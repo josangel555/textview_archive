@@ -111,16 +111,23 @@ final class LaunchHarness {
             "dist/TextView.app/Contents/MacOS/MarkdownViewer")
         // Fixture base. Under the VM GUI lane xctest runs as ROOT (the sudo'd
         // `launchctl asuser` bridge) but the live app spawns as the console
-        // user. Root's per-user temp (`/var/folders/.../T`) is 0700 AND
-        // SIP-restricted (`SF_RESTRICTED` — even root cannot `chmod` it), so it
-        // is untraversable by the console user → every spawned doc lands in
-        // `.error`. World-traversable `/tmp` (1777), with this run dir chown'd
-        // to the console user at spawn time (AppLauncher, `preShared`), lets the
-        // app read AND write fixtures IN PLACE — so editor-save round-trips and
-        // multi-launch path-keyed state (bookmarks) survive. On a normal host
-        // (non-root) the per-user temp is correct and symlink-safe.
+        // user, and TWO constraints must BOTH hold for that app:
+        //   (1) it must read+write the fixtures — root's per-user temp
+        //       (`/var/folders/zz/.../T`) is 0700 AND SIP-restricted (even root
+        //       can't `chmod` it), so it's untraversable by the console user →
+        //       every spawned doc lands in `.error`; and
+        //   (2) MCP-driven UAT (`open_path`) enforces a containment fence — the
+        //       path must be under the APP's home or the app's own per-user temp
+        //       (`MCPToolCatalog`). `/tmp` satisfies (1) but FAILS (2); root's
+        //       temp fails both.
+        // The only base that satisfies BOTH is a scratch dir under the SPAWN
+        // user's OWN home: that user can read+write it, and it's under its home
+        // so containment passes. `AppLauncher` chowns the run dir to the spawn
+        // user at launch (`preShared`) so the root-written fixtures become the
+        // app's to read+write. On a normal host (non-root) the per-user temp is
+        // correct + symlink-safe (and these tiers self-skip off the VM anyway).
         let fixtureBase = (geteuid() == 0)
-            ? URL(fileURLWithPath: "/tmp")
+            ? AppLauncher.spawnUserHome.appendingPathComponent(".mdv-uat-fixtures")
             : FileManager.default.temporaryDirectory
         self.tmpDir = fixtureBase
             .appendingPathComponent("\(label)-\(UUID().uuidString)")

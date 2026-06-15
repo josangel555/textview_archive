@@ -24,12 +24,27 @@ hours.
   the test reads back the untouched original; (b) **multi-launch path-keyed state** (bookmarks) — each
   launch copies to a NEW uuid path, so a bookmark set in launch 1 ≠ launch 2's path. And multi-file/folder
   fixtures beyond `fileArg` were never bridged at all.
-- FIX (in-place, one mechanism): `LaunchHarness` roots ALL fixtures under world-traversable `/tmp` when
-  `geteuid()==0`; `AppLauncher.runScript` gains `preShared` → skips the copy, `chown -R`s the whole run dir
-  to the console user, runs the app against the **real stable paths**, and does NOT reap the dir between a
-  method's scenarios. Result: the two worst classes went 31 failures → 0. On a normal host (non-root) the
-  per-user temp stays the default (symlink-safe). Files: `Tests/ViewerUITests/AppLauncher.swift`,
+- FIX (in-place, one mechanism): `LaunchHarness` roots ALL fixtures under the **spawn user's HOME**
+  (`AppLauncher.spawnUserHome/.mdv-uat-fixtures`) when `geteuid()==0`; `AppLauncher.runScript` gains
+  `preShared` → skips the copy, `chown -R`s the whole run dir to the console user, runs the app against the
+  **real stable paths**, and does NOT reap the dir between a method's scenarios. Result: the two worst
+  file-UAT classes went 31 failures → 0. On a normal host (non-root) the per-user temp stays the default
+  (symlink-safe). Files: `Tests/ViewerUITests/AppLauncher.swift`,
   `Tests/ViewerUITests/Harness/LaunchHarness.swift`.
+- SECOND CONSTRAINT (TSK-954, found by the full GUI lane): an early version of this fix used `/tmp` — which
+  is readable by the spawn user but **fails the MCP containment fence**. MCP `open_path`
+  (`MCPToolCatalog.swift`) admits a path ONLY if it's under the SERVER process's home or that process's OWN
+  per-user temp. So `/tmp` is rejected. Moving the base to the console user's home greens the file-UAT lane
+  (Cm6/Sidebar) and kills `.error`, but does NOT fully green the MCP-driven UAT
+  (`PluginsAndMcpAutomationUATTests`) — see the THIRD constraint.
+- THIRD CONSTRAINT (TSK-954, still open as of 2026-06-15): the file-UAT app and the MCP server can run as
+  DIFFERENT users, and then NO single fixture base works. `AppLauncher` spawns the live app as the **console
+  user** (`/Users/vm-tester`), but the PMA test's `MCPClient` spawns `--mcp-stdio` **directly as ROOT** (no
+  `sudo -u`), so the server's `NSHomeDirectory()` is `/var/root`. Home-based fixtures (`/Users/vm-tester/...`)
+  are then "outside" the server's home → containment rejects them. FIX (pending): make `MCPClient` spawn the
+  server as the console user too (mirror AppLauncher), so both lanes share `/Users/vm-tester`. RULE: any
+  process that opens fixtures under MCP containment must run as the SAME user whose home the fixtures live
+  under — match the spawn user across BOTH the `--script` launcher and the `--mcp-stdio` launcher.
 
 ## VM UAT validation spawns a STALE `dist/` unless you rebuild it first (2026-06-15, VM-drain)
 - The `rsync` to the VM EXCLUDES `dist/` (`--exclude='dist/'`), and `scripts/test-in-vm.sh test` mode

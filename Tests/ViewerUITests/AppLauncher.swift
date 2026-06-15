@@ -76,8 +76,9 @@ enum AppLauncher {
         // run's script/arg/artifacts move to a world-accessible /tmp dir.
         let spawnUser: String? = geteuid() == 0 ? consoleUser : nil
         // TSK-953: when the caller (LaunchHarness) has ALREADY rooted its
-        // fixtures in a world-traversable dir (`/tmp`), run the app against the
-        // REAL paths IN PLACE rather than copying to a throwaway /tmp dir. Only
+        // fixtures under the spawn user's home (readable by that user AND inside
+        // the MCP containment fence), run the app against the REAL paths IN
+        // PLACE rather than copying to a throwaway /tmp dir. Only
         // the copy path breaks editor-save round-trips (the app saves to a copy
         // the test never reads back) and multi-launch path-keyed state — e.g. a
         // bookmark set in launch 1 keys off `/tmp/mdv-uat-AAA/f`, but launch 2

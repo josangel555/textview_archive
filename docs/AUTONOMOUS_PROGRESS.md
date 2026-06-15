@@ -18,13 +18,29 @@ chmod = `Operation not permitted`; (2) `FileManager.temporaryDirectory` ignores 
 `confstr(_CS_DARWIN_USER_TEMP_DIR)`), so the earlier TMPDIR-redirect was a no-op. Reverted the dead
 `test-in-vm.sh` chmod.
 
-**Fix (in-place, one mechanism).** `LaunchHarness` roots fixtures under world-traversable `/tmp` when
-`geteuid()==0`; `AppLauncher.runScript` gained `preShared` → skips its copy-to-/tmp indirection,
-`chown -R`s the run dir to the console user, runs the app against the REAL stable paths, and does NOT reap
-the dir between a method's scenarios. The replaced copy indirection itself broke editor-save round-trips
-(app saved a copy the test never read back) and multi-launch path-keyed bookmarks (new uuid path per
-launch). Files: `Tests/ViewerUITests/AppLauncher.swift`, `Tests/ViewerUITests/Harness/LaunchHarness.swift`,
+**Fix (in-place, one mechanism).** `LaunchHarness` roots fixtures under the spawn user's HOME
+(`AppLauncher.spawnUserHome/.mdv-uat-fixtures`) when `geteuid()==0`; `AppLauncher.runScript` gained
+`preShared` → skips its copy-to-/tmp indirection, `chown -R`s the run dir to the console user, runs the app
+against the REAL stable paths, and does NOT reap the dir between a method's scenarios. The replaced copy
+indirection itself broke editor-save round-trips (app saved a copy the test never read back) and
+multi-launch path-keyed bookmarks (new uuid path per launch). Files:
+`Tests/ViewerUITests/AppLauncher.swift`, `Tests/ViewerUITests/Harness/LaunchHarness.swift`,
 `scripts/test-in-vm.sh`.
+
+**TSK-954 (found by the full GUI `all` lane) — partial; PMA needs a follow-on.** An initial cut used `/tmp`;
+the full lane then showed 19 failures, ALL in `PluginsAndMcpAutomationUATTests` — the MCP `open_path`
+containment fence (`MCPToolCatalog`) admits a path only if it's under the MCP SERVER process's home or that
+process's own per-user temp. Moving the fixture base from `/tmp` to `spawnUserHome/.mdv-uat-fixtures` kept
+Cm6/Sidebar green (file-UAT app = console user, home = `/Users/vm-tester`), killed the `.error` class and the
+`-609` connection errors, and cut PMA 19→16 — BUT did not green PMA. ROOT CAUSE of the remainder:
+`MCPClient` (in the PMA test) spawns `--mcp-stdio` DIRECTLY as ROOT (no `sudo -u`), so the server's
+`NSHomeDirectory()` is `/var/root`, not `/Users/vm-tester` — the home-based fixtures are "outside" the
+server's home → rejected. The file-UAT app (console user) and the MCP server (root) have DIFFERENT homes,
+so no single fixture base satisfies both while they run as different users. COMPLETE FIX (follow-on, owner
+paused the loop so HELD): make `MCPClient` spawn the server as the console user too (mirror AppLauncher),
+so both lanes are the console user and share `/Users/vm-tester`. The home-base fixture change is committed as
+the correct foundation; PMA stays red pending the MCPClient-spawn fix. Host gate green (PMA self-skips on
+host); Cm6/Sidebar 10/10 on the VM.
 
 **Validation (teeth demonstrated).** Same two worst classes (`Cm6EditorUATTests` +
 `SidebarFileTreeAndBookmarksUATTests`): **31 failures on the broken harness → 0 failures, 20/20, `.error`=0**

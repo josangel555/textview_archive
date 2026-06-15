@@ -170,8 +170,9 @@ swift_test() {
   # spawns as the console user; root's per-user temp (`/var/folders/.../T`) is
   # 0700 AND SIP-restricted (`SF_RESTRICTED` — even root cannot `chmod` it), so
   # there is nothing to open from this side. Instead LaunchHarness roots its
-  # fixtures in world-traversable `/tmp` and AppLauncher chowns the run dir to
-  # the console user, so the app reads + writes fixtures in place.
+  # fixtures under the spawn user's HOME (readable by that user AND inside the
+  # MCP open_path containment fence — TSK-954) and AppLauncher chowns the run
+  # dir to the console user, so the app reads + writes fixtures in place.
   [[ -n "${TOOLCHAINS:-}" ]] && inner+=" && export TOOLCHAINS=$(printf '%q' "$TOOLCHAINS")"
   # Forward MDV_* knobs (MDV_PIXEL_DEBUG_DIR, MDV_RUN_WEBVIEW_TESTS, …) into
   # the asuser shell — `launchctl asuser` drops the caller's environment, so
