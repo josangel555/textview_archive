@@ -1,5 +1,22 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Sessions: TSK-931 menu rename (→ review) + TSK-930 reconciled (already built)
+
+Investigated the Sessions system — it ALREADY is "named saved sessions": each session persists open tabs
+([TabSnapshot]) + tool-window state (panelLayout snapshot) + selection (SessionState.swift:165), is listed
+(SessionTabBar strip + Jump-to-Session menu 1-9), renameable (coordinator.rename + inline tab editor), and
+deletable (close → trash); restore reapplies layout + tabs.
+
+- **TSK-930 — RECONCILED (already built).** The owner's Save/list/delete + remember-tool-windows-and-tabs ask is
+  delivered by the live session system (which auto-persists continuously — strictly more than an explicit "Save").
+  → review, no code. Optional nuance: an explicit "Save Session As" distinct snapshot, if the owner wants it.
+- **TSK-931 — menu-bar rename ADDED.** Right-click-on-session-tab → inline rename already existed; the owner also
+  asked for a MENU surface. Added **Session ▸ Rename Session…** (`renameSession` → NSAlert prompt prefilled with
+  the current name → the SAME `sessions.rename`), gated on an active session. Extracted the trim/empty/no-op rule
+  into pure `SessionRename.sanitize` (ViewerCore) — host-tested (6 tests) — since the App-coordinator session
+  lifecycle is async (an `openFolder`-then-assert test found `active` nil synchronously, so the decision logic is
+  the right host-testable unit; the menu/NSAlert is the VM tail).
+
 ## LOG 2026-06-14 — TSK-925 CSV column sort (→ review); TSK-903 triaged-as-slice; TSK-904 answered
 
 **TSK-925 — sort the CSV table by a column.** New pure `CsvSort` (ViewerCore): `sorted(rows:column:ascending:)`
