@@ -16,9 +16,12 @@ SECURITY diligence pass (security = the SOP's #1 fallback pool; the repo ships-p
   `*.swift/*.rs/*.json/*.sh/*.plist/*.yml`, excluding test/mock/fixture/example/placeholder.
 - Only credential-like string in the repo: the intentional LOCAL-DEV UTM VM password (`<vm-sudo-password>` +
   `vm-tester@<vm-ip>`, CLAUDE.md) — a throwaway local VM, deliberately documented, not a real secret.
-Recorded on TSK-859 (the secret-verify ticket, wontdo — stands). No code change (repo already clean);
-not wired as a gate step (false-positive risk on the velocity-critical merge gate isn't worth it while
-the repo is clean — kept as a documented pre-release check instead).
+Recorded on TSK-859 (the secret-verify ticket, wontdo — stands). Repo already clean; not wired as a
+gate step (false-positive risk on the velocity-critical merge gate isn't worth it while clean).
+UPDATE (later tick): formalized into `scripts/check-no-secrets.sh` — a standalone, on-demand
+pre-public-release check (exit 0 clean / 2 on a candidate). Self-validated: exits clean on the repo +
+teeth confirmed (the patterns match known-bad AWS/GitHub/Google/PEM/generic samples). Standalone by
+design (NOT in the merge gate). Run before the Developer-ID public ship.
 
 ## LOG 2026-06-15 — HOLD (VM down 4 ticks) + NEW finding: the Rust-migration endgame is owner-gated
 
