@@ -144,6 +144,24 @@ struct DiffView: View {
         .overlay(alignment: .bottom) { Divider() }
     }
 
+    /// TSK-911: the commit summary banner — message preamble + totals.
+    private func summaryHeader(_ preamble: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(preamble)
+                .font(.system(size: doc.uiSize(12), design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(DiffStat(files).shortStat)
+                .font(.system(size: doc.uiSize(11), weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.controlBackground)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityIdentifier("mdv.diff.summaryHeader")
+    }
+
     /// Per-row find state, O(1) via the match set.
     private var findMatchSet: Set<DiffFind.Match> { Set(findMatches) }
 
@@ -159,6 +177,12 @@ struct DiffView: View {
     /// contract is pinned here, one level below it.
     internal func scrollBody(viewport: CGSize) -> some View {
         LazyVStack(alignment: .leading, spacing: 16, pinnedViews: []) {
+            // TSK-911: commit-diff summary header — the message/author/date the
+            // parser drops, plus the multi-file totals. Only shows for a commit
+            // diff (git-show preamble present), not a plain patch.
+            if let header = CommitDiffSummary.preamble(text) {
+                summaryHeader(header)
+            }
             ForEach(Array(files.enumerated()), id: \.offset) { fi, file in
                 fileBlock(file, fileIndex: fi)
             }
