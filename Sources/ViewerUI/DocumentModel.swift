@@ -5792,6 +5792,16 @@ public final class DocumentModel: ObservableObject {
         setCurrentViewMode(new)
     }
 
+    /// TSK-899: select the Nth view mode for the current file (⌘1/⌘2/⌘3 →
+    /// the 1st/2nd/3rd button in the mode bar). Positional — robust across file
+    /// types (markdown: Rendered/Source/HEX; CSV: Table/Source/HEX) — and a
+    /// no-op when the slot doesn't exist for this file.
+    public func selectViewMode(at index: Int) {
+        let modes = availableViewModes
+        guard modes.indices.contains(index) else { return }
+        setCurrentViewMode(modes[index])
+    }
+
     public func setCurrentViewMode(_ mode: ViewMode) {
         guard let i = tabs.selectedIndex, tabs.tabs.indices.contains(i) else { return }
         var t = tabs.tabs[i]

@@ -28,6 +28,20 @@ public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
         case .rendered, .formatted, .table, .diff, .preview, .hex: return false
         }
     }
+
+    /// Human label for menus / the mode bar (TSK-899 positional shortcuts).
+    public var displayName: String {
+        switch self {
+        case .rendered: return "Rendered"
+        case .source: return "Source"
+        case .editor: return "Editor"
+        case .formatted: return "Formatted"
+        case .table: return "Table"
+        case .diff: return "Diff"
+        case .preview: return "Preview"
+        case .hex: return "HEX"
+        }
+    }
 }
 
 /// Computes which view modes are reachable for a given URL. Always

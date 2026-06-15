@@ -804,6 +804,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.insertDateAndTime()
     }
 
+    /// TSK-899: ⌘N → select the Nth available view mode (tag = 0-based slot).
+    @objc func selectViewModeSlot(_ sender: Any?) {
+        let slot = (sender as? NSMenuItem)?.tag ?? 0
+        model.selectViewMode(at: slot)
+    }
+
     @objc func toggleViewMode(_ sender: Any?) {
         model.toggleViewMode()
     }
@@ -1381,6 +1387,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         toggleItem.target = self
         applyShortcut("view.toggleRenderedSource", to: toggleItem)
         viewMenu.addItem(toggleItem)
+
+        // TSK-899: ⌘1/⌘2/⌘3 select the 1st/2nd/3rd view mode in the current
+        // file's mode bar (positional — Rendered/Source/HEX for markdown,
+        // Table/Source/HEX for CSV, etc.). Title + enabled state are refreshed
+        // per file in validateMenuItem; the slot is a no-op when absent.
+        for slot in 0..<3 {
+            let item = NSMenuItem(
+                title: "View Mode \(slot + 1)",
+                action: #selector(selectViewModeSlot(_:)),
+                keyEquivalent: "\(slot + 1)")
+            item.keyEquivalentModifierMask = [.command]
+            item.target = self
+            item.tag = slot
+            viewMenu.addItem(item)
+        }
 
         let sidebarItem = NSMenuItem(
             title: "Toggle Sidebar",
@@ -2539,6 +2560,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(newTabFromClipboard(_:)):
             // TSK-935: only when the clipboard has text.
             return model.canNewTabFromClipboard
+        case #selector(selectViewModeSlot(_:)):
+            // TSK-899: name the slot after the current file's Nth mode + enable
+            // only when that slot exists. Keeps ⌘1/⌘2/⌘3 mapped to the bar.
+            let modes = model.availableViewModes
+            let slot = item.tag
+            if modes.indices.contains(slot) {
+                item.title = "Show \(modes[slot].displayName)"
+                return true
+            }
+            item.title = "View Mode \(slot + 1)"
+            return false
         case #selector(printRenderedPage(_:)), #selector(exportRenderedPDF(_:)):
             return model.canPrintRenderedPage
         case #selector(toggleViewMode(_:)):
