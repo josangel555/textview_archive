@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-14
 
 ### Added
+- **Sort the CSV table by a column** — click a column header in the CSV/TSV table to sort by it (click again to reverse). Numeric columns sort by value (2 < 10, not "10" < "2"), text sorts case-insensitively, and blank cells sink to the bottom.
 - **Drag a file onto the Terminal to paste its path** — dropping a file (or several) on the built-in terminal types the shell-quoted path(s) at the prompt instead of opening the file in a tab. Dropping anywhere else still opens the file as before.
 - **`textview://` links** — the app's URL scheme is now `textview://open?path=…` (and `textview://search?…`); the old `markdownviewer://` links keep working as an alias.
 

@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-925 CSV column sort (→ review); TSK-903 triaged-as-slice; TSK-904 answered
+
+**TSK-925 — sort the CSV table by a column.** New pure `CsvSort` (ViewerCore): `sorted(rows:column:ascending:)`
+type-aware (numeric when every non-empty cell parses, else case-insensitive string), empties-last (direction-
+independent), stable; `nextState(current:tapped:)` pins the header-click toggle (new col → asc; same col →
+flip). §2.5-safe (consumer of parsed rows, not the Rust CSV parser). CSVTableView: sort state applied to the
+filtered rows before render; headers clickable with a chevron indicator. Teeth: 11 host tests (numeric vs lexical,
+desc, case-insensitive, empties-last both ways, stable, 2nd column, short-row, out-of-range, + 3 toggle-state).
+Host gate green. Header click/arrow render = VM tail.
+
+**TSK-903 — task-list `[x]` render: SPIKED → triaged as a multi-engine slice (NOT done this tick).** Both engines
+deliberately drop the checkbox (rust markdown.rs:236 + Swift HTMLRenderer:365). Fixing it spans rust renderer +
+Swift twin + a SECURITY-sensitive HTMLSanitizer allowlist (`<input type=checkbox disabled>` is currently
+stripped) + CSS + A/B golden + VM-visual. Full plan recorded on the ticket. Deferred to a focused rust-core
+firing rather than rushed.
+
+**TSK-904 — "Format JSON?" answered (no code):** Pretty-Print (View) + Minify JSON (Edit, TSK-868) already exist;
+the gap is discoverability ("Pretty-Print" doesn't read as "Format JSON"). Optional label follow-up is the owner's
+call. Answered on the ticket.
+
 ## LOG 2026-06-14 — TSK-920 (terminal drag-paste) + TSK-928 (textview:// scheme) shipped (→ review)
 
 Two items, gated once.

@@ -39,7 +39,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-920** — drag-to-Terminal pastes the file path (not capture) `[review; TerminalDropFormatter + drag-dest, 7 teeth tests]`
 - [ ] **TSK-919** — File-nav: sub-folder self-drag trap (needs DropRouter/re-root investigation)
 - [x] **TSK-902** — Preview tab title italic not bold `[30f672c → review; TabTitleStyle host-tested, pixel=VM]`
-- [ ] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items
+- [~] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items `[TRIAGED slice — both engines drop it by design; needs rust+swift+sanitizer(security)+CSS+golden+VM; plan on ticket]`
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
 - [ ] **TSK-929** — External rename → tab shows "file not found"; should follow the rename `(fs.watch TSK-662)`
 
@@ -50,13 +50,14 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-932** — Unsaved blue dot on modified tab `[review — ALREADY BUILT: TabBar accent dirty-dot on tab.isDirty]`
 - [ ] **TSK-936 / 937 / 938** — Toggle-View-only shortcut · Focus Terminal/Nav/Git/File · Esc→current tab
 - [ ] **TSK-918** — Remove max-width cap on horizontal panel resize (cf TSK-440)
-- [ ] **TSK-925 / 924** — CSV: sort by column header · multi-cell select + copy/paste `(711)`
+- [x] **TSK-925** — CSV: sort by column header `[review; CsvSort type-aware comparator + 11 teeth tests; header click=VM]`
+- [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
 - [ ] **TSK-911 / 909** — Commit-diff summary header (uses TSK-514 DiffStat) · Reviews submenu `(537)`
 - [ ] **TSK-933 / 934** — Footer filename as breadcrumb · breadcrumb right-click = file-nav menu
 - [x] **TSK-928** — Rename URL scheme markdownviewer:// → textview:// `[review; textview primary + markdownviewer alias, router+plist+gate, teeth tests]`
 - [ ] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer
 - [ ] **TSK-931** — Rename a session (menu + right-click tab)
-- [ ] **TSK-904** — "Format JSON" discoverability (question; Pretty-Print/Minify already exist)
+- [x] **TSK-904** — "Format JSON" discoverability `[answered: Pretty-Print (View) + Minify JSON (Edit) exist; optional label follow-up = owner's call]`
 - [ ] **TSK-901** — Auto-detect content type (CSV/JSON/language) for unknown/misnamed files
 
 **P3 — bigger / design-first / epics:**
