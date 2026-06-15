@@ -4023,6 +4023,29 @@ public final class DocumentModel: ObservableObject {
         terminalPane.setOpen(true)
     }
 
+    /// TSK-769: user-curated favorite terminal commands (a cross-session
+    /// shortlist; the PTY shell still owns up-arrow history). Hand-editable JSON;
+    /// the Terminal menu lists these for one-click insertion.
+    public let terminalFavorites = TerminalFavoritesStore()
+
+    /// Insert a favorite at the in-app terminal prompt (TSK-769): open the pane
+    /// (spawning a tab if none is live) and type the command WITHOUT a trailing
+    /// newline — the user reviews + presses Return. Returns false on a blank
+    /// command or when no live terminal can receive it.
+    @discardableResult
+    public func insertTerminalFavorite(_ command: String) -> Bool {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if terminalPane.terminal == nil {
+            terminalPane.addTab(
+                workingDirectory: TerminalCwd.workingDirectory(forFocusedFile: currentURL))
+        }
+        terminalPane.setOpen(true)
+        guard let term = terminalPane.terminal else { return false }
+        term.sendString(trimmed)
+        return true
+    }
+
     /// True when there's a file OR a project folder open — i.e. the status
     /// footer has something useful to show (path/metrics for a file; the
     /// folder-scoped git chip + "—" path for a folder-only project). TSK-738:

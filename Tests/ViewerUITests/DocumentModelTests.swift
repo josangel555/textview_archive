@@ -1046,6 +1046,23 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertFalse(model.canFindNextPrev, "closed bar ⇒ next/prev disabled again")
     }
 
+    // MARK: - Terminal favorites (TSK-769)
+
+    func test_insertTerminalFavorite_blankIsNoOp() {
+        let model = makeModel()
+        // A blank command must short-circuit BEFORE opening the terminal pane —
+        // returns false, no PTY spawned.
+        XCTAssertFalse(model.insertTerminalFavorite("   "))
+        XCTAssertFalse(model.insertTerminalFavorite(""))
+    }
+
+    func test_terminalFavorites_accessorRoundTrips() {
+        let model = makeModel()
+        XCTAssertTrue(model.terminalFavorites.add(command: "git status"))
+        XCTAssertEqual(model.terminalFavorites.all.first?.command, "git status",
+            "the model exposes the favorites store for the menu to list")
+    }
+
     // MARK: - Content auto-detect for misnamed files (TSK-901)
 
     func test_canMinifyJSON_trueForMisnamedJSONFile() throws {

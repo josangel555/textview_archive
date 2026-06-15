@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var sessionJumpMenu: NSMenu?
     private var languageMenu: NSMenu?
     private var windowMenu: NSMenu?
+    private var terminalFavoritesMenu: NSMenu?   // TSK-769
     /// Auxiliary tool windows (WAVE 2b items 4 + 5). Retained so a second
     /// menu invocation re-focuses the existing window instead of spawning
     /// duplicates; `isReleasedWhenClosed = false` keeps them alive across
@@ -883,7 +884,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             rebuildSessionJumpMenu(menu)
         } else if menu === languageMenu {
             rebuildLanguageMenu(menu)
+        } else if menu === terminalFavoritesMenu {
+            rebuildTerminalFavoritesMenu(menu)
         }
+    }
+
+    /// Rebuild the "Terminal Favorites" submenu (TSK-769) from the user's store.
+    /// Each favorite inserts its command at the terminal prompt; the footer items
+    /// open the hand-editable JSON and reload it.
+    private func rebuildTerminalFavoritesMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let favorites = model.terminalFavorites.all
+        if favorites.isEmpty {
+            let none = NSMenuItem(title: "(no favorites)", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+        } else {
+            for fav in favorites {
+                let item = NSMenuItem(
+                    title: fav.displayLabel,
+                    action: #selector(insertTerminalFavoriteItem(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = fav.command
+                item.toolTip = fav.command
+                menu.addItem(item)
+            }
+        }
+        menu.addItem(.separator())
+        let edit = NSMenuItem(
+            title: "Edit Favorites…", action: #selector(editTerminalFavorites(_:)), keyEquivalent: "")
+        edit.target = self
+        menu.addItem(edit)
+        let reload = NSMenuItem(
+            title: "Reload Favorites", action: #selector(reloadTerminalFavorites(_:)), keyEquivalent: "")
+        reload.target = self
+        menu.addItem(reload)
+    }
+
+    @objc func insertTerminalFavoriteItem(_ sender: NSMenuItem) {
+        guard let command = sender.representedObject as? String else { return }
+        _ = model.insertTerminalFavorite(command)
+    }
+
+    @objc func editTerminalFavorites(_ sender: Any?) {
+        // Open the hand-editable JSON in the app (creating it empty if missing).
+        let url = model.terminalFavorites.storeURL
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? Data("[]\n".utf8).write(to: url, options: .atomic)
+        }
+        model.open(url: url)
+    }
+
+    @objc func reloadTerminalFavorites(_ sender: Any?) {
+        model.terminalFavorites.reload()
     }
 
     /// Rebuild the "Language Mode" submenu (TSK-753): every highlightable
@@ -1470,6 +1523,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         )
         reloadItem.target = self
         viewMenu.addItem(reloadItem)
+
+        // TSK-769: Terminal Favorites — a dynamic submenu of the user's curated
+        // commands, rebuilt on open (menuNeedsUpdate) from the host-tested store.
+        // Picking one inserts it at the in-app terminal prompt.
+        viewMenu.addItem(.separator())
+        let favItem = NSMenuItem(title: "Terminal Favorites", action: nil, keyEquivalent: "")
+        let favMenu = NSMenu(title: "Terminal Favorites")
+        favMenu.delegate = self
+        favItem.submenu = favMenu
+        terminalFavoritesMenu = favMenu
+        viewMenu.addItem(favItem)
 
         let paletteItem = NSMenuItem(
             title: "Quick Open…",
