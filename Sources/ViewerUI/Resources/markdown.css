@@ -173,6 +173,20 @@ mark.mdv-find-current {
     .tok-tagattribute { color: #D9C97C; }
 }
 
+/* GFM task lists (TSK-903): the renderer emits a disabled <input checkbox>
+   inside the item's <p>. Drop the bullet for task items and dim + strike
+   through a completed one. Uses :has() (WebKit 15.4+, available in the app's
+   WKWebView); a browser without it just shows the bullet + checkbox. */
+li:has(> p > input[type="checkbox"]),
+li:has(> input[type="checkbox"]) { list-style: none; }
+li:has(> p > input[type="checkbox"]) > p,
+li:has(> input[type="checkbox"]) { margin-left: -1.2em; }
+input[type="checkbox"][disabled] { margin-right: 0.3em; vertical-align: middle; }
+li:has(> p > input[type="checkbox"][checked]) > p {
+  text-decoration: line-through;
+  color: var(--mdv-fg-secondary);
+}
+
 /* Print / Export-as-PDF (TSK-638): paginate cleanly. Code fences keep
    their background but must not clip across pages; long URLs wrap. */
 @media print {

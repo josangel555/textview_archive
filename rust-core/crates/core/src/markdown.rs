@@ -233,9 +233,19 @@ impl Writer {
                 self.out("<br/>\n");
             }
             Event::Rule => self.out("<hr/>\n"),
-            // The Swift visitor drops task-list checkboxes (ListItem.checkbox
-            // is parsed but never emitted) — mirror by skipping the marker.
-            Event::TaskListMarker(_) => {}
+            // GFM task list: emit a disabled checkbox at the marker, INSIDE the
+            // item's synthesized <p> so it precedes the text (TSK-903). This is
+            // trusted structural output (not author raw-HTML), so it bypasses
+            // the sanitizer. The Swift visitor mirrors this byte-for-byte
+            // (HTMLVisitor.visitListItem) — the A/B parity suite pins it.
+            Event::TaskListMarker(checked) => {
+                self.synth_para_if_needed();
+                self.out(if checked {
+                    "<input type=\"checkbox\" disabled checked/> "
+                } else {
+                    "<input type=\"checkbox\" disabled/> "
+                });
+            }
             // Unreachable without their Options bits; ignore defensively.
             Event::FootnoteReference(_)
             | Event::InlineMath(_)
@@ -650,11 +660,12 @@ mod tests {
     }
 
     #[test]
-    fn task_list_markers_are_dropped() {
-        // Swift extracts ListItem.checkbox and never emits it.
+    fn task_list_renders_disabled_checkboxes() {
+        // TSK-903: GFM task items render a disabled checkbox inside the item's
+        // <p>; the Swift visitor matches this byte-for-byte (A/B parity).
         assert_eq!(
             html("- [x] done\n- [ ] todo"),
-            "<ul>\n<li><p>done</p>\n</li>\n<li><p>todo</p>\n</li>\n</ul>\n"
+            "<ul>\n<li><p><input type=\"checkbox\" disabled checked/> done</p>\n</li>\n<li><p><input type=\"checkbox\" disabled/> todo</p>\n</li>\n</ul>\n"
         );
     }
 

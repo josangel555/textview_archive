@@ -365,7 +365,16 @@ struct HTMLVisitor: MarkupVisitor {
     mutating func visitListItem(_ listItem: ListItem) -> String {
         if depth >= Self.maxDepth { return Self.truncationMarker }
         let inner = descend(listItem.children)
-        return "<li>\(inner)</li>\n"
+        guard let checkbox = listItem.checkbox else { return "<li>\(inner)</li>\n" }
+        // TSK-903: GFM task item → disabled checkbox INSIDE the leading <p>, so
+        // it matches the Rust path byte-for-byte (the A/B parity suite pins it).
+        let box = checkbox == .checked
+            ? "<input type=\"checkbox\" disabled checked/> "
+            : "<input type=\"checkbox\" disabled/> "
+        if inner.hasPrefix("<p>") {
+            return "<li><p>\(box)\(inner.dropFirst(3))</li>\n"
+        }
+        return "<li>\(box)\(inner)</li>\n"
     }
 
     mutating func visitThematicBreak(_ thematicBreak: ThematicBreak) -> String {
