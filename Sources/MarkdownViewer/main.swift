@@ -617,6 +617,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func previousSession(_ sender: Any?) { sessions.previousSession() }
     @objc func closeSession(_ sender: Any?)    { sessions.closeActive() }
 
+    /// TSK-931: rename the active session from the menu bar. Prompts with the
+    /// current name prefilled; routes to the SAME `sessions.rename` the inline
+    /// session-tab editor uses (which trims + ignores empty/no-op).
+    @objc func renameSession(_ sender: Any?) {
+        guard let active = sessions.active else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename Session"
+        alert.informativeText = "Enter a new name for this session."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = active.displayName
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        if alert.runModal() == .alertFirstButtonReturn {
+            sessions.rename(id: active.id, to: field.stringValue)
+        }
+    }
+
     /// Jump-to-session menu handler. The Nth item carries `tag = N`
     /// (1-indexed) so we can route ⌃1…⌃9 through one selector.
     @objc func jumpToSession(_ sender: NSMenuItem) {
@@ -2048,6 +2067,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         closeItem.target = self
         menu.addItem(closeItem)
 
+        // TSK-931: rename the active session from the menu bar (the session-tab
+        // right-click already offers inline rename; this is the menu surface the
+        // owner also asked for).
+        let renameItem = NSMenuItem(
+            title: "Rename Session…",
+            action: #selector(renameSession(_:)), keyEquivalent: "")
+        renameItem.target = self
+        menu.addItem(renameItem)
+
         // TSK-755: Tab operations — a discoverability section grouping the
         // open-file tab commands in the Session menu. The keyboard shortcuts
         // live on File (New/Close Tab) and Window (Next/Previous/Move Tab);
@@ -2490,6 +2518,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(newFile(_:)), #selector(newFileOfType(_:)):
             // TSK-329/747: needs a folder to create into (selected dir or root).
             return model.newFileTargetDirectory != nil
+        case #selector(renameSession(_:)):
+            // TSK-931: only when there's an active session to rename.
+            return sessions.active != nil
         case #selector(printRenderedPage(_:)), #selector(exportRenderedPDF(_:)):
             return model.canPrintRenderedPage
         case #selector(toggleViewMode(_:)):

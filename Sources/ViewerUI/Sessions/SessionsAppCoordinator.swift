@@ -294,11 +294,12 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// updates so a stray Enter on the inline editor doesn't clobber
     /// the existing name. Persists through the coalescing write queue.
     public func rename(id: UUID, to newName: String) {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        // Cheap early-out for the common empty/stray-Enter case; the full
+        // trim + no-op rule lives in the host-tested `SessionRename.sanitize`.
+        guard !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         core.updateSession(id: id) { snap in
-            guard snap.displayName != trimmed else { return }
-            snap = snap.with(displayName: trimmed)
+            guard let name = SessionRename.sanitize(newName, current: snap.displayName) else { return }
+            snap = snap.with(displayName: name)
         }
     }
 
