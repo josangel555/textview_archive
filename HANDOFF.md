@@ -1,28 +1,32 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — markdown/data consumer-tools suite shipped; frontier owner/VM-bound  (2026-06-14)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `60a6cec`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `4a2c4b6`
 
 ## Mission
 Autonomous loop: drain `WORK_QUEUE.md` top-down / ship complete host-validated work (host-test the model, leave render at `review`), keep `main` headless-gate-green, commit per item, log. Owner is doc-heavy; recent value = §2.5-safe markdown/data **consumer** features.
 
 ## Current state
-- **21 features shipped this run → `review`** (host-tested model + render/menu = VM tail). Recent (newest first):
-  - Editor ▸ Lines: in-place Sort/Reverse/Remove-Duplicates (883) + Remove-Empty/Collapse-Blank (884).
-  - Markdown: Promote/Demote Headings (882).
-  - **Data interop set:** CSV→Markdown/JSON (870), **CSV Summary (885)**, **JSON→CSV (886)** — all pure §2.5-safe consumers.
-  - LSP hover (710) reconciled — ALREADY BUILT in CM6 (stale entry), → review, no code.
-  - 675 epic slices: line-endings (862), doc-stats + trim/final-newline (863), indentation (864), TOC (865).
-  - Markdown docs/export: Copy/Export HTML (866), Check Links (867), Lint (869), self-contained HTML (871), Open in Browser (881), Minify JSON (868).
-  - Audio (533/534), content Text Size base×zoom incl. rendered-markdown (358).
-  - Validated (host): 853 (highlight warm), 575 (clippy cast-ratchet).
+- **OWNER INTAKE 2026-06-14 (TSK-887..945) — 15 shipped → `review`, 4 reconciled, 1 answered, 1 epic-slice, 1 parked.**
+  Shipped (host model tested; menu/render = VM tail): 884 (Lines remove-empty/collapse-blank), 885 (CSV Summary),
+  886 (JSON→CSV), 902 (preview tab italic), 900 (unknown-ext stuck-in-HEX fix), 907 (git dup-tab), 914
+  (open-in-terminal → in-app), 920 (drag-file-to-terminal pastes path), 928 (textview:// scheme), 925 (CSV column
+  sort), 931 (session rename menu), 903 (MD task-list checkboxes — rust+swift byte-matched), 919 (folder
+  self-drag trap), 918 (sidebar resize cap lifted), 929 (follow external rename), 935 (New Tab from Clipboard),
+  899 (⌘1/2/3 view-mode shortcuts). Reconciled-as-already-built: 710 (LSP hover), 930 (saved sessions), 932
+  (unsaved dot), 913 (right-click rename). Answered: 904 (Format JSON discoverability). Epic: 698 slice 1 (JS
+  transform engine). PARKED: 698 safe-exec decision (SPI/off-main/subprocess — owner pick).
+- Earlier this run (still at `review`): 882, 883, 870, 862-866, 867-869, 871, 881, 868, 358, 533/534. ~36 total at review.
 - **Tree clean** except pre-existing untracked `archive/Untitled.txt` + `untitled2.md` (NOT ours).
-- **Headless gate green** (~5623 tests). NOTE: the gate can flake on a perf bench under load — re-run before trusting a red.
+- **Headless gate green** (~5650 tests). NOTE: the gate can flake on a perf bench under load — re-run before trusting a red.
 
 ## Next action
-The clean high-value host pool is thin but the **§2.5-safe CONSUMER vein keeps yielding when probed** (don't HOLD prematurely):
-1. Probe for a fresh consumer/output feature (new file consuming an existing model/engine output — safe even when the engine is Rust-ported). Candidates noted as borderline: Open-in-Browser (done), file checksum, highlighted-code-as-HTML, more lint rules.
-2. A real (even convenience) user feature is NOT the "marginal work" the SOP forbids — that rule targets TEST busywork. Ship real features; only HOLD when truly nothing real remains.
+The intake host-pool is largely drained; remaining items are VM-render, perf-traces, or epics. RE-SCAN the WHOLE
+WORK_QUEUE each firing (not just intake) — that has repeatedly surfaced clean host work (935, 913, 919, 918, 929)
+after I'd wrongly called the pool empty. Remaining host-probe candidates: **911** (commit-diff summary header —
+uses host-tested TSK-514 DiffStat + commit metadata, host-testable), **937** (focus-toolwindow shortcuts — thin),
+**901** (content auto-detect — value spread across extension-gated consumers). Then groomed pools / VM.
+**THE TOP LEVER IS A VM VALIDATION PASS** (~36 items at `review` → `done`) + the parked 698 safe-exec decision.
 
 ## Key lessons (also appended to LESSONS.md 2026-06-14)
 - **§2.5 forbids MODIFYING port-target Swift engines, not building a CONSUMER of their output.** TOC/HTML-export/Check-Links/Lint/CSV-convert all consume `MarkdownOutline`/`HTMLRenderer.render`/`CSVParser` → safe. (Over-applying it caused one premature HOLD.)
