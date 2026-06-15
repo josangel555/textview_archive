@@ -89,6 +89,11 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         self.fontSize = fontSize
         wantsLayer = true
         rebuildFontMetrics()
+        // TSK-920: a file dropped on the terminal pastes its PATH at the prompt
+        // (not "capture"/open it — that's the app-wide drop behavior). Registering
+        // this nested view as a drag destination lets it intercept drops over the
+        // grid ahead of the ancestor SwiftUI `.onDrop`.
+        registerForDraggedTypes([.fileURL])
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -562,6 +567,26 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         // Send raw bytes. We don't advertise bracketed-paste (mode 2004 is
         // parse-and-ignored), so a raw write is correct for the shell.
         send(Array(s.utf8))
+    }
+
+    // MARK: - Drag destination: file drop → paste path (TSK-920)
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedFileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = droppedFileURLs(from: sender)
+        let text = TerminalDropFormatter.shellPaste(for: urls)
+        guard !text.isEmpty else { return false }
+        send(Array(text.utf8))
+        return true
+    }
+
+    private func droppedFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
     }
 
     @objc override func selectAll(_ sender: Any?) {
