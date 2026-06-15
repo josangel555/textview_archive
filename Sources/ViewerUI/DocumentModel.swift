@@ -4691,6 +4691,28 @@ public final class DocumentModel: ObservableObject {
         reload(url: url, at: i)
     }
 
+    /// TSK-916: "Reload from Disk" for an arbitrary file (the sidebar / breadcrumb
+    /// context-menu action), not just the active one. Re-reads the file into its
+    /// open tab if one exists; a no-op (returns false) when the file isn't open —
+    /// the sidebar holds no content to reload, and the on-disk bytes are the
+    /// source of truth the next open will read anyway.
+    @discardableResult
+    public func reloadFileFromDisk(_ url: URL) -> Bool {
+        let target = url.standardizedFileURL
+        guard let i = tabs.tabs.firstIndex(where: {
+            $0.url?.standardizedFileURL == target
+        }), let tabURL = tabs.tabs[i].url else { return false }
+        reload(url: tabURL, at: i)
+        return true
+    }
+
+    /// True when `url` is open in some tab — gates the "Reload from Disk" menu
+    /// item so it only enables when there's actually a tab to reload (TSK-916).
+    public func isFileOpenInTab(_ url: URL) -> Bool {
+        let target = url.standardizedFileURL
+        return tabs.tabs.contains { $0.url?.standardizedFileURL == target }
+    }
+
     /// The active tab's current text (live editor buffer if present, else the
     /// loaded-from-disk contents), or nil for a non-text tab. Used by
     /// encoding-convert (TSK-352).

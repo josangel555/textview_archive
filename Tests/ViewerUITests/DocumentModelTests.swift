@@ -1046,6 +1046,32 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertFalse(model.canFindNextPrev, "closed bar ⇒ next/prev disabled again")
     }
 
+    // MARK: - Reload from Disk for an arbitrary file (TSK-916)
+
+    func test_isFileOpenInTab_tracksOpenState() throws {
+        let model = makeModel()
+        let url = try writeFile("doc.txt", "one\n")
+        XCTAssertFalse(model.isFileOpenInTab(url), "not open ⇒ false")
+        model.open(url: url)
+        XCTAssertTrue(model.isFileOpenInTab(url), "open ⇒ true")
+    }
+
+    func test_reloadFileFromDisk_noOpWhenNotOpen() throws {
+        let model = makeModel()
+        let url = try writeFile("closed.txt", "x\n")
+        // File exists on disk but isn't open in any tab → nothing to reload.
+        XCTAssertFalse(model.reloadFileFromDisk(url),
+            "reload of an unopened file must be a no-op (returns false)")
+    }
+
+    func test_reloadFileFromDisk_reloadsOpenTab() throws {
+        let model = makeModel()
+        let url = try writeFile("open.txt", "x\n")
+        model.open(url: url)
+        XCTAssertTrue(model.reloadFileFromDisk(url),
+            "reload of the open file must find its tab and reload (returns true)")
+    }
+
     /// Two clicks on the same line must each produce a fresh nonce
     /// so the view re-fires the scroll (otherwise a second click on
     /// the same row after the user scrolled away would be a silent

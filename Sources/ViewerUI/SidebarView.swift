@@ -1028,6 +1028,10 @@ private struct FileRowContextMenu: View {
             Button("Open") { model.open(url: node.url) }
             Button("Open in New Tab") { model.openInNewTab(node.url) }
             Button("Open in Split") { model.openInSplit(node.url) }
+            // TSK-916: re-read this file's open tab from disk (no-op/disabled
+            // when it isn't open — the tree holds no content to reload).
+            Button("Reload from Disk") { model.reloadFileFromDisk(node.url) }
+                .disabled(!model.isFileOpenInTab(node.url))
             // WAVE 2b item 6: universal "Open As…" — open this file in a
             // new tab through any applicable viewer (Source, SQLite, HEX,
             // Image, …), including for binaries.
@@ -1104,6 +1108,10 @@ private struct FileRowContextMenu: View {
             Button("Open in Terminal") {
                 model.openTerminalInApp(at: node.url, isDirectory: node.isDirectory)
             }
+            // TSK-916: manual "Refresh" — force a fresh re-list of this folder
+            // and its expanded descendants (the FSEvents auto-refresh can miss
+            // network/iCloud mounts or a dropped watcher stream).
+            Button("Refresh") { sidebar.refreshFromDisk(node.url) }
             // MARK: - Search in Folder (folder-context agent)
             // Presents the unified search panel with the scope picker
             // pre-set to this folder (pickedFolder), bypassing the

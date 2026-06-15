@@ -400,6 +400,35 @@ public final class SidebarModel: ObservableObject {
         expanded = snapshot
     }
 
+    /// TSK-916: user-invoked "Refresh" / "Reload from Disk" on a folder. Force a
+    /// fresh re-list of `directory` AND every currently-expanded descendant under
+    /// it, ignoring the children cache, then republish once. Unlike the FSEvents
+    /// auto-refresh (`onFolderChange`, which only fires on a *detected* change),
+    /// this is the manual escape hatch for cases the watcher can miss — a
+    /// network/SMB mount, an iCloud materialization, or a watcher whose stream
+    /// dropped. Recency caches for the touched dirs are invalidated so the stripe
+    /// colors recompute too.
+    public func refreshFromDisk(_ directory: URL) {
+        let root = normalize(directory)
+        let rootPrefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        // The clicked dir + each currently-expanded descendant under it. Sorting
+        // is unnecessary (each is re-listed independently); a Set→Array is fine.
+        let targets = [root] + expanded.filter { $0.path.hasPrefix(rootPrefix) }
+        for dir in targets {
+            let kids = (try? service.children(of: dir, includeHidden: includeHidden)) ?? []
+            storeChildren(kids, for: dir)
+            FileTreeRecencyCache.invalidate(dir)
+            for kid in kids { FileTreeRecencyCache.invalidate(kid.url) }
+        }
+        expanded.insert(root)
+        invalidateFlatCache()
+        descendantsCache = nil   // the global-find set changed (TSK-666)
+        recencyVersion &+= 1
+        // Nudge a publish (assigning the same Set value refires — LESSONS).
+        let snapshot = expanded
+        expanded = snapshot
+    }
+
     // MARK: Keyboard navigation (CRIT-6)
 
     public func setSelected(_ url: URL?) {
