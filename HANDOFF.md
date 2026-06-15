@@ -1,52 +1,35 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — markdown/data consumer-tools suite shipped; frontier owner/VM-bound  (2026-06-14)
+# Handoff — host feature pool scraped; VM-down blocks the top lever  (2026-06-15)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `4a2c4b6`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `25cf469`
 
 ## Mission
-Autonomous loop: drain `WORK_QUEUE.md` top-down / ship complete host-validated work (host-test the model, leave render at `review`), keep `main` headless-gate-green, commit per item, log. Owner is doc-heavy; recent value = §2.5-safe markdown/data **consumer** features.
+Autonomous loop: drain `WORK_QUEUE.md` top-down, ship host-validated work (host-test the model, leave render at `review`), keep `main` headless-gate-green, commit per item, log. Fallback when the queue's host items drain: groomed pools (security/rust-core/parity/theming) → fixed-lane validation drain.
 
-## Current state
-- **OWNER INTAKE 2026-06-14 (TSK-887..945) — 15 shipped → `review`, 4 reconciled, 1 answered, 1 epic-slice, 1 parked.**
-  Shipped (host model tested; menu/render = VM tail): 884 (Lines remove-empty/collapse-blank), 885 (CSV Summary),
-  886 (JSON→CSV), 902 (preview tab italic), 900 (unknown-ext stuck-in-HEX fix), 907 (git dup-tab), 914
-  (open-in-terminal → in-app), 920 (drag-file-to-terminal pastes path), 928 (textview:// scheme), 925 (CSV column
-  sort), 931 (session rename menu), 903 (MD task-list checkboxes — rust+swift byte-matched), 919 (folder
-  self-drag trap), 918 (sidebar resize cap lifted), 929 (follow external rename), 935 (New Tab from Clipboard),
-  899 (⌘1/2/3 view-mode shortcuts). Reconciled-as-already-built: 710 (LSP hover), 930 (saved sessions), 932
-  (unsaved dot), 913 (right-click rename). Answered: 904 (Format JSON discoverability). Epic: 698 slice 1 (JS
-  transform engine). PARKED: 698 safe-exec decision (SPI/off-main/subprocess — owner pick).
-- Earlier this run (still at `review`): 882, 883, 870, 862-866, 867-869, 871, 881, 868, 358, 533/534. ~36 total at review.
+## Current state (READ THIS FIRST)
+- **`WORK_QUEUE.md` host-buildable pool is DRAINED.** Every remaining unchecked item is one of: VM-render / first-responder (910, 905, 906, 893-896, 917, 921/922, 898, 924, 936-938, 947, 766, 704, 708, 463, 470, 495, 506, 668, 912), a perf **trace** (P0: 892, 887, 888, 889, 890/891/895, 908, 839, 838), an **epic** (670, 711, 679, 280, 318, 319, 677, 940-945), or **owner-input** (733, 791, 751, 709). Verified this tick by re-scan.
+- **🔴 THE UTM VM IS DOWN (2 ticks running — `ssh macOS15` times out at <vm-ip>:22).** This is the dominant blocker: it gates BOTH the ~49-item `review` → `done` **validation drain** (the highest-leverage work) AND render-validation of any new VM-tail feature. **Shipping more VM-tail features while the VM is down just GROWS the unvalidatable review pile** — the bottleneck is VM validation, not feature-building.
+- **rust-core epic (TSK-538) is drained** — almost all children `validated`; the open ones are excluded (perf-internal lane 543/564/574), dep-gated (584/585/587), front-end/last-resort (573), or large infra (586 golden-corpus, 588 perf-bench — host-validatable but P3/internal-quality, which the owner de-prioritizes).
 - **Tree clean** except pre-existing untracked `archive/Untitled.txt` + `untitled2.md` (NOT ours).
-- **Headless gate green** (~5650 tests). NOTE: the gate can flake on a perf bench under load — re-run before trusting a red.
+- **Headless gate green** (~5800 tests). NOTE: the gate flakes on `CrossFileSearchBench` wall-clock under load — re-run before trusting a red; confirm the failure isn't bench-only.
 
-## Next action
-The intake host-pool is largely drained; remaining items are VM-render, perf-traces, or epics. RE-SCAN the WHOLE
-WORK_QUEUE each firing (not just intake) — that has repeatedly surfaced clean host work (935, 913, 919, 918, 929)
-after I'd wrongly called the pool empty. Remaining host-probe candidates: **911** (commit-diff summary header —
-uses host-tested TSK-514 DiffStat + commit metadata, host-testable), **937** (focus-toolwindow shortcuts — thin),
-**901** (content auto-detect — value spread across extension-gated consumers). Then groomed pools / VM.
-**THE TOP LEVER IS A VM VALIDATION PASS** (~36 items at `review` → `done`) + the parked 698 safe-exec decision.
+## Recent ticks (all shipped → `review`, VM render-tail; host models tested + gated)
+946/949 find-menu (⌘G/⌥⌘G router + ⌥⌘F gate) · 915/916/934 file-nav Refresh/Reload-from-Disk + breadcrumb context-menu · 926/927 CLI (LaunchArgs) + 950 LSP Find-References menu/palette · 951 palette-parity slice (view toggles + edit transforms) · **901 content-detect (JSON/CSV for misnamed files) — self-VALIDATED (host-tested, no VM tail)** · 769 Terminal Favorites slice.
 
-## Key lessons (also appended to LESSONS.md 2026-06-14)
-- **§2.5 forbids MODIFYING port-target Swift engines, not building a CONSUMER of their output.** TOC/HTML-export/Check-Links/Lint/CSV-convert all consume `MarkdownOutline`/`HTMLRenderer.render`/`CSVParser` → safe. (Over-applying it caused one premature HOLD.)
-- **Anti-paper-cut / §5 "don't fill with marginal" targets TEST busywork, not real features.** Convenience features are real. (Over-applying caused another premature HOLD — I resumed and shipped Open-in-Browser.)
-- **`DocumentModel.applyTextTransformToActiveFile { text in … }`** is the shared encoding-preserving write-through behind every active-file Edit transform — reuse it.
-- **`HtmlExport.standaloneDocument` ≠ `renderPage`** (export omits the in-app no-network CSP); **`inlineLocalImages`** makes the export portable. CRLF-grapheme trap: walk `unicodeScalars`.
-- Menu commands: `Sources/MarkdownViewer/main.swift` (Edit/View NSMenus) — item + `@objc` handler + `validateMenuItem` case + a `DocumentModel.canX` gate. Mirror the shipped "Convert Encoding" pattern.
-
-## Files that matter
-- `Sources/ViewerCore/` pure host-tested models: `MarkdownTOC`, `HtmlExport`, `MarkdownLinks`, `MarkdownLint`, `CsvConvert`, `BrowserPreview`, `Formatter.minifyJSON`, `TextCleanup`, `IndentConverter`, `LineEndingConverter`, `DocumentStats`, `ContentFontSizing` (+ audio `AudioTrimFade`/`SpectrumAnalyzer`).
-- `Sources/ViewerUI/DocumentModel.swift` — `canX` gates + `xActiveFile()` commands + `applyTextTransformToActiveFile` + `htmlExportForActiveMarkdown(inlineImages:)` + `writeActiveMarkdownPreviewHTML`.
-- `Sources/MarkdownViewer/main.swift` — menus + `@objc` handlers + `validateMenuItem`.
+## Next action (decision tree)
+1. **Is the VM back?** `ssh -o ConnectTimeout=10 macOS15 'echo ok'`. If YES → **run the validation drain** (the top lever): `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh` (+ `MDV_RUN_WEBVIEW_TESTS=1` for the #192 suites). Validate the ~49 `review` items' render-tails → drive to `validated`/`done`. This is worth far more than any new host slice.
+2. **VM still down?** Re-scan WORK_QUEUE for any GENUINELY host-shippable item (don't assume empty — re-scan has surfaced work before). If only marginal-on-the-host slices remain, **don't manufacture them** (they grow the unvalidatable pile) — prefer a documented HOLD that keeps the blocker visible. Owner directive "don't HOLD, build VM-tail features" is satisfied here BECAUSE the buildable-with-real-host-value pool is empty + the bottleneck is external.
+3. **Genuinely want host-validatable NON-VM work?** The rust-core infra items (586 golden corpus, 588 perf-floor bench) are host-validatable (rust-core gate, no VM) and serve the owner's Rust-core direction — but they're large/internal; slice carefully (spike auto-approved per §0.5).
 
 ## Open questions / blockers (DECISIONS NEEDED — also in docs/AUTONOMOUS_PROGRESS.md)
-1. **A VM validation pass** — converts the ~16-feature `review` pile → `done` (highest leverage). `ssh macOS15` + `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh`.
-2. **TSK-343** local-history default (ON vs opt-in + retention) — PARKED.
-3. **TSK-470** zoom-split — PARKED (Text Size may already cover it → close 470/321/322).
-4. **TSK-733** session-switch save: (A) silently preserve dirty buffers vs (B) keep prompt — PARKED.
+1. **🔴 Restore the UTM VM** — it's been unreachable 2 ticks; this unblocks the ~49-item `review` → `done` validation drain (the single highest-leverage action) + all render validation.
+2. **TSK-698** — JS-over-JSON safe-exec model (SPI timeout / off-main+thread-leak / subprocess) — PARKED, owner pick.
+3. **TSK-343** — local-history default ON vs opt-in + retention (the `LocalHistoryStore` is built; this gates the snapshot-on-save trigger + the revert feature) — PARKED.
+4. **TSK-733** — session-switch save: silently preserve dirty buffers vs keep the prompt — PARKED (needs repro confirmation).
+5. **TSK-751 / TSK-709** — menu reorg ("which menus feel wrong?") / ⌘K↔⌘G unify (intended behavior?) — PARKED, need owner framing.
 
 ## How to resume
 1. Read this, then `docs/AUTONOMOUS_PROGRESS.md` (top logs), then `WORK_QUEUE.md`.
 2. `git -C <repo> log --oneline -15`; confirm tree clean (only the 2 untracked non-ours files).
-3. Re-read `docs/TASK_WORKFLOW.md`. Probe for a fresh §2.5-safe consumer feature; build model-tested → `review`; gate via `bash scripts/test-headless-gate.sh` (re-run once if a bench flakes); commit per item; log. Owner away → keep shipping real features; only HOLD when nothing real remains.
+3. Re-read `docs/TASK_WORKFLOW.md`. Run the **Next action** decision tree above. Gate via `bash scripts/test-headless-gate.sh`; commit per item; log to `AUTONOMOUS_PROGRESS.md` + (user-facing) `CHANGELOG.md`.
+</content>

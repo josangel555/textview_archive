@@ -1,5 +1,36 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — DOCUMENTED HOLD: host pool scraped + VM down (2 ticks) — escalating the blocker
+
+A no-op-on-shipping tick by deliberate, honest choice (§5 + the anti-paper-cut escalation), NOT premature
+HOLD — preceded by an exhaustive re-scan:
+- **WORK_QUEUE host pool DRAINED** — every unchecked item is VM-render/first-responder, a perf trace, an
+  epic, or owner-input (full list in HANDOFF.md).
+- **🔴 UTM VM unreachable for a 2nd tick** (`ssh macOS15` → connection timeout). This blocks the
+  ~49-item `review` → `done` **validation drain** (the standing top lever) AND render-validation of any
+  new VM-tail feature. KEY INSIGHT: with the VM down, shipping more VM-tail features only GROWS the
+  unvalidatable `review` pile — the bottleneck is VM validation, not feature-building.
+- **rust-core epic drained** — open items are excluded (perf-internal 543/564/574), dep-gated (584/585/587),
+  front-end/last-resort (573), or large internal infra (586/588 — host-validatable but P3, de-prioritized).
+- Spiked the marginal candidates: TSK-708 (preview-definition) has only a tiny host core (snippet extract);
+  TSK-912 (review comments) is pure discoverability-UI (the `ReviewComment` model already exists); TSK-343
+  revert is owner-blocked on the parked history-default decision (`LocalHistoryStore` is built).
+
+Per the anti-paper-cut rule ("after 2+ marginal firings, surface the blocker, don't manufacture work"),
+this tick: (1) board hygiene — released the TSK-564 progress-zombie (stale claim, lease expired ~06-13;
+valid finding deferred to the perf lane); (2) refreshed HANDOFF.md (was stale at 4a2c4b6) with the current
+state + a prominent VM-down escalation + a Next-action decision tree; (3) updated DECISIONS NEEDED below.
+`main` stays gate-green; tree clean. No marginal feature manufactured.
+
+### DECISIONS NEEDED (owner) — unblock the real work
+1. **🔴 Restore the UTM VM** (unreachable 2 ticks) — unblocks the ~49-item `review` → `done` validation
+   drain (single highest-leverage action) + all render validation. Without it the loop can only add to the
+   unvalidatable pile.
+2. **TSK-698** JS-over-JSON safe-exec model (SPI-timeout / off-main+thread-leak / subprocess) — PARKED.
+3. **TSK-343** local-history default ON vs opt-in + retention (store built; gates snapshot trigger + revert) — PARKED.
+4. **TSK-733** session-switch save: silently preserve dirty buffers vs keep prompt — PARKED (needs repro).
+5. **TSK-751 / TSK-709** menu reorg / ⌘K↔⌘G unify — PARKED, need owner framing.
+
 ## LOG 2026-06-15 — TSK-769 terminal favorites slice (→ review)
 
 The clean host-buildable WORK_QUEUE pool is drained (remaining = VM/first-responder/trace/epic/owner-
