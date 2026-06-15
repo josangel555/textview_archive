@@ -37,7 +37,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
 - [x] **TSK-914** — "Open in Terminal" opens macOS Terminal.app, not the in-app terminal `[06c04d1 → review; in-app terminal at node folder + 3 teeth tests; also covers TSK-769 PWD]`
 - [x] **TSK-920** — drag-to-Terminal pastes the file path (not capture) `[review; TerminalDropFormatter + drag-dest, 7 teeth tests]`
-- [ ] **TSK-919** — File-nav: sub-folder self-drag trap (needs DropRouter/re-root investigation)
+- [x] **TSK-919** — File-nav: sub-folder self-drag trap `[review; DropReRootPolicy guards openMultiple re-root for root/descendant drops, 6 teeth tests; drag gesture=VM]`
 - [x] **TSK-902** — Preview tab title italic not bold `[30f672c → review; TabTitleStyle host-tested, pixel=VM]`
 - [x] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items `[review; rust+swift emit disabled checkbox (byte-matched A/B), CSS strike; NO sanitizer change needed (structural html); rust+swift gates green]`
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`

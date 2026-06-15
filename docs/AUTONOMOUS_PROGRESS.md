@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-919 file-nav self-drag trap fixed (→ review)
+
+Nav rows are draggable (`FileDragProvider`); `ContentView.onDrop → handleDrop → DropRouter → model.openMultiple`
+re-rooted the sidebar on ANY dropped folder — so dragging a sub-folder from the tree and dropping it back in the
+same window re-rooted INTO it (the owner's trap). Fix: new pure `DropReRootPolicy.shouldReRoot(folder:currentRoot:)`
+(ViewerCore) — false when the dropped folder is the current root or a descendant under it (component-wise so
+`/ab` isn't seen as under `/a`); external/parent folders still re-root. `openMultiple`'s folder loop now guards on
+it; files still open as tabs. Intentional descendant re-root stays on the right-click "Open Folder". Teeth: 6 host
+tests (no-root, root-itself, descendant ×2, external/parent, sibling-prefix-collision, trailing-slash). Host gate
+green. The actual drag/drop gesture = VM tail; the re-root DECISION is host-pinned.
+
 ## LOG 2026-06-14 — TSK-903 markdown task-list checkboxes (cross-engine, → review)
 
 Executed the triaged TSK-903 slice (deferred twice; done now). Both markdown engines deliberately dropped GFM
