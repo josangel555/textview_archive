@@ -1,5 +1,18 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-899 view-mode shortcuts ⌘1/⌘2/⌘3 (→ review)
+
+⌘1/⌘2/⌘3 select the 1st/2nd/3rd view mode in the current file's bar — POSITIONAL (robust across types: markdown
+Rendered/Source/HEX, CSV Table/Source/HEX) rather than fixed render/editor/hex (which would be no-ops on CSV/image).
+`ViewMode.displayName` (ViewerKit) for the menu labels; `DocumentModel.selectViewMode(at:)` picks
+`availableViewModes[index]` → `setCurrentViewMode` (no-op when the slot is absent). View menu: 3 ⌘1/2/3 items
+whose titles + enabled state refresh per file in validateMenuItem ("Show Rendered/Source/HEX/…"). ⌘1-3 were free
+(⌃-digits = Jump-to-Session; no ⌘-digit tab bindings). Teeth: 3 host tests (positional select on a real .md doc,
+out-of-range no-op, displayName covers every ViewMode case). Host gate green. Key-event routing = VM tail.
+
+NOTE: this is the SHORTCUT half of the "898/899" queue line; TSK-898 (make Render|Editor|HEX a segmented button
+GROUP, pure visual restyle) stays unchecked — VM render.
+
 ## LOG 2026-06-14 — TSK-935 New Tab from Clipboard (→ review) + TSK-913 reconciled (already built)
 
 Fresh re-scan of the WHOLE WORK_QUEUE (not just intake) for clean host work, per the owner's anti-premature-HOLD

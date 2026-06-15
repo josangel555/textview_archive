@@ -44,7 +44,8 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-929** — External rename → tab shows "file not found"; should follow the rename `[review; inode capture + RenameFollower.findRenamed → tab.url follow + re-watch, 5 teeth; live watcher tick=VM]`
 
 **P2 — quick-win features / UX (host-buildable, [VM] render at review):**
-- [ ] **TSK-898 / 899** — Render|Editor|HEX segmented button group + mode shortcuts
+- [x] **TSK-899** — view-mode shortcuts ⌘1/⌘2/⌘3 (positional) `[review; selectViewMode(at:) + ViewMode.displayName, 3 teeth; key routing=VM]`
+- [ ] **TSK-898** — Render|Editor|HEX as a segmented button GROUP (pure visual restyle — VM)
 - [x] **TSK-913** — File-nav right-click → Rename `[review — ALREADY BUILT: SidebarView Button("Rename…") + F2 → renameFile/FileRenamer (TSK-283)]`
 - [ ] **TSK-915 / 916** — File tree auto-refresh on disk change + "Reload from disk" action
 - [x] **TSK-932** — Unsaved blue dot on modified tab `[review — ALREADY BUILT: TabBar accent dirty-dot on tab.isDirty]`
