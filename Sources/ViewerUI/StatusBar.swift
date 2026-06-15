@@ -59,18 +59,13 @@ struct StatusBar: View {
             // but only on click (cold path, inside the Menu content).
             gitChip
 
-            Text(model.currentFilePath ?? "—")
-                .font(.system(size: model.uiSize(11)))
-                .foregroundStyle(.secondary)
+            // TSK-933: the footer path is a clickable breadcrumb — each segment
+            // reveals that ancestor folder (or the file) in the sidebar. Lowest
+            // layout priority so it shrinks before the live metric chips (same
+            // reason the single-Text version had `.layoutPriority(-1)`).
+            pathBreadcrumb
                 .lineLimit(1)
                 .truncationMode(.head)
-                // The path is the LEAST critical field — it already
-                // head-truncates. Give it the lowest layout priority so
-                // SwiftUI shrinks IT (not the live metric chips) first
-                // under width pressure. Without this, a normal-width
-                // footer with the WAVE1 date chips appended distributed
-                // truncation across every chip ("Col…", "50.…") instead
-                // of collapsing the path.
                 .layoutPriority(-1)
                 .help(model.currentURL?.path ?? "")
                 .accessibilityIdentifier("mdv.statusBar.path")
@@ -132,6 +127,35 @@ struct StatusBar: View {
     /// worktree-open-in-new-window. Hidden entirely when the focused file
     /// isn't inside a git repo. The LABEL costs only `.git/HEAD` filesystem
     /// reads (`SessionGitInfo`) — no `git` subprocess on the body path; the
+    /// TSK-933: footer path as a clickable breadcrumb. Each segment reveals its
+    /// folder (or the file) in the sidebar via `revealInSidebar`. Falls back to
+    /// "—" with no file open.
+    @ViewBuilder
+    private var pathBreadcrumb: some View {
+        if let url = model.currentURL {
+            let segs = BreadcrumbPath.segments(
+                for: url, home: URL(fileURLWithPath: NSHomeDirectory()))
+            HStack(spacing: 2) {
+                ForEach(Array(segs.enumerated()), id: \.offset) { i, seg in
+                    if i > 0 {
+                        Text("›")
+                            .font(.system(size: model.uiSize(10)))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Button(seg.name) { model.revealInSidebar(seg.url) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: model.uiSize(11)))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        } else {
+            Text("—")
+                .font(.system(size: model.uiSize(11)))
+                .foregroundStyle(.secondary)
+        }
+    }
+
     /// expensive enumeration is deferred into the lazily-evaluated menu.
     @ViewBuilder
     private var gitChip: some View {
