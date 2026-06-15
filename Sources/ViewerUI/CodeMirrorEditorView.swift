@@ -49,6 +49,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// as `gotoLineRequest`.
     public let insertRequest: CMInsertRequest?
     public let showInvisibles: Bool
+    /// Vim mode (opt-in; owner-approved 2026-06-15). Drives the JS host's
+    /// `vimCompartment` via `setVimMode`. Off by default.
+    public let vimMode: Bool
     /// Phase 4 (v2): toggle the indent-guides decoration plugin.
     /// Pure visual cue; no language-pack dependency.
     public let indentGuides: Bool
@@ -116,6 +119,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         gotoLineRequest: CMGotoLineRequest? = nil,
         insertRequest: CMInsertRequest? = nil,
         showInvisibles: Bool = false,
+        vimMode: Bool = false,
         indentGuides: Bool = false,
         foldingRanges: [CMFoldRange] = [],
         gutterMarkers: [CMGutterMarker] = [],
@@ -152,6 +156,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.gotoLineRequest = gotoLineRequest
         self.insertRequest = insertRequest
         self.showInvisibles = showInvisibles
+        self.vimMode = vimMode
         self.indentGuides = indentGuides
         self.foldingRanges = foldingRanges
         self.gutterMarkers = gutterMarkers
@@ -278,6 +283,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingGotoLine: CMGotoLineRequest?
         private var pendingInsert: CMInsertRequest?
         private var pendingShowInvisibles: Bool?
+        private var pendingVim: Bool?
         private var pendingIndentGuides: Bool?
         private var pendingFoldingRanges: [CMFoldRange]?
         private var pendingGutterMarkers: [CMGutterMarker]?
@@ -303,6 +309,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentPalette: [String: String]?
         private var lastSentFontFamily: String??
         private var lastSentWrap: Bool?
+        private var lastSentVim: Bool?
         private var lastSentReadOnly: Bool?
         private var lastSentLineNumbers: Bool?
         private var lastSentIndentation: CMIndentation?
@@ -353,6 +360,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingGotoLine = view.gotoLineRequest
             self.pendingInsert = view.insertRequest
             self.pendingShowInvisibles = view.showInvisibles
+            self.pendingVim = view.vimMode
             self.pendingIndentGuides = view.indentGuides
             self.pendingFoldingRanges = view.foldingRanges
             self.pendingGutterMarkers = view.gutterMarkers
@@ -424,6 +432,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             if let wrap = pendingWrap, wrap != lastSentWrap {
                 lastSentWrap = wrap
                 dispatch(.setWordWrap(wrap), webView: webView)
+            }
+            if let vim = pendingVim, vim != lastSentVim {
+                lastSentVim = vim
+                dispatch(.setVimMode(vim), webView: webView)
             }
             if let ro = pendingReadOnly, ro != lastSentReadOnly {
                 lastSentReadOnly = ro

@@ -7,6 +7,11 @@ This file is the at-a-glance "what's new" view of the app's progress.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-15
+
+### Added
+- **Vim mode in the editor** — turn on **View ▸ Vim Mode** for modal editing in the code editor: normal/insert/visual modes, `hjkl` navigation, operators like `dw`/`ciw`, `:` ex-commands, registers, and macros. It's **opt-in and off by default**, the choice is remembered across launches, and it's included in exported settings. ⌘S (save) and ⌘F (find) still work as usual.
+
 ## 2026-06-14
 
 ### Changed

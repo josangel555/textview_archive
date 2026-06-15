@@ -20,6 +20,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let contentFontSize = "MarkdownViewer.contentFontSize"
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
+        static let vimModeEnabled = "MarkdownViewer.vimModeEnabled"
         static let editorIndentGuides = "MarkdownViewer.editorIndentGuides"
         static let themeOverride = "MarkdownViewer.themeOverride"
         /// Legacy chrome-scale preference, retired when `uiScale` and
@@ -117,6 +118,13 @@ public final class PreferencesStore: @unchecked Sendable {
     public var showInvisibleChars: Bool {
         get { defaults.object(forKey: Key.showInvisibleChars) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.showInvisibleChars) }
+    }
+
+    /// Vim mode in the CM6 editor (opt-in; owner-approved 2026-06-15). Off by
+    /// default. Backs the View → Vim Mode menu toggle.
+    public var vimModeEnabled: Bool {
+        get { defaults.object(forKey: Key.vimModeEnabled) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.vimModeEnabled) }
     }
 
     /// Render vertical indentation guide lines in the CM6 editor (the
@@ -333,6 +341,7 @@ public final class PreferencesStore: @unchecked Sendable {
         s.sourceWordWrap = sourceWordWrap
         s.sourceFontName = sourceFontName
         s.showInvisibleChars = showInvisibleChars
+        s.vimModeEnabled = vimModeEnabled
         s.editorIndentGuides = editorIndentGuides
         s.themeOverride = themeOverrideRaw
         s.hexBytesPerRow = hexBytesPerRow
@@ -357,6 +366,7 @@ public final class PreferencesStore: @unchecked Sendable {
         if let v = s.sourceWordWrap { sourceWordWrap = v }
         if let v = s.sourceFontName { sourceFontName = v }
         if let v = s.showInvisibleChars { showInvisibleChars = v }
+        if let v = s.vimModeEnabled { vimModeEnabled = v }
         if let v = s.editorIndentGuides { editorIndentGuides = v }
         if let v = s.themeOverride { themeOverrideRaw = v }
         if let v = s.hexBytesPerRow { hexBytesPerRow = v }
@@ -384,6 +394,7 @@ public struct SettingsSnapshot: Codable, Equatable {
     public var sourceWordWrap: Bool?
     public var sourceFontName: String?
     public var showInvisibleChars: Bool?
+    public var vimModeEnabled: Bool?
     public var editorIndentGuides: Bool?
     public var themeOverride: String?
     public var hexBytesPerRow: Int?

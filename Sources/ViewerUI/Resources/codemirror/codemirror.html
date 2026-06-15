@@ -35,6 +35,9 @@
     // Phase 4 (v2):
     StateField, StateEffect, foldService, gutter, GutterMarker,
     Decoration, ViewPlugin, WidgetType,
+    // Vim mode (opt-in; owner-approved 2026-06-15). May be absent on a stale
+    // bundle during a rolling upgrade — guarded at the use site (applySetVimMode).
+    vim,
   } = window.CM;
 
   // Optional hoverTooltip from @codemirror/view — may not be present on
@@ -245,6 +248,7 @@
   const foldServiceCompartment = new Compartment(); // LSP-driven fold ranges
   const diffGutterCompartment  = new Compartment(); // diff bars + blame swatches
   const indentGuidesCompartment = new Compartment(); // hand-rolled indent guides
+  const vimCompartment         = new Compartment(); // vim mode (opt-in, off by default)
 
   // ---- show-invisibles decoration plugin ------------------------------
   // Toggled via `setShowInvisibles`. Renders middle-dot for spaces,
@@ -513,6 +517,22 @@
         indentGuidesExtension(!!msg.enabled)),
     });
   }
+  // Vim mode toggle (opt-in; owner-approved 2026-06-15). Reconfigures the
+  // vim compartment: [vim()] when enabled, [] when off. `vim` may be absent
+  // on a stale bundle mid-rolling-upgrade — degrade to a no-op + report,
+  // never throw (the dispatch wrapper would otherwise post a dispatch error).
+  function applySetVimMode(msg) {
+    if (typeof vim !== "function") {
+      post("errorOccurred", {
+        phase: "setVimMode",
+        message: "vim mode unavailable in this codemirror.js bundle",
+      });
+      return;
+    }
+    view.dispatch({
+      effects: vimCompartment.reconfigure(msg.enabled ? [vim()] : []),
+    });
+  }
 
   // ---- Phase 4 (v2): apply incremental edits from Swift --------------
   // Reciprocal to the JS → Swift `incrementalChange` accumulator. Swift
@@ -762,6 +782,11 @@
   // keymap priority (search/save before defaults so ⌘S / ⌘F win).
   function baseExtensions(initialLang, initialThemeDark, initialFontPx) {
     return [
+      // Vim mode (opt-in). FIRST so vim's keymap takes precedence over the
+      // default/search/save bindings when enabled. Empty (no-op) by default;
+      // Swift toggles it via `setVimMode` once the View → Vim Mode pref is read.
+      // ⌘-combos (⌘S save, ⌘F search) are NOT bound by vim, so they still win.
+      vimCompartment.of([]),
       gutterCompartment.of([lineNumbers(), highlightActiveLineGutter(), foldGutter()]),
       // Multi-cursor (TSK-639): the facet that PERMITS >1 selection range.
       // With it, the built-ins light up: ⌥-click adds a caret, ⌘D
@@ -878,6 +903,7 @@
         case "replaceAll":         replaceAll(view); emitFindResult(); break;
         case "setDiagnostics":     applySetDiagnostics(msg); break;
         case "setShowInvisibles":  applySetShowInvisibles(msg); break;
+        case "setVimMode":         applySetVimMode(msg); break;
         case "foldAll":            foldAll(view); break;
         case "unfoldAll":          unfoldAll(view); break;
         case "undo":               undo(view); break;

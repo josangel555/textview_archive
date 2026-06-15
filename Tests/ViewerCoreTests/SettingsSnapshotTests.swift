@@ -38,6 +38,19 @@ final class SettingsSnapshotTests: XCTestCase {
         XCTAssertEqual(s.viewModeDefaults, ["markdown": "source"])
     }
 
+    func test_vimModeEnabled_roundTripsAcrossStores() throws {
+        let (a, sa) = store("vim-src"); defer { a.defaults.removePersistentDomain(forName: sa) }
+        a.vimModeEnabled = true
+        let data = try JSONEncoder().encode(a.exportSettings())
+        let snap = try JSONDecoder().decode(SettingsSnapshot.self, from: data)
+        XCTAssertEqual(snap.vimModeEnabled, true, "snapshot carries vimModeEnabled")
+
+        let (b, sb) = store("vim-dst"); defer { b.defaults.removePersistentDomain(forName: sb) }
+        XCTAssertFalse(b.vimModeEnabled, "fresh store defaults off")
+        b.applySettings(snap)
+        XCTAssertTrue(b.vimModeEnabled, "applySettings transfers vimModeEnabled across stores")
+    }
+
     func test_jsonRoundTrip() throws {
         let (a, suite) = store("json"); defer { a.defaults.removePersistentDomain(forName: suite) }
         a.zoom = 2.0

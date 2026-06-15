@@ -657,6 +657,7 @@ public struct ContentView: View {
                     gotoLineRequest: model.editorGotoLine,
                     insertRequest: model.editorInsertRequest,
                     showInvisibles: model.showInvisibleChars,
+                    vimMode: model.vimModeEnabled,
                     indentGuides: model.editorIndentGuides,
                     foldingRanges: model.editorFoldRangesByTab[tid] ?? [],
                     gutterMarkers: gutter,

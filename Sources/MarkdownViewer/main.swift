@@ -1486,6 +1486,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyShortcut("view.toggleInvisibles", to: invisItem)
         viewMenu.addItem(invisItem)
 
+        // Vim Mode — modal editing in the CM6 editor (opt-in; owner-approved
+        // 2026-06-15). Checkable, persisted. No default key equivalent — vim
+        // owns single-key bindings, so a global shortcut would invite clashes;
+        // the toggle lives in the menu only.
+        let vimItem = NSMenuItem(
+            title: "Vim Mode",
+            action: #selector(toggleVimMode(_:)),
+            keyEquivalent: ""
+        )
+        vimItem.target = self
+        viewMenu.addItem(vimItem)
+
         // Editor (CM6) — code folding + go to line. Validated to
         // only enable when an editor tab is on screen.
         let foldAllItem = NSMenuItem(
@@ -2645,6 +2657,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(toggleShowInvisibleChars(_:)):
             item.state = model.showInvisibleChars ? .on : .off
             return hasFile
+        case #selector(toggleVimMode(_:)):
+            item.state = model.vimModeEnabled ? .on : .off
+            return true   // a global editor preference — settable anytime
         case #selector(cmFoldAll(_:)), #selector(cmUnfoldAll(_:)),
              #selector(cmGotoLine(_:)),
              #selector(lspGotoDefinition(_:)), #selector(lspGotoDeclaration(_:)),
@@ -2978,6 +2993,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleShowInvisibleChars(_ sender: Any?) {
         model.toggleShowInvisibleChars()
+    }
+
+    @objc func toggleVimMode(_ sender: Any?) {
+        model.toggleVimMode()
     }
 
     @objc func cmFoldAll(_ sender: Any?) {

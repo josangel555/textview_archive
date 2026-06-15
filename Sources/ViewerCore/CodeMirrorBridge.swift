@@ -172,6 +172,10 @@ public enum CMOutboundMessage: Equatable, Sendable {
     case setReadOnly(Bool)
     case setLineNumbers(Bool)
     case setShowInvisibles(Bool)
+    /// Vim mode (opt-in; owner-approved 2026-06-15). Reconfigures the JS
+    /// host's `vimCompartment` to `[vim()]` (true) or `[]` (false). Off by
+    /// default; driven by the View → Vim Mode preference.
+    case setVimMode(Bool)
     case setIndentation(useTabs: Bool, size: Int)
     case gotoLine(line: Int, column: Int?, select: Bool)
     /// Insert `text` at the current selection (replacing it if non-empty),
@@ -532,6 +536,9 @@ public enum CMBridgeCodec {
             dict["enabled"] = enabled
         case .setShowInvisibles(let enabled):
             dict["type"] = "setShowInvisibles"
+            dict["enabled"] = enabled
+        case .setVimMode(let enabled):
+            dict["type"] = "setVimMode"
             dict["enabled"] = enabled
         case .setIndentation(let useTabs, let size):
             dict["type"] = "setIndentation"

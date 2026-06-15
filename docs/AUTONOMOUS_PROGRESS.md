@@ -1,5 +1,31 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — TSK-679: Vim mode in the CM6 editor (opt-in, View → Vim Mode)
+
+Owner approved Option A (`@replit/codemirror-vim`) from the editor-vim options analysis and asked for a
+`View → Vim Mode` setting. Shipped the full opt-in mode:
+
+- **Dep (build-time only):** added `@replit/codemirror-vim@6.3.0` (MIT, Replit) to
+  `scripts/codemirror-build/package.json`, pinned exactly. It bundles into the vendored `codemirror.js`
+  (608 KB → 728 KB) — NO runtime npm dep, same posture as every `@codemirror/*` package.
+- **JS host:** `entry.js` imports + re-exports `vim`; `codemirror.html` adds a `vimCompartment` (FIRST in
+  `baseExtensions` so vim's keymap wins; ⌘S/⌘F are not vim-bound so they still work), a `setVimMode`
+  dispatch case, and `applySetVimMode` (guards a stale bundle: degrades to a reported no-op, never throws).
+- **Swift:** `CMOutboundMessage.setVimMode(Bool)` + encoding; `CodeMirrorEditorView.vimMode` (pending/lastSent
+  dispatch mirroring wordWrap); `ContentView` passes `model.vimModeEnabled`; `DocumentModel.vimModeEnabled`
+  (@Published, persisted) + `toggleVimMode()`; `PreferencesStore.vimModeEnabled` (+ settings-snapshot
+  export/import); `main.swift` View → Vim Mode menu item (checkable, no key-equiv to avoid clashing with
+  vim keys) + validateMenuItem + selector.
+- **Tests (host teeth, all green):** `testEncodeSetVimMode` (bridge field contract), `testVimModeWiringSurvivesBuild`
+  (HTML case/compartment + JS `vim:` export survive a rebuild — teeth: absent on the old bundle),
+  `test_vimModeEnabled_proxiesPreferences_andSeedsOnInit` (model toggle + persist + init seed),
+  `test_vimModeEnabled_roundTripsAcrossStores` (settings export/import). Host build + headless gate green.
+- **Opt-in + caveats** (design doc §6.4): off by default; never auto-enable for CJK (IME garbles in command
+  mode); upstream `o` quirk. **VM smoke pending** — live keystroke behavior (NORMAL/INSERT, operators) is
+  the VM render tail (the design doc's planned `CodeMirrorVimSmokeTest`); host covers the model/wiring only,
+  so this lands at `review`, not self-validated. A status-bar mode indicator (NORMAL/INSERT/VISUAL) is a
+  deferred follow-on slice.
+
 ## LOG 2026-06-15 — TSK-953: fixed the VM GUI-lane UAT harness (53 false reds → real signal)
 
 VM back. Owner directive "fix the UAT harness first" — the GUI lane (`MDV_VM_GUI_SESSION=1`) was reporting

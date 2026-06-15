@@ -39,6 +39,20 @@ final class DocumentModelTests: XCTestCase {
         )
     }
 
+    // MARK: Vim mode (TSK-679 — View → Vim Mode preference)
+
+    func test_vimModeEnabled_proxiesPreferences_andSeedsOnInit() {
+        let model = makeModel()
+        XCTAssertFalse(model.vimModeEnabled, "defaults to off (opt-in)")
+
+        model.toggleVimMode()
+        XCTAssertTrue(model.vimModeEnabled)
+        // didSet persists through PreferencesStore…
+        XCTAssertTrue(PreferencesStore(defaults: defaults).vimModeEnabled)
+        // …and a fresh model over the same defaults seeds from it on init.
+        XCTAssertTrue(makeModel().vimModeEnabled)
+    }
+
     // MARK: Audio ffmpeg path (TSK-528/535 — Settings → Audio proxy)
 
     func test_audioFFmpegPath_proxiesPreferences_andSeedsOnInit() {

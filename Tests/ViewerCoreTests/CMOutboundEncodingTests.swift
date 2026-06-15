@@ -244,6 +244,15 @@ final class CMOutboundEncodingTests: XCTestCase {
         XCTAssertEqual(d["enabled"] as? Bool, true)
     }
 
+    /// Vim mode (TSK-679). The JS host's `setVimMode` case reads `msg.enabled`
+    /// to reconfigure the vimCompartment — the field name must stay in lockstep.
+    func testEncodeSetVimMode() {
+        let on = encodeAndParse(.setVimMode(true))
+        XCTAssertEqual(on["type"] as? String, "setVimMode")
+        XCTAssertEqual(on["enabled"] as? Bool, true)
+        XCTAssertEqual(encodeAndParse(.setVimMode(false))["enabled"] as? Bool, false)
+    }
+
     func testEncodeSetDiagnosticsEmpty() {
         let d = encodeAndParse(.setDiagnostics([]))
         XCTAssertEqual(d["type"] as? String, "setDiagnostics")

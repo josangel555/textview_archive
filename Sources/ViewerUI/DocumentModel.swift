@@ -185,6 +185,14 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleShowInvisibleChars() { showInvisibleChars.toggle() }
 
+    /// Vim mode in the CM6 editor (opt-in; owner-approved 2026-06-15). Drives
+    /// `CodeMirrorEditorView(vimMode:)` → JS `setVimMode` (vimCompartment).
+    /// Off by default; toggled via View → Vim Mode. Persisted.
+    @Published public var vimModeEnabled: Bool {
+        didSet { preferences.vimModeEnabled = vimModeEnabled }
+    }
+    public func toggleVimMode() { vimModeEnabled.toggle() }
+
     /// TSK-259 — the user-selected monospace family for the text
     /// surfaces (nil = system). Write-through to PreferencesStore;
     /// resolution is fail-safe in FontPreference.resolvedFont.
@@ -410,6 +418,7 @@ public final class DocumentModel: ObservableObject {
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showPreviewMetadataPanel = preferences.previewMetadataVisible
         self.showInvisibleChars = preferences.showInvisibleChars
+        self.vimModeEnabled = preferences.vimModeEnabled
         self.sourceFontName = preferences.sourceFontName
         self.editorIndentGuides = preferences.editorIndentGuides
         self.audioFFmpegPath = preferences.audioFFmpegPath

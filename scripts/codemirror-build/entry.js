@@ -54,6 +54,11 @@ import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
 import { oneDark } from "@codemirror/theme-one-dark";
+// Vim mode (opt-in; owner-approved 2026-06-15). @replit/codemirror-vim 6.3.0,
+// MIT, maintained by Replit. Bundles into codemirror.js — no runtime npm dep,
+// same as every other @codemirror/* package here. Gated behind a Compartment in
+// the HTML host (off by default; toggled via View → Vim Mode).
+import { vim } from "@replit/codemirror-vim";
 
 // EditorState.tabSize is a facet on the namespace object, not a named
 // export. Re-export as `EditorStateTabSize` for use from the HTML host
@@ -81,4 +86,5 @@ export {
   foldService,
   linter, lintGutter, setDiagnostics, forEachDiagnostic,
   markdown, javascript, python, json, oneDark,
+  vim,
 };

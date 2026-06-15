@@ -32,8 +32,11 @@ Phase 4 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.4 / §22):
   `RangeSetBuilder` (`@codemirror/state`); `gutter`, `GutterMarker`
   (`@codemirror/view`); `foldService` (`@codemirror/language`). All
   in the existing approved peer-dep set — **no new npm packages**.
-- Vim mode (`@replit/codemirror-vim`) deferred pending approval per
-  project rules on new deps.
+- **Vim mode (`@replit/codemirror-vim` 6.3.0, MIT) — LANDED (owner-approved
+  2026-06-15, TSK-679).** Re-exported as `CM.vim`; the HTML host wraps it in a
+  `vimCompartment` (off by default), toggled via the `setVimMode` dispatch +
+  the View → Vim Mode preference. Build-time dep only — bundles into
+  `codemirror.js` (no runtime npm).
 
 Phase 3 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.3):
 - `hoverTooltip` from `@codemirror/view` — drives the LSP hover

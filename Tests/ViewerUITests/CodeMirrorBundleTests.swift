@@ -66,6 +66,24 @@ final class CodeMirrorBundleTests: XCTestCase {
         }
     }
 
+    /// Vim mode (TSK-679, owner-approved 2026-06-15). The HTML host must wire
+    /// the dispatch case + compartment, and the JS bundle must export `vim`.
+    /// A rebuild from a stale entry.js (missing the @replit/codemirror-vim
+    /// import) or an HTML edit that drops the wiring trips here — host-side
+    /// guard; live keystroke behavior is the VM smoke.
+    func testVimModeWiringSurvivesBuild() throws {
+        let htmlURL = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        for needle in ["case \"setVimMode\"", "applySetVimMode", "vimCompartment"] {
+            XCTAssertTrue(html.contains(needle),
+                          "codemirror.html missing vim wiring: \(needle)")
+        }
+        let jsURL = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
+        let js = try String(contentsOf: jsURL, encoding: .utf8)
+        XCTAssertTrue(js.contains("vim:"),
+                      "codemirror.js missing the vim export — re-run scripts/codemirror-build npm run build")
+    }
+
     /// TSK-602 ViewOnly↔Editor color parity: the HTML host must carry the
     /// palette→HighlightStyle builder, and the JS bundle must export the
     /// symbols it needs (`HighlightStyle`, `tags`). A bundle rebuilt from a
