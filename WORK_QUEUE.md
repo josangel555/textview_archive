@@ -61,7 +61,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer `[review; File ▸ New Tab from Clipboard + NewFileType.detect (JSON→.json) + create(contents:), 9 teeth; menu=VM]`
 - [x] **TSK-931** — Rename a session (menu + right-click tab) `[review; right-click existed, added Session ▸ Rename Session… + SessionRename.sanitize host-tested]`
 - [x] **TSK-904** — "Format JSON" discoverability `[answered: Pretty-Print (View) + Minify JSON (Edit) exist; optional label follow-up = owner's call]`
-- [ ] **TSK-901** — Auto-detect content type (CSV/JSON/language) for unknown/misnamed files
+- [~] **TSK-901** — Auto-detect content type (CSV/JSON/language) for unknown/misnamed files `[review 871dec5 — ContentTypeSniffer (strict JSON-parse/CSV-consistent) → canMinifyActiveJSON/canConvertActiveCSV fall back to content for misnamed files, 16 teeth. "language" half (misnamed code highlighting) deferred]`
 
 **P3 — bigger / design-first / epics:**
 - [x] **TSK-926 / 927** — CLI: open file/folder in TextView · pipe stdin → tab `(353)` `[review 5749369 — ALREADY BUILT: mdv shim (install-mdv-cli.sh) does file/folder + 'mdv -' stdin→temp→open over argv-open; extracted host-tested LaunchArgs.parse (9 teeth)]`

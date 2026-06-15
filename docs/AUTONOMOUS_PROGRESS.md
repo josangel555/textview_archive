@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — TSK-901 content auto-detect for misnamed JSON/CSV files (→ review)
+
+The JSON/CSV menu tools gated purely on extension (`canMinifyActiveJSON` → `.json`,
+`canConvertActiveCSV` → `.csv`/`.tsv`), so a misnamed file (e.g. `data.txt` holding JSON) got no
+tools — exactly the TSK-901 gap. Fixed WITHOUT a FileCategory/type-system change (which the earlier
+spike flagged as the heavy path): a conservative content sniffer feeding the existing tool gates.
+
+New `ViewerCore.ContentTypeSniffer` (pure, host-tested): `detect(_:) -> .json | .csv | nil`. JSON =
+leading `{`/`[` AND a real `JSONSerialization` parse (so `[TODO] note` / `{ a note }` are rejected);
+CSV = the first ≤5 non-empty lines share a consistent `,`/`\t` delimiter with ≥2 fields and ≥2 rows
+(rejects prose-with-commas + single-column word lists). STRICT by design — a false positive (prose→data)
+is worse than a miss (worst case: a tool stays menu-disabled). `DocumentModel.canMinifyActiveJSON` /
+`canConvertActiveCSV` now fall back to `sniffedActiveContentKind()` when the extension doesn't match —
+size-capped at 1 MiB so the menu-validate path stays cheap (beyond the cap, extension-only).
+
+Teeth: 12 `ContentTypeSnifferTests` (JSON object/array/whitespace-led/invalid-bracket/prose; CSV
+consistent/tab/inconsistent/single-col/single-row/empty; multiline-JSON-not-CSV) + 4 `DocumentModelTests`
+(misnamed `.txt` JSON → JSON tools enabled; misnamed `.txt` CSV → CSV tools enabled; prose → both
+disabled; real `.json` fast-path unchanged). Headless gate green; no exe change (menu items already
+gate on these properties). § note: builds a new sniffer + extends CONSUMER gates — does not touch the
+ported CSV engine (§2.5-safe). The "language" half of 901 (highlight a misnamed code file) is deferred
+(needs the TreeSitter language-map keyed off content — a separate slice). → review.
+
 ## LOG 2026-06-14 — TSK-951 palette-parity slice (view toggles + edit transforms) (→ review)
 
 Worked the palette-parity umbrella (audit B1+B2). SPIKE finding: the audit's "~18 nil-verb + ~25
