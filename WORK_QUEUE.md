@@ -35,7 +35,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-893 / 894 / 896** — Editor: cursor pointer↔I-beam flip / current-line highlight stuck after drag / hovered-row offset
 - [ ] **TSK-917** — Gutter selectable + cursor-icon confusion (hand/pointer/I-beam)
 - [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
-- [ ] **TSK-914** — "Open in Terminal" opens macOS Terminal.app, not the in-app terminal
+- [x] **TSK-914** — "Open in Terminal" opens macOS Terminal.app, not the in-app terminal `[06c04d1 → review; in-app terminal at node folder + 3 teeth tests; also covers TSK-769 PWD]`
 - [ ] **TSK-919 / 920** — File-nav: sub-folder self-drag trap / drag-to-Terminal should paste path
 - [x] **TSK-902** — Preview tab title italic not bold `[30f672c → review; TabTitleStyle host-tested, pixel=VM]`
 - [ ] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items

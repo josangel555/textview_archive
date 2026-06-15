@@ -1,5 +1,18 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-914 fix: "Open in Terminal" → in-app terminal at the node's folder (→ review)
+
+`SidebarView.openInTerminal` shelled out `/usr/bin/open -a Terminal <path>` → a macOS Terminal.app window. Owner
+wants the embedded terminal (also re-reported the PWD ask, TSK-769). Fix: new `DocumentModel.openTerminalInApp(at:
+isDirectory:)` opens a new tab in the in-app terminal pane cd'd to the node's directory, reusing the existing
+`terminalPane.addTab(workingDirectory:)` path (same as `openTerminalHere`). cwd resolution via a new
+`TerminalCwd.workingDirectory(for:isDirectory:)` — takes the file-tree's KNOWN directory-ness rather than
+`URL.hasDirectoryPath` (sidebar folder URLs lack the trailing-slash marker, so the old resolver would have used a
+folder's PARENT). Removed the dead Terminal.app launcher. Teeth: 3 new TerminalCwd tests (explicit folder→itself
+sans trailing slash, file→parent, non-file→nil). Host gate green. Terminal pane render = VM tail.
+
+This also satisfies the TSK-769 "open in PWD" re-report for the file-nav entry point (a file opens its folder).
+
 ## LOG 2026-06-14 — TSK-900 fix: large unknown-ext TEXT file no longer stuck in HEX (→ review)
 
 Root-caused the owner's "plain-text identified but locked in HEX" bug. The SYNC open path passes the loader's
