@@ -98,9 +98,10 @@
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>MarkdownViewer URL Scheme</string>
+            <string>TextView URL Scheme</string>
             <key>CFBundleURLSchemes</key>
             <array>
+                <string>textview</string>
                 <string>markdownviewer</string>
             </array>
         </dict>

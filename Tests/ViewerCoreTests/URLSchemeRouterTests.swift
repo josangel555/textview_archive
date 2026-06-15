@@ -14,6 +14,27 @@ final class URLSchemeRouterTests: XCTestCase {
         NSHomeDirectory() + "/mdv-router-test.md"
     }
 
+    func test_textviewScheme_routes_andMarkdownviewerAliasStillWorks() {
+        // TSK-928: textview:// is the current scheme; markdownviewer:// is a
+        // back-compat alias. Both must route identically.
+        guard case .open(let a)? = URLSchemeRouter.route(
+            url("textview://open?path=\(homePath)")) else {
+            return XCTFail("textview:// must route")
+        }
+        XCTAssertEqual(a.lastPathComponent, "mdv-router-test.md")
+        guard case .open(let b)? = URLSchemeRouter.route(
+            url("markdownviewer://open?path=\(homePath)")) else {
+            return XCTFail("markdownviewer:// alias must still route")
+        }
+        XCTAssertEqual(b.lastPathComponent, "mdv-router-test.md")
+    }
+
+    func test_unknownScheme_doesNotRoute() {
+        XCTAssertNil(URLSchemeRouter.route(url("https://open?path=\(homePath)")),
+            "a non-app scheme must never route")
+        XCTAssertNil(URLSchemeRouter.route(url("evil://open?path=\(homePath)")))
+    }
+
     func test_openVerb_routesContainedPaths_only() {
         let route = URLSchemeRouter.route(
             url("markdownviewer://open?path=\(homePath)"))

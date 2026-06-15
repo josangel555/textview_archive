@@ -23,11 +23,17 @@ public enum URLSchemeRoute: Equatable, Sendable {
 
 public enum URLSchemeRouter {
 
+    /// The custom URL schemes the app answers to. `textview` is the current
+    /// scheme (TSK-928); `markdownviewer` is kept as a back-compat alias so
+    /// existing links keep working. Must match `CFBundleURLSchemes` in
+    /// `scripts/Info.plist`.
+    public static let schemes: Set<String> = ["textview", "markdownviewer"]
+
     /// Route a custom-scheme URL, or nil for unknown hosts / rejected
     /// paths / non-scheme URLs. A `search` with neither a contained root
     /// nor a query routes to nil rather than an empty action.
     public static func route(_ url: URL) -> URLSchemeRoute? {
-        guard url.scheme == "markdownviewer", let host = url.host else { return nil }
+        guard let scheme = url.scheme, schemes.contains(scheme), let host = url.host else { return nil }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems ?? []
         func q(_ key: String) -> String? {

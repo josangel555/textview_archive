@@ -454,7 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            if url.scheme == "markdownviewer" {
+            if let scheme = url.scheme, URLSchemeRouter.schemes.contains(scheme) {
                 handleCustomURLScheme(url)
             } else if url.isFileURL,
                       FileManager.default.fileExists(atPath: url.path) {
