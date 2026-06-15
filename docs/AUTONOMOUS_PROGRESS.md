@@ -1,5 +1,38 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — HOLD (VM down 4 ticks) + NEW finding: the Rust-migration endgame is owner-gated
+
+VM unreachable for a 4th tick (`ssh macOS15` timeout) → review-drain still blocked. Exhaustive re-scan
+this tick (board, not assumptions) to avoid both premature HOLD and manufactured marginal work:
+- **Rust migration (owner's #1 direction) — NEW finding.** Stage A is COMPLETE (TSK-649): all 10
+  capabilities route the Rust core by default in the owner's app, every Swift twin fallback-only. Stage B
+  (delete the twins — the actual deprecation the owner asked for) is MID-FLIGHT but **fully owner-gated**:
+  #1 indent (TSK-808) + #4 diff (TSK-809) deleted+validated; **#2/#3 hex family (TSK-810) is PARKED on an
+  owner decision** (the hex twins have a live non-gated consumer — click-to-highlight byte search + windowed
+  dump aren't ported — so they can't cleanly delete: A=keep-fallback / B=no-fallback / C=port-the-paths);
+  and **#5-9 (csv/fuzzy/find/transcript/markdown) each need the owner's individual package review** (per the
+  2026-06-13 resolution). So the migration endgame can't advance without the owner. I did NOT override the
+  parked 810 (an explicit owner gate) by doing option C, despite "don't synthesize decisions" — overriding a
+  pending human decision is the wrong call.
+- **Everything else exhausted/unfit:** WORK_QUEUE host pool drained (VM/first-responder/trace/epic); rust-core
+  582-audit drained (validated) or excluded; security/triaged pools drained; TSK-573 (web theming) is NOT a
+  clean consolidation (55 web CSS colors, no `core::theme` Role mapping → messy partial or risky API blowup);
+  TSK-586 (golden corpus) / TSK-588 (perf-floor bench) are large net-new infra (sprawl + the bench-flakiness
+  irony I just fixed); TSK-367 (diag-window) is a vague `reported` partial needing triage; the review pile
+  (~49) is correctly VM/owner-gated (self-validating would over-claim the render). No clean, bounded,
+  host-validatable, non-presuming, non-marginal shippable item remains.
+
+Per §5 + the anti-paper-cut escalation: documented HOLD, `main` stays gate-green, NO marginal/risky work
+manufactured. The honest signal: the loop has done what it can without the owner.
+
+### DECISIONS NEEDED (owner) — two concrete unblocks for your #1 directions
+1. **🔴 Restore the UTM VM** (down 4 ticks) — unblocks the ~49-item `review` → `done` validation drain + all
+   render validation.
+2. **🔴 Advance the Rust deprecation (Stage B):** answer **TSK-810** (hex carve-out: A/B/C — agent rec was A,
+   keep-fallback) and approve the **#5-9 deletion packages** (csv/fuzzy/find/transcript/markdown) — this is
+   the "deprecate Swift core" endgame you directed; it's blocked solely on your reviews.
+3. (Standing) Unpark a feature decision to re-open app-feature work: **TSK-698 / 343 / 733 / 751 / 709**.
+
 ## LOG 2026-06-15 — TSK-952 flaky perf benches (single-sample → best-of-N) (→ review)
 
 VM still down (3rd tick — `ssh macOS15` timeout), host feature pool scraped, review pile correctly

@@ -22,11 +22,14 @@ Autonomous loop: drain `WORK_QUEUE.md` top-down, ship host-validated work (host-
 3. **Genuinely want host-validatable NON-VM work?** The rust-core infra items (586 golden corpus, 588 perf-floor bench) are host-validatable (rust-core gate, no VM) and serve the owner's Rust-core direction — but they're large/internal; slice carefully (spike auto-approved per §0.5).
 
 ## Open questions / blockers (DECISIONS NEEDED — also in docs/AUTONOMOUS_PROGRESS.md)
-1. **🔴 Restore the UTM VM** — it's been unreachable 2 ticks; this unblocks the ~49-item `review` → `done` validation drain (the single highest-leverage action) + all render validation.
-2. **TSK-698** — JS-over-JSON safe-exec model (SPI timeout / off-main+thread-leak / subprocess) — PARKED, owner pick.
-3. **TSK-343** — local-history default ON vs opt-in + retention (the `LocalHistoryStore` is built; this gates the snapshot-on-save trigger + the revert feature) — PARKED.
-4. **TSK-733** — session-switch save: silently preserve dirty buffers vs keep the prompt — PARKED (needs repro confirmation).
-5. **TSK-751 / TSK-709** — menu reorg ("which menus feel wrong?") / ⌘K↔⌘G unify (intended behavior?) — PARKED, need owner framing.
+1. **🔴 Restore the UTM VM** — unreachable 4 ticks (as of 2026-06-15); unblocks the ~49-item `review` → `done` validation drain (single highest-leverage action) + all render validation.
+2. **🔴 Advance the Rust deprecation (Stage B, TSK-649) — the owner's #1 direction, mid-flight + owner-gated.** Stage A done (all 10 capabilities route Rust by default). Stage B deletions: #1 indent (808) + #4 diff (809) done; **#2/#3 hex (TSK-810) PARKED on your A/B/C carve-out decision** (agent rec: A, keep-fallback); **#5-9 (csv/fuzzy/find/transcript/markdown) need your per-package review**. Blocked solely on you. (Do NOT override the 810 park by doing option C — it's a pending human decision.)
+3. **TSK-698** — JS-over-JSON safe-exec model (SPI timeout / off-main+thread-leak / subprocess) — PARKED, owner pick.
+4. **TSK-343** — local-history default ON vs opt-in + retention (`LocalHistoryStore` built; gates the snapshot trigger + revert) — PARKED.
+5. **TSK-733 / TSK-751 / TSK-709** — session-switch save / menu reorg / ⌘K↔⌘G unify — PARKED, need owner framing.
+
+## What's been done since this handoff's last rewrite (SHA 25cf469 → 669f8c8)
+TSK-952 flaky-bench fix (best-of-N denoise, validated) · TSK-564 zombie released · this HOLD tick. The 5 ticks since the WORK_QUEUE drained have confirmed: no clean host-shippable feature work remains un-gated; the bottleneck is the VM + the Stage-B owner reviews.
 
 ## How to resume
 1. Read this, then `docs/AUTONOMOUS_PROGRESS.md` (top logs), then `WORK_QUEUE.md`.
