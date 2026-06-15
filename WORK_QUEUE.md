@@ -69,7 +69,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 
 **De-duped (owner re-reports linked onto existing tickets — NOT re-filed):**
 - Slow to type CM6/MD + MD selection slow → **TSK-791** (commented; symptoms split to 890/891/895)
-- Console / JS-manipulation of JSON → **TSK-698** (JQ-style script window epic; owner wants the design — auto-approved)
+- Console / JS-manipulation of JSON → **TSK-698** (epic, `progress`): design recorded + slice 1 shipped — host-tested `JSTransform` engine (JavaScriptCore sandbox); remaining: safe off-main exec, console UI, beyond-JSON
 - Open-in-Terminal PWD → **TSK-769** (open-in-pwd; re-verify) — distinct from TSK-914
 - Multi-file refactoring engine → **TSK-697** (Agent Services suite — Refactor)
 - Feature parity View-only vs Editor (highlighting) → **TSK-602** (validated); broader parity → TSK-939

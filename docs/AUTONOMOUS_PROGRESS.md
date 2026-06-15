@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-698 script console: slice 1 (JS transform engine, progress)
+
+Started the JS/JQ console epic (owner: "console to operate on source files; JS-type manipulation of JSON; can we
+do some design?"). Ran the spike + DESIGN (recorded on the ticket): engine = JavaScriptCore (Apple SYSTEM
+framework, not a third-party dep) in a fresh JSContext SANDBOX — pure ECMAScript, no fetch/require/process/FS/DOM,
+so a transform reshapes in-memory JSON but can't do I/O. Slices: (1) engine [DONE], (2) safe off-main exec + soft
+deadline (evaluateScript is non-preemptible — runaway scripts must not block main; gate before exposing arbitrary
+input), (3) console UI + apply-back/copy, (4) beyond-JSON (any buffer).
+
+Slice 1: `JSTransform.run(json:expression:)` (ViewerCore) — validates JSON in Swift, binds it to `input`/`$` in a
+JSContext, evals the expression, returns `JSON.stringify(result, null, 2)`; distinct errors for invalidJSON /
+jsException / unserializableResult. Teeth: 13 host tests incl. map/filter/reduce, property access, errors, and
+SANDBOX teeth (`typeof fetch|require|process === "undefined"`). JavaScriptCore auto-links (no Package.swift
+change). Host gate green. No CHANGELOG (no user-visible surface yet — engine foundation only).
+
+OWNER NOTE: engine runs sandboxed arbitrary JS per the explicit "JS-type" ask; if a safer JQ-subset is preferred,
+that's a one-word redirect.
+
 ## LOG 2026-06-14 — TSK-929 follow external rename → update tab (→ review)
 
 A single-file watcher learns a file vanished from its path but not where it went (kqueue gives no new name). Fix:
