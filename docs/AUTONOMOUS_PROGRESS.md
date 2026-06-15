@@ -1,5 +1,30 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-946 + TSK-949 find-menu bugs from the parity audit (→ review)
+
+Drained the two host-fixable find-menu bugs the TSK-939 audit surfaced (B4 + B6).
+
+**TSK-946 (B4) — Find Next/Prev (⌘G/⌥⌘G) were inert.** The menu items targeted
+`NSTextView.performFindPanelAction` with NSTextFinder tags, but no surface sets `usesFindBar`
+(our find bars are custom `FindCoordinator` bags) — so ⌘G/⌥⌘G did nothing; next/prev was only
+Return/Shift-Return inside the open bar. Fix: added `FindCoordinator.next()/prev()` — a router
+that bumps the OPEN bar's existing next/prev request nonce (editor → rendered → source order,
+mutually exclusive in practice), plus `isAnyBarPresented`. Forwarded as `DocumentModel.findNext()/
+findPrev()` + `canFindNextPrev`. Retargeted the menu items to new `@objc findNextInPage/
+findPrevInPage` handlers (target self) + a `validateMenuItem` gate (grey when no bar open).
+
+**TSK-949 (B6) — ⌥⌘F wasn't greyed outside the editor.** `replaceInPage` silently degraded to
+plain Find on the read-only rendered/source views — a surprise (Find&Replace looks available, only
+gives Find). Fix: added `DocumentModel.canFindAndReplace` (`tabs.selected != nil &&
+currentViewMode == .editor`) + a `validateMenuItem` case so ⌥⌘F greys outside the editor;
+simplified the handler to editor-only (dropped the degrade-to-find fallback).
+
+Teeth (host): 7 new `FindCoordinatorTests` (router routes to each open bar; no-op when none open;
+editor-wins-when-multiple; `isAnyBarPresented` tracks state) + 4 `DocumentModelTests`
+(`canFindAndReplace` false/no-tab, true/editor, false/source; `canFindNextPrev` follows the open
+bar). Headless gate green. The on-screen ⌘G stepping + the greyed menu item are render/first-
+responder behavior → VM tail. Both → review.
+
 ## LOG 2026-06-14 — TSK-939 feature-surface PARITY AUDIT (→ review) + 6 follow-up tickets
 
 Ran the owner's parity audit (analysis, host-only — no VM/code). A subagent cataloged feature reachability across
