@@ -1046,6 +1046,39 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertFalse(model.canFindNextPrev, "closed bar ⇒ next/prev disabled again")
     }
 
+    // MARK: - Content auto-detect for misnamed files (TSK-901)
+
+    func test_canMinifyJSON_trueForMisnamedJSONFile() throws {
+        let model = makeModel()
+        let url = try writeFile("data.txt", "{\n  \"a\": 1,\n  \"b\": [2, 3]\n}\n")
+        model.open(url: url)
+        XCTAssertTrue(model.canMinifyActiveJSON,
+            "a .txt whose content IS JSON must enable the JSON tools (TSK-901)")
+    }
+
+    func test_canConvertCSV_trueForMisnamedCSVFile() throws {
+        let model = makeModel()
+        let url = try writeFile("table.txt", "name,age,city\nAda,36,London\nGrace,40,NYC\n")
+        model.open(url: url)
+        XCTAssertTrue(model.canConvertActiveCSV,
+            "a .txt whose content IS CSV must enable the CSV tools (TSK-901)")
+    }
+
+    func test_contentGates_falseForProseTextFile() throws {
+        let model = makeModel()
+        let url = try writeFile("notes.txt", "Hello world.\nThis is a plain note, with a comma.\n")
+        model.open(url: url)
+        XCTAssertFalse(model.canMinifyActiveJSON, "prose must not sniff as JSON")
+        XCTAssertFalse(model.canConvertActiveCSV, "prose-with-commas must not sniff as CSV")
+    }
+
+    func test_canMinifyJSON_stillTrueForRealJSONExtension() throws {
+        let model = makeModel()
+        let url = try writeFile("real.json", "{\"x\":1}\n")
+        model.open(url: url)
+        XCTAssertTrue(model.canMinifyActiveJSON, "the .json extension fast-path is unchanged")
+    }
+
     // MARK: - Reload from Disk for an arbitrary file (TSK-916)
 
     func test_isFileOpenInTab_tracksOpenState() throws {

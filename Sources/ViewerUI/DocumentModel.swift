@@ -4862,9 +4862,25 @@ public final class DocumentModel: ObservableObject {
     }
 
     /// True when the CSV conversions can act — an active `.csv`/`.tsv` text file.
+    /// Size cap for content-sniffing the active file in the menu gates (TSK-901).
+    /// The sniff scans/parses the in-memory text on each menu-validate, so cap it
+    /// — beyond this we trust the extension only (a huge misnamed data file is
+    /// rare and the validate path must stay cheap).
+    private static let contentSniffByteCap = 1 * 1024 * 1024
+
+    /// The active file's CONTENT-sniffed kind (TSK-901) — only for files whose
+    /// extension didn't already classify them, and only under the size cap.
+    /// Lets a misnamed file (`.txt` holding JSON / `.dat` holding CSV) still use
+    /// the matching tools. Conservative: prose returns nil.
+    private func sniffedActiveContentKind() -> ContentTypeSniffer.Kind? {
+        guard let text = activeFileText, text.utf8.count <= Self.contentSniffByteCap else { return nil }
+        return ContentTypeSniffer.detect(text)
+    }
+
     public var canConvertActiveCSV: Bool {
-        guard let tab = tabs.selected, let url = tab.url else { return false }
-        return ["csv", "tsv"].contains(url.pathExtension.lowercased()) && activeFileText != nil
+        guard let tab = tabs.selected, let url = tab.url, activeFileText != nil else { return false }
+        if ["csv", "tsv"].contains(url.pathExtension.lowercased()) { return true }
+        return sniffedActiveContentKind() == .csv   // TSK-901: misnamed CSV
     }
 
     /// The active CSV rendered as a Markdown pipe table, or nil when no CSV is active.
@@ -4889,10 +4905,12 @@ public final class DocumentModel: ObservableObject {
         return CsvSummary.report(header: r.header, rows: r.rows)
     }
 
-    /// True when "Minify JSON" can act — an active `.json` text file.
+    /// True when "Minify JSON" can act — an active `.json` text file, or (TSK-901)
+    /// a misnamed text file whose content actually parses as JSON.
     public var canMinifyActiveJSON: Bool {
-        guard let tab = tabs.selected, let url = tab.url else { return false }
-        return url.pathExtension.lowercased() == "json" && activeTextWithEncoding != nil
+        guard let tab = tabs.selected, let url = tab.url, activeTextWithEncoding != nil else { return false }
+        if url.pathExtension.lowercased() == "json" { return true }
+        return sniffedActiveContentKind() == .json   // TSK-901: misnamed JSON
     }
 
     /// TSK — compact the active JSON file (whitespace-strip, order + values
