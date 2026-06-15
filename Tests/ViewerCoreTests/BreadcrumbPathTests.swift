@@ -43,4 +43,20 @@ final class BreadcrumbPathTests: XCTestCase {
             for: URL(fileURLWithPath: "/Users/josX/f.txt"), home: home)
         XCTAssertEqual(segs.first?.name, "/", "a sibling dir is not the home prefix")
     }
+
+    // MARK: - TSK-934 right-click segment actions
+
+    func test_menuActions_folderSegment_getsFolderVerbs() {
+        XCTAssertEqual(
+            BreadcrumbPath.menuActions(isDirectory: true),
+            [.revealInSidebar, .openFolder, .copyPath, .revealInFinder, .openInTerminal])
+    }
+
+    func test_menuActions_fileSegment_getsFileVerbs() {
+        let actions = BreadcrumbPath.menuActions(isDirectory: false)
+        XCTAssertEqual(actions, [.revealInSidebar, .openInDefaultApp, .copyPath, .revealInFinder])
+        // A file segment must NOT offer folder-only verbs.
+        XCTAssertFalse(actions.contains(.openFolder), "file segment can't 'Open Folder'")
+        XCTAssertFalse(actions.contains(.openInTerminal), "file segment can't 'Open in Terminal'")
+    }
 }

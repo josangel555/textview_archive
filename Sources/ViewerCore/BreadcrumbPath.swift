@@ -13,6 +13,29 @@ public enum BreadcrumbPath {
         public init(name: String, url: URL) { self.name = name; self.url = url }
     }
 
+    /// Right-click actions for a breadcrumb segment (TSK-934) — the footer's
+    /// parity with the file-nav context menu. Folder segments get folder-nav
+    /// verbs; the leaf file segment gets file verbs. The order IS the menu order.
+    public enum Action: String, Equatable, Sendable, CaseIterable {
+        case revealInSidebar
+        case openFolder
+        case openInDefaultApp
+        case copyPath
+        case revealInFinder
+        case openInTerminal
+    }
+
+    /// The ordered context-menu actions for a segment. `isDirectory` is true for
+    /// every segment except the leaf when the breadcrumb is for a file (the
+    /// footer's usual case). Pure — host-testable; the menu rendering is VM tail.
+    public static func menuActions(isDirectory: Bool) -> [Action] {
+        if isDirectory {
+            return [.revealInSidebar, .openFolder, .copyPath, .revealInFinder, .openInTerminal]
+        } else {
+            return [.revealInSidebar, .openInDefaultApp, .copyPath, .revealInFinder]
+        }
+    }
+
     public static func segments(for url: URL, home: URL) -> [Segment] {
         let std = url.standardizedFileURL
         let homeStd = home.standardizedFileURL

@@ -147,12 +147,44 @@ struct StatusBar: View {
                         .font(.system(size: model.uiSize(11)))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        // TSK-934: right-click a segment for the file-nav verbs.
+                        // Every segment is a folder except the leaf (the file).
+                        .contextMenu {
+                            breadcrumbSegmentMenu(seg, isDirectory: i < segs.count - 1)
+                        }
                 }
             }
         } else {
             Text("—")
                 .font(.system(size: model.uiSize(11)))
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// TSK-934: footer breadcrumb right-click menu — same verbs as the file-nav
+    /// context menu. The applicable action SET is the host-tested
+    /// `BreadcrumbPath.menuActions`; this just renders each to a Button.
+    @ViewBuilder
+    private func breadcrumbSegmentMenu(
+        _ seg: BreadcrumbPath.Segment, isDirectory: Bool
+    ) -> some View {
+        ForEach(BreadcrumbPath.menuActions(isDirectory: isDirectory), id: \.self) { action in
+            switch action {
+            case .revealInSidebar:
+                Button("Reveal in Sidebar") { model.revealInSidebar(seg.url) }
+            case .openFolder:
+                Button("Open Folder") { model.openFolder(seg.url) }
+            case .openInDefaultApp:
+                Button("Open in Default App") { Finder.openInDefaultApp(seg.url) }
+            case .copyPath:
+                Button("Copy Path") { Pasteboard.copy(seg.url.path) }
+            case .revealInFinder:
+                Button("Reveal in Finder") { Finder.reveal(seg.url) }
+            case .openInTerminal:
+                Button("Open in Terminal") {
+                    model.openTerminalInApp(at: seg.url, isDirectory: true)
+                }
+            }
         }
     }
 
