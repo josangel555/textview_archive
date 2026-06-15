@@ -114,6 +114,20 @@ public enum ScriptVerb {
         case "goto-commit":     model.commitGoToPath(arg, newSession: false)
         case "goto-commit-new-session": model.commitGoToPath(arg, newSession: true)
         case "toggle-format":   model.toggleFormat()
+        // TSK-951: palette parity for the two nil-verb view toggles — pure
+        // model toggles, headless-safe.
+        case "toggle-word-wrap": model.toggleSourceWordWrap()
+        case "toggle-invisibles": model.toggleShowInvisibleChars()
+        // TSK-951: menu-only active-file Edit text-transforms surfaced to the
+        // palette. Each wires to an existing host-tested model method (no-op,
+        // returns false, when there's no active text file / editor caret).
+        case "edit-remove-empty-lines":    _ = model.removeEmptyActiveFileLines()
+        case "edit-collapse-blank-lines":  _ = model.collapseBlankActiveFileLines()
+        case "edit-trim-trailing":         _ = model.trimTrailingWhitespaceInActiveFile()
+        case "edit-ensure-final-newline":  _ = model.ensureFinalNewlineInActiveFile()
+        case "edit-minify-json":           _ = model.minifyActiveJSON()
+        case "edit-insert-toc":            _ = model.insertTableOfContents()
+        case "edit-insert-date":           model.insertDateAndTime()
         // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.

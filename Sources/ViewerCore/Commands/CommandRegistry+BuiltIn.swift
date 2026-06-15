@@ -77,11 +77,13 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "view.toggleWordWrap", title: "Wrap Long Lines", category: .view,
             defaultShortcut: Shortcut(key: "w", modifiers: [.command, .option]),
-            scriptVerb: nil),
+            // TSK-951: palette parity — pure model toggle (toggleSourceWordWrap).
+            scriptVerb: "toggle-word-wrap"),
         CommandDescriptor(
             id: "view.toggleInvisibles", title: "Show Invisibles", category: .view,
             defaultShortcut: Shortcut(key: "i", modifiers: [.command, .option]),
-            scriptVerb: nil),
+            // TSK-951: palette parity — pure model toggle (toggleShowInvisibleChars).
+            scriptVerb: "toggle-invisibles"),
         CommandDescriptor(
             id: "view.foldAll", title: "Fold All", category: .view,
             defaultShortcut: Shortcut(key: "[", modifiers: [.command, .option]),
@@ -153,6 +155,30 @@ extension CommandRegistry {
             id: "edit.redo", title: "Redo", category: .edit,
             defaultShortcut: Shortcut(key: "z", modifiers: [.command, .shift]),
             scriptVerb: nil),
+        // TSK-951: menu-only Edit text-transforms were invisible to the palette
+        // (no registry entry). Each maps to an existing host-tested active-file
+        // transform on the model (no-op when there's no active text file).
+        CommandDescriptor(
+            id: "edit.removeEmptyLines", title: "Remove Empty Lines", category: .edit,
+            scriptVerb: "edit-remove-empty-lines"),
+        CommandDescriptor(
+            id: "edit.collapseBlankLines", title: "Collapse Blank Lines", category: .edit,
+            scriptVerb: "edit-collapse-blank-lines"),
+        CommandDescriptor(
+            id: "edit.trimTrailingWhitespace", title: "Trim Trailing Whitespace", category: .edit,
+            scriptVerb: "edit-trim-trailing"),
+        CommandDescriptor(
+            id: "edit.ensureFinalNewline", title: "Ensure Final Newline", category: .edit,
+            scriptVerb: "edit-ensure-final-newline"),
+        CommandDescriptor(
+            id: "edit.minifyJSON", title: "Minify JSON", category: .edit,
+            scriptVerb: "edit-minify-json"),
+        CommandDescriptor(
+            id: "edit.insertTOC", title: "Insert Table of Contents", category: .edit,
+            scriptVerb: "edit-insert-toc"),
+        CommandDescriptor(
+            id: "edit.insertDate", title: "Insert Date and Time", category: .edit,
+            scriptVerb: "edit-insert-date"),
 
         // MARK: Find
         CommandDescriptor(

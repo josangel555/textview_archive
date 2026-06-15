@@ -82,6 +82,11 @@ final class CommandRegistryTests: XCTestCase {
             "tools.htmlEncode", "tools.htmlDecode",
             "reload", "toggle-split", "swap-split", "move-tab-left", "move-tab-right",
             "show-git-panel", "toggle-line-bookmark", "git-file-history",
+            // palette parity for view toggles + menu-only edit transforms (TSK-951)
+            "toggle-word-wrap", "toggle-invisibles",
+            "edit-remove-empty-lines", "edit-collapse-blank-lines",
+            "edit-trim-trailing", "edit-ensure-final-newline",
+            "edit-minify-json", "edit-insert-toc", "edit-insert-date",
             // LSP go-to commands (TSK-464)
             "editor-goto-definition", "editor-goto-declaration",
             "editor-goto-type-definition", "editor-goto-implementation",
@@ -111,6 +116,28 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertEqual(cmd?.scriptVerb, "reload")
         XCTAssertTrue(CommandRegistry.builtIn.paletteInvokable.contains { $0.id == "file.reload" },
                       "Reload must appear in the command palette")
+    }
+
+    /// TSK-951: the view toggles + menu-only edit transforms must now be
+    /// palette-invokable (carry a scriptVerb), not dimmed/absent.
+    func test_paletteParity_viewTogglesAndEditTransforms() {
+        let expected: [(String, String)] = [
+            ("view.toggleWordWrap", "toggle-word-wrap"),
+            ("view.toggleInvisibles", "toggle-invisibles"),
+            ("edit.removeEmptyLines", "edit-remove-empty-lines"),
+            ("edit.collapseBlankLines", "edit-collapse-blank-lines"),
+            ("edit.trimTrailingWhitespace", "edit-trim-trailing"),
+            ("edit.ensureFinalNewline", "edit-ensure-final-newline"),
+            ("edit.minifyJSON", "edit-minify-json"),
+            ("edit.insertTOC", "edit-insert-toc"),
+            ("edit.insertDate", "edit-insert-date"),
+        ]
+        let invokable = Set(CommandRegistry.builtIn.paletteInvokable.map { $0.id })
+        for (id, verb) in expected {
+            let cmd = CommandRegistry.builtIn.command(id: id)
+            XCTAssertEqual(cmd?.scriptVerb, verb, "\(id) must carry verb \(verb) (TSK-951)")
+            XCTAssertTrue(invokable.contains(id), "\(id) must be palette-invokable (TSK-951)")
+        }
     }
 
     // MARK: - Shortcut parsing
