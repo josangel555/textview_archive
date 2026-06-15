@@ -49,7 +49,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-915 / 916** — File tree auto-refresh on disk change + "Reload from disk" action
 - [x] **TSK-932** — Unsaved blue dot on modified tab `[review — ALREADY BUILT: TabBar accent dirty-dot on tab.isDirty]`
 - [ ] **TSK-936 / 937 / 938** — Toggle-View-only shortcut · Focus Terminal/Nav/Git/File · Esc→current tab
-- [ ] **TSK-918** — Remove max-width cap on horizontal panel resize (cf TSK-440)
+- [x] **TSK-918** — Remove max-width cap on horizontal panel resize (cf TSK-440) `[review; PanelResize.clampWidth window-relative (sidebar), cap 480→window-bound, 6 teeth; other shoulders can adopt same helper]`
 - [x] **TSK-925** — CSV: sort by column header `[review; CsvSort type-aware comparator + 11 teeth tests; header click=VM]`
 - [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
 - [ ] **TSK-911 / 909** — Commit-diff summary header (uses TSK-514 DiffStat) · Reviews submenu `(537)`

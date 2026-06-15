@@ -9,6 +9,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-14
 
+### Changed
+- **The sidebar can be dragged much wider** — the old fixed ~480 px resize cap is gone; the file/tool sidebar now resizes freely up to the window width (always leaving room for the content area). Useful for deep folder trees and long file names.
+
 ### Added
 - **Rename a session from the menu** — **Session ▸ Rename Session…** renames the active session (prompts with the current name). This joins the existing right-click-on-the-session-tab rename.
 - **Sort the CSV table by a column** — click a column header in the CSV/TSV table to sort by it (click again to reverse). Numeric columns sort by value (2 < 10, not "10" < "2"), text sorts case-insensitively, and blank cells sink to the bottom.

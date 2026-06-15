@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-918 sidebar resize cap lifted (→ review)
+
+Sidebar width was hard-capped at 480 (`PreferencesStore.maxSidebarWidth`; `DraggableSidebar` drag clamped to it).
+Owner: "no restriction on horizontal resizing." Fix: new pure `PanelResize.clampWidth(proposed:available:
+minContent:minPanel:)` (ViewerCore) — grow freely up to `available − minContent`, never below `minPanel`, no fixed
+cap; on a window too small for both minima the panel floor wins. The drag now reads the live window width
+(`NSApp.keyWindow.contentView.bounds.width`) and clamps via the helper (minContent 360). `maxSidebarWidth` raised
+480→4000 as a sanity ceiling only (the runtime window-relative clamp is the real bound). Teeth: 6 host tests
+(within-bounds, grows past old 480, capped-to-leave-content, min-floor, tiny-window, huge-window). Host gate green.
+The drag gesture itself = VM tail. SCOPE: sidebar (the dominant resizable panel); other shoulders (terminal/tool
+windows, TSK-491/440) can adopt the same `PanelResize` helper if they show a cap — noted, not changed this tick.
+
 ## LOG 2026-06-14 — TSK-919 file-nav self-drag trap fixed (→ review)
 
 Nav rows are draggable (`FileDragProvider`); `ContentView.onDrop → handleDrop → DropRouter → model.openMultiple`
