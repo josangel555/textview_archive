@@ -19,6 +19,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **`textview://` links** — the app's URL scheme is now `textview://open?path=…` (and `textview://search?…`); the old `markdownviewer://` links keep working as an alias.
 
 ### Fixed
+- **An open tab now follows an external rename** — if a file you have open is renamed (or moved within its folder) by another app, the tab updates to the new name instead of showing "file not found". (A true delete, or a move out of the folder, still reports gone.)
 - **Dragging a folder within the file tree no longer "traps" you into it** — accidentally dragging a folder (or sub-folder) and dropping it back in the same window no longer re-roots the sidebar into that folder. External folders still open as the new root; use right-click ▸ Open Folder to intentionally go into a sub-folder.
 - **Markdown task lists now render checkboxes** — `- [x] done` / `- [ ] todo` show a real (disabled) checkbox in the rendered view, and completed items are dimmed + struck through, instead of the `[x]`/`[ ]` marker being dropped.
 - **"Open in Terminal" now uses the built-in terminal, in the right folder** — right-clicking a file or folder in the file tree → Open in Terminal opens a new tab in the app's own terminal pane, cd'd to that folder (a file opens its containing folder), instead of launching macOS Terminal.app.

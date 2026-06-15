@@ -1,5 +1,19 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-929 follow external rename → update tab (→ review)
+
+A single-file watcher learns a file vanished from its path but not where it went (kqueue gives no new name). Fix:
+capture the watched file's INODE at watch-start; on the watcher tick, if the file is gone at its path, scan the
+parent folder for that inode (new `RenameFollower.findRenamed` / `inode(of:)`, ViewerCore, FS-based + host-tested)
+and, if found, follow the rename — set `tab.url` to the new path, mark `.fresh`, re-point the watcher (re-captures
+inode), and reload — instead of `refreshDiskState` → `.deleted` ("file not found"). Safe because editor buffer +
+scroll/cursor are tab.id-keyed (TSK-718), so they follow the tab across the URL change; URL-keyed secondary state
+(bookmarks/recents) is a minor edge, noted. A true delete or a move OUT of the folder still reports gone.
+
+Teeth: 5 host tests on real temp-dir renames (finds renamed by inode; true-delete→nil; moved-out→nil;
+distinct-file-same-folder not mis-matched; inode-of-missing→nil). Host gate green. The live watcher-event path
+(DispatchSource rename tick → follow) is integration/VM; the follow DECISION + inode match are host-pinned.
+
 ## LOG 2026-06-14 — TSK-918 sidebar resize cap lifted (→ review)
 
 Sidebar width was hard-capped at 480 (`PreferencesStore.maxSidebarWidth`; `DraggableSidebar` drag clamped to it).
