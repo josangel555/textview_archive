@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-933 footer path → clickable breadcrumb (→ review)
+
+New pure `BreadcrumbPath.segments(for:home:)` (ViewerCore) splits a file URL into clickable segments — home prefix
+collapsed to a single `~` (URL = home), each segment carrying its cumulative ancestor URL; sibling-prefix-safe
+(`/Users/josX` not seen as under `/Users/me`). StatusBar renders the segments as plain Buttons separated by `›`;
+click → `model.revealInSidebar(seg.url)` (re-roots/expands to it). Kept the lowest layoutPriority + head-truncation
++ full-path tooltip from the old single-Text. Teeth: 5 host tests (under-home tilde, outside-home from-root,
+home-itself, cumulative-ancestor URLs, sibling-prefix-not-collapsed). Host gate green. Segment render + truncation
+under width pressure = VM tail (the model is the host-pinned part).
+
+FOLLOW-ON: TSK-934 (right-click a breadcrumb segment → the SAME file-nav context menu) — separate slice.
+
 ## LOG 2026-06-14 — TSK-911 commit-diff summary header (→ review)
 
 The diff parser (`UnifiedDiff`) keeps only files+hunks, so the `git show` preamble (commit message/author/date,

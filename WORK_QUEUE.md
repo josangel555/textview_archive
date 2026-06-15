@@ -55,7 +55,8 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
 - [x] **TSK-911** — Commit-diff summary header (message + DiffStat totals) `[review; CommitDiffSummary.preamble + DiffView banner, 5 teeth; banner render=VM; reviews-list deferred]`
 - [ ] **TSK-909** — Right-click commit → Reviews submenu (lazy list) `(537)`
-- [ ] **TSK-933 / 934** — Footer filename as breadcrumb · breadcrumb right-click = file-nav menu
+- [x] **TSK-933** — Footer filename as breadcrumb `[review; BreadcrumbPath.segments + StatusBar clickable segments → revealInSidebar, 5 teeth; render=VM]`
+- [ ] **TSK-934** — breadcrumb right-click = file-nav context menu `(follow-on to 933)`
 - [x] **TSK-928** — Rename URL scheme markdownviewer:// → textview:// `[review; textview primary + markdownviewer alias, router+plist+gate, teeth tests]`
 - [x] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer `[review; File ▸ New Tab from Clipboard + NewFileType.detect (JSON→.json) + create(contents:), 9 teeth; menu=VM]`
 - [x] **TSK-931** — Rename a session (menu + right-click tab) `[review; right-click existed, added Session ▸ Rename Session… + SessionRename.sanitize host-tested]`
