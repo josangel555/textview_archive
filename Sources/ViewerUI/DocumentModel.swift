@@ -706,6 +706,35 @@ public final class DocumentModel: ObservableObject {
         return createNewFile(in: dir, type: type)
     }
 
+    /// True when there's clipboard text to paste into a new scratch tab (TSK-935).
+    public var canNewTabFromClipboard: Bool {
+        !(NSPasteboard.general.string(forType: .string) ?? "").isEmpty
+    }
+
+    /// TSK-935: "New Tab from Clipboard" — create a scratch file seeded with the
+    /// clipboard text and open it. The extension is content-detected (JSON →
+    /// `.json` so it opens with JSON tools; else `.txt`). Lands in the open
+    /// folder, or the per-user temp scratch dir when none is open.
+    @discardableResult
+    public func newScratchTabFromClipboard() -> URL? {
+        guard let content = NSPasteboard.general.string(forType: .string),
+              !content.isEmpty else { return nil }
+        let type = NewFileType.detect(content)
+        let dir = newFileTargetDirectory ?? FileManager.default.temporaryDirectory
+        do {
+            let url = try NewFileCreator.create(
+                in: dir, baseName: type.pastedBaseName, contents: content)
+            sidebar.reloadChildren(of: dir)
+            sidebar.setSelected(url)
+            open(url: url)
+            return url
+        } catch {
+            Obs.shared.emit(.warn, "files",
+                            "New Tab from Clipboard failed: \(String(describing: error))")
+            return nil
+        }
+    }
+
     /// Rename the file/folder at `url` to `newName` (collision-safe via
     /// `FileRenamer`: never overwrites a different file), then refresh the
     /// tree, reselect the renamed item, and repoint any bookmarks that

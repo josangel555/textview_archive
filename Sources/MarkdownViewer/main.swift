@@ -831,6 +831,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.createNewFile(in: dir, type: type)
     }
 
+    /// File → New Tab from Clipboard (TSK-935). Scratch tab seeded with the
+    /// clipboard text; extension content-detected. No-op when the clipboard
+    /// has no text (validateMenuItem also disables it).
+    @objc func newTabFromClipboard(_ sender: Any?) {
+        _ = model.newScratchTabFromClipboard()
+    }
+
     @objc func closeCurrentTab(_ sender: Any?) {
         guard model.tabs.selectedIndex != nil else {
             window?.performClose(nil)
@@ -1222,6 +1229,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         newFileItem.submenu = newFileSubmenu
         fileMenu.addItem(newFileItem)
+
+        // TSK-935: New Tab from Clipboard — a scratch tab seeded with the
+        // clipboard (extension content-detected: JSON → .json, else .txt).
+        let newFromClipItem = NSMenuItem(
+            title: "New Tab from Clipboard",
+            action: #selector(newTabFromClipboard(_:)), keyEquivalent: "")
+        newFromClipItem.target = self
+        fileMenu.addItem(newFromClipItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
@@ -2521,6 +2536,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(renameSession(_:)):
             // TSK-931: only when there's an active session to rename.
             return sessions.active != nil
+        case #selector(newTabFromClipboard(_:)):
+            // TSK-935: only when the clipboard has text.
+            return model.canNewTabFromClipboard
         case #selector(printRenderedPage(_:)), #selector(exportRenderedPDF(_:)):
             return model.canPrintRenderedPage
         case #selector(toggleViewMode(_:)):

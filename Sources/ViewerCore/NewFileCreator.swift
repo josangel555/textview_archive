@@ -31,6 +31,7 @@ public enum NewFileCreator {
     public static func create(
         in directory: URL,
         baseName: String = "Untitled.txt",
+        contents: String = "",
         maxAttempts: Int = 10_000
     ) throws -> URL {
         var isDir: ObjCBool = false
@@ -60,6 +61,19 @@ public enum NewFileCreator {
                 open($0, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, 0o644)
             }
             if fd >= 0 {
+                // TSK-935: write seed contents (e.g. clipboard text for a paste-
+                // scratch tab). Empty by default → an empty file as before.
+                if !contents.isEmpty {
+                    let bytes = Array(contents.utf8)
+                    var off = 0
+                    bytes.withUnsafeBytes { raw in
+                        while off < raw.count {
+                            let n = write(fd, raw.baseAddress!.advanced(by: off), raw.count - off)
+                            if n <= 0 { break }   // best-effort; partial write is rare for a paste
+                            off += n
+                        }
+                    }
+                }
                 close(fd)
                 return candidate
             }
@@ -124,5 +138,24 @@ public enum NewFileType: String, CaseIterable, Sendable {
         case .csv: return "Untitled.csv"
         case .json: return "Untitled.json"
         }
+    }
+
+    /// Base name for a paste-scratch tab (TSK-935) — same extension, clearer stem.
+    public var pastedBaseName: String {
+        baseName.replacingOccurrences(of: "Untitled", with: "Pasted")
+    }
+
+    /// Pick a scratch type from pasted CONTENT (TSK-935). Conservative: only the
+    /// reliably-detectable JSON is special-cased (parses as a JSON object/array);
+    /// everything else defaults to plain text (no fuzzy CSV/markdown guessing
+    /// that would misclassify prose containing commas or `#`).
+    public static func detect(_ content: String) -> NewFileType {
+        let t = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let first = t.first, first == "{" || first == "[",
+           let data = t.data(using: .utf8),
+           (try? JSONSerialization.jsonObject(with: data)) != nil {
+            return .json
+        }
+        return .text
     }
 }
