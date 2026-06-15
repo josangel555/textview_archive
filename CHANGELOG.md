@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **The sidebar can be dragged much wider** — the old fixed ~480 px resize cap is gone; the file/tool sidebar now resizes freely up to the window width (always leaving room for the content area). Useful for deep folder trees and long file names.
 
 ### Added
+- **New Tab from Clipboard** — **File ▸ New Tab from Clipboard** drops the clipboard text into a fresh scratch tab (handy for pasting a snippet, log chunk, or JSON blob to inspect). If the clipboard is JSON, the scratch opens as a `.json` file so the JSON tools apply; otherwise it's plain text.
 - **Rename a session from the menu** — **Session ▸ Rename Session…** renames the active session (prompts with the current name). This joins the existing right-click-on-the-session-tab rename.
 - **Sort the CSV table by a column** — click a column header in the CSV/TSV table to sort by it (click again to reverse). Numeric columns sort by value (2 < 10, not "10" < "2"), text sorts case-insensitively, and blank cells sink to the bottom.
 - **Drag a file onto the Terminal to paste its path** — dropping a file (or several) on the built-in terminal types the shell-quoted path(s) at the prompt instead of opening the file in a tab. Dropping anywhere else still opens the file as before.

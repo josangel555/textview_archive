@@ -1,5 +1,21 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-935 New Tab from Clipboard (→ review) + TSK-913 reconciled (already built)
+
+Fresh re-scan of the WHOLE WORK_QUEUE (not just intake) for clean host work, per the owner's anti-premature-HOLD
+lesson — found two.
+
+- **TSK-935 — New Tab from Clipboard (SHIPPED).** File ▸ New Tab from Clipboard seeds a scratch file with the
+  clipboard text + opens it. Extended `NewFileCreator.create` with a `contents:` write (keeps the atomic O_EXCL/
+  O_NOFOLLOW no-clobber path); new `NewFileType.detect(_:)` content sniff (conservative: parses-as-JSON → `.json`
+  so JSON tools apply; everything else → `.txt`, no fuzzy CSV/markdown false-positives) + `pastedBaseName`
+  ("Pasted.json/.txt"). `DocumentModel.newScratchTabFromClipboard()` + `canNewTabFromClipboard` gate; File-menu
+  item + validateMenuItem. Lands in the open folder or the temp scratch dir. Teeth: 9 host tests (detect
+  json-object/array/whitespace/prose-with-braces/malformed; pastedBaseName; create writes contents / empty /
+  no-clobber-keeps-both-contents). Host gate green. Menu render = VM tail.
+- **TSK-913 — right-click Rename: RECONCILED, already built.** SidebarView:1093 `Button("Rename…")` + F2 (line 295)
+  → presentRenamePrompt → DocumentModel.renameFile (FileRenamer, collision-safe; TSK-283). → review, no code.
+
 ## LOG 2026-06-14 — TSK-698 script console: slice 1 (JS transform engine, progress)
 
 Started the JS/JQ console epic (owner: "console to operate on source files; JS-type manipulation of JSON; can we

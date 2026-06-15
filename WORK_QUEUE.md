@@ -45,7 +45,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 
 **P2 — quick-win features / UX (host-buildable, [VM] render at review):**
 - [ ] **TSK-898 / 899** — Render|Editor|HEX segmented button group + mode shortcuts
-- [ ] **TSK-913** — File-nav right-click → Rename
+- [x] **TSK-913** — File-nav right-click → Rename `[review — ALREADY BUILT: SidebarView Button("Rename…") + F2 → renameFile/FileRenamer (TSK-283)]`
 - [ ] **TSK-915 / 916** — File tree auto-refresh on disk change + "Reload from disk" action
 - [x] **TSK-932** — Unsaved blue dot on modified tab `[review — ALREADY BUILT: TabBar accent dirty-dot on tab.isDirty]`
 - [ ] **TSK-936 / 937 / 938** — Toggle-View-only shortcut · Focus Terminal/Nav/Git/File · Esc→current tab
@@ -55,7 +55,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-911 / 909** — Commit-diff summary header (uses TSK-514 DiffStat) · Reviews submenu `(537)`
 - [ ] **TSK-933 / 934** — Footer filename as breadcrumb · breadcrumb right-click = file-nav menu
 - [x] **TSK-928** — Rename URL scheme markdownviewer:// → textview:// `[review; textview primary + markdownviewer alias, router+plist+gate, teeth tests]`
-- [ ] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer
+- [x] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer `[review; File ▸ New Tab from Clipboard + NewFileType.detect (JSON→.json) + create(contents:), 9 teeth; menu=VM]`
 - [x] **TSK-931** — Rename a session (menu + right-click tab) `[review; right-click existed, added Session ▸ Rename Session… + SessionRename.sanitize host-tested]`
 - [x] **TSK-904** — "Format JSON" discoverability `[answered: Pretty-Print (View) + Minify JSON (Edit) exist; optional label follow-up = owner's call]`
 - [ ] **TSK-901** — Auto-detect content type (CSV/JSON/language) for unknown/misnamed files
