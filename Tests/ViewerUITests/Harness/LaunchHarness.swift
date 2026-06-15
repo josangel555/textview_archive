@@ -109,10 +109,24 @@ final class LaunchHarness {
         self.appBundlePath = project.appendingPathComponent("dist/TextView.app").path
         self.appExecutable = project.appendingPathComponent(
             "dist/TextView.app/Contents/MacOS/MarkdownViewer")
-        self.tmpDir = FileManager.default.temporaryDirectory
+        // Fixture base. Under the VM GUI lane xctest runs as ROOT (the sudo'd
+        // `launchctl asuser` bridge) but the live app spawns as the console
+        // user. Root's per-user temp (`/var/folders/.../T`) is 0700 AND
+        // SIP-restricted (`SF_RESTRICTED` — even root cannot `chmod` it), so it
+        // is untraversable by the console user → every spawned doc lands in
+        // `.error`. World-traversable `/tmp` (1777), with this run dir chown'd
+        // to the console user at spawn time (AppLauncher, `preShared`), lets the
+        // app read AND write fixtures IN PLACE — so editor-save round-trips and
+        // multi-launch path-keyed state (bookmarks) survive. On a normal host
+        // (non-root) the per-user temp is correct and symlink-safe.
+        let fixtureBase = (geteuid() == 0)
+            ? URL(fileURLWithPath: "/tmp")
+            : FileManager.default.temporaryDirectory
+        self.tmpDir = fixtureBase
             .appendingPathComponent("\(label)-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(
-            at: tmpDir, withIntermediateDirectories: true)
+            at: tmpDir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755])
     }
 
     /// SIGTERM any leftover TEST-spawned MarkdownViewer process and remove
@@ -152,7 +166,11 @@ final class LaunchHarness {
             // run-scoped artifact dir so parallel scenarios don't collide
             // on `mdv-step-NN.json`.
             artifactDir: tmpDir,
-            viaOpen: viaOpen
+            viaOpen: viaOpen,
+            // The harness fixtures already live in a world-traversable dir (see
+            // init), so AppLauncher hands the tree to the spawn user and runs
+            // the app against the REAL paths instead of throwaway copies.
+            preShared: true
         )
     }
 

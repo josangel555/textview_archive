@@ -165,6 +165,13 @@ swift_test() {
   fi
   local uid; uid=$(stat -f %u /dev/console)
   local inner="cd $(printf '%q' "$ROOT_DIR") && ulimit -n 8192"
+  # NOTE (TSK-953): the live-app UAT cross-user temp problem is fixed in the
+  # TEST HARNESS, not here. The asuser bridge runs xctest as ROOT but the app
+  # spawns as the console user; root's per-user temp (`/var/folders/.../T`) is
+  # 0700 AND SIP-restricted (`SF_RESTRICTED` — even root cannot `chmod` it), so
+  # there is nothing to open from this side. Instead LaunchHarness roots its
+  # fixtures in world-traversable `/tmp` and AppLauncher chowns the run dir to
+  # the console user, so the app reads + writes fixtures in place.
   [[ -n "${TOOLCHAINS:-}" ]] && inner+=" && export TOOLCHAINS=$(printf '%q' "$TOOLCHAINS")"
   # Forward MDV_* knobs (MDV_PIXEL_DEBUG_DIR, MDV_RUN_WEBVIEW_TESTS, …) into
   # the asuser shell — `launchctl asuser` drops the caller's environment, so

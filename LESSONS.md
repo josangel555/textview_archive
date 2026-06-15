@@ -5,6 +5,32 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## VM GUI-lane UAT: root's per-user temp is SIP-locked; bridge fixtures via `/tmp`, not `chmod` (2026-06-15, TSK-953)
+- SYMPTOM: the GUI lane (`MDV_VM_GUI_SESSION=1`) showed ~53 UAT false reds across live-app classes —
+  `document landed in .error state`, `editor-save did not persist`, `sidebar.rootURL` wrong,
+  `BookmarksStore did not survive the process boundary`. Headless = 0 failures on the same code.
+- ROOT CAUSE (one cause, several symptoms): the `sudo launchctl asuser <consoleUID> /bin/bash` bridge runs
+  **xctest as ROOT** (EUID 0, but `HOME=/Users/<consoleUser>`), while the live app is spawned **as the
+  console user** (`AppLauncher`, required so WindowServer grants key/activation — TSK-620). xctest's
+  `FileManager.temporaryDirectory` resolves by EUID to **root's** `/var/folders/zz/.../T` (mode `0700`),
+  which the console-user app cannot traverse → fixtures unreadable → docs `.error`, and everything
+  downstream (saves, sidebar root, etc.) fails.
+- THE TRAP I burned a VM round-trip on: you CANNOT `chmod o+rx` that dir to open it. `/var/folders/.../T`
+  is **SIP-restricted (`SF_RESTRICTED`)** — even EUID-0 `chmod` returns `Operation not permitted`
+  (verified by probing through the exact asuser bridge). `confstr(_CS_DARWIN_USER_TEMP_DIR)` also ignores
+  `$TMPDIR`, so redirecting `TMPDIR` does nothing for `FileManager.temporaryDirectory` either.
+- `AppLauncher` already bridged the SINGLE `fileArg` (copy → `/tmp/mdv-uat-<uuid>` + `chown`), but that
+  COPY indirection itself breaks two cases: (a) **editor-save round-trips** — the app saves to the copy,
+  the test reads back the untouched original; (b) **multi-launch path-keyed state** (bookmarks) — each
+  launch copies to a NEW uuid path, so a bookmark set in launch 1 ≠ launch 2's path. And multi-file/folder
+  fixtures beyond `fileArg` were never bridged at all.
+- FIX (in-place, one mechanism): `LaunchHarness` roots ALL fixtures under world-traversable `/tmp` when
+  `geteuid()==0`; `AppLauncher.runScript` gains `preShared` → skips the copy, `chown -R`s the whole run dir
+  to the console user, runs the app against the **real stable paths**, and does NOT reap the dir between a
+  method's scenarios. Result: the two worst classes went 31 failures → 0. On a normal host (non-root) the
+  per-user temp stays the default (symlink-safe). Files: `Tests/ViewerUITests/AppLauncher.swift`,
+  `Tests/ViewerUITests/Harness/LaunchHarness.swift`.
+
 ## VM UAT validation spawns a STALE `dist/` unless you rebuild it first (2026-06-15, VM-drain)
 - The `rsync` to the VM EXCLUDES `dist/` (`--exclude='dist/'`), and `scripts/test-in-vm.sh test` mode
   runs the suite but does NOT rebuild `dist/` (only `build_all` / the `all` mode runs `build-app.sh`).

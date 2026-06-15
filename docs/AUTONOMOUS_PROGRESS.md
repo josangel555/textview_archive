@@ -1,5 +1,37 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — TSK-953: fixed the VM GUI-lane UAT harness (53 false reds → real signal)
+
+VM back. Owner directive "fix the UAT harness first" — the GUI lane (`MDV_VM_GUI_SESSION=1`) was reporting
+~53 live-app UAT failures that were a HARNESS artifact, not product regressions (headless = 0 on the same
+code). Root-caused, fixed, verified red→green, gate-green, committed.
+
+**Root cause (one cause, many symptoms).** The `sudo launchctl asuser <consoleUID> /bin/bash` bridge runs
+xctest as ROOT (EUID 0) while `AppLauncher` spawns the live app as the console user (required for
+WindowServer key/activation, TSK-620). xctest's `FileManager.temporaryDirectory` resolves by EUID to
+ROOT's `/var/folders/zz/.../T` (0700) — untraversable by the console-user app → fixtures `.error`, and
+everything downstream (editor-save round-trips, sidebar root, bookmark persistence) fails.
+
+**Two dead-ends ruled out by direct VM instrumentation (probed through the exact asuser bridge):**
+(1) you CANNOT `chmod` root's temp open — `/var/folders/.../T` is SIP-restricted (`SF_RESTRICTED`), EUID-0
+chmod = `Operation not permitted`; (2) `FileManager.temporaryDirectory` ignores `$TMPDIR` (uses
+`confstr(_CS_DARWIN_USER_TEMP_DIR)`), so the earlier TMPDIR-redirect was a no-op. Reverted the dead
+`test-in-vm.sh` chmod.
+
+**Fix (in-place, one mechanism).** `LaunchHarness` roots fixtures under world-traversable `/tmp` when
+`geteuid()==0`; `AppLauncher.runScript` gained `preShared` → skips its copy-to-/tmp indirection,
+`chown -R`s the run dir to the console user, runs the app against the REAL stable paths, and does NOT reap
+the dir between a method's scenarios. The replaced copy indirection itself broke editor-save round-trips
+(app saved a copy the test never read back) and multi-launch path-keyed bookmarks (new uuid path per
+launch). Files: `Tests/ViewerUITests/AppLauncher.swift`, `Tests/ViewerUITests/Harness/LaunchHarness.swift`,
+`scripts/test-in-vm.sh`.
+
+**Validation (teeth demonstrated).** Same two worst classes (`Cm6EditorUATTests` +
+`SidebarFileTreeAndBookmarksUATTests`): **31 failures on the broken harness → 0 failures, 20/20, `.error`=0**
+on the fixed harness (VM GUI lane, fresh test target). Host headless gate: PASS (5813 tests, tier
+enforcement OK). Next: full GUI `all` lane vs fresh `dist/` for the complete render signal, then drain the
+~99-item `review` pile.
+
 ## LOG 2026-06-15 — Security diligence: committed-secret scan (CLEAN) + VM down 6th tick
 
 VM unreachable a 6th tick; all high-value work still owner-gated (VM restore + Stage-B reviews + parked

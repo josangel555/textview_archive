@@ -51,7 +51,8 @@ enum AppLauncher {
         timeout: TimeInterval = 30,
         existingProcessName: String = "MarkdownViewer",
         artifactDir: URL? = nil,
-        viaOpen: Bool = false
+        viaOpen: Bool = false,
+        preShared: Bool = false
     ) throws -> [[String: Any]] {
         // #193: run-scoped artifact dir. When the caller threads a unique
         // per-test directory we point the spawned app at it via
@@ -74,7 +75,17 @@ enum AppLauncher {
         // per-user tmpdir is 700, unreadable by the target user, so the
         // run's script/arg/artifacts move to a world-accessible /tmp dir.
         let spawnUser: String? = geteuid() == 0 ? consoleUser : nil
-        if spawnUser != nil || viaOpen {
+        // TSK-953: when the caller (LaunchHarness) has ALREADY rooted its
+        // fixtures in a world-traversable dir (`/tmp`), run the app against the
+        // REAL paths IN PLACE rather than copying to a throwaway /tmp dir. Only
+        // the copy path breaks editor-save round-trips (the app saves to a copy
+        // the test never reads back) and multi-launch path-keyed state — e.g. a
+        // bookmark set in launch 1 keys off `/tmp/mdv-uat-AAA/f`, but launch 2
+        // copies to `/tmp/mdv-uat-BBB/f`, a different path, so it reads as
+        // un-bookmarked. In place, both launches use the same stable path.
+        // Direct callers (preShared=false) keep the copy hand-off below.
+        let inPlace = preShared && spawnUser != nil
+        if (spawnUser != nil || viaOpen) && !inPlace {
             let shared = URL(fileURLWithPath: "/tmp/mdv-uat-\(UUID().uuidString)")
             try FileManager.default.createDirectory(
                 at: shared, withIntermediateDirectories: true,
@@ -93,11 +104,7 @@ enum AppLauncher {
             // console-user app shells git against it. Hand the whole run
             // dir to the spawn user (we are root here; direct chown).
             if let user = spawnUser {
-                let chown = Process()
-                chown.executableURL = URL(fileURLWithPath: "/usr/sbin/chown")
-                chown.arguments = ["-R", user, shared.path]
-                try? chown.run()
-                chown.waitUntilExit()
+                chownRecursive(shared.path, to: user)
             }
         }
         try? FileManager.default.createDirectory(
@@ -112,6 +119,15 @@ enum AppLauncher {
         try scriptContents.write(to: scriptURL, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes(
             [.posixPermissions: 0o644], ofItemAtPath: scriptURL.path)
+        // TSK-953: in-place cross-user hand-off — give the whole run dir
+        // (script + arg + every fixture + the artifact slots the app writes its
+        // step dumps/saves into) to the spawn user so the console-user app can
+        // read AND write them where the test reads back. Re-applied per launch:
+        // each scenario's fixtures are (re)written by the root test process, so
+        // they revert to root-owned between launches.
+        if inPlace, let user = spawnUser {
+            chownRecursive(artifacts.path, to: user)
+        }
         // Reap any leaked PRIOR TEST instance — never the developer's
         // normally-launched app (it shares this exec name; a blanket
         // `killall` used to kill it, making the gate/live-smoke destructive).
@@ -206,9 +222,11 @@ enum AppLauncher {
         }
 
         let dumps = collectStepDumps(from: artifacts)
-        if spawnUser != nil || viaOpen {
-            // The /tmp run dir was created solely for the cross-user
-            // hand-off; reap it once the dumps are in memory.
+        if (spawnUser != nil || viaOpen) && !inPlace {
+            // The throwaway /tmp run dir created for the COPY hand-off is reaped
+            // here, once the dumps are in memory. The in-place run dir belongs
+            // to the caller (LaunchHarness.cleanup) and must survive across a
+            // method's scenarios — e.g. the launch-1→launch-2 persistence flow.
             try? FileManager.default.removeItem(at: artifacts)
         }
         return dumps
@@ -218,6 +236,18 @@ enum AppLauncher {
     static var consoleUser: String? {
         let attrs = try? FileManager.default.attributesOfItem(atPath: "/dev/console")
         return attrs?[.ownerAccountName] as? String
+    }
+
+    /// `chown -R <user> <path>` (best-effort). Used by the root VM GUI lane to
+    /// hand a fixture/run directory to the console user the app spawns as, so a
+    /// root-created tree becomes readable AND writable by that user. A failure
+    /// must not abort the test (the caller surfaces the real assertion).
+    static func chownRecursive(_ path: String, to user: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/chown")
+        p.arguments = ["-R", user, path]
+        try? p.run()
+        p.waitUntilExit()
     }
 
     /// HOME of the user the app is actually spawned as. Tests asserting
