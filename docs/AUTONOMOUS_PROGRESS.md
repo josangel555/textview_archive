@@ -1,5 +1,19 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-909 right-click commit → Reviews submenu (lazy) (→ review)
+
+Owner asked for "right-click commit → Reviews ▸ [list] (lazy loaded)". New `ReviewStore.reviews(forCommit:)`
+(ViewerCore) — loads each review (ReviewSummary lacks scope) and filters `scope == .commit(sha:)`, newest-first.
+`GitPanelModel.reviewsForCommit(_:)` wraps it via `ReviewStore.projectLocal(repoRoot:)` (empty when no repo).
+GitLogTab's commit `.contextMenu` gains a `Menu("Reviews")` whose content closure (and the ReviewStore read) runs
+ONLY when the submenu opens — so it never touches the right-click hot path (relevant to the still-open perf bug
+TSK-908). Empty → a disabled "No reviews for this commit" row. Teeth: 3 host tests (only-matching-commit-scope,
+multiple-on-same-commit, empty-store). Host gate green. Submenu render = VM tail.
+
+PROBED + DEFERRED this tick: TSK-901 (content auto-detect) — FileCategory has NO `.csv` case (CSV→table is
+extension-driven), so the Open-As/sniffCategory hint path can't suggest CSV without deeper category work; not a
+clean slice. TSK-937 (focus shortcuts) — host-thin (the value is first-responder = VM).
+
 ## LOG 2026-06-14 — TSK-933 footer path → clickable breadcrumb (→ review)
 
 New pure `BreadcrumbPath.segments(for:home:)` (ViewerCore) splits a file URL into clickable segments — home prefix

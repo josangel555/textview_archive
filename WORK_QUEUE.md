@@ -54,7 +54,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-925** — CSV: sort by column header `[review; CsvSort type-aware comparator + 11 teeth tests; header click=VM]`
 - [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
 - [x] **TSK-911** — Commit-diff summary header (message + DiffStat totals) `[review; CommitDiffSummary.preamble + DiffView banner, 5 teeth; banner render=VM; reviews-list deferred]`
-- [ ] **TSK-909** — Right-click commit → Reviews submenu (lazy list) `(537)`
+- [x] **TSK-909** — Right-click commit → Reviews submenu (lazy list) `[review; ReviewStore.reviews(forCommit:) + lazy Menu, 3 teeth; submenu render=VM]`
 - [x] **TSK-933** — Footer filename as breadcrumb `[review; BreadcrumbPath.segments + StatusBar clickable segments → revealInSidebar, 5 teeth; render=VM]`
 - [ ] **TSK-934** — breadcrumb right-click = file-nav context menu `(follow-on to 933)`
 - [x] **TSK-928** — Rename URL scheme markdownviewer:// → textview:// `[review; textview primary + markdownviewer alias, router+plist+gate, teeth tests]`

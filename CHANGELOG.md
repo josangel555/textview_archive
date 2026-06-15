@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **The sidebar can be dragged much wider** — the old fixed ~480 px resize cap is gone; the file/tool sidebar now resizes freely up to the window width (always leaving room for the content area). Useful for deep folder trees and long file names.
 
 ### Added
+- **Right-click a commit → Reviews** — the Git-log commit menu now has a **Reviews** submenu listing the reviews that cover that commit (click one to open it); it's loaded only when you open the submenu.
 - **Footer path is a clickable breadcrumb** — the file path in the status bar is now a row of clickable segments (`~ › proj › src › file.swift`); click any folder segment to reveal/expand it in the sidebar.
 - **Commit diff shows a summary header** — viewing a commit's diff now puts the commit message (author, date, description) and a totals line (files changed, +insertions/−deletions) at the top, above the per-file changes.
 - **Keyboard shortcuts for view modes** — **⌘1 / ⌘2 / ⌘3** switch to the 1st / 2nd / 3rd mode button for the current file (e.g. Rendered / Source / HEX for Markdown, Table / Source / HEX for CSV). The View menu shows the current file's mode names next to the shortcuts.
