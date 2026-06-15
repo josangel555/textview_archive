@@ -14,6 +14,10 @@ struct CSVTableView: View {
 
     @State private var widths: [CGFloat] = []
     @State private var lastFingerprint: String = ""
+    // TSK-925: click a column header to sort by it (toggles asc/desc; a third
+    // click is just another toggle). nil = original file order.
+    @State private var sortColumn: Int?
+    @State private var sortAscending: Bool = true
 
     // Filter state lives on DocumentModel keyed by tab id so it
     // survives tab switches. These computed properties bridge the
@@ -52,6 +56,14 @@ struct CSVTableView: View {
         var s = model.csvFilterState(forTabID: tabID)
         s.advancedShown = v
         model.setCsvFilterState(s, forTabID: tabID)
+    }
+    /// TSK-925: header click → sort by that column (toggles asc/desc on the
+    /// active one). Pure transition in `CsvSort.nextState`.
+    private func toggleSort(column: Int) {
+        let next = CsvSort.nextState(
+            current: sortColumn.map { ($0, sortAscending) }, tapped: column)
+        sortColumn = next.column
+        sortAscending = next.ascending
     }
 
     /// Debounced filter — separate from the typing buffer so each
@@ -95,6 +107,10 @@ struct CSVTableView: View {
             to: result,
             lowercasedRows: lowercasedRowsCache
         )
+        // TSK-925: apply the active column sort to the (already-filtered) rows.
+        let displayRows: [[String]] = sortColumn.map {
+            CsvSort.sorted(rows: filtered.rows, column: $0, ascending: sortAscending)
+        } ?? filtered.rows
         VStack(spacing: 0) {
             filterBar(result: result, filteredCount: filtered.rows.count)
             Divider()
@@ -113,8 +129,8 @@ struct CSVTableView: View {
                         perColumnRow(result: result)
                     }
                     Section {
-                        ForEach(filtered.rows.indices, id: \.self) { i in
-                            cellRow(filtered.rows[i], isAlt: i % 2 == 1,
+                        ForEach(displayRows.indices, id: \.self) { i in
+                            cellRow(displayRows[i], isAlt: i % 2 == 1,
                                     header: result.header)
                         }
                     } header: {
@@ -319,11 +335,22 @@ struct CSVTableView: View {
     private func headerRow(_ r: CSVParser.Result) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(r.header.enumerated()), id: \.offset) { (i, name) in
-                Text(name)
-                    .font(.system(size: headerFontSize, weight: .semibold, design: .monospaced))
+                HStack(spacing: 2) {
+                    Text(name)
+                        .font(.system(size: headerFontSize, weight: .semibold, design: .monospaced))
+                    if sortColumn == i {
+                        // TSK-925: sort-direction indicator on the active column.
+                        Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                            .font(.system(size: headerFontSize - 2, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .background(Palette.controlBackground)
+                    .contentShape(Rectangle())
+                    // TSK-925: click toggles sort by this column (asc → desc → asc).
+                    .onTapGesture { toggleSort(column: i) }
                     .overlay(alignment: .trailing) { columnResizer(forIndex: i) }
                     // A11Y-01: mark header cells with the header trait so
                     // VoiceOver's table navigation announces column titles.
