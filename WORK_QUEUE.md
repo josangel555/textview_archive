@@ -36,7 +36,8 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-917** — Gutter selectable + cursor-icon confusion (hand/pointer/I-beam)
 - [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
 - [x] **TSK-914** — "Open in Terminal" opens macOS Terminal.app, not the in-app terminal `[06c04d1 → review; in-app terminal at node folder + 3 teeth tests; also covers TSK-769 PWD]`
-- [ ] **TSK-919 / 920** — File-nav: sub-folder self-drag trap / drag-to-Terminal should paste path
+- [x] **TSK-920** — drag-to-Terminal pastes the file path (not capture) `[review; TerminalDropFormatter + drag-dest, 7 teeth tests]`
+- [ ] **TSK-919** — File-nav: sub-folder self-drag trap (needs DropRouter/re-root investigation)
 - [x] **TSK-902** — Preview tab title italic not bold `[30f672c → review; TabTitleStyle host-tested, pixel=VM]`
 - [ ] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
@@ -52,7 +53,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-925 / 924** — CSV: sort by column header · multi-cell select + copy/paste `(711)`
 - [ ] **TSK-911 / 909** — Commit-diff summary header (uses TSK-514 DiffStat) · Reviews submenu `(537)`
 - [ ] **TSK-933 / 934** — Footer filename as breadcrumb · breadcrumb right-click = file-nav menu
-- [ ] **TSK-928** — Rename URL scheme markdownviewer:// → textview://
+- [x] **TSK-928** — Rename URL scheme markdownviewer:// → textview:// `[review; textview primary + markdownviewer alias, router+plist+gate, teeth tests]`
 - [ ] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer
 - [ ] **TSK-931** — Rename a session (menu + right-click tab)
 - [ ] **TSK-904** — "Format JSON" discoverability (question; Pretty-Print/Minify already exist)

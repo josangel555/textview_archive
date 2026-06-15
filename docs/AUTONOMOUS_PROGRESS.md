@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-920 (terminal drag-paste) + TSK-928 (textview:// scheme) shipped (→ review)
+
+Two items, gated once.
+
+**TSK-920 — drop a file on the terminal → paste its path.** The terminal NSView had no drag destination, so a
+file dropped on it fell through to the app-wide `.onDrop` → DropRouter → OPENED it (the "capture" the owner didn't
+want). Fix: `TerminalNSView` now `registerForDraggedTypes([.fileURL])` + `draggingEntered`/`performDragOperation`
+send the formatted path through the existing `send([UInt8])`→PTY path (same as paste). Pure
+`TerminalDropFormatter.shellPaste(for:)` (ViewerCore) POSIX-quotes each path (bare when safe, single-quoted with
+`'\''` escaping otherwise), space-joined + trailing space. Teeth: 7 host tests (bare/space/quote/multi/non-file/
+empty/shell-specials). Drop INTERCEPTION (nested AppKit view winning over the SwiftUI ancestor onDrop) = VM tail.
+
+**TSK-928 — rename URL scheme to textview://.** `URLSchemeRouter.route` guarded on `scheme=="markdownviewer"`;
+now `URLSchemeRouter.schemes = {textview, markdownviewer}` (textview primary, markdownviewer kept as a
+back-compat alias so existing links don't break). `scripts/Info.plist` CFBundleURLSchemes lists both; main.swift
+`application(_:open:)` gate uses the set. Teeth: textview:// routes, markdownviewer:// alias still routes, unknown
+scheme rejected. plutil-lint OK. OS scheme registration = install-time (can't host-validate).
+
 ## LOG 2026-06-14 — TSK-914 fix: "Open in Terminal" → in-app terminal at the node's folder (→ review)
 
 `SidebarView.openInTerminal` shelled out `/usr/bin/open -a Terminal <path>` → a macOS Terminal.app window. Owner
