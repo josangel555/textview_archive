@@ -13,4 +13,14 @@ enum TerminalCwd {
         guard let url, url.isFileURL else { return nil }
         return url.hasDirectoryPath ? url : url.deletingLastPathComponent()
     }
+
+    /// Working directory for a sidebar node whose directory-ness is KNOWN from
+    /// the file tree — don't trust `URL.hasDirectoryPath`, which keys off a
+    /// trailing slash that sidebar URLs usually lack (TSK-914): a folder URL
+    /// without the marker would otherwise resolve to its PARENT. A folder → the
+    /// folder itself; a file → its containing folder; a non-file URL → nil.
+    static func workingDirectory(for url: URL, isDirectory: Bool) -> URL? {
+        guard url.isFileURL else { return nil }
+        return isDirectory ? url : url.deletingLastPathComponent()
+    }
 }

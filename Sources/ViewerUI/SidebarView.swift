@@ -1101,7 +1101,9 @@ private struct FileRowContextMenu: View {
                 }
             }
             Divider()
-            Button("Open in Terminal") { openInTerminal(node.url) }
+            Button("Open in Terminal") {
+                model.openTerminalInApp(at: node.url, isDirectory: node.isDirectory)
+            }
             // MARK: - Search in Folder (folder-context agent)
             // Presents the unified search panel with the scope picker
             // pre-set to this folder (pickedFolder), bypassing the
@@ -1128,18 +1130,6 @@ private struct FileRowContextMenu: View {
                 }
             }
         }
-    }
-
-    /// Launches a new Terminal.app window with cwd set to `url`.
-    /// `/usr/bin/open -a Terminal <path>` honors the user's default
-    /// terminal-application setting via Launch Services *only* when
-    /// they've explicitly remapped Terminal's UTI; most users get
-    /// system Terminal. Future polish: detect iTerm2 and prefer it.
-    private func openInTerminal(_ url: URL) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        p.arguments = ["-a", "Terminal", url.path]
-        try? p.run()
     }
 
     /// Path relative to the sidebar root. Falls back to the filename when

@@ -3911,6 +3911,16 @@ public final class DocumentModel: ObservableObject {
         terminalPane.setOpen(true)
     }
 
+    /// TSK-914: "Open in Terminal" on a sidebar node opens the IN-APP terminal
+    /// (a new tab in the embedded pane), cd'd to the node's directory — a file's
+    /// containing folder, or the folder itself — NOT a system Terminal.app
+    /// window. `isDirectory` comes from the file tree (see TerminalCwd note).
+    public func openTerminalInApp(at url: URL, isDirectory: Bool) {
+        let cwd = TerminalCwd.workingDirectory(for: url, isDirectory: isDirectory)
+        terminalPane.addTab(workingDirectory: cwd)
+        terminalPane.setOpen(true)
+    }
+
     /// True when there's a file OR a project folder open — i.e. the status
     /// footer has something useful to show (path/metrics for a file; the
     /// folder-scoped git chip + "—" path for a folder-only project). TSK-738:

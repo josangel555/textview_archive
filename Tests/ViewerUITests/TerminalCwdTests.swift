@@ -29,4 +29,27 @@ final class TerminalCwdTests: XCTestCase {
         XCTAssertNil(TerminalCwd.workingDirectory(forFocusedFile: web),
             "a non-file URL has no folder to anchor a terminal to")
     }
+
+    // TSK-914: explicit-isDirectory variant for sidebar nodes (don't trust
+    // URL.hasDirectoryPath — sidebar folder URLs usually lack the trailing slash).
+
+    func test_explicitFolder_resolvesToItself_evenWithoutTrailingSlash() {
+        let dir = URL(fileURLWithPath: "/Users/me/proj/src")
+        XCTAssertFalse(dir.hasDirectoryPath, "precondition: no trailing-slash marker")
+        XCTAssertEqual(
+            TerminalCwd.workingDirectory(for: dir, isDirectory: true)?.path,
+            "/Users/me/proj/src")
+    }
+
+    func test_explicitFile_resolvesToContainingFolder() {
+        let file = URL(fileURLWithPath: "/Users/me/proj/src/main.swift")
+        XCTAssertEqual(
+            TerminalCwd.workingDirectory(for: file, isDirectory: false)?.path,
+            "/Users/me/proj/src")
+    }
+
+    func test_explicit_nonFileURL_returnsNil() {
+        let web = URL(string: "https://example.com")!
+        XCTAssertNil(TerminalCwd.workingDirectory(for: web, isDirectory: true))
+    }
 }
