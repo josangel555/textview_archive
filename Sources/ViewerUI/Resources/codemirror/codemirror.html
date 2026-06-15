@@ -37,7 +37,8 @@
     Decoration, ViewPlugin, WidgetType,
     // Vim mode (opt-in; owner-approved 2026-06-15). May be absent on a stale
     // bundle during a rolling upgrade — guarded at the use site (applySetVimMode).
-    vim,
+    // `Vim` (defineEx: wire `:w` → save) + `getCM` (vim-mode-change events).
+    vim, Vim, getCM,
   } = window.CM;
 
   // Optional hoverTooltip from @codemirror/view — may not be present on
@@ -521,6 +522,38 @@
   // vim compartment: [vim()] when enabled, [] when off. `vim` may be absent
   // on a stale bundle mid-rolling-upgrade — degrade to a no-op + report,
   // never throw (the dispatch wrapper would otherwise post a dispatch error).
+  // Wire vim ex-commands to the app. `Vim.defineEx` is GLOBAL (one Vim
+  // singleton) so define once; harmless when vim is off (only fires when a
+  // `:` command runs in an active vim instance). `:w`/`:wq`/`:x` route to the
+  // SAME path as ⌘S — emit pending edits, then post "save" → Swift
+  // saveActiveEditor → disk write + clears the dirty dot. We do NOT quit/close
+  // the tab (no vim window here); save is the safe, expected action.
+  let vimExDefined = false;
+  function setupVimExCommands() {
+    if (vimExDefined || !Vim || typeof Vim.defineEx !== "function") return;
+    const save = function () { emitChangeImmediate(); post("save", {}); };
+    Vim.defineEx("write", "w", save);
+    Vim.defineEx("wq", "wq", save);
+    Vim.defineEx("xit", "x", save);
+    vimExDefined = true;
+  }
+
+  // Bridge vim's mode (normal/insert/visual) to the Swift footer status bar.
+  // `vim-mode-change` fires on every transition; attach once (the listener
+  // lives on the cm5-compat object and survives compartment reconfigures).
+  let vimModeListenerAttached = false;
+  function attachVimModeListener() {
+    if (vimModeListenerAttached || typeof getCM !== "function") return;
+    const cm = getCM(view);
+    if (!cm || typeof cm.on !== "function") return;
+    cm.on("vim-mode-change", function (e) {
+      let m = (e && e.mode) || "normal";
+      if (e && e.mode === "visual" && e.subMode) m = "visual-" + e.subMode;
+      post("vimModeChanged", { mode: m });
+    });
+    vimModeListenerAttached = true;
+  }
+
   function applySetVimMode(msg) {
     if (typeof vim !== "function") {
       post("errorOccurred", {
@@ -532,6 +565,13 @@
     view.dispatch({
       effects: vimCompartment.reconfigure(msg.enabled ? [vim()] : []),
     });
+    if (msg.enabled) {
+      setupVimExCommands();
+      attachVimModeListener();
+      post("vimModeChanged", { mode: "normal" });  // seed (no event for initial state)
+    } else {
+      post("vimModeChanged", { mode: "" });         // clear the footer indicator
+    }
   }
 
   // ---- Phase 4 (v2): apply incremental edits from Swift --------------
@@ -1059,6 +1099,14 @@
     const chrome = EditorView.theme({
       "&": { backgroundColor: palette.background, color: palette.defaultText },
       ".cm-content": { caretColor: palette.defaultText },
+      // Vim block cursor (normal/visual mode) → blue (TSK-679). Semi-transparent
+      // so the character under the block stays legible; solid blue outline when
+      // the editor isn't focused. Overrides the plugin's default reddish block —
+      // our theme is ordered after vim's, so equal-specificity rules win.
+      ".cm-fat-cursor": { background: "rgba(10,132,255,0.5)" },
+      "&:not(.cm-focused) .cm-fat-cursor": {
+        background: "none", outline: "solid 1px rgba(10,132,255,0.85)",
+      },
       ".cm-gutters": {
         backgroundColor: palette.gutterBackground,
         color: palette.gutterText,

@@ -58,7 +58,9 @@ import { oneDark } from "@codemirror/theme-one-dark";
 // MIT, maintained by Replit. Bundles into codemirror.js — no runtime npm dep,
 // same as every other @codemirror/* package here. Gated behind a Compartment in
 // the HTML host (off by default; toggled via View → Vim Mode).
-import { vim } from "@replit/codemirror-vim";
+// `Vim` (defineEx — wire `:w` to the app's save) + `getCM` (the cm5-compat
+// handle for `vim-mode-change` events → the footer mode indicator).
+import { vim, Vim, getCM } from "@replit/codemirror-vim";
 
 // EditorState.tabSize is a facet on the namespace object, not a named
 // export. Re-export as `EditorStateTabSize` for use from the HTML host
@@ -86,5 +88,5 @@ export {
   foldService,
   linter, lintGutter, setDiagnostics, forEachDiagnostic,
   markdown, javascript, python, json, oneDark,
-  vim,
+  vim, Vim, getCM,
 };

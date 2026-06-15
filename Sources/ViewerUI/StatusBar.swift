@@ -59,6 +59,10 @@ struct StatusBar: View {
             // but only on click (cold path, inside the Menu content).
             gitChip
 
+            // TSK-679: vim mode indicator (NORMAL/INSERT/VISUAL…). Empty (and
+            // absent) when vim mode is off. Bottom-left, the conventional place.
+            vimModeChip
+
             // TSK-933: the footer path is a clickable breadcrumb — each segment
             // reveals that ancestor folder (or the file) in the sidebar. Lowest
             // layout priority so it shrinks before the live metric chips (same
@@ -268,6 +272,26 @@ struct StatusBar: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Vim mode chip (TSK-679). A compact uppercased badge in the accent color;
+    /// renders only when the editor reports an active vim mode.
+    @ViewBuilder
+    private var vimModeChip: some View {
+        if !model.editorVimMode.isEmpty {
+            Text(model.editorVimMode)
+                .font(.system(size: model.uiSize(10), weight: .semibold, design: .monospaced))
+                .padding(.horizontal, model.uiSize(6))
+                .padding(.vertical, model.uiSize(1))
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.accentColor.opacity(0.18))
+                )
+                .foregroundStyle(Color.accentColor)
+                .fixedSize()
+                .help("Vim mode")
+                .accessibilityIdentifier("mdv.statusBar.vimMode")
         }
     }
 

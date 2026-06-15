@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — TSK-679 follow-ups (owner live-testing): :w→save, footer mode, blue cursor
+
+Owner tried vim live and flagged three things; all fixed:
+- **`:w` didn't save (blue dot stayed).** Vim's ex-commands weren't wired to the app — the package's default
+  `:w` is a no-op, so the doc stayed dirty. Re-exported `Vim` + `getCM`; `Vim.defineEx("write"/"wq"/"xit")`
+  now routes to the SAME save path as ⌘S (`emitChangeImmediate()` + `post("save")` → saveActiveEditor →
+  disk write clears the dirty dot). Defined once (global Vim singleton).
+- **Footer mode indicator.** Bridged vim's `vim-mode-change` (via `getCM(view).on(...)`) → new
+  `vimModeChanged` inbound message → `DocumentModel.editorVimMode` → a `StatusBar.vimModeChip`
+  (uppercased NORMAL/INSERT/VISUAL badge in the accent color; hidden when vim is off). Seeded "normal"
+  on enable, cleared on disable.
+- **Blue block cursor.** Added `.cm-fat-cursor` rules (semi-transparent blue fill, blue outline when
+  unfocused) to the chrome theme — ordered after the vim plugin's theme so equal-specificity wins.
+- **Files:** entry.js (+Vim/getCM re-export, bundle rebuilt 728K), codemirror.html (ex-commands +
+  mode listener + cursor CSS), CodeMirrorBridge (CMInboundMessage.vimModeChanged + decode),
+  CodeMirrorEditorView (onVimModeChange), ContentView, DocumentModel (editorVimMode), StatusBar (chip).
+- **Tests (host teeth, green):** testDecodeVimModeChanged, test_setEditorVimMode_normalizesAndClears,
+  testVimModeWiringSurvivesBuild (extended: Vim.defineEx / vim-mode-change / vimModeChanged in HTML +
+  Vim:/getCM: exports in JS). Live keystroke/cursor-pixel = VM tail (unchanged).
+
 ## LOG 2026-06-15 — TSK-679: Vim mode in the CM6 editor (opt-in, View → Vim Mode)
 
 Owner approved Option A (`@replit/codemirror-vim`) from the editor-vim options analysis and asked for a

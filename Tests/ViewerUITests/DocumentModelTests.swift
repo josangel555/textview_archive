@@ -53,6 +53,17 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertTrue(makeModel().vimModeEnabled)
     }
 
+    func test_setEditorVimMode_normalizesAndClears() {
+        let model = makeModel()
+        XCTAssertEqual(model.editorVimMode, "", "off by default")
+        model.setEditorVimMode("normal")
+        XCTAssertEqual(model.editorVimMode, "NORMAL", "uppercased for the footer chip")
+        model.setEditorVimMode("visual-block")
+        XCTAssertEqual(model.editorVimMode, "VISUAL-BLOCK")
+        model.setEditorVimMode("")
+        XCTAssertEqual(model.editorVimMode, "", "empty clears the chip")
+    }
+
     // MARK: Audio ffmpeg path (TSK-528/535 — Settings → Audio proxy)
 
     func test_audioFFmpegPath_proxiesPreferences_andSeedsOnInit() {

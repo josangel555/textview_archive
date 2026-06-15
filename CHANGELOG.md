@@ -10,7 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-15
 
 ### Added
-- **Vim mode in the editor** — turn on **View ▸ Vim Mode** for modal editing in the code editor: normal/insert/visual modes, `hjkl` navigation, operators like `dw`/`ciw`, `:` ex-commands, registers, and macros. It's **opt-in and off by default**, the choice is remembered across launches, and it's included in exported settings. ⌘S (save) and ⌘F (find) still work as usual.
+- **Vim mode in the editor** — turn on **View ▸ Vim Mode** for modal editing in the code editor: normal/insert/visual modes, `hjkl` navigation, operators like `dw`/`ciw`, `:` ex-commands, registers, and macros. It's **opt-in and off by default**, the choice is remembered across launches, and it's included in exported settings. `:w` / `:wq` / `:x` save the file (same as ⌘S — the unsaved-dot clears); ⌘S and ⌘F still work as usual. The current mode (**NORMAL / INSERT / VISUAL**) shows in the footer status bar, and the normal-mode block cursor is blue.
 
 ## 2026-06-14
 

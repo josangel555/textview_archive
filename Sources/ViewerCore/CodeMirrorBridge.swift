@@ -120,6 +120,10 @@ public enum CMInboundMessage: Equatable, Sendable {
     case findResultChanged(matches: Int, current: Int)
     case linkClicked(href: String, line: Int, column: Int)
     case editorBlurred
+    /// Vim mode changed (TSK-679). `mode` is "normal"/"insert"/"visual"
+    /// (or "visual-line"/"visual-block"), or "" when vim mode is turned off
+    /// — drives the footer status-bar mode indicator.
+    case vimModeChanged(mode: String)
     case errorOccurred(phase: String, message: String, stack: String?)
     case requestReply(replyId: String, valueJSON: String)
     /// JS → Swift hover request. Carries the doc-offset pos (UTF-16) and
@@ -402,6 +406,8 @@ public enum CMBridgeCodec {
             )
         case "editorBlurred":
             return .editorBlurred
+        case "vimModeChanged":
+            return .vimModeChanged(mode: dict["mode"] as? String ?? "")
         case "errorOccurred":
             return .errorOccurred(
                 phase: dict["phase"] as? String ?? "unknown",

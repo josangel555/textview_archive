@@ -193,6 +193,15 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleVimMode() { vimModeEnabled.toggle() }
 
+    /// The live vim mode reported by the editor ("NORMAL"/"INSERT"/"VISUAL…"),
+    /// shown in the footer status bar. Empty when vim mode is off. Transient
+    /// (not persisted) — driven by `CodeMirrorEditorView.onVimModeChange`.
+    @Published public var editorVimMode: String = ""
+    public func setEditorVimMode(_ raw: String) {
+        let next = raw.isEmpty ? "" : raw.uppercased()
+        if next != editorVimMode { editorVimMode = next }
+    }
+
     /// TSK-259 — the user-selected monospace family for the text
     /// surfaces (nil = system). Write-through to PreferencesStore;
     /// resolution is fail-safe in FontPreference.resolvedFont.

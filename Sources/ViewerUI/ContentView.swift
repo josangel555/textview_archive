@@ -680,6 +680,9 @@ public struct ContentView: View {
                     onCursorChange: { pos in
                         model.recordEditorCursor(pos, forTabID: tid)
                     },
+                    onVimModeChange: { mode in
+                        model.setEditorVimMode(mode)
+                    },
                     onScrollChange: { pos in
                         model.recordEditorScroll(pos, forTabID: tid)
                     },

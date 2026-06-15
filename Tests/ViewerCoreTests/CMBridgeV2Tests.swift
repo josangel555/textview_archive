@@ -56,6 +56,22 @@ final class CMBridgeV2Tests: XCTestCase {
         XCTAssertEqual(parsed?["v"] as? Int, CMProtocol.currentVersion)
     }
 
+    // MARK: - Inbound: vimModeChanged (TSK-679)
+
+    func testDecodeVimModeChanged() {
+        guard case let .vimModeChanged(mode)? = CMBridgeCodec.decodeInbound(
+            ["v": 2, "type": "vimModeChanged", "mode": "insert"]) else {
+            XCTFail("vimModeChanged did not decode"); return
+        }
+        XCTAssertEqual(mode, "insert")
+        // Empty mode (vim turned off) decodes to "" — clears the footer chip.
+        guard case let .vimModeChanged(off)? = CMBridgeCodec.decodeInbound(
+            ["v": 2, "type": "vimModeChanged", "mode": ""]) else {
+            XCTFail("vimModeChanged(off) did not decode"); return
+        }
+        XCTAssertEqual(off, "")
+    }
+
     // MARK: - Inbound: incrementalChange
 
     func testDecodeIncrementalChange() {

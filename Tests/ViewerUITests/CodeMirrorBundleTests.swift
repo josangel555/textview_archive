@@ -74,14 +74,20 @@ final class CodeMirrorBundleTests: XCTestCase {
     func testVimModeWiringSurvivesBuild() throws {
         let htmlURL = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
-        for needle in ["case \"setVimMode\"", "applySetVimMode", "vimCompartment"] {
+        for needle in [
+            "case \"setVimMode\"", "applySetVimMode", "vimCompartment",
+            // :w → save + footer mode-indicator wiring (TSK-679 follow-up).
+            "Vim.defineEx", "vim-mode-change", "vimModeChanged",
+        ] {
             XCTAssertTrue(html.contains(needle),
                           "codemirror.html missing vim wiring: \(needle)")
         }
         let jsURL = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
         let js = try String(contentsOf: jsURL, encoding: .utf8)
-        XCTAssertTrue(js.contains("vim:"),
-                      "codemirror.js missing the vim export — re-run scripts/codemirror-build npm run build")
+        for sym in ["vim:", "Vim:", "getCM:"] {
+            XCTAssertTrue(js.contains(sym),
+                          "codemirror.js missing export \(sym) — re-run scripts/codemirror-build npm run build")
+        }
     }
 
     /// TSK-602 ViewOnly↔Editor color parity: the HTML host must carry the

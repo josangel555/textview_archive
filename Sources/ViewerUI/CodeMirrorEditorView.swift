@@ -86,6 +86,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     public let onTextChange: (String) -> Void
     public let onSaveRequested: () -> Void
     public let onCursorChange: ((CMCursorPosition) -> Void)?
+    /// Vim mode changed (TSK-679) — "normal"/"insert"/"visual…" or "" when
+    /// vim is off. Routed to the footer status-bar mode indicator.
+    public let onVimModeChange: ((String) -> Void)?
     public let onScrollChange: ((CMScrollPosition) -> Void)?
     public let onFindResultChange: ((CMFindResult) -> Void)?
     /// JS posted a hover request. Handler receives `(line, character,
@@ -136,6 +139,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         onTextChange: @escaping (String) -> Void,
         onSaveRequested: @escaping () -> Void = {},
         onCursorChange: ((CMCursorPosition) -> Void)? = nil,
+        onVimModeChange: ((String) -> Void)? = nil,
         onScrollChange: ((CMScrollPosition) -> Void)? = nil,
         onFindResultChange: ((CMFindResult) -> Void)? = nil,
         onHoverRequest: ((CMHoverRequest) -> Void)? = nil,
@@ -173,6 +177,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.onTextChange = onTextChange
         self.onSaveRequested = onSaveRequested
         self.onCursorChange = onCursorChange
+        self.onVimModeChange = onVimModeChange
         self.onScrollChange = onScrollChange
         self.onFindResultChange = onFindResultChange
         self.onHoverRequest = onHoverRequest
@@ -258,6 +263,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         var onTextChange: ((String) -> Void)?
         var onSaveRequested: (() -> Void)?
         var onCursorChange: ((CMCursorPosition) -> Void)?
+        var onVimModeChange: ((String) -> Void)?
         var onScrollChange: ((CMScrollPosition) -> Void)?
         var onFindResultChange: ((CMFindResult) -> Void)?
         var onHoverRequest: ((CMHoverRequest) -> Void)?
@@ -341,6 +347,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.onTextChange = view.onTextChange
             self.onSaveRequested = view.onSaveRequested
             self.onCursorChange = view.onCursorChange
+            self.onVimModeChange = view.onVimModeChange
             self.onScrollChange = view.onScrollChange
             self.onFindResultChange = view.onFindResultChange
             self.onHoverRequest = view.onHoverRequest
@@ -655,6 +662,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 break
             case .editorBlurred:
                 onBlur?()
+            case .vimModeChanged(let mode):
+                onVimModeChange?(mode)
             case .requestHover(_, let line, let character, let replyId):
                 if let handler = onHoverRequest {
                     handler(CMHoverRequest(line: line, character: character, replyId: replyId))
