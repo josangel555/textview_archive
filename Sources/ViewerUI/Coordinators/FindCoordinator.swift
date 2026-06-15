@@ -186,4 +186,29 @@ public final class FindCoordinator: ObservableObject {
 
     public func editorReplaceNext() { editorReplaceNextRequest &+= 1 }
     public func editorReplaceAll() { editorReplaceAllRequest &+= 1 }
+
+    // MARK: Cross-bar next/prev router (⌘G / ⌥⌘G)
+
+    /// True when ANY find bar is open — gates the Find Next/Previous menu
+    /// items so ⌘G/⌥⌘G grey out when there's no active search surface.
+    public var isAnyBarPresented: Bool {
+        isEditorBarPresented || isRenderedBarPresented || isSourceBarPresented
+    }
+
+    /// Advance to the next match on whichever find bar is currently open.
+    /// The three bars are mutually exclusive in practice (the active view
+    /// mode determines which one Cmd+F opened), so the first presented bag
+    /// wins. No-ops when no bar is open — ⌘G has nothing to step through.
+    public func next() {
+        if isEditorBarPresented { editorNext() }
+        else if isRenderedBarPresented { renderedNext() }
+        else if isSourceBarPresented { sourceNext() }
+    }
+
+    /// Step to the previous match on whichever find bar is open (⌥⌘G).
+    public func prev() {
+        if isEditorBarPresented { editorPrev() }
+        else if isRenderedBarPresented { renderedPrev() }
+        else if isSourceBarPresented { sourcePrev() }
+    }
 }

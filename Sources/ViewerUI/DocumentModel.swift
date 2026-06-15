@@ -2231,6 +2231,24 @@ public final class DocumentModel: ObservableObject {
     public func renderedFindNext() { find.renderedNext() }
     public func renderedFindPrev() { find.renderedPrev() }
 
+    /// ⌘G / ⌥⌘G — step the *open* find bar (TSK-946). The previous menu
+    /// items targeted `NSTextView.performFindPanelAction` (NSTextFinder),
+    /// which is inert here because no surface sets `usesFindBar` — our find
+    /// bars are custom. Route to whichever bar is presented instead.
+    public func findNext() { find.next() }
+    public func findPrev() { find.prev() }
+    /// Gates the Find Next/Previous menu items — only meaningful with a bar open.
+    public var canFindNextPrev: Bool { find.isAnyBarPresented }
+
+    /// Gates Find & Replace (⌥⌘F, TSK-949). Replace is only possible on the
+    /// editable CM6 editor surface; the rendered (WKWebView) and source
+    /// (read-only NSTextView) views can't replace. The old handler silently
+    /// degraded ⌥⌘F to plain Find outside the editor — a surprise; greying
+    /// the item makes "replace needs the editor" explicit instead.
+    public var canFindAndReplace: Bool {
+        tabs.selected != nil && currentViewMode == .editor
+    }
+
     // MARK: Find bar (CM6 editor mode) — forwarders
 
     public var isEditorFindBarPresented: Bool {

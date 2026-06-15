@@ -1774,12 +1774,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         findInFolderItem.keyEquivalentModifierMask = [.command, .shift]
         findInFolderItem.target = self
         findSubmenu.addItem(findInFolderItem)
+        // TSK-946: drive the active CUSTOM find bar's next/prev. The old
+        // NSTextFinder action (`performFindPanelAction` + a tag) was inert —
+        // no surface sets `usesFindBar`, our bars are custom — so ⌘G/⌥⌘G did
+        // nothing. Route through DocumentModel to whichever bar is open.
         let findNext = NSMenuItem(
             title: "Find Next",
-            action: #selector(NSTextView.performFindPanelAction(_:)),
+            action: #selector(findNextInPage(_:)),
             keyEquivalent: "g"
         )
-        findNext.tag = NSTextFinder.Action.nextMatch.rawValue
+        findNext.target = self
         findSubmenu.addItem(findNext)
         // Note: ⇧⌘G is reserved for "Go to file or folder" (Finder
         // convention) — see File → Go to… below. Find Previous moves
@@ -1788,11 +1792,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // back; the Option alternative keeps that muscle memory close.
         let findPrev = NSMenuItem(
             title: "Find Previous",
-            action: #selector(NSTextView.performFindPanelAction(_:)),
+            action: #selector(findPrevInPage(_:)),
             keyEquivalent: "g"
         )
         findPrev.keyEquivalentModifierMask = [.command, .option]
-        findPrev.tag = NSTextFinder.Action.previousMatch.rawValue
+        findPrev.target = self
         findSubmenu.addItem(findPrev)
         findSubmenuItem.submenu = findSubmenu
         // TSK-823 follow-up — LSP editor commands (Format / Rename / Code
@@ -2643,6 +2647,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 ? "Remove Bookmark"
                 : "Bookmark This"
             return model.bookmarkTargetURL != nil
+        case #selector(findNextInPage(_:)), #selector(findPrevInPage(_:)):
+            // TSK-946: only steppable while a find bar is actually open.
+            return model.canFindNextPrev
+        case #selector(replaceInPage(_:)):
+            // TSK-949: Find & Replace greys out unless the editor is active
+            // (replace is editor-only; no more silent degrade-to-find).
+            return model.canFindAndReplace
         case #selector(reloadCurrentFile(_:)),
              #selector(findInPage(_:)),
              #selector(closeCurrentTab(_:)),
@@ -2889,16 +2900,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.toggleSourceFindBar()
     }
 
-    /// Cmd+Option+F router — Find & Replace. Replace is only meaningful
-    /// on the editable CM6 editor surface; the rendered and source views
-    /// are read-only, so there we fall back to plain Find rather than
-    /// showing an inert replace row.
+    /// Cmd+Option+F — Find & Replace. Replace only works on the editable CM6
+    /// editor surface; the rendered and source views are read-only. The menu
+    /// item is greyed outside the editor (`canFindAndReplace`, TSK-949), so
+    /// this fires only in editor mode — no more silent degrade-to-find.
     @objc func replaceInPage(_ sender: Any?) {
-        if model.currentViewMode == .editor {
-            model.showEditorReplaceBar()
-            return
-        }
-        findInPage(sender)
+        guard model.currentViewMode == .editor else { return }
+        model.showEditorReplaceBar()
+    }
+
+    /// ⌘G / ⌥⌘G — step the active find bar's match cursor (TSK-946). No-op
+    /// (and the menu item greys via `canFindNextPrev`) when no bar is open.
+    @objc func findNextInPage(_ sender: Any?) {
+        model.findNext()
+    }
+
+    @objc func findPrevInPage(_ sender: Any?) {
+        model.findPrev()
     }
 
     // MARK: - Editor-mode menu items (CM6 Phase 2)

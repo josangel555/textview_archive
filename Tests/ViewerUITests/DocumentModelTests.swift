@@ -1009,6 +1009,43 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertGreaterThan(model.sourceScrollLineNonce, baselineNonce)
     }
 
+    // MARK: - Find menu gates (TSK-946 / TSK-949)
+
+    /// ⌥⌘F (Find & Replace) greys out unless the editor surface is active —
+    /// replace can't run on the read-only rendered/source views.
+    func test_canFindAndReplace_falseWithNoTab() {
+        let model = makeModel()
+        XCTAssertFalse(model.canFindAndReplace, "no tab ⇒ replace disabled")
+    }
+
+    func test_canFindAndReplace_trueInEditorMode() throws {
+        let model = makeModel()
+        let url = try writeFile("code.swift", "let a = 1\n")
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        XCTAssertEqual(model.currentViewMode, .editor)
+        XCTAssertTrue(model.canFindAndReplace, "editor active ⇒ replace enabled")
+    }
+
+    func test_canFindAndReplace_falseInSourceMode() throws {
+        let model = makeModel()
+        let url = try writeFile("code.swift", "let a = 1\n")
+        model.open(url: url)
+        model.setCurrentViewMode(.source)
+        XCTAssertEqual(model.currentViewMode, .source)
+        XCTAssertFalse(model.canFindAndReplace, "read-only source ⇒ replace disabled")
+    }
+
+    /// ⌘G / ⌥⌘G (Find Next/Prev) only enable while a find bar is open.
+    func test_canFindNextPrev_followsOpenBar() {
+        let model = makeModel()
+        XCTAssertFalse(model.canFindNextPrev, "no bar ⇒ next/prev disabled")
+        model.find.showSourceBar()
+        XCTAssertTrue(model.canFindNextPrev, "open bar ⇒ next/prev enabled")
+        model.find.dismissSourceBar()
+        XCTAssertFalse(model.canFindNextPrev, "closed bar ⇒ next/prev disabled again")
+    }
+
     /// Two clicks on the same line must each produce a fresh nonce
     /// so the view re-fires the scroll (otherwise a second click on
     /// the same row after the user scrolled away would be a silent

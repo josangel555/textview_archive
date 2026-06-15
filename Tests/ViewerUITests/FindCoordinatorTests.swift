@@ -204,4 +204,85 @@ final class FindCoordinatorTests: XCTestCase {
         XCTAssertEqual(f.renderedMatchSummary, "a")
         XCTAssertEqual(f.editorMatchSummary, "b")
     }
+
+    // MARK: Cross-bar next/prev router (⌘G / ⌥⌘G, TSK-946)
+
+    func test_router_noBarOpen_isNoOp() {
+        let f = FindCoordinator()
+        XCTAssertFalse(f.isAnyBarPresented)
+        let e0 = f.editorNextRequest, r0 = f.renderedNextRequest, s0 = f.sourceNextRequest
+        let ep0 = f.editorPrevRequest, rp0 = f.renderedPrevRequest, sp0 = f.sourcePrevRequest
+        f.next()
+        f.prev()
+        // ⌘G with nothing open must not bump any bag.
+        XCTAssertEqual(f.editorNextRequest, e0)
+        XCTAssertEqual(f.renderedNextRequest, r0)
+        XCTAssertEqual(f.sourceNextRequest, s0)
+        XCTAssertEqual(f.editorPrevRequest, ep0)
+        XCTAssertEqual(f.renderedPrevRequest, rp0)
+        XCTAssertEqual(f.sourcePrevRequest, sp0)
+    }
+
+    func test_router_editorBarOpen_routesToEditor() {
+        let f = FindCoordinator()
+        f.showEditorBar()
+        let n0 = f.editorNextRequest, p0 = f.editorPrevRequest
+        let r0 = f.renderedNextRequest, s0 = f.sourceNextRequest
+        f.next()
+        f.prev()
+        XCTAssertEqual(f.editorNextRequest, n0 &+ 1)
+        XCTAssertEqual(f.editorPrevRequest, p0 &+ 1)
+        XCTAssertEqual(f.renderedNextRequest, r0, "editor open ⇒ rendered bag untouched")
+        XCTAssertEqual(f.sourceNextRequest, s0, "editor open ⇒ source bag untouched")
+    }
+
+    func test_router_renderedBarOpen_routesToRendered() {
+        let f = FindCoordinator()
+        f.showRenderedBar()
+        let n0 = f.renderedNextRequest, p0 = f.renderedPrevRequest
+        let e0 = f.editorNextRequest, s0 = f.sourceNextRequest
+        f.next()
+        f.prev()
+        XCTAssertEqual(f.renderedNextRequest, n0 &+ 1)
+        XCTAssertEqual(f.renderedPrevRequest, p0 &+ 1)
+        XCTAssertEqual(f.editorNextRequest, e0)
+        XCTAssertEqual(f.sourceNextRequest, s0)
+    }
+
+    func test_router_sourceBarOpen_routesToSource() {
+        let f = FindCoordinator()
+        f.showSourceBar()
+        let n0 = f.sourceNextRequest, p0 = f.sourcePrevRequest
+        let e0 = f.editorNextRequest, r0 = f.renderedNextRequest
+        f.next()
+        f.prev()
+        XCTAssertEqual(f.sourceNextRequest, n0 &+ 1)
+        XCTAssertEqual(f.sourcePrevRequest, p0 &+ 1)
+        XCTAssertEqual(f.editorNextRequest, e0)
+        XCTAssertEqual(f.renderedNextRequest, r0)
+    }
+
+    func test_router_editorWinsWhenMultiplePresented() {
+        // Defensive: bars are mutually exclusive in practice, but if more
+        // than one flag is set the router must pick deterministically
+        // (editor → rendered → source), never bump two bags at once.
+        let f = FindCoordinator()
+        f.showEditorBar()
+        f.showRenderedBar()
+        f.showSourceBar()
+        let e0 = f.editorNextRequest, r0 = f.renderedNextRequest, s0 = f.sourceNextRequest
+        f.next()
+        XCTAssertEqual(f.editorNextRequest, e0 &+ 1)
+        XCTAssertEqual(f.renderedNextRequest, r0)
+        XCTAssertEqual(f.sourceNextRequest, s0)
+    }
+
+    func test_isAnyBarPresented_reflectsState() {
+        let f = FindCoordinator()
+        XCTAssertFalse(f.isAnyBarPresented)
+        f.showSourceBar()
+        XCTAssertTrue(f.isAnyBarPresented)
+        f.dismissSourceBar()
+        XCTAssertFalse(f.isAnyBarPresented)
+    }
 }
