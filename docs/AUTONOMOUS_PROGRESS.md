@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — Security diligence: committed-secret scan (CLEAN) + VM down 6th tick
+
+VM unreachable a 6th tick; all high-value work still owner-gated (VM restore + Stage-B reviews + parked
+feature decisions — unchanged, escalation current in HANDOFF). Re-scanned for any safe/clean/non-gated
+host work; the only promising perf lead (TSK-564) turned out mostly-shipped (recorded on its ticket).
+Rather than a 3rd bare HOLD or manufactured marginal/risky code, did a genuine, zero-risk, host-doable
+SECURITY diligence pass (security = the SOP's #1 fallback pool; the repo ships-public-eventually).
+
+**Committed-secret scan — CLEAN.** `git grep` over all tracked files found NO real secrets. Patterns
+(reusable as a pre-public-release checklist — re-run when Developer-ID signing lands):
+- `AKIA[0-9A-Z]{16}` (AWS), `gh[pousr]_[A-Za-z0-9]{20,}` / `github_pat_…` (GitHub),
+  `BEGIN …PRIVATE KEY` (PEM), `xox[baprs]-…` / `sk_live_…` / `AIza…` (Slack/Stripe/Google),
+  and generic `(api_key|secret|access_token|client_secret|password)[:=]…{24,}` over
+  `*.swift/*.rs/*.json/*.sh/*.plist/*.yml`, excluding test/mock/fixture/example/placeholder.
+- Only credential-like string in the repo: the intentional LOCAL-DEV UTM VM password (`<vm-sudo-password>` +
+  `vm-tester@<vm-ip>`, CLAUDE.md) — a throwaway local VM, deliberately documented, not a real secret.
+Recorded on TSK-859 (the secret-verify ticket, wontdo — stands). No code change (repo already clean);
+not wired as a gate step (false-positive risk on the velocity-critical merge gate isn't worth it while
+the repo is clean — kept as a documented pre-release check instead).
+
 ## LOG 2026-06-15 — HOLD (VM down 4 ticks) + NEW finding: the Rust-migration endgame is owner-gated
 
 VM unreachable for a 4th tick (`ssh macOS15` timeout) → review-drain still blocked. Exhaustive re-scan
