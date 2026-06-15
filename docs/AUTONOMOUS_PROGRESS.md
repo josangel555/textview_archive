@@ -1324,6 +1324,13 @@ foundation slice of a Section-C epic instead of rushing a risky item or holding:
   WORK_QUEUE + no CHANGELOG line.
 
 ## DECISIONS NEEDED (consolidated — would each unblock a clean firing)
+- **TSK-698** (JS console safe-execution — PARKED 2026-06-14): how to bound a runaway script so it can't hang the
+  app, before the console UI (slice 3). Engine (slice 1) shipped + sandboxed. The clean preemptive fix
+  (`JSContextGroupSetExecutionTimeLimit`) is SPI (not in Swift's public JavaScriptCore). Fork: **(A)** SPI via a C
+  shim — true preemption but private API blocks the future public-shipping goal; **(B, recommended for v1)**
+  off-main + soft timeout — portable, UI never hangs, but a truly-infinite script leaks one CPU-spinning thread
+  until quit; **(C)** subprocess isolation — fully safe + killable, heavy. (Also confirm sandboxed arbitrary JS vs
+  a JQ-subset.) Parked on the board.
 - **TSK-343** (local file-history/revert): enable snapshot-on-save by default (VS Code-style) or opt-in? +
   retention defaults? Store is built+tested; only the privacy default blocks the wiring.
 - **TSK-358** (absolute font-size): how should an absolute content font-size interact with the zoom
