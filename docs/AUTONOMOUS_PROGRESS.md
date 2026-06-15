@@ -1,5 +1,32 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-926/927 CLI (reconcile+teeth) + TSK-950 Find-References menu/palette (→ review)
+
+Batched a CLI reconcile with the next parity-audit gap.
+
+**TSK-926 + TSK-927 (CLI open + stdin) — ALREADY BUILT, reconciled with new teeth.** The `mdv`
+shim (`scripts/install-mdv-cli.sh`) already does `mdv file`/`mdv folder` (→ `open -a MarkdownViewer`,
+which hits the argv-open path in `main.swift`) AND `mdv -` / `echo … | mdv -` (stdin → temp `.md` →
+open) — so both 926 and 927 were shipped. To make the reconcile honest (the argv parsing had NO host
+test), extracted the AppDelegate's inline argv loop into a pure `ViewerCore.LaunchArgs.parse` (flags +
+positional paths; `--auto-snapshot`/`--script`/`--walkthrough` consume their value; unknown `--…`
+ignored, not collected as paths) and switched `main.swift` to it. Teeth: 9 `LaunchArgsTests`
+(empty/single/multi-path order/folder/diagnose+source/auto-snapshot value+bad-value/script+walkthrough/
+unknown-flags-not-paths). Install: `bash scripts/install-mdv-cli.sh` (→ `/usr/local/bin/mdv`).
+
+**TSK-950 (LSP Find-References → menu + palette) — NEW.** References was source-view right-click only
+(`LSPHoverAttachment`). Added `DocumentModel.findReferencesAtCursor()` (mirrors
+`navigateViaLSPAtCursor`: active tab + editor cursor + LSP-language guard → `lspPool.references` →
+`lspNavigation.setReferences`, the SAME store the hover menu populates — so it's parity, not a new
+panel) + `canFindReferences` gate + a `#if DEBUG _lastReferencesRequest` dispatch seam. Surfaced as
+**Navigate ▸ Find References** (editor-mode-gated, with the go-to siblings) and the `lsp.findReferences`
+palette command (scriptVerb `editor-find-references`). Teeth: 6 `LSPGotoCommandTests` (dispatch at
+cursor w/ 1→0-based conversion; via script verb; no-cursor no-op; non-LSP no-op; canFindReferences
+gate; catalog carries the command). The live-LSP resolution + panel render = VM tail (same as the
+existing references feature).
+
+Headless gate green; executable compiles. All three → review.
+
 ## LOG 2026-06-14 — TSK-915 + TSK-916 + TSK-934 file-nav refresh/reload + breadcrumb menu (→ review)
 
 Drained three file-nav queue items in one gated batch.

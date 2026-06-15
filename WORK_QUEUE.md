@@ -64,14 +64,14 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-901** — Auto-detect content type (CSV/JSON/language) for unknown/misnamed files
 
 **P3 — bigger / design-first / epics:**
-- [ ] **TSK-926 / 927** — CLI: open file/folder in TextView · pipe stdin → tab `(353)`
+- [x] **TSK-926 / 927** — CLI: open file/folder in TextView · pipe stdin → tab `(353)` `[review 5749369 — ALREADY BUILT: mdv shim (install-mdv-cli.sh) does file/folder + 'mdv -' stdin→temp→open over argv-open; extracted host-tested LaunchArgs.parse (9 teeth)]`
 - [x] **TSK-930** — Named saved sessions (save/list/delete + tool-window state) `[review — ALREADY BUILT: sessions persist tabs+panelLayout, list/rename/delete/restore]`
 - [x] **TSK-939** — Parity audit `[review; docs/PARITY_AUDIT_2026-06-14.md — matrix + 10 gaps + Viewer verdict; surfaced 6 follow-ups TSK-946..951 (4 latent bugs + 2 gaps)]`
   - [x] **TSK-946** — Find Next/Prev (⌘G/⌥⌘G) inert (B4) `[review; ee78398 — FindCoordinator.next()/prev() router + canFindNextPrev gate, 8 teeth; ⌘G stepping render=VM]`
   - [ ] **TSK-947** — ⌘F dead in HTML-rendered + over editor size-cap (B5)
   - [ ] **TSK-948** — Source code folding dead-wired (B10)
   - [x] **TSK-949** — Find&Replace (⌥⌘F) not greyed outside editor (B6) `[review; ee78398 — canFindAndReplace gate (editor-only), 3 teeth; greyed-item render=VM]`
-  - [ ] **TSK-950** — LSP Find-References no menu/palette (B7)
+  - [x] **TSK-950** — LSP Find-References no menu/palette (B7) `[review 842d5fe — findReferencesAtCursor → Navigate ▸ Find References + lsp.findReferences palette cmd, 6 teeth; live-LSP+panel render=VM]`
   - [ ] **TSK-951** — palette-parity umbrella (B1+B2, ~40 menu-only cmds)
 - [ ] **TSK-897** — Editor missing many languages' highlighting (reopen TSK-362) `[triage]`
 - [ ] **TSK-940..945** — Agent integration: review/approve agent diffs · line-ref-to-agent · LSP/diag sharing · browser MCP · security audits `(687, epic→slices)`
