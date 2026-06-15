@@ -139,40 +139,55 @@ final class CrossFileSearchBenchTests: XCTestCase {
         s += "needle lives here\n"
 
         // OLD path: allocate String per line, then range-check.
-        let t0 = Date()
-        var oldHits = 0
-        let lines = s.split(separator: "\n", omittingEmptySubsequences: false)
-        for lineSub in lines {
-            let line = String(lineSub)
-            if line.range(of: "needle", options: [.caseInsensitive]) != nil {
-                oldHits += 1
+        func runOld() -> Int {
+            var hits = 0
+            for lineSub in s.split(separator: "\n", omittingEmptySubsequences: false) {
+                let line = String(lineSub)
+                if line.range(of: "needle", options: [.caseInsensitive]) != nil { hits += 1 }
             }
+            return hits
         }
-        let oldMs = Date().timeIntervalSince(t0) * 1000
-
         // NEW path: range-check Substring, only allocate on hit.
-        let t1 = Date()
-        var newHits = 0
-        let lines2 = s.split(separator: "\n", omittingEmptySubsequences: false)
-        for lineSub in lines2 {
-            if lineSub.range(of: "needle", options: [.caseInsensitive]) != nil {
-                _ = String(lineSub)  // simulate materialization on hit
-                newHits += 1
+        func runNew() -> Int {
+            var hits = 0
+            for lineSub in s.split(separator: "\n", omittingEmptySubsequences: false) {
+                if lineSub.range(of: "needle", options: [.caseInsensitive]) != nil {
+                    _ = String(lineSub)  // simulate materialization on hit
+                    hits += 1
+                }
             }
+            return hits
         }
-        let newMs = Date().timeIntervalSince(t1) * 1000
 
-        XCTAssertEqual(oldHits, 1)
-        XCTAssertEqual(newHits, 1)
+        // TSK-952: this bench used a SINGLE wall-clock sample per path, so a
+        // scheduler/GC spike on the one `newMs` reading under machine load
+        // flaked the ratio assertion (a recurring red across CI/agent gate runs,
+        // always bench-only). Fix: take the BEST (min) of several runs. The
+        // minimum is the least load-contaminated estimate of true compute cost —
+        // load only ADDS time — so this kills the single-sample flakiness WITHOUT
+        // loosening the 1.5x regression threshold: a genuine regression slows
+        // EVERY run, including the min, so the teeth survive.
+        func bestMs(_ body: () -> Int) -> Double {
+            var best = Double.greatestFiniteMagnitude
+            for _ in 0..<5 {
+                let t = Date()
+                let hits = body()
+                best = min(best, Date().timeIntervalSince(t) * 1000)
+                XCTAssertEqual(hits, 1)
+            }
+            return best
+        }
+
+        let oldMs = bestMs(runOld)
+        let newMs = bestMs(runNew)
         let ratio = oldMs / max(newMs, 0.001)
-        print("[CrossFileSearch] per-line bench (50K lines, 1 hit): " +
+        print("[CrossFileSearch] per-line bench (50K lines, 1 hit, best-of-5): " +
               "old=\(oldMs) ms, new=\(newMs) ms, speedup=\(ratio)x")
 
-        // The new path must not be slower than the old one. We don't
-        // assert a specific speedup factor — Swift's String impl may
-        // optimize String(lineSub) into a no-op shared-storage init in
-        // future toolchains, narrowing the gap. The load-bearing
-        // assertion is "new is not a regression vs old".
+        // The new path must not be slower than the old one (best-of-5 → load-
+        // robust). We don't assert a specific speedup factor — Swift's String
+        // impl may optimize String(lineSub) into a shared-storage no-op in a
+        // future toolchain, narrowing the gap. Load-bearing: "new is no worse".
         XCTAssertLessThanOrEqual(newMs, oldMs * 1.5,
             "new per-line path should be no worse than old (within 1.5x noise)")
     }

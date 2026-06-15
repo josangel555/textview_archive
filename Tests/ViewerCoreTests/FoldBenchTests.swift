@@ -25,19 +25,25 @@ final class FoldBenchTests: XCTestCase {
         let lineCount = b.split(separator: "\n", omittingEmptySubsequences: false).count
         XCTAssertGreaterThanOrEqual(lineCount, 10_000)
 
-        TreeSitterEngine.shared._testOnly_clearFoldCaches()
-        let t0 = Date()
-        let regions = TreeSitterEngine.shared.computeFoldsSync(
-            text: b, language: .json
-        )
-        let elapsedMs = Date().timeIntervalSince(t0) * 1000
-        print("[FoldBench] 10K-line JSON cold compute: \(elapsedMs) ms, " +
-              "\(regions.count) regions")
-        XCTAssertGreaterThan(regions.count, 2000,
+        // TSK-952: best-of-3 cold computes (cache cleared each) — the single
+        // wall-clock sample flaked under machine load. Min = least-noisy true
+        // cost; a real cliff (e.g. quadratic) still blows past 250 ms on the min.
+        var coldBest = Double.greatestFiniteMagnitude
+        var regionCount = 0
+        for _ in 0..<3 {
+            TreeSitterEngine.shared._testOnly_clearFoldCaches()
+            let t0 = Date()
+            let regions = TreeSitterEngine.shared.computeFoldsSync(text: b, language: .json)
+            coldBest = min(coldBest, Date().timeIntervalSince(t0) * 1000)
+            regionCount = regions.count
+        }
+        print("[FoldBench] 10K-line JSON cold compute (best-of-3): \(coldBest) ms, " +
+              "\(regionCount) regions")
+        XCTAssertGreaterThan(regionCount, 2000,
                              "expected one fold per object")
         // Generous ceiling — design target is <50 ms; this guards the
         // engine never accidentally falls off a cliff (e.g. quadratic).
-        XCTAssertLessThan(elapsedMs, 250)
+        XCTAssertLessThan(coldBest, 250)
     }
 
     func testWarmCacheIsConstantTime() async {
@@ -48,11 +54,17 @@ final class FoldBenchTests: XCTestCase {
         b += "  null\n]\n"
 
         TreeSitterEngine.shared._testOnly_clearFoldCaches()
-        _ = await TreeSitterEngine.shared.computeFolds(text: b, language: .json)
-        let t0 = Date()
-        _ = await TreeSitterEngine.shared.computeFolds(text: b, language: .json)
-        let warmMs = Date().timeIntervalSince(t0) * 1000
-        print("[FoldBench] warm-cache lookup: \(warmMs) ms")
-        XCTAssertLessThan(warmMs, 5)
+        _ = await TreeSitterEngine.shared.computeFolds(text: b, language: .json)  // warm it
+        // TSK-952: best-of-5 warm lookups. A single sample at a <5 ms threshold
+        // is extremely spike-prone (one scheduler hiccup → red); the min of a
+        // pure cache hit is stable and still catches a real warm-path regression.
+        var warmBest = Double.greatestFiniteMagnitude
+        for _ in 0..<5 {
+            let t0 = Date()
+            _ = await TreeSitterEngine.shared.computeFolds(text: b, language: .json)
+            warmBest = min(warmBest, Date().timeIntervalSince(t0) * 1000)
+        }
+        print("[FoldBench] warm-cache lookup (best-of-5): \(warmBest) ms")
+        XCTAssertLessThan(warmBest, 5)
     }
 }

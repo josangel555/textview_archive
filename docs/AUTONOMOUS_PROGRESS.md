@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — TSK-952 flaky perf benches (single-sample → best-of-N) (→ review)
+
+VM still down (3rd tick — `ssh macOS15` timeout), host feature pool scraped, review pile correctly
+VM/owner-gated (self-validating those would over-claim the render). Rather than repeat the HOLD or
+manufacture a marginal VM-tail slice, fixed a CONCRETE, host-validatable, recurring problem: the perf
+benches that flake the gate under load (bitten 4+ times this session, always bench-only — which masks
+real reds and wastes re-runs on the owner's velocity bottleneck).
+
+Root cause: each bench took a SINGLE wall-clock sample, then asserted a threshold — a scheduler/GC spike
+on that one sample flaked it. Fix (TSK-952): take the BEST (min) of N runs per measurement. The minimum
+is the least load-contaminated estimate of true compute cost (load only ADDS time), so this kills the
+single-sample flakiness WITHOUT loosening any threshold — a genuine regression slows EVERY run including
+the min, so the teeth survive.
+- `CrossFileSearchBenchTests` (per-line substring-reject ratio): best-of-5 → stable 1.007x (was flaking
+  at 0.66x under load). Self-contained inline micro-bench (NOT the CrossFileSearch engine) → §2.5-irrelevant.
+- `FoldBenchTests`: cold-compute best-of-3 (<250ms), warm-cache best-of-5 (<5ms — the most spike-prone,
+  a single sample at a 5ms threshold flaked on one hiccup).
+- Left alone (not flaky): HexDumpBuilder microbench (500ms threshold = ~100x headroom), TextFileLoaderBench
+  (prints only, no time assert).
+
+Test-only change (no Sources/ touched) — not user-facing, so no CHANGELOG line. Targeted benches pass
+(stable numbers logged); headless gate green. Validated on the host (the change IS test-harness logic,
+fully host-exercised). → review.
+
 ## LOG 2026-06-15 — DOCUMENTED HOLD: host pool scraped + VM down (2 ticks) — escalating the blocker
 
 A no-op-on-shipping tick by deliberate, honest choice (§5 + the anti-paper-cut escalation), NOT premature
