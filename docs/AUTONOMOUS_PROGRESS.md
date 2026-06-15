@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-15 — TSK-769 terminal favorites slice (→ review)
+
+The clean host-buildable WORK_QUEUE pool is drained (remaining = VM/first-responder/trace/epic/owner-
+input) and the **VM is unreachable** this tick (ssh timed out → the review-pile validation drain, the
+standing top lever, is blocked). Per the owner's "don't HOLD — build VM-tail features" directive, picked
+the next genuine host-buildable feature: the **favorites** slice of the TSK-769 terminal-UX bundle.
+(Confirmed the rust-core epic is drained/excluded, TSK-343 revert is owner-blocked on the parked
+history-default decision, and the terminal is a real PTY so shell history already covers up-arrow.)
+
+New `ViewerCore.TerminalFavoritesStore` (pure host model): a user-curated, hand-editable JSON list of
+favorite commands — `add` (dedupe-to-front, trim, cap 100), `remove`, `reload`, load-time blank/dupe
+sanitation, JSONFileStore persistence. `DocumentModel.terminalFavorites` + `insertTerminalFavorite(_:)`
+(opens the pane, types the command at the prompt WITHOUT a newline so the user reviews + runs; blank →
+no-op). main.swift: a dynamic **View ▸ Terminal Favorites** submenu (NSMenuDelegate-rebuilt from the
+store, mirroring the Language/Recents menus) → insert on click, + "Edit Favorites…" (opens the JSON) +
+"Reload Favorites".
+
+Teeth: 10 host tests — 8 `TerminalFavoritesStoreTests` (prepend+persist roundtrip / blank-reject /
+dedupe-to-front / trim / remove / displayLabel fallback / cap / hand-edited-file sanitation) + 2
+`DocumentModelTests` (insert blank-guard no-ops before spawning a PTY; favorites accessor round-trips).
+Headless gate green; executable compiles. The menu's on-screen appearance + the actual PTY insertion are
+the VM render tail. TSK-769 stays `[~]` — the other bundle slices (history-search, colors, tab border)
+remain. → review.
+
 ## LOG 2026-06-15 — TSK-901 content auto-detect for misnamed JSON/CSV files (→ review)
 
 The JSON/CSV menu tools gated purely on extension (`canMinifyActiveJSON` → `.json`,

@@ -156,7 +156,7 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 
 ## B. [PARTIAL] slice continuations (chip the remaining gaps)
 
-- [ ] **TSK-769** — Terminal UX bundle: remaining slices (command history + favorites + search, colors, tab shoulder border). `[slice]` done: open-in-pwd, tab-rename, copy-trimmed.
+- [~] **TSK-769** — Terminal UX bundle: remaining slices (command history + favorites + search, colors, tab shoulder border). `[slice]` done: open-in-pwd, tab-rename, copy-trimmed, **favorites** `[review 278a0fa — TerminalFavoritesStore + View ▸ Terminal Favorites menu, 10 teeth; menu+PTY-insert=VM]`. Shell handles up-arrow history (PTY). Remaining: history-search, colors, tab border.
 - [x] **TSK-348** — Deep metadata: remaining (richer PDF + AV/video fields; XMP). `[slice]` done: FS perms/owner/inode, image EXIF/GPS.
       `[validated 575c1c5]` — PDF: +Subject/Keywords/Creator/Created/Modified/Page-Size/Encrypted; AV: +Video/Audio codec (FourCC→name). Pure host-tested builders (pdfRows + MediaCodecName) + real-PDF fixture test; panel auto-renders (no new UI). XMP still remaining (separate parse).
 - [x] **TSK-352** — NotePad++ tools: remaining (column/block select, macro record/replay, encoding convert). `[slice]` done: 15 clipboard transform tools.
