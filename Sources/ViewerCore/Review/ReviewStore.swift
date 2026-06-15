@@ -113,6 +113,15 @@ public final class ReviewStore: Sendable {
         return review
     }
 
+    /// Reviews scoped to a specific commit (TSK-909) — the lazy list behind the
+    /// Git-log right-click "Reviews" submenu. `ReviewSummary` doesn't carry the
+    /// scope, so this loads each review; it's a cold path (runs only when the
+    /// submenu is opened). Newest-first (inherits `list()`'s ordering).
+    public func reviews(forCommit sha: String) -> [Review] {
+        list().compactMap { load(id: $0.id) }
+            .filter { $0.scope == .commit(sha: sha) }
+    }
+
     /// Remove a review's JSON file from disk. Best-effort.
     public func delete(id: String) {
         let url = fileURL(for: id)

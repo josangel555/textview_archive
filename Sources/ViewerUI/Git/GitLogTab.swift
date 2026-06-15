@@ -188,6 +188,19 @@ struct GitLogTab: View {
         // structured diff with the add-comment affordance, in the Review tab.
         .contextMenu {
             Button("Review Commit…") { model.openCommitReview(sha: c.sha) }
+            // TSK-909: lazy list of reviews that include this commit — the
+            // closure (and its ReviewStore read) runs only when the submenu
+            // opens, so it never touches the right-click hot path.
+            Menu("Reviews") {
+                let reviews = model.reviewsForCommit(c.sha)
+                if reviews.isEmpty {
+                    Button("No reviews for this commit") {}.disabled(true)
+                } else {
+                    ForEach(reviews) { r in
+                        Button(r.title) { model.openReview(id: r.id) }
+                    }
+                }
+            }
         }
     }
 

@@ -252,6 +252,13 @@ public final class GitPanelModel: ObservableObject {
         selectTab(.review)
     }
 
+    /// TSK-909: reviews scoped to `sha` for the Git-log right-click "Reviews"
+    /// submenu (lazy — called only when the submenu opens). Empty when no repo.
+    public func reviewsForCommit(_ sha: String) -> [Review] {
+        guard let root = repoRoot else { return [] }
+        return ReviewStore.projectLocal(repoRoot: root).reviews(forCommit: sha)
+    }
+
     /// Open an existing review from the index list (Stage 3 row click).
     public func openReview(id: String) {
         guard let root = repoRoot else { return }
