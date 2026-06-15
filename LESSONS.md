@@ -5,6 +5,30 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## VM UAT validation spawns a STALE `dist/` unless you rebuild it first (2026-06-15, VM-drain)
+- The `rsync` to the VM EXCLUDES `dist/` (`--exclude='dist/'`), and `scripts/test-in-vm.sh test` mode
+  runs the suite but does NOT rebuild `dist/` (only `build_all` / the `all` mode runs `build-app.sh`).
+  So the **T4 LiveAppTestCase / *UATTests / PixelTest tiers spawn whatever `dist/TextView.app` was last
+  built ON the VM** — which can be a MONTH stale (a long VM-down gap leaves a long-stale bundle).
+- SYMPTOM that nearly fooled me: a stage-2 GUI run showed 54 UAT "failures" incl.
+  `Cm6EditorUATTests: editor-save did not persist the edit to disk` / `document landed in .error state`
+  — a textbook "critical data-loss regression" alarm. FALSE: the headless save tests (EditorWriter
+  round-trip) passed on current `main` in stage 1, and the VM `dist/` binary mtime was `May 16` (≈1 month
+  old) — the UAT was testing a stale app, not current `main`.
+- RULE: a VM **render/UAT validation MUST run `test-in-vm.sh all`** (or `build-app.sh debug` first) so
+  `dist/` rebuilds to current `main` BEFORE trusting any live-app/UAT/pixel result. Before treating a UAT
+  failure as a real regression, check `stat -f "%Sm" dist/TextView.app/Contents/MacOS/MarkdownViewer` on
+  the VM vs `git log -1`. Stale `dist/` ⇒ the result is meaningless. `test-in-vm.sh test` is fine for the
+  HEADLESS forward-compat check (no app spawn) but is the WRONG mode for render/UAT validation.
+
+## VM GUI-lane false-failures: 0 headless → N GUI is usually env/stale, not N regressions (2026-06-15)
+- A 0→N failure jump on IDENTICAL code between the headless run (`test-in-vm.sh test`, 0 failures) and the
+  GUI lane (heavy tiers un-skipped) is the signal to SUSPECT environment/harness (stale `dist/` above; or
+  the `launchctl asuser`→root bridge / TCC / fd) BEFORE concluding N real regressions. Diagnose by:
+  (a) check `dist/` freshness, (b) re-run ONE failing class in isolation, (c) read the actual assertion —
+  the JUnit only says "see swift test output", so the reasons live in the swift-test stdout: capture FULL
+  output, NOT `… | tail -50` (that truncates the per-test failures, leaving only the summary count).
+
 ## `Formatter.SupportedFormat.detect` is a VIEW-MODE change, not just a formatter change (2026-06-14, TSK-350)
 - Adding an extension to `Formatter.SupportedFormat.detect` does TWO things, not one: it gates the Pretty-Print
   COMMAND/`supportsFormatToggle` (DocumentModel reads `detect(url) != nil`) AND, paired with a SEPARATE list

@@ -1,38 +1,75 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — host feature pool scraped; VM-down blocks the top lever  (2026-06-15)
+# Handoff — VM back; validation drain in flight (stage 2b re-running vs fresh dist/)  (2026-06-15 00:30)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `25cf469`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `e6033e9`
 
 ## Mission
-Autonomous loop: drain `WORK_QUEUE.md` top-down, ship host-validated work (host-test the model, leave render at `review`), keep `main` headless-gate-green, commit per item, log. Fallback when the queue's host items drain: groomed pools (security/rust-core/parity/theming) → fixed-lane validation drain.
+Autonomous loop. Right now: the UTM VM is BACK after ~15 ticks down, so the top lever — the VM
+render-validation drain of the ~70-item `review` pile → `done` — is finally running. Land it, then resume
+WORK_QUEUE / groomed-pool work.
 
-## Current state (READ THIS FIRST)
-- **`WORK_QUEUE.md` host-buildable pool is DRAINED.** Every remaining unchecked item is one of: VM-render / first-responder (910, 905, 906, 893-896, 917, 921/922, 898, 924, 936-938, 947, 766, 704, 708, 463, 470, 495, 506, 668, 912), a perf **trace** (P0: 892, 887, 888, 889, 890/891/895, 908, 839, 838), an **epic** (670, 711, 679, 280, 318, 319, 677, 940-945), or **owner-input** (733, 791, 751, 709). Verified this tick by re-scan.
-- **🔴 THE UTM VM IS DOWN (2 ticks running — `ssh macOS15` times out at <vm-ip>:22).** This is the dominant blocker: it gates BOTH the ~49-item `review` → `done` **validation drain** (the highest-leverage work) AND render-validation of any new VM-tail feature. **Shipping more VM-tail features while the VM is down just GROWS the unvalidatable review pile** — the bottleneck is VM validation, not feature-building.
-- **rust-core epic (TSK-538) is drained** — almost all children `validated`; the open ones are excluded (perf-internal lane 543/564/574), dep-gated (584/585/587), front-end/last-resort (573), or large infra (586 golden-corpus, 588 perf-bench — host-validatable but P3/internal-quality, which the owner de-prioritizes).
-- **Tree clean** except pre-existing untracked `archive/Untitled.txt` + `untitled2.md` (NOT ours).
-- **Headless gate green** (~5800 tests). NOTE: the gate flakes on `CrossFileSearchBench` wall-clock under load — re-run before trusting a red; confirm the failure isn't bench-only.
+## Current state
+- **Done + verified this session:** **VM stage 1 (headless) = 5813 tests / 0 failures** on Swift 6.3
+  (`test-in-vm.sh test`) — current `main` is fully forward-compat; Rust path solid (CSV 0.50×). Earlier
+  in the day shipped 12 commits (find-menu, file-nav, CLI, palette-parity, content-detect, terminal-
+  favorites, bench fix, secret-scan script) — all at `review`/`validated`, gate-green.
+- **🔴 IN FLIGHT — VM stage 2b is running in the background** (`bzglu8tx3`):
+  `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh all`
+  → output on the VM at `/tmp/mdv-stage2b.log`, JUnit at `/tmp/mdv-test-results.xml`. `all` rebuilds
+  `dist/` FRESH (`build_all`) then runs the full GUI pyramid vs current `main`. ~25 min. **Wait for it.**
+- **Why stage 2b:** stage 2 (first GUI run) showed 54 UAT "failures" — but they were against a STALE
+  `dist/` (May 16 binary; rsync excludes `dist/`, `test` mode doesn't rebuild it). NOT real regressions
+  (headless save tests pass on current `main`). See the stale-dist lesson below. Stage 2b is the
+  CORRECT re-run vs a freshly-built bundle.
 
-## Recent ticks (all shipped → `review`, VM render-tail; host models tested + gated)
-946/949 find-menu (⌘G/⌥⌘G router + ⌥⌘F gate) · 915/916/934 file-nav Refresh/Reload-from-Disk + breadcrumb context-menu · 926/927 CLI (LaunchArgs) + 950 LSP Find-References menu/palette · 951 palette-parity slice (view toggles + edit transforms) · **901 content-detect (JSON/CSV for misnamed files) — self-VALIDATED (host-tested, no VM tail)** · 769 Terminal Favorites slice.
+## Next action (when stage 2b completes)
+1. Read `bzglu8tx3` output / the VM `/tmp/mdv-stage2b.log` + parse `/tmp/mdv-test-results.xml` for failing
+   testcases (grep `<testcase ...><failure`). Note JUnit only says "see swift test output" — the real
+   assertions are in the stdout log (full, not tail).
+2. If the live-app/UAT/pixel tiers are now GREEN vs fresh `dist/` → the 54 were stale-bundle false
+   failures. Then DRAIN: drive `review` items whose dedicated VM render test passed → `validated`
+   (`task_validate` with the VM checks artifact); list owner-glance-only items for the owner's `done`.
+3. If some UAT still FAIL vs fresh `dist/` → those are REAL regressions from ~15 days of un-VM-validated
+   UI features. Re-run each failing class in isolation, read the assertion, file a board bug + fix.
 
-## Next action (decision tree)
-1. **Is the VM back?** `ssh -o ConnectTimeout=10 macOS15 'echo ok'`. If YES → **run the validation drain** (the top lever): `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh` (+ `MDV_RUN_WEBVIEW_TESTS=1` for the #192 suites). Validate the ~49 `review` items' render-tails → drive to `validated`/`done`. This is worth far more than any new host slice.
-2. **VM still down?** Re-scan WORK_QUEUE for any GENUINELY host-shippable item (don't assume empty — re-scan has surfaced work before). If only marginal-on-the-host slices remain, **don't manufacture them** (they grow the unvalidatable pile) — prefer a documented HOLD that keeps the blocker visible. Owner directive "don't HOLD, build VM-tail features" is satisfied here BECAUSE the buildable-with-real-host-value pool is empty + the bottleneck is external.
-3. **Genuinely want host-validatable NON-VM work?** The rust-core infra items (586 golden corpus, 588 perf-floor bench) are host-validatable (rust-core gate, no VM) and serve the owner's Rust-core direction — but they're large/internal; slice carefully (spike auto-approved per §0.5).
+## Key decisions & rationale
+- Ran the VM drain in stages (headless `test` first, then GUI `all`) to de-risk — a build/forward-compat
+  failure would waste the heavy lane. Stage 1 green confirmed the VM validates current `main`.
+- Did NOT alarm the owner about "editor-save data-loss" — checked `dist/` freshness first and found the
+  stale bundle. Homework before escalation.
+- Did NOT override the parked TSK-810 (option C) — a pending human decision; respect the gate.
 
-## Open questions / blockers (DECISIONS NEEDED — also in docs/AUTONOMOUS_PROGRESS.md)
-1. **🔴 Restore the UTM VM** — unreachable 4 ticks (as of 2026-06-15); unblocks the ~49-item `review` → `done` validation drain (single highest-leverage action) + all render validation.
-2. **🔴 Advance the Rust deprecation (Stage B, TSK-649) — the owner's #1 direction, mid-flight + owner-gated.** Stage A done (all 10 capabilities route Rust by default). Stage B deletions: #1 indent (808) + #4 diff (809) done; **#2/#3 hex (TSK-810) PARKED on your A/B/C carve-out decision** (agent rec: A, keep-fallback); **#5-9 (csv/fuzzy/find/transcript/markdown) need your per-package review**. Blocked solely on you. (Do NOT override the 810 park by doing option C — it's a pending human decision.)
-3. **TSK-698** — JS-over-JSON safe-exec model (SPI timeout / off-main+thread-leak / subprocess) — PARKED, owner pick.
-4. **TSK-343** — local-history default ON vs opt-in + retention (`LocalHistoryStore` built; gates the snapshot trigger + revert) — PARKED.
-5. **TSK-733 / TSK-751 / TSK-709** — session-switch save / menu reorg / ⌘K↔⌘G unify — PARKED, need owner framing.
+## Gotchas / lessons (also in LESSONS.md + CLAUDE.md VM workflow)
+- **STALE-`dist/` TRAP:** VM render/UAT validation MUST use `test-in-vm.sh all` (rebuilds `dist/`), NOT
+  `test` (spawns whatever `dist/` was last built on the VM — can be a month stale → false UAT failures).
+  Verify: `ssh macOS15 'stat -f "%Sm" markdown_viewer/dist/TextView.app/Contents/MacOS/MarkdownViewer'`
+  vs `git log -1`.
+- VM JUnit `<failure>` only says "see swift test output" — capture FULL VM stdout, never `… | tail -N`.
+- 0-headless → N-GUI failure jump = suspect env/stale before concluding N regressions; isolate one class.
 
-## What's been done since this handoff's last rewrite (SHA 25cf469 → 669f8c8)
-TSK-952 flaky-bench fix (best-of-N denoise, validated) · TSK-564 zombie released · this HOLD tick. The 5 ticks since the WORK_QUEUE drained have confirmed: no clean host-shippable feature work remains un-gated; the bottleneck is the VM + the Stage-B owner reviews.
+## Files that matter
+- `scripts/test-in-vm.sh` — `test` (headless) vs `all` (build_all rebuilds dist/ + full suite); GUI lane
+  via `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>`, WebView via `MDV_RUN_WEBVIEW_TESTS=1`.
+- `scripts/check-no-secrets.sh` — new this session (pre-public-release committed-secret scan, TSK-859).
+- VM mirror: `macOS15:~/markdown_viewer` (rsync target; excludes `.build/`/`dist/`/`.swiftpm/`).
+
+## Open questions / blockers
+- **🔴 TSK-810** (Stage-B hex carve-out) — owner-decision, still `waiting:human`. Agent rec **A** (keep
+  the Swift fallback for the two un-deletable hex paths, retire only the gate/toggle). + green-light the
+  **#5-9** Swift-twin deletion packages (csv/fuzzy/find/transcript/markdown). This is the only thing the
+  VM drain can't unblock — the "deprecate Swift core" endgame.
+
+## Tracker (`tasked`, agent claude-mdv)
+- ~70 items at `review` (the drain target — pending stage-2b classification; do NOT mass-validate until the
+  fresh-`dist/` render result is in).
+- TSK-901, TSK-952 → `validated` (host-testable, self-validated earlier).
+- TSK-810 → `waiting:human` (owner decision). TSK-564 → reconciled comment (perf zombie, body-copy already shipped).
 
 ## How to resume
-1. Read this, then `docs/AUTONOMOUS_PROGRESS.md` (top logs), then `WORK_QUEUE.md`.
-2. `git -C <repo> log --oneline -15`; confirm tree clean (only the 2 untracked non-ours files).
-3. Re-read `docs/TASK_WORKFLOW.md`. Run the **Next action** decision tree above. Gate via `bash scripts/test-headless-gate.sh`; commit per item; log to `AUTONOMOUS_PROGRESS.md` + (user-facing) `CHANGELOG.md`.
+1. Read this, then check stage-2b: `cat <task bzglu8tx3 output>` or
+   `ssh macOS15 'tail -40 /tmp/mdv-stage2b.log; echo; stat -f "%Sm" markdown_viewer/dist/TextView.app/Contents/MacOS/MarkdownViewer'`.
+2. Parse failures from the VM JUnit (`/tmp/mdv-test-results.xml`) + the full stdout log.
+3. Execute the Next-action decision tree above (drain on green / file regressions on red).
+4. `git -C <repo> log --oneline -5`; tree clean except the 2 untracked non-ours files
+   (`archive/Untitled.txt`, `untitled2.md`).
 </content>

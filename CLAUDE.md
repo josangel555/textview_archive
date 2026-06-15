@@ -139,6 +139,16 @@ ViewerCoreTests is the unambiguous host-safe target).
     `swift test` uses the default 6.1.2 and will NOT compile the test target —
     prefer the script (see the toolchain note above).
   - Smoke (build + run + screencap): `bash scripts/vm-smoke.sh`
+  - **RENDER/UAT validation MUST use `all`, not `test` — `test` spawns a STALE
+    `dist/` (2026-06-15 stale-dist trap, LESSONS.md).** The rsync excludes
+    `dist/` and `test` mode never rebuilds it, so T4 `LiveAppTestCase`/`*UATTests`/
+    T5 spawn whatever `dist/TextView.app` was last built on the VM (can be a MONTH
+    stale → false "regression" failures, e.g. a fake editor-save-data-loss alarm).
+    For live-app/pixel validation run `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>
+    MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh all` (`all` = `build_all`
+    rebuilds `dist/` first). Before trusting any UAT failure, verify freshness:
+    `stat -f "%Sm" dist/TextView.app/Contents/MacOS/MarkdownViewer` vs `git log -1`.
+    Capture FULL output (NOT `… | tail`) — JUnit says only "see swift test output".
   - GUI/pixel lane (T4/T5): `MDV_VM_GUI_SESSION=1 bash scripts/test-in-vm.sh …`
     REQUIRES `MDV_VM_SUDO_PASS=<vm-sudo-password>` — without it the sudo wrapper silently
     runs NOTHING ("a password is required" buried in the log). Note the
