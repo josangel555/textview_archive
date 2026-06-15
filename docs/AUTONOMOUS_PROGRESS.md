@@ -1,5 +1,27 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-903 markdown task-list checkboxes (cross-engine, → review)
+
+Executed the triaged TSK-903 slice (deferred twice; done now). Both markdown engines deliberately dropped GFM
+task-list markers; now they emit a disabled checkbox. KEY SIMPLIFICATION found during impl: the checkbox is
+RENDERER-emitted STRUCTURAL html, not author raw-HTML, so it bypasses HTMLSanitizer entirely — NO
+security-sensitive sanitizer change needed (the earlier triage over-scoped this).
+
+- **Rust (live engine, pulldown-cmark):** `markdown.rs` `Event::TaskListMarker(checked)` now calls
+  `synth_para_if_needed()` then emits `<input type="checkbox" disabled checked?/> ` inside the item's `<p>`
+  (was a no-op drop). Rust test updated (`task_list_renders_disabled_checkboxes`).
+- **Swift (fallback, HTMLVisitor):** `visitListItem` injects the byte-identical checkbox after the leading `<p>`
+  when `listItem.checkbox != nil`.
+- **A/B parity (the hard constraint):** `MarkdownRenderABTests` is byte-for-byte and includes `- [x] done\n- [ ] todo`
+  — both engines now produce identical checkbox HTML, so parity holds (verified: 6/6 A/B tests pass).
+- **CSS (markdown.css):** `:has()` rules drop the bullet for task items + dim/strike completed ones (WebKit 15.4+,
+  available in the app's WKWebView; degrades to bullet+checkbox without `:has`).
+
+Validated: rebuilt libmdvcore_ffi.a (build-rust-core.sh) → **rust-core gate green** + **swift headless gate** +
+3 new Swift task-list teeth (renderSwiftPath emits checked/unchecked/none) + A/B parity. The `.a`/header are
+gitignored build artifacts (CI/VM rebuild from the committed rust source). On-screen checkbox + strikethrough
+pixel = VM tail. §2.5: a user-facing bugfix to the live Rust engine + its Swift twin for parity (allowed).
+
 ## LOG 2026-06-14 — Sessions: TSK-931 menu rename (→ review) + TSK-930 reconciled (already built)
 
 Investigated the Sessions system — it ALREADY is "named saved sessions": each session persists open tabs

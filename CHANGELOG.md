@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **`textview://` links** — the app's URL scheme is now `textview://open?path=…` (and `textview://search?…`); the old `markdownviewer://` links keep working as an alias.
 
 ### Fixed
+- **Markdown task lists now render checkboxes** — `- [x] done` / `- [ ] todo` show a real (disabled) checkbox in the rendered view, and completed items are dimmed + struck through, instead of the `[x]`/`[ ]` marker being dropped.
 - **"Open in Terminal" now uses the built-in terminal, in the right folder** — right-clicking a file or folder in the file tree → Open in Terminal opens a new tab in the app's own terminal pane, cd'd to that folder (a file opens its containing folder), instead of launching macOS Terminal.app.
 - **Larger unknown-type text files no longer open stuck in HEX** — a big file with an unknown/odd extension that's actually plain text now opens in the text (Source) view instead of a hex dump, matching what the view picker offers. (Small files were already fine; this was the off-main path for files over ~4 MB.)
 - **Git log: clicking the same commit no longer stacks duplicate tabs** — re-clicking a commit (or re-running a cumulative diff) now focuses the existing diff tab instead of opening another copy.

@@ -39,7 +39,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-920** — drag-to-Terminal pastes the file path (not capture) `[review; TerminalDropFormatter + drag-dest, 7 teeth tests]`
 - [ ] **TSK-919** — File-nav: sub-folder self-drag trap (needs DropRouter/re-root investigation)
 - [x] **TSK-902** — Preview tab title italic not bold `[30f672c → review; TabTitleStyle host-tested, pixel=VM]`
-- [~] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items `[TRIAGED slice — both engines drop it by design; needs rust+swift+sanitizer(security)+CSS+golden+VM; plan on ticket]`
+- [x] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items `[review; rust+swift emit disabled checkbox (byte-matched A/B), CSS strike; NO sanitizer change needed (structural html); rust+swift gates green]`
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
 - [ ] **TSK-929** — External rename → tab shows "file not found"; should follow the rename `(fs.watch TSK-662)`
 
