@@ -1,5 +1,18 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-911 commit-diff summary header (→ review)
+
+The diff parser (`UnifiedDiff`) keeps only files+hunks, so the `git show` preamble (commit message/author/date,
+emitted by `commitDiff`'s `--format`) was dropped — that's why the owner asked for a summary section. Fix: new pure
+`CommitDiffSummary.preamble(_:)` (ViewerCore) — the text before the first `diff --git` line (nil for a plain patch
+or no-preamble; multi-file-safe — checks hasPrefix first so the first file's diff isn't mistaken for a header).
+DiffView renders it as a banner atop the file list with the host-tested `DiffStat(files).shortStat` totals (N
+files changed, +X −Y). Per-file +/- was already shown. Teeth: 5 host tests (extract preamble; plain-patch→nil;
+multi-file-not-first-file; no-diff-git→nil; empty→nil). Host gate green. The banner render = VM tail.
+
+DEFERRED (911 also lists "list of reviews"): needs a ReviewStore-by-sha lookup + render — separate slice (the
+commit diff is a plain .diff tab today, not the rich code-review view; cf TSK-537).
+
 ## LOG 2026-06-14 — TSK-899 view-mode shortcuts ⌘1/⌘2/⌘3 (→ review)
 
 ⌘1/⌘2/⌘3 select the 1st/2nd/3rd view mode in the current file's bar — POSITIONAL (robust across types: markdown

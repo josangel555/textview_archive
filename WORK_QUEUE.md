@@ -53,7 +53,8 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-918** — Remove max-width cap on horizontal panel resize (cf TSK-440) `[review; PanelResize.clampWidth window-relative (sidebar), cap 480→window-bound, 6 teeth; other shoulders can adopt same helper]`
 - [x] **TSK-925** — CSV: sort by column header `[review; CsvSort type-aware comparator + 11 teeth tests; header click=VM]`
 - [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
-- [ ] **TSK-911 / 909** — Commit-diff summary header (uses TSK-514 DiffStat) · Reviews submenu `(537)`
+- [x] **TSK-911** — Commit-diff summary header (message + DiffStat totals) `[review; CommitDiffSummary.preamble + DiffView banner, 5 teeth; banner render=VM; reviews-list deferred]`
+- [ ] **TSK-909** — Right-click commit → Reviews submenu (lazy list) `(537)`
 - [ ] **TSK-933 / 934** — Footer filename as breadcrumb · breadcrumb right-click = file-nav menu
 - [x] **TSK-928** — Rename URL scheme markdownviewer:// → textview:// `[review; textview primary + markdownviewer alias, router+plist+gate, teeth tests]`
 - [x] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer `[review; File ▸ New Tab from Clipboard + NewFileType.detect (JSON→.json) + create(contents:), 9 teeth; menu=VM]`
