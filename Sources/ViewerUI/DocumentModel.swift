@@ -318,6 +318,10 @@ public final class DocumentModel: ObservableObject {
     public var preferencesStore: PreferencesStore { preferences }
     private var fileWatcher: FileWatcher?
     private var watchedURL: URL?
+    /// TSK-929: the watched file's inode, captured at watch-start so that if it
+    /// vanishes from its path we can find where it was renamed to (same inode,
+    /// new name in the same folder) and follow it instead of "file not found".
+    private var watchedInode: Int?
 
     /// Shared LSP pool — one server per `(language, workspaceRoot)`.
     /// Lazy: the actor is cheap to allocate; servers spawn on first
@@ -4974,6 +4978,25 @@ public final class DocumentModel: ObservableObject {
         guard let i = tabs.selectedIndex,
               tabs.tabs.indices.contains(i),
               tabs.tabs[i].url == watchedURL else { return }
+        // TSK-929: if the file vanished from its path, it may have been renamed/
+        // moved WITHIN its folder — follow it by inode instead of showing "file
+        // not found". Editor buffer + scroll/cursor are tab.id-keyed, so they
+        // follow the tab across the URL change; we just re-point url + watcher.
+        if !FileManager.default.fileExists(atPath: watchedURL.path),
+           let inode = watchedInode,
+           let newURL = RenameFollower.findRenamed(
+               inode: inode, inDirectory: watchedURL.deletingLastPathComponent()) {
+            var t = tabs.tabs[i]
+            t.url = newURL
+            t.diskState = .fresh
+            tabCoordinator.replace(at: i, with: t)
+            startWatchingCurrentFile()   // re-point watcher + re-capture inode
+            reload(url: newURL, at: i)
+            Obs.shared.emit(.info, "filewatcher",
+                "followed rename \(watchedURL.lastPathComponent) -> \(newURL.lastPathComponent)",
+                fields: ["from": watchedURL.path, "to": newURL.path])
+            return
+        }
         // 0d: compute the disk-staleness SIGNAL on the watcher tick. This is
         // purely additive — the auto-reload below still runs (and resets the
         // signal to `.fresh`), so behavior is unchanged. The signal is what a
@@ -5163,7 +5186,12 @@ public final class DocumentModel: ObservableObject {
         // A nil URL or a not-yet-existent file is "nothing to watch", not
         // a watcher failure, so it leaves the cue cleared.
         liveReloadUnavailable = false
-        guard let url, FileManager.default.fileExists(atPath: url.path) else { return }
+        guard let url, FileManager.default.fileExists(atPath: url.path) else {
+            watchedInode = nil
+            return
+        }
+        // TSK-929: capture the inode now so a later rename can be followed.
+        watchedInode = RenameFollower.inode(of: url)
         // CRIT-4: capture the URL the watcher is bound to so the handler
         // can verify the user is still viewing it before reloading.
         let boundURL = url
