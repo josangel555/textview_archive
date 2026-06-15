@@ -19,6 +19,10 @@ struct DraggableSidebar: View {
         liveWidth ?? model.sidebarWidth
     }
 
+    /// Minimum width the content area (editor/preview) keeps when the sidebar is
+    /// dragged wide (TSK-918) — the sidebar can grow up to `window − this`.
+    private static let minContentWidth: Double = 360
+
     var body: some View {
         // `panelLayout` + `trackedRepos` are read off the model and handed
         // to SidebarView so the accordion resolves per-panel visibility and
@@ -48,14 +52,17 @@ struct DraggableSidebar: View {
                             .onChanged { value in
                                 let start = dragStart ?? model.sidebarWidth
                                 if dragStart == nil { dragStart = model.sidebarWidth }
-                                // Clamp at the controller so dragging
-                                // off-screen doesn't produce silly widths.
+                                // TSK-918: no fixed cap — clamp window-relative
+                                // so the sidebar can grow freely yet never starve
+                                // the content area (≥ minContentWidth). The live
+                                // window width feeds the pure `PanelResize` clamp.
                                 let raw = start + value.translation.width
-                                let clamped = min(
-                                    max(raw, PreferencesStore.minSidebarWidth),
-                                    PreferencesStore.maxSidebarWidth
-                                )
-                                liveWidth = clamped
+                                let available = Double(
+                                    NSApp.keyWindow?.contentView?.bounds.width ?? 1200)
+                                liveWidth = PanelResize.clampWidth(
+                                    raw, available: available,
+                                    minContent: Self.minContentWidth,
+                                    minPanel: PreferencesStore.minSidebarWidth)
                             }
                             .onEnded { _ in
                                 if let w = liveWidth {

@@ -63,7 +63,11 @@ public final class PreferencesStore: @unchecked Sendable {
     }
 
     public static let minSidebarWidth: Double = 160
-    public static let maxSidebarWidth: Double = 480
+    // TSK-918: the real upper bound is the runtime window-relative clamp
+    // (`PanelResize.clampWidth`, applied during the drag). This persisted
+    // ceiling is just a sanity bound so a corrupt/huge stored value can't
+    // produce an absurd width on a tiny window — it no longer caps resizing.
+    public static let maxSidebarWidth: Double = 4000
 
     private static func clampSidebarWidth(_ width: Double) -> Double {
         min(max(width, minSidebarWidth), maxSidebarWidth)
