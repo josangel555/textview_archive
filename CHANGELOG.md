@@ -13,6 +13,8 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **The sidebar can be dragged much wider** — the old fixed ~480 px resize cap is gone; the file/tool sidebar now resizes freely up to the window width (always leaving room for the content area). Useful for deep folder trees and long file names.
 
 ### Added
+- **Refresh / Reload from Disk in the file tree** — right-click a folder → **Refresh** force re-reads it (and its open sub-folders) from disk, for cases the automatic watcher can miss (network/iCloud mounts). Right-click an open file → **Reload from Disk** re-reads it into its tab.
+- **Right-click the footer breadcrumb** — right-clicking a segment of the status-bar path now offers the same actions as the file tree (Reveal in Sidebar / Reveal in Finder / Copy Path, plus Open Folder + Open in Terminal for folders, Open in Default App for the file).
 - **Right-click a commit → Reviews** — the Git-log commit menu now has a **Reviews** submenu listing the reviews that cover that commit (click one to open it); it's loaded only when you open the submenu.
 - **Footer path is a clickable breadcrumb** — the file path in the status bar is now a row of clickable segments (`~ › proj › src › file.swift`); click any folder segment to reveal/expand it in the sidebar.
 - **Commit diff shows a summary header** — viewing a commit's diff now puts the commit message (author, date, description) and a totals line (files changed, +insertions/−deletions) at the top, above the per-file changes.

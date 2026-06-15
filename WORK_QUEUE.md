@@ -47,7 +47,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-899** — view-mode shortcuts ⌘1/⌘2/⌘3 (positional) `[review; selectViewMode(at:) + ViewMode.displayName, 3 teeth; key routing=VM]`
 - [ ] **TSK-898** — Render|Editor|HEX as a segmented button GROUP (pure visual restyle — VM)
 - [x] **TSK-913** — File-nav right-click → Rename `[review — ALREADY BUILT: SidebarView Button("Rename…") + F2 → renameFile/FileRenamer (TSK-283)]`
-- [ ] **TSK-915 / 916** — File tree auto-refresh on disk change + "Reload from disk" action
+- [x] **TSK-915 / 916** — File tree auto-refresh on disk change + "Reload from disk" action `[915 review — ALREADY BUILT: SidebarModel FolderWatcher→onFolderChange re-list, FolderWatcherTests proof; 916 review 0921186 — refreshFromDisk (folder) + reloadFileFromDisk (file) context items, 7 teeth; menu render=VM]`
 - [x] **TSK-932** — Unsaved blue dot on modified tab `[review — ALREADY BUILT: TabBar accent dirty-dot on tab.isDirty]`
 - [ ] **TSK-936 / 937 / 938** — Toggle-View-only shortcut · Focus Terminal/Nav/Git/File · Esc→current tab
 - [x] **TSK-918** — Remove max-width cap on horizontal panel resize (cf TSK-440) `[review; PanelResize.clampWidth window-relative (sidebar), cap 480→window-bound, 6 teeth; other shoulders can adopt same helper]`
@@ -56,7 +56,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [x] **TSK-911** — Commit-diff summary header (message + DiffStat totals) `[review; CommitDiffSummary.preamble + DiffView banner, 5 teeth; banner render=VM; reviews-list deferred]`
 - [x] **TSK-909** — Right-click commit → Reviews submenu (lazy list) `[review; ReviewStore.reviews(forCommit:) + lazy Menu, 3 teeth; submenu render=VM]`
 - [x] **TSK-933** — Footer filename as breadcrumb `[review; BreadcrumbPath.segments + StatusBar clickable segments → revealInSidebar, 5 teeth; render=VM]`
-- [ ] **TSK-934** — breadcrumb right-click = file-nav context menu `(follow-on to 933)`
+- [x] **TSK-934** — breadcrumb right-click = file-nav context menu `(follow-on to 933)` `[review 583b4c5 — BreadcrumbPath.menuActions host-tested + StatusBar .contextMenu, 2 teeth; menu render=VM]`
 - [x] **TSK-928** — Rename URL scheme markdownviewer:// → textview:// `[review; textview primary + markdownviewer alias, router+plist+gate, teeth tests]`
 - [x] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer `[review; File ▸ New Tab from Clipboard + NewFileType.detect (JSON→.json) + create(contents:), 9 teeth; menu=VM]`
 - [x] **TSK-931** — Rename a session (menu + right-click tab) `[review; right-click existed, added Session ▸ Rename Session… + SessionRename.sanitize host-tested]`

@@ -1,5 +1,34 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-915 + TSK-916 + TSK-934 file-nav refresh/reload + breadcrumb menu (→ review)
+
+Drained three file-nav queue items in one gated batch.
+
+**TSK-915 (auto-refresh file tree) — RECONCILED already-built.** `SidebarModel` already runs an
+FSEvents `FolderWatcher` (set up in `setRoot`) → `onFolderChange` re-lists each changed visible dir
+off-main and republishes. Proof: `FolderWatcherTests` (create/delete fire `onChange`, 50-file burst
+coalesces to ≤3, `stop()` silences). No code change.
+
+**TSK-916 (Reload from Disk on files + folders) — NEW.** Added `SidebarModel.refreshFromDisk(_:)`
+— a MANUAL force re-list of a folder + its currently-expanded descendants (ignoring the children
+cache; recency caches invalidated), the escape hatch for changes the watcher misses (network/iCloud
+mounts, a dropped stream). Folder context menu → "Refresh". For files: `DocumentModel.reloadFileFromDisk(_:)`
+re-reads an arbitrary file's open tab (no-op when not open) + `isFileOpenInTab(_:)` gate; file context
+menu → "Reload from Disk" (disabled unless open). The active file's `View ▸ Reload` already existed;
+this generalizes it to any tab. Teeth: 4 `SidebarRefreshFromDiskTests` (picks up added / drops removed
+/ re-lists expanded descendant / skips collapsed) + 3 `DocumentModelTests` (open-state gate + reload
+routing true/false).
+
+**TSK-934 (breadcrumb right-click) — NEW, follow-on to TSK-933.** Each footer breadcrumb segment now
+has a `.contextMenu` with the file-nav verbs. The applicable action SET is a pure host-tested helper
+`BreadcrumbPath.menuActions(isDirectory:)` (folder → reveal/openFolder/copyPath/revealInFinder/
+openInTerminal; file → reveal/openInDefaultApp/copyPath/revealInFinder); the view maps each to a Button.
+Leaf segment = the file, the rest = folders (derived by index). Teeth: 2 `BreadcrumbPathTests`
+(folder vs file verb sets; file can't Open-Folder/Open-in-Terminal).
+
+Headless gate green. The context-menu/refresh on-screen appearance is render behavior → VM tail. All
+three → review.
+
 ## LOG 2026-06-14 — TSK-946 + TSK-949 find-menu bugs from the parity audit (→ review)
 
 Drained the two host-fixable find-menu bugs the TSK-939 audit surfaced (B4 + B6).
