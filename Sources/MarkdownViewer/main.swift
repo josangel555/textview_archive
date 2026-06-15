@@ -312,40 +312,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         //   --source              Force source view mode (with --diagnose / --auto-snapshot).
         //   --auto-snapshot SECS  Wait SECS, write PNG+JSON to /tmp, exit. No external signaling.
         //                         Lets us snapshot without terminal stealing focus.
-        let rawArgs = Array(CommandLine.arguments.dropFirst())
-        let diagnoseMode = rawArgs.contains("--diagnose")
-        let forceSource = rawArgs.contains("--source")
-        var autoSnapshotDelay: Double = -1
-        var scriptPath: String? = nil
-        var walkthroughPath: String? = nil
-        var skipNext = false
-        var pathArgs: [String] = []
-        for (i, a) in rawArgs.enumerated() {
-            if skipNext { skipNext = false; continue }
-            if a == "--auto-snapshot" {
-                if i + 1 < rawArgs.count, let s = Double(rawArgs[i + 1]) {
-                    autoSnapshotDelay = s
-                    skipNext = true
-                }
-                continue
-            }
-            if a == "--script" {
-                if i + 1 < rawArgs.count {
-                    scriptPath = rawArgs[i + 1]
-                    skipNext = true
-                }
-                continue
-            }
-            if a == "--walkthrough" {
-                if i + 1 < rawArgs.count {
-                    walkthroughPath = rawArgs[i + 1]
-                    skipNext = true
-                }
-                continue
-            }
-            if a.hasPrefix("--") { continue }
-            pathArgs.append(a)
-        }
+        // TSK-926/927: argv parsing extracted to the host-tested
+        // `LaunchArgs.parse` (ViewerCore). The `--script`/path values below stay
+        // mutable so the LaunchServices ENV fallback can fill them in.
+        let launch = LaunchArgs.parse(Array(CommandLine.arguments.dropFirst()))
+        let diagnoseMode = launch.diagnose
+        let forceSource = launch.forceSource
+        let autoSnapshotDelay = launch.autoSnapshotDelay
+        var scriptPath: String? = launch.scriptPath
+        let walkthroughPath = launch.walkthroughPath
+        var pathArgs: [String] = launch.paths
         // TSK-620: LaunchServices-launched harness runs (`open -a … --env`)
         // carry the script + file via ENVIRONMENT because LS drops
         // `--`-prefixed argv. An LS launch is the only way a harness app
@@ -1982,6 +1958,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             mi.target = self
             navigateMenu.addItem(applyShortcut(id, to: mi))
         }
+        // TSK-950: "Find References" was source-view right-click only. Surface it
+        // in the Navigate menu (+ palette via lsp.findReferences) — it lists all
+        // references in the LSP navigation panel (multi-result, not go-to-first).
+        navigateMenu.addItem(.separator())
+        let findRefsItem = NSMenuItem(
+            title: "Find References",
+            action: #selector(lspFindReferences(_:)), keyEquivalent: "")
+        findRefsItem.target = self
+        navigateMenu.addItem(applyShortcut("lsp.findReferences", to: findRefsItem))
         navigateMenuItem.submenu = navigateMenu
         mainMenu.addItem(navigateMenuItem)
         mainMenu.addItem(sessionMenuItem)
@@ -2296,6 +2281,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func lspGotoImplementation(_ sender: Any?) {
         _ = model.navigateViaLSPAtCursor(kind: .implementation)
     }
+    /// TSK-950 — "Find References" at the active editor cursor → LSP navigation
+    /// panel. Safe no-op (returns false) without an editor cursor / language server.
+    @objc func lspFindReferences(_ sender: Any?) {
+        _ = model.findReferencesAtCursor()
+    }
 
     // TSK-823 follow-up — the remaining LSP editor commands (format/rename/
     // code-actions, TSK-627/640) worked via palette/keybinding but had no menu.
@@ -2595,10 +2585,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
              #selector(cmGotoLine(_:)),
              #selector(lspGotoDefinition(_:)), #selector(lspGotoDeclaration(_:)),
              #selector(lspGotoTypeDefinition(_:)), #selector(lspGotoImplementation(_:)),
+             #selector(lspFindReferences(_:)),
              #selector(lspFormatDocument(_:)), #selector(lspRenameSymbol(_:)),
              #selector(lspCodeActions(_:)):
-            // LSP go-to/format/rename/code-actions operate on the EDITOR cursor/
-            // buffer, so they're editor-mode-only — gray out elsewhere.
+            // LSP go-to/references/format/rename/code-actions operate on the
+            // EDITOR cursor/buffer, so they're editor-mode-only — gray out elsewhere.
             return hasTab && model.currentViewMode == .editor
                 && CodeMirrorEditorRegistry.shared.current() != nil
         case #selector(alignMarkdownTables(_:)):

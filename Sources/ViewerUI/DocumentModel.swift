@@ -2557,6 +2557,57 @@ public final class DocumentModel: ObservableObject {
     }
 
     #if DEBUG
+    /// Test-only: the last "Find References" dispatch (URL + 0-based position
+    /// handed to the pool). Lets the host gate pin the menu/palette → request
+    /// routing + the 1-based→0-based conversion without a live language server.
+    var _lastReferencesRequest: (url: URL, line: Int, character: Int)?
+    #endif
+
+    /// Command/verb entry: run LSP "Find References" at the ACTIVE editor cursor
+    /// and populate the navigation panel (TSK-950). Returns false (no-op) when
+    /// there's no selected tab with a URL, no recorded editor cursor, or no
+    /// language server for the file — same honest no-op contract as
+    /// `navigateViaLSPAtCursor`. References is a multi-result flow, so it routes
+    /// into `lspNavigation` (the SAME store the source-view hover menu's "Find
+    /// References" populates), never a go-to-first jump.
+    @discardableResult
+    public func findReferencesAtCursor() -> Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard let cursor = editor.editorCursorByTab[tab.id] else { return false }
+        guard lspPool.registry.language(for: url) != nil else { return false }
+        let lspLine = max(0, cursor.line - 1)
+        let lspChar = max(0, cursor.column)
+        #if DEBUG
+        _lastReferencesRequest = (url, lspLine, lspChar)
+        #endif
+        let originLabel = "References at \(url.lastPathComponent):\(cursor.line)"
+        let pool = lspPool
+        let store = lspNavigation
+        Task {
+            do {
+                let locs = try await pool.references(
+                    fileURL: url, line: lspLine, character: lspChar,
+                    includeDeclaration: true)
+                await MainActor.run {
+                    store.setReferences(originLabel: originLabel, locations: locs)
+                }
+            } catch {
+                // Silent — same contract as navigateViaLSP (no "LSP returned
+                // nothing" surface; users notice by the panel staying empty).
+            }
+        }
+        return true
+    }
+
+    /// True when "Find References" can act — there's an editable tab with a
+    /// recorded cursor in a language the LSP pool serves. Gates the menu item.
+    public var canFindReferences: Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard editor.editorCursorByTab[tab.id] != nil else { return false }
+        return lspPool.registry.language(for: url) != nil
+    }
+
+    #if DEBUG
     /// Test-only: the last formatting dispatch (URL + the buffer snapshot
     /// the edits will be applied against). Pins the guard set + snapshot
     /// semantics without a live language server.

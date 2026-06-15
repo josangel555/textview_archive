@@ -183,6 +183,63 @@ final class LSPGotoCommandTests: HeadlessUITestCase {
         XCTAssertEqual(cmd?.scriptVerb, "show-lsp-rename")
     }
 
+    // MARK: - Find References (TSK-950)
+
+    func test_findReferences_dispatchesAtCursor() throws {
+        let model = try openWithCursor(line: 2, column: 8)
+        model._lastReferencesRequest = nil
+        XCTAssertTrue(model.findReferencesAtCursor(),
+            "swift + cursor ⇒ references dispatches")
+        // 1-based cursor (line 2, col 8) → 0-based LSP position (1, 8).
+        XCTAssertEqual(model._lastReferencesRequest?.line, 1)
+        XCTAssertEqual(model._lastReferencesRequest?.character, 8)
+        XCTAssertEqual(model._lastReferencesRequest?.url.lastPathComponent, "goto.swift")
+    }
+
+    func test_findReferences_viaScriptVerb_isRecognized() throws {
+        let model = try openWithCursor(line: 1, column: 3)
+        model._lastReferencesRequest = nil
+        XCTAssertTrue(
+            ScriptVerb.apply(verb: "editor-find-references", to: model, sessions: harness.sessions),
+            "editor-find-references must be a recognized script verb (TSK-950)")
+        XCTAssertEqual(model._lastReferencesRequest?.line, 0)
+        XCTAssertEqual(model._lastReferencesRequest?.character, 3)
+    }
+
+    func test_findReferences_noCursor_isANoOp() throws {
+        let url = try harness.writeFile("noref.swift", "let x = 1\n")
+        let model = harness.model
+        model.open(url: url)
+        XCTAssertFalse(model.findReferencesAtCursor(),
+            "without a recorded cursor references must no-op")
+        XCTAssertNil(model._lastReferencesRequest)
+        XCTAssertFalse(model.canFindReferences)
+    }
+
+    func test_findReferences_nonLSPLanguage_doesNotDispatch() throws {
+        let url = try harness.writeFile("plain.txt", "hello\n")
+        let model = harness.model
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        model.editor.recordEditorCursor(
+            CMCursorPosition(line: 1, column: 0, head: 0, rangeCount: 1), forTabID: id)
+        XCTAssertFalse(model.findReferencesAtCursor(),
+            "a language with no LSP mapping must not dispatch references")
+        XCTAssertNil(model._lastReferencesRequest)
+        XCTAssertFalse(model.canFindReferences, "non-LSP language ⇒ canFindReferences false")
+    }
+
+    func test_canFindReferences_trueForSwiftWithCursor() throws {
+        let model = try openWithCursor(line: 1, column: 0)
+        XCTAssertTrue(model.canFindReferences, "swift + cursor + LSP mapping ⇒ true")
+    }
+
+    func test_commandCatalog_carriesFindReferences() {
+        let cmd = CommandRegistry.builtIn.command(id: "lsp.findReferences")
+        XCTAssertNotNil(cmd, "lsp.findReferences must be in the built-in catalog (TSK-950)")
+        XCTAssertEqual(cmd?.scriptVerb, "editor-find-references")
+    }
+
     func test_commandCatalog_carriesTheFourGotoCommands() {
         let registry = CommandRegistry.builtIn
         let expected: [(String, String)] = [

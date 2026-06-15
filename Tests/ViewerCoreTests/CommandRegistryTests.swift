@@ -86,6 +86,8 @@ final class CommandRegistryTests: XCTestCase {
             "editor-goto-definition", "editor-goto-declaration",
             "editor-goto-type-definition", "editor-goto-implementation",
             "editor-format",
+            // LSP find-references → navigation panel (TSK-950)
+            "editor-find-references",
             // LSP rename prompt + code-action picker (TSK-640)
             "show-lsp-rename", "show-code-actions",
             // git blame gutter toggle (TSK-814)

@@ -236,6 +236,11 @@ extension CommandRegistry {
             id: "lsp.gotoImplementation", title: "Go to Implementation", category: .lsp,
             scriptVerb: "editor-goto-implementation"),
         CommandDescriptor(
+            // TSK-950: list all references in the LSP navigation panel (was
+            // source-view right-click only). Resolved at the active editor cursor.
+            id: "lsp.findReferences", title: "Find References", category: .lsp,
+            scriptVerb: "editor-find-references"),
+        CommandDescriptor(
             id: "lsp.format", title: "Format Document", category: .lsp,
             // TSK-757: ⇧⌥F — VS Code's universal "Format Document" chord. ⌘⌥F is
             // taken by find.replace; ⇧⌥F is free. Auto-wires the Edit-menu item

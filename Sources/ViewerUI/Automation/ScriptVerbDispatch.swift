@@ -155,6 +155,10 @@ public enum ScriptVerb {
             _ = model.navigateViaLSPAtCursor(kind: .typeDefinition)
         case "editor-goto-implementation":
             _ = model.navigateViaLSPAtCursor(kind: .implementation)
+        case "editor-find-references":
+            // TSK-950: list references at the active editor cursor in the LSP
+            // navigation panel. Silent no-op without a cursor / language server.
+            _ = model.findReferencesAtCursor()
         case "editor-format":
             // Whole-document LSP format of the active editor buffer
             // (TSK-627). Snapshot-guarded; silent no-op without a
