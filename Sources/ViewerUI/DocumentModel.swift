@@ -5585,7 +5585,11 @@ public final class DocumentModel: ObservableObject {
         }
         // Folders first: each sets/updates the sidebar root. The last
         // folder wins (matches `openPath`/`openFolder` "last root wins").
-        for folder in folders {
+        // TSK-919: skip a folder that's already the root or a descendant under
+        // it — an accidental self/sub-folder drag from the nav must not re-root
+        // (the intentional path is the right-click "Open Folder").
+        for folder in folders
+        where DropReRootPolicy.shouldReRoot(folder: folder, currentRoot: sidebar.rootURL) {
             openFolder(folder)
         }
         // Files: all but the last lazy, last eager (history-recorded,
