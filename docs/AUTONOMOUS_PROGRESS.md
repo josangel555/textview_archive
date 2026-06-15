@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-939 feature-surface PARITY AUDIT (→ review) + 6 follow-up tickets
+
+Ran the owner's parity audit (analysis, host-only — no VM/code). A subagent cataloged feature reachability across
+Capability / Menu / ⌘K palette / Source / Editor, plus the Viewer-deprecation assessment. Wrote
+`docs/PARITY_AUDIT_2026-06-14.md` (matrix + 10-item gap list B1-B10 + Viewer-vs-Editor verdict). Key structural
+finding: one CommandRegistry, three consumers; palette command mode is `>`-gated + scriptVerb-gated, so ~25
+menu actions have NO registry entry + ~18 are registry-but-nil-verb (dimmed) → menu coverage ⊋ palette coverage;
+16 clipboard tools are palette-only; filesystem ops are context-menu-only.
+
+LATENT BUGS surfaced (filed): **TSK-946** Find Next/Prev (⌘G) inert (target NSTextFinder, no view sets
+usesFindBar); **TSK-947** ⌘F in HTML-rendered toggles an invisible bar (+ dead over the 50 MiB editor cap);
+**TSK-948** Source folding dead-wired (gutter built without foldState); **TSK-949** ⌥⌘F not disabled outside the
+editor. GAPS filed: **TSK-950** LSP Find-References has no menu/palette; **TSK-951** palette-parity umbrella
+(~40 menu-only/nil-verb commands → add scriptVerbs).
+
+VIEWER-DEPRECATION verdict (TSK-939 / TSK-811): NOT a drop-in swap — Source uniquely handles >50 MiB files (to
+512 MiB / ~1 GB logs at constant RAM; Editor caps at 50 MiB), highlights ~9 more languages, is the read-only
+`.diff` lens, and owns the minimap/SwiftUI-gutter/selection-highlight. Roadmap: keep Source for big files + diff;
+grow the Editor's language map; port minimap/gutter; only then retire Source elsewhere.
+
 ## LOG 2026-06-14 — TSK-909 right-click commit → Reviews submenu (lazy) (→ review)
 
 Owner asked for "right-click commit → Reviews ▸ [list] (lazy loaded)". New `ReviewStore.reviews(forCommit:)`

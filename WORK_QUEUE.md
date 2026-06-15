@@ -66,7 +66,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 **P3 — bigger / design-first / epics:**
 - [ ] **TSK-926 / 927** — CLI: open file/folder in TextView · pipe stdin → tab `(353)`
 - [x] **TSK-930** — Named saved sessions (save/list/delete + tool-window state) `[review — ALREADY BUILT: sessions persist tabs+panelLayout, list/rename/delete/restore]`
-- [ ] **TSK-939** — Parity audit: Feature × View-only × Editor × Cmd-K × Menu (+ deprecate own Viewer?) `[audit]`
+- [x] **TSK-939** — Parity audit `[review; docs/PARITY_AUDIT_2026-06-14.md — matrix + 10 gaps + Viewer verdict; surfaced 6 follow-ups TSK-946..951 (4 latent bugs + 2 gaps)]`
 - [ ] **TSK-897** — Editor missing many languages' highlighting (reopen TSK-362) `[triage]`
 - [ ] **TSK-940..945** — Agent integration: review/approve agent diffs · line-ref-to-agent · LSP/diag sharing · browser MCP · security audits `(687, epic→slices)`
 
