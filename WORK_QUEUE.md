@@ -73,7 +73,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-811** — "View as" affordance redesign — per-filename lock icon (split from TSK-732)
 - [~] **TSK-836** — build/test: capture per-class swift-test timings, split the slowest classes `[0d59480+cadb5ea → review; CAPTURE half done — scripts/test-timings.py/.sh (SERIAL — see LESSONS) + TestTimingsTests; verified on real output. REMAINING: split the slowest classes (data-enabled; pairs with 849/850)]`
 - [ ] **TSK-849** — build/test: trim fixed sleeps + shard the subprocess-tail classes (~22s run floor)
-- [~] **TSK-850** — build/test: share immutable git/temp fixtures across a class (vs per-method) `[ee140da → review; SLICE 1: GitTestRepo.makeRepo (batched init+config, 1 shell vs 4 spawns) + migrated GitClientHistoryStats/GitClientPanel. REMAINING: migrate differently-configured git classes via the params]`
+- [~] **TSK-850** — build/test: share immutable git/temp fixtures across a class (vs per-method) `[ee140da+4150b91 → review; GitTestRepo.makeRepo (batched, 1 shell vs 4 spawns) + 4 same-config ViewerCoreTests classes migrated (HistoryStats/Panel/GrepLog/CumDiff). REMAINING needs a shared TestSupport target (cross-target: ViewerUITests git classes) + helper generalization (config variation) — focused design slice, modest gain — see board]`
 
 ## B. [PARTIAL] slice continuations — remaining
 
