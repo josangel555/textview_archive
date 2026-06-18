@@ -927,6 +927,8 @@ struct SourceModeView: View {
     /// TSK-263: 1-based source line under the pointer, or nil when the pointer
     /// is outside the text rows. Drives `SourceHoverHighlight`.
     @State private var hoveredSourceLine: Int?
+    /// TSK-374: presents the find-match LIST popover (line + text per match).
+    @State private var showFindMatchList = false
 
     var body: some View {
         let displayedInfo = model.displayedText(for: file)
@@ -1017,15 +1019,40 @@ struct SourceModeView: View {
                 }
                 if model.isSourceFindBarPresented,
                    !model.sourceFindMatchLines.isEmpty {
-                    FindMatchMinimapView(
-                        matchLines: model.sourceFindMatchLines,
-                        totalLines: max(1, sourceView.sourceScrollState.lineCount),
-                        currentMatchIndex: model.sourceFindCurrentMatchIndex,
-                        theme: model.activeTheme,
-                        onClickLine: { line in
-                            model.scrollSource(toLine: line)
+                    VStack(spacing: 2) {
+                        // TSK-374: open the full match LIST (line + text, click to
+                        // jump) — the richer companion to the tick minimap below.
+                        Button { showFindMatchList.toggle() } label: {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: model.uiSize(9)))
+                                .frame(width: FindMatchMinimapView.stripWidth, height: 14)
+                                .contentShape(Rectangle())
                         }
-                    )
+                        .buttonStyle(.plain)
+                        .help("Show all matches")
+                        .accessibilityIdentifier("mdv.findMatchList.toggle")
+                        .popover(isPresented: $showFindMatchList, arrowEdge: .leading) {
+                            FindMatchListView(
+                                rows: FindMatchList.rows(
+                                    matchLines: model.sourceFindMatchLines,
+                                    docText: model.displayText(for: file)),
+                                currentMatchIndex: model.sourceFindCurrentMatchIndex,
+                                onClickLine: { line in
+                                    model.scrollSource(toLine: line)
+                                    showFindMatchList = false
+                                },
+                                uiSize: { model.uiSize($0) })
+                        }
+                        FindMatchMinimapView(
+                            matchLines: model.sourceFindMatchLines,
+                            totalLines: max(1, sourceView.sourceScrollState.lineCount),
+                            currentMatchIndex: model.sourceFindCurrentMatchIndex,
+                            theme: model.activeTheme,
+                            onClickLine: { line in
+                                model.scrollSource(toLine: line)
+                            }
+                        )
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

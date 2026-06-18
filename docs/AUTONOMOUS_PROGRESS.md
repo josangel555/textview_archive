@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-374: find-match LIST for in-document find (feature)
+
+Built the in-document find match-list (the richer companion to the tick minimap; cross-file search already had a
+grouped list). New `FindMatchListView.swift`: a pure `FindMatchList.rows(matchLines:docText:)` (line number + that
+line's trimmed/truncated text; out-of-range lines skipped; stable positional ids so same-line matches stay distinct)
++ a `FindMatchListView` rendering the rows with the current match highlighted. Wired into `SourceModeView` (where the
+minimap lives — it has model.sourceFindMatchLines + displayText(for:file) + scrollSource(toLine:)): a "list.bullet"
+button above the minimap opens the list in a popover; clicking a row jumps via the existing `scrollSource(toLine:)`
+(reuses the minimap's jump) and dismisses. Host teeth: FindMatchListTests (4 — mapping/trim, out-of-range+same-line
+distinct ids, truncation, empty). The list view + popover render = VM/owner tail.
+
 ## LOG 2026-06-18 — TSK-960 diagnosed: the last VM red is a T5-capture artifact, NOT a bug
 
 Investigated the one remaining VM-baseline red (TerminalTabStripVisualRegressionTests, failing 4 consecutive `all`

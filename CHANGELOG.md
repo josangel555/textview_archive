@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-18
 
 ### Added
+- **Find in source: a "show all matches" list** — next to the match minimap, a new list button opens a popover listing every match (line number + that line's text); click a row to jump straight to it. Complements the existing tick minimap and Next/Previous.
 - **Bookmarks can be scoped to the current folder** — a new "R" filter chip in the Bookmarks panel shows only the bookmarks under the folder you currently have open, alongside the existing file / folder / line (F/D/L) filters.
 - **Syntax highlighting for extensionless & misnamed scripts** — a file with no extension (or a misleading one) that starts with a shebang like `#!/usr/bin/env python3` or `#!/bin/bash` now gets the right syntax highlighting (Python, shell, Node/JS, Ruby, Lua) instead of showing as plain text.
 
