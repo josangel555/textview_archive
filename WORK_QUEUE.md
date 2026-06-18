@@ -30,7 +30,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [x] **TSK-906** — Palette dismiss loses editor focus `[bc93d6f → review; editorFocusRequest nonce → makeFirstResponder + dispatch(.focus), 1 teeth; live focus = VM]`
 - [~] **TSK-893** [x] / **894** / **896** — Editor: cursor pointer↔I-beam flip `[893 DONE: 294ba39 → review; .cm-content cursor:text in codemirror.html (917 family), host teeth assert it survives the build, live look = VM]` · 894 (current-line highlight stuck after drag) + 896 (hovered-row offset) remain — CM6 interaction-STATE bugs (not CSS), VM-repro slice
 - [x] **TSK-917** — Gutter selectable + cursor-icon confusion `[b675551 → review; .cm-gutters user-select:none + cursor:default, 1 teeth; appearance = VM]`
-- [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
+- [~] **TSK-922** [x] / **921** — Split: open-split slow+doesn't appear / can't close `(714)` `[922 SLOW FIXED: fd4180a → review; off-main load (.task) replaces the per-body sync read + loading/error states; host size-gate teeth; render/"appears" = VM-validate. 921 close button is wired (SplitPaneView:86→closeSplit); if truly unclickable on VM = separate event-routing repro]`
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
 
 **P2 — quick-win features / UX (host-buildable, [VM] render at review):**
