@@ -15,10 +15,13 @@ enum GitTestRepo {
     /// A fresh repo in a unique temp dir: `git init -b <branch>` + the standard
     /// identity / gpgsign config, all in one shell call. Caller removes the dir.
     static func makeRepo(prefix: String,
+                         at fixedDir: URL? = nil,
                          branch: String = "main",
                          email: String = "t@example.com",
                          name: String = "Tester") throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
+        // `at:` lets a class init a dir it already created (e.g. a class-level
+        // tmpDir); otherwise a fresh unique temp dir is made from `prefix`.
+        let dir = fixedDir ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // One shell, four git ops — byte-identical to four separate `git`

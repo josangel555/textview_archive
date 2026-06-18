@@ -31,10 +31,12 @@ final class GitClientStatusTests: XCTestCase {
         }
     }
 
+    // TSK-850: shared batched fixture at the pre-created tmpDir (one shell vs 3
+    // git Processes). `-b main` ≡ the prior `init.defaultBranch=main`; the
+    // added gpgsign-false just hardens against an env `commit.gpgsign=true`.
     private func initRepo() throws {
-        try runGit(["-c", "init.defaultBranch=main", "init"])
-        try runGit(["config", "user.email", "test@example.com"])
-        try runGit(["config", "user.name", "Test"])
+        _ = try GitTestRepo.makeRepo(prefix: "GitClientStatusTests", at: tmpDir,
+                                     email: "test@example.com", name: "Test")
     }
 
     private func touch(_ name: String, contents: String = "x") throws {

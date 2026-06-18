@@ -18,6 +18,13 @@ Scoped the REST on the board: the ~remaining git classes need either a shared **
 (cross-target — RepoFocusTracker etc. live in ViewerUITests and can't import the ViewerCoreTests helper) or
 helper generalization (config variation: caller-dir, `init -q` no `-b`, different email/name). That's a
 focused Package.swift design slice for modest (spawn-only) gain — owner/effort judgment, not a blind migrate.
+**Slice 3 (same day):** generalized the helper with an `at:` param (init a pre-created dir, not just a fresh
+temp) + migrated ScopeDiffTests (identical config; setUp-built repo) and GitClientStatusTests (`at: tmpDir`,
+test@example.com/Test params — its `init.defaultBranch=main` ≡ `-b main`, and the added gpgsign-false only
+hardens against an env default). **6 ViewerCoreTests classes** now share GitTestRepo (both suites pass: 16+10,
+gate green). That EXHAUSTS the clean within-target migrations — the rest are ViewerUITests (cross-target → need
+a shared TestSupport SwiftPM target) or inline-setup variants. Remaining 850 = the TestSupport structural slice
+(modest gain → owner judgment).
 
 ## LOG 2026-06-16 — TSK-836 (capture half): per-class swift-test timing report
 

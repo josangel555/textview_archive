@@ -14,13 +14,8 @@ final class ScopeDiffTests: XCTestCase {
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else {
             throw XCTSkip("/usr/bin/git not available")
         }
-        repo = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mdv-scopediff-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
-        try git(["init", "-q", "-b", "main"])
-        try git(["config", "user.email", "t@example.com"])
-        try git(["config", "user.name", "Tester"])
-        try git(["config", "commit.gpgsign", "false"])
+        // TSK-850: shared batched fixture (one shell vs 4 git Processes).
+        repo = try GitTestRepo.makeRepo(prefix: "mdv-scopediff")
     }
 
     override func tearDownWithError() throws {
