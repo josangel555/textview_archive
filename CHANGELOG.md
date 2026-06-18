@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-18
 
 ### Added
+- **Bookmarks can be scoped to the current folder** — a new "R" filter chip in the Bookmarks panel shows only the bookmarks under the folder you currently have open, alongside the existing file / folder / line (F/D/L) filters.
 - **Syntax highlighting for extensionless & misnamed scripts** — a file with no extension (or a misleading one) that starts with a shebang like `#!/usr/bin/env python3` or `#!/bin/bash` now gets the right syntax highlighting (Python, shell, Node/JS, Ruby, Lua) instead of showing as plain text.
 
 ### Fixed

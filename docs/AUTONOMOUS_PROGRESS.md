@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-307: bookmarks root-folder scope filter (A-section feature)
+
+Continuing the curated drain (after 905, 893, 901). TSK-307 asked for (a) a root-folder scope filter on the
+Bookmarks panel + (b) an "open in new view/window" affordance. Shipped (a): a pure `nonisolated static
+BookmarksSection.underRoot(_:root:)` (standardized path-prefix with a trailing "/" so `/foo` doesn't match
+`/foobar`; nil root = no-op) wired behind a new "R" filter chip beside F/D/L, scoping the list to bookmarks under
+`model.sidebar.rootURL`. Host teeth: BookmarksSectionEmptyTests.test_underRoot_keepsDescendants_excludesSiblingPrefix_nilIsNoOp
+(root itself + descendants kept; /other + the /proj-sibling false-prefix excluded; nil = no-op). Live chip render =
+VM tail. The (b) "open in new view/window" half is a bigger window-management affordance — deferred (noted on the
+board + WORK_QUEUE).
+
 ## LOG 2026-06-18 — TSK-901: shebang-based language detection for extensionless/misnamed scripts (P2)
 
 Continuing the curated drain (after 905, 893). TSK-901's language half: a file whose extension can't classify it

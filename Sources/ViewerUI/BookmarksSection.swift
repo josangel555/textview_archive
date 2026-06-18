@@ -26,6 +26,9 @@ struct BookmarksSection: View {
     @State private var showFolders = true
     @State private var showLines = true
     @State private var sortMode: SortMode = .recent
+    /// TSK-307: when on, show only bookmarks under the current sidebar root
+    /// folder (a no-op when no folder is open).
+    @State private var rootScopeOnly = false
 
     enum SortMode: String, CaseIterable, Identifiable {
         case recent = "Recent"
@@ -79,6 +82,8 @@ struct BookmarksSection: View {
             filterChip("F", isOn: $showFiles, help: "Show file bookmarks")
             filterChip("D", isOn: $showFolders, help: "Show directory bookmarks")
             filterChip("L", isOn: $showLines, help: "Show line bookmarks")
+            filterChip("R", isOn: $rootScopeOnly,
+                       help: "Show only bookmarks under the current root folder")
             Text("\(filtered.count)/\(model.bookmarks.count)")
                 .font(.system(size: model.uiSize(10), weight: .medium, design: .monospaced))
                 .foregroundStyle(.tertiary)
@@ -132,7 +137,7 @@ struct BookmarksSection: View {
     /// `model.bookmarks` is already kept fresh by the bookmark store
     /// observers; we just project it.
     private var filtered: [BookmarkEntry] {
-        let allowed = model.bookmarks.filter { entry in
+        var allowed = model.bookmarks.filter { entry in
             if entry.line != nil { return showLines }
             // The store doesn't carry directory-ness; ask the
             // filesystem. Cheap on the typical bookmark count (<50);
@@ -140,6 +145,9 @@ struct BookmarksSection: View {
             let isDir = Self.isDir(entry.url)
             return isDir ? showFolders : showFiles
         }
+        // TSK-307: optional root-folder scope — only bookmarks under the current
+        // sidebar root (no-op when no folder is open).
+        if rootScopeOnly { allowed = Self.underRoot(allowed, root: model.sidebar.rootURL) }
         switch sortMode {
         case .recent:
             // Sort by addedAt descending. Was relying on the store's
@@ -154,6 +162,20 @@ struct BookmarksSection: View {
             }
         case .created:
             return allowed.sorted { $0.addedAt < $1.addedAt }
+        }
+    }
+
+    /// TSK-307: keep only bookmarks at or under `root` (the root-folder scope
+    /// filter). A nil root (no folder open) is a no-op → returns all. Pure +
+    /// host-testable. Path-prefix match on standardized paths, with a trailing
+    /// "/" so `/foo` doesn't spuriously match `/foobar`.
+    nonisolated static func underRoot(_ entries: [BookmarkEntry], root: URL?) -> [BookmarkEntry] {
+        guard let root else { return entries }
+        let rootPath = root.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        return entries.filter { entry in
+            let p = entry.url.standardizedFileURL.path
+            return p == rootPath || p.hasPrefix(prefix)
         }
     }
 
