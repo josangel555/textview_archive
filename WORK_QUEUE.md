@@ -27,7 +27,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 **P1 — broken user-facing behavior (host-fixable bugs; ship model + leave render at review):**
 - [ ] **TSK-910** — Git diff: only one line selectable → multi-line selection `(537)`
 - [ ] **TSK-905** — Preview ↑/↓ broken unless tab is last (first-responder by tab position)
-- [ ] **TSK-906** — Palette dismiss loses editor focus (restore prior first-responder)
+- [x] **TSK-906** — Palette dismiss loses editor focus `[bc93d6f → review; editorFocusRequest nonce → makeFirstResponder + dispatch(.focus), 1 teeth; live focus = VM]`
 - [ ] **TSK-893 / 894 / 896** — Editor: cursor pointer↔I-beam flip / current-line highlight stuck after drag / hovered-row offset
 - [ ] **TSK-917** — Gutter selectable + cursor-icon confusion (hand/pointer/I-beam)
 - [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
