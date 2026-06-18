@@ -3074,10 +3074,18 @@ public final class DocumentModel: ObservableObject {
     /// `tabCoordinator` for the override; auto-detect lives here
     /// (URL-based, no coordinator coupling required).
     public func effectiveLanguage(forTabID id: UUID, url: URL) -> HighlightLanguage {
-        tabCoordinator.effectiveLanguage(
-            forTabID: id,
-            autodetected: HighlightLanguage.detect(from: url)
-        )
+        var auto = HighlightLanguage.detect(from: url)
+        // TSK-901: an uninformative extension (extensionless / misnamed script)
+        // yields .plainText → no highlighting. Fall back to the content's shebang
+        // line if it names a known interpreter. Scanned ONLY when the extension
+        // can't classify the file, so files with known extensions pay nothing.
+        if auto == .plainText,
+           let tab = tabs.tabs.first(where: { $0.id == id }),
+           let text = editor.editorBuffer(forTabID: id)?.text ?? Self.loadedText(of: tab),
+           let lang = HighlightLanguage.detect(fromShebang: text) {
+            auto = lang
+        }
+        return tabCoordinator.effectiveLanguage(forTabID: id, autodetected: auto)
     }
 
     /// The effective highlight language of the current tab — the manual

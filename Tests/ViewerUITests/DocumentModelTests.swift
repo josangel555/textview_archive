@@ -123,6 +123,19 @@ final class DocumentModelTests: XCTestCase {
                        "leaving rendered for the editor does not request preview focus")
     }
 
+    // MARK: Language detection from shebang (TSK-901)
+
+    func test_effectiveLanguage_fallsBackToShebang_forExtensionlessScript() throws {
+        let model = makeModel()
+        let script = tmpDir.appendingPathComponent("deploy")   // no extension
+        try "#!/bin/bash\necho hello\n".write(to: script, atomically: true, encoding: .utf8)
+        model.open(url: script)
+        let id = try XCTUnwrap(model.tabs.selected?.id)
+        // No extension → detect(from:url) is .plainText; the bash shebang upgrades it.
+        XCTAssertEqual(model.effectiveLanguage(forTabID: id, url: script), .shell,
+                       "an extensionless script with a bash shebang highlights as shell")
+    }
+
     // MARK: Vim mode (TSK-679 — View → Vim Mode preference)
 
     func test_vimModeEnabled_proxiesPreferences_andSeedsOnInit() {

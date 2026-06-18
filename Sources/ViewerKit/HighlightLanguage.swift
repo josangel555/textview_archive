@@ -97,6 +97,34 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         }
     }
 
+    /// TSK-901: detect a language from a script's shebang (the first line, e.g.
+    /// `#!/usr/bin/env python3` or `#!/bin/bash`). The fallback for extensionless
+    /// or misnamed scripts that `detect(from:url)` can't classify. Returns `nil`
+    /// when there's no shebang or the interpreter is unrecognized, so callers keep
+    /// their extension-based default. Pure + host-testable.
+    public static func detect(fromShebang text: String) -> HighlightLanguage? {
+        guard text.hasPrefix("#!") else { return nil }
+        let line = text.prefix { !$0.isNewline }.dropFirst(2)   // strip "#!"
+        let words = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        guard let first = words.first else { return nil }
+        // Interpreter = basename of the first word; `env NAME [args]` defers to
+        // the next non-flag, non-assignment word (`env FOO=bar python` → python).
+        var interp = first.split(separator: "/").last.map(String.init) ?? first
+        if interp == "env" {
+            let next = words.dropFirst().first { !$0.hasPrefix("-") && !$0.contains("=") } ?? ""
+            interp = next.split(separator: "/").last.map(String.init) ?? next
+        }
+        let name = interp.lowercased()
+        if name.hasPrefix("python") { return .python }   // python, python3, python2.7
+        if name.hasPrefix("node") { return .javascript }  // node, nodejs
+        switch name {
+        case "bash", "sh", "zsh", "fish", "dash", "ksh": return .shell
+        case "ruby": return .ruby
+        case "lua": return .lua
+        default: return nil
+        }
+    }
+
     /// Human-readable name for UI badges.
     public var displayName: String {
         switch self {

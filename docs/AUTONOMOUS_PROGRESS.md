@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-901: shebang-based language detection for extensionless/misnamed scripts (P2)
+
+Continuing the curated drain (after 905, 893). TSK-901's language half: a file whose extension can't classify it
+(extensionless script, misnamed `.txt`) got no highlighting. Added pure `HighlightLanguage.detect(fromShebang:)`
+(parses the first-line interpreter — env-style + absolute-path, skips `env VAR=val` assignments →
+python/shell/javascript/ruby/lua), wired as a fallback in the shared chokepoint
+`DocumentModel.effectiveLanguage(forTabID:url:)` ONLY when the extension yields `.plainText` (known extensions pay
+nothing). Since `HighlightLanguage` drives BOTH highlight paths (source-view TreeSitter + CM6 editor) AND the
+language badge, the one fallback fixes all three consistently. Host teeth: HighlightLanguageTests (2 pure shebang
+tests) + DocumentModelTests (extensionless bash script → `.shell` integration). Keyword-based content detection
+(no shebang) left as a future enhancement (fuzzier; shebang covers the common extensionless-script case).
+
 ## LOG 2026-06-18 — TSK-893: CM6 editor always shows the I-beam cursor (P1)
 
 Continuing the curated P1 drain (after 905). TSK-893: the CM6 editing surface flipped between the arrow and the
