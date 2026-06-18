@@ -1,5 +1,20 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-574 (bulk): reduced zero-consumer pub surface in rust-core `core`
+
+Addressed the audit's [S3] zero-external-consumer pub-API finding. The WireError concern was already RESOLVED
+(TSK-577 emits via `write_wire_error` in 6 sites + TSK-669 decodes + `tests.rs:840` guards it). This tick:
+`pub(crate)`'d the 6 internal helpers with confirmed NON-test callers — `csv::detect_delimiter`/`parse_with`,
+`diff::hunk_marks`, `hex::rendered_row_length`/`row_count`/`hex_search_find` — and DELETED the dead
+`CsvSession::from_table` (session.rs — zero callers anywhere; its doc's "used in tests" was stale). rust-core
+gate GREEN (builds core+ffi+tests+clippy; a missed cross-crate consumer or a `dead_code` from over-`pub(crate)`
+= compile error, so green proves both). FFI ABI unchanged (core visibility only, no ffi edits) → headless gate
+not needed. DEFERRED (residual, → review not validated): 2 TEST-ONLY pub fns left `pub` pending a
+delete-vs-future-API call (`theme::parse_hex` — doc says vestigial/"palettes use Rgb literals directly";
+`view::looks_tabular` — thin `classify` wrapper) + `trace::set_sink`/`clear_sink` (deliberate future host-seam).
+`pub(crate)`-ing the test-only ones would trip `dead_code`, so they need delete or a marker — a nuanced call,
+not blind.
+
 ## LOG 2026-06-16 — TSK-820 EXECUTED: 5 dead per-method FFI exports removed (rust-core cleanup)
 
 Removed the 5 production-dead per-method C export wrappers from `ffi/src/lib.rs` (cm_apply, fuzzy_rank,

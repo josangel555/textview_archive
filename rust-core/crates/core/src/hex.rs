@@ -23,7 +23,7 @@
 /// `HexLayout.renderedRowLength`). Total: `width == 0` (no row can exist) → 0,
 /// and absurd widths saturate instead of overflowing (audit TSK-540).
 #[must_use]
-pub fn rendered_row_length(width: usize) -> usize {
+pub(crate) fn rendered_row_length(width: usize) -> usize {
     // 8 offset + 2 spaces + (width*3 - 1) hex/sep + 2 spaces + width ascii + \n
     // = width*4 + 12; the subtraction form underflows at width == 0.
     if width == 0 {
@@ -35,7 +35,7 @@ pub fn rendered_row_length(width: usize) -> usize {
 /// Row count for a byte buffer at the given width (mirrors `HexLayout.rowCount`).
 /// Zero bytes or zero width → zero rows.
 #[must_use]
-pub fn row_count(byte_count: usize, width: usize) -> usize {
+pub(crate) fn row_count(byte_count: usize, width: usize) -> usize {
     if width == 0 || byte_count == 0 {
         return 0;
     }
@@ -186,7 +186,7 @@ fn hex_nibble(c: u8) -> Option<u8> {
 /// empty pattern, or one longer than `data`, yields `[]`. On a match the cursor
 /// advances by the full pattern length (Sublime/VSCode convention).
 #[must_use]
-pub fn hex_search_find(pattern: &[u8], data: &[u8]) -> Vec<usize> {
+pub(crate) fn hex_search_find(pattern: &[u8], data: &[u8]) -> Vec<usize> {
     if pattern.is_empty() || pattern.len() > data.len() {
         return Vec::new();
     }

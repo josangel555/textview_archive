@@ -75,7 +75,7 @@ impl Default for Limits {
 /// quote-aware. Tabs win when present; otherwise the candidate producing the
 /// most fields. Falls back to `,`.
 #[must_use]
-pub fn detect_delimiter(text: &str) -> char {
+pub(crate) fn detect_delimiter(text: &str) -> char {
     let (mut tabs, mut commas, mut semis, mut pipes) = (0usize, 0usize, 0usize, 0usize);
     let mut in_quotes = false;
     let mut chars = text.chars().peekable();
@@ -164,7 +164,7 @@ pub fn parse_arena_with(text: &str, delimiter: char, limits: Limits) -> TableAre
 
 /// Parse with an explicit delimiter and explicit limits, into the wire DTO.
 #[must_use]
-pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
+pub(crate) fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
     let _span = trace::Span::enter("csv.parse");
     let mut sink = VecSink::default();
     let truncated = tokenize(text, delimiter, limits, &mut sink);

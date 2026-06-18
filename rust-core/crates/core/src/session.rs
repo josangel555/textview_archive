@@ -78,18 +78,6 @@ impl CsvSession {
         })
     }
 
-    /// Open a session from an already-parsed table (used in tests / when the
-    /// caller parsed separately). Consumes the DTO into the arena store.
-    #[must_use]
-    pub fn from_table(table: Table) -> Self {
-        Self {
-            arena: TableArena::from_table(table),
-            query: Query::empty(),
-            version: 1,
-            cached: None,
-        }
-    }
-
     /// The arena store (read-only borrow) — span accessors without
     /// materializing a wire [`Table`].
     #[must_use]

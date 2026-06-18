@@ -510,7 +510,7 @@ pub enum DiffMark {
 /// Flatten a unified diff to a `new-side-line → mark` map (mirrors
 /// `DiffHunkParser.parse`). Multi-file diffs accumulate across every hunk.
 #[must_use]
-pub fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
+pub(crate) fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
     let mut marks: BTreeMap<i64, DiffMark> = BTreeMap::new();
     let mut line_in_new: i64 = 0;
     let mut pending_deletion = false;
