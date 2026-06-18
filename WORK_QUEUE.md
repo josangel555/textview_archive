@@ -52,6 +52,11 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-839** — Attribute + fix the 30–366 ms per-nav main-thread CoreAnimation commit stall (the REAL felt 'nav slow' root) `[Time-Profiler attribution first]`
 - [ ] **TSK-838** — Rendered-MD WebView: persistent page + DOM-patch instead of full `loadHTMLString` reload (2–9 s reload storm; quantifies TSK-624) `[architectural — spike + slices]`
 
+- [ ] **TSK-564** — Swift FFI boundary does a DOUBLE copy of every response frame (rust-core perf)
+- [ ] **TSK-543** — cm_apply ships the FULL doc across FFI both directions per edit batch (~10× traffic/tick)
+- [ ] **TSK-826** — FFI receive-side whole-frame copy: decode directly from MdvBuf (extends 564)
+- [ ] **TSK-827** — TreeSitterEngine.tokenize bridges whole file to NSString + per-predicate substring (perf)
+
 ## A. Quick wins — small features, host-buildable — remaining
 
 - [ ] **TSK-708** — Preview definition (IntelliJ Quick Definition / Cmd+Y) `[VM]`
@@ -61,12 +66,27 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [~] **TSK-746** — Open dialog: show recents `[LOW-VALUE: NSOpenPanel can't cleanly host custom recents; Open Recent exists]`
 - [~] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto) `[PARKED→owner: "unify" ambiguous; ⌘G is standard Find-Next]`
 
+- [ ] **TSK-574** — rust-core: pub API surface with zero consumers; WireError rich-error channel never sent
+- [ ] **TSK-820** — rust-core: deprecate/remove the dead per-method C symbols (post-envelope cleanup)
+- [ ] **TSK-307** — Button: show bookmarks from just the root folder in a new view
+- [ ] **TSK-374** — Find match list view
+- [ ] **TSK-811** — "View as" affordance redesign — per-filename lock icon (split from TSK-732)
+- [ ] **TSK-836** — build/test: capture per-class swift-test timings, split the slowest classes
+- [ ] **TSK-849** — build/test: trim fixed sleeps + shard the subprocess-tail classes (~22s run floor)
+- [ ] **TSK-850** — build/test: share immutable git/temp fixtures across a class (vs per-method)
+
 ## B. [PARTIAL] slice continuations — remaining
 
 - [~] **TSK-769** — Terminal UX bundle: remaining (command history-search, colors, tab shoulder border). Done: open-in-pwd, tab-rename, copy-trimmed, favorites `[278a0fa]`
 - [⊘] **TSK-343** — History, Revert `[OWNER-GATED — board state waiting:human; needs your repro/decision → loop skips]`
 - [~] **TSK-358** — "window sizing" half remaining (font-size slice shipped 6a045e0/2ad2518)
 - [~] **TSK-382** — Squeeze DocumentModel memory `[triaged — needs VM memory-profile; no host-visible structural leak]`
+
+- [ ] **TSK-302** — CSV/table: cell navigation (arrow keys) + Cmd+C copies the whole cell `[VM]`
+- [ ] **TSK-303** — Find support in the table view `[VM]`
+- [ ] **TSK-305** — Markdown minimap / overview window (top-right)
+- [ ] **TSK-368** — Terminal tool window with tabs
+- [ ] **TSK-373** — New → Code review / Agent session / Project view
 
 ## C. Medium features — remaining
 
@@ -82,6 +102,16 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [~] **TSK-705** — Snippets — remaining: CM6 Tab-key wiring (apply SnippetSession) + management UI `[MODEL COMPLETE @ 667f8ba/8de8b2c/08d4e28/9393706]`
 - [~] **TSK-727** — Unified "Goto Anything" — remaining: code-file `@` via LSP documentSymbols `[CORE COMPLETE @ a4022b9/…/651eaca]`
 
+- [ ] **TSK-685** — Spell check / Grammar (NSSpellChecker) + LSP checks
+- [ ] **TSK-712** — 3-way merge
+- [ ] **TSK-713** — Diagram formats beyond Mermaid/Dot
+- [ ] **TSK-721** — HTTP client
+- [ ] **TSK-722** — Task / command runner (run tests & npm/package scripts)
+- [ ] **TSK-723** — Structural search
+- [ ] **TSK-586** — rust-core: shared golden corpus for cross-language parity + differential fuzzing
+- [ ] **TSK-588** — rust-core: perf-floor ratchet bench + periodic cargo-mutants teeth audit
+- [ ] **TSK-818** — test-infra: VM key-synthesis interaction lane (T4) — unblocks key-routing tail (730/728)
+
 ## D. Bigger features / epics — remaining
 
 - [~] **TSK-675** — Text Edit: plain-text editing [P0 epic] — remaining: line ops (duplicate/move/delete), column/block select, macro record-replay, insert/overwrite `[slices 1-5 shipped f472ad6,…,d07a815]`
@@ -91,57 +121,15 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-711** — CSV table editor (editable cells)
 - [ ] **TSK-679** — VIM modal editing in the editor [P6 epic] — core shipped (review); VM keystroke smoke remaining
 
+- [ ] **TSK-715** — Profiling / Memory diffs / Flame charts (webpack-analyzer style)
+- [ ] **TSK-716** — Better worktree-management UX
+- [ ] **TSK-749** — Image edit: add text & shapes (draw tools, crop, 1000+ undo)
+- [ ] **TSK-754** — Plugin API: let plugins contribute menu items / submenus
+
 ## E. Owner-input-needed (surface, don't autonomously guess)
 
 - [ ] **TSK-733** — Save-prompt on session switch despite autosave [bug; waiting:human — needs repro]
 - [ ] **TSK-791** — Editor feels slow / "was CM6 a mistake?" [bug/perf; informed by TSK-837 perf lane]
-
----
-
-## ★ Pulled-in 2026-06-16 — 30 additional actionable tickets (full-board scan)
-
-Selected from the tracker (846 tasks, all states read) — **actionable, no owner-decision/dep-approval
-gate, not the validation tail, not foreign**. Lane-grouped; drain after the Intake/§0/A–D above.
-(Excluded as owner/dep-gated: 343,470,498,508,589,810,831,847,852,854,835,851,399,409,584,585,587;
-research-question epics 775–805; giant-aspirational 689/691/700/701/702/774; foreign 441–445.)
-
-**Rust-core / remote-core (owner's #1 direction — concrete + host-testable, ranks above Swift internal work):**
-- [ ] **TSK-564** — Swift FFI boundary does a DOUBLE copy of every response frame (perf)
-- [ ] **TSK-543** — cm_apply ships the FULL doc across FFI both directions per edit batch (~10× traffic/tick)
-- [ ] **TSK-826** — FFI receive-side whole-frame copy: decode directly from MdvBuf (extends 564)
-- [ ] **TSK-827** — TreeSitterEngine.tokenize bridges whole file to NSString + per-predicate substring (perf)
-- [ ] **TSK-574** — pub API surface with zero consumers; WireError rich-error channel never sent (observability)
-- [ ] **TSK-820** — deprecate/remove the dead per-method C symbols (post-envelope cleanup)
-- [ ] **TSK-586** — shared golden corpus for cross-language parity + differential fuzzing (test-infra)
-- [ ] **TSK-588** — perf-floor ratchet bench + periodic cargo-mutants teeth audit
-
-**Build / test speed (you flagged felt latency + iteration speed):**
-- [ ] **TSK-836** — capture per-class swift-test timings, split the slowest classes
-- [ ] **TSK-849** — trim fixed sleeps + shard the subprocess-tail test classes (the ~22s run-phase floor)
-- [ ] **TSK-850** — share immutable git/temp fixtures across a class (vs per-method git-init/createDirectory)
-- [ ] **TSK-818** — VM key-synthesis interaction lane (T4) — unblocks the AppKit key-routing bug tail (730/728)
-
-**Concrete feature backlog (host-buildable; `[VM]` = render at review):**
-- [ ] **TSK-305** — Markdown minimap / overview window (top-right)
-- [ ] **TSK-307** — Button: show bookmarks from just the root folder in a new view
-- [ ] **TSK-368** — Terminal tool window with tabs
-- [ ] **TSK-373** — New → Code review / Agent session / Project view
-- [ ] **TSK-374** — Find match list view
-- [ ] **TSK-302** — CSV/table: cell navigation (arrow keys) + Cmd+C copies the whole cell `[VM]`
-- [ ] **TSK-303** — Find support in the table view `[VM]`
-- [ ] **TSK-811** — "View as" affordance redesign — per-filename lock icon (split from TSK-732)
-
-**Mid-size epics (spike → slices; spike+design auto-approved per SOP):**
-- [ ] **TSK-685** — Spell check / Grammar (NSSpellChecker) + LSP checks
-- [ ] **TSK-712** — 3-way merge
-- [ ] **TSK-713** — Diagram formats beyond Mermaid/Dot
-- [ ] **TSK-715** — Profiling / Memory diffs / Flame charts (webpack-analyzer style)
-- [ ] **TSK-716** — Better worktree-management UX
-- [ ] **TSK-721** — HTTP client
-- [ ] **TSK-722** — Task / command runner (run tests & npm/package scripts from the app)
-- [ ] **TSK-723** — Structural search
-- [ ] **TSK-749** — Image edit: add text & shapes (draw tools, crop, 1000+ undo)
-- [ ] **TSK-754** — Plugin API: let plugins contribute menu items / submenus
 
 ---
 
