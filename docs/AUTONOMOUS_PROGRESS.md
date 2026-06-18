@@ -1,5 +1,18 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-850 slice 1: shared batched git-fixture helper (dedup + modest speed)
+
+First slice of the systemic build-speed win (scoped from the 836 measurement). Added
+`Tests/ViewerCoreTests/GitTestRepo.swift` — `GitTestRepo.makeRepo(prefix:branch:email:name:)` batches the
+identical `git init` + 3 config calls into ONE `/bin/bash -c` (3 fewer process spawns per repo) and replaces
+the copy-pasted per-class `makeRepo`. Migrated the 2 SAME-config classes (GitClientHistoryStatsTests,
+GitClientPanelTests) to delegate to it; both keep their local `run`/`writeFile` for per-test commits.
+Behavior-identical (same init+config → same commit SHAs): both suites pass (23 + 12 tests, 0 failures) — the
+migrated classes ARE the helper's regression guard. Headless gate green. Speed gain is modest (spawn overhead,
+not the git-work itself — confirmed by the 836 finding) but the dedup is real; `branch`/`email`/`name` params
+let the differently-configured git classes (RepoFocusTracker t@e.com, GitClient test@example.com) migrate in
+follow-up slices. 850 → review (remaining git classes = follow-up).
+
 ## LOG 2026-06-16 — TSK-836 (capture half): per-class swift-test timing report
 
 Build/test-speed, measure-first half. Added `scripts/test-timings.py` (parses the same
