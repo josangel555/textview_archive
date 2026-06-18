@@ -1,7 +1,12 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — loop re-armed; WORK_QUEUE reorganized + 30 board tickets merged; vim shipped  (2026-06-16 ~02:30)
+# Handoff — loop running UNATTENDED (owner away ~24h); build+VM green; WORK_QUEUE merged; vim shipped  (2026-06-16 ~05:50)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `2662881`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `b293260`
+
+> **OWNER AWAY until ~tomorrow night (2026-06-17 PM).** The 10-min cron `50d0fbc8` drives the loop
+> unattended — drain `WORK_QUEUE.md`, commit per item, keep `main` gate-green. Build/test + VM validated
+> green this checkpoint. No owner in the loop: `task_park` anything needing a decision/dep-approval and keep
+> shipping host-fixable items + papercuts (owner directive: "progress is the goal").
 
 ## Mission
 Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automation SOP to **drain
@@ -22,11 +27,20 @@ Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automati
     jupyter-server; Option-A primitives vs embed-Lab vs Thebe; Pyodide discard), localhost browser-tab
     design, 7-feature feasibility. **New epics filed:** TSK-955 (RSS), 956 (AU/MIDI/VST), 957 (Macros),
     958 (Universal Paste); enriched 717/676/690/682.
-  - **Loop cron `50d0fbc8`** live (`4,14,24,34,44,54 * * * *`, session-only, 7-day auto-expire).
-- **In flight:** nothing mid-edit. The cron fires the loop on the next 10-min mark.
-- **Next action:** loop drains `WORK_QUEUE.md` top-down. ★ Intake **P0 perf needs a VM/Instruments trace**
-  (autonomous but VM-gated) — if the VM's not usable a tick, drop to the first host-fixable batch:
-  **TSK-910 (git-diff multi-line select) / 905 (preview ↑/↓) / 906 (palette focus)**.
+  - **Loop cron `50d0fbc8`** live (`4,14,24,34,44,54 * * * *`, session-only, 7-day auto-expire); fires only
+    when the REPL is idle.
+  - **Build/test ✅** (this checkpoint): `swift build` clean + headless Swift gate PASSED + rust-core gate
+    green → `main` @ `b293260` fully green, **no blockers**.
+  - **UTM VM ✅ validated + cleaned:** Swift 6.3 `swift build` green (forward-compat); reclaimed ~1.4 GB
+    (removed redundant `~/swift.pkg` installer + `/tmp/mdv-*` scratch) → **5.7 GB free (87%)**. `.build`(2.8G)
+    + Caches left INTACT (offline mirror — never wipe). `dist/` ~1 day stale → render/UAT needs `test-in-vm.sh all`.
+- **In flight:** **TSK-906** (palette dismiss loses editor focus) — investigated, NOT yet implemented (no edits).
+  Fix = an `editorFocusRequest: Int` nonce on `DocumentModel` (mirror `gotoLineRequest`): `dismissPalette()`
+  increments it; `CodeMirrorEditorView` reacts → `webView.window?.makeFirstResponder(webView)` +
+  `dispatch(.focus)`. Nonce sites to mirror: `CodeMirrorEditorView.swift:47/122/160/289/322/367/484`.
+  Host-test the increment in `DocumentModelTests`; live-focus = VM tail. The loop implements it next.
+- **Next action:** loop drains `WORK_QUEUE.md` top-down. ★ Intake **P0 perf needs a VM/Instruments trace** —
+  VM is up + validated so a trace IS possible; else the first host-fixable batch: **TSK-906 / 910 / 905**.
 
 ## Key decisions & rationale
 - Vim via `@replit/codemirror-vim` (owner-approved) over hand-rolling — mature plugin; Compartment + opt-in.
