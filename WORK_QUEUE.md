@@ -64,14 +64,14 @@ record is at the bottom of this file** (2026-06-16 reorg).
 ## B. [PARTIAL] slice continuations — remaining
 
 - [~] **TSK-769** — Terminal UX bundle: remaining (command history-search, colors, tab shoulder border). Done: open-in-pwd, tab-rename, copy-trimmed, favorites `[278a0fa]`
-- [ ] **TSK-343** — History, Revert (revert a file to a previous saved version)
+- [⊘] **TSK-343** — History, Revert `[OWNER-GATED — board state waiting:human; needs your repro/decision → loop skips]`
 - [~] **TSK-358** — "window sizing" half remaining (font-size slice shipped 6a045e0/2ad2518)
 - [~] **TSK-382** — Squeeze DocumentModel memory `[triaged — needs VM memory-profile; no host-visible structural leak]`
 
 ## C. Medium features — remaining
 
 - [ ] **TSK-463** — Wire LSP completion to the editor (request implemented, never invoked) `[VM]`
-- [ ] **TSK-470** — Zoom split: UI-chrome zoom vs document zoom (currently unified) `[VM]`
+- [⊘] **TSK-470** — Zoom split: UI-chrome zoom vs document zoom `[OWNER-GATED — board state waiting:human → loop skips]`
 - [ ] **TSK-495** — Unified tool-window placement: any tool window → any shoulder, drag-and-drop `[VM]`
 - [ ] **TSK-506** — Folder-stats treemap (bundle-analyzer) Canvas render (TreemapLayout exists) `[VM]`
 - [ ] **TSK-668** — Wire CSV table view to windowed-snapshot paging (backend exists) `[VM]`
