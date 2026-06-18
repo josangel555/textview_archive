@@ -1003,8 +1003,26 @@ private final class MCPClient: @unchecked Sendable {
     }
 
     init(exePath: String) throws {
-        proc.executableURL = URL(fileURLWithPath: exePath)
-        proc.arguments = ["--mcp-stdio"]
+        // TSK-954: on the VM GUI lane xctest runs as ROOT (the launchctl asuser
+        // bridge). The MCP server's `open_path` containment fences to its
+        // NSHomeDirectory — spawned directly as root that's /var/root, but the
+        // UAT fixtures live under the console user's home (TSK-953), so every
+        // open_path is rejected and all PMA assertions fail. Fix: when root,
+        // spawn the server AS the console user (mirrors AppLauncher 178-189) so
+        // its home is /Users/<consoleUser>, matching the fixtures. /usr/bin/env
+        // threads HOME (sudo's env_reset strips it) + the test-instance tag so
+        // teardown can reap it; on a non-root host this is a direct spawn (PMA
+        // self-skips on the host anyway).
+        if geteuid() == 0, let user = AppLauncher.consoleUser {
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+            proc.arguments = ["-n", "-u", user, "/usr/bin/env",
+                              "HOME=\(AppLauncher.spawnUserHome.path)",
+                              "MDV_TEST_INSTANCE=1",
+                              exePath, "--mcp-stdio"]
+        } else {
+            proc.executableURL = URL(fileURLWithPath: exePath)
+            proc.arguments = ["--mcp-stdio"]
+        }
         proc.standardInput = stdinPipe
         proc.standardOutput = stdoutPipe
         proc.standardError = stderrPipe
