@@ -14,6 +14,9 @@ Two clean items, gated together (velocity directive), committed separately.
   scroll-restoration on a retained-WebView reload is version/state-dependent — passed run 1, failed runs 2-3 with
   identical app code) with a tolerant "scroll-readable after reload" check; the load-bearing capture + restore
   assertions are unchanged. De-reds the VM `all` lane (root cause: it's a raw WKWebView test, unrelated to 905/922).
+- **VM batch-validate (66e5907, GUI all-lane):** 5834 tests, **1 failure** = only TSK-491 (terminal, known-open).
+  PaneScrollRestoreWebViewTests now PASSES → **TSK-959 VALIDATED**; 947-half regression-clean (947 → review, both
+  halves host-tested). The VM baseline is now clean except the single known TSK-491.
 
 ## LOG 2026-06-18 — TSK-922: split pane loads off-main (was a per-body synchronous read)
 
