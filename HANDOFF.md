@@ -1,12 +1,12 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — loop running UNATTENDED (owner away ~24h); build+VM green; WORK_QUEUE merged; vim shipped  (2026-06-16 ~05:50)
+# Handoff — autonomous run 06-16→18; shipped 906/917/820/574/836; clean host-wins DRAINED  (2026-06-18)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `b293260`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `1d6325c`
 
-> **OWNER AWAY until ~tomorrow night (2026-06-17 PM).** The 10-min cron `50d0fbc8` drives the loop
-> unattended — drain `WORK_QUEUE.md`, commit per item, keep `main` gate-green. Build/test + VM validated
-> green this checkpoint. No owner in the loop: `task_park` anything needing a decision/dep-approval and keep
-> shipping host-fixable items + papercuts (owner directive: "progress is the goal").
+> **OWNER likely BACK** (today is 2026-06-18; expected return was ~06-17 PM). The 10-min cron `50d0fbc8` ran
+> the loop unattended and shipped 5 items (below). **The host-clean win well is now DRAINED** — what remains
+> in `WORK_QUEUE.md` needs OWNER DIRECTION (see "Next action"): VM/Instruments traces for the P0 perf items,
+> shortcut-key decisions for the parked cluster, or a design-first render/refactor pick. `main` is gate-green.
 
 ## Mission
 Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automation SOP to **drain
@@ -34,12 +34,26 @@ Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automati
   - **UTM VM ✅ validated + cleaned:** Swift 6.3 `swift build` green (forward-compat); reclaimed ~1.4 GB
     (removed redundant `~/swift.pkg` installer + `/tmp/mdv-*` scratch) → **5.7 GB free (87%)**. `.build`(2.8G)
     + Caches left INTACT (offline mirror — never wipe). `dist/` ~1 day stale → render/UAT needs `test-in-vm.sh all`.
-- **In flight:** nothing mid-edit. **TSK-906 SHIPPED this run** (`bc93d6f` → board `review`, checked off
-  `WORK_QUEUE`; `editorFocusRequest` nonce → makeFirstResponder + `dispatch(.focus)`; live focus = VM tail).
-- **Next action:** loop drains `WORK_QUEUE.md` top-down. ★ Intake **P0 perf needs a VM/Instruments trace** —
-  VM is up + validated so a trace IS possible; else the next host-fixable items: **TSK-910 (git-diff
-  multi-line select) / 905 (preview ↑/↓) / 917 (gutter cursor)** (all editor/render-coupled — host-test the
-  model, leave render at `review`).
+- **Done this autonomous run (06-16→18), all gate-green, committed per item:**
+  - **TSK-906** (`bc93d6f` → review): palette dismiss refocuses the editor (`editorFocusRequest` nonce).
+  - **TSK-917** (`b675551` → review): CM6 gutter non-selectable + default cursor (`.cm-gutters` CSS).
+  - **TSK-820** (`6e4c821` → VALIDATED): removed 5 dead per-method FFI exports (all envelope-routed; rust + headless gates).
+  - **TSK-574** (`a4973ad`+`16b0fb3` → VALIDATED): zero-consumer pub surface — `pub(crate)` 6 helpers, deleted
+    dead `from_table`, marked 3 deliberate future-API items; WireError was already done (577/669).
+  - **TSK-836** (`0d59480`+`cadb5ea` → review): per-class swift-test timing tool (`scripts/test-timings.py/.sh`
+    + `TestTimingsTests`). Caught+fixed a parallel-vs-serial reporter trap (LESSONS). Ran the real measurement → 849/850 scoped.
+  - Parked **936/937/938** (shortcut-key UX decision, `waiting:human`); design/scope notes on **905/910/947/948/908/849/850**.
+- **In flight:** nothing mid-edit. Tree clean (except untracked non-ours `archive/Untitled.txt`, `untitled2.md`).
+- **Next action — NEEDS OWNER DIRECTION (host-clean wins drained):**
+  - **P0 app-perf (892/887/888/889/890-891-895/908)** — all need a **VM/Instruments trace** (measure-don't-guess).
+    908 is now scoped: SwiftUI `.contextMenu` materialization latency (render, not host-logic). Best done with the
+    owner supervising a VM-profiling session, or approve me to run `scripts/vm-profile.sh` unattended.
+  - **Shortcut cluster 936/937/938** — parked `waiting:human`: pick keys + confirm "view-only" semantics.
+  - **Render-design items (905/910/947/948)** — each needs a render slice (design notes on the board).
+  - **Systemic build-speed (849/850)** — scoped: 850 = a shared *batched* git-fixture helper (NOT a naive share —
+    repos are bespoke per test), 849 = per-site condition-waits (sleeps are load-bearing). Modest ceiling.
+  - If continuing autonomously, the cleanest remaining is a **design-first** pick (850 helper or a render slice),
+    or board-hygiene (the ~20 zombie `progress` claims + the ~167 review/validated owner-close tail).
 
 ## Key decisions & rationale
 - Vim via `@replit/codemirror-vim` (owner-approved) over hand-rolling — mature plugin; Compartment + opt-in.
