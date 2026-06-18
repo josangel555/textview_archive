@@ -57,6 +57,24 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertTrue(DocumentModel.findIsAvailable(category: nil, viewMode: .rendered))
     }
 
+    // TSK-947 (second half): ⌘F gated when the editor is over the CM6 size cap
+    // (the LargeEditorPlaceholderView has no CodeMirror → no find runtime).
+    func test_findIsAvailable_gatesOverSizeCapEditor() {
+        // Over the cap in EDITOR mode → NO find, regardless of category.
+        XCTAssertFalse(DocumentModel.findIsAvailable(
+            category: .code, viewMode: .editor, editorExceedsSizeCap: true))
+        XCTAssertFalse(DocumentModel.findIsAvailable(
+            category: .markdown, viewMode: .editor, editorExceedsSizeCap: true))
+        // Under the cap → find available.
+        XCTAssertTrue(DocumentModel.findIsAvailable(
+            category: .code, viewMode: .editor, editorExceedsSizeCap: false))
+        // The cap only gates EDITOR mode — a large file's source/rendered still find.
+        XCTAssertTrue(DocumentModel.findIsAvailable(
+            category: .code, viewMode: .source, editorExceedsSizeCap: true))
+        XCTAssertTrue(DocumentModel.findIsAvailable(
+            category: .markdown, viewMode: .rendered, editorExceedsSizeCap: true))
+    }
+
     // MARK: Palette focus (TSK-906 — dismiss refocuses the editor)
 
     func test_dismissPalette_requestsEditorRefocus() {

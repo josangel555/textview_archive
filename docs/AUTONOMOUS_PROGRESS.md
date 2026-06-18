@@ -1,5 +1,20 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-947 (second half) + TSK-959 de-flake (batched, gated once)
+
+Two clean items, gated together (velocity directive), committed separately.
+- **TSK-947 second half** (⌘F over the editor size-cap): extended the pure `findIsAvailable(category:viewMode:
+  editorExceedsSizeCap:)` to also gate ⌘F off when a file past `codeMirrorEditorMaxBytes` is in editor mode — it
+  shows the LargeEditorPlaceholderView (no CodeMirror → no find runtime), so ⌘F had nothing to drive. `canFindInPage`
+  passes the new `isEditorOverSizeCap` instance check (currentViewMode == .editor && loaded file byteCount > cap).
+  The menu + the findInPage runtime guard both inherit it via canFindInPage. Host teeth:
+  DocumentModelTests.test_findIsAvailable_gatesOverSizeCapEditor (over-cap editor → false; under-cap → true; cap only
+  gates editor, not source/rendered). Live menu-grey = VM tail. This completes TSK-947 ([~] → done-able).
+- **TSK-959 de-flake** (PaneScrollRestoreWebViewTests): replaced the brittle `XCTAssertEqual(afterReload, 0)` (WebKit
+  scroll-restoration on a retained-WebView reload is version/state-dependent — passed run 1, failed runs 2-3 with
+  identical app code) with a tolerant "scroll-readable after reload" check; the load-bearing capture + restore
+  assertions are unchanged. De-reds the VM `all` lane (root cause: it's a raw WKWebView test, unrelated to 905/922).
+
 ## LOG 2026-06-18 — TSK-922: split pane loads off-main (was a per-body synchronous read)
 
 Built the fix from the prior tick's diagnosis. SplitPaneView did a SYNCHRONOUS `TextFileLoader().load()` INSIDE

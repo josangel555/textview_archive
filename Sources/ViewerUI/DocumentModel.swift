@@ -2302,13 +2302,28 @@ public final class DocumentModel: ObservableObject {
     /// hosts no find bar, so ⌘F there used to flip an INVISIBLE rendered-find
     /// bar. Gating greys the Find menu + makes ⌘F a clean no-op instead.
     public var canFindInPage: Bool {
-        Self.findIsAvailable(category: currentCategory, viewMode: currentViewMode)
+        Self.findIsAvailable(category: currentCategory, viewMode: currentViewMode,
+                             editorExceedsSizeCap: isEditorOverSizeCap)
+    }
+
+    /// True only when the editor is showing the over-cap placeholder (TSK-947
+    /// second half): a file past `codeMirrorEditorMaxBytes` in editor mode renders
+    /// the LargeEditorPlaceholderView (no CodeMirror), so there is no find runtime
+    /// for ⌘F to drive.
+    var isEditorOverSizeCap: Bool {
+        guard currentViewMode == .editor, let tab = tabs.selected,
+              case .loaded(let file) = tab.state else { return false }
+        return file.byteCount > codeMirrorEditorMaxBytes
     }
 
     /// Pure decision for [`canFindInPage`] (host-tested): find is available
-    /// everywhere except an HTML page shown in rendered mode.
-    static func findIsAvailable(category: FileCategory?, viewMode: ViewMode) -> Bool {
-        !(category == .html && viewMode == .rendered)
+    /// everywhere EXCEPT (a) an HTML page shown in rendered mode (no find runtime),
+    /// and (b) a file past the CM6 size cap in editor mode — the placeholder has
+    /// no CodeMirror, so ⌘F has nothing to drive (TSK-947).
+    static func findIsAvailable(category: FileCategory?, viewMode: ViewMode,
+                                editorExceedsSizeCap: Bool = false) -> Bool {
+        if viewMode == .editor && editorExceedsSizeCap { return false }
+        return !(category == .html && viewMode == .rendered)
     }
 
     // MARK: Find bar (CM6 editor mode) — forwarders
