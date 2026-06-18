@@ -12,7 +12,11 @@ SplitPaneViewSizeGateTests (media never gated; text gated strictly above the wat
 async-load + loading-state render = VM tail; a VM repro will confirm it resolves the felt "slow + doesn't appear"
 (921's close button is already wired). Minor accepted trade: the split caches per-URL (the old sync read's
 freshness was incidental — body-eval-driven, not file-watched — so little is lost; the dirty-editor-buffer branch
-is unchanged).
+is unchanged). VM render-validate (fd4180a, GUI all-lane): REGRESSION-CLEAN — 5833 tests, split suites + the new
+SplitPaneViewSizeGateTests pass, PMA(954) holds; only reds = TSK-491 (terminal, known) + TSK-959 (PaneScrollRestore,
+root-caused as a RAW-WKWebView scroll-restoration flake — it uses no app views + failed the prior run without 922,
+so 905/922 are ruled out). 922 stays at review (felt "appears fast" = owner/VM-render-test). 959 root-cause recorded
+(fix: force `history.scrollRestoration='manual'` or reframe the reload-resets-0 assumption).
 
 ## LOG 2026-06-18 — VM lane re-confirmed + TSK-954 VALIDATED + VM-framing corrected (owner prompt)
 
