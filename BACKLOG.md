@@ -1,5 +1,14 @@
 # Backlog
 
+## 2026-06-16 — VM harness completion (deferred; board-tracked)
+- **TSK-954** (`fixed`) — MCP-driven UAT (`PluginsAndMcpAutomationUATTests`) still red on the VM GUI lane. Root cause
+  found: its `MCPClient` spawns `--mcp-stdio` DIRECTLY as ROOT, so the MCP server's `NSHomeDirectory()` is `/var/root`
+  while fixtures now live under the console user's home → `open_path` containment rejects them. Fix (ready, not landed):
+  make `MCPClient` spawn the server as the console user too (mirror `AppLauncher`'s `sudo -u`). Needs a VM verify cycle.
+  TSK-953 (`.error` class) is DONE/validated; this is the remaining PMA piece.
+- **TSK-679** (`review`) — Vim mode shipped; remaining tail = VM keystroke smoke (`CodeMirrorVimSmokeTest`) for live
+  modal behavior + cursor-pixel color (WebView-rendered; host covers model/wiring only).
+
 ## 2026-06-14 (late) — perf-lane tail + Section-A drain (deferred/ambiguous)
 
 Surfaced during the Section-A drain (board tickets — link, don't duplicate):

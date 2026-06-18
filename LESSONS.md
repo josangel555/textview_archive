@@ -5,6 +5,21 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## CodeMirror-6 vim (`@replit/codemirror-vim`) integration gotchas (2026-06-15, TSK-679)
+- **`:w` (and every ex-command) is a NO-OP by default** — the plugin does not know about the app's save. Symptom:
+  owner runs `:w`, file stays dirty (blue dot persists). Fix: `Vim.defineEx("write","w", () => { emitChangeImmediate();
+  post("save", {}) })` to route `:w`/`:wq`/`:x` through the SAME path as ⌘S. `defineEx` is GLOBAL (one Vim singleton) —
+  define once.
+- **Re-export `Vim` and `getCM`, not just `vim`** — `Vim` for `defineEx`; `getCM(view)` for the cm5-compat handle you
+  attach `cm.on("vim-mode-change", …)` to (drives the footer NORMAL/INSERT/VISUAL indicator → `vimModeChanged` inbound
+  msg → `DocumentModel.editorVimMode`).
+- **`vim()` must be FIRST in `baseExtensions`** so its keymap wins; ⌘-combos (⌘S/⌘F) are not vim-bound so they still
+  pass through. Gate it behind a `Compartment` (off by default) toggled via `setVimMode`.
+- **Blue block cursor:** style `.cm-fat-cursor` in the chrome `EditorView.theme`, which must be ordered AFTER the vim
+  plugin's own theme so equal-specificity rules win (semi-transparent fill so the char stays legible).
+- **Embedding ANY localhost web UI in WKWebView (Jupyter etc.):** will need an **ATS exception for http/ws to
+  localhost** (non-TLS) — flagged for the TSK-717 notebook spike.
+
 ## VM GUI-lane UAT: root's per-user temp is SIP-locked; bridge fixtures via `/tmp`, not `chmod` (2026-06-15, TSK-953)
 - SYMPTOM: the GUI lane (`MDV_VM_GUI_SESSION=1`) showed ~53 UAT false reds across live-app classes —
   `document landed in .error state`, `editor-save did not persist`, `sidebar.rootURL` wrong,
