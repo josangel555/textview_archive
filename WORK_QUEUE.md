@@ -40,7 +40,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
 
 **P3 — bigger / design-first / epics:**
-- [~] **TSK-947** — ⌘F dead in HTML-rendered + over editor size-cap (B5) `[abaa36c → review; HTML-rendered half FIXED — canFindInPage gates findInPage + greys Find menu, host-tested (findIsAvailable). REMAINING: ⌘F over the 50 MiB EDITOR size-cap (distinct editor-mode gate)]`
+- [x] **TSK-947** — ⌘F dead in HTML-rendered + over editor size-cap (B5) `[BOTH halves done → review; HTML-rendered @ abaa36c + editor size-cap @ 0ee63e1; canFindInPage/findIsAvailable gates ⌘F + greys Find menu, host-tested both cases; live menu-grey = VM]`
 - [ ] **TSK-948** — Source code folding dead-wired (B10)
 - [~] **TSK-951** — palette-parity umbrella (B1+B2) — tail: foldAll/unfoldAll model method, undo/redo first-responder, param converters `[slice shipped c36f1b9]`
 - [ ] **TSK-897** — Editor missing many languages' highlighting (reopen TSK-362) `[triage]`
