@@ -34,13 +34,12 @@ Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automati
   - **UTM VM ✅ validated + cleaned:** Swift 6.3 `swift build` green (forward-compat); reclaimed ~1.4 GB
     (removed redundant `~/swift.pkg` installer + `/tmp/mdv-*` scratch) → **5.7 GB free (87%)**. `.build`(2.8G)
     + Caches left INTACT (offline mirror — never wipe). `dist/` ~1 day stale → render/UAT needs `test-in-vm.sh all`.
-- **In flight:** **TSK-906** (palette dismiss loses editor focus) — investigated, NOT yet implemented (no edits).
-  Fix = an `editorFocusRequest: Int` nonce on `DocumentModel` (mirror `gotoLineRequest`): `dismissPalette()`
-  increments it; `CodeMirrorEditorView` reacts → `webView.window?.makeFirstResponder(webView)` +
-  `dispatch(.focus)`. Nonce sites to mirror: `CodeMirrorEditorView.swift:47/122/160/289/322/367/484`.
-  Host-test the increment in `DocumentModelTests`; live-focus = VM tail. The loop implements it next.
+- **In flight:** nothing mid-edit. **TSK-906 SHIPPED this run** (`bc93d6f` → board `review`, checked off
+  `WORK_QUEUE`; `editorFocusRequest` nonce → makeFirstResponder + `dispatch(.focus)`; live focus = VM tail).
 - **Next action:** loop drains `WORK_QUEUE.md` top-down. ★ Intake **P0 perf needs a VM/Instruments trace** —
-  VM is up + validated so a trace IS possible; else the first host-fixable batch: **TSK-906 / 910 / 905**.
+  VM is up + validated so a trace IS possible; else the next host-fixable items: **TSK-910 (git-diff
+  multi-line select) / 905 (preview ↑/↓) / 917 (gutter cursor)** (all editor/render-coupled — host-test the
+  model, leave render at `review`).
 
 ## Key decisions & rationale
 - Vim via `@replit/codemirror-vim` (owner-approved) over hand-rolling — mature plugin; Compartment + opt-in.
