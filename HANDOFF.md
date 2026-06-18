@@ -1,5 +1,5 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run 06-16→18; shipped 906/917/820/574/836; clean host-wins DRAINED  (2026-06-18)
+# Handoff — autonomous run 06-16→18; shipped 906/917/820/574/836/850; clean GOOD-ROI host-wins DRAINED  (2026-06-18)
 
 **Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `1d6325c`
 
@@ -42,7 +42,11 @@ Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automati
     dead `from_table`, marked 3 deliberate future-API items; WireError was already done (577/669).
   - **TSK-836** (`0d59480`+`cadb5ea` → review): per-class swift-test timing tool (`scripts/test-timings.py/.sh`
     + `TestTimingsTests`). Caught+fixed a parallel-vs-serial reporter trap (LESSONS). Ran the real measurement → 849/850 scoped.
-  - Parked **936/937/938** (shortcut-key UX decision, `waiting:human`); design/scope notes on **905/910/947/948/908/849/850**.
+  - **TSK-850** (`ee140da`+`4150b91`+`4eb396c` → review): shared batched `GitTestRepo` (one shell vs 4 git spawns)
+    + migrated **6** ViewerCoreTests git classes (HistoryStats/Panel/GrepLog/CumDiff/ScopeDiff/GitClientStatus).
+    Within-target migrations EXHAUSTED; the rest are ViewerUITests (cross-target → need a TestSupport SwiftPM target,
+    POOR ROI — the 836 measurement proved the cost is git-WORK not spawns, so the restructure buys only seconds).
+  - Parked **936/937/938** (shortcut-key UX decision, `waiting:human`); design/scope notes on **905/910/947/948/908/849/850/573**.
 - **In flight:** nothing mid-edit. Tree clean (except untracked non-ours `archive/Untitled.txt`, `untitled2.md`).
 - **Next action — NEEDS OWNER DIRECTION (host-clean wins drained):**
   - **P0 app-perf (892/887/888/889/890-891-895/908)** — all need a **VM/Instruments trace** (measure-don't-guess).
@@ -50,10 +54,15 @@ Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automati
     owner supervising a VM-profiling session, or approve me to run `scripts/vm-profile.sh` unattended.
   - **Shortcut cluster 936/937/938** — parked `waiting:human`: pick keys + confirm "view-only" semantics.
   - **Render-design items (905/910/947/948)** — each needs a render slice (design notes on the board).
-  - **Systemic build-speed (849/850)** — scoped: 850 = a shared *batched* git-fixture helper (NOT a naive share —
-    repos are bespoke per test), 849 = per-site condition-waits (sleeps are load-bearing). Modest ceiling.
-  - If continuing autonomously, the cleanest remaining is a **design-first** pick (850 helper or a render slice),
-    or board-hygiene (the ~20 zombie `progress` claims + the ~167 review/validated owner-close tail).
+  - **Systemic build-speed (849/850)** — 850 within-target DONE (6 classes share `GitTestRepo`); the rest needs a
+    TestSupport SwiftPM target (cross-target) — POOR ROI (spawn-only gain) → owner judgment. 849 = per-site
+    condition-waits (sleeps load-bearing). **573** (web→`core::theme` palette) = design-first + a visual change to the
+    web UI (owner-reviewable). All scoped on the board.
+  - **Clean GOOD-ROI autonomous work is EXHAUSTED** — verified across WORK_QUEUE + the groomed pool (573/845/382/492/675/787/788
+    are all gated / design-first / profile-gated / epic / question). Continuing autonomously would mean poor-ROI churn (the
+    TestSupport restructure), owner-judgment calls (573 visual, shortcut keys, 845 profile), or context-heavy board hygiene
+    (~20 zombie `progress` claims). The loop is HOLDING for direction: point it at a P0 perf VM trace, the shortcut keys,
+    or OK a design-first refactor (573 / TestSupport).
 
 ## Key decisions & rationale
 - Vim via `@replit/codemirror-vim` (owner-approved) over hand-rolling — mature plugin; Compartment + opt-in.
