@@ -1,5 +1,19 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-922: split pane loads off-main (was a per-body synchronous read)
+
+Built the fix from the prior tick's diagnosis. SplitPaneView did a SYNCHRONOUS `TextFileLoader().load()` INSIDE
+`body` (re-reading the whole file on every SwiftUI invalidation — the "slow"). Replaced with an OFF-MAIN load once
+per URL: a `DiskLoad` enum (`.loading`/`.loaded`/`.failed`) in `@State`, driven by `.task(id: url)` →
+`Task.detached` read; `textContent` now switches on it (spinner while loading; the existing "Couldn't read"
+placeholder on failure; render on loaded). Also extracted the size-gate as a pure `nonisolated static
+SplitPaneView.isTooLargeForSyncRead(category:byteCount:softWarnBytes:)` for host coverage. Host teeth:
+SplitPaneViewSizeGateTests (media never gated; text gated strictly above the watermark; nil size ⇒ false). The
+async-load + loading-state render = VM tail; a VM repro will confirm it resolves the felt "slow + doesn't appear"
+(921's close button is already wired). Minor accepted trade: the split caches per-URL (the old sync read's
+freshness was incidental — body-eval-driven, not file-watched — so little is lost; the dirty-editor-buffer branch
+is unchanged).
+
 ## LOG 2026-06-18 — VM lane re-confirmed + TSK-954 VALIDATED + VM-framing corrected (owner prompt)
 
 Owner: "Is the VM lane blocked? VM is up — no blockers for testing/validation." Correct — I'd been over-cautiously

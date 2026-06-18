@@ -14,6 +14,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Syntax highlighting for extensionless & misnamed scripts** — a file with no extension (or a misleading one) that starts with a shebang like `#!/usr/bin/env python3` or `#!/bin/bash` now gets the right syntax highlighting (Python, shell, Node/JS, Ruby, Lua) instead of showing as plain text.
 
 ### Fixed
+- **Opening a split view no longer stalls the UI** — the second pane now loads its file off the main thread (with a brief loading indicator) instead of re-reading the whole file synchronously on every redraw, which could freeze the window when opening a split on a larger file.
 - **⌘F no longer opens an invisible Find bar on rendered HTML** — in HTML files shown in rendered mode (where in-page find isn't supported yet), ⌘F and the Find menu are now correctly disabled instead of silently toggling a find bar you couldn't see. (Find still works as before in the editor, source, and rendered Markdown.)
 - **Arrow-key scrolling works in the Markdown preview regardless of tab position** — switching to a rendered preview now gives it keyboard focus, so ↑/↓/Page-Up/Page-Down scroll it immediately. Previously only the last-opened tab's preview responded to arrows; other previews were "dead" to the keyboard until you clicked them.
 - **The code editor consistently shows the text cursor (I-beam)** — the cursor no longer flips between an arrow and the I-beam as you move across a line; it stays the I-beam over editable text, matching every other text editor.

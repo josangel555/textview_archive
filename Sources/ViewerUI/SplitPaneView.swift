@@ -41,22 +41,43 @@ struct SplitPaneView: View {
     /// and never freed.
     @State private var splitCSVTabID: UUID = UUID()
 
+    /// TSK-922: the split file's on-disk content, loaded OFF-MAIN once per URL
+    /// (was a synchronous `TextFileLoader().load` INSIDE `body` that re-read the
+    /// whole file on every SwiftUI invalidation → main-thread stalls = "slow").
+    /// `.loading` shows a spinner; `.failed` the "Couldn't read" placeholder;
+    /// `.loaded` renders. Re-loads on URL change via `.task(id: url)`.
+    @State private var diskLoad: DiskLoad = .loading
+    private enum DiskLoad: Equatable, Sendable { case loading, loaded(String), failed }
+
     /// True when the split-pane file is large enough that a synchronous
     /// in-`body` read would stall the main thread. Media categories
     /// don't read bytes into Swift memory, so this only matters for the
     /// text/markdown/CSV path. Uses the loader's soft watermark so the
     /// split-pane guard and the main-pane large-read tagging agree.
     private var isSplitFileTooLargeForSyncRead: Bool {
-        switch FileTypeDetector.category(for: url) {
+        let bytes = (try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size]) as? Int
+        return Self.isTooLargeForSyncRead(
+            category: FileTypeDetector.category(for: url),
+            byteCount: bytes,
+            softWarnBytes: TextFileLoader().softWarnBytes)
+    }
+
+    /// TSK-922 (host-testable, pure): the size-gate. Media categories never read
+    /// bytes into Swift memory (false); everything else routes to a placeholder
+    /// above the loader's soft watermark so the split guard + main-pane large-read
+    /// tagging agree. Missing/unreadable size ⇒ false (let the load try).
+    nonisolated static func isTooLargeForSyncRead(
+        category: FileCategory, byteCount: Int?, softWarnBytes: Int
+    ) -> Bool {
+        switch category {
         case .image, .audio, .video, .pdf, .sqlite:
             return false
         default:
             break
         }
-        guard let bytes = (try? FileManager.default
-            .attributesOfItem(atPath: url.path)[.size]) as? Int
-        else { return false }
-        return bytes > TextFileLoader().softWarnBytes
+        guard let byteCount else { return false }
+        return byteCount > softWarnBytes
     }
 
     var body: some View {
@@ -70,6 +91,18 @@ struct SplitPaneView: View {
         .onDisappear {
             // Free the CSV filter slot keyed on this pane's pseudo-tab.
             model.clearCsvFilterState(forTabID: splitCSVTabID)
+        }
+        .task(id: url) {
+            // TSK-922: load the split file OFF-MAIN once per URL (was a per-body
+            // synchronous read). The too-large case shows a placeholder without
+            // reading any bytes (stat-only guard). Re-runs on URL change.
+            guard !isSplitFileTooLargeForSyncRead else { return }
+            diskLoad = .loading
+            let u = url
+            diskLoad = await Task.detached(priority: .userInitiated) { () -> DiskLoad in
+                if let f = try? TextFileLoader().load(url: u) { return .loaded(f.contents) }
+                return .failed
+            }.value
         }
     }
 
@@ -138,14 +171,16 @@ struct SplitPaneView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(24)
-        } else if let file = try? TextFileLoader().load(url: url) {
+        } else if case .loaded(let diskText) = diskLoad {
             let ext = url.pathExtension.lowercased()
             let cat = FileTypeDetector.category(for: url)
             // TSK-806: show the file's UNSAVED edits, not stale on-disk text,
             // when this file is open in a (dirty) editor tab. Keyed by the split
             // file's URL — the split can show a different file than the active
             // tab — so it can't reuse the selected-tab `displayedText(for:)`.
-            let sourceText = model.splitPaneText(for: url, fallback: file.contents)
+            // TSK-922: `diskText` is the off-main-loaded on-disk content (fallback
+            // when the file isn't an open, dirty editor buffer).
+            let sourceText = model.splitPaneText(for: url, fallback: diskText)
             if cat == .markdown || cat == .mermaid {
                 // `.mmd` standalone files get wrapped into a single mermaid
                 // fence so the same renderer path handles them.
@@ -177,7 +212,7 @@ struct SplitPaneView: View {
                     wordWrap: false
                 )
             }
-        } else {
+        } else if case .failed = diskLoad {
             VStack(spacing: 6) {
                 Text("Couldn't read")
                     .foregroundStyle(.secondary)
@@ -186,6 +221,12 @@ struct SplitPaneView: View {
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            // TSK-922: .loading — the off-main read is in flight (replaces the
+            // old per-body synchronous read that stalled the main thread).
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
