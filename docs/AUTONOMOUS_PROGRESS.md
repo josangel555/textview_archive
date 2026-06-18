@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-906: palette dismiss refocuses the editor (loop tick, owner away)
+
+Autonomous loop (cron `50d0fbc8`). **TSK-906** (INTAKE P1): dismissing the command palette left the editor
+without focus (the overlay tear-down left first responder nowhere — owner had to click back in). Fixed via
+the existing nonce-request pattern: `DocumentModel.editorFocusRequest` (`@Published Int`) bumped by
+`dismissPalette()`; `CodeMirrorEditorView` reacts (pending/lastApplied nonce, mirroring `gotoLineRequest`) →
+`webView.window?.makeFirstResponder(webView)` + `dispatch(.focus)`. Files: `DocumentModel`,
+`CodeMirrorEditorView`, `ContentView`. Host teeth: `test_dismissPalette_requestsEditorRefocus` (nonce bumps
+on dismiss, NOT on show). Headless gate PASSED (5820 tests). Live first-responder behavior = VM tail →
+stays `review`. User-facing → CHANGELOG.
+
 ## LOG 2026-06-15 — TSK-679 follow-ups (owner live-testing): :w→save, footer mode, blue cursor
 
 Owner tried vim live and flagged three things; all fixed:

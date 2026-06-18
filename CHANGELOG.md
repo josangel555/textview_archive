@@ -7,6 +7,11 @@ This file is the at-a-glance "what's new" view of the app's progress.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-16
+
+### Fixed
+- **Dismissing the command palette no longer loses editor focus** — after you close the ⌘K / ⇧⌘P palette (Esc, click-away, or running a command), keyboard focus returns to the active editor instead of going nowhere, so you can keep typing right away.
+
 ## 2026-06-15
 
 ### Added

@@ -895,8 +895,15 @@ public final class DocumentModel: ObservableObject {
         preferences.setSidebarWidth(sidebarWidth)
     }
 
+    /// TSK-906: bumped on palette dismiss so the active CM6 editor re-takes
+    /// first responder (the overlay tear-down left focus nowhere). Consumed by
+    /// `CodeMirrorEditorView(editorFocusRequest:)`.
+    @Published public var editorFocusRequest: Int = 0
     public func showPalette() { isPalettePresented = true }
-    public func dismissPalette() { isPalettePresented = false }
+    public func dismissPalette() {
+        isPalettePresented = false
+        editorFocusRequest &+= 1
+    }
 
     // MARK: - Command registry (UX-M / #232)
 

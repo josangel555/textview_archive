@@ -52,6 +52,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// Vim mode (opt-in; owner-approved 2026-06-15). Drives the JS host's
     /// `vimCompartment` via `setVimMode`. Off by default.
     public let vimMode: Bool
+    /// TSK-906: one-shot "refocus the editor" nonce. Incremented by
+    /// `DocumentModel.dismissPalette()` so the editor re-takes first responder
+    /// after the palette overlay tears down. Int-nonce semantics (0 = idle).
+    public let editorFocusRequest: Int
     /// Phase 4 (v2): toggle the indent-guides decoration plugin.
     /// Pure visual cue; no language-pack dependency.
     public let indentGuides: Bool
@@ -123,6 +127,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         insertRequest: CMInsertRequest? = nil,
         showInvisibles: Bool = false,
         vimMode: Bool = false,
+        editorFocusRequest: Int = 0,
         indentGuides: Bool = false,
         foldingRanges: [CMFoldRange] = [],
         gutterMarkers: [CMGutterMarker] = [],
@@ -161,6 +166,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.insertRequest = insertRequest
         self.showInvisibles = showInvisibles
         self.vimMode = vimMode
+        self.editorFocusRequest = editorFocusRequest
         self.indentGuides = indentGuides
         self.foldingRanges = foldingRanges
         self.gutterMarkers = gutterMarkers
@@ -287,6 +293,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingLineNumbers: Bool?
         private var pendingIndentation: CMIndentation?
         private var pendingGotoLine: CMGotoLineRequest?
+        private var pendingFocusRequest: Int = 0
         private var pendingInsert: CMInsertRequest?
         private var pendingShowInvisibles: Bool?
         private var pendingVim: Bool?
@@ -320,6 +327,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentLineNumbers: Bool?
         private var lastSentIndentation: CMIndentation?
         private var lastAppliedGotoLine: CMGotoLineRequest?
+        private var lastAppliedFocusRequest: Int = 0
         private var lastAppliedInsert: CMInsertRequest?
         private var lastSentShowInvisibles: Bool?
         private var lastSentIndentGuides: Bool?
@@ -365,6 +373,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingLineNumbers = view.lineNumbers
             self.pendingIndentation = view.indentation
             self.pendingGotoLine = view.gotoLineRequest
+            self.pendingFocusRequest = view.editorFocusRequest
             self.pendingInsert = view.insertRequest
             self.pendingShowInvisibles = view.showInvisibles
             self.pendingVim = view.vimMode
@@ -491,6 +500,14 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             if let req = pendingInsert, req != lastAppliedInsert {
                 lastAppliedInsert = req
                 dispatch(.insertAtCursor(text: req.text), webView: webView)
+            }
+            // TSK-906: refocus the editor after a palette dismiss (the overlay
+            // left first responder nowhere). Nonce-gated so stable redraws don't
+            // steal focus; initial 0 == 0 is a no-op on mount.
+            if pendingFocusRequest != lastAppliedFocusRequest {
+                lastAppliedFocusRequest = pendingFocusRequest
+                webView.window?.makeFirstResponder(webView)
+                dispatch(.focus, webView: webView)
             }
             // Initial selection: applied exactly once after the text
             // is in the editor — using `setSelection` (anchor/head)

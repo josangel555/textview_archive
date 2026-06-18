@@ -39,6 +39,21 @@ final class DocumentModelTests: XCTestCase {
         )
     }
 
+    // MARK: Palette focus (TSK-906 — dismiss refocuses the editor)
+
+    func test_dismissPalette_requestsEditorRefocus() {
+        let model = makeModel()
+        XCTAssertEqual(model.editorFocusRequest, 0)
+        model.showPalette()
+        XCTAssertTrue(model.isPalettePresented)
+        XCTAssertEqual(model.editorFocusRequest, 0, "showing the palette does not bump the refocus nonce")
+        model.dismissPalette()
+        XCTAssertFalse(model.isPalettePresented)
+        XCTAssertEqual(model.editorFocusRequest, 1, "dismiss bumps the refocus nonce (→ editor re-takes focus)")
+        model.showPalette(); model.dismissPalette()
+        XCTAssertEqual(model.editorFocusRequest, 2, "each dismiss bumps")
+    }
+
     // MARK: Vim mode (TSK-679 — View → Vim Mode preference)
 
     func test_vimModeEnabled_proxiesPreferences_andSeedsOnInit() {
