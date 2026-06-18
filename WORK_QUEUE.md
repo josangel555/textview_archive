@@ -71,7 +71,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-307** — Button: show bookmarks from just the root folder in a new view
 - [ ] **TSK-374** — Find match list view
 - [ ] **TSK-811** — "View as" affordance redesign — per-filename lock icon (split from TSK-732)
-- [~] **TSK-836** — build/test: capture per-class swift-test timings, split the slowest classes `[0d59480 → review; CAPTURE half done — scripts/test-timings.py/.sh + TestTimingsTests (host teeth). REMAINING: split the slowest classes (now data-enabled; pairs with 849/850)]`
+- [~] **TSK-836** — build/test: capture per-class swift-test timings, split the slowest classes `[0d59480+cadb5ea → review; CAPTURE half done — scripts/test-timings.py/.sh (SERIAL — see LESSONS) + TestTimingsTests; verified on real output. REMAINING: split the slowest classes (data-enabled; pairs with 849/850)]`
 - [ ] **TSK-849** — build/test: trim fixed sleeps + shard the subprocess-tail classes (~22s run floor)
 - [ ] **TSK-850** — build/test: share immutable git/temp fixtures across a class (vs per-method)
 
