@@ -98,6 +98,53 @@ record is at the bottom of this file** (2026-06-16 reorg).
 
 ---
 
+## ★ Pulled-in 2026-06-16 — 30 additional actionable tickets (full-board scan)
+
+Selected from the tracker (846 tasks, all states read) — **actionable, no owner-decision/dep-approval
+gate, not the validation tail, not foreign**. Lane-grouped; drain after the Intake/§0/A–D above.
+(Excluded as owner/dep-gated: 343,470,498,508,589,810,831,847,852,854,835,851,399,409,584,585,587;
+research-question epics 775–805; giant-aspirational 689/691/700/701/702/774; foreign 441–445.)
+
+**Rust-core / remote-core (owner's #1 direction — concrete + host-testable, ranks above Swift internal work):**
+- [ ] **TSK-564** — Swift FFI boundary does a DOUBLE copy of every response frame (perf)
+- [ ] **TSK-543** — cm_apply ships the FULL doc across FFI both directions per edit batch (~10× traffic/tick)
+- [ ] **TSK-826** — FFI receive-side whole-frame copy: decode directly from MdvBuf (extends 564)
+- [ ] **TSK-827** — TreeSitterEngine.tokenize bridges whole file to NSString + per-predicate substring (perf)
+- [ ] **TSK-574** — pub API surface with zero consumers; WireError rich-error channel never sent (observability)
+- [ ] **TSK-820** — deprecate/remove the dead per-method C symbols (post-envelope cleanup)
+- [ ] **TSK-586** — shared golden corpus for cross-language parity + differential fuzzing (test-infra)
+- [ ] **TSK-588** — perf-floor ratchet bench + periodic cargo-mutants teeth audit
+
+**Build / test speed (you flagged felt latency + iteration speed):**
+- [ ] **TSK-836** — capture per-class swift-test timings, split the slowest classes
+- [ ] **TSK-849** — trim fixed sleeps + shard the subprocess-tail test classes (the ~22s run-phase floor)
+- [ ] **TSK-850** — share immutable git/temp fixtures across a class (vs per-method git-init/createDirectory)
+- [ ] **TSK-818** — VM key-synthesis interaction lane (T4) — unblocks the AppKit key-routing bug tail (730/728)
+
+**Concrete feature backlog (host-buildable; `[VM]` = render at review):**
+- [ ] **TSK-305** — Markdown minimap / overview window (top-right)
+- [ ] **TSK-307** — Button: show bookmarks from just the root folder in a new view
+- [ ] **TSK-368** — Terminal tool window with tabs
+- [ ] **TSK-373** — New → Code review / Agent session / Project view
+- [ ] **TSK-374** — Find match list view
+- [ ] **TSK-302** — CSV/table: cell navigation (arrow keys) + Cmd+C copies the whole cell `[VM]`
+- [ ] **TSK-303** — Find support in the table view `[VM]`
+- [ ] **TSK-811** — "View as" affordance redesign — per-filename lock icon (split from TSK-732)
+
+**Mid-size epics (spike → slices; spike+design auto-approved per SOP):**
+- [ ] **TSK-685** — Spell check / Grammar (NSSpellChecker) + LSP checks
+- [ ] **TSK-712** — 3-way merge
+- [ ] **TSK-713** — Diagram formats beyond Mermaid/Dot
+- [ ] **TSK-715** — Profiling / Memory diffs / Flame charts (webpack-analyzer style)
+- [ ] **TSK-716** — Better worktree-management UX
+- [ ] **TSK-721** — HTTP client
+- [ ] **TSK-722** — Task / command runner (run tests & npm/package scripts from the app)
+- [ ] **TSK-723** — Structural search
+- [ ] **TSK-749** — Image edit: add text & shapes (draw tools, crop, 1000+ undo)
+- [ ] **TSK-754** — Plugin API: let plugins contribute menu items / submenus
+
+---
+
 # ===== COMPLETED (shipped to review/validated — kept for record) =====
 
 **★ Intake P1/P2/P3:**
