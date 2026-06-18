@@ -1,5 +1,18 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-820 EXECUTED: 5 dead per-method FFI exports removed (rust-core cleanup)
+
+Removed the 5 production-dead per-method C export wrappers from `ffi/src/lib.rs` (cm_apply, fuzzy_rank,
+find_search, transcript_parse, markdown_render) — Swift reaches all five via the `mdvcore_call` envelope
+(`MDV_METHOD_*`), zero direct refs. Dropped the 5 now-orphaned `use` imports + the 5
+`frame_export_misuse_matrix!` tests; KEPT highlight_runs (separate crate, core dispatch refuses it) + every
+still-consumed symbol (session_*, indent_detect, diff_parse, diff_hunk_marks, hex_*, call, infra). Updated the
+5 `MDV_CAP_*` doc comments to name the envelope method-ids. cbindgen regenerated `mdvcore.h` (5 decls gone;
+header + `link/libmdvcore_ffi.a` are UNTRACKED build artifacts). VALIDATION: rust-core gate GREEN (header-drift
+OK; ffi compiles + tests pass) + headless gate GREEN (Swift links the symbol-removed lib; 5821 tests pass —
+proves NO consumer broke). Diff = exactly the 2 tracked ffi source files. CAUGHT + reverted a `cargo fmt --all`
+detour that had churned 43 files via a divergent stable rustfmt (the repo's style differs) — see LESSONS.
+
 ## LOG 2026-06-16 — TSK-820 spiked (dead FFI-symbol removal), execution deferred-mechanical
 
 Loop tick. Pivoted to the rust-core lane (owner #1). Spiked **TSK-820** (remove dead per-method C exports

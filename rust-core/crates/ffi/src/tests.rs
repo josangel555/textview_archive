@@ -1104,12 +1104,7 @@ macro_rules! frame_export_misuse_matrix {
     };
 }
 
-frame_export_misuse_matrix!(cm_apply_misuse_matrix, mdvcore_cm_apply);
 frame_export_misuse_matrix!(diff_parse_misuse_matrix, mdvcore_diff_parse);
-frame_export_misuse_matrix!(fuzzy_rank_misuse_matrix, mdvcore_fuzzy_rank);
-frame_export_misuse_matrix!(find_search_misuse_matrix, mdvcore_find_search);
-frame_export_misuse_matrix!(transcript_parse_misuse_matrix, mdvcore_transcript_parse);
-frame_export_misuse_matrix!(markdown_render_misuse_matrix, mdvcore_markdown_render);
 frame_export_misuse_matrix!(highlight_runs_misuse_matrix, mdvcore_highlight_runs);
 
 #[test]

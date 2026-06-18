@@ -50,17 +50,12 @@ pub mod guard;
 pub mod handle;
 pub mod status;
 
-use mdvcore_core::cm_edit;
 use mdvcore_core::diff;
 use mdvcore_core::dispatch;
 use mdvcore_core::filter::{Query, Scope};
-use mdvcore_core::find_engine;
-use mdvcore_core::fuzzy;
 use mdvcore_core::hex;
 use mdvcore_core::indent;
-use mdvcore_core::markdown;
 use mdvcore_core::session::{CsvSession, OpenError};
-use mdvcore_core::transcript;
 use mdvcore_core::wire;
 use mdvcore_highlight::runs as highlight_runs;
 
@@ -183,15 +178,15 @@ pub const MDV_CAP_DIFF: u64 = 1 << 1;
 pub const MDV_CAP_HEX: u64 = 1 << 2;
 /// Indent detection (`mdvcore_indent_*`).
 pub const MDV_CAP_INDENT: u64 = 1 << 3;
-/// Editor document apply (`mdvcore_cm_apply`).
+/// Editor document apply (envelope `MDV_METHOD_CM_APPLY`).
 pub const MDV_CAP_CM_APPLY: u64 = 1 << 4;
-/// Whole-document find (`mdvcore_find_search`) — TSK-630.
+/// Whole-document find (envelope `MDV_METHOD_FIND_SEARCH`) — TSK-630.
 pub const MDV_CAP_FIND: u64 = 1 << 5;
-/// Markdown→HTML structural render (`mdvcore_markdown_render`) — TSK-631.
+/// Markdown→HTML structural render (envelope `MDV_METHOD_MARKDOWN_RENDER`) — TSK-631.
 pub const MDV_CAP_MARKDOWN: u64 = 1 << 6;
-/// Claude transcript/JSONL parse (`mdvcore_transcript_parse`) — TSK-632.
+/// Claude transcript/JSONL parse (envelope `MDV_METHOD_TRANSCRIPT_PARSE`) — TSK-632.
 pub const MDV_CAP_TRANSCRIPT: u64 = 1 << 7;
-/// Fuzzy ranking (`mdvcore_fuzzy_rank`) — TSK-633.
+/// Fuzzy ranking (envelope `MDV_METHOD_FUZZY_RANK`) — TSK-633.
 pub const MDV_CAP_FUZZY: u64 = 1 << 8;
 /// SERVER-ONLY (TSK-657): the mdv-serve git family (head/status/branches/log).
 /// Same posture as the fs bit: never set by the in-process library.
@@ -364,28 +359,6 @@ pub extern "C" fn mdvcore_force_panic() -> MdvStatus {
 // first; future pure transforms (diff, hex, fuzzy) follow this exact shape.
 // ---------------------------------------------------------------------------
 
-/// Apply a CodeMirror edit batch (stateless). `req`/`req_len` is a
-/// length-prefixed MessagePack request frame `{base, edits:[{from,to,insert}]}`;
-/// the result is written to `out_buf` as a `{text: Option<String>}` response
-/// frame (a `null` text means the batch was rejected — the caller full-resyncs).
-/// Caller MUST call [`mdvcore_buf_free`] on `out_buf`.
-///
-/// # Returns
-/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`] (malformed
-/// request frame / encode failure), or [`MdvStatus::Panic`].
-///
-/// # Safety
-/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
-/// `out_buf` must be a valid, writable pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mdvcore_cm_apply(
-    req: *const u8,
-    req_len: usize,
-    out_buf: *mut MdvBuf,
-) -> MdvStatus {
-    ffi_frame_body!(req, req_len, out_buf, cm_edit::apply_wire)
-}
-
 /// Parse a unified diff (stateless). `req`/`req_len` is a length-prefixed
 /// MessagePack request frame `{text}`; the result is written to `out_buf` as a
 /// `{files:[…]}` response frame (the full structured diff: per-file metadata +
@@ -429,28 +402,6 @@ pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
     ffi_frame_body!(req, req_len, out_buf, diff::hunk_marks_wire)
 }
 
-/// Rank candidates by fuzzy-match score (stateless, TSK-633). `req`/`req_len`
-/// is a `{query, candidates:[String]}` MessagePack request frame; the result
-/// is written to `out_buf` as a `{matches:[{index, score, indices}]}` response
-/// frame, sorted score-descending with stable input-order ties. Caller MUST
-/// call [`mdvcore_buf_free`] on `out_buf`.
-///
-/// # Returns
-/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
-/// [`MdvStatus::Panic`].
-///
-/// # Safety
-/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
-/// `out_buf` must be a valid, writable pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mdvcore_fuzzy_rank(
-    req: *const u8,
-    req_len: usize,
-    out_buf: *mut MdvBuf,
-) -> MdvStatus {
-    ffi_frame_body!(req, req_len, out_buf, fuzzy::rank_wire)
-}
-
 /// Tree-sitter highlight runs (stateless, TSK-660). `req`/`req_len` is a
 /// `{text, lang}` MessagePack request frame (`lang` = the host's
 /// `HighlightLanguage` rawValue); the result is written to `out_buf` as a
@@ -474,81 +425,6 @@ pub unsafe extern "C" fn mdvcore_highlight_runs(
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
     ffi_frame_body!(req, req_len, out_buf, highlight_runs::runs_wire)
-}
-
-/// Whole-document find (stateless, TSK-630). `req`/`req_len` is a
-/// `{text, pattern, kind, case_sensitive, whole_word}` MessagePack request
-/// frame; the result is written to `out_buf` as an
-/// `{error, matches:[{location,length,line,column}]}` response frame —
-/// UTF-16 ranges, 1-based line/column, `error` non-null when the pattern
-/// doesn't compile (the host's invalid-regex / fallback channel). Linear-time
-/// engine: no ReDoS guard needed. Caller MUST call [`mdvcore_buf_free`].
-///
-/// # Returns
-/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
-/// [`MdvStatus::Panic`].
-///
-/// # Safety
-/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
-/// `out_buf` must be a valid, writable pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mdvcore_find_search(
-    req: *const u8,
-    req_len: usize,
-    out_buf: *mut MdvBuf,
-) -> MdvStatus {
-    ffi_frame_body!(req, req_len, out_buf, find_engine::search_wire)
-}
-
-/// Parse a Claude JSONL transcript (stateless, TSK-632). `req`/`req_len` is a
-/// `{text, redacting}` MessagePack request frame; the result is written to
-/// `out_buf` as an `{events:[{id, timestamp_ms, kind, text, name, input,
-/// tool_use_id, summary}]}` response frame — `kind` discriminates which
-/// optional fields are set; `redacting: true` routes every record through the
-/// TSK-245 barrier (signature/headers/image-blob scrub) and is REQUIRED for
-/// surfacing consumers. Tolerant framing: torn/invalid lines are skipped,
-/// never an error. Caller MUST call [`mdvcore_buf_free`].
-///
-/// # Returns
-/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
-/// [`MdvStatus::Panic`].
-///
-/// # Safety
-/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
-/// `out_buf` must be a valid, writable pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mdvcore_transcript_parse(
-    req: *const u8,
-    req_len: usize,
-    out_buf: *mut MdvBuf,
-) -> MdvStatus {
-    ffi_frame_body!(req, req_len, out_buf, transcript::parse_wire)
-}
-
-/// Render markdown to structural HTML + enrichment chunks (stateless,
-/// TSK-631). `req`/`req_len` is a `{text}` MessagePack request frame; the
-/// result is written to `out_buf` as an `{html, chunks:[{kind,lang,payload}]}`
-/// response frame. `html` carries `<!--mdv-chunk-N-->` sentinels where the
-/// host splices enrichments: `raw_html` chunks MUST pass through the host
-/// sanitizer (the security barrier deliberately stays host-side), `mermaid`
-/// chunks become the mermaid host div, `code` chunks get syntax highlighting.
-/// Raw HTML never appears in `html` itself. Caller MUST call
-/// [`mdvcore_buf_free`].
-///
-/// # Returns
-/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
-/// [`MdvStatus::Panic`].
-///
-/// # Safety
-/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
-/// `out_buf` must be a valid, writable pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mdvcore_markdown_render(
-    req: *const u8,
-    req_len: usize,
-    out_buf: *mut MdvBuf,
-) -> MdvStatus {
-    ffi_frame_body!(req, req_len, out_buf, markdown::render_wire)
 }
 
 /// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;
