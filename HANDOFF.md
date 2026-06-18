@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — autonomous run 06-16→18; shipped 906/917/820/574/836/850/947; VM-validated 5825t/0-fail; GOOD-ROI host-wins DRAINED  (2026-06-18)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `1d6325c`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `b3a3aae` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
 
 > **OWNER likely BACK** (today is 2026-06-18; expected return was ~06-17 PM). The 10-min cron `50d0fbc8` ran
 > the loop unattended and shipped 5 items (below). **The host-clean win well is now DRAINED** — what remains
@@ -53,7 +53,15 @@ Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automati
     a flaky test I'd introduced (836's `test_countsAllOutcomes`: stdout-Pipe broken-pipe race → exit 120 on the VM
     only; fixed file-based, `6b128d2`; LESSONS). So all accumulated Swift+rust changes are confirmed VM-compile/
     headless-clean (render/live of the review-state items is still the GUI-lane VM tail).
-  - Parked **936/937/938** (shortcut-key UX decision, `waiting:human`); design/scope notes on **905/910/947/948/908/849/850/573**.
+  - **Coverage MEASURED** (`b3a3aae`): `swift test --enable-code-coverage` → pure-logic non-engine files ~100%
+    (ByteSize/BreadcrumbPath/AudioMetadataRows); the only gaps are IO/error/framework paths → the owner-endorsed
+    backfill fallback has NO meaningful target (measured, not assumed; AUTONOMOUS_PROGRESS).
+  - **rust-perf dive-deep spikes (board comments, fix-ready/owner-framed):** TSK-564 — FFI double-copy located
+    (CoreClient.swift:89-102 = MdvBuf→[UInt8]→unframe `Array(frame[4...])`); safe decode-in-place fix designed
+    (NOT a UAF — synchronous decode before free, owned types); architectural (touches every FFI call site) →
+    bench-gate + supervise. TSK-543 — cm_apply is the per-keystroke full-doc round-trip keeping Swift's text
+    mirror; fix = stateful editor session in the core = a REMOTE-CORE design (owner-framed, not a quick fix).
+  - Parked **936/937/938** (shortcut-key UX decision, `waiting:human`); design/scope notes on **905/910/947/948/908/849/850/573/564/543**.
 - **In flight:** nothing mid-edit. Tree clean (except untracked non-ours `archive/Untitled.txt`, `untitled2.md`).
 - **Next action — NEEDS OWNER DIRECTION (host-clean wins drained):**
   - **P0 app-perf (892/887/888/889/890-891-895/908)** — all need a **VM/Instruments trace** (measure-don't-guess).
