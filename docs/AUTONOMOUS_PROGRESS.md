@@ -9,6 +9,12 @@ reports). Host teeth: `TestTimingsTests` (Process-invokes the script like `JUnit
 sums, slowest-first ordering, all-outcomes-counted, and `top_n` limits ROWS not the TOTAL — 3 tests pass).
 Read-only tooling — no product/test edits. Headless gate green. The SPLIT-the-slowest half is the follow-up;
 it now has the data this produces (feeds TSK-849/850). 836 → review.
+**Follow-up fix (same tick, found by running on REAL data):** the tool first returned 0 classes — the host
+gate runs `swift test --parallel`, whose swiftpm progress reporter (`[N/M] Testing Class/method`) omits
+per-case timing, and `--xunit-output` is broken on the host toolchain (writes no file). Only SERIAL
+`swift test` emits the XCTest `Test Case … (N seconds).` lines the parser needs. Fixed `test-timings.sh` to
+run serial + demonstrated a correct real report. The synthetic-fixture Swift test passed but the .sh fed the
+wrong source — exactly the "demonstrate teeth on REAL data, not just a green fixture" lesson (now in LESSONS).
 
 ## LOG 2026-06-16 — TSK-574 residual RESOLVED (explicit future-API markers) → validated
 

@@ -8,7 +8,9 @@ which they are).
 
 Parses the same `Test Case '-[Module.Class method]' <result> (N seconds).`
 lines that junit-convert.py keys on, sums `seconds` per class, and prints a
-table sorted slowest-first. Deterministic ordering (time desc, then class name)
+table sorted slowest-first. INPUT MUST be SERIAL `swift test` output —
+`--parallel` uses swiftpm's progress reporter and omits per-case timing
+(see scripts/test-timings.sh). Deterministic ordering (time desc, then class name)
 and pure stdout, so the aggregation is host-testable (TestTimingsTests, the
 same Process-invocation pattern as JUnitConverterTests).
 

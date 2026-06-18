@@ -5,6 +5,20 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Per-test timing on the host: only SERIAL `swift test` has it (2026-06-16, TSK-836)
+
+To capture per-test/per-class wall-clock on the host, you MUST run `swift test` **serially**. The three traps:
+- `swift test --parallel` (what the merge gate runs) uses swiftpm's progress reporter — `[N/M] Testing
+  Module.Class/method` lines with NO per-case timing. Parsing it for `(N seconds)` yields nothing.
+- `--xunit-output <path>` is **broken on the host toolchain** — it writes no file (silently). Don't rely on it.
+- SERIAL `swift test` (no `--parallel`) emits the legacy XCTest `Test Case '-[Mod.Class m]' passed
+  (N seconds).` lines (the same format `junit-convert.py` + `test-timings.py` parse). The VM lane
+  (`test-in-vm.sh`) also produces this format. Serial is slower (no parallelism) but it's the only host
+  source of per-case timing, and serial per-case times are the cleaner "which class is heavy" signal.
+- META-LESSON: a synthetic-fixture test (`TestTimingsTests`) went green while the tool returned 0 on the
+  REAL host gate output — the fixture matched the parser but the runner fed the wrong source. Always run a
+  new measurement/parsing tool against REAL output once, not just curated fixtures.
+
 ## NEVER `cargo fmt --all` in rust-core — divergent rustfmt churns 40+ files (2026-06-16, TSK-820)
 
 Running `cargo fmt --all` (or `cargo fmt` without `--manifest-path` targeting only the changed file) over
