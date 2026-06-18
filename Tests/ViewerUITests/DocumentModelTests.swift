@@ -39,6 +39,24 @@ final class DocumentModelTests: XCTestCase {
         )
     }
 
+    // MARK: Find availability (TSK-947 — ⌘F gated off in HTML-rendered)
+
+    func test_findIsAvailable_excludesOnlyHtmlRendered() {
+        // HTML in rendered mode → NO find: HTMLRenderedView has no find runtime
+        // (raw-HTML find is deferred) and hosts no find bar.
+        XCTAssertFalse(DocumentModel.findIsAvailable(category: .html, viewMode: .rendered))
+        // HTML in non-rendered modes → find available (source/editor host a bar).
+        XCTAssertTrue(DocumentModel.findIsAvailable(category: .html, viewMode: .source))
+        XCTAssertTrue(DocumentModel.findIsAvailable(category: .html, viewMode: .editor))
+        // markdown/mermaid rendered → available (they host MarkdownFindBar).
+        XCTAssertTrue(DocumentModel.findIsAvailable(category: .markdown, viewMode: .rendered))
+        XCTAssertTrue(DocumentModel.findIsAvailable(category: .mermaid, viewMode: .rendered))
+        // any other category → available regardless of mode.
+        XCTAssertTrue(DocumentModel.findIsAvailable(category: .code, viewMode: .source))
+        XCTAssertTrue(DocumentModel.findIsAvailable(category: .plainText, viewMode: .rendered))
+        XCTAssertTrue(DocumentModel.findIsAvailable(category: nil, viewMode: .rendered))
+    }
+
     // MARK: Palette focus (TSK-906 — dismiss refocuses the editor)
 
     func test_dismissPalette_requestsEditorRefocus() {

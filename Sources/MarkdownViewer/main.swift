@@ -2724,8 +2724,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // TSK-949: Find & Replace greys out unless the editor is active
             // (replace is editor-only; no more silent degrade-to-find).
             return model.canFindAndReplace
+        case #selector(findInPage(_:)):
+            // TSK-947: needs a tab AND find must be available (greyed in
+            // HTML-rendered mode — no find runtime / no hosted bar).
+            return hasTab && model.canFindInPage
         case #selector(reloadCurrentFile(_:)),
-             #selector(findInPage(_:)),
              #selector(closeCurrentTab(_:)),
              #selector(nextTab(_:)),
              #selector(previousTab(_:)),
@@ -2951,6 +2954,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// the source mode uses NSTextView for selection / scrolling but
     /// we still wrap our own bar around it so the UX matches.
     @objc func findInPage(_ sender: Any?) {
+        // TSK-947 / parity B5: ⌘F is a clean no-op in HTML-rendered mode (no
+        // find runtime, no hosted bar) — guarding here stops the old flip of an
+        // INVISIBLE rendered-find bar, and never falls through to the source bar.
+        guard model.canFindInPage else { return }
         // Cmd+F TOGGLES the find bar for the active surface (TSK-739): a second
         // press closes it. Each branch routes to the matching bar's toggle.
         // Rendered markdown — only meaningful when the file is markdown

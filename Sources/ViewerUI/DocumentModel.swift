@@ -2274,6 +2274,21 @@ public final class DocumentModel: ObservableObject {
         tabs.selected != nil && currentViewMode == .editor
     }
 
+    /// Gates ⌘F (TSK-947 / parity B5). Find works in editor, source, and
+    /// markdown/mermaid rendered views — but NOT in HTML-rendered mode: the
+    /// `HTMLRenderedView` has no find runtime (raw-HTML find is deferred) and
+    /// hosts no find bar, so ⌘F there used to flip an INVISIBLE rendered-find
+    /// bar. Gating greys the Find menu + makes ⌘F a clean no-op instead.
+    public var canFindInPage: Bool {
+        Self.findIsAvailable(category: currentCategory, viewMode: currentViewMode)
+    }
+
+    /// Pure decision for [`canFindInPage`] (host-tested): find is available
+    /// everywhere except an HTML page shown in rendered mode.
+    static func findIsAvailable(category: FileCategory?, viewMode: ViewMode) -> Bool {
+        !(category == .html && viewMode == .rendered)
+    }
+
     // MARK: Find bar (CM6 editor mode) — forwarders
 
     public var isEditorFindBarPresented: Bool {

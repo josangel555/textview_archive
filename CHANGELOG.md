@@ -7,6 +7,11 @@ This file is the at-a-glance "what's new" view of the app's progress.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-18
+
+### Fixed
+- **⌘F no longer opens an invisible Find bar on rendered HTML** — in HTML files shown in rendered mode (where in-page find isn't supported yet), ⌘F and the Find menu are now correctly disabled instead of silently toggling a find bar you couldn't see. (Find still works as before in the editor, source, and rendered Markdown.)
+
 ## 2026-06-16
 
 ### Fixed

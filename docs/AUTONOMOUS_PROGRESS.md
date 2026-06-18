@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-947: ⌘F gated off in HTML-rendered mode (parity B5)
+
+Fixed B5: ⌘F in HTML-rendered mode flipped an INVISIBLE find bar — `findInPage` routes `.rendered` →
+`toggleRenderedFindBar`, but `HTMLRenderedView` hosts no bar AND has no find runtime (raw-HTML find is a
+deferred feature). Added a host-testable `DocumentModel.canFindInPage` (delegates to a pure
+`findIsAvailable(category:viewMode:)` = false only for `.html`+`.rendered`); `findInPage` now `guard`s on it
+(clean no-op, no fall-through to the source bar) and the Find menu greys (`validateMenuItem`:
+`hasTab && canFindInPage`). Host teeth: `test_findIsAvailable_excludesOnlyHtmlRendered` (8 combos). Headless
+gate green. Did NOT implement find-in-HTML (separate deferred feature). The over-50MiB-editor-size-cap half of
+B5 is a distinct gate — noted as follow-up. User-facing → CHANGELOG. Live menu-grey/⌘F-no-op = VM tail → review.
+
 ## LOG 2026-06-18 — TSK-850 slice 1: shared batched git-fixture helper (dedup + modest speed)
 
 First slice of the systemic build-speed win (scoped from the 836 measurement). Added
