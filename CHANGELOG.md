@@ -11,6 +11,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ### Fixed
 - **Dismissing the command palette no longer loses editor focus** — after you close the ⌘K / ⇧⌘P palette (Esc, click-away, or running a command), keyboard focus returns to the active editor instead of going nowhere, so you can keep typing right away.
+- **Editor line-number gutter no longer text-selectable** — the gutter no longer lets you accidentally select the line numbers, and it shows the normal arrow cursor instead of the text I-beam.
 
 ## 2026-06-15
 

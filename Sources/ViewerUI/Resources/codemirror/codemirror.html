@@ -1111,6 +1111,11 @@
         backgroundColor: palette.gutterBackground,
         color: palette.gutterText,
         border: "none",
+        // TSK-917: line numbers shouldn't be text-selectable, and the gutter
+        // should show the arrow cursor (not the editor's I-beam). Fold-arrow
+        // elements set their own pointer cursor.
+        userSelect: "none",
+        cursor: "default",
       },
     }, { dark: dark });
     return [chrome, syntaxHighlighting(HighlightStyle.define(specs))];

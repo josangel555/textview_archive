@@ -1,5 +1,14 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-917: CM6 gutter non-selectable + default cursor (loop tick)
+
+Gutter line numbers were text-selectable + showed the I-beam. Added `userSelect:none` + `cursor:default` to
+the `.cm-gutters` chrome theme (`codemirror.html`). Host teeth: `testGutterNonSelectableWiringSurvivesBuild`
+(rule survives the build). Gate PASSED. Pure appearance → `review` (VM/owner look). Parked with design
+notes on the board: **TSK-910** (diff multi-line select — SwiftUI per-`Text` `.textSelection` can't span;
+needs a per-hunk AttributedString render that conflicts with per-line review affordances → render slice) +
+**TSK-905** (preview ↑/↓ = WKWebView first-responder-by-tab-position; AppKit focus-chain, VM-deep).
+
 ## LOG 2026-06-16 — TSK-906: palette dismiss refocuses the editor (loop tick, owner away)
 
 Autonomous loop (cron `50d0fbc8`). **TSK-906** (INTAKE P1): dismissing the command palette left the editor

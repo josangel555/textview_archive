@@ -90,6 +90,17 @@ final class CodeMirrorBundleTests: XCTestCase {
         }
     }
 
+    /// TSK-917: the line-number gutter must be non-selectable + show the
+    /// default (not I-beam) cursor. Pure-CSS appearance fix in the chrome
+    /// theme; the rule must survive in the host HTML (live look = VM tail).
+    func testGutterNonSelectableWiringSurvivesBuild() throws {
+        let html = try String(contentsOf: try XCTUnwrap(CodeMirrorResources.hostHTMLURL), encoding: .utf8)
+        for needle in ["userSelect: \"none\"", "cursor: \"default\""] {
+            XCTAssertTrue(html.contains(needle),
+                          "codemirror.html missing gutter non-select wiring: \(needle)")
+        }
+    }
+
     /// TSK-602 ViewOnly↔Editor color parity: the HTML host must carry the
     /// palette→HighlightStyle builder, and the JS bundle must export the
     /// symbols it needs (`HighlightStyle`, `tags`). A bundle rebuilt from a
