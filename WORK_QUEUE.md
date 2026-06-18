@@ -66,7 +66,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [~] **TSK-746** — Open dialog: show recents `[LOW-VALUE: NSOpenPanel can't cleanly host custom recents; Open Recent exists]`
 - [~] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto) `[PARKED→owner: "unify" ambiguous; ⌘G is standard Find-Next]`
 
-- [ ] **TSK-574** — rust-core: pub API surface with zero consumers; WireError rich-error channel never sent
+- [~] **TSK-574** — rust-core: zero-consumer pub surface `[a4973ad → review; WireError DONE (577 emit/669 decode/tests.rs:840), pub(crate) 6 helpers + deleted dead CsvSession::from_table; RESIDUAL: parse_hex/looks_tabular (test-only) + trace::set_sink/clear_sink (future host-seam) — delete-vs-keep call]`
 - [x] **TSK-820** — rust-core: remove dead per-method C symbols `[6e4c821 → validated; removed 5 dead exports (cm_apply/fuzzy_rank/find_search/transcript_parse/markdown_render) + 5 misuse tests; kept highlight_runs; rust+headless gates green (5821 tests, no consumer broke)]`
 - [ ] **TSK-307** — Button: show bookmarks from just the root folder in a new view
 - [ ] **TSK-374** — Find match list view
