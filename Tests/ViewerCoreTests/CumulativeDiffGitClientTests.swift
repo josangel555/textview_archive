@@ -9,15 +9,10 @@ import XCTest
 final class CumulativeDiffGitClientTests: XCTestCase {
 
     // MARK: - fixture helpers (mirror GitClientPanelTests)
+    // TSK-850: shared batched fixture (one shell vs 4 git Processes); per-test
+    // commits still use the local `git` below.
     private func makeRepo() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CumDiffTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try git(["init", "-q", "-b", "main"], in: dir)
-        try git(["config", "user.email", "t@example.com"], in: dir)
-        try git(["config", "user.name", "Tester"], in: dir)
-        try git(["config", "commit.gpgsign", "false"], in: dir)
-        return dir
+        try GitTestRepo.makeRepo(prefix: "CumDiffTests")
     }
     @discardableResult
     private func git(_ args: [String], in dir: URL) throws -> String {

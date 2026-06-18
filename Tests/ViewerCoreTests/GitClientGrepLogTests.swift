@@ -6,15 +6,10 @@ import XCTest
 /// `GitClientPanelTests`.
 final class GitClientGrepLogTests: XCTestCase {
 
+    // TSK-850: shared batched fixture (one shell vs 4 git Processes); per-test
+    // commits still use the local `run` below.
     private func makeRepo() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GitClientGrepLogTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try run(["init", "-q", "-b", "main"], in: dir)
-        try run(["config", "user.email", "t@example.com"], in: dir)
-        try run(["config", "user.name", "Tester"], in: dir)
-        try run(["config", "commit.gpgsign", "false"], in: dir)
-        return dir
+        try GitTestRepo.makeRepo(prefix: "GitClientGrepLogTests")
     }
 
     @discardableResult

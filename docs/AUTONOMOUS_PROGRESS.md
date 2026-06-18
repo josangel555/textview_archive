@@ -12,6 +12,12 @@ migrated classes ARE the helper's regression guard. Headless gate green. Speed g
 not the git-work itself — confirmed by the 836 finding) but the dedup is real; `branch`/`email`/`name` params
 let the differently-configured git classes (RepoFocusTracker t@e.com, GitClient test@example.com) migrate in
 follow-up slices. 850 → review (remaining git classes = follow-up).
+**Slice 2 (same day):** migrated 2 MORE identical-config ViewerCoreTests classes (GitClientGrepLogTests,
+CumulativeDiffGitClientTests) to the helper — **4 total** now share it (both suites pass, gate green).
+Scoped the REST on the board: the ~remaining git classes need either a shared **TestSupport** SwiftPM target
+(cross-target — RepoFocusTracker etc. live in ViewerUITests and can't import the ViewerCoreTests helper) or
+helper generalization (config variation: caller-dir, `init -q` no `-b`, different email/name). That's a
+focused Package.swift design slice for modest (spawn-only) gain — owner/effort judgment, not a blind migrate.
 
 ## LOG 2026-06-16 — TSK-836 (capture half): per-class swift-test timing report
 
