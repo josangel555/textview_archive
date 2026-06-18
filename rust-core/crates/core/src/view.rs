@@ -244,6 +244,8 @@ pub fn classify(name: &str) -> FileKind {
 }
 
 /// Whether `name` looks like a delimited table (drives the `Table` mode).
+/// TSK-574: a deliberate public predicate — the in-tree path uses `classify(name)`
+/// directly, so this has no current consumer; retained as API, not dead code.
 #[must_use]
 pub fn looks_tabular(name: &str) -> bool {
     classify(name) == FileKind::Tabular

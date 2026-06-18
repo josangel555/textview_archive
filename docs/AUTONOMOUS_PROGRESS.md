@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-574 residual RESOLVED (explicit future-API markers) → validated
+
+Closed out 574's residual per the audit's own prescription ("keep deliberate future-API only with an explicit
+marker"). On inspection the 3 retained zero-consumer items are all DELIBERATE, not dead: `theme::parse_hex`
+(doc already says "Offered for front-ends / future user theme config" — a wrong delete avoided!),
+`view::looks_tabular` (public predicate; `classify` is the in-tree path), `trace::set_sink`/`clear_sink`
+(host-seam `Sink` facade). Added explicit TSK-574 markers to the two that lacked them (looks_tabular, set_sink);
+parse_hex was already marked. So every [S3] item is now resolved: 6 internal helpers → `pub(crate)`, dead
+`from_table` deleted, WireError done (577/669), 3 future-API items kept-with-markers. rust-core gate green.
+574 → validated.
+
 ## LOG 2026-06-16 — TSK-574 (bulk): reduced zero-consumer pub surface in rust-core `core`
 
 Addressed the audit's [S3] zero-external-consumer pub-API finding. The WireError concern was already RESOLVED

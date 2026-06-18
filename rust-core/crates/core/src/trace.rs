@@ -104,6 +104,8 @@ static SINK_PRESENT: AtomicBool = AtomicBool::new(false);
 
 /// Install the global trace sink, replacing any previous one. Idempotent;
 /// passing the same kind of sink twice simply swaps it.
+/// TSK-574: a deliberate future host-seam — the host installs a `Sink` to drain
+/// trace records. No in-tree consumer yet; intentionally retained, not dead.
 pub fn set_sink(sink: Box<dyn Sink>) {
     if let Ok(mut guard) = SINK.write() {
         *guard = Some(sink);
