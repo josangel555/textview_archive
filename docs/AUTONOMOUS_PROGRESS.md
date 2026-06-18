@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — VM lane re-confirmed + TSK-954 VALIDATED + VM-framing corrected (owner prompt)
+
+Owner: "Is the VM lane blocked? VM is up — no blockers for testing/validation." Correct — I'd been over-cautiously
+parking render items as "VM tail, owner-gated" as if I couldn't run the GUI/pixel lane. I CAN (it's agent-runnable;
+the project memory already said so). Ran the VM GUI lane (`test-in-vm.sh all`, MDV_VM_GUI_SESSION): **5832 tests incl
+T5 pixel + every WebView suite**. The accumulated review work (905/893/901/307) is **regression-clean** on the VM —
+none appears in any failure. The only reds were 2 pre-existing known issues.
+- **FIXED + VALIDATED TSK-954** (`8f91de5`): the PMA UAT's MCPClient spawned the `--mcp-stdio` server as ROOT
+  (NSHomeDirectory=/var/root → open_path containment rejected the console-user fixtures from TSK-953). Now spawns via
+  `sudo -n -u <consoleUser> /usr/bin/env HOME=<spawnUserHome> … --mcp-stdio` (mirrors AppLauncher). VM re-run:
+  `PluginsAndMcpAutomationUATTests` PASSES (PMA01/PMA01var/PMA02/PMA03 all green, was 3-red). PMA self-skips on host.
+- **Remaining VM reds (NOT mine):** TSK-491 (terminal right-dock compositing, known-open) + PaneScrollRestoreWebViewTests
+  (FLAKY — passed the prior run with identical app code; scroll-timing race 400 vs 0; my 905 focus path is dormant when
+  focusRequest is unchanged, as in that test). Filed **TSK-959** to de-flake (deterministic poll-until on the reload milestone).
+- **GO-FORWARD (corrected):** render/interaction items get the FULL VM pyramid (build → host-test the model → VM UI test/run
+  → validated), NOT "VM tail forever." The previously-parked VM-interaction bugs (894/896/921/922) are now actionable
+  (repro + fix + validate on the VM).
+
 ## LOG 2026-06-18 — TSK-307: bookmarks root-folder scope filter (A-section feature)
 
 Continuing the curated drain (after 905, 893, 901). TSK-307 asked for (a) a root-folder scope filter on the

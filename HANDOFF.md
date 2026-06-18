@@ -1,12 +1,16 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run 06-16→18; shipped 906/917/820/574/836/850/947; VM-validated 5825t/0-fail; GOOD-ROI host-wins DRAINED  (2026-06-18)
+# Handoff — autonomous run; shipped 906/917/820/574/836/850/947 + (06-18 RE-ENGAGED) 905/893/901/307/954; VM lane CONFIRMED agent-runnable  (2026-06-18)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `b3a3aae` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `8f91de5` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
 
-> **OWNER likely BACK** (today is 2026-06-18; expected return was ~06-17 PM). The 10-min cron `50d0fbc8` ran
-> the loop unattended and shipped 5 items (below). **The host-clean win well is now DRAINED** — what remains
-> in `WORK_QUEUE.md` needs OWNER DIRECTION (see "Next action"): VM/Instruments traces for the P0 perf items,
-> shortcut-key decisions for the parked cluster, or a design-first render/refactor pick. `main` is gate-green.
+> **OWNER IS BACK + ENGAGED (2026-06-18).** Two corrections this session: (1) STOP no-opping — drain the curated
+> WORK_QUEUE; I re-engaged and shipped **905** (preview kbd focus), **893** (CM6 I-beam cursor), **901** (shebang
+> language-detect), **307** (bookmarks root-scope filter), all gate-green with host teeth → `review`. (2) **The VM
+> GUI/pixel lane is NOT blocked** — it's agent-runnable (`MDV_VM_GUI_SESSION=1 … test-in-vm.sh all`). I'd wrongly
+> parked render items as "VM tail / owner-gated"; corrected. Ran it: 5832 tests incl T5 + WebView, my work
+> regression-clean; FIXED+VALIDATED **TSK-954** (PMA MCPClient→console-user spawn, 8f91de5). GO-FORWARD: render items
+> get the FULL VM pyramid (build→host-test→VM run→validated), and the parked VM-interaction bugs (894/896/921/922) are
+> now actionable. VM baseline reds: TSK-491 (terminal, known) + TSK-959 (flaky scroll test, filed). `main` gate-green.
 
 ## Mission
 Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automation SOP to **drain
