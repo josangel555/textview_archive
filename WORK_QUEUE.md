@@ -67,7 +67,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [~] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto) `[PARKED→owner: "unify" ambiguous; ⌘G is standard Find-Next]`
 
 - [ ] **TSK-574** — rust-core: pub API surface with zero consumers; WireError rich-error channel never sent
-- [ ] **TSK-820** — rust-core: deprecate/remove the dead per-method C symbols (post-envelope cleanup)
+- [~] **TSK-820** — rust-core: remove dead per-method C symbols `[SPIKED on board — EXECUTE NEXT: remove 5 exports (cm_apply/fuzzy_rank/find_search/markdown_render/transcript_parse) from ffi/src/lib.rs + their 5 misuse_matrix tests; KEEP highlight_runs (crate-boundary); build-rust-core.sh regens header+lib; rust+headless gates validate. Mechanical — see board comment]`
 - [ ] **TSK-307** — Button: show bookmarks from just the root folder in a new view
 - [ ] **TSK-374** — Find match list view
 - [ ] **TSK-811** — "View as" affordance redesign — per-filename lock icon (split from TSK-732)

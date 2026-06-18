@@ -1,5 +1,20 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-820 spiked (dead FFI-symbol removal), execution deferred-mechanical
+
+Loop tick. Pivoted to the rust-core lane (owner #1). Spiked **TSK-820** (remove dead per-method C exports
+post-envelope) to full execution-readiness: 5 exports (cm_apply/fuzzy_rank/find_search/markdown_render/
+transcript_parse) are production-dead (zero Swift refs — Swift uses `mdvcore_call(MDV_METHOD_*)`) and
+cleanly envelope-routed; **keep** highlight_runs (separate crate, core dispatch refuses it). Drop their 5
+`frame_export_misuse_matrix!` tests; the byte-for-byte parity test survives (uses DiffParse, kept) + core
+dispatch tests cover the methods → no coverage lost. Pipeline: lib.rs+tests.rs edits → `build-rust-core.sh`
+(cbindgen regens header + stages the staticlib) → rust + headless gates (a wrong removal = link error,
+caught pre-commit). Full plan on the board (TSK-820 comment) + WORK_QUEUE annotation. DEFERRED execution to
+a fresh tick — a delicate ABI + binary-lib-rebuild change shouldn't be rushed at the tail of a long turn on
+unattended `main`; next fire executes it mechanically. (Cadence note: recent ticks shipped 906+917, parked
+the 936/937/938 shortcut-UX cluster, and spiked 820 — ship + responsible triage as the render/rust tail is
+drained; 820 is the next code ship.)
+
 ## LOG 2026-06-16 — TSK-936 parked (shortcut-cluster UX decision); ★ Intake tail is render/UX-deep
 
 Loop tick (owner away). Worked down the ★ Intake tail. Remaining items there are render/first-responder-deep
