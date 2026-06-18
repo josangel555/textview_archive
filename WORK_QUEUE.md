@@ -34,7 +34,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
 
 **P2 — quick-win features / UX (host-buildable, [VM] render at review):**
-- [~] **TSK-901** — Auto-detect content type — "language" half (misnamed code → highlighting) remaining `[ContentTypeSniffer shipped; language deferred]`
+- [x] **TSK-901** — Auto-detect content type — "language" half `[5eaa951 → review; HighlightLanguage.detect(fromShebang:) fallback in effectiveLanguage (shared chokepoint → source+editor+badge) for extensionless/misnamed scripts; 3 host teeth. Keyword-based (no-shebang) content detection = future enhancement]`
 - [ ] **TSK-898** — Render|Editor|HEX as a segmented button GROUP (pure visual restyle — VM)
 - [⊘] **TSK-936 / 937 / 938** — Toggle-View-only · Focus Terminal/Nav/Git/File · Esc→current tab `[PARKED→owner (TSK-936 waiting:human): shortcut keys + "view-only" semantics overlap ⇧⌘R/⌘1-3 — a UX/muscle-memory call; editor⇄view-only impl ready on key-choice]`
 - [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
