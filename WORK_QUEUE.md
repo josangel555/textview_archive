@@ -36,7 +36,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 **P2 — quick-win features / UX (host-buildable, [VM] render at review):**
 - [~] **TSK-901** — Auto-detect content type — "language" half (misnamed code → highlighting) remaining `[ContentTypeSniffer shipped; language deferred]`
 - [ ] **TSK-898** — Render|Editor|HEX as a segmented button GROUP (pure visual restyle — VM)
-- [ ] **TSK-936 / 937 / 938** — Toggle-View-only shortcut · Focus Terminal/Nav/Git/File · Esc→current tab
+- [⊘] **TSK-936 / 937 / 938** — Toggle-View-only · Focus Terminal/Nav/Git/File · Esc→current tab `[PARKED→owner (TSK-936 waiting:human): shortcut keys + "view-only" semantics overlap ⇧⌘R/⌘1-3 — a UX/muscle-memory call; editor⇄view-only impl ready on key-choice]`
 - [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
 
 **P3 — bigger / design-first / epics:**

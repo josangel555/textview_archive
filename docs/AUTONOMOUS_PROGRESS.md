@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-936 parked (shortcut-cluster UX decision); ★ Intake tail is render/UX-deep
+
+Loop tick (owner away). Worked down the ★ Intake tail. Remaining items there are render/first-responder-deep
+(905 preview-↑↓, 910 diff-multiline, 947 ⌘F-rendered, 948 source-fold-collapse, 893/894/896 cursor, 921/922
+split — design-noted/deferred) or **shortcut-UX decisions**: **TSK-936** ("Toggle View-only") overlaps the
+existing ⇧⌘R (Rendered⇄Source) + ⌘1/2/3 (positional) — semantics + key are a muscle-memory call, so parked
+for the owner (same class as 709/751); the editor⇄view-only impl (pure `ViewModeOptions.toggleViewOnly` +
+`DocumentModel.toggleViewOnly` + registry command) is ready to land on key-choice. 937/938 folded into the
+same decision. NEXT TICK: pivot to the fatter-host-teeth lanes (rust-core §0/A cleanups + build-speed
+836/849/850) where items are gate-validated with real teeth, rather than guess-ship render/shortcut items
+blind on unattended `main`.
+
 ## LOG 2026-06-16 — TSK-917: CM6 gutter non-selectable + default cursor (loop tick)
 
 Gutter line numbers were text-selectable + showed the I-beam. Added `userSelect:none` + `cursor:default` to
