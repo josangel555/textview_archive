@@ -28,7 +28,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-910** — Git diff: only one line selectable → multi-line selection `(537)` `[DESIGN-ON-BOARD: SwiftUI per-Text .textSelection can't span; needs per-hunk AttributedString vs per-line review affordances → render slice, not a quick fix]`
 - [x] **TSK-905** — Preview ↑/↓ broken unless tab is last (first-responder by tab position) `[af2b30a → review; previewFocusRequest nonce bumped on rendered-preview activation (change-keyed via updateDerived → no over-grab) → MarkdownRenderedView makeFirstResponder; 2 host teeth (bump-on-activation + no-regrab guard); live scroll = VM]`
 - [x] **TSK-906** — Palette dismiss loses editor focus `[bc93d6f → review; editorFocusRequest nonce → makeFirstResponder + dispatch(.focus), 1 teeth; live focus = VM]`
-- [ ] **TSK-893 / 894 / 896** — Editor: cursor pointer↔I-beam flip / current-line highlight stuck after drag / hovered-row offset
+- [~] **TSK-893** [x] / **894** / **896** — Editor: cursor pointer↔I-beam flip `[893 DONE: 294ba39 → review; .cm-content cursor:text in codemirror.html (917 family), host teeth assert it survives the build, live look = VM]` · 894 (current-line highlight stuck after drag) + 896 (hovered-row offset) remain — CM6 interaction-STATE bugs (not CSS), VM-repro slice
 - [x] **TSK-917** — Gutter selectable + cursor-icon confusion `[b675551 → review; .cm-gutters user-select:none + cursor:default, 1 teeth; appearance = VM]`
 - [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
