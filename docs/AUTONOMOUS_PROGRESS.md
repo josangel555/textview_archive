@@ -1,5 +1,15 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-16 — TSK-836 (capture half): per-class swift-test timing report
+
+Build/test-speed, measure-first half. Added `scripts/test-timings.py` (parses the same
+`Test Case …(N seconds).` lines `junit-convert.py` keys on → sums per CLASS → prints a slowest-first table)
++ `scripts/test-timings.sh` (runs the headless sweep with `MDV_HEADLESS_GATE=1` so heavy tiers skip, captures,
+reports). Host teeth: `TestTimingsTests` (Process-invokes the script like `JUnitConverterTests`; pins per-class
+sums, slowest-first ordering, all-outcomes-counted, and `top_n` limits ROWS not the TOTAL — 3 tests pass).
+Read-only tooling — no product/test edits. Headless gate green. The SPLIT-the-slowest half is the follow-up;
+it now has the data this produces (feeds TSK-849/850). 836 → review.
+
 ## LOG 2026-06-16 — TSK-574 residual RESOLVED (explicit future-API markers) → validated
 
 Closed out 574's residual per the audit's own prescription ("keep deliberate future-API only with an explicit
