@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — Coverage MEASURED (don't-guess): pure-logic ~100%, no backfill target
+
+With the clean queue drained, MEASURED coverage (`swift test --enable-code-coverage`) rather than assuming —
+to genuinely check the owner-endorsed "uncovered-pure-logic backfill" fallback. Result via `llvm-cov report`:
+pure-logic non-engine files are ~100% line-covered (`ByteSize`/`BreadcrumbPath`/`AudioMetadataRows` = 100%);
+the only gaps are IO/error/framework paths — `BinaryFileLoader` 88%, `AuditLog` 94%, `BookmarksStore` 96% (the
+uncovered lines are IO-failure / persistence-error branches, legitimately hard to unit-test + low value) and the
+framework-coupled Audio/Archive/MCP/Browser files. So the backfill fallback has NO meaningful pure-logic target
+— confirmed by measurement, not assumed. The codebase's test-discipline holds. Clean autonomous work remains
+genuinely exhausted; owner-bottlenecked (GUI-lane VM / P0 traces / owner decisions).
+
 ## LOG 2026-06-18 — VM validation of the run (owner standing ask) → caught + fixed a flaky test
 
 Ran the headless VM suite (`test-in-vm.sh test`, Swift 6.3) to validate this run's 9 accumulated items —
