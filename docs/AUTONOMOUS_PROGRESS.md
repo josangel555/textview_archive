@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-893: CM6 editor always shows the I-beam cursor (P1)
+
+Continuing the curated P1 drain (after 905). TSK-893: the CM6 editing surface flipped between the arrow and the
+I-beam cursor "by position" over editable text. Same class as the shipped TSK-917 (gutter cursor) — a chrome-theme
+CSS rule in `codemirror.html`. Fix: `.cm-content { cursor: "text" }`, which forces the I-beam over the content and
+cascades to the syntax spans (they were falling back to the default arrow). Host teeth:
+`CodeMirrorBundleTests.testEditorContentForcesIBeamCursorSurvivesBuild` asserts the rule survives in the bundled
+host HTML (mirrors 917's gutter teeth); live look = VM tail. The bundled ticket's siblings — 894 (current-line
+highlight stuck after drag) + 896 (hovered-row offset) — are CM6 interaction-STATE bugs (not CSS), left for a
+VM-repro slice. Also recorded TSK-910 (diff multi-line selection) as a genuine render slice (conflicts with the
+per-line find-highlight + scroll-to-line; has an existing Copy-Hunk workaround) — deferred with a precise design note.
+
 ## LOG 2026-06-18 — TSK-905: Markdown preview takes keyboard focus on activation (P1 bug; re-engaged per owner)
 
 Owner pushback ("why so many no-ops? finish the curated tasks; if blocked, pick from the board") — I'd been

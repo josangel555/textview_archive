@@ -1098,7 +1098,14 @@
     ].filter((s) => typeof s.color === "string");
     const chrome = EditorView.theme({
       "&": { backgroundColor: palette.background, color: palette.defaultText },
-      ".cm-content": { caretColor: palette.defaultText },
+      ".cm-content": {
+        caretColor: palette.defaultText,
+        // TSK-893: the editing surface must ALWAYS show the I-beam. Without an
+        // explicit cursor, the content (and its syntax spans) fall back to the
+        // default arrow in places — the reported pointer↔I-beam "flip by
+        // position". Setting it on .cm-content cascades to the child spans.
+        cursor: "text",
+      },
       // Vim block cursor (normal/visual mode) → blue (TSK-679). Semi-transparent
       // so the character under the block stays legible; solid blue outline when
       // the editor isn't focused. Overrides the plugin's default reddish block —

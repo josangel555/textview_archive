@@ -101,6 +101,16 @@ final class CodeMirrorBundleTests: XCTestCase {
         }
     }
 
+    /// TSK-893: the CM6 editing surface (`.cm-content`) must force the I-beam
+    /// cursor so it never flips to the default arrow over editable text. Pure-CSS
+    /// chrome-theme rule; the rule must survive in the host HTML (live look = VM
+    /// tail). Distinct from the gutter's `cursor: "default"` (TSK-917) above.
+    func testEditorContentForcesIBeamCursorSurvivesBuild() throws {
+        let html = try String(contentsOf: try XCTUnwrap(CodeMirrorResources.hostHTMLURL), encoding: .utf8)
+        XCTAssertTrue(html.contains("cursor: \"text\""),
+                      "codemirror.html missing .cm-content I-beam cursor wiring (TSK-893)")
+    }
+
     /// TSK-602 ViewOnly↔Editor color parity: the HTML host must carry the
     /// palette→HighlightStyle builder, and the JS bundle must export the
     /// symbols it needs (`HighlightStyle`, `tags`). A bundle rebuilt from a
