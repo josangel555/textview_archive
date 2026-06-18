@@ -5,6 +5,17 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## A test helper reading a subprocess's stdout via a Pipe flakes on the VM — use a FILE (2026-06-18, TSK-836)
+
+A test that spawns a subprocess (`python3 scripts/test-timings.py`) and captured its stdout via a `Pipe`
+passed on the host but FAILED on the VM (`test-in-vm.sh`, parallel): python exited **120** with
+`Exception ignored in: <_io.TextIOWrapper name='<stdout>' ...>` — a BrokenPipe at python's at-exit stdout
+flush, racing the Swift side's pipe teardown under the VM's heavier parallel load (the host never raced it).
+FIX: set the `Process.standardOutput` to a `FileHandle` on a temp file (NOT a `Pipe`) and read the file after
+`waitUntilExit` — a file can't break. (`JUnitConverterTests` already writes to a file for this reason.) RULE:
+test helpers capturing a subprocess's stdout should use a FILE, not a Pipe — and the owner's "run the suite on
+the VM" step is what catches these host-invisible flakes. (Keep stderr a small Pipe for the failure message.)
+
 ## Per-test timing on the host: only SERIAL `swift test` has it (2026-06-16, TSK-836)
 
 To capture per-test/per-class wall-clock on the host, you MUST run `swift test` **serially**. The three traps:

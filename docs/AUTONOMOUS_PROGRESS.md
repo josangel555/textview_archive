@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — VM validation of the run (owner standing ask) → caught + fixed a flaky test
+
+Ran the headless VM suite (`test-in-vm.sh test`, Swift 6.3) to validate this run's 9 accumulated items —
+the owner's standing "run the suite on the VM for substantive Swift changes" step, which I'd skipped all run.
+Result: 5825 tests / 193 skipped / **3 VM assertion failures** (host had 0), ALL in ONE test:
+`TestTimingsTests.test_countsAllOutcomes` (my TSK-836 work). Cause: its `report()` helper read
+`test-timings.py`'s stdout via a **Pipe**; under the VM's parallel load python hit a BrokenPipe at its at-exit
+stdout flush → "Exception ignored in TextIOWrapper" → exit 120 → the `terminationStatus == 0` assertion failed
+(+ 2 cascades). FIX: capture python's stdout to a **FILE** (a file can't break), mirroring the file-based
+`JUnitConverterTests`. Host re-run 3/3 green. This is exactly why the VM-validation ask exists — the host's
+lighter load never raced; the VM's parallelism did. Lesson recorded in LESSONS.md.
+
 ## LOG 2026-06-18 — TSK-947: ⌘F gated off in HTML-rendered mode (parity B5)
 
 Fixed B5: ⌘F in HTML-rendered mode flipped an INVISIBLE find bar — `findInPage` routes `.rendered` →

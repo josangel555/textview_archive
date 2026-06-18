@@ -16,7 +16,11 @@ final class TestTimingsTests: XCTestCase {
         .deletingLastPathComponent()
         .appendingPathComponent("scripts/test-timings.py")
 
-    /// Run test-timings.py on `fixture`, returning its stdout report.
+    /// Run test-timings.py on `fixture`, returning its report. stdout is
+    /// captured to a FILE, not a Pipe: a stdout pipe raced python's at-exit
+    /// flush on the VM under parallel load (BrokenPipe → exit 120, caught by
+    /// the TSK-836 VM-validation run) — a file can't break. Mirrors the
+    /// file-based JUnitConverterTests capture.
     private func report(_ fixture: String, topN: Int? = nil) throws -> String {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("testtimings-\(UUID().uuidString)")
@@ -24,20 +28,22 @@ final class TestTimingsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let input = dir.appendingPathComponent("out.txt")
         try fixture.write(to: input, atomically: true, encoding: .utf8)
+        let outFile = dir.appendingPathComponent("report.txt")
+        FileManager.default.createFile(atPath: outFile.path, contents: nil)
+        let outHandle = try FileHandle(forWritingTo: outFile)
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         p.arguments = [Self.script.path, input.path] + (topN.map { [String($0)] } ?? [])
-        let out = Pipe()
         let err = Pipe()
-        p.standardOutput = out
+        p.standardOutput = outHandle
         p.standardError = err
         try p.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        let errData = err.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        XCTAssertEqual(p.terminationStatus, 0,
-            String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
-        return String(decoding: data, as: UTF8.self)
+        try? outHandle.close()  // flush + close so the report file is readable
+        XCTAssertEqual(p.terminationStatus, 0, String(decoding: errData, as: UTF8.self))
+        return (try? String(contentsOf: outFile, encoding: .utf8)) ?? ""
     }
 
     private func index(of needle: String, in haystack: String) -> String.Index? {
