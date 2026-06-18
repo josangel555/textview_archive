@@ -905,6 +905,28 @@ public final class DocumentModel: ObservableObject {
         editorFocusRequest &+= 1
     }
 
+    /// TSK-905: bumped when the active RENDERED preview changes (tab switch /
+    /// view-mode→rendered / open) so its `WKWebView` re-takes first responder
+    /// and ↑/↓/PageUp scroll it. WKWebViews are first-responder-by-tab-position
+    /// by default — only the last-added one gets key events — so a preview that
+    /// isn't the last tab is dead to arrows until we explicitly focus it.
+    /// Consumed by `MarkdownRenderedView(focusRequest:)`.
+    @Published public private(set) var previewFocusRequest: Int = 0
+    private var lastFocusedPreviewTabID: UUID?
+
+    /// Re-evaluate which rendered preview is active and bump `previewFocusRequest`
+    /// only when it CHANGED. Called from `updateDerived` (the common post-change
+    /// refresh) so it covers tab switches, view-mode flips, and opens — but the
+    /// change-key (active rendered tab id) makes a same-preview derived refresh a
+    /// no-op, so focus is never stolen mid-interaction.
+    private func refreshPreviewFocus() {
+        let active: UUID? = (currentViewMode == .rendered) ? tabs.selected?.id : nil
+        defer { lastFocusedPreviewTabID = active }
+        if let active, active != lastFocusedPreviewTabID {
+            previewFocusRequest &+= 1
+        }
+    }
+
     // MARK: - Command registry (UX-M / #232)
 
     /// The effective command catalog: the built-in `CommandRegistry`
@@ -6228,6 +6250,10 @@ public final class DocumentModel: ObservableObject {
         // Sibling: recompute the CM6 editor's syntax fold ranges for the
         // newly-focused tab (TSK-466). No-op outside editor mode.
         refreshEditorFolds()
+        // Sibling (TSK-905): if the active rendered preview changed, ask it to
+        // take first responder so arrows scroll it. Change-keyed, so this is a
+        // no-op on same-preview refreshes (no focus stealing).
+        refreshPreviewFocus()
         // Sibling to refreshDiffMarks: keep the multi-repo registry's
         // demand set in sync with the open-tab/selection state. The
         // tabCoordinator/sidebar Combine sinks in RepoFocusTracker cover

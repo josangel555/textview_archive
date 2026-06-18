@@ -1,5 +1,19 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-905: Markdown preview takes keyboard focus on activation (P1 bug; re-engaged per owner)
+
+Owner pushback ("why so many no-ops? finish the curated tasks; if blocked, pick from the board") — I'd been
+over-gating render-coupled P1 bugs as unshippable. Per the [VM] policy (build the model, host-test it, ship to
+review), built TSK-905 (preview ↑/↓ dead unless the tab was the last one). Root cause: WKWebViews are
+first-responder-by-tab-position — only the last-added one gets key events — so a non-last preview never
+received arrows. Fix: a `previewFocusRequest` nonce on DocumentModel (mirrors 906's `editorFocusRequest`),
+bumped from `updateDerived`'s new `refreshPreviewFocus()` ONLY when the active rendered-preview tab id CHANGES
+(change-keyed → NO focus stealing on same-preview refreshes — the over-grab risk I'd flagged); MarkdownRenderedView
+consumes it (Coordinator `lastFocusRequest` → `makeFirstResponder(webView)` in `updateNSView`), gated to the
+ACTIVE tab in ContentView (`isActive ? model.previewFocusRequest : 0`). Host teeth: 2 new DocumentModelTests pin
+bump-on-activation AND the no-regrab guard (the over-grab regression is now host-caught). Live scroll = VM tail
+(review). Files: DocumentModel.swift, MarkdownRenderedView.swift, ContentView.swift, DocumentModelTests.swift.
+
 ## LOG 2026-06-18 — Coverage MEASURED (don't-guess): pure-logic ~100%, no backfill target
 
 With the clean queue drained, MEASURED coverage (`swift test --enable-code-coverage`) rather than assuming —

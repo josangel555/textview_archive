@@ -881,6 +881,9 @@ public struct ContentView: View {
                     model.recordPDFExportResult(nonce: nonce, ok: ok, message: message)
                 }
             },
+            // TSK-905: only the ACTIVE tab's preview answers the focus nonce
+            // (a background sibling must never grab first responder).
+            focusRequest: isActive ? model.previewFocusRequest : 0,
             // TSK-821: per-file rendered-scroll persistence — capture this
             // file's scrollY before it's swapped out, restore it on return.
             fileURL: file.url,

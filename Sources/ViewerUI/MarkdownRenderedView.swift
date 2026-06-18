@@ -30,6 +30,12 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     public let pdfExportURL: URL?
     /// (nonce, ok, message) reported after createPDF resolves.
     public let onPDFExportResult: ((Int, Bool, String) -> Void)?
+    /// TSK-905: nonce-bumped (the find/print pattern) when this rendered preview
+    /// becomes the active tab's content. On a change we `makeFirstResponder` the
+    /// WKWebView so ↑/↓/PageUp scroll it — WKWebViews are
+    /// first-responder-by-tab-position by default, so a preview that isn't the
+    /// last tab is otherwise dead to arrow keys.
+    public let focusRequest: Int
     /// TSK-821 (rendered scroll persistence): the file URL this pane shows
     /// (keys the per-file scroll memory) + the bridge to the model's
     /// `renderedScrollByURL`. `onScrollCapture` reports the OUTGOING file's
@@ -59,6 +65,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         pdfExportNonce: Int = 0,
         pdfExportURL: URL? = nil,
         onPDFExportResult: ((Int, Bool, String) -> Void)? = nil,
+        focusRequest: Int = 0,
         fileURL: URL? = nil,
         restoreScrollY: Double? = nil,
         onScrollCapture: ((URL, Double) -> Void)? = nil
@@ -77,6 +84,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.pdfExportNonce = pdfExportNonce
         self.pdfExportURL = pdfExportURL
         self.onPDFExportResult = onPDFExportResult
+        self.focusRequest = focusRequest
         self.fileURL = fileURL
         self.restoreScrollY = restoreScrollY
         self.onScrollCapture = onScrollCapture
@@ -298,6 +306,14 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             c.lastPrevNonce = findPrevNonce
             c.runFind(in: webView, backwards: true)
         }
+        // Preview focus (TSK-905): on a change, take first responder so the
+        // active rendered preview gets arrow/PageUp key events. window?. so a
+        // not-yet-attached webView no-ops safely (only the live, on-screen
+        // active tab's view is in a window — background tabs aren't realized).
+        if c.lastFocusRequest != focusRequest {
+            c.lastFocusRequest = focusRequest
+            webView.window?.makeFirstResponder(webView)
+        }
         // Print / Export-as-PDF (TSK-638).
         if c.lastPrintNonce != printNonce {
             c.lastPrintNonce = printNonce
@@ -497,6 +513,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         var lastPrevNonce: Int = 0
         var lastPrintNonce: Int = 0
         var lastPDFExportNonce: Int = 0
+        var lastFocusRequest: Int = 0
         /// Reported back via SwiftUI: true/false = last find's matchFound.
         var onFindResult: ((Bool?) -> Void)? = nil
         /// Match count + current index + pre-formatted "n/N" summary,

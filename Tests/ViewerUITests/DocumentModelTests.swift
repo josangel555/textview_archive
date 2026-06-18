@@ -72,6 +72,57 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model.editorFocusRequest, 2, "each dismiss bumps")
     }
 
+    // MARK: Preview focus (TSK-905 — active rendered preview takes first responder)
+
+    /// The active rendered preview requests first-responder focus when it
+    /// becomes active (so ↑/↓/PageUp scroll it) — and a redundant refresh of the
+    /// SAME preview must NOT re-grab focus (the over-grab guard: this is what a
+    /// regression to "bump on every derived refresh" would trip).
+    func test_previewFocusRequest_bumpsOnRenderedActivation_notOnRedundantRefresh() throws {
+        let model = makeModel()
+        XCTAssertEqual(model.previewFocusRequest, 0)
+
+        let a = try writeFile("a.md", "# A\n")
+        model.open(url: a)
+        model.setCurrentViewMode(.rendered)
+        XCTAssertEqual(model.currentViewMode, .rendered, "markdown can show a rendered preview")
+        let afterA = model.previewFocusRequest
+        XCTAssertGreaterThan(afterA, 0, "activating a rendered preview requests focus")
+
+        // Redundant refresh of the SAME preview → no bump (no focus stealing).
+        model.selectTab(at: 0)
+        XCTAssertEqual(model.previewFocusRequest, afterA,
+                       "re-selecting the same rendered preview must not re-grab focus")
+
+        // A second rendered file = a different active preview → bump.
+        let b = try writeFile("b.md", "# B\n")
+        model.open(url: b)
+        model.setCurrentViewMode(.rendered)
+        let afterB = model.previewFocusRequest
+        XCTAssertGreaterThan(afterB, afterA,
+                             "switching to a different rendered preview requests focus")
+
+        // Switching back to A's preview is again a change → bump.
+        model.selectTab(at: 0)
+        XCTAssertGreaterThan(model.previewFocusRequest, afterB,
+                             "switching back to A's rendered preview requests focus")
+    }
+
+    /// Leaving a rendered preview for a non-rendered mode (the editor) does not
+    /// request preview focus — only rendered previews are focus targets.
+    func test_previewFocusRequest_silentForNonRenderedModes() throws {
+        let md = try writeFile("doc.md", "# A\n")
+        let model = makeModel()
+        model.open(url: md)
+        model.setCurrentViewMode(.rendered)
+        let afterRendered = model.previewFocusRequest
+        XCTAssertGreaterThan(afterRendered, 0)
+
+        model.setCurrentViewMode(.editor)
+        XCTAssertEqual(model.previewFocusRequest, afterRendered,
+                       "leaving rendered for the editor does not request preview focus")
+    }
+
     // MARK: Vim mode (TSK-679 — View → Vim Mode preference)
 
     func test_vimModeEnabled_proxiesPreferences_andSeedsOnInit() {
