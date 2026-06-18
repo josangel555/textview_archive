@@ -1,5 +1,5 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run 06-16→18; shipped 906/917/820/574/836/850; clean GOOD-ROI host-wins DRAINED  (2026-06-18)
+# Handoff — autonomous run 06-16→18; shipped 906/917/820/574/836/850/947; VM-validated 5825t/0-fail; GOOD-ROI host-wins DRAINED  (2026-06-18)
 
 **Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `1d6325c`
 
@@ -46,6 +46,13 @@ Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automati
     + migrated **6** ViewerCoreTests git classes (HistoryStats/Panel/GrepLog/CumDiff/ScopeDiff/GitClientStatus).
     Within-target migrations EXHAUSTED; the rest are ViewerUITests (cross-target → need a TestSupport SwiftPM target,
     POOR ROI — the 836 measurement proved the cost is git-WORK not spawns, so the restructure buys only seconds).
+  - **TSK-947** (`abaa36c` → review): ⌘F gated off in HTML-rendered mode (no more invisible find bar) — pure
+    `canFindInPage` gating, host-tested; live menu-grey = VM tail. Also diagnosed **905**'s root cause (no
+    first-responder mgmt for the preview → fix-ready, but VM-gated for over-grab risk).
+  - **VM-validated the whole run** (`test-in-vm.sh`, Swift 6.3): 5825 tests / 0 failures — but FIRST caught + fixed
+    a flaky test I'd introduced (836's `test_countsAllOutcomes`: stdout-Pipe broken-pipe race → exit 120 on the VM
+    only; fixed file-based, `6b128d2`; LESSONS). So all accumulated Swift+rust changes are confirmed VM-compile/
+    headless-clean (render/live of the review-state items is still the GUI-lane VM tail).
   - Parked **936/937/938** (shortcut-key UX decision, `waiting:human`); design/scope notes on **905/910/947/948/908/849/850/573**.
 - **In flight:** nothing mid-edit. Tree clean (except untracked non-ours `archive/Untitled.txt`, `untitled2.md`).
 - **Next action — NEEDS OWNER DIRECTION (host-clean wins drained):**
