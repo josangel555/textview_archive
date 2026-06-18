@@ -15,6 +15,14 @@ per-case timing, and `--xunit-output` is broken on the host toolchain (writes no
 `swift test` emits the XCTest `Test Case … (N seconds).` lines the parser needs. Fixed `test-timings.sh` to
 run serial + demonstrated a correct real report. The synthetic-fixture Swift test passed but the .sh fed the
 wrong source — exactly the "demonstrate teeth on REAL data, not just a green fixture" lesson (now in LESSONS).
+**Real measurement (serial, 5824 tests / 665 classes / 214s total) — the 849/850 targets:** the heaviest
+classes cluster into two families. (1) GIT tests (per-method `git init` + ops): GitClientHistoryStatsTests
+8.8s, RepoFocusTrackerTests 7.3s, GitLogStalePageGuardTests 7.3s (3637 ms/test!), GitClient*/GitLog*/
+CommitReview*/Cumulative*/GitPanel* — collectively the biggest bucket → TSK-850 (share an immutable git
+fixture across the class). (2) SLEEP/WAIT tests: FolderWatcherTests 6.9s, LSPClientSmokeTests 3245 ms/1 test,
+LSPPoolSmokeTests 2131 ms/test, GrandchildPipeTests 2908 ms/test, ModeSwitchRaceTests → TSK-849 (replace
+fixed sleeps with condition-waits). High avg-ms/test classes block a parallel worker longest, so they're the
+priority. Full top-25 in the commit's run; `bash scripts/test-timings.sh` reproduces.
 
 ## LOG 2026-06-16 — TSK-574 residual RESOLVED (explicit future-API markers) → validated
 
