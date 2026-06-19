@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-18
 
 ### Added
+- **Git log: more commit actions** — right-clicking a commit now offers **Copy SHA**, **Copy Short SHA**, **Copy Subject**, and **Copy Reference** (`<short-sha> <subject>`, git-oneline style), not just "Review Commit".
 - **CSV viewer: copy a whole row or column** — the cell right-click menu now has **Copy Row** (tab-separated) and **Copy Column** (one value per line) alongside Copy Cell, so you can paste a row or column straight into a spreadsheet.
 - **Find in source: a "show all matches" list** — next to the match minimap, a new list button opens a popover listing every match (line number + that line's text); click a row to jump straight to it. Complements the existing tick minimap and Next/Previous.
 - **Bookmarks can be scoped to the current folder** — a new "R" filter chip in the Bookmarks panel shows only the bookmarks under the folder you currently have open, alongside the existing file / folder / line (F/D/L) filters.

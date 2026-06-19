@@ -201,6 +201,14 @@ struct GitLogTab: View {
                     }
                 }
             }
+            // TSK-908: common commit copy actions (the menu was review-only).
+            Divider()
+            Button("Copy SHA") { Pasteboard.copy(c.sha) }
+            Button("Copy Short SHA") { Pasteboard.copy(CommitClipboard.shortSHA(c.sha)) }
+            Button("Copy Subject") { Pasteboard.copy(c.subject) }
+            Button("Copy Reference") {
+                Pasteboard.copy(CommitClipboard.reference(sha: c.sha, subject: c.subject))
+            }
         }
     }
 

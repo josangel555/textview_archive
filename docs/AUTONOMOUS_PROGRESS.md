@@ -1,5 +1,14 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-908: investigated (slow part already lazy) + added the missing commit copy actions
+
+908 = "right-click commit slow + only shows Review Commit." (a) SLOW: the host hot path is already CHEAP — the
+expensive ReviewStore read (reviewsForCommit) is lazy inside the "Reviews" submenu closure (TSK-909), off the
+right-click path; any residual is SwiftUI .contextMenu framework materialization (not host-fixable), likely resolved
+by 909 (verify on VM). (b) "ONLY SHOWS Review Commit" → addressed: added Copy SHA / Copy Short SHA / Copy Subject /
+Copy Reference (`<short-sha> <subject>`) to the commit context menu (GitLogTab), backed by a pure host-tested
+ViewerCore CommitClipboard (shortSHA + reference). Host teeth: CommitClipboardTests (2). Menu render = VM/owner.
+
 ## LOG 2026-06-18 — P0 perf front opened: TSK-889 traced (cold JSON open is fast; lag is warm-path)
 
 Pivoted to the owner's TOP priority (P0 perf) now that the VM lane is confirmed. Ran an os_signpost trace of a
