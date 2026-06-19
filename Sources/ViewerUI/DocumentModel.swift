@@ -340,6 +340,12 @@ public final class DocumentModel: ObservableObject {
     /// separate from `history` so typing into the prompt doesn't churn
     /// the global recents list.
     public let goToPathHistory: GoToPathHistoryStore
+    /// TSK-1017: durable per-file scroll + zoom memory. Backs the in-session
+    /// `Tab.scrollTopLine` (UX-K #231) with a disk store keyed by FILE
+    /// IDENTITY, so a file reopened in a later session/relaunch returns to the
+    /// position it was left at. Written only when the user actually scrolled
+    /// or zoomed since restore (see `ScrollMemoryStore.shouldPersist`).
+    public let scrollMemory: ScrollMemoryStore
     public let bookmarksStore: BookmarksStore
     /// User-defined snippets merged over the built-ins (TSK-705). Read by the
     /// Insert-Snippet menu + `insertSnippet`.
@@ -407,6 +413,9 @@ public final class DocumentModel: ObservableObject {
         goToPathHistory: GoToPathHistoryStore = GoToPathHistoryStore(
             storeURL: GoToPathHistoryStore.defaultStoreURL()
         ),
+        scrollMemory: ScrollMemoryStore = ScrollMemoryStore(
+            storeURL: ScrollMemoryStore.defaultStoreURL()
+        ),
         bookmarks: BookmarksStore = BookmarksStore(storeURL: BookmarksStore.defaultStoreURL()),
         snippets: SnippetStore = SnippetStore(storeURL: SnippetStore.defaultStoreURL()),
         sidebar: SidebarModel = SidebarModel(),
@@ -419,6 +428,7 @@ public final class DocumentModel: ObservableObject {
         self.controller = controller
         self.history = history
         self.goToPathHistory = goToPathHistory
+        self.scrollMemory = scrollMemory
         self.bookmarksStore = bookmarks
         self.snippetStore = snippets
         self.sidebar = sidebar
@@ -2025,6 +2035,12 @@ public final class DocumentModel: ObservableObject {
     // is excluded from `Tab`'s Equatable, so this write can't churn the
     // SwiftUI tab-strip diff.
 
+    /// TSK-1017: the per-file scroll/zoom entry we last RESTORED from (or
+    /// stored to) the durable `scrollMemory`, keyed by resolved path. Lets
+    /// `ScrollMemoryStore.shouldPersist` tell an actually-scrolled file from
+    /// an untouched open/glance/close — so we don't write-amplify the store.
+    private var scrollMemoryBaseline: [String: ScrollMemoryStore.Entry] = [:]
+
     /// Sample the live source-view scroll offset and stamp the resulting
     /// 1-based top line into the tab at `index`. No-op when the geometry isn't
     /// usable (zero-line doc / pre-first-paint) or the value is unchanged.
@@ -2033,9 +2049,33 @@ public final class DocumentModel: ObservableObject {
         guard tabs.tabs.indices.contains(index) else { return }
         guard let line = sourceView.sourceScrollState.topVisibleLine else { return }
         var t = tabs.tabs[index]
-        guard t.scrollTopLine != line else { return }
-        t.scrollTopLine = line
-        tabCoordinator.replace(at: index, with: t)
+        if t.scrollTopLine != line {
+            t.scrollTopLine = line
+            tabCoordinator.replace(at: index, with: t)
+        }
+        persistScrollMemory(forTabAt: index, topLine: line)
+    }
+
+    /// TSK-1017: mirror a captured scroll/zoom into the DURABLE store, gated so
+    /// untouched files write nothing. Reads the tab's file identity + current
+    /// global zoom (the per-file zoom override is a later slice; today we
+    /// remember the global zoom so reopening doesn't visually jump). No-op for
+    /// tabs without a file URL (scratch / untitled).
+    private func persistScrollMemory(forTabAt index: Int, topLine: Int) {
+        guard tabs.tabs.indices.contains(index),
+              let url = tabs.tabs[index].url else { return }
+        let key = ScrollMemoryStore.key(for: url)
+        // Zoom is only worth remembering when the user moved it off the 1.0
+        // default — otherwise every file would pin a "zoom: 1.0" entry.
+        let z: Double? = abs(zoom - 1.0) > 0.0001 ? zoom : nil
+        let candidate = ScrollMemoryStore.Entry(
+            path: key, scrollTopLine: topLine, zoomLevel: z, savedAt: Date()
+        )
+        guard ScrollMemoryStore.shouldPersist(
+            restored: scrollMemoryBaseline[key], candidate: candidate
+        ) else { return }
+        scrollMemory.remember(url: url, scrollTopLine: topLine, zoomLevel: z)
+        scrollMemoryBaseline[key] = candidate
     }
 
     /// Convenience: capture the currently-selected tab's scroll position.
@@ -2051,8 +2091,32 @@ public final class DocumentModel: ObservableObject {
     /// `.editor`). `nil` / non-positive ⇒ no-op (top of file). Called after a
     /// tab materializes / becomes active so the content is laid out first.
     func restoreScroll(forTabAt index: Int) {
-        guard tabs.tabs.indices.contains(index),
-              let line = tabs.tabs[index].scrollTopLine, line > 0 else { return }
+        guard tabs.tabs.indices.contains(index) else { return }
+        let tab = tabs.tabs[index]
+        // Prefer the in-session position (it's the freshest — set by this
+        // session's capture-on-switch). Fall back to the DURABLE per-file
+        // store (TSK-1017) when the tab carries no in-session memory, e.g. a
+        // file opened fresh in a NEW session or after a relaunch.
+        if let line = tab.scrollTopLine, line > 0 {
+            scrollSource(toLine: line)
+            // Seed the no-write baseline so a re-capture at the same position
+            // doesn't churn the durable store.
+            if let url = tab.url {
+                let key = ScrollMemoryStore.key(for: url)
+                scrollMemoryBaseline[key] = ScrollMemoryStore.Entry(
+                    path: key, scrollTopLine: line, savedAt: Date()
+                )
+            }
+            return
+        }
+        guard let url = tab.url,
+              let entry = scrollMemory.entry(for: url),
+              let line = entry.scrollTopLine, line > 0 else { return }
+        scrollMemoryBaseline[entry.path] = entry
+        // Stamp the in-session tab so subsequent switches treat it as known.
+        var t = tab
+        t.scrollTopLine = line
+        tabCoordinator.replace(at: index, with: t)
         scrollSource(toLine: line)
     }
 

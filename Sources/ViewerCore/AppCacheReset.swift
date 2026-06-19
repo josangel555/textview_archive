@@ -41,7 +41,7 @@ public enum CacheDomain: String, CaseIterable, Sendable {
         case .sessions:   return ["Sessions"]
         case .workspaces: return ["Workspaces"]
         case .bookmarks:  return ["bookmarks.json"]
-        case .recents:    return ["history.json", "recent-paths.json"]
+        case .recents:    return ["history.json", "recent-paths.json", "scroll-memory.json"]
         case .lspCache:   return ["jdtls-data"]
         }
     }
