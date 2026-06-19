@@ -223,4 +223,18 @@ final class SessionSnapshotTests: XCTestCase {
         XCTAssertTrue(folderDerived.hasSamePersistedContent(as: explicitFalse),
             "nil and false both mean not-user-set — must not spam writes")
     }
+
+    func testSessionIndexDecodeToleratesMissingVersion() throws {
+        // TSK-1028: a legacy/hand-edited index.json with no `version` must
+        // decode (defaulting to the v1 schema), NOT throw → be classified
+        // corrupt → discard lastActiveID + ordering.
+        let uuid = UUID()
+        let json = Data("""
+        {"sessions":[{"id":"\(uuid.uuidString)","rootPath":"/tmp/x","displayName":"X","lastActiveAt":"2020-01-01T00:00:00Z"}],"lastActiveID":"\(uuid.uuidString)"}
+        """.utf8)
+        let idx = try JSONFileStore.decoder.decode(SessionIndex.self, from: json)
+        XCTAssertEqual(idx.version, SessionIndex.currentSchema)
+        XCTAssertEqual(idx.sessions.count, 1)
+        XCTAssertEqual(idx.lastActiveID, uuid, "lastActiveID preserved, not discarded")
+    }
 }

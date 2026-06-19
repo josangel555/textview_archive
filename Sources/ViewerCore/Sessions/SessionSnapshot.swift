@@ -264,6 +264,17 @@ public struct SessionIndex: Codable, Equatable, Sendable {
         self.lastActiveID = lastActiveID
     }
 
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // TSK-1028: version is OPTIONAL on decode — a legacy/hand-edited
+        // index.json missing it defaults to the v1 schema instead of being
+        // classified corrupt (which silently discarded lastActiveID + session
+        // ordering). The future-version downgrade guard still applies downstream.
+        self.version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? Self.currentSchema
+        self.sessions = (try? c.decodeIfPresent([Entry].self, forKey: .sessions)) ?? []
+        self.lastActiveID = try? c.decodeIfPresent(UUID.self, forKey: .lastActiveID)
+    }
+
     public struct Entry: Codable, Equatable, Sendable, Identifiable {
         public let id: UUID
         public let rootPath: String
