@@ -116,4 +116,13 @@ final class BookmarksStoreTests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(s.all().count, 3)
     }
+
+    func test_decode_unparseableAddedAt_fallsBackToDistantPast() throws {
+        // TSK-1030: a bad/unparseable addedAt sorts to the bottom
+        // (.distantPast), NOT "now" (which would jump it to the top of the
+        // addedAt-sorted Recent/Created sections).
+        let json = Data(#"{"url":"file:///tmp/x.md","addedAt":"not-a-real-date","displayName":"x"}"#.utf8)
+        let entry = try JSONFileStore.decoder.decode(BookmarkEntry.self, from: json)
+        XCTAssertEqual(entry.addedAt, .distantPast)
+    }
 }

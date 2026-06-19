@@ -276,16 +276,18 @@ public struct BookmarkEntry: Codable, Equatable, Hashable, Sendable, Identifiabl
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.url = try c.decode(URL.self, forKey: .url)
-        // Tolerate older entries written without ISO8601 / with custom
-        // format — fall back to "now" so a malformed entry doesn't
-        // poison the whole load.
+        // Tolerate older entries written without ISO8601 / with a custom
+        // format. An UNPARSEABLE addedAt falls back to `.distantPast`, NOT
+        // "now" (TSK-1030): substituting the current time made a date-less
+        // legacy entry jump to the TOP of the addedAt-sorted Recent/Created
+        // bookmark sections; `.distantPast` sorts it stably at the bottom.
         if let d = try? c.decode(Date.self, forKey: .addedAt) {
             self.addedAt = d
         } else if let s = try? c.decode(String.self, forKey: .addedAt),
                   let d = BookmarkEntry.iso8601.date(from: s) {
             self.addedAt = d
         } else {
-            self.addedAt = Date()
+            self.addedAt = .distantPast
         }
         self.displayName = (try? c.decode(String.self, forKey: .displayName))
             ?? url.lastPathComponent
