@@ -50,4 +50,25 @@ final class GitChipStoreTests: XCTestCase {
         XCTAssertEqual(store.branches, ["b-main", "b-dev"], "cache replaced for the new root")
         XCTAssertEqual(store.loadedRoot?.lastPathComponent, "b")
     }
+
+    // TSK-969: a slower in-flight load for a PREVIOUS root must not clobber a
+    // newer one (last-writer-is-wrong). The latest-REQUESTED root wins.
+    func test_load_staleResultDoesNotClobberLatest() async {
+        let store = GitChipStore()
+        let a = URL(fileURLWithPath: "/tmp/a"), b = URL(fileURLWithPath: "/tmp/b")
+        store.enumerate = { root in
+            if root == a {
+                try? await Task.sleep(nanoseconds: 60_000_000)  // A is slow → finishes LAST
+                return (["a-main"], [])
+            }
+            return (["b-main"], [])                              // B is fast → finishes first
+        }
+        async let la: Void = store.load(root: a)   // requested first, completes last
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        async let lb: Void = store.load(root: b)   // requested second, completes first
+        _ = await (la, lb)
+        XCTAssertEqual(store.branches, ["b-main"],
+                       "latest-requested root wins, not latest-completing")
+        XCTAssertEqual(store.loadedRoot?.lastPathComponent, "b")
+    }
 }

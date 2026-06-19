@@ -20,6 +20,9 @@ public final class GitChipStore: ObservableObject {
     @Published public private(set) var worktrees: [GitClient.WorktreeEntry] = []
     /// The repo root the current cache belongs to (nil until the first load).
     public private(set) var loadedRoot: URL?
+    /// The most-recently REQUESTED root (TSK-969). A slower in-flight load for a
+    /// previous root must not clobber a newer one — only the latest wins.
+    private var latestRequestedRoot: URL?
 
     public init() {}
 
@@ -39,7 +42,11 @@ public final class GitChipStore: ObservableObject {
     /// so the data is ready by the time the user opens the menu; the menu reads
     /// only `branches` / `worktrees`, never `GitClient`.
     public func load(root: URL) async {
+        latestRequestedRoot = root                  // mark latest (on main, before the await)
         let (b, w) = await enumerate(root)
+        // TSK-969: an out-of-order completion for a superseded root must not
+        // clobber the newer one (last-writer-is-wrong).
+        guard latestRequestedRoot == root else { return }
         branches = b
         worktrees = w
         loadedRoot = root
