@@ -15,6 +15,12 @@ Cherry-picking ~115 parallel-worktree commits onto one branch: git reported **te
 
 Process that worked: build the integration branch in an isolated worktree (`/tmp/mdv-integration`), `cargo build` (rust) + `swift build --build-tests` (finds ALL compile errors per pass, faster than the full gate) to iterate clashes, THEN the full `test-headless-gate.sh` for the test run, only then fast-forward `main`. NB: capture gate output to a file (NOT `| tail`), and `$?` not `${PIPESTATUS[0]}` (zsh uses `$pipestatus`, 1-indexed) — both bit me.
 
+**WAVE 2 (48-commit drain, 2026-06-19 PM) added 2 MORE clash classes + 2 tooling gotchas:**
+- **Catalog-count drift**: two slices each add a new entry to a registry (`set_zoom` + `search_files` → `MCPToolCatalog`); the cherry-pick of the SOURCE is clean (different lines) but the COUNT/expected-set tests fail (`11 != 12`, `names == expected` exact-match). Fix: merge both into the expected set + bump hardcoded counts (or pin to `.all.count`). The gate (not the build) catches these — a clean compile is NOT enough; run the gate.
+- **Dispatch↔catalog parity gap**: one agent (TSK-326) added 4 verbs to `ScriptVerbDispatch` but not `ScriptVerbCatalog` → `testCatalogMatchesDispatchSwitch` red ("verbs in dispatch but NOT in catalog"). Fix: add to BOTH (the catalog is the discoverability surface). Parity tests are the safety net for "registered in one place, forgotten in another."
+- **zsh word-split**: `for s in $SHAS` (unquoted) does NOT split in zsh — it loops ONCE with the whole string ("fatal: bad revision '<all shas>'"). Use `for s in ${=SHAS}` (or `echo|tr|while read`). Bit me twice before I noticed.
+- **Throwaway integration worktree lacks gitignored build inputs**: a fresh `git worktree` has no `rust-core/link/libmdvcore_ffi.a` NOR `Sources/CMdvCore/mdvcore.h` (both gitignored, staged by `scripts/build-rust-core.sh`). Copy BOTH from the main repo before `swift build`, else "header 'mdvcore.h' not found → could not build module 'CMdvCore'". The modulemap wants the header in `Sources/CMdvCore/`, not `rust-core/link/`.
+
 ## VM render-validation of a big merge: 2 UAT reds were both NON-regressions — diagnose/measure before "fixing" (2026-06-19 PM)
 
 A full GUI-lane VM suite over the 117-commit merge was ~3998/4000 green; the 2 reds each taught a reusable lesson:

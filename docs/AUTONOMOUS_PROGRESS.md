@@ -1,5 +1,27 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 PM — WAVE 2 backlog-drain (50 agents) integrated to main
+
+Owner directive recalibrated: **drive every task → done; never idle.** Launched a 50-item ultracode
+select-drain (`wfykpwfqh`, 8-concurrent worktrees, one-foundation-slice-per-epic). **48/50 succeeded**
+(2 correctly blocked: **TSK-891** PageUp + **TSK-794** async/inlining audit — both returned
+"VM-profile-needed, no safe host fix," respecting measure-don't-guess).
+
+Integration onto `wave2/integration` off main `2ad9131f`, cherry-pick (CHANGELOG union-merged):
+47/48 clean, **1 semantic clash** — TSK-697 (`search_files`) vs a parallel commit that added the
+`set_zoom` MCP tool: both modified `MCPToolCatalog` + its catalog/count tests. Resolved by merging
+BOTH tools (catalog = 12), and fixing a **3rd/4th clash class** the gate caught: hardcoded tool-count
+`11→12` in `MCPServerTests`/`MCPToolCatalogTests`, and **`ScriptVerbCatalog` parity** — TSK-326 added
+4 omni-verbs (`fold-all`/`unfold-all`/`clear-recents`/`show-repo-history`) to `ScriptVerbDispatch` but
+not the catalog (`testCatalogMatchesDispatchSwitch` failed). One integration-fix commit `f7e94872`.
+
+Build green → **headless gate PASSED** (0 failures, tier enforcement OK) → ff `main` → **`f7e94872`**
+(48 wave + 1 fix). Reaped the wave2 worktree + 48 branch refs (disk 80 GB). CHANGELOG union-merged
+the agents' user-facing entries cleanly. **All 48 board items → `fixed`** (commits recorded). The
+2 blocked stay `reported` (need VM profile). Lessons → LESSONS.md (zsh `${=VAR}` split; staged
+`mdvcore.h` into `Sources/CMdvCore/` for the throwaway worktree build; gate caught 4 distinct
+parallel-clash classes a clean cherry-pick missed).
+
 ## LOG 2026-06-19 — TSK-588 perf-floor ratchet bench (TSK-538 epic slice)
 
 Shipped the hand-rolled perf-floor RATCHET bench, the host-completable half of audit child **TSK-588**
