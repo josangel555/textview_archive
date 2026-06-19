@@ -532,6 +532,13 @@ fn snapshot_window_clamps_offset_and_limit() {
     // A huge limit saturates to the full surviving set.
     let (all, _) = snapshot_window_of(h, 0, 100_000);
     assert_eq!(all.rows.len(), 100);
+    // TSK-1012: offset past end + a near-MAX limit must not overflow the
+    // `start.saturating_add(limit)` — it saturates and clamps to an empty window.
+    let (sat, _) = snapshot_window_of(h, 200, u64::MAX);
+    assert!(sat.rows.is_empty(), "offset-past-end + MAX limit stays empty (no overflow)");
+    // MAX limit from the top saturates to the full surviving set.
+    let (sat_top, _) = snapshot_window_of(h, 0, u64::MAX);
+    assert_eq!(sat_top.rows.len(), 100);
     unsafe { mdvcore_session_free(h) };
 }
 
