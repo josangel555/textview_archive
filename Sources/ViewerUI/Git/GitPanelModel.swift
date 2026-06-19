@@ -114,21 +114,26 @@ public final class GitPanelModel: ObservableObject {
     /// In-flight grep-log search (TSK-596). Generation-guarded like
     /// `loadMoreLog` so a stale result can't land after a newer query /
     /// a clear / a repo switch.
-    private var logSearchTask: Task<Void, Never>?
+    /// `nonisolated(unsafe)` so the nonisolated `deinit` (M15, TSK-989) can
+    /// cancel it. The class is `@MainActor`; every non-deinit access is on main.
+    private nonisolated(unsafe) var logSearchTask: Task<Void, Never>?
     private var logSearchGen: Int = 0
     /// Debounce before shelling out per keystroke. Internal so tests
     /// can zero it.
     var logSearchDebounceNanos: UInt64 = 250_000_000
 
-    private var timer: Timer?
-    private var refreshTask: Task<Void, Never>?
+    /// `nonisolated(unsafe)` (with `refreshTask`/`loadMoreTask`/`logSearchTask`)
+    /// so the nonisolated `deinit` (M15, TSK-989) can invalidate/cancel them.
+    /// The class is `@MainActor`; every non-deinit access is on main.
+    private nonisolated(unsafe) var timer: Timer?
+    private nonisolated(unsafe) var refreshTask: Task<Void, Never>?
     /// In-flight `loadMoreLog` pagination task — tracked so it can be cancelled
     /// when the log is reset/refreshed under it (the generation guard is the
     /// correctness backstop; cancellation just avoids the wasted shell-out).
     /// Internal (not private) as the TSK-150 test seam: the stale-page
     /// guard test captures this task before invalidating the list
     /// identity, then awaits it to assert the page was dropped.
-    private(set) var loadMoreTask: Task<Void, Never>?
+    private(set) nonisolated(unsafe) var loadMoreTask: Task<Void, Never>?
     /// Cache freshness threshold — anything older than this on tab-switch
     /// triggers an immediate refresh. Matches the user-stated 60 s cadence.
     private let cacheTTL: TimeInterval = 60
@@ -164,7 +169,34 @@ public final class GitPanelModel: ObservableObject {
         refreshTask = nil
         loadMoreTask?.cancel()
         loadMoreTask = nil
+        logSearchTask?.cancel()
+        logSearchTask = nil
     }
+
+    /// L-mem backstop (M15, TSK-989): `start()` schedules a 60 s repeating
+    /// `Timer` on `RunLoop.main(.common)` whose block captures `[weak self]`,
+    /// so the run loop — not the model — retains the timer. That means this
+    /// `deinit` CAN run while the timer is still live, and without invalidating
+    /// it here the timer keeps firing `self?.refreshCurrent()` (a no-op once
+    /// self is gone) every 60 s forever — a leaked run-loop source. `stop()`
+    /// is the normal teardown but it is wired solely to `GitPanelView`'s
+    /// `onDisappear`; any teardown that skips it would otherwise leak the timer
+    /// AND leave the three in-flight tasks running. This mirrors `stop()` as
+    /// the unconditional backstop. The `Task`s are cooperatively cancelled
+    /// (cancellation is thread-safe); the timer invalidation is the load-
+    /// bearing bit.
+    deinit {
+        timer?.invalidate()
+        refreshTask?.cancel()
+        loadMoreTask?.cancel()
+        logSearchTask?.cancel()
+    }
+
+    /// Test seam (M15, TSK-989): the scheduled refresh timer, so a host test
+    /// can take a reference, drop the model WITHOUT calling `stop()`, and
+    /// assert the deinit invalidated it (`timer.isValid == false`). Not for
+    /// production use.
+    var timerForTesting: Timer? { timer }
 
     /// Hook from `NSWindow.didBecomeKeyNotification` (wired by the view).
     public func windowDidBecomeKey() {

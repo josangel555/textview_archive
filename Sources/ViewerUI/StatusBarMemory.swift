@@ -51,7 +51,11 @@ enum StatusBarMemory {
 final class StatusBarMemorySampler: ObservableObject {
     @Published private(set) var appFootprintBytes: UInt64?
 
-    private var timer: Timer?
+    /// `nonisolated(unsafe)` so the nonisolated `deinit` can read it to
+    /// invalidate (see the deinit note). The class is `@MainActor`, and every
+    /// non-deinit access goes through main, so the unsafe escape is confined
+    /// to teardown.
+    private nonisolated(unsafe) var timer: Timer?
     private let interval: TimeInterval
 
     init(interval: TimeInterval = 1.5) {
@@ -70,6 +74,25 @@ final class StatusBarMemorySampler: ObservableObject {
         timer?.invalidate()
         timer = nil
     }
+
+    /// L-mem backstop (M14, TSK-989): `start()` schedules a repeating `Timer`
+    /// on the run loop. The block captures `[weak self]`, so the timer does
+    /// NOT retain the sampler — which means this `deinit` CAN run while the
+    /// timer is still scheduled and live on the run loop. Without invalidating
+    /// it here, that timer keeps firing `self?.sampleNow()` (a no-op now that
+    /// self is gone) every `interval` FOREVER — a leaked run-loop source.
+    /// `stop()` is the normal path but it is wired solely to the chip view's
+    /// `onDisappear` (StatusBarMemoryChip), so any teardown that skips that
+    /// (future caller, view-graph quirk) would otherwise leak. The deinit is
+    /// the unconditional backstop.
+    deinit {
+        timer?.invalidate()
+    }
+
+    /// Test seam (M14, TSK-989): the scheduled timer, so a host test can take
+    /// a reference, drop the sampler WITHOUT calling `stop()`, and assert the
+    /// deinit invalidated it (`timer.isValid == false`). Not for production use.
+    var timerForTesting: Timer? { timer }
 
     private func sampleNow() {
         ingest(ProcessMemory.appFootprintBytes())
