@@ -1,0 +1,13 @@
+files: 1
+  file[0]
+    old_path: "tail.txt"
+    new_path: "tail.txt"
+    flags: new=false deleted=false binary=false rename=false
+    hunks: 1
+      hunk[0] @@ -1,2 +1,2 @@ header=""
+        [context ]    1    1 | "keep"
+        [removed ]    2    · | "no newline old"
+        [nonewline]    ·    · | " No newline at end of file"
+        [added   ]    ·    2 | "no newline new"
+        [nonewline]    ·    · | " No newline at end of file"
+        [context ]    3    3 | ""

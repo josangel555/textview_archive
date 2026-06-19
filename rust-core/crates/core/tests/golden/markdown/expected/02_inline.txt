@@ -1,0 +1,7 @@
+=== html ===
+<p>plain <em>em</em> <strong>strong</strong> <del>gone</del> <code>c&amp;d</code></p>
+<p>a soft
+break line</p>
+<p>a hard<br/>
+break line</p>
+=== chunks: 0 ===

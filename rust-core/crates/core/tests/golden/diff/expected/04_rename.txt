@@ -1,0 +1,14 @@
+files: 1
+  file[0]
+    old_path: "old/path.rs"
+    new_path: "new/path.rs"
+    flags: new=false deleted=false binary=false rename=true
+    hunks: 1
+      hunk[0] @@ -10,7 +10,7 @@ header="fn context_header() {"
+        [context ]   10   10 | "    let x = 1;"
+        [context ]   11   11 | "    let y = 2;"
+        [removed ]   12    · | "    let z = old;"
+        [added   ]    ·   12 | "    let z = renamed;"
+        [context ]   13   13 | "    return z;"
+        [context ]   14   14 | "}"
+        [context ]   15   15 | ""

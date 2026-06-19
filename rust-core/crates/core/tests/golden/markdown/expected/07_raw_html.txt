@@ -1,0 +1,10 @@
+=== html ===
+<p>Before the block.</p>
+<!--mdv-chunk-0--><p>After the block with an inline <!--mdv-chunk-1-->tag<!--mdv-chunk-2--> too.</p>
+=== chunks: 3 ===
+chunk[0] kind=raw_html lang=""
+  payload: "<div class=\"custom\">raw block</div>\n"
+chunk[1] kind=raw_html lang=""
+  payload: "<span>"
+chunk[2] kind=raw_html lang=""
+  payload: "</span>"

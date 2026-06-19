@@ -1,0 +1,14 @@
+diff --git a/old/path.rs b/new/path.rs
+similarity index 92%
+rename from old/path.rs
+rename to new/path.rs
+index aaaaaaa..bbbbbbb 100644
+--- a/old/path.rs
++++ b/new/path.rs
+@@ -10,7 +10,7 @@ fn context_header() {
+     let x = 1;
+     let y = 2;
+-    let z = old;
++    let z = renamed;
+     return z;
+ }

@@ -1,0 +1,8 @@
+=== html ===
+<h1 id="code">Code</h1>
+<p>A fenced block with a language produces a <code>code</code> chunk:</p>
+<pre><code class="language-swift"><!--mdv-chunk-0--></code></pre>
+<p>And inline <code>code &amp; escape</code> stays inline.</p>
+=== chunks: 1 ===
+chunk[0] kind=code lang="swift"
+  payload: "let a = 1\nprint(a)\n"

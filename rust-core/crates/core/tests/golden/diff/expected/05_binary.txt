@@ -1,0 +1,6 @@
+files: 1
+  file[0]
+    old_path: "logo.png"
+    new_path: "logo.png"
+    flags: new=false deleted=false binary=true rename=false
+    hunks: 0

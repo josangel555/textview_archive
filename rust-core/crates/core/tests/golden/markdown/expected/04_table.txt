@@ -1,0 +1,8 @@
+=== html ===
+<table>
+<thead><tr><th>Name</th><th>Count</th></tr></thead>
+<tbody>
+<tr><td>apple</td><td>3</td></tr>
+<tr><td>pear</td><td>12</td></tr>
+</tbody></table>
+=== chunks: 0 ===

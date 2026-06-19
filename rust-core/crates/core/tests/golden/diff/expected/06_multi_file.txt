@@ -1,0 +1,19 @@
+files: 2
+  file[0]
+    old_path: "a.txt"
+    new_path: "a.txt"
+    flags: new=false deleted=false binary=false rename=false
+    hunks: 1
+      hunk[0] @@ -1,1 +1,1 @@ header=""
+        [removed ]    1    · | "alpha"
+        [added   ]    ·    1 | "ALPHA"
+  file[1]
+    old_path: "b.txt"
+    new_path: "b.txt"
+    flags: new=false deleted=false binary=false rename=false
+    hunks: 1
+      hunk[0] @@ -1,2 +1,3 @@ header=""
+        [context ]    1    1 | "beta"
+        [added   ]    ·    2 | "gamma inserted"
+        [context ]    2    3 | "delta"
+        [context ]    3    4 | ""

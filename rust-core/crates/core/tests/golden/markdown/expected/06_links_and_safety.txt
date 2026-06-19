@@ -1,0 +1,8 @@
+=== html ===
+<p>A <a href="https://example.com">safe link</a> and a <a href="mailto:a@b.com">mailto</a>.</p>
+<p>A blocked <a href="about:blank">javascript link</a> gets neutralized.</p>
+<blockquote>
+<p>A blockquote
+spanning two lines.</p>
+</blockquote>
+=== chunks: 0 ===

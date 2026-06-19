@@ -1,0 +1,6 @@
+=== html ===
+<h1 id="hello-world">Hello World</h1>
+<h2 id="a-section">A Section</h2>
+<h3 id="nested-bold-heading">Nested <strong>Bold</strong> Heading</h3>
+<h2 id="a-section-1">A Section</h2>
+=== chunks: 0 ===

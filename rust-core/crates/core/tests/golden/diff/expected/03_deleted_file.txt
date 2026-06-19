@@ -1,0 +1,10 @@
+files: 1
+  file[0]
+    old_path: "gone.txt"
+    new_path: "gone.txt"
+    flags: new=false deleted=true binary=false rename=false
+    hunks: 1
+      hunk[0] @@ -1,2 +0,0 @@ header=""
+        [removed ]    1    · | "old line A"
+        [removed ]    2    · | "old line B"
+        [context ]    3    0 | ""

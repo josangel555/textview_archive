@@ -1,0 +1,10 @@
+files: 1
+  file[0]
+    old_path: "new.md"
+    new_path: "new.md"
+    flags: new=true deleted=false binary=false rename=false
+    hunks: 1
+      hunk[0] @@ -0,0 +1,2 @@ header=""
+        [added   ]    ·    1 | "# Title"
+        [added   ]    ·    2 | "first body line"
+        [context ]    0    3 | ""
