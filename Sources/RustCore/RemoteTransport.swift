@@ -215,7 +215,7 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     /// minted — the caller supplies the sub id.
     func _testRegister(_ sub: UInt64, handler: @escaping @Sendable (RemoteEvent) -> Void) {
         state.lock()
-        let raced = orphanEvents.removeValue(forKey: sub) ?? []
+        let raced = orphans.take(sub)   // TSK-987 OrphanStore API (was orphanEvents dict)
         subs[sub] = handler
         state.unlock()
         for event in raced {
