@@ -40,14 +40,15 @@ Then write newline-framed JSON-RPC to its **stdin** and read replies from **stdo
 Methods: `initialize`, `tools/list`, `tools/call`, `ping`, `shutdown`
 (protocol `2024-11-05`; server `{name:"TextView", version:"1.0.0"}`).
 
-**The 10 tools:**
+**The 11 tools:**
 
 | Tool | Args | Does |
 |---|---|---|
 | `open_path` | `path`, `newTab?` | Open a file/folder → returns `tabId`. |
 | `select_tab` | `byIndex` (1-based) \| `byId` | Switch tab. |
 | `set_view_mode` | `mode` (rendered/source/formatted/table/diff/hex) | Change view mode. |
-| `find` | `query`, `regex?`, `caseSensitive?`, `wholeWord?` | Search → up to 1000 matches (line/col/byte). |
+| `find` | `query`, `regex?`, `caseSensitive?`, `wholeWord?` | Search the current tab → up to 1000 matches (line/col/byte). |
+| `search_files` | `root`, `query`, `regex?`, `caseSensitive?`, `filenamesOnly?`, `maxResults?` | Global / cross-file grep under a folder → matches grouped by file (line + text). Skips binaries/VCS/build dirs; root jailed to home. |
 | `goto_line` | `line` (1-based), `column?` | Scroll source to a position. |
 | `visible_text` | — | Current tab's text (10 MB cap). |
 | `current_state` | — | Snapshot: tabs, selection, zoom, sidebar root, palette. |

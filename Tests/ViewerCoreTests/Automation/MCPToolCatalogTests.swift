@@ -78,7 +78,7 @@ final class MCPToolCatalogTests: XCTestCase {
         let names = Set(MCPToolCatalog.all.map(\.name))
         let expected: Set<String> = [
             "open_path", "select_tab", "set_view_mode", "set_zoom",
-            "find", "goto_line", "visible_text", "current_state",
+            "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
         ]
         XCTAssertEqual(names, expected)

@@ -1,13 +1,22 @@
 import Foundation
 import ViewerKit
 
-/// The ten v1 MCP tools, per design §6. Each tool has a descriptor
+/// The v1 MCP tools, per design §6. Each tool has a descriptor
 /// (name + JSON Schema for `tools/list`) and a dispatcher (the closure
 /// that turns args into an `AutomationHost` call).
 ///
 /// Tools are kept in this single file so the catalog reads top-to-
 /// bottom — the action vocabulary is small and stable enough that the
 /// usual "one file per handler" wins us nothing.
+///
+/// TSK-697 — Agent Services suite (foundation slice). The owner's call:
+/// "all these should be accessible for an Agent through MCP." This is the
+/// canonical home for agent-callable services, so the first Agent Service
+/// — `search_files` (global / cross-file grep, backed by the existing
+/// `CrossFileSearch` engine) — lands here alongside the v1 viewer-control
+/// tools. The other four capabilities (semantic/LSP search, refactor,
+/// test runner, code review) are tracked as the epic's `remaining` slices,
+/// each to add one tool to this catalog backed by its existing engine.
 @MainActor
 public enum MCPToolCatalog {
 
@@ -19,6 +28,7 @@ public enum MCPToolCatalog {
         setViewModeDescriptor,
         setZoomDescriptor,
         findDescriptor,
+        searchFilesDescriptor,
         gotoLineDescriptor,
         visibleTextDescriptor,
         currentStateDescriptor,
@@ -41,6 +51,7 @@ public enum MCPToolCatalog {
         case "set_view_mode":     return try setViewMode(args, host)
         case "set_zoom":          return try setZoom(args, host)
         case "find":              return try find(args, host)
+        case "search_files":      return try searchFiles(args, host)
         case "goto_line":         return try gotoLine(args, host)
         case "visible_text":      return try visibleText(args, host)
         case "current_state":     return try currentState(args, host)
@@ -232,6 +243,115 @@ public enum MCPToolCatalog {
             "matches": .array(arr),
             "truncated": .bool(matches.count > cap),
             "total": .int(matches.count),
+        ])
+    }
+
+    // MARK: - search_files
+
+    /// Hard ceiling on the `maxResults` an agent may request, regardless of
+    /// what it passes. Mirrors the `find` tool's 1000-match serialisation cap
+    /// — a single tool call should never serialise an unbounded result set
+    /// over the wire. Clamped (not rejected) so an over-eager request still
+    /// succeeds with a sane bound.
+    static let searchFilesResultCeiling = 1_000
+
+    private static let searchFilesDescriptor = MCP.ToolDescriptor(
+        name: "search_files",
+        description: """
+            Global / cross-file text search (grep) under a folder. Returns \
+            matches grouped by file, with 1-based line numbers and full line \
+            content. Skips binary files, VCS/build dirs (.git, node_modules, \
+            .build, …) and files over 2 MiB. The root must be inside the \
+            user's home directory.
+            """,
+        inputSchema: schema([
+            "root": .object(["type": .string("string"),
+                             "description": .string("Folder to search, absolute or ~-expanded. Must exist and be inside the user's home.")]),
+            "query": .object(["type": .string("string"),
+                              "description": .string("Text (or regex when regex:true) to search for.")]),
+            "regex": .object(["type": .string("boolean"),
+                              "description": .string("Treat query as a regular expression (ReDoS-guarded). Default false.")]),
+            "caseSensitive": .object(["type": .string("boolean"),
+                                      "description": .string("Default false.")]),
+            "filenamesOnly": .object(["type": .string("boolean"),
+                                      "description": .string("Match file NAMES only, never file bodies (cheap over large trees). Default false.")]),
+            "maxResults": .object(["type": .string("integer"),
+                                   "description": .string("Total match cap (clamped to 1000). Default 500.")]),
+        ], required: ["root", "query"])
+    )
+
+    private static func searchFiles(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let rootPath = try args.string("root")
+        let query = try args.string("query")
+        guard !query.isEmpty else {
+            throw MCPError.invalidParams("query must not be empty")
+        }
+        let regex = (try? args.bool("regex")) ?? false
+        let cs = (try? args.bool("caseSensitive")) ?? false
+        let filenamesOnly = (try? args.bool("filenamesOnly")) ?? false
+
+        // Reuse the home/temp jail the rest of the catalog enforces — and
+        // require the root to be an existing DIRECTORY (a file root is a
+        // client error, not an empty result).
+        let root = try validatedExistingURL(from: rootPath)
+        let isDir = (try? root.resourceValues(forKeys: [.isDirectoryKey]))?
+            .isDirectory ?? false
+        guard isDir else {
+            throw MCPError.invalidParams("root is not a directory: \(root.path)")
+        }
+
+        // Pre-validate a regex the SAME way `find` does so a bad/unsafe
+        // pattern surfaces as an MCP error rather than a silent zero-match
+        // (the engine maps a rejected pattern to `[]`, indistinguishable
+        // from a genuine no-match). `validateRegex` runs the ReDoS guard
+        // then a compile.
+        if regex, let reason = CrossFileSearch.validateRegex(query, caseSensitive: cs) {
+            throw MCPError.invalidParams("invalid regex: \(reason)")
+        }
+
+        // Clamp the result cap to the wire ceiling. A non-positive request
+        // is meaningless — fall back to the engine default.
+        let requested = args.optionalInt("maxResults")
+        let maxResults: Int
+        if let r = requested, r > 0 {
+            maxResults = min(r, searchFilesResultCeiling)
+        } else {
+            maxResults = min(CrossFileSearch.Options().maxResults, searchFilesResultCeiling)
+        }
+        var options = CrossFileSearch.Options()
+        options.caseSensitive = cs
+        options.useRegex = regex
+        options.maxResults = maxResults
+
+        let fileMatches = filenamesOnly
+            ? CrossFileSearch.searchFilenames(root: root, query: query, options: options)
+            : CrossFileSearch.search(root: root, query: query, options: options)
+
+        var totalMatches = 0
+        let files: [MCP.Value] = fileMatches.map { fm in
+            let matchValues: [MCP.Value] = fm.matches.map { m in
+                totalMatches += 1
+                return .object([
+                    "line": .int(m.lineNumber),
+                    "text": .string(m.line),
+                ])
+            }
+            // filenamesOnly hits carry no line matches but ARE a result — count
+            // the file itself so `total` is non-zero for a filename-only search.
+            if fm.matches.isEmpty { totalMatches += 1 }
+            return .object([
+                "path": .string(fm.url.path),
+                "matches": .array(matchValues),
+            ])
+        }
+
+        return .object([
+            "files": .array(files),
+            "fileCount": .int(fileMatches.count),
+            "total": .int(totalMatches),
+            // The engine halts the walk at `maxResults`; report whether the
+            // cap was hit so the agent knows the result set may be partial.
+            "truncated": .bool(totalMatches >= maxResults),
         ])
     }
 
