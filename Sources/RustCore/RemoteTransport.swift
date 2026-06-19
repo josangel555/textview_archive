@@ -649,18 +649,26 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
             let wrote = frame[off...].withUnsafeBytes { raw in
                 write(fd, raw.baseAddress, raw.count)
             }
+            if wrote < 0 && errno == EINTR { continue }   // interrupted — retry (TSK-988)
             guard wrote > 0 else { throw RemoteError.io("write: errno \(errno)") }
             off += wrote
         }
     }
 
     private static func readExact(_ fd: Int32, _ n: Int) throws -> [UInt8] {
+        try readFull(n) { raw in read(fd, raw.baseAddress, raw.count) }
+    }
+
+    /// Loop a partial-read to completion, RETRYING on EINTR (TSK-988): a signal
+    /// interrupting a blocking `read` returns -1/EINTR and must be retried, not
+    /// treated as a fatal connection error. `readfn` returns bytes-read (>0),
+    /// 0 (EOF), or <0 (errno set). Injectable so the EINTR retry is unit-testable.
+    static func readFull(_ n: Int, _ readfn: (UnsafeMutableRawBufferPointer) -> Int) throws -> [UInt8] {
         var out = [UInt8](repeating: 0, count: n)
         var off = 0
         while off < n {
-            let got = out[off...].withUnsafeMutableBytes { raw in
-                read(fd, raw.baseAddress, raw.count)
-            }
+            let got = out[off...].withUnsafeMutableBytes { readfn($0) }
+            if got < 0 && errno == EINTR { continue }   // interrupted — retry, not fatal
             if got == 0 { throw RemoteError.io("connection closed") }
             guard got > 0 else { throw RemoteError.io("read: errno \(errno)") }
             off += got
