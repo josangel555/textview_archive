@@ -264,6 +264,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
             .store(in: &cancellables)
 
+        // Plugins (Tier U / TSK-782): install the AppKit seams that the
+        // pure-logic registry can't own. The opener hands a host-
+        // validated https/http URL to the system browser; the context
+        // provider supplies the focused document so `{path}`/`{filename}`
+        // templates resolve against the live tab when the user selects an
+        // "open in Docs/Wiki/Code Review/CodeSearch" menu item. Wired
+        // BEFORE loadAtLaunch so a Tier U item is live the moment it
+        // registers. Selection/query/line stay nil for now (the editor
+        // selection lives in the WebView, not the model) — they're
+        // forward-compat fields a richer host context can fill later.
+        PluginRegistry.shared.setURLOpener { url in
+            NSWorkspace.shared.open(url)
+        }
+        PluginRegistry.shared.setURLContextProvider { [weak model] in
+            let url = model?.currentURL
+            return PluginURLTemplate.Context(
+                path: url?.path,
+                filename: url?.lastPathComponent
+            )
+        }
+
         // Plugins: bundled (Tier 0) register synchronously; on-disk
         // (Tier A/B) load via the registry. Anything awaiting a grant
         // bubbles up here and gets a one-shot first-install prompt.

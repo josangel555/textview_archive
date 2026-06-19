@@ -34,6 +34,66 @@ public final class PluginRegistry {
     /// The Tier B host. Tests can substitute via `_setSubprocessHost`.
     private var subprocessHost: PluginSubprocessHost = PluginSubprocessHost()
 
+    /// Tier U (TSK-782) — the seam that actually opens a validated
+    /// external URL. Defaults to `nil` so the pure-logic core never
+    /// touches `NSWorkspace`; the AppKit layer installs a real opener
+    /// via `setURLOpener` at app launch, and tests inject a capturing
+    /// stub. When `nil`, an `openURL` action expands+validates the
+    /// template (still exercising the perimeter) but no-ops the open.
+    private var urlOpener: (@MainActor (URL) -> Void)?
+
+    /// Tier U context provider — supplies the host context (focused
+    /// file path, selection, query, line) against which an `openURL`
+    /// template is expanded *at invocation time*. The context is only
+    /// known when the user selects the item, so it's a closure the host
+    /// installs, not a stored value. Defaults to an empty context (a
+    /// template that references no placeholders still works).
+    private var urlContextProvider: (@MainActor () -> PluginURLTemplate.Context) = { .init() }
+
+    /// Install the real URL opener (AppKit: `NSWorkspace.shared.open`).
+    /// Public so `MarkdownViewer`/`ViewerUI` can wire it without exposing
+    /// the storage. Idempotent.
+    public func setURLOpener(_ opener: @escaping @MainActor (URL) -> Void) {
+        self.urlOpener = opener
+    }
+
+    /// Install the Tier U context provider. The host wires this to read
+    /// the focused tab's path/selection + the command argument.
+    public func setURLContextProvider(
+        _ provider: @escaping @MainActor () -> PluginURLTemplate.Context
+    ) {
+        self.urlContextProvider = provider
+    }
+
+    /// Test seam: a capturing URL opener stub. Returns the URLs the
+    /// registry attempted to open, in order. `internal` (not public):
+    /// tests reach it via `@testable import`.
+    func _setURLOpener(_ opener: @escaping @MainActor (URL) -> Void) {
+        self.urlOpener = opener
+    }
+
+    /// Test seam: set the Tier U context provider. `internal`.
+    func _setURLContextProvider(
+        _ provider: @escaping @MainActor () -> PluginURLTemplate.Context
+    ) {
+        self.urlContextProvider = provider
+    }
+
+    /// Expand `template` against the host context and open it via the
+    /// installed opener. Returns the `Result` so callers (and tests) can
+    /// observe expansion/validation failures without inspecting the
+    /// opener. A failed expansion is logged + audited but never opens a
+    /// URL — the perimeter is enforced here, not deferred to the opener.
+    @discardableResult
+    func invokeOpenURL(template: String) -> Result<URL, PluginURLTemplate.Failure> {
+        let context = urlContextProvider()
+        let result = PluginURLTemplate.expand(template: template, context: context)
+        if case .success(let url) = result {
+            urlOpener?(url)
+        }
+        return result
+    }
+
     /// Grant store. Required-but-undecided grants block contribution
     /// registration; the host UI must call `recordGrant` before the
     /// contributions become visible. `internal(set)` so tests can
@@ -451,6 +511,24 @@ public final class PluginRegistry {
                         timeoutMs: timeoutMs,
                         request: .init(kind: "runCommand")
                     )
+                }
+            )
+            menuItems.register(entry)
+            return nil
+
+        case .openURL(let template):
+            // Tier U (TSK-782): selecting the item expands the template
+            // against the live host context and opens the resulting URL.
+            // No subprocess — `invokeOpenURL` enforces the scheme
+            // allowlist + percent-encoding perimeter before any open.
+            let entry = MenuContributionRegistry.Entry(
+                pluginID: manifest.id,
+                itemID: m.id,
+                title: m.title,
+                submenu: m.submenu,
+                order: m.order ?? 100,
+                invoke: { [weak self] in
+                    self?.invokeOpenURL(template: template)
                 }
             )
             menuItems.register(entry)

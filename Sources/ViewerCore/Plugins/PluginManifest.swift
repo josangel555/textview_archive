@@ -56,6 +56,15 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
         // way a sidebar contributor declares `ui.sidebar`.
         case uiMenu = "ui.menu"
         case shellExec = "shell.exec"
+        // TSK-782: gate for the `openURL` (Tier "U") action — the
+        // foundation for office/web integrations (Docs, Wiki, Code
+        // Review, CodeSearch). A contribution that opens an external
+        // service URL in the browser must declare `web.open`, the same
+        // way a subprocess contribution declares `shell.exec`. It is a
+        // distinct (lower) privilege than `shell.exec`: it can only hand
+        // a host-validated https/http URL to the system browser, never
+        // spawn a process or read the filesystem.
+        case webOpen = "web.open"
         // Forward-compat: unknown capability strings decode to
         // `.unknown` rather than throwing, so a future-host manifest
         // doesn't poison loading of compatible siblings.
@@ -107,6 +116,8 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
                 // A subprocess-backed item (Tier B) additionally needs
                 // `shell.exec` — same gate as a Tier B sidebar section.
                 if case .b = m.action { req.insert(.shellExec) }
+                // An open-external-URL item (Tier U) needs `web.open`.
+                if case .openURL = m.action { req.insert(.webOpen) }
                 return req
             case .unknown:
                 return []
@@ -127,6 +138,15 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
     ///     `PluginSubprocessHost` the sidebar uses. The provider carries
     ///     `bin` (path relative to the plugin folder), optional `args`,
     ///     and an optional `timeoutMs`.
+    ///   - **Tier U** (TSK-782) — selecting the item opens an external
+    ///     service URL in the user's browser. The action carries a
+    ///     `urlTemplate` that interpolates the current host context
+    ///     (`{path}`, `{filename}`, `{selection}`, `{query}`, `{line}`),
+    ///     expanded + validated by `PluginURLTemplate`. This is the
+    ///     foundation for office/web integrations (Docs, Wiki, Code
+    ///     Review, CodeSearch, code browsers) — no subprocess, no code
+    ///     execution, just a host-validated https/http URL handed to the
+    ///     system browser. Gated by the `web.open` capability.
     ///
     /// Tier C (WebView) is parsed-and-rejected like the sidebar's.
     public struct MenuItemContribution: Decodable, Sendable, Equatable {
@@ -163,11 +183,18 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
         public enum Action: Decodable, Sendable, Equatable {
             case a
             case b(bin: String, args: [String], timeoutMs: Int?)
+            /// Tier U (TSK-782) — open an external service URL. Carries
+            /// the raw template; expansion + scheme validation happen at
+            /// invocation time via `PluginURLTemplate`. The template is
+            /// kept verbatim here (not pre-expanded) because the host
+            /// context (focused file, selection, query) is only known
+            /// when the user selects the item, not at manifest decode.
+            case openURL(urlTemplate: String)
             case c
             case unknown(tier: String)
 
             private enum CodingKeys: String, CodingKey {
-                case tier, bin, args, timeoutMs
+                case tier, bin, args, timeoutMs, urlTemplate
             }
 
             public init(from decoder: Decoder) throws {
@@ -184,6 +211,12 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
                     let args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
                     let timeoutMs = try c.decodeIfPresent(Int.self, forKey: .timeoutMs)
                     self = .b(bin: bin, args: args, timeoutMs: timeoutMs)
+                case "U":
+                    // Tier U *must* declare a `urlTemplate`. A missing one
+                    // is a decode error (same fail-at-load contract as
+                    // Tier B's `bin`) rather than a silently inert item.
+                    let template = try c.decode(String.self, forKey: .urlTemplate)
+                    self = .openURL(urlTemplate: template)
                 case "C":
                     self = .c
                 default:
@@ -196,6 +229,7 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
                 switch self {
                 case .a: return "A"
                 case .b: return "B"
+                case .openURL: return "U"
                 case .c: return "C"
                 case .unknown(let t): return t
                 }
