@@ -212,7 +212,26 @@ cheaper can prove the behavior (compositor/occlusion class). Disturb the human o
 - **Commit per item.** One-line subject. Land on `main` as a fast-forward (no merge bubbles).
 - **Re-verify with the CENTRAL gate on the COMMITTED commit:** `scripts/test-headless-gate.sh`
   (Swift) / `scripts/rust-core-gate.sh` (rust-core). Read the real result, not a wrapper.
-- **Regression tests must have teeth:** mutation-check (break the fix → test fails → restore).
+- **Regression tests must have teeth (mechanics).** A green never shown to go red is not a
+  guard. For every fix/feature you land: break the code under test (a "mutation") → confirm the
+  new test goes RED → restore. This is hand-run mutation testing of the *specific* thing you
+  shipped (there is no teeth-automation script, by design). Four documented footguns —
+  internalize them or you'll re-learn them the hard way (`LESSONS.md` has the war stories):
+  - **Independent oracle.** The *expected* side of a teeth assertion must NOT flow through the
+    helper you're mutating, or both sides move together and stay green (self-referential false
+    green — `LESSONS.md` ~3147). Use a different std API or hardcoded literals.
+  - **The mutant must have compiled.** SwiftPM's incremental build can miss a same-second
+    rewrite, so a "surviving" mutation may just be the OLD binary — confirm `Compiling <module>`
+    ran. And a surviving mutation isn't always a weak test: verify the mutant actually changes
+    behavior first (`LESSONS.md` ~3187).
+  - **Restore with the inverse Edit, never `git checkout`, until committed.** `git checkout --
+    <file>` during a teeth check restores the *committed* state and WIPES your uncommitted fix +
+    new test (`LESSONS.md` ~2803).
+  - **Don't mutate while a build is in flight.** A teeth mutate/restore cycle during a background
+    `build-app.sh` hard-fails SwiftPM ("input file modified during build"). Order per item:
+    teeth → restore → commit → gate → THEN install (`LESSONS.md` ~2910).
+  - **UI render-path teeth are VM-only** (T5 pixel tests; revert→rebuild→confirm FAIL→restore) —
+    consistent with the self-validation policy above: host tests cover the model, not the pixels.
 - **Log the narrative** in `docs/AUTONOMOUS_PROGRESS.md` (survives compaction; the board is live
   state, the doc is the story).
 - **Update `CHANGELOG.md` for USER-FACING changes (owner ask, every firing).** If the item that
