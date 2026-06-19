@@ -390,6 +390,22 @@ struct DiffView: View {
         "@@ -\(h.oldStart),\(h.oldCount) +\(h.newStart),\(h.newCount) @@"
     }
 
+    // TSK-766: the diff BODY is source code — a hunk line is the same line you
+    // see in the Editor / Source view, so its typography must track the SAME
+    // font-size source (`contentFontSize × zoom`) the editor binds to, not the
+    // chrome `uiSize` scale. Routed through the pure, host-tested `DiffTextStyle`
+    // so a regression that re-hardcodes a size fails on the host gate. The file/
+    // hunk headers stay on `uiSize` — they're diff chrome (metadata), not body.
+    private var bodyFontSize: CGFloat {
+        DiffTextStyle.bodyFontSize(contentFontSize: doc.contentFontSize, zoom: doc.zoom)
+    }
+    private var prefixFontSize: CGFloat {
+        DiffTextStyle.prefixFontSize(contentFontSize: doc.contentFontSize, zoom: doc.zoom)
+    }
+    private var lineNumberFontSize: CGFloat {
+        DiffTextStyle.lineNumberFontSize(contentFontSize: doc.contentFontSize, zoom: doc.zoom)
+    }
+
     private func lineRow(_ line: UnifiedDiff.Line,
                          coordinate: DiffFind.Match) -> some View {
         HStack(spacing: 0) {
@@ -397,14 +413,14 @@ struct DiffView: View {
             lineNoCell(line.newLineNo)
             // Gutter +/- column
             Text(prefix(for: line.kind))
-                .font(.system(size: doc.uiSize(11), design: .monospaced))
+                .font(.system(size: prefixFontSize, design: .monospaced))
                 .foregroundStyle(prefixColor(line.kind))
                 .frame(width: 14, alignment: .center)
             // Content. Selectable in place (TSK-594) — per-Text on older
             // macOS; the guaranteed multi-line path is the right-click
             // Copy Hunk / Copy File Diff on the enclosing blocks.
             Text(line.content.isEmpty ? " " : line.content)
-                .font(.system(size: doc.uiSize(11), design: .monospaced))
+                .font(.system(size: bodyFontSize, design: .monospaced))
                 .foregroundStyle(contentColor(line.kind))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -430,7 +446,7 @@ struct DiffView: View {
 
     private func lineNoCell(_ n: Int?) -> some View {
         Text(n.map(String.init) ?? "")
-            .font(.system(size: doc.uiSize(10), design: .monospaced))
+            .font(.system(size: lineNumberFontSize, design: .monospaced))
             .foregroundStyle(.tertiary)
             .frame(width: 44, alignment: .trailing)
             .padding(.trailing, 6)
