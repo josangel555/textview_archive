@@ -218,6 +218,15 @@ public struct ContentView: View {
                         .panelDropZone(.bottom, panelLayout: panelLayout)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // COMPOSITOR (TSK-960): the center column hosts the opaque
+                    // WKWebView content surface. Pin it to the BASE layer so the
+                    // side-docked terminal column (its own `.zIndex(1)`) sits
+                    // ABOVE it and neither opaque representable occludes the
+                    // other (the right-dock "terminal no longer composites"
+                    // regression of TSK-491). Applies in every layout branch
+                    // since the center column is unconditional. Z-order from the
+                    // named `SideDockCompositing` contract (host-testable).
+                    .zIndex(SideDockCompositing.contentColumnZIndex)
                     // RIGHT-docked terminal column (TSK-491): a fixed-WIDTH
                     // sibling between the center column and the right dock —
                     // same level as RightDockContainer (NOT nested in the center
@@ -394,6 +403,21 @@ public struct ContentView: View {
     /// `.left`/`.right`. `.clipped()` matches the bottom-band discipline so the
     /// opaque terminal surface can't paint past its column. The pane keeps its
     /// own internal tab strip (TSK-488) via `TerminalPaneView`.
+    ///
+    /// COMPOSITOR (TSK-960, regression of TSK-491; rule in CLAUDE.md/LESSONS
+    /// TSK-488): this column hosts an opaque, layer-backed `NSViewRepresentable`
+    /// terminal surface, and it sits as a plain `HStack` sibling of the center
+    /// content column — which itself hosts an opaque WKWebView surface. Two
+    /// opaque representable siblings in one container composite by PAINT ORDER:
+    /// without explicit z-ordering the later-painted surface occludes the
+    /// earlier one, so depending on the dock edge either the terminal column
+    /// fails to composite (right dock) or it overdraws the content. Force the
+    /// terminal column into its OWN compositing layer ordered ABOVE the content
+    /// surface — `.compositingGroup().zIndex(1)` here vs `.zIndex(0)` on the
+    /// center column — applied in BOTH the left- and right-dock layout
+    /// branches (this single helper is used for both at ContentView call
+    /// sites). Mirrors the in-pane fix at `TerminalView.swift` (strip vs
+    /// surface).
     private var sideTerminalColumn: some View {
         let column = TerminalPaneView(store: terminalPane, fontSize: model.uiSize(12))
             .frame(width: terminalPane.sideWidth)
@@ -406,6 +430,13 @@ public struct ContentView: View {
             // Left dock → handle on the RIGHT (content-facing) edge.
             if terminalPane.paneEdge == .left { TerminalSideResizeHandle(store: terminalPane) }
         }
+        // Own compositing layer ordered ABOVE the center content surface so the
+        // opaque terminal NSView neither occludes nor is occluded by the
+        // opaque WKWebView sibling, regardless of paint order (TSK-960). The
+        // z-order is driven from the named `SideDockCompositing` contract so the
+        // ordering is a host-testable invariant, not a scattered literal.
+        .compositingGroup()
+        .zIndex(SideDockCompositing.terminalColumnZIndex)
     }
 
     private var bodyRow: some View {
