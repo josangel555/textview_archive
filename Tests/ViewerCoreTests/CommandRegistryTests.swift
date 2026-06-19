@@ -144,6 +144,51 @@ final class CommandRegistryTests: XCTestCase {
         }
     }
 
+    // MARK: - JSON format discoverability (TSK-904)
+
+    /// The command palette fuzzy-filters on `title` ONLY
+    /// (`CommandPaletteView.applyFilter` → `RustFuzzyAdapter.filterWithMatches
+    /// { $0.title }`). So discoverability is a property of the TITLE: a user
+    /// typing "format json" / "prettify" / "compact" must surface the two JSON
+    /// format commands. This runs the EXACT filter the palette runs, so a title
+    /// regression that re-hid these commands fails here.
+    private func paletteFinds(_ id: String, query: String) -> Bool {
+        let hits = RustFuzzyAdapter.filterWithMatches(
+            CommandRegistry.builtIn.commands, query: query
+        ) { $0.title }
+        return hits.contains { $0.item.id == id }
+    }
+
+    func test_palette_prettyPrint_discoverableByFormatKeywords() {
+        // The bare "Pretty-Print" title hid the command from a "format"/"json"
+        // search; the enriched title must restore it.
+        for q in ["format", "json", "Format JSON", "pretty"] {
+            XCTAssertTrue(paletteFinds("view.prettyPrint", query: q),
+                          "palette query \"\(q)\" should surface view.prettyPrint (TSK-904)")
+        }
+    }
+
+    func test_palette_minifyJSON_discoverableByKeywords() {
+        for q in ["minify", "json", "compact"] {
+            XCTAssertTrue(paletteFinds("edit.minifyJSON", query: q),
+                          "palette query \"\(q)\" should surface edit.minifyJSON (TSK-904)")
+        }
+    }
+
+    func test_prettyPrint_titleMentionsEveryFormattableType() {
+        // Each Formatter.SupportedFormat that `detect` can return (i.e. not the
+        // explicit-only markdown lens) should appear in the palette title so its
+        // displayName is searchable.
+        let title = CommandRegistry.builtIn.command(id: "view.prettyPrint")?.title ?? ""
+        for f in [Formatter.SupportedFormat.json, .xml, .js, .css] {
+            // The title uses short tokens (JSON/XML/JS/CSS); assert the canonical
+            // token for each so the palette hit is not accidental.
+            let token = f == .js ? "JS" : f.displayName
+            XCTAssertTrue(title.contains(token),
+                          "view.prettyPrint title must mention \(token) (TSK-904): \(title)")
+        }
+    }
+
     // MARK: - Shortcut parsing
 
     func test_shortcut_parsesSimpleModifierCombo() {

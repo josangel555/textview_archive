@@ -169,6 +169,24 @@ final class FormatterTests: XCTestCase {
         XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "/x/Bundle.JS")), .js)
     }
 
+    // MARK: - SupportedFormat.displayName (TSK-904 discoverability)
+
+    func test_displayName_perFormat() {
+        // Drives the dynamic "Pretty-Print <Format>" menu title + the palette
+        // keywords; pin each so a label rename can't silently drop "JSON".
+        XCTAssertEqual(Formatter.SupportedFormat.json.displayName, "JSON")
+        XCTAssertEqual(Formatter.SupportedFormat.xml.displayName, "XML")
+        XCTAssertEqual(Formatter.SupportedFormat.js.displayName, "JavaScript")
+        XCTAssertEqual(Formatter.SupportedFormat.css.displayName, "CSS")
+        XCTAssertEqual(Formatter.SupportedFormat.markdown.displayName, "Markdown")
+    }
+
+    func test_displayName_everyCaseIsNonEmpty() {
+        for f in Formatter.SupportedFormat.allCases {
+            XCTAssertFalse(f.displayName.isEmpty, "\(f) needs a non-empty display name")
+        }
+    }
+
     func test_js_detect_jsxAndTs_areNotFormattable() {
         // JSX / TS carry syntax the brace re-indenter doesn't model — must not
         // claim a Format affordance that would mis-indent.

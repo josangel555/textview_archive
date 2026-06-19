@@ -22,6 +22,20 @@ public enum Formatter {
         /// "Align Markdown Tables" editor command (TSK-350).
         case markdown
 
+        /// Short, user-facing name for menus / the command palette
+        /// (TSK-904 discoverability) — e.g. "Pretty-Print \(displayName)".
+        /// Capitalised the way each format is conventionally written so a
+        /// user searching for "JSON" / "XML" hits the dynamic menu title.
+        public var displayName: String {
+            switch self {
+            case .json: return "JSON"
+            case .xml:  return "XML"
+            case .js:   return "JavaScript"
+            case .css:  return "CSS"
+            case .markdown: return "Markdown"
+            }
+        }
+
         /// Detect a supported format from a URL's path extension.
         ///
         /// NB: `.jsonl` is deliberately absent — JSON-Lines is one JSON

@@ -123,7 +123,13 @@ extension CommandRegistry {
             defaultShortcut: Shortcut(key: "0", modifiers: [.command]),
             scriptVerb: "zoom-reset"),
         CommandDescriptor(
-            id: "view.prettyPrint", title: "Pretty-Print", category: .view,
+            // TSK-904 discoverability: the palette fuzzy-matches on `title`
+            // ONLY, so a search for "format" / "json" / "prettify" missed the
+            // bare "Pretty-Print". The keyword tail makes those queries hit it
+            // (the format names mirror Formatter.SupportedFormat.displayName).
+            // `id` stays "view.prettyPrint" — a shipped keybinding contract.
+            id: "view.prettyPrint",
+            title: "Pretty-Print / Format JSON, XML, JS, CSS", category: .view,
             defaultShortcut: Shortcut(key: "f", modifiers: [.command, .option]),
             scriptVerb: "toggle-format"),
         CommandDescriptor(
@@ -199,7 +205,9 @@ extension CommandRegistry {
             id: "edit.ensureFinalNewline", title: "Ensure Final Newline", category: .edit,
             scriptVerb: "edit-ensure-final-newline"),
         CommandDescriptor(
-            id: "edit.minifyJSON", title: "Minify JSON", category: .edit,
+            // TSK-904: "Compact" keyword so the palette finds the inverse of
+            // Pretty-Print under its common synonym, not just "minify".
+            id: "edit.minifyJSON", title: "Minify JSON (Compact)", category: .edit,
             scriptVerb: "edit-minify-json"),
         CommandDescriptor(
             id: "edit.insertTOC", title: "Insert Table of Contents", category: .edit,

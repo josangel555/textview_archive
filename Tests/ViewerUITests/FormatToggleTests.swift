@@ -86,6 +86,35 @@ final class FormatToggleTests: HeadlessUITestCase {
         XCTAssertFalse(model.supportsFormatToggle)
     }
 
+    // MARK: - Dynamic menu title (TSK-904 discoverability)
+
+    // `validateMenuItem` assigns `model.formatToggleMenuTitle` to the
+    // View → Pretty-Print item each time the menu opens, so the menu names
+    // the concrete format (e.g. "Pretty-Print JSON") — the host-testable
+    // model state behind that VM-validated menu label.
+
+    func test_formatToggleMenuTitle_namesJSON() throws {
+        let model = makeModel()
+        let url = try writeFile("data.json", #"{"a":1}"#)
+        model.open(url: url)
+        XCTAssertEqual(model.formatToggleMenuTitle, "Pretty-Print JSON")
+    }
+
+    func test_formatToggleMenuTitle_namesXML() throws {
+        let model = makeModel()
+        let url = try writeFile("data.xml", "<r/>\n")
+        model.open(url: url)
+        XCTAssertEqual(model.formatToggleMenuTitle, "Pretty-Print XML")
+    }
+
+    func test_formatToggleMenuTitle_fallsBackForNonFormattable() throws {
+        let model = makeModel()
+        let url = try writeFile("doc.md", "# x\n")
+        model.open(url: url)
+        XCTAssertEqual(model.formatToggleMenuTitle, "Pretty-Print",
+            "a non-formattable file keeps the bare label (no dangling format name)")
+    }
+
     // MARK: - Toggle behavior
 
     func test_toggleFormat_flipsState() throws {

@@ -3633,6 +3633,20 @@ public final class DocumentModel: ObservableObject {
         return Formatter.SupportedFormat.detect(url) != nil
     }
 
+    /// Dynamic title for the "Pretty-Print" View-menu item (TSK-904
+    /// discoverability). When a formattable file is active it names the
+    /// concrete format — `"Pretty-Print JSON"`, `"Pretty-Print XML"` — so
+    /// a user scanning menus for "JSON" finds it; otherwise it falls back
+    /// to the bare `"Pretty-Print"`. Pure derivation of `currentURL`, so
+    /// it's host-testable; `validateMenuItem` assigns it each time the
+    /// menu opens.
+    public var formatToggleMenuTitle: String {
+        guard let url = currentURL,
+              let format = Formatter.SupportedFormat.detect(url)
+        else { return "Pretty-Print" }
+        return "Pretty-Print \(format.displayName)"
+    }
+
     /// True if the current tab is currently showing pretty-printed
     /// content (as opposed to the raw file).
     public var isCurrentTabFormatted: Bool {

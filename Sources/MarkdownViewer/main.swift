@@ -2841,6 +2841,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return model.supportsViewModeToggle
         case #selector(toggleFormat(_:)):
             // Format only when the current file has a registered formatter.
+            // TSK-904: name the concrete format ("Pretty-Print JSON") so it's
+            // discoverable when scanning the menu for "JSON" / "XML".
+            item.title = model.formatToggleMenuTitle
             item.state = model.isCurrentTabFormatted ? .on : .off
             return model.supportsFormatToggle
         case #selector(toggleSourceWordWrap(_:)):
