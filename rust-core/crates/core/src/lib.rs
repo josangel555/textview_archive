@@ -49,3 +49,7 @@ pub mod transcript;
 pub mod view;
 pub mod whitespace;
 pub mod wire;
+
+/// WASM-shape invariant guard (TSK-800) — test-only; ships no production code.
+#[cfg(test)]
+mod wasm_shape;
