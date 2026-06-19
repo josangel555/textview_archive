@@ -72,33 +72,13 @@ struct GitRemotesTab: View {
         }
     }
 
-    /// Translate git@host:owner/repo(.git)? and ssh://host/owner/repo to
-    /// https://host/owner/repo so the browser can open them. Leaves
-    /// http(s):// URLs alone.
+    /// Translate any git remote URL (https, git@ scp-style, ssh://) to its
+    /// `https://host/owner/repo` web page so the browser can open it.
+    /// Delegates to the host-tested `ForgeRemote` parser
+    /// (`ViewerCore/Git/ForgeRemote.swift`) — the canonical, pure-logic
+    /// home for remote-URL parsing and forge web-URL derivation.
     static func webURL(from remote: String) -> URL? {
-        if remote.hasPrefix("http://") || remote.hasPrefix("https://") {
-            var s = remote
-            if s.hasSuffix(".git") { s = String(s.dropLast(4)) }
-            return URL(string: s)
-        }
-        if remote.hasPrefix("git@") {
-            // git@github.com:foo/bar.git → https://github.com/foo/bar
-            let body = String(remote.dropFirst("git@".count))
-            guard let colon = body.firstIndex(of: ":") else { return nil }
-            let host = body[..<colon]
-            var path = String(body[body.index(after: colon)...])
-            if path.hasSuffix(".git") { path = String(path.dropLast(4)) }
-            return URL(string: "https://\(host)/\(path)")
-        }
-        if remote.hasPrefix("ssh://") {
-            // ssh://git@host/foo/bar.git → https://host/foo/bar
-            var s = remote.dropFirst("ssh://".count)
-            if let at = s.firstIndex(of: "@") { s = s[s.index(after: at)...] }
-            var str = String(s)
-            if str.hasSuffix(".git") { str = String(str.dropLast(4)) }
-            return URL(string: "https://\(str)")
-        }
-        return nil
+        ForgeRemote.parse(remote)?.webURL
     }
 
     private func openInBrowser(_ r: GitClient.RemoteEntry) {
