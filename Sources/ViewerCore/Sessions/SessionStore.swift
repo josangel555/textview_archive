@@ -63,7 +63,9 @@ public final class SessionStore: @unchecked Sendable {
     public static let maxIndexFileSize = 4 * 1024 * 1024
     public static let maxSnapshotFileSize = 8 * 1024 * 1024
 
-    public static func defaultDirectory() -> URL {
+    public static func defaultDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
         let fm = FileManager.default
         // Clean-room override (host live-smoke / T4 session smokes): redirect the
         // store to per-run scratch so a scripted launch never appends scratch
@@ -77,7 +79,7 @@ public final class SessionStore: @unchecked Sendable {
         // (Salvaged from superseded scratch branch worktree-wf_7f6adec6-3ab-64;
         // the rest of that branch — wireLifecycle on the skip-restore path — had
         // already landed on main.)
-        let env = ProcessInfo.processInfo.environment
+        let env = environment
         let dir: URL
         if let override = env["MDV_SESSIONS_DIR"], !override.isEmpty {
             dir = URL(fileURLWithPath: override, isDirectory: true)

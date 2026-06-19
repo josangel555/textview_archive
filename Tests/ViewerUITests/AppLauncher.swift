@@ -150,6 +150,10 @@ enum AppLauncher {
             "MDV_SKIP_WORKSPACE_RESTORE=1",
             "MDV_TEST_INSTANCE=1",
             "MDV_ARTIFACT_DIR=\(artifacts.path)",
+            // BUG-027: redirect the SessionStore to per-run scratch so scripted
+            // session verbs (persist() fires under skip-restore) never append
+            // pills to the user's real ~/Library/Application Support store.
+            "MDV_SESSIONS_DIR=\(artifacts.appendingPathComponent("SessionsScratch").path)",
         ]
         let p = Process()
         if viaOpen {
@@ -171,6 +175,8 @@ enum AppLauncher {
                 "MDV_ARTIFACT_DIR=\(artifacts.path)",
                 "MDV_SCRIPT_PATH=\(scriptURL.path)",
                 "MDV_OPEN_FILE=\(argURL.path)",
+                // BUG-027: per-run scratch session store (see mdvEnv above).
+                "MDV_SESSIONS_DIR=\(artifacts.appendingPathComponent("SessionsScratch").path)",
             ]
             var argv = ["/usr/bin/open", "-n", "-W"]
             for pair in openEnv { argv += ["--env", pair] }
