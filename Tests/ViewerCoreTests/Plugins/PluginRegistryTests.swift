@@ -470,4 +470,169 @@ final class PluginRegistryTests: XCTestCase {
         }
         XCTAssertTrue(PluginRegistry.shared.sidebarSections.all.isEmpty)
     }
+
+    // MARK: - Menu-item contributions (TSK-754)
+
+    // A Tier A menu_item loads and registers a disabled (noop) menu item.
+    func test_loads_tier_a_menu_item() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.menu.a", manifestJSON: #"""
+        {
+          "id": "com.test.menu.a", "name": "M", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.menu"],
+          "contributes": [
+            { "type": "menu_item", "id": "m1", "title": "Do Nothing",
+              "submenu": "Tools", "action": { "tier": "A" } }
+          ]
+        }
+        """#)
+        grant("com.test.menu.a", ["ui.menu"])
+
+        let results = PluginRegistry.shared.loadAll(from: dir)
+        XCTAssertEqual(results.count, 1)
+        if case .loaded = results[0].status {} else {
+            XCTFail("expected .loaded, got \(results[0].status)")
+        }
+        let model = PluginRegistry.shared.menuItems.menuModel()
+        XCTAssertEqual(model.submenus.count, 1)
+        XCTAssertEqual(model.submenus[0].title, "Tools")
+        XCTAssertEqual(model.submenus[0].items.first?.title, "Do Nothing")
+        XCTAssertEqual(model.submenus[0].items.first?.enabled, false)  // Tier A ⇒ noop
+    }
+
+    // A menu_item that declares ui.menu but the manifest doesn't list it:
+    // contribution dropped with a capability warning.
+    func test_menu_item_without_ui_menu_capability_is_skipped() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.menu.nocap", manifestJSON: #"""
+        {
+          "id": "com.test.menu.nocap", "name": "M", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar"],
+          "contributes": [
+            { "type": "menu_item", "id": "m1", "title": "X",
+              "action": { "tier": "A" } }
+          ]
+        }
+        """#)
+        grant("com.test.menu.nocap", ["ui.sidebar"])
+        let results = PluginRegistry.shared.loadAll(from: dir)
+        XCTAssertEqual(results.count, 1)
+        if case .loadedWithWarnings(let w) = results[0].status {
+            XCTAssertTrue(w.contains { $0.contains("uiMenu") || $0.contains("ui.menu") })
+        } else {
+            XCTFail("expected loadedWithWarnings, got \(results[0].status)")
+        }
+        XCTAssertTrue(PluginRegistry.shared.menuItems.menuModel().isEmpty)
+    }
+
+    // End-to-end: a Tier B menu_item with a real bin — invoking the
+    // contributed action spawns the subprocess (proven by the side effect
+    // the script writes to disk).
+    func test_tier_b_menu_item_invoke_runs_subprocess() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let folder = try writePlugin(in: dir, id: "com.test.menu.b", manifestJSON: #"""
+        {
+          "id": "com.test.menu.b", "name": "B", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.menu", "shell.exec"],
+          "contributes": [
+            { "type": "menu_item", "id": "run", "title": "Run It",
+              "action": { "tier": "B", "bin": "bin.sh", "args": [] } }
+          ]
+        }
+        """#)
+        // The script proves it ran by touching a sentinel file. It still
+        // emits an empty (valid) response envelope on stdout.
+        let sentinel = folder.appendingPathComponent("ran.flag")
+        let binURL = folder.appendingPathComponent("bin.sh")
+        try """
+        #!/bin/sh
+        cat >/dev/null
+        echo ran > "\(sentinel.path)"
+        echo '{}'
+        """.data(using: .utf8)!.write(to: binURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: binURL.path)
+
+        grant("com.test.menu.b", ["shell.exec", "ui.menu"])
+        let results = PluginRegistry.shared.loadAll(from: dir)
+        XCTAssertEqual(results.count, 1)
+        if case .loaded = results[0].status {} else {
+            XCTFail("expected .loaded, got \(results[0].status)")
+        }
+
+        // The contributed item is enabled (Tier B has an invoke closure).
+        let model = PluginRegistry.shared.menuItems.menuModel()
+        XCTAssertEqual(model.topLevel.count, 1)
+        XCTAssertEqual(model.topLevel[0].enabled, true)
+
+        // Invoke it — the registry's Tier B closure spawns the subprocess.
+        let entry = PluginRegistry.shared.menuItems.all.first { $0.itemID == "run" }
+        XCTAssertNotNil(entry?.invoke)
+        entry?.invoke?()
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: sentinel.path),
+            "Tier B menu invoke should have spawned the bin (sentinel missing)")
+    }
+
+    // setEnabled drops + restores menu-item contributions (mirrors the
+    // sidebar toggle path).
+    func test_setEnabled_toggles_menu_items() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.menu.toggle", manifestJSON: #"""
+        {
+          "id": "com.test.menu.toggle", "name": "M", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.menu"],
+          "contributes": [
+            { "type": "menu_item", "id": "m1", "title": "Item",
+              "action": { "tier": "A" } }
+          ]
+        }
+        """#)
+        grant("com.test.menu.toggle", ["ui.menu"])
+        _ = PluginRegistry.shared.loadAll(from: dir)
+        XCTAssertEqual(PluginRegistry.shared.menuItems.all.count, 1)
+        PluginRegistry.shared.setEnabled("com.test.menu.toggle", enabled: false)
+        XCTAssertTrue(PluginRegistry.shared.menuItems.all.isEmpty)
+        PluginRegistry.shared.setEnabled("com.test.menu.toggle", enabled: true)
+        XCTAssertEqual(PluginRegistry.shared.menuItems.all.count, 1)
+    }
+
+    // A bundled menu item registered via the bundled seam parks + restores
+    // across disable/enable without re-running a launch hook.
+    func test_bundled_menu_item_parks_and_restores() {
+        let manifest = PluginManifest(
+            id: "bundled.menu", name: "BM", version: "1", author: .init(name: "x", url: nil, email: nil),
+            homepage: nil, license: nil, hostVersion: "0", manifestVersion: 1,
+            capabilities: [.uiMenu], contributes: []
+        )
+        var fired = 0
+        let entry = MenuContributionRegistry.Entry(
+            pluginID: "bundled.menu", itemID: "go", title: "Go",
+            submenu: nil, order: 5, invoke: { fired += 1 }
+        )
+        PluginRegistry.shared.registerBundledMenuItem(manifest: manifest, entry: entry)
+        XCTAssertEqual(PluginRegistry.shared.menuItems.all.count, 1)
+        PluginRegistry.shared.menuItems.all.first?.invoke?()
+        XCTAssertEqual(fired, 1)
+
+        PluginRegistry.shared.setEnabled("bundled.menu", enabled: false)
+        XCTAssertTrue(PluginRegistry.shared.menuItems.all.isEmpty)
+        PluginRegistry.shared.setEnabled("bundled.menu", enabled: true)
+        // Same closure restored (not re-created) — firing it again works.
+        PluginRegistry.shared.menuItems.all.first?.invoke?()
+        XCTAssertEqual(fired, 2)
+    }
 }

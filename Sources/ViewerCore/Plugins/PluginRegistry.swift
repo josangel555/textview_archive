@@ -27,6 +27,10 @@ public final class PluginRegistry {
 
     public let sidebarSections = SidebarSectionRegistry()
 
+    /// Contributed app-menu items (TSK-754). The AppKit menu builder
+    /// reads `menuItems.menuModel()` while constructing the main menu.
+    public let menuItems = MenuContributionRegistry()
+
     /// The Tier B host. Tests can substitute via `_setSubprocessHost`.
     private var subprocessHost: PluginSubprocessHost = PluginSubprocessHost()
 
@@ -99,6 +103,11 @@ public final class PluginRegistry {
     /// plugin's launch hook.
     private var dormantSidebarEntries: [String: [SidebarSectionRegistry.Entry]] = [:]
 
+    /// A bundled plugin's menu items, parked while the plugin is disabled
+    /// so `setEnabled(true)` can re-register them (mirrors the sidebar
+    /// dormant-entry path — TSK-754).
+    private var dormantMenuEntries: [String: [MenuContributionRegistry.Entry]] = [:]
+
     /// Test seam: swap the subprocess host with a fixture (e.g. one
     /// that returns canned rows without spawning).
     /// `internal` (not `public`): tests reach it via `@testable import`;
@@ -128,6 +137,29 @@ public final class PluginRegistry {
         }
         loaded[manifest.id] = LoadedPlugin(manifest: manifest, folder: nil, enabled: true)
         sidebarSections.register(entry)
+    }
+
+    /// Register a bundled-Swift plugin's menu item (TSK-754). Same
+    /// contract as `registerBundledSidebarSection`: first-party code,
+    /// bypasses the grant store, honors a persisted dismissal.
+    public func registerBundledMenuItem(
+        manifest: PluginManifest,
+        entry: MenuContributionRegistry.Entry
+    ) {
+        if persistedDisabledIDs.contains(manifest.id) {
+            // Preserve any existing record (e.g. a sibling sidebar
+            // section already registered this plugin) rather than
+            // clobbering its enabled flag.
+            if loaded[manifest.id] == nil {
+                loaded[manifest.id] = LoadedPlugin(manifest: manifest, folder: nil, enabled: false)
+            }
+            dormantMenuEntries[manifest.id, default: []].append(entry)
+            return
+        }
+        if loaded[manifest.id] == nil {
+            loaded[manifest.id] = LoadedPlugin(manifest: manifest, folder: nil, enabled: true)
+        }
+        menuItems.register(entry)
     }
 
     // MARK: - On-disk discovery
@@ -237,6 +269,14 @@ public final class PluginRegistry {
             case .sidebarSection(let s):
                 if let warning = registerSidebarSection(
                     section: s, manifest: manifest, folder: folder
+                ) {
+                    warnings.append(warning)
+                } else {
+                    registeredAny = true
+                }
+            case .menuItem(let m):
+                if let warning = registerMenuItem(
+                    item: m, manifest: manifest, folder: folder
                 ) {
                     warnings.append(warning)
                 } else {
@@ -357,9 +397,77 @@ public final class PluginRegistry {
         }
     }
 
+    /// Register one `menu_item` contribution (TSK-754). Returns nil on
+    /// success, a warning string on skip. Mirrors `registerSidebarSection`:
+    /// a capability gate, then a per-tier mapping into a registry `Entry`.
+    private func registerMenuItem(
+        item m: PluginManifest.MenuItemContribution,
+        manifest: PluginManifest,
+        folder: URL
+    ) -> String? {
+        // Capability gate (no silent escalation — design §5).
+        let required = PluginManifest.Contribution.menuItem(m).requiredCapabilities
+        guard required.isSubset(of: Set(manifest.capabilities)) else {
+            let missing = required.subtracting(Set(manifest.capabilities))
+                .map { $0.rawValue }.sorted().joined(separator: ", ")
+            return "menu_item '\(m.id)' missing capability: \(missing)"
+        }
+
+        switch m.action {
+        case .a:
+            // Tier A: declarative-only. The item appears disabled (inert).
+            let entry = MenuContributionRegistry.Entry(
+                pluginID: manifest.id,
+                itemID: m.id,
+                title: m.title,
+                submenu: m.submenu,
+                order: m.order ?? 100,
+                invoke: nil
+            )
+            menuItems.register(entry)
+            return nil
+
+        case .b(let bin, let args, let timeoutMs):
+            let pluginID = manifest.id
+            let host = self.subprocessHost
+            let entry = MenuContributionRegistry.Entry(
+                pluginID: pluginID,
+                itemID: m.id,
+                title: m.title,
+                submenu: m.submenu,
+                order: m.order ?? 100,
+                invoke: {
+                    // Selecting the item spawns the plugin with a
+                    // `runCommand` envelope. Fire-and-observe: the result
+                    // is captured in the audit log by `PluginSubprocessHost`;
+                    // we don't surface a return value into the menu (a menu
+                    // selection has no row to repaint). The synchronous
+                    // wait is bounded by the host's timeout cap.
+                    _ = host.call(
+                        pluginID: pluginID,
+                        pluginFolder: folder,
+                        bin: bin,
+                        args: args,
+                        timeoutMs: timeoutMs,
+                        request: .init(kind: "runCommand")
+                    )
+                }
+            )
+            menuItems.register(entry)
+            return nil
+
+        case .c:
+            return "menu_item '\(m.id)' uses tier C (WebView) — not supported in v1"
+        case .unknown(let t):
+            return "menu_item '\(m.id)' uses unknown tier '\(t)' — skipped"
+        }
+    }
+
     public func unload(_ id: String) {
         sidebarSections.dropAll(forPlugin: id)
+        menuItems.dropAll(forPlugin: id)
         dormantSidebarEntries[id] = nil
+        dormantMenuEntries[id] = nil
         loaded[id] = nil
     }
 
@@ -380,10 +488,13 @@ public final class PluginRegistry {
         persistDisabled(id, disabled: !enabled)
         if enabled {
             guard let folder = entry.folder else {
-                // Bundled: re-register the sections parked when the
+                // Bundled: re-register the contributions parked when the
                 // plugin was disabled (or registered-while-disabled).
                 for parked in dormantSidebarEntries.removeValue(forKey: id) ?? [] {
                     sidebarSections.register(parked)
+                }
+                for parked in dormantMenuEntries.removeValue(forKey: id) ?? [] {
+                    menuItems.register(parked)
                 }
                 entry.enabled = true
                 loaded[id] = entry
@@ -392,13 +503,16 @@ public final class PluginRegistry {
             // Third-party: re-register by re-loading the folder.
             _ = reloadOne(folder: folder)
         } else {
-            // Bundled sections are parked (not lost) so enable can
+            // Bundled contributions are parked (not lost) so enable can
             // restore them without re-running the launch hook.
             if entry.folder == nil {
                 dormantSidebarEntries[id, default: []]
                     .append(contentsOf: sidebarSections.entries(forPlugin: id))
+                dormantMenuEntries[id, default: []]
+                    .append(contentsOf: menuItems.entries(forPlugin: id))
             }
             sidebarSections.dropAll(forPlugin: id)
+            menuItems.dropAll(forPlugin: id)
             entry.enabled = false
             loaded[id] = entry
         }

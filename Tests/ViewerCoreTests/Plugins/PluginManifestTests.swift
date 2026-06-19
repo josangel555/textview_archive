@@ -97,4 +97,123 @@ final class PluginManifestTests: XCTestCase {
         """#.data(using: .utf8)!
         XCTAssertThrowsError(try JSONDecoder().decode(PluginManifest.self, from: json))
     }
+
+    // MARK: - Menu-item contributions (TSK-754)
+
+    // A Tier A (noop) menu item parses every field the registry needs,
+    // and `ui.menu` decodes to a known capability (not `.unknown`).
+    func test_decodes_tier_a_menu_item() throws {
+        let json = #"""
+        {
+          "id": "com.example.tv.tools",
+          "name": "Tools", "version": "1.0.0",
+          "author": { "name": "Example Co." },
+          "hostVersion": ">=0.0.0", "manifestVersion": 1,
+          "capabilities": ["ui.menu"],
+          "contributes": [
+            {
+              "type": "menu_item",
+              "id": "ping",
+              "title": "Ping",
+              "submenu": "Diagnostics",
+              "order": 42,
+              "action": { "tier": "A" }
+            }
+          ]
+        }
+        """#.data(using: .utf8)!
+
+        let m = try JSONDecoder().decode(PluginManifest.self, from: json)
+        XCTAssertEqual(m.capabilities, [.uiMenu])
+        guard case .menuItem(let item) = m.contributes[0] else {
+            return XCTFail("expected menu_item, got \(m.contributes[0])")
+        }
+        XCTAssertEqual(item.id, "ping")
+        XCTAssertEqual(item.title, "Ping")
+        XCTAssertEqual(item.submenu, "Diagnostics")
+        XCTAssertEqual(item.order, 42)
+        XCTAssertEqual(item.action, .a)
+    }
+
+    // A Tier B menu item carries the subprocess bin/args/timeout, and the
+    // contribution's required-capability set picks up `shell.exec` on top
+    // of `ui.menu`.
+    func test_decodes_tier_b_menu_item_and_required_caps() throws {
+        let json = #"""
+        {
+          "id": "x", "name": "x", "version": "1.0.0",
+          "author": { "name": "x" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.menu", "shell.exec"],
+          "contributes": [
+            {
+              "type": "menu_item", "id": "run", "title": "Run It",
+              "action": { "tier": "B", "bin": "tool", "args": ["--go"], "timeoutMs": 1234 }
+            }
+          ]
+        }
+        """#.data(using: .utf8)!
+        let m = try JSONDecoder().decode(PluginManifest.self, from: json)
+        guard case .menuItem(let item) = m.contributes[0] else {
+            return XCTFail("expected menu_item")
+        }
+        XCTAssertNil(item.submenu)   // optional submenu absent ⇒ top-level
+        XCTAssertEqual(item.action, .b(bin: "tool", args: ["--go"], timeoutMs: 1234))
+        XCTAssertEqual(
+            PluginManifest.Contribution.menuItem(item).requiredCapabilities,
+            [.uiMenu, .shellExec]
+        )
+    }
+
+    // A Tier A menu item requires only `ui.menu` (no shell.exec).
+    func test_tier_a_menu_item_requires_only_ui_menu() throws {
+        let item = PluginManifest.MenuItemContribution(
+            id: "i", title: "T", action: .a
+        )
+        XCTAssertEqual(
+            PluginManifest.Contribution.menuItem(item).requiredCapabilities,
+            [.uiMenu]
+        )
+    }
+
+    // A Tier B menu item missing its `bin` is a hard parse failure (the
+    // same contract Tier B sidebar sections enforce) — caught at load,
+    // not at invocation.
+    func test_tier_b_menu_item_missing_bin_throws() {
+        let json = #"""
+        {
+          "id": "x", "name": "x", "version": "1.0.0",
+          "author": { "name": "x" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.menu", "shell.exec"],
+          "contributes": [
+            { "type": "menu_item", "id": "run", "title": "Run",
+              "action": { "tier": "B" } }
+          ]
+        }
+        """#.data(using: .utf8)!
+        XCTAssertThrowsError(try JSONDecoder().decode(PluginManifest.self, from: json))
+    }
+
+    // An unknown action tier on a menu item decodes to `.unknown` (not a
+    // throw), so a forward-compat manifest still loads its other items.
+    func test_unknown_menu_item_tier_decodes_to_unknown() throws {
+        let json = #"""
+        {
+          "id": "x", "name": "x", "version": "1.0.0",
+          "author": { "name": "x" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.menu"],
+          "contributes": [
+            { "type": "menu_item", "id": "future", "title": "Future",
+              "action": { "tier": "Z" } }
+          ]
+        }
+        """#.data(using: .utf8)!
+        let m = try JSONDecoder().decode(PluginManifest.self, from: json)
+        guard case .menuItem(let item) = m.contributes[0] else {
+            return XCTFail("expected menu_item")
+        }
+        XCTAssertEqual(item.action, .unknown(tier: "Z"))
+    }
 }

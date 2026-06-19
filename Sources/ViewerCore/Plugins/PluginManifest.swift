@@ -51,6 +51,10 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
     /// subprocess at all.
     public enum Capability: String, Decodable, Sendable, Equatable {
         case uiSidebar = "ui.sidebar"
+        // TSK-754: gate for `menu_item` contributions. A plugin that
+        // contributes app-menu items must declare `ui.menu`, the same
+        // way a sidebar contributor declares `ui.sidebar`.
+        case uiMenu = "ui.menu"
         case shellExec = "shell.exec"
         // Forward-compat: unknown capability strings decode to
         // `.unknown` rather than throwing, so a future-host manifest
@@ -65,6 +69,7 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
 
     public enum Contribution: Decodable, Sendable, Equatable {
         case sidebarSection(SidebarSectionContribution)
+        case menuItem(MenuItemContribution)
         case unknown(type: String)
 
         private enum CodingKeys: String, CodingKey { case type }
@@ -75,6 +80,8 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
             switch type {
             case "sidebar_section":
                 self = .sidebarSection(try SidebarSectionContribution(from: decoder))
+            case "menu_item":
+                self = .menuItem(try MenuItemContribution(from: decoder))
             default:
                 // Don't throw — record and skip. Lets a multi-
                 // contribution plugin partially register on a host
@@ -95,8 +102,103 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
                 // and rejected as not-supported (§3.3).
                 if case .b = s.provider { req.insert(.shellExec) }
                 return req
+            case .menuItem(let m):
+                var req: Set<Capability> = [.uiMenu]
+                // A subprocess-backed item (Tier B) additionally needs
+                // `shell.exec` — same gate as a Tier B sidebar section.
+                if case .b = m.action { req.insert(.shellExec) }
+                return req
             case .unknown:
                 return []
+            }
+        }
+    }
+
+    /// §2.x menu-item contribution (TSK-754). A plugin contributes one
+    /// command into the app's "Plugins" top-level menu, optionally
+    /// nested under a named submenu. v1 supports two action tiers,
+    /// mirroring `SidebarSectionContribution`:
+    ///
+    ///   - **Tier A** — a "noop" item. The contribution is declarative
+    ///     only; selecting it does nothing host-side (used as a label
+    ///     or for forward-compat declarations). No subprocess.
+    ///   - **Tier B** — selecting the item spawns the plugin's `bin`
+    ///     with a `runCommand` envelope, dispatched through the same
+    ///     `PluginSubprocessHost` the sidebar uses. The provider carries
+    ///     `bin` (path relative to the plugin folder), optional `args`,
+    ///     and an optional `timeoutMs`.
+    ///
+    /// Tier C (WebView) is parsed-and-rejected like the sidebar's.
+    public struct MenuItemContribution: Decodable, Sendable, Equatable {
+        public let id: String
+        public let title: String
+        /// Optional submenu name. When present the item nests under a
+        /// submenu of that name inside the Plugins menu; when absent the
+        /// item sits at the top level of the Plugins menu.
+        public let submenu: String?
+        public let order: Int?
+        public let action: Action
+
+        public init(
+            id: String,
+            title: String,
+            submenu: String? = nil,
+            order: Int? = nil,
+            action: Action
+        ) {
+            self.id = id
+            self.title = title
+            self.submenu = submenu
+            self.order = order
+            self.action = action
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, title, submenu, order, action
+        }
+
+        /// The behaviour bound to the menu item. A tagged union over
+        /// `tier`, mirroring the sidebar provider so plugin authors only
+        /// learn one shape.
+        public enum Action: Decodable, Sendable, Equatable {
+            case a
+            case b(bin: String, args: [String], timeoutMs: Int?)
+            case c
+            case unknown(tier: String)
+
+            private enum CodingKeys: String, CodingKey {
+                case tier, bin, args, timeoutMs
+            }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                let tier = try c.decode(String.self, forKey: .tier)
+                switch tier {
+                case "A":
+                    self = .a
+                case "B":
+                    // Tier B *must* declare a `bin` — surface a missing
+                    // one as a decode error rather than crashing at
+                    // invocation time (same contract as the sidebar).
+                    let bin = try c.decode(String.self, forKey: .bin)
+                    let args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
+                    let timeoutMs = try c.decodeIfPresent(Int.self, forKey: .timeoutMs)
+                    self = .b(bin: bin, args: args, timeoutMs: timeoutMs)
+                case "C":
+                    self = .c
+                default:
+                    self = .unknown(tier: tier)
+                }
+            }
+
+            /// Human-readable label for log + warning messages.
+            var tierLabel: String {
+                switch self {
+                case .a: return "A"
+                case .b: return "B"
+                case .c: return "C"
+                case .unknown(let t): return t
+                }
             }
         }
     }

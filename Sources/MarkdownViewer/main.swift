@@ -25,6 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var languageMenu: NSMenu?
     private var windowMenu: NSMenu?
     private var terminalFavoritesMenu: NSMenu?   // TSK-769
+    /// TSK-754: plugin-contributed menu items, keyed by their menu-item
+    /// tag, so the single `invokePluginMenuItem` selector can dispatch to
+    /// the right `Entry.invoke` closure. Rebuilt whenever the Plugins
+    /// menu is (re)constructed.
+    private var pluginMenuInvocations: [Int: (@MainActor () -> Void)] = [:]
     /// Auxiliary tool windows (WAVE 2b items 4 + 5). Retained so a second
     /// menu invocation re-focuses the existing window instead of spawning
     /// duplicates; `isReleasedWhenClosed = false` keeps them alive across
@@ -2077,6 +2082,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if DiagnosticGate.isEnabled, let debugMenuItem = buildDebugMenu() {
             mainMenu.addItem(debugMenuItem)
         }
+        // TSK-754: a "Plugins" top-level menu materialised from plugin
+        // menu-item contributions. Added only when at least one plugin
+        // contributed an item (the builder returns nil otherwise), so a
+        // host with no menu-contributing plugins shows no empty menu.
+        if let pluginMenuItem = buildPluginsMenu() {
+            mainMenu.addItem(pluginMenuItem)
+        }
         mainMenu.addItem(windowMenuItem)
         mainMenu.addItem(helpMenuItem)
 
@@ -2109,6 +2121,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         debugMenuItem.submenu = debugMenu
         return debugMenuItem
+    }
+
+    /// Build the "Plugins" top-level menu (TSK-754) from the menu-item
+    /// contributions registered in `PluginRegistry.shared.menuItems`.
+    /// Returns `nil` when no plugin contributed a menu item so callers
+    /// skip adding an empty menu. Top-level items come first, then named
+    /// submenus (both ordered by the registry's stable ordering).
+    ///
+    /// Tier B items dispatch through the registry's `invoke` closure (a
+    /// `PluginSubprocessHost` call); Tier A items have no `invoke` and are
+    /// rendered disabled. Each enabled item gets a unique tag so the
+    /// shared `invokePluginMenuItem` selector can route to the right
+    /// closure.
+    private func buildPluginsMenu() -> NSMenuItem? {
+        let model = PluginRegistry.shared.menuItems.menuModel()
+        guard !model.isEmpty else { return nil }
+
+        // Rebuild the tag → invoke map from scratch each time the menu is
+        // constructed so stale closures from a prior build don't linger.
+        pluginMenuInvocations.removeAll()
+        var nextTag = 1
+
+        func makeItem(_ item: MenuContributionRegistry.Item) -> NSMenuItem {
+            let mi = NSMenuItem(
+                title: item.title,
+                action: item.enabled ? #selector(invokePluginMenuItem(_:)) : nil,
+                keyEquivalent: ""
+            )
+            if item.enabled,
+               let entry = PluginRegistry.shared.menuItems.all.first(where: {
+                   $0.pluginID == item.pluginID && $0.itemID == item.itemID
+               }),
+               let invoke = entry.invoke {
+                mi.target = self
+                mi.tag = nextTag
+                pluginMenuInvocations[nextTag] = invoke
+                nextTag += 1
+            } else {
+                // Tier A (noop) item: no target/action ⇒ disabled.
+                mi.isEnabled = false
+            }
+            return mi
+        }
+
+        let pluginsMenuItem = NSMenuItem()
+        let pluginsMenu = NSMenu(title: "Plugins")
+
+        for item in model.topLevel {
+            pluginsMenu.addItem(makeItem(item))
+        }
+        if !model.topLevel.isEmpty && !model.submenus.isEmpty {
+            pluginsMenu.addItem(.separator())
+        }
+        for submenu in model.submenus {
+            let subItem = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: submenu.title)
+            for item in submenu.items {
+                sub.addItem(makeItem(item))
+            }
+            subItem.submenu = sub
+            pluginsMenu.addItem(subItem)
+        }
+
+        pluginsMenuItem.submenu = pluginsMenu
+        return pluginsMenuItem
+    }
+
+    /// Dispatch a selected plugin menu item to its contributed `invoke`
+    /// closure (TSK-754). The item's `tag` keys into `pluginMenuInvocations`.
+    @objc func invokePluginMenuItem(_ sender: NSMenuItem) {
+        guard let invoke = pluginMenuInvocations[sender.tag] else { return }
+        invoke()
     }
 
     /// Build the Session menu. The "Jump to Session" submenu is
