@@ -1006,11 +1006,11 @@ public func mdvCoreFuzzyRank(query: String, candidates: [String]) throws -> [Fuz
         let map = try reader.decode().mapValue()
         guard let matches = map["matches"] else { throw CoreError.decode("missing 'matches'") }
         return try matches.arrayValue().map { el in
-            let m = try el.mapValue()
+            // Allocation-free per-row field access: no throwaway dict per match.
             return FuzzyRanked(
-                index: Int(try m.require("index").u64Value()),
-                score: Int(try m.require("score").u64Value()),
-                matchedIndices: try m.require("indices").u32Array().map(Int.init)
+                index: Int(try el.requireField("index").u64Value()),
+                score: Int(try el.requireField("score").u64Value()),
+                matchedIndices: try el.requireField("indices").u32Array().map(Int.init)
             )
         }
     } catch let e as MsgPackError {
@@ -1061,12 +1061,12 @@ public func mdvCoreFindSearch(
         }
         guard let matches = map["matches"] else { throw CoreError.decode("missing 'matches'") }
         return try matches.arrayValue().map { el in
-            let m = try el.mapValue()
+            // Allocation-free per-row field access: no throwaway dict per match.
             return CoreFindMatch(
-                location: Int(try m.require("location").u64Value()),
-                length: Int(try m.require("length").u64Value()),
-                line: Int(try m.require("line").u64Value()),
-                column: Int(try m.require("column").u64Value())
+                location: Int(try el.requireField("location").u64Value()),
+                length: Int(try el.requireField("length").u64Value()),
+                line: Int(try el.requireField("line").u64Value()),
+                column: Int(try el.requireField("column").u64Value())
             )
         }
     } catch let e as MsgPackError {
@@ -1187,23 +1187,23 @@ public func mdvCoreTranscriptParse(
         let map = try reader.decode().mapValue()
         guard let events = map["events"] else { throw CoreError.decode("missing 'events'") }
         return try events.arrayValue().map { el in
-            let m = try el.mapValue()
-            let id = try m.require("id").stringValue()
+            // Allocation-free per-row field access: no throwaway dict per event.
+            let id = try el.requireField("id").stringValue()
             var timestampMs: Int64?
-            if let ts = m["timestamp_ms"], !ts.isNil {
+            if let ts = try el.field("timestamp_ms"), !ts.isNil {
                 timestampMs = try ts.i64Value()
             }
             let kind: CoreTranscriptEvent.Kind
-            switch try m.require("kind").stringValue() {
+            switch try el.requireField("kind").stringValue() {
             case "user":
-                kind = .userMessage(text: try m.require("text").stringValue())
+                kind = .userMessage(text: try el.requireField("text").stringValue())
             case "assistant":
-                kind = .assistantMessage(text: try m.require("text").stringValue())
+                kind = .assistantMessage(text: try el.requireField("text").stringValue())
             case "thinking":
-                kind = .thinking(text: try m.require("text").stringValue())
+                kind = .thinking(text: try el.requireField("text").stringValue())
             case "tool_use":
                 var input: [String: String] = [:]
-                for pair in try m.require("input").arrayValue() {
+                for pair in try el.requireField("input").arrayValue() {
                     let kv = try pair.arrayValue()
                     if kv.count == 2 {
                         input[try kv[0].stringValue()] = try kv[1].stringValue()
@@ -1211,12 +1211,12 @@ public func mdvCoreTranscriptParse(
                 }
                 kind = .toolUse(
                     id: id,
-                    name: try m.require("name").stringValue(),
+                    name: try el.requireField("name").stringValue(),
                     input: input)
             case "tool_result":
                 kind = .toolResult(
-                    toolUseId: try m.require("tool_use_id").stringValue(),
-                    summary: try m.require("summary").stringValue())
+                    toolUseId: try el.requireField("tool_use_id").stringValue(),
+                    summary: try el.requireField("summary").stringValue())
             case let unknown:
                 throw CoreError.decode("unknown transcript event kind '\(unknown)'")
             }
@@ -1287,11 +1287,11 @@ public func mdvCoreMarkdownRender(text: String) throws -> CoreMarkdownRendered {
         let map = try reader.decode().mapValue()
         let html = try map.require("html").stringValue()
         let chunks = try map.require("chunks").arrayValue().map { el in
-            let m = try el.mapValue()
+            // Allocation-free per-row field access: no throwaway dict per chunk.
             return CoreMarkdownChunk(
-                kind: try m.require("kind").stringValue(),
-                lang: try m.require("lang").stringValue(),
-                payload: try m.require("payload").stringValue())
+                kind: try el.requireField("kind").stringValue(),
+                lang: try el.requireField("lang").stringValue(),
+                payload: try el.requireField("payload").stringValue())
         }
         return CoreMarkdownRendered(html: html, chunks: chunks)
     } catch let e as MsgPackError {

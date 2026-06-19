@@ -225,6 +225,38 @@ extension MsgPackValue {
         return dict
     }
 
+    /// Direct, allocation-free lookup of a string-keyed field in a `.map` value.
+    ///
+    /// `mapValue()` materializes the WHOLE map into a throwaway
+    /// `[String: MsgPackValue]` dict and then the caller pulls a handful of keys
+    /// back out — pure throwaway work, paid once PER row when decoding a
+    /// response array (e.g. one find/fuzzy/grep hit per element). When the caller
+    /// only needs a few fields out of a small map, scanning the pair-array in
+    /// place is cheaper than building (and immediately discarding) the dict:
+    /// no Dictionary allocation, no per-key hashing, no copy.
+    ///
+    /// Maps the Rust core emits are small (a row is ~3-6 fields), so the linear
+    /// scan is faster than the dict round-trip in practice; it returns the FIRST
+    /// match, matching `mapValue()`'s last-writer-wins only on duplicate keys
+    /// (the core never emits duplicates). Returns `nil` if the key is absent.
+    /// Throws `typeMismatch` if `self` is not a map — same contract as
+    /// `mapValue()` on a shape error, so callers fail identically.
+    func field(_ key: String) throws -> MsgPackValue? {
+        guard case let .map(pairs) = self else {
+            throw MsgPackError.typeMismatch("expected map")
+        }
+        for (k, v) in pairs where k == .string(key) { return v }
+        return nil
+    }
+
+    /// `field(_:)` that throws `missingKey` when the field is absent — the
+    /// allocation-free analogue of `mapValue().require(_:)` for per-row decode
+    /// loops. Same error surface as the dict path so error handling is unchanged.
+    func requireField(_ key: String) throws -> MsgPackValue {
+        guard let v = try field(key) else { throw MsgPackError.missingKey(key) }
+        return v
+    }
+
     func arrayValue() throws -> [MsgPackValue] {
         guard case let .array(a) = self else {
             throw MsgPackError.typeMismatch("expected array")

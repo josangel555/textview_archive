@@ -431,10 +431,10 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
                 case "r":
                     let id = try map.require("i").u64Value()
                     if let e = map["e"] {
-                        let em = try e.mapValue()
+                        // Allocation-free 2-field error read: no throwaway dict.
                         deliver(.response(id: id, outcome: .failure(ServerError(
-                            code: (try? em.require("c").stringValue()) ?? "unknown",
-                            text: (try? em.require("x").stringValue()) ?? ""))))
+                            code: (try? e.requireField("c").stringValue()) ?? "unknown",
+                            text: (try? e.requireField("x").stringValue()) ?? ""))))
                     } else if case .binary(let body)? = map["b"] {
                         deliver(.response(id: id, outcome: .success(body)))
                     } else {
@@ -606,10 +606,10 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
             throw RemoteError.protocolViolation("hello answer must be a response")
         }
         if let e = map["e"] {
-            let em = try e.mapValue()
+            // Allocation-free 2-field error read: no throwaway dict.
             return .failure(ServerError(
-                code: (try? em.require("c").stringValue()) ?? "unknown",
-                text: (try? em.require("x").stringValue()) ?? ""))
+                code: (try? e.requireField("c").stringValue()) ?? "unknown",
+                text: (try? e.requireField("x").stringValue()) ?? ""))
         }
         if case .binary(let body)? = map["b"] {
             return .success(body)
