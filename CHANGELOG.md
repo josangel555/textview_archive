@@ -9,8 +9,35 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-19
 
+_A large batch landed today (the integrated backlog-drain wave). Highlights below; some bigger features shipped their core + wiring with on-screen polish still being validated._
+
+### Added
+- **Code-review comments** — you can now add and view review comments on a diff (the add-comment control + comment list are reachable from the review surface).
+- **CSV: keyboard cell navigation + copy** — arrow keys move the focused cell (with Home/End/Page-Up/Down), and ⌘C copies the focused cell's value.
+- **Image editor: paint + annotation tools** — raster paint (brush, flood fill, color-picker eyedropper) plus non-destructive vector annotations (rectangle, line, arrow, ellipse, text) over the image.
+- **LSP: a Problems panel + code completion** — diagnostics are surfaced in a Problems/health view, and editor completion is now wired up.
+- **Worktree management UI** — add / remove / prune git worktrees from the Git panel (was a read-only list).
+- **"View as" lock** — pin a file's view mode by name so reopening it re-applies your choice.
+- **Open dialog shows recents**, **window size + sidebar width are remembered across launches**, and **sessions can be turned off** (single-root mode, no session strip).
+- **More diagram formats** + **richer web viewer** (themed colors + a server-side command palette at `/cmd`).
+
 ### Fixed
 - **Editor current-line highlight no longer sticks after a drag-select** — while you drag to select text the current-line highlight now stays out of the way, and once you let go it follows your caret again instead of getting stuck on the line where you released the mouse.
+- **Fold / Unfold All now works in the Source view** — the menu items were dead in Source mode (only the CM6 editor folded); they now collapse/expand in any foldable lens.
+- **Git diff: select multiple lines** — you can now drag-select across several diff lines instead of just one.
+- **Closing a split pane works** (and no longer stalls) — the close button now reliably tears the second pane down.
+- **Per-file scroll & zoom is remembered** across session switches and even after closing a file (size-capped; only stored if you actually scrolled/zoomed).
+- **Session tab name tracks the current folder** — it relabels when you change the root (e.g. Open Folder), unless you've manually renamed the session.
+- **Image "Save a Copy" reports write failures** instead of silently losing data; other previously-swallowed save/export/decode errors now surface too.
+- **Horizontal scrollbar no longer flickers while typing**, and the **hovered-row highlight is no longer offset** in the editor.
+
+### Security
+- **Hardened HTML export / Open-in-Browser against XSS** — author HTML is escaped on the export path and a restrictive Content-Security-Policy is shipped; the in-app HTML sanitizer's event-handler and `javascript:`-scheme bypasses are closed; exported image inlining refuses path-traversal.
+- **Robustness/DoS hardening** in the rust-core remote path (MessagePack recursion-depth cap, bounded orphan-event buffer), a SQLite use-after-free fix, an `ffmpeg` locator safety check, and several timer/observer memory-leak backstops.
+
+### Performance
+- **Faster editor + highlighting plumbing** — the Rust FFI no longer double-copies every response frame, syntax tokenization stops re-bridging the whole file per highlight, and `cm_apply` is moving to keystroke-sized edits instead of shipping the whole document each tick.
+- **Folder stats no longer block** other folder lookups (the git walk runs off the actor + coalesces duplicate work).
 
 ## 2026-06-18
 

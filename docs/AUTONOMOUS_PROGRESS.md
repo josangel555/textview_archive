@@ -1,5 +1,38 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 (PM) — ULTRACODE WAVE MERGED TO MAIN: +116 commits, headless gate GREEN
+
+The full backlog-drain wave landed on `main` (fast-forward `bd1f8ca` → `d4a8612c`, **116 commits**). All 4 retry lanes + the first/second waves were integrated onto `ultracode/backlog-drain` in an isolated worktree, gated, then ff-merged. Headless gate: **7329 tests, 0 failures, tier enforcement OK**. `/Applications/TextView.app` rebuilt + installed from the merged main.
+
+- **Integration method:** cherry-pick all curated commits → dedup (drop orphans `4050b4bb`/`abe06af7`; pick-one for 910/948; epic-slices keep-all) → resolve conflicts → `cargo build` + `swift build --build-tests` to clear compile clashes → full `test-headless-gate.sh` → ff `main`. (Full how-to + the 5 clash patterns in LESSONS.md 2026-06-19.)
+- **5 parallel-worktree semantic clashes fixed at integration** (clean git-merge, broken-when-combined): RemoteTransport `orphanEvents`→`OrphanStore` (976+987); `RGBAColor` byte-vs-double (285+287)→renamed vector to `OverlayColor`; 989-vs-963 hover test removed; union-strip brace loss restored; sleep-ratchet baseline 75→77.
+- **DROPPED from the wave (re-land coherently via follow-up):** tmux 964 (4 model slices had 2 incompatible `PaneNode` designs + a competing controller — TSK-1018 + a model-reconcile follow-up); CSV inline-editor wiring (TSK-1019; the EditableCSVModel landed); 897 grammars (landed the coverage test only — grammars need the dep + a non-sandbox build); 704 Markdown side-by-side (lane-A connection-error miss — re-retry).
+- **REMAINING bookkeeping:** board fixed→validated for the wave items (gate = proof) + check off the curated list; re-retry 704; reap `/tmp/mdv-integration`.
+
+## LOG 2026-06-19 — Ultracode wave: 19 items landed (reconciled→fixed), 47 rate-limited→retrying; /Applications rebuilt
+
+Two waves of parallel ultracode workflows (6 worktree-isolated lanes) ran overnight. The session cap hit **4:10am EDT
+mid-run**, so each lane finished SELECT + committed the agents that ran before the cap; the rest were killed. Outcome:
+
+- **19 unique items committed & reconciled to `fixed`** (commits on `worktree-wf_*` branch refs, NOT yet on main):
+  perf 826 `46ec4511` (FFI receive double-copy; also resolves **564**) · 543 `64b48bdd` (cm_apply delta session) ·
+  827 `d9ad796c` (tokenize byte-range); bugs/UX 948 `0a92d833` (source fold) · 910 `f809e271` (multi-line diff sel) ·
+  921 `82df3156` (split close) · 912 `0b0bb767` (CR comment affordance) · 318 `f617e119` (CR Q&A ctx) ·
+  302 `a9741c8d` (CSV cell nav) · 668 `ec335ed3` (CSV windowed paging); features 264 `178b4a76` (sessions-optional) ·
+  265 `6b5cffce` (multi-window); **security** 966 `bd71f8ea` (export XSS+CSP) · 967 `98107431` (sanitizer harden) ·
+  997 `d04d9eb9` (export path-traversal) · 989 `10ccc936` (timer/leak deinit) · 999 `6e83c2bc` (ffmpeg locator) ·
+  **968 `ed9e76bd` (sqlite UAF, HIGH)** · **965 `7bd32878` (MessagePack recursion-depth → remote-SIGSEGV, CRITICAL)**.
+- **47 unique items killed by the cap → relaunched** (cap reset 4:10; new `ultracode-retry-{A,B,C,D}.js`, items+notes
+  baked in, self-clean `.build`): A the-30·16 `wucqhmz4b` · B security·9 `wqlqzhy1h` · C feat+bug+rust·15 `wnrbrp82e` ·
+  D UX·7 `wl26ainrn`. (incl 1016 session-tab=root + 1017 durable-scroll-store from the owner's 06-19 reports.)
+- Housekeeping: reaped all 30 completed-lane worktrees (commits survive on branch refs; verified 65 SHAs reachable),
+  freed disk ~100→81 GB (retries consuming); 564 recorded→fixed (resolved by 826).
+- **`/Applications/TextView.app` rebuilt from current main** (installed binary was 2026-06-15, ~3 days stale vs main
+  06-18) so the owner gets the already-shipped 06-16/06-18 work (vim-mode footer, palette focus, search-scroll cap,
+  git-log copy, CSV copy, find-all-matches, bookmarks scope, shebang highlight, ⌘F/split/I-beam fixes).
+- **Integration still pending** (the big step): cherry-pick all `fixed` SHAs onto `ultracode/backlog-drain`, headless
+  gate, owner-validate before mainline. None of the wave is on `main` yet (main @ `bd1f8ca`).
+
 ## LOG 2026-06-18 — TSK-888 (slice): global-search per-file match-row cap (result-scroll perf)
 
 888's typing side is ALREADY host-optimized — SearchAnywhereSection debounces 200ms + runs the search off-main

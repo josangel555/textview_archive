@@ -5,6 +5,61 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Integrating N independently-built commits: clean git-merge ≠ it compiles; gate-before-merge is non-negotiable (2026-06-19)
+
+Cherry-picking ~115 parallel-worktree commits onto one branch: git reported **textually clean** merges, but the COMBINED tree had 5 distinct *semantic* clashes that only the build/gate caught (each was two slices independently adding/renaming the same symbol):
+- Two slices both defined a public type with the SAME name but DIFFERENT shape → "ambiguous for type lookup" / "invalid redeclaration": `PaneNode` (tmux geometry-enum vs typed-enum) and `RGBAColor` (UInt8 pixel vs Double vector). Fix: rename the more-specialized one (`RGBAColor`→`OverlayColor`), or — when the whole family is incoherent (tmux: 2 PaneNode + a competing controller TmuxSession) — DROP the epic from the integration and re-land it coherently behind a follow-up ticket. Don't try to force-merge competing designs.
+- A type was renamed/restructured by slice B (`orphanEvents` dict → `OrphanStore`) while slice A added a NEW reference to the old name (a debug test-seam) → "cannot find X in scope". Fix: point A's reference at B's new API.
+- Slice A's test exercised an API that slice B replaced (989 hover test vs 963's kept hover impl) → "no member". Fix: drop the redundant test (the kept impl has its own).
+- **Blind conflict-marker strip is UNSAFE for "union" merges when the conflict boundary falls MID-method.** `sed -i '' '/^<<<<<<< /d;/^=======$/d;/^>>>>>>> /d'` keeps both sides, but if HEAD's side ended mid-method and the closing `}` lived on the `=======`-adjacent region, the strip drops a brace → "expected '}'" reported at a FAR-AWAY line (class start / EOF). ALWAYS verify `grep -o '{' | wc -l == grep -o '}' | wc -l` after a marker-strip; prefer manual resolution when the conflict cuts a declaration. Use union-strip only when both sides are whole top-level additions.
+
+Process that worked: build the integration branch in an isolated worktree (`/tmp/mdv-integration`), `cargo build` (rust) + `swift build --build-tests` (finds ALL compile errors per pass, faster than the full gate) to iterate clashes, THEN the full `test-headless-gate.sh` for the test run, only then fast-forward `main`. NB: capture gate output to a file (NOT `| tail`), and `$?` not `${PIPESTATUS[0]}` (zsh uses `$pipestatus`, 1-indexed) — both bit me.
+
+## Parallel ultracode worktrees exhaust disk — each `.build` ≈ 4 GB (2026-06-19)
+
+Each git worktree shares `.git` but gets its OWN `.build` — a full cold SwiftPM **debug** build (~4 GB:
+object files + module caches + the bundled TreeSitter grammars + the Rust `.a`). ~20 parallel ultracode
+worktrees hit **96 GB / 97 % disk**. Once an agent COMMITS, its `.build` is dead weight (the commit lives in
+the object DB, not `.build`). Mitigations — all SAFE (commits survive):
+- **Reap completed-run worktrees:** `git worktree unlock <p>` → `remove --force <p>` → `prune`. The branch ref
+  + the SHA survive, so the commit is still `cherry-pick`-able at integration (verified with `git cat-file -t`).
+- **Sweep `.build` in committed-but-idle worktrees** of still-running workflows (only those with a commit ahead
+  of base = finished agents; never touch a building one).
+- **Bake `rm -rf .build` into the agent prompt right after its commit** so future waves self-clean.
+- zsh gotchas: `for p in $VAR` does NOT word-split an unquoted var (use a `case` allowlist over the dirs); and
+  `rm .build-*` errors on nomatch (just `.build`).
+
+## Workflow `args` arrive as a STRING — parse defensively (2026-06-19)
+
+The `Workflow` tool delivers `args` to the script as a JSON **string**, not the parsed value (a bare
+`ITEMS.slice/map` threw "is not a function" and the run died at 15 ms, 0 agents). Top of every workflow script:
+`const cfg = (typeof args === 'string') ? JSON.parse(args) : args`.
+
+## Ultracode workflow patterns that worked (2026-06-19)
+
+- **`select-drain`** (one reusable script, invoked many times via `{scriptPath, args:{selectPrompt,batch,maxItems}}`):
+  a SELECT agent curates/decomposes the item list (board query / a curated doc / epic decomposition) → IMPLEMENT
+  agents fan out in **worktree isolation**, each a tested slice + ONE commit, returning `{id,success,sha}`. Used
+  for bugs / wishlist / minor / security-fix / LSP / tmux + the curated-30.
+- **Big epics → ONE foundation slice**, never parallel worktree-slices: independent worktrees each branch off
+  `main`, so slices can't build on each other → they re-implement the foundation and collide at integration.
+- **Cross-workflow overlap happens** even with an exclude-list (bugs + minor both picked TSK-948) because select
+  agents run concurrently + can't see each other → **dedup at integration** (the 948 case had 2 *complementary*
+  commits: gate + wire).
+- **Board hygiene under N parallel agents:** tell agents NOT to touch the board (contention); reconcile from each
+  run's COMPLETION RESULT (authoritative `{id,success,sha}`) via `task_advance(to:'fixed', understanding,note,summary)`
+  — it walks reported→…→fixed in ONE call. Keep them at `fixed` (not `validated`) until the central gate on the
+  integration branch (don't validate a torn worktree).
+
+## Export-HTML path's regex sanitizer is bypassable + has no CSP (2026-06-19, adversarial review)
+
+`HTMLSanitizer`'s event-handler / javascript-URL regexes are bypassable — `href="x"onclick=`, `<svg/onload=`,
+entity-encoded `jav&#x09;ascript:` all slipped through a standalone harness against the shipped regexes. In-app
+the CSP absorbs them, but the HTML **export / "open in browser"** path ships NO CSP (`HtmlExport.standaloneDocument`),
+so the regex is the sole (bypassable) defense ⇒ stored XSS from untrusted markdown. Fix (in the security-fix
+workflow): escape author HTML on the export path + add a restrictive CSP to the standalone export. **Never rely
+on the regex sanitizer alone on a no-CSP path.**
+
 ## A test helper reading a subprocess's stdout via a Pipe flakes on the VM — use a FILE (2026-06-18, TSK-836)
 
 A test that spawns a subprocess (`python3 scripts/test-timings.py`) and captured its stdout via a `Pipe`

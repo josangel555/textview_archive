@@ -1,150 +1,78 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run; (06-18) shipped 905/893/901/307/954/922/947/959/374/924/908/961; P0 TSK-889 root-caused (fix scoped); VM lane green except TSK-960  (2026-06-18)
+# Handoff — ULTRACODE WAVE (nearing compaction): 11 workflows done, 6 in-flight, integration pending  (2026-06-19)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `abe8f10` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `bd1f8ca` (verify `git log -1`; ALL wave work is on `worktree-wf_*` branch refs + the object DB, NOT yet on main)
 
-> **LATEST (06-18, after the items below):** also shipped **924-slice** (CSV Copy Row/Column, host-tested), **908**
-> (commit context-menu copy actions: SHA/short/subject/reference) — both → review; and **961** (new `vm-profile.sh
-> reopen` warm-path trace mode). Used 961 to fully root-cause the **#1 P0 TSK-889** (large-JSON re-open lag): switching
-> away DISMANTLES the inactive tab's source view (`teardownStorage` frees the glyph store for memory, TextDisplayView
-> :170), so switching back re-creates an empty-storage controller → full O(N) GLYPH-LAYOUT/typesetting (~20 ms; debug
-> trace confirmed typesetting dominance, NOT buildAttributed). FIX (confirmed, deferred — substantial SwiftUI
-> NSViewController-lifecycle change): preserve the laid-out source view for the N most-recent tabs (LRU), free on
-> close/eviction; a cheap attributed-string cache won't help (layout is per-layoutManager). 889 → triaged. Other P0s
-> (892 file-tree hover, 908-slow): host side already optimized — need 961's *hover* mode (follow-on) to trace. The
-> owner's REAL laggy 699KB file would size 889's actual lag (the indent=1 synthetic is a many-lines worst case).
-> **NEXT:** implement 889's LRU view-preservation (focused effort), or 961 hover mode, or render slices (727/766).
+## Mission (OWNER DIRECTIVE 2026-06-19 — INTEGRATION TO MAINLINE)
+**Get the ~81 ultracode-wave commits + the retry-lane commits MERGED TO `main`, done WELL.** Integrate onto `ultracode/backlog-drain` (worktree `/tmp/mdv-integration`); as I go: REVIEW each change, ADD missing unit/host tests, ADD UI tests for render-path items, run CONSOLIDATED SMOKE + the headless gate, VALIDATE, then rebase + ff `main` (gate BEFORE merge — main stays green). Owner AUTHORIZED mainline merge (overrides the earlier validate-the-branch-first rider). EXCLUDE stale orphans (no-TSK / "NOT landed", e.g. `4050b4bb`). Cron is now every 5 min. NEVER idle — when integration is genuinely exhausted, fall back to draining the board. (Memory: `project_integration_mission`, `feedback_ultracode_parallel_mode`.)
 
-> **OWNER IS BACK + ENGAGED (2026-06-18).** Two corrections this session: (1) STOP no-opping — drain the curated
-> WORK_QUEUE; I re-engaged and shipped **905** (preview kbd focus), **893** (CM6 I-beam cursor), **901** (shebang
-> language-detect), **307** (bookmarks root-scope filter), all gate-green with host teeth → `review`. (2) **The VM
-> GUI/pixel lane is NOT blocked** — it's agent-runnable (`MDV_VM_GUI_SESSION=1 … test-in-vm.sh all`). I'd wrongly
-> parked render items as "VM tail / owner-gated"; corrected. Ran it: 5832 tests incl T5 + WebView, my work
-> regression-clean; FIXED+VALIDATED **TSK-954** (PMA console-user spawn). SINCE: shipped **922** (split off-main load),
-> **947** (⌘F gating, both halves), **959** (de-flaked PaneScrollRestore, VALIDATED), **374** (find-match list) — all
-> VM-regression-clean → review. **TSK-960** (the last VM red) DIAGNOSED as a T5-**screencapture** artifact, NOT a bug:
-> the terminal right-dock feature WORKS (`vm-uitest.sh run terminal-paneright` PASS + visual capture confirm). So the
-> VM baseline is effectively GREEN for features (the one red is a capture-tool artifact; fix = migrate the T5 test to
-> vm-uitest.sh's capture / owner TCC re-grant / retire). GO-FORWARD: render items get the FULL VM pyramid; **BATCH 2-3
-> before VM-validating** (a VM `all` run is ~17 min — don't spend one per single item). 894/896 (cursor/hover) need the
-> unbuilt input-synth lane (TSK-818); 811 is design-first. NOTE vm-uitest.sh runs on the HOST, not via ssh-onto-VM. `main` gate-green.
+**Integration assessment (2026-06-19):** ~90 outside-main commits / 74 TSKs. Cherry-pick onto `ultracode/backlog-drain` with CHANGELOG auto-resolve (`--ours`), then resolve code conflicts. **DEDUP (don't stack duplicates):**
+- **EXCLUDE 2 orphans** (both dated 2026-06-03, pre-wave): `4050b4bb` ("NOT landed"), `abe06af7` (no-TSK view-mode guard).
+- **910** = 2 independent impls (diff find-runs): keep richer `198ba17b` (DiffFindRuns+DiffHunkAttributedString, 489L), DROP `f809e271` (DiffHunkAttributedText).
+- **948** REVIEWED: 1st-wave wiring `b0d86156` does NOT use the 2nd-wave model types → `0a92d833` is an UNWIRED model (dead code). KEEP `b0d86156` (working menu wiring + foldable-lens gate); DROP `0a92d833` + `54e94dc1` (older gate, superseded).
+- **897** = fix `59b35aee` + test `31b5eee5` — keep BOTH (complementary).
+- **955/958/963/964** = epic slices, keep ALL (955: c6669c7+c93e9be · 958: d6ba90f+436b406 · 963: 5 · 964: 5).
+- Real code conflicts to resolve (after dedup): `b9790ec6`+`8ef31cea` (image 285/287 ImageEditor*) · `11c15b53` (677 CommandPaletteView) · `45946cdd` (964 TmuxSession) · `10ccc936` (989) REVIEWED: dup of 963 `b5f68e8` hover-leak fix — KEEP `b5f68e8` (has tests+LSPService); for 989 take only its StatusBar/GitPanel parts (`--ours` on the LSPHoverAttachment hunk) · `e391da6e` (711 CSVTableView — C is re-doing 711, defer to C's commit).
+- CHANGELOG: drop per-commit entries; `git checkout main -- CHANGELOG.md` then write ONE consolidated wave section at the end.
+- **Retry lanes:** D `wl26ainrn` DONE 7/7 → reconciled fixed (1016 e2df5959, 1017 cfc2eed8, 495 0ad1bb18, 368 cc5b7fd4, 811 101fcf7a, 358 0357db54, 746 942d4011). A `wucqhmz4b` / B `wqlqzhy1h` / C `wnrbrp82e` still running — fold in + reconcile as they finish.
+- **Execution PROGRESS (resume here):** `ultracode/backlog-drain` (`/tmp/mdv-integration`) is at **64 commits over main** = the STABLE set (69 = 96 outside-main − 22 on A/B/C-still-running − 5 excludes; 43 clean + 19 CHANGELOG-auto + 2 conflicts resolved). CHANGELOG per-commit entries were dropped (`--ours`) — write ONE consolidated section at the end. **66 commits over main — RESOLVED 4 of 7 conflicts:** `10ccc936` (989 hover → kept 963's hover `--ours`, kept 989's GitPanel/StatusBar) · `b9790ec6` (285 image → union, added `}` to close commitSampleText) · `8ef31cea` (287 image → union-strip markers, all addition-blocks) · `11c15b53` (677 palette → kept HEAD `codeSymbolMatches=[]` + 677's `if isGlobalSearchMode{} else if isInFileSearchMode{`). Technique: union conflicts → `sed -i '' '/^<<<<<<< /d;/^=======$/d;/^>>>>>>> /d' file`; same-line → manual Edit; CHANGELOG always `git checkout --ours`. **REMAINING 3 stable conflicts (cherry-pick `-x`, fix, `--ours` CHANGELOG, continue):**
+  - `b0d86156` (948 fold) — main.swift 3 blocks + DocumentModel 1 block. PLAN: (b1 ~menu items) keep Markdown-Overview item + use 948's foldable-lens comment; (b2 validateMenuItem — SAME-LINE, careful) keep `toggleMarkdownOverview` case THEN split `case cmFoldAll,cmUnfoldAll: return model.canFoldActiveDocument` and leave `cmGotoLine` as its own case; (b3 @objc funcs) union; (DocumentModel) union (snippetTab + fold-dispatch section, add `}` to close snippetTab — image-View pattern).
+  - `45946cdd` (964 tmux) — **DECISION: DROP.** It's a COMPLETE self-contained tmux impl (TmuxControlMode/Router/Session/Controller/PTY, 9 files, 1553L) with a COMPETING `TmuxWindow`/`TmuxSession` (raw layout strings) vs the already-applied model slices `b51548a`+`bc7c080` (PaneNode tree). They don't compose. Keep the model slices on the branch; drop 45946cdd; FILE A FOLLOW-UP to rebuild the controller/router on the PaneNode model. (So the tmux integrate-set = cc9f7f1+616a974+b51548a+bc7c080, model-only.)
+  - `0357db54` (358 PreferencesStore window-geometry) — STILL PENDING, inspect+resolve (likely union; conflicts with another PreferencesStore commit).
 
-## Mission
-Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automation SOP to **drain
-`WORK_QUEUE.md` top-down**, each item → board `≥review`, commit per item, gate once per batch.
+**Branch = 83 commits over main: stable set (68) + ALL 15 lane C folded. EVERY conflict resolved.** Notable resolutions: 711 e391da6e CSV → kept HEAD's CSVTableView (find/nav/copy), landed 711's NEW model files (EditableCSVModel/CSVEditingGate/tests, default-OFF gate) — **inline-editor wiring deferred (FOLLOW-UP ticket)**. 409 491abd8d web → kept HEAD's 573 themed CSS + 409's `/cmd` route/box + re-added the `/cmd` nav link.
+**VALIDATION:** rust workspace compiles; full security lane reviewed-correct (965/966/967/968/989/997/999). The HEADLESS GATE (gate-before-merge) caught 2 clean-git-merge-but-broken-semantics integration bugs in the combined branch:
+1. `RemoteTransport.swift` — 976 (race-fix, added `_testRegister` referencing `orphanEvents`) + 987 (replaced the `orphanEvents` dict with a bounded `OrphanStore`) → `_testRegister` referenced the removed name. FIXED: `orphans.take(sub)` (commit d178119d).
+2. tmux 964 — TWO incompatible `PaneNode` definitions across parallel slices (cc9f7f1 geometry `leaf(id,w,h,x,y)/hsplit/vsplit` vs bc7c080 typed `leaf(paneID)/split(axis,weights)`) → 'PaneNode ambiguous'. The model slices DON'T compose (like the dropped controller). **REVERTED all 4 tmux model commits** (3feef0a9/49de67ef/4ea55dc6/9f631ac0) — tmux 964 FULLY out (re-land coherently via follow-up; TSK-1018 + the MODEL needs ONE PaneNode design).
+3. `RGBAColor` declared twice (285 `UInt8` pixel vs 287 `Double` vector) → renamed the vector one to `OverlayColor` (3 vector-only files; commit 938c6476).
+4. 989's L-mem3/4 test referenced 989's hover API (`ChainedMonitor`/`HoverState`/`installDismissObservers`) which I dropped for 963's kept hover impl → removed the redundant test (963's LSPHoverTokenInvalidateTests covers the leak; commit 4091f773).
+5. Union-strip dropped 2 method-closing braces in ImageEditorViewModelTests (conflict cut mid-method) → restored (eb3e7c48). [See LESSONS.md 2026-06-19 integration entry.]
+**`swift build --build-tests` now CLEAN (BUILD_RC=0).** Branch = **115 commits**. FULL HEADLESS GATE RUNNING (`bash test-headless-gate.sh` → /tmp/gate_full.log, bg `bdz0nfwb8`); look for `GATE_RC=0` + 'headless gate PASSED'. On GREEN → ff `main` → rebuild /Applications → CHANGELOG + board fixed→validated + check off curated; re-retry 704.
+**ALL 4 LANES DONE + FOLDED — branch = 107 commits over main, zero conflict markers.** D 7/7 + C 15/15 (reconciled) + A 15/16 + B 9/9 (folded). Follow-up tickets filed: TSK-1018 (tmux controller), TSK-1019 (CSV inline-editor). **704 (Markdown side-by-side) FAILED on a transient API connection error → re-retry separately** (not session-limit; lane A's only miss). **GATE RUNNING:** `bash /tmp/mdv-integration/scripts/test-headless-gate.sh` (bg task `b6j84s1og`) — builds rust-core+mdv-serve+swift + all headless tests; look for `^GATE_EXIT=0`. **PENDING (in order):** (1) reconcile A+B's 24 to `fixed` (task_advance; A SHAs: 319 f1aca986·723 33cbb7d1·897 31b5eee5·962 6c7365e8·851 7fa811f0·733 0e084ae8·791 12be8e3d·818 be678b82·849 f30be99e·586 a84b8f9c·889 5c3ddae5·838 6349b34c·722 5860f061·712 15cb3f70·675 fff1c2f3; B SHAs: 970 82ec53dd·976 2c0db62b·977 28bd40a8·978 99df30c2·979 fc6a4140·982 6c75400a·983 32b7c9e6·987 4d4c957d·1008 3d39813d); (2) on GATE GREEN → consolidated CHANGELOG (reset to main + one wave section) → ff `main` → rebuild /Applications → board fixed→validated + check off curated; (3) re-retry 704; (4) note 897 landed only the grammar-coverage TEST (the grammars need the owner-approved dep + a non-sandbox build). THEN: when A/B/C land → reconcile + fold their NEW commits (drop 711/897 dups) → resolve any new conflicts → consolidated CHANGELOG → `bash scripts/test-headless-gate.sh` green → ff `main` → rebuild /Applications → board fixed→validated + check off curated list.
 
 ## Current state
-- **Done + verified this session:**
-  - **Vim mode (TSK-679)** shipped + installed to `/Applications/TextView.app`: opt-in `View → Vim Mode`
-    (`@replit/codemirror-vim` 6.3.0, Compartment-gated), `:w`/`:wq`/`:x` save, footer NORMAL/INSERT/VISUAL
-    chip, blue block cursor. Host teeth green; live keystroke/pixels = VM tail (TSK-679 stays `review`).
-  - **VM harness fix (TSK-953, validated):** GUI-lane UAT false reds were a cross-user-temp issue — root's
-    `/var/folders/.../T` is SIP-locked (can't `chmod`); fix = fixtures under the **spawn user's home** +
-    AppLauncher in-place chown. Cm6/Sidebar UAT 31→0.
-  - **`WORK_QUEUE.md` reorganized** (active-first, completed appended) + **30 board tickets merged in**
-    (rust-core/perf into §0, small/build into A, partial-continuations into B, medium+test-infra into C,
-    epics into D). Owner-gated 343/470 marked `[⊘]`.
-  - **`docs/FEATURE_EXPLORATION_2026-06-16.md`** — Jupyter notebook architecture (host-kernel via
-    jupyter-server; Option-A primitives vs embed-Lab vs Thebe; Pyodide discard), localhost browser-tab
-    design, 7-feature feasibility. **New epics filed:** TSK-955 (RSS), 956 (AU/MIDI/VST), 957 (Macros),
-    958 (Universal Paste); enriched 717/676/690/682.
-  - **Loop cron `50d0fbc8`** live (`4,14,24,34,44,54 * * * *`, session-only, 7-day auto-expire); fires only
-    when the REPL is idle.
-  - **Build/test ✅** (this checkpoint): `swift build` clean + headless Swift gate PASSED + rust-core gate
-    green → `main` @ `b293260` fully green, **no blockers**.
-  - **UTM VM ✅ validated + cleaned:** Swift 6.3 `swift build` green (forward-compat); reclaimed ~1.4 GB
-    (removed redundant `~/swift.pkg` installer + `/tmp/mdv-*` scratch) → **5.7 GB free (87%)**. `.build`(2.8G)
-    + Caches left INTACT (offline mirror — never wipe). `dist/` ~1 day stale → render/UAT needs `test-in-vm.sh all`.
-- **Done this autonomous run (06-16→18), all gate-green, committed per item:**
-  - **TSK-906** (`bc93d6f` → review): palette dismiss refocuses the editor (`editorFocusRequest` nonce).
-  - **TSK-917** (`b675551` → review): CM6 gutter non-selectable + default cursor (`.cm-gutters` CSS).
-  - **TSK-820** (`6e4c821` → VALIDATED): removed 5 dead per-method FFI exports (all envelope-routed; rust + headless gates).
-  - **TSK-574** (`a4973ad`+`16b0fb3` → VALIDATED): zero-consumer pub surface — `pub(crate)` 6 helpers, deleted
-    dead `from_table`, marked 3 deliberate future-API items; WireError was already done (577/669).
-  - **TSK-836** (`0d59480`+`cadb5ea` → review): per-class swift-test timing tool (`scripts/test-timings.py/.sh`
-    + `TestTimingsTests`). Caught+fixed a parallel-vs-serial reporter trap (LESSONS). Ran the real measurement → 849/850 scoped.
-  - **TSK-850** (`ee140da`+`4150b91`+`4eb396c` → review): shared batched `GitTestRepo` (one shell vs 4 git spawns)
-    + migrated **6** ViewerCoreTests git classes (HistoryStats/Panel/GrepLog/CumDiff/ScopeDiff/GitClientStatus).
-    Within-target migrations EXHAUSTED; the rest are ViewerUITests (cross-target → need a TestSupport SwiftPM target,
-    POOR ROI — the 836 measurement proved the cost is git-WORK not spawns, so the restructure buys only seconds).
-  - **TSK-947** (`abaa36c` → review): ⌘F gated off in HTML-rendered mode (no more invisible find bar) — pure
-    `canFindInPage` gating, host-tested; live menu-grey = VM tail. Also diagnosed **905**'s root cause (no
-    first-responder mgmt for the preview → fix-ready, but VM-gated for over-grab risk).
-  - **VM-validated the whole run** (`test-in-vm.sh`, Swift 6.3): 5825 tests / 0 failures — but FIRST caught + fixed
-    a flaky test I'd introduced (836's `test_countsAllOutcomes`: stdout-Pipe broken-pipe race → exit 120 on the VM
-    only; fixed file-based, `6b128d2`; LESSONS). So all accumulated Swift+rust changes are confirmed VM-compile/
-    headless-clean (render/live of the review-state items is still the GUI-lane VM tail).
-  - **Coverage MEASURED** (`b3a3aae`): `swift test --enable-code-coverage` → pure-logic non-engine files ~100%
-    (ByteSize/BreadcrumbPath/AudioMetadataRows); the only gaps are IO/error/framework paths → the owner-endorsed
-    backfill fallback has NO meaningful target (measured, not assumed; AUTONOMOUS_PROGRESS).
-  - **rust-perf dive-deep spikes (board comments, fix-ready/owner-framed):** TSK-564 — FFI double-copy located
-    (CoreClient.swift:89-102 = MdvBuf→[UInt8]→unframe `Array(frame[4...])`); safe decode-in-place fix designed
-    (NOT a UAF — synchronous decode before free, owned types); architectural (touches every FFI call site) →
-    bench-gate + supervise. TSK-543 — cm_apply is the per-keystroke full-doc round-trip keeping Swift's text
-    mirror; fix = stateful editor session in the core = a REMOTE-CORE design (owner-framed, not a quick fix).
-  - Parked **936/937/938** (shortcut-key UX decision, `waiting:human`); design/scope notes on **905/910/947/948/908/849/850/573/564/543**.
-- **In flight:** nothing mid-edit. Tree clean (except untracked non-ours `archive/Untitled.txt`, `untitled2.md`).
-- **Next action — NEEDS OWNER DIRECTION (host-clean wins drained):**
-  - **P0 app-perf (892/887/888/889/890-891-895/908)** — all need a **VM/Instruments trace** (measure-don't-guess).
-    908 is now scoped: SwiftUI `.contextMenu` materialization latency (render, not host-logic). Best done with the
-    owner supervising a VM-profiling session, or approve me to run `scripts/vm-profile.sh` unattended.
-  - **Shortcut cluster 936/937/938** — parked `waiting:human`: pick keys + confirm "view-only" semantics.
-  - **Render-design items (905/910/947/948)** — each needs a render slice (design notes on the board).
-  - **Systemic build-speed (849/850)** — 850 within-target DONE (6 classes share `GitTestRepo`); the rest needs a
-    TestSupport SwiftPM target (cross-target) — POOR ROI (spawn-only gain) → owner judgment. 849 = per-site
-    condition-waits (sleeps load-bearing). **573** (web→`core::theme` palette) = design-first + a visual change to the
-    web UI (owner-reviewable). All scoped on the board.
-  - **Clean GOOD-ROI autonomous work is EXHAUSTED** — verified across WORK_QUEUE + the groomed pool (573/845/382/492/675/787/788
-    are all gated / design-first / profile-gated / epic / question). Continuing autonomously would mean poor-ROI churn (the
-    TestSupport restructure), owner-judgment calls (573 visual, shortcut keys, 845 profile), or context-heavy board hygiene
-    (~20 zombie `progress` claims). The loop is HOLDING for direction: point it at a P0 perf VM trace, the shortcut keys,
-    or OK a design-first refactor (573 / TestSupport).
+**DONE — 11 workflows complete, ~50 board items reconciled to `fixed`/`review`.** Commits live on `worktree-wf_*-N` branch refs + the object DB (worktrees of completed runs REAPED; SHAs verified reachable via `git cat-file -t`). The full cherry-pick list is in **`docs/COMPLETED_ARCHIVE_2026-06-19.md`** (the ~33 first-wave) + these recent additions:
+- **LSP epic TSK-963** (5 slices): 10168a0 (LSPConfiguration) · d689056 (LSPProblemsViewModel) · **b284a5d (LSP security fixes: lsp.json args/env gate + binary-safety)** · b5f68e8 (hover-leak + LSPService facade) · 38b6d40 (DocumentModel consolidation + completion wiring)
+- **tmux epic TSK-964** (5 slices): 616a974 (TmuxControlParser) · cc9f7f1 (TmuxLayoutParser) · b51548a (TmuxSession model) · 45946cd (TmuxController, VM-tier) · bc7c080 (TerminalSplitView, VM-tier)
+- First wave SHAs (for integration): 721 cc31eea · 956 dbdc3aa · 535 ecd5b30 · 285 b9790ec · 749 652682e · 287 8ef31ce · 286 4989f1c · 670 34c2dfa · 303 ccb0818 · 506 2c13a2a · 705 50de0e0 · 727 63f3f01 · 463 65f9264 · 685 94d8bfb · 305 b744d96 · 754 9b7161d · 677 11c15b5 · 280 50caf57 · 958 d6ba90f+436b406 · 955 c93e9be+c6669c7 · 676 ddbe9fd · 957 6caa377 · 897 59b35ae · 309 56704de · 948 54e94dc+b0d8615 · 896 7a9c05a · 894 84b6801 · 910 198ba17 · 898 1ed5bc9 · 766 d40c9a9 · 708 b981891 · 938 b9fa81c · 937 e5b8514
+
+**UPDATE 2026-06-19 ~04:20 EDT — the 6 second-wave workflows COMPLETED but were heavily RATE-LIMITED** (session cap hit 4:10am EDT mid-run). Each finished SELECT + committed the agents that ran before the cap; the rest were killed. Tally: **19 unique items committed & reconciled to `fixed`** (incl both criticals 965 `7bd32878` + 968 `ed9e76bd`); **47 unique items killed → RE-RETRYING.**
+- 19 reconciled-to-`fixed` SHAs (this batch): 826 `46ec4511` · 543 `64b48bdd` · 827 `d9ad796c` · 948 `0a92d833` · 910 `f809e271` · 912 `0b0bb767` · 318 `f617e119` · 302 `a9741c8d` · 668 `ec335ed3` · 966 `bd71f8ea` · 967 `98107431` · 997 `d04d9eb9` · 989 `10ccc936` · 999 `6e83c2bc` · 968 `ed9e76bd` · 264 `178b4a76` · 265 `6b5cffce` · 921 `82df3156` · 965 `7bd32878`.
+- **IN FLIGHT — 4 RETRY workflows** (cap reset at 4:10; relaunched 04:16 via `ultracode-retry-{A,B,C,D}.js`, self-built items+notes baked in, self-clean `.build`):
+  - A the-30 remainder (16) `wucqhmz4b` (`wf_25627000-51f`): 319,723,897,962,851,733,791,818,849,586,889,838,704,722,712,675
+  - B security (9) `wqlqzhy1h` (`wf_a586453e-717`): 970,976,977,978,979,982,983,987,1008
+  - C feat+bug+rust (15) `wnrbrp82e` (`wf_709b57d2-00f`): 711,716,713,717,706,703,768,895,960,573,492,308,651,379,409
+  - D UX (7) `wl26ainrn` (`wf_e9ad51e0-796`): 1016,1017,495,368,811,358,746
+- Old 6-wave run-ids (DONE, worktrees reaped): wttgqkq5w w4neipy8y wi7pvj8ut wn6srmw1b wiuqx9wld w7bujwkw1.
+
+**Curated lists are LIVE** (reconciliation agent, 2026-06-19): `docs/CURATED_TASKS_2026-06-19.md` (active, ~150 undone, categorized + Top-10) · `docs/COMPLETED_ARCHIVE_2026-06-19.md` (~430 done) · `WORK_QUEUE.md` = pointer to those (NEXT_30 folded in). **The autonomous loop should drain `docs/CURATED_TASKS_2026-06-19.md`** (WORK_QUEUE redirects there).
+
+**NEXT ACTION:** as each of the **4 RETRY** runs (`wucqhmz4b`/`wqlqzhy1h`/`wnrbrp82e`/`wl26ainrn`) completes → parse `{id,success,sha}` from its `.output` (parser in How-to-resume §3) → `task_advance(to:'fixed')` the successes (agent can't jump `reported→fixed`: supply BOTH `understanding` AND `note` so the walk reaches `fixed`) → reap its worktrees + sweep `.build`. Any still rate-limited again → re-retry next cap window with the same per-lane script (the killed-item subset). THEN the **integration** (below). Board reconcile is conflict-free with running retries (retry agents don't touch the board).
 
 ## Key decisions & rationale
-- Vim via `@replit/codemirror-vim` (owner-approved) over hand-rolling — mature plugin; Compartment + opt-in.
-- Harness fixtures under **spawn-user home**, not `/tmp` — `/tmp` fails the MCP `open_path` containment fence;
-  root temp is SIP-locked. Home satisfies both cross-user read/write AND containment.
-- Merged the 30 into existing sections by **type/size** (not a dated block) per owner — so they prioritize
-  alongside everything else.
-- Cron is **session-only** (matches the prior loop) — re-arm if the session restarts.
+- Parallel worktree workflows for throughput; ONE foundation slice per big epic (parallel slices conflict); agents don't touch the board (I reconcile); integrate onto one branch → owner validates before mainline.
+- Owner direction (still active): VST out (956=AU+CoreMIDI only); TreeSitter grammars + ccache APPROVED (897/851); 791→perf-benchmarking; 733→prompt only on session CLOSE; scopes TSK-962 (highlight parity), 963 (LSP), 964 (tmux); the 2 criticals 965/968 pulled into lane 4.
+- Second-wave lanes partitioned to NOT overlap the running the-30/security/tmux (lane 4 = rust-core/remote/PTY security findings, distinct from the HTML/UI security-fix).
 
-## Gotchas / lessons (also in LESSONS.md)
-- **Vim `:w` is a no-op** unless `Vim.defineEx`'d to the app save; re-export `Vim`+`getCM` (not just `vim`);
-  `vim()` first in baseExtensions; blue `.cm-fat-cursor` theme must be ordered AFTER the plugin's theme.
-- **Embedding localhost web UI in WKWebView needs an ATS exception** for http/ws to localhost (TSK-717 spike).
-- **The board (`tasked` MCP @ localhost:8787) can go DOWN** mid-session (server not listening / MCP
-  disconnect). The built-in Claude Code `TaskList` (`#NNN`) is a DIFFERENT system — never drive the board
-  through it. On reconnect, reload `mcp__tasked__*` via ToolSearch.
-- **VM SIP cross-user-temp trap** (TSK-953) + **stale-`dist/` trap** — both in LESSONS.md.
+## Gotchas / lessons (full detail in LESSONS.md, 2026-06-19)
+- Worktree `.build` ≈ 4 GB → reap completed runs (commits survive) + sweep `.build` in committed-idle worktrees; the select-drain script now bakes `rm -rf .build` after commit (the 4 new lanes self-clean; the older 3 I sweep). zsh: no word-split unquoted (use `case`); avoid `.build-*` globs.
+- Workflow `args` arrive as a STRING → `JSON.parse`. Cross-workflow overlap happens (948 had 2 commits) → dedup at integration. Export-HTML regex sanitizer bypassable + no CSP (being fixed).
 
 ## Files that matter
-- `WORK_QUEUE.md` — the priority SELECTOR (reorganized; active §0/A/B/C/D up top, Completed appended).
-- `docs/TASK_WORKFLOW.md:94` — the SOP; §0 already directs draining `WORK_QUEUE.md` top-down.
-- `docs/FEATURE_EXPLORATION_2026-06-16.md` — Jupyter/browser/feature feasibility + the 4 new epics.
-- `scripts/test-in-vm.sh` — VM lanes; `test` (headless) vs `all` (rebuilds dist/); GUI lane needs
-  `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>`.
-- `Tests/ViewerUITests/AppLauncher.swift` + `Harness/LaunchHarness.swift` — the cross-user fixture machinery
-  (spawn-user home + in-place chown). **TSK-954 follow-on: `MCPClient` (in PluginsAndMcpAutomationUATTests)
-  must also spawn as the console user.**
-- Vim wiring: `scripts/codemirror-build/entry.js`, `Sources/ViewerUI/Resources/codemirror/codemirror.html`,
-  `Sources/ViewerCore/CodeMirrorBridge.swift`, `Sources/ViewerUI/{CodeMirrorEditorView,ContentView,DocumentModel,StatusBar}.swift`.
+- `~/.claude/projects/.../workflows/scripts/ultracode-select-drain-wf_2e51035f-8a3.js` — the REUSABLE select-drain workflow (step 7 bakes `.build` cleanup). Re-invoke `{scriptPath, args:{selectPrompt,batch,maxItems}}`.
+- `docs/CURATED_TASKS_2026-06-19.md` (active) · `docs/COMPLETED_ARCHIVE_2026-06-19.md` (done + SHAs) · `docs/research/adversarial-review-2026-06-18/FINAL.md` (51 security findings) · `docs/LSP_PRODUCTIONALIZATION_2026-06-18.md` · `docs/TMUX_CC_DESIGN_2026-06-18.md` · `docs/TSK-889-warm-reopen-fix-design.md`.
+- Branch refs `worktree-wf_*-N` — hold ALL unintegrated commits (do NOT delete until integrated).
 
 ## Open questions / blockers
-- **TSK-954** (`fixed`) — PMA UAT: `MCPClient`-as-console-user fix is ready, not landed (needs VM verify). BACKLOG.
-- **TSK-810** (Stage-B hex carve-out) + **#5–9 Swift-twin deletions** — owner decision (Rust-deprecation endgame).
-- **~167 items in review+validated** = the owner-close / validation tail; **~20 zombie `progress`** claims
-  (dead leases) cluttering the board — offered a board-hygiene pass, owner hasn't prioritized it.
+- The **integration** (cherry-pick ~50+ SHAs onto `ultracode/backlog-drain`, dedup 948 [2 commits] + the 4 image commits share `ImageEditorViewModel/View`, central gate) is the big pending step — after the 6 in-flight settle.
+- Owner-gated remainder (curated §Owner-gated): 470/709/751/343 + the 792–805 question cluster. Stale-lease `progress` tickets (276/279/293/296/298/364/373/375-377/530/698) want a `task_record`-back sweep.
 
-## Tracker (`tasked`, project `tasked` = markdown_viewer, 846 tasks; board BACK UP)
-- TSK-953 → `validated`; TSK-954 → `fixed` (PMA follow-on deferred); TSK-679 → `review`.
-- TSK-955/956/957/958 → `reported` (new epics); TSK-717/676/690/682 → enriched (comments).
+## Tracker (tasked board, project `tasked`, agent `claude-mdv`)
+- ~50 items at `fixed`/`review` (the wave). In-flight: the-30 items + 965-1015 (security) + the 40-task wave + 1016/1017. Authoritative done/undone split = the two curated docs.
 
 ## How to resume
-1. Read this + `docs/TASK_WORKFLOW.md` (the SOP). The **cron `50d0fbc8`** fires the loop every 10 min; if the
-   session restarted, re-arm it (CronCreate, `4,14,24,34,44,54 * * * *`, the same SOP prompt).
-2. If `mcp__tasked__*` tools are missing, the board MCP needs reconnecting (`/mcp`); then ToolSearch
-   `select:mcp__tasked__task_list,...`.
-3. Drain `WORK_QUEUE.md` top-down: pick next unchecked `[ ]`/`[~]` (skip `[⊘]` owner-gated), drive its
-   `TSK-###` to `≥review`, batch 2-3 + `bash scripts/test-headless-gate.sh` once, commit per item (rebase+ff),
-   check off `[x]` with the SHA, log `docs/AUTONOMOUS_PROGRESS.md` (+ `CHANGELOG.md` if user-facing).
-4. `git -C <repo> log --oneline -6`; tree clean except untracked non-ours `archive/Untitled.txt`, `untitled2.md`.
+1. Read this + `docs/CURATED_TASKS_2026-06-19.md` (active work) + `docs/COMPLETED_ARCHIVE_2026-06-19.md`. `git log -1` (expect `main` @ `bd1f8ca` unless integration started).
+2. Check the **4 RETRY** workflows (`/workflows` or `.output`). Task-ids: `wucqhmz4b`(A/the-30·16) `wqlqzhy1h`(B/security·9) `wnrbrp82e`(C/feat+bug·15) `wl26ainrn`(D/UX·7). Scripts: `~/.claude/projects/.../workflows/scripts/ultracode-retry-{A,B,C,D}.js` (items baked in). The killed-item partitions are at `/private/tmp/claude-501/.../tasks/retry/{A,B,C,D}_*.json`.
+3. For each COMPLETED run: `python3 -c "import json;d=json.load(open('.../tasks/<id>.output'));r=d.get('result') or d;r=json.loads(r) if isinstance(r,str) else r;[print(x['id'],x.get('success'),(x.get('sha') or '')[:12]) for x in r['results']]"` → `task_advance(to:'fixed')` each success (epics: one ticket, all slice SHAs in the summary) → reap its worktree + sweep `.build`.
+4. **INTEGRATION (after all 6 settle):** `git switch -c ultracode/backlog-drain main`; cherry-pick every success SHA (this file + COMPLETED_ARCHIVE + the in-flight .output); resolve the 948 (2 commits) + image-cluster conflicts; `bash scripts/test-headless-gate.sh`; report to owner; then `task_validate` + check off the curated list + log `docs/AUTONOMOUS_PROGRESS.md`. Owner validates before merge to `main`.
+5. Keep disk healthy each tick: sweep `.build` in committed worktrees + reap completed runs (avail ~102 GB / 95 %; 23 worktrees).
