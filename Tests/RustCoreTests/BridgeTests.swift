@@ -125,6 +125,37 @@ final class BridgeTests: XCTestCase {
         XCTAssertNotEqual(CoreError(status: MDV_STATUS_HANDLE_DEAD), .busy)
     }
 
+    func testUnknownMethodStatusMapsToDistinctError() {
+        // TSK-982: a method-space skew (forward-compat / remote-skew) must
+        // surface as .unknownMethod, NOT .internalError — so the host can tell
+        // a version/capability mismatch (gate on capabilities / fall back)
+        // apart from a genuine core fault that reads as a crash. On unfixed code
+        // the unknown-method arm returned Internal → both these collapse and
+        // the assertions go red.
+        XCTAssertEqual(CoreError(status: MDV_STATUS_UNKNOWN_METHOD), .unknownMethod(method: nil))
+        XCTAssertNotEqual(CoreError(status: MDV_STATUS_UNKNOWN_METHOD), .internalError)
+        // The genuine internal fault stays distinct.
+        XCTAssertEqual(CoreError(status: MDV_STATUS_INTERNAL), .internalError)
+        XCTAssertNotEqual(CoreError(status: MDV_STATUS_INTERNAL), .unknownMethod(method: nil))
+    }
+
+    func testUnknownMethodEnrichedInitCarriesTheSkewedId() {
+        // The envelope call sites know which method id they dispatched, so the
+        // enriched init threads it through for host-side logging/branching.
+        XCTAssertEqual(
+            CoreError(status: MDV_STATUS_UNKNOWN_METHOD, method: 9999),
+            .unknownMethod(method: 9999))
+        // The id-distinguishing equality holds (a different id is a different
+        // value), so a regression that dropped the id would be caught.
+        XCTAssertNotEqual(
+            CoreError(status: MDV_STATUS_UNKNOWN_METHOD, method: 9999),
+            .unknownMethod(method: 1))
+        // The enriched init is transparent for every OTHER status — it must not
+        // hijack a real fault into .unknownMethod.
+        XCTAssertEqual(CoreError(status: MDV_STATUS_PANIC, method: 12), .panic)
+        XCTAssertEqual(CoreError(status: MDV_STATUS_INTERNAL, method: 12), .internalError)
+    }
+
     func testOpenAndTableRoundTrip() throws {
         let session = try CsvSession(csv: csv)
         let table = try session.table()

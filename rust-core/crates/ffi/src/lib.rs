@@ -269,9 +269,10 @@ pub const MDV_METHOD_HEX_RENDER: u16 = 12;
 /// TSK-577) is written to `out_buf`; caller MUST `mdvcore_buf_free` it.
 ///
 /// Returns [`MdvStatus::Ok`], [`MdvStatus::NullArg`] (null out_buf, or a
-/// null/len mismatch on req/aux), [`MdvStatus::Internal`] (unknown method id —
-/// a forward-compat caller on a newer ABI; the host falls back), a wire status,
-/// or [`MdvStatus::Panic`].
+/// null/len mismatch on req/aux), [`MdvStatus::UnknownMethod`] (unknown method
+/// id — a forward-compat caller on a newer ABI; the host gates on capabilities
+/// / falls back, distinct from a genuine fault), a wire status, or
+/// [`MdvStatus::Panic`].
 ///
 /// # Safety
 /// `out_buf` valid & writable; `req`/`aux` each point to their `len` bytes (or
@@ -296,9 +297,15 @@ pub unsafe extern "C" fn mdvcore_call(
             return MdvStatus::NullArg;
         }
         let Some(m) = dispatch::Method::from_u16(method) else {
-            // Unknown method id: a caller on a newer ABI than this build. Coarse
-            // Internal is fine — the host gates on capabilities/version first.
-            return MdvStatus::Internal;
+            // Unknown method id: a caller on a newer ABI than this build — a
+            // method-space SKEW, not a genuine fault (TSK-982). Return the
+            // dedicated `UnknownMethod` so the host can DISTINGUISH this from
+            // `Internal` (a real core fault that reads as a crash) and react —
+            // gate on capabilities / fall back / surface an upgrade hint —
+            // instead of diagnosing a phantom crash. The in-process wire
+            // `assertCompatible()` crash-fast normally precludes reaching here;
+            // it is the remote-skew path that this distinction serves.
+            return MdvStatus::UnknownMethod;
         };
         let req_bytes: &[u8] = if req_len == 0 {
             &[]

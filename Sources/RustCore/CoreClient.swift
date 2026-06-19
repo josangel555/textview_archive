@@ -35,6 +35,14 @@ public enum CoreError: Error, Equatable {
     /// suspect; the wrapper dead-flags the handle so no further call touches it.
     case panic
     case internalError
+    /// The envelope dispatch was handed a method id the LINKED core doesn't
+    /// know (TSK-982) — a method-space SKEW (forward-compat / remote-skew),
+    /// NOT a genuine core fault. Distinct from `.internalError` so a host can
+    /// tell a version/capability mismatch (gate on `CoreABI.capabilities`,
+    /// fall back, surface an upgrade hint) apart from a crash that reads the
+    /// same. `method` carries the offending id WHEN the call site knew it (the
+    /// envelope wrappers); a bare status→error map has no id and leaves it nil.
+    case unknownMethod(method: UInt16?)
     /// Unknown / future status code (forward-compat default arm).
     case unknown(UInt32)
     /// The MessagePack frame returned by the core failed to decode.
@@ -59,9 +67,23 @@ public enum CoreError: Error, Equatable {
         case MDV_STATUS_WIRE_ERROR: self = .wireError
         case MDV_STATUS_TOO_LARGE: self = .tooLarge
         case MDV_STATUS_HANDLE_DEAD: self = .handleDead
+        case MDV_STATUS_UNKNOWN_METHOD: self = .unknownMethod(method: nil)
         case MDV_STATUS_PANIC: self = .panic
         case MDV_STATUS_INTERNAL: self = .internalError
         default: self = .unknown(status.rawValue)
+        }
+    }
+
+    /// Status→error map that ENRICHES the method-space skew with the offending
+    /// method id (TSK-982). Use at the envelope call sites that know `method`:
+    /// an `MDV_STATUS_UNKNOWN_METHOD` becomes `.unknownMethod(method: method)`
+    /// so the host can log/branch on exactly which id skewed. Every other
+    /// status maps identically to `init(status:)`.
+    init(status: MdvStatus, method: UInt16) {
+        if status == MDV_STATUS_UNKNOWN_METHOD {
+            self = .unknownMethod(method: method)
+        } else {
+            self.init(status: status)
         }
     }
 }
@@ -96,7 +118,7 @@ public enum CoreEnvelope {
         defer { mdvcore_buf_free(&buf) }
         if status != MDV_STATUS_OK {
             CsvSession.logWireErrorIfPresent(buf)   // TSK-669 rich-error diagnosis
-            throw CoreError(status: status)
+            throw CoreError(status: status, method: method)   // TSK-982 carries the skewed id
         }
         guard let data = buf.data, buf.len > 0 else { return [] }
         return Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
@@ -616,7 +638,7 @@ func mdvEnvelopeCall(_ name: String, _ methodId: UInt16, body: [UInt8]) throws -
     defer { mdvcore_buf_free(&buf) }
     guard status == MDV_STATUS_OK else {
         CsvSession.logWireErrorIfPresent(buf)
-        throw CoreError(status: status)
+        throw CoreError(status: status, method: methodId)   // TSK-982 carries the skewed id
     }
     guard let data = buf.data, buf.len > 0 else { return nil }
     // TSK-826: single-copy unframe (see mdvFrameCall).
@@ -649,7 +671,7 @@ func mdvEnvelopeCallAux(
     defer { mdvcore_buf_free(&buf) }
     guard status == MDV_STATUS_OK else {
         CsvSession.logWireErrorIfPresent(buf)
-        throw CoreError(status: status)
+        throw CoreError(status: status, method: methodId)   // TSK-982 carries the skewed id
     }
     guard let data = buf.data, buf.len > 0 else { return nil }
     return Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))

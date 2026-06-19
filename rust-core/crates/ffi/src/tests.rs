@@ -810,18 +810,29 @@ fn envelope_routes_hex_render_raw_bulk_output() {
 }
 
 #[test]
-fn envelope_unknown_method_is_internal() {
+fn envelope_unknown_method_is_unknown_method_not_internal() {
+    // TSK-982: a method id this build doesn't know is a method-space SKEW, not a
+    // fault — it must return the dedicated `UnknownMethod`, NOT `Internal`, so a
+    // version/capability skew is distinguishable from a genuine core crash.
+    // TEETH: pre-fix both arms returned `Internal`, so the `assert_ne!`s fail red.
     let mut buf = MdvBuf::empty();
+
+    let reserved = unsafe { mdvcore_call(0, core::ptr::null(), 0, core::ptr::null(), 0, &mut buf) };
+    assert_eq!(reserved, MdvStatus::UnknownMethod, "id 0 is reserved (no method)");
+    assert_ne!(reserved, MdvStatus::Internal, "must NOT collapse to the fault catch-all");
+
+    let future = unsafe { mdvcore_call(9999, core::ptr::null(), 0, core::ptr::null(), 0, &mut buf) };
     assert_eq!(
-        unsafe { mdvcore_call(0, core::ptr::null(), 0, core::ptr::null(), 0, &mut buf) },
-        MdvStatus::Internal,
-        "id 0 is reserved (no method)"
+        future,
+        MdvStatus::UnknownMethod,
+        "an id from a newer ABI is UnknownMethod (forward-compat skew), not UB"
     );
-    assert_eq!(
-        unsafe { mdvcore_call(9999, core::ptr::null(), 0, core::ptr::null(), 0, &mut buf) },
-        MdvStatus::Internal,
-        "an id from a newer ABI is Internal, not UB"
-    );
+    assert_ne!(future, MdvStatus::Internal, "must NOT collapse to the fault catch-all");
+
+    // The skew status carries its own stable discriminant (7), never the
+    // Internal=99 / Panic=98 catch-alls.
+    assert_eq!(MdvStatus::UnknownMethod as i32, 7);
+
     unsafe { mdvcore_buf_free(&mut buf) };
 }
 

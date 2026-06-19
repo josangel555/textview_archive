@@ -38,6 +38,17 @@ pub enum MdvStatus {
     /// [`MdvStatus::Panic`] (the call that panicked reports `Panic`; the NEXT
     /// caller of the poisoned handle sees `HandleDead`).
     HandleDead = 6,
+    /// The envelope dispatch (`mdvcore_call`) was handed a method id this build
+    /// does NOT know (TSK-982). This is a method-space SKEW, not a fault: a
+    /// forward-compat caller — or a remote `mdv-serve` client on a newer ABI —
+    /// asked for a method that doesn't exist in the LINKED core. Distinct from
+    /// [`MdvStatus::Internal`] so the host can tell a version/capability skew
+    /// (gracefully fall back, gate on capabilities, surface a "rebuild/upgrade"
+    /// hint) apart from a genuine internal fault that reads as a crash. The
+    /// in-process wire `assertCompatible()` crash-fast normally precludes this;
+    /// it bites the remote-skew path where client and core version
+    /// independently.
+    UnknownMethod = 7,
     /// A Rust panic was caught at the boundary (recoverable: the process did
     /// NOT crash, but the handle's state may be suspect — drop & recreate it).
     Panic = 98,
