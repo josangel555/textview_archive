@@ -1,5 +1,27 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 PM — FULL VM SUITE (owner ask) — T4/T5/WebView lane UNBLOCKED
+
+Owner enabled Accessibility for TextView in the UTM VM + asked for a full VM run. Ran
+`MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh all`
+(build_all rebuilds dist/ + headless + T4 LiveApp/UAT + T5 Pixel + #192 WebView). Result: VM_EXIT=1,
+**3 test failures out of the whole pyramid**, everything else green incl this session's
+persistence/hot-exit/security work:
+
+- **The Accessibility enablement unblocked the T4/T5 lane** (the synthesized-event lane that was
+  previously skipped/flaky). 30+ render suites RAN and PASSED: Cm6EditorUATTests, GitPanelUATTests,
+  LSPUATTests, InteractionUATTests, KeySynthUATTests, MetadataChecksumUATTests, and all the
+  *VisualRegression / *PixelEval / *WebView / Mermaid* suites.
+- **Failure 1 — PMA01 (PluginsAndMcpAutomationUATTests):** stale — expected 10 MCP tools, app
+  correctly has 12 (set_zoom + search_files). FIXED as TSK-1031 (`b76eb496`); re-validates next VM run.
+- **Failures 2+3 — PV_02 (PreviewsUATTests, video→hex) + ViewModeMatrixSmokeTests (md→hex):** SAME
+  root cause — switching to HEX mode → "no Hex* view in tree — byte grid did not mount" under the VM
+  GUI lane. Filed TSK-1032 (broadened, live-validation): real mount regression vs view-tree-name
+  introspection vs VM CA-quirk — needs VM investigation.
+
+Net: the full VM validation pyramid works end-to-end now; the session's data-safety/security changes
+all pass on the VM; one real render finding (HEX byte-grid mount, 2 tests) to investigate on the VM.
+
 ## LOG 2026-06-19 PM — THOROUGH "nothing-lost" MERGE AUDIT (owner ask)
 
 Owner: "absolute thorough audit — all commits merged, nothing lost; don't waste the workflow effort."
