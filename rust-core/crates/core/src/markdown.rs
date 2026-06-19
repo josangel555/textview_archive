@@ -125,8 +125,10 @@ struct Writer {
     image_depth: u32,
     /// Open block containers (for tight-item `<p>` synthesis).
     containers: Vec<Container>,
-    /// Slug de-dupe: (slug, times-issued-so-far) — Vec keeps it Hash-free.
-    used_slugs: Vec<(String, u32)>,
+    /// Slug de-dupe: slug → times-issued-so-far. A HashMap keeps `unique_slug`
+    /// O(1) per heading (the old Vec linear-scan made it O(N²) over a document's
+    /// headings, TSK-984). Never iterated, so there's no ordering dependency.
+    used_slugs: std::collections::HashMap<String, u32>,
     /// Code-fence capture (info string) while inside a code block.
     fence: Option<String>,
     /// Raw HTML block capture while inside an `HtmlBlock`.
@@ -464,11 +466,11 @@ impl Writer {
         if slug.is_empty() {
             slug = "section".to_owned();
         }
-        if let Some((_, n)) = self.used_slugs.iter_mut().find(|(s, _)| *s == slug) {
+        if let Some(n) = self.used_slugs.get_mut(&slug) {
             *n = n.saturating_add(1);
             return format!("{slug}-{n}");
         }
-        self.used_slugs.push((slug.clone(), 0));
+        self.used_slugs.insert(slug.clone(), 0);
         slug
     }
 }
@@ -622,6 +624,23 @@ mod tests {
         );
         // Symbol-only heading falls back to "section".
         assert_eq!(html("# !!!"), "<h1 id=\"section\">!!!</h1>\n");
+    }
+
+    #[test]
+    fn slug_dedupe_scales_to_many_duplicates() {
+        // TSK-984: many same-title headings dedupe to title, title-1, …,
+        // title-(N-1) via an O(1)/heading HashMap lookup (was O(N²) Vec scan).
+        let n = 200;
+        let md = vec!["# Title"; n].join("\n\n");
+        let out = html(&md);
+        assert!(out.contains("<h1 id=\"title\">Title</h1>"), "first is the bare slug");
+        assert!(out.contains("<h1 id=\"title-1\">Title</h1>"));
+        assert!(
+            out.contains(&format!("<h1 id=\"title-{}\">Title</h1>", n - 1)),
+            "the Nth duplicate gets the -(N-1) suffix"
+        );
+        // Every heading got a unique id.
+        assert_eq!(out.matches("id=\"").count(), n, "all {n} headings have an id");
     }
 
     #[test]
