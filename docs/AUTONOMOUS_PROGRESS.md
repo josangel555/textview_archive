@@ -1,5 +1,19 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — P0 perf front: host side is already optimized; lag needs structured VM traces (892/908/889)
+
+Investigated the top P0 perf items host-side. PATTERN: the app's host code is already well-optimized, so the felt
+lag lives in harder-to-attribute layers needing structured VM traces, not host fixes:
+- 889 (large JSON open): traced — COLD open is fast (openResolved 8.4 ms), no hang; lag is the WARM re-open path.
+- 908 (right-click commit slow): the expensive ReviewStore read is already LAZY in the submenu (TSK-909), off the
+  hot path; residual = SwiftUI .contextMenu framework cost. (Also shipped the missing copy actions — see below.)
+- 892 (file-tree hover slow): the tree is already .equatable() over an Equatable FileRowState snapshot (TSK-613) +
+  per-row-local hover, so a hover doesn't re-eval the tree or re-run make() for all rows; "find per-hover compute"
+  doesn't surface in this path.
+CONCLUSION: isolating these needs trace modes the harness lacks — a WARM-reopen capture + a sustained HOVER-synth
+capture + DEBUG symbols. Filed that tooling as the P0-front unblock (board TSK). Until then the P0s can't be
+blind-fixed (the obvious host causes are already handled). Owner's real repro files would also help.
+
 ## LOG 2026-06-18 — TSK-908: investigated (slow part already lazy) + added the missing commit copy actions
 
 908 = "right-click commit slow + only shows Review Commit." (a) SLOW: the host hot path is already CHEAP — the
