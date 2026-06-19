@@ -29,6 +29,14 @@ public final class ReviewSession: ObservableObject {
     /// on demand; never stored on the model.
     @Published public private(set) var anchorStates: [String: AnchorState] = [:]
 
+    /// Test seam: seed the parsed `diffFiles` directly so host tests can
+    /// exercise the `AddTarget`/`addComment(at:)` path without a live git repo
+    /// (which `reload()` requires). Behaviour is otherwise identical to a real
+    /// load. Internal so only the test target reaches it.
+    internal func setDiffFilesForTesting(_ files: [UnifiedDiff.File]) {
+        diffFiles = files
+    }
+
     /// The project-local store this session persists through.
     private let store: ReviewStore
 
@@ -152,6 +160,85 @@ public final class ReviewSession: ObservableObject {
         return (anchor, context)
     }
 
+    // MARK: - Add-comment targeting (TSK-912)
+
+    /// A pickable location for a new comment in the loaded diff: the file +
+    /// hunk to capture from, the anchored side, and the 1-based line number.
+    /// The toolbar "Add comment" affordance defaults to the first such target
+    /// so the entry point is reachable without first hovering a diff line.
+    public struct AddTarget: Equatable, Sendable {
+        public let fileIndex: Int
+        public let hunkIndex: Int
+        public let side: LineAnchor.Side
+        public let lineNo: Int
+        public init(fileIndex: Int, hunkIndex: Int, side: LineAnchor.Side, lineNo: Int) {
+            self.fileIndex = fileIndex
+            self.hunkIndex = hunkIndex
+            self.side = side
+            self.lineNo = lineNo
+        }
+    }
+
+    /// The first anchorable line across the loaded `diffFiles`, scanned
+    /// top-down file→hunk→line — the first reviewable line wins, mapped to its
+    /// natural side (`.added → .new`, `.removed → .old`, `.context → context`).
+    /// `nil` when the diff has no reviewable lines. Pure over `diffFiles` so
+    /// it's host-testable.
+    public var firstAddTarget: AddTarget? {
+        Self.firstAddTarget(in: diffFiles)
+    }
+
+    /// Pure picker: first anchorable (file, hunk, line) in a parsed diff. The
+    /// scan order matches the gutter — top-down, first reviewable line wins —
+    /// so the toolbar default lands where the user would expect (the top of
+    /// the diff).
+    public static func firstAddTarget(in files: [UnifiedDiff.File]) -> AddTarget? {
+        for (fi, file) in files.enumerated() where !file.isBinary {
+            for (hi, hunk) in file.hunks.enumerated() {
+                for line in hunk.lines {
+                    switch line.kind {
+                    case .added:
+                        if let n = line.newLineNo {
+                            return AddTarget(fileIndex: fi, hunkIndex: hi, side: .new, lineNo: n)
+                        }
+                    case .removed:
+                        if let n = line.oldLineNo {
+                            return AddTarget(fileIndex: fi, hunkIndex: hi, side: .old, lineNo: n)
+                        }
+                    case .context:
+                        if let n = line.newLineNo ?? line.oldLineNo {
+                            return AddTarget(fileIndex: fi, hunkIndex: hi, side: .context, lineNo: n)
+                        }
+                    case .noNewline:
+                        continue
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Add a comment at an `AddTarget` resolved against the loaded `diffFiles`.
+    /// The exact closure the `ReviewTabView` toolbar "Add comment" affordance
+    /// invokes. Returns the new comment id, or `nil` if the target is out of
+    /// range / doesn't intersect its hunk.
+    @discardableResult
+    public func addComment(
+        at target: AddTarget,
+        severity: ReviewComment.Severity,
+        body: String
+    ) -> String? {
+        guard diffFiles.indices.contains(target.fileIndex) else { return nil }
+        let file = diffFiles[target.fileIndex]
+        guard file.hunks.indices.contains(target.hunkIndex) else { return nil }
+        let hunk = file.hunks[target.hunkIndex]
+        return addComment(
+            file: file, hunk: hunk, side: target.side,
+            lineRange: target.lineNo...target.lineNo,
+            severity: severity, body: body
+        )
+    }
+
     // MARK: - Mutations
     //
     // Each mutator: applies a pure transform to `review`, bumps `updatedAt`,
@@ -196,6 +283,38 @@ public final class ReviewSession: ObservableObject {
             anchor: anchor, liveBlobSha: liveBlobSha(for: comment)
         )
         return comment.id
+    }
+
+    /// Convenience entry point for the diff/review UI: capture the frozen
+    /// `HunkContext` for the picked line(s) AND append the comment in one call.
+    /// This is the exact closure the gutter "Add comment" affordance and the
+    /// `ReviewTabView` toolbar invoke (TSK-912) — the UI never has to assemble
+    /// a `LineAnchor`/`HunkContext` by hand.
+    ///
+    /// Returns the new comment's id, or `nil` if the range doesn't intersect
+    /// the hunk on `side` (a caller bug — `capture` returns nil rather than
+    /// freezing a bogus snapshot). Single-line is `lineRange = n...n`.
+    @discardableResult
+    public func addComment(
+        file: UnifiedDiff.File,
+        hunk: UnifiedDiff.Hunk,
+        side: LineAnchor.Side,
+        lineRange: ClosedRange<Int>,
+        severity: ReviewComment.Severity,
+        body: String
+    ) -> String? {
+        guard let (anchor, context) = capture(
+            file: file, hunk: hunk, side: side, range: lineRange
+        ) else {
+            return nil
+        }
+        return addComment(
+            filePath: file.newPath.isEmpty ? file.oldPath : file.newPath,
+            anchor: anchor,
+            severity: severity,
+            body: body,
+            hunkContext: context
+        )
     }
 
     /// Add a reply to an existing comment (thread).

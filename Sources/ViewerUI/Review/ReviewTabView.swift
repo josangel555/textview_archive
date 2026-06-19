@@ -14,6 +14,10 @@ struct ReviewTabView: View {
     @State private var draftInstructions: String = ReviewExporter.defaultInstructions
     @State private var sidebarVisible = true
 
+    /// TSK-912: when set, the toolbar "Add comment" sheet is presented for this
+    /// target (the first anchorable line of the loaded diff). nil = no sheet.
+    @State private var addTarget: ReviewSession.AddTarget?
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -42,6 +46,51 @@ struct ReviewTabView: View {
             }
         }
         .onAppear { session.reload() }
+        .sheet(isPresented: addCommentSheetBinding) {
+            if let target = addTarget {
+                addCommentSheet(target: target)
+            }
+        }
+    }
+
+    /// Presents the toolbar composer while a target is set. Dismissing clears
+    /// the target so the next "Add comment" re-resolves the first line.
+    private var addCommentSheetBinding: Binding<Bool> {
+        Binding(
+            get: { addTarget != nil },
+            set: { if !$0 { addTarget = nil } }
+        )
+    }
+
+    /// The toolbar-driven composer (TSK-912). Captures + appends via the
+    /// session's `addComment(at:)` closure; no diff-line hover required.
+    private func addCommentSheet(target: ReviewSession.AddTarget) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Add comment")
+                .font(.system(size: doc.uiSize(13), weight: .semibold))
+            Text("On \(targetDescription(target))")
+                .font(.system(size: doc.uiSize(10)))
+                .foregroundStyle(.secondary)
+            CommentEditorView(
+                doc: doc,
+                onCommit: { severity, body in
+                    _ = session.addComment(at: target, severity: severity, body: body)
+                    addTarget = nil
+                },
+                onCancel: { addTarget = nil }
+            )
+        }
+        .padding(14)
+        .frame(width: 360)
+        .accessibilityIdentifier("mdv.review.toolbarComposer")
+    }
+
+    private func targetDescription(_ t: ReviewSession.AddTarget) -> String {
+        let path = session.diffFiles.indices.contains(t.fileIndex)
+            ? { let f = session.diffFiles[t.fileIndex]
+                return f.newPath.isEmpty ? f.oldPath : f.newPath }()
+            : "file"
+        return "\(path):\(t.lineNo)"
     }
 
     private var toolbar: some View {
@@ -55,6 +104,19 @@ struct ReviewTabView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            // TSK-912: the visible add-comment entry point. Resolves the first
+            // anchorable diff line and opens the composer sheet. Disabled when
+            // the diff has no reviewable lines (nothing to anchor to).
+            Button {
+                addTarget = session.firstAddTarget
+            } label: {
+                Label("Add Comment", systemImage: "plus.bubble")
+            }
+            .controlSize(.small)
+            .help("Add a review comment on the first changed line")
+            .disabled(session.firstAddTarget == nil)
+            .accessibilityIdentifier("mdv.review.toolbarAddComment")
+
             Button {
                 sidebarVisible.toggle()
             } label: {

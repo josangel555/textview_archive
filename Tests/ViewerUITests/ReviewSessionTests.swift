@@ -202,6 +202,152 @@ final class ReviewSessionTests: HeadlessUITestCase {
         XCTAssertNil(session.capture(file: file, hunk: hunk, side: .new, range: 99...99))
     }
 
+    // MARK: - add-comment affordance closure (TSK-912)
+    //
+    // These pin the exact closures the diff gutter / review toolbar invoke, so
+    // a logic regression of the visible add-comment path fails on the host gate
+    // (the pixel visibility itself is VM-owed).
+
+    private func sampleFile() -> UnifiedDiff.File {
+        let hunk = UnifiedDiff.Hunk(
+            oldStart: 10, oldCount: 3, newStart: 10, newCount: 4, header: "f()",
+            lines: [
+                UnifiedDiff.Line(kind: .context, oldLineNo: 10, newLineNo: 10, content: "a"),
+                UnifiedDiff.Line(kind: .added, oldLineNo: nil, newLineNo: 11, content: "TARGET"),
+                UnifiedDiff.Line(kind: .context, oldLineNo: 11, newLineNo: 12, content: "b"),
+            ]
+        )
+        return UnifiedDiff.File(oldPath: "a.swift", newPath: "a.swift", hunks: [hunk])
+    }
+
+    func test_addCommentFromHunk_capturesAndAppends() {
+        // The gutter "Add comment" closure: capture(file,hunk,side,range) +
+        // addComment in one call. Severity + body land in the session's
+        // comments for that path/range with the frozen context.
+        let session = makeSession(makeReview())
+        let file = sampleFile()
+        let id = session.addComment(
+            file: file, hunk: file.hunks[0], side: .new, lineRange: 11...11,
+            severity: .blocker, body: "fix this"
+        )
+        XCTAssertNotNil(id)
+        XCTAssertEqual(session.review.comments.count, 1)
+        let c = session.review.comments.first
+        XCTAssertEqual(c?.filePath, "a.swift")
+        XCTAssertEqual(c?.anchor.startLine, 11)
+        XCTAssertEqual(c?.anchor.side, .new)
+        XCTAssertEqual(c?.severity, .blocker)
+        XCTAssertEqual(c?.body, "fix this")
+        XCTAssertEqual(c?.hunkContext.anchoredLines.map(\.content), ["TARGET"])
+    }
+
+    func test_addCommentFromHunk_rangeOutsideHunk_returnsNil_appendsNothing() {
+        let session = makeSession(makeReview())
+        let file = sampleFile()
+        let id = session.addComment(
+            file: file, hunk: file.hunks[0], side: .new, lineRange: 99...99,
+            severity: .issue, body: "x"
+        )
+        XCTAssertNil(id, "a range outside the hunk freezes no bogus snapshot")
+        XCTAssertTrue(session.review.comments.isEmpty)
+    }
+
+    func test_firstAddTarget_picksFirstReviewableLine_topDown() {
+        // Pure picker over a parsed diff: top-down, the FIRST reviewable line
+        // wins (here the leading context line at 10), mapped to its side. This
+        // drives the toolbar default — it lands at the top of the diff.
+        let file = sampleFile()
+        let target = ReviewSession.firstAddTarget(in: [file])
+        XCTAssertEqual(target, ReviewSession.AddTarget(
+            fileIndex: 0, hunkIndex: 0, side: .context, lineNo: 10))
+    }
+
+    func test_firstAddTarget_mapsAddedLineToNewSide() {
+        // An added-first hunk maps to `.new` on the added line's new number.
+        let hunk = UnifiedDiff.Hunk(
+            oldStart: 5, oldCount: 0, newStart: 5, newCount: 1, header: "",
+            lines: [UnifiedDiff.Line(kind: .added, oldLineNo: nil, newLineNo: 5, content: "new")]
+        )
+        let file = UnifiedDiff.File(oldPath: "n", newPath: "n", isNew: true, hunks: [hunk])
+        XCTAssertEqual(ReviewSession.firstAddTarget(in: [file]),
+                       ReviewSession.AddTarget(fileIndex: 0, hunkIndex: 0, side: .new, lineNo: 5))
+    }
+
+    func test_firstAddTarget_mapsRemovedLineToOldSide() {
+        let hunk = UnifiedDiff.Hunk(
+            oldStart: 8, oldCount: 1, newStart: 8, newCount: 0, header: "",
+            lines: [UnifiedDiff.Line(kind: .removed, oldLineNo: 8, newLineNo: nil, content: "gone")]
+        )
+        let file = UnifiedDiff.File(oldPath: "d", newPath: "d", isDeleted: true, hunks: [hunk])
+        XCTAssertEqual(ReviewSession.firstAddTarget(in: [file]),
+                       ReviewSession.AddTarget(fileIndex: 0, hunkIndex: 0, side: .old, lineNo: 8))
+    }
+
+    func test_firstAddTarget_fallsBackToContext_whenNoAddedOrRemoved() {
+        let hunk = UnifiedDiff.Hunk(
+            oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, header: "",
+            lines: [
+                UnifiedDiff.Line(kind: .context, oldLineNo: 1, newLineNo: 1, content: "x"),
+                UnifiedDiff.Line(kind: .context, oldLineNo: 2, newLineNo: 2, content: "y"),
+            ]
+        )
+        let file = UnifiedDiff.File(oldPath: "c", newPath: "c", hunks: [hunk])
+        let target = ReviewSession.firstAddTarget(in: [file])
+        XCTAssertEqual(target, ReviewSession.AddTarget(
+            fileIndex: 0, hunkIndex: 0, side: .context, lineNo: 1))
+    }
+
+    func test_firstAddTarget_emptyDiff_isNil() {
+        XCTAssertNil(ReviewSession.firstAddTarget(in: []))
+        let binary = UnifiedDiff.File(oldPath: "b", newPath: "b", isBinary: true, hunks: [])
+        XCTAssertNil(ReviewSession.firstAddTarget(in: [binary]),
+                     "a binary file has no anchorable line")
+    }
+
+    func test_addCommentAtTarget_resolvesAgainstLoadedDiff_andAppends() {
+        // The toolbar closure: addComment(at: firstAddTarget). Seed diffFiles
+        // via the test seam (reload() needs a live git repo).
+        let session = makeSession(makeReview())
+        session.setDiffFilesForTesting([sampleFile()])
+        let target = try? XCTUnwrap(session.firstAddTarget)
+        let id = session.addComment(at: target!, severity: .suggestion, body: "consider X")
+        XCTAssertNotNil(id)
+        XCTAssertEqual(session.review.comments.count, 1)
+        let c = session.review.comments.first
+        // firstAddTarget is the top-down first reviewable line (context @ 10).
+        XCTAssertEqual(c?.anchor.startLine, 10)
+        XCTAssertEqual(c?.anchor.side, .context)
+        XCTAssertEqual(c?.severity, .suggestion)
+        XCTAssertEqual(c?.body, "consider X")
+    }
+
+    func test_addCommentAtTarget_outOfRangeIndices_returnsNil() {
+        let session = makeSession(makeReview())
+        session.setDiffFilesForTesting([sampleFile()])
+        // fileIndex past the end → nil, no append.
+        let bad = ReviewSession.AddTarget(fileIndex: 9, hunkIndex: 0, side: .new, lineNo: 11)
+        XCTAssertNil(session.addComment(at: bad, severity: .info, body: "x"))
+        XCTAssertTrue(session.review.comments.isEmpty)
+    }
+
+    func test_listBinding_reflectsAddEditResolveFromAffordanceClosure() {
+        // The comments list (sidebar/threads bind to review.comments) updates
+        // across the affordance closure's add → edit → resolve lifecycle.
+        let session = makeSession(makeReview())
+        let file = sampleFile()
+        let id = try? XCTUnwrap(session.addComment(
+            file: file, hunk: file.hunks[0], side: .new, lineRange: 11...11,
+            severity: .issue, body: "first"))
+        XCTAssertEqual(session.review.comments.filter { $0.parentId == nil }.count, 1)
+
+        session.updateComment(id: id!, body: "edited", severity: .blocker)
+        XCTAssertEqual(session.review.comments.first?.body, "edited")
+        XCTAssertEqual(session.review.comments.first?.severity, .blocker)
+
+        session.setResolved(id: id!, true)
+        XCTAssertEqual(session.review.comments.first?.resolved, true)
+    }
+
     // MARK: - debounced persistence (republish/storm guard)
 
     func test_burstOfEdits_coalesces_butLandsTheFinalValueOnDisk() {

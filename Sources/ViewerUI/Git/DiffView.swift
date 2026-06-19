@@ -35,6 +35,21 @@ struct DiffView: View {
     @State private var findMatches: [DiffFind.Match] = []
     @State private var findIndex: Int?
 
+    // TSK-912 — the line the inline "Add comment" composer is open on, if any.
+    // Identifies a single (file, hunk, line) row so the composer renders under
+    // exactly that line. nil = no composer open. Review-only (gated on session).
+    @State private var composerTarget: ComposerTarget?
+
+    /// Which diff row the add-comment composer is anchored to. Equatable so
+    /// SwiftUI diffs it cheaply; carries the side + line number we'll capture.
+    struct ComposerTarget: Equatable {
+        let fileIndex: Int
+        let hunkIndex: Int
+        let lineIndex: Int
+        let side: LineAnchor.Side
+        let lineNo: Int
+    }
+
     init(text: String, doc: DocumentModel, reviewSession: ReviewSession? = nil) {
         self.text = text
         self.doc = doc
@@ -224,7 +239,7 @@ struct DiffView: View {
                     .padding(.vertical, 8)
             } else {
                 ForEach(Array(file.hunks.enumerated()), id: \.offset) { hi, hunk in
-                    hunkBlock(hunk, filePath: filePath(of: file),
+                    hunkBlock(hunk, file: file,
                               fileIndex: fileIndex, hunkIndex: hi)
                 }
             }
@@ -299,8 +314,9 @@ struct DiffView: View {
     }
 
     @ViewBuilder
-    private func hunkBlock(_ hunk: UnifiedDiff.Hunk, filePath: String,
+    private func hunkBlock(_ hunk: UnifiedDiff.Hunk, file: UnifiedDiff.File,
                            fileIndex: Int, hunkIndex: Int) -> some View {
+        let filePath = filePath(of: file)
         VStack(alignment: .leading, spacing: 0) {
             // Hunk header banner — like "@@ -10,3 +12,5 @@ func foo()"
             HStack(spacing: 6) {
@@ -322,11 +338,17 @@ struct DiffView: View {
 
             ForEach(Array(hunk.lines.enumerated()), id: \.offset) { li, line in
                 lineRow(line, coordinate: DiffFind.Match(
-                    file: fileIndex, hunk: hunkIndex, line: li))
+                    file: fileIndex, hunk: hunkIndex, line: li),
+                    addCommentTarget: addCommentTarget(
+                        for: line, fileIndex: fileIndex,
+                        hunkIndex: hunkIndex, lineIndex: li))
                 // Review affordances — entirely gated on a session being
                 // present. The nil (read-only) path renders only `lineRow`.
                 if reviewSession != nil {
-                    reviewAffordances(for: line, hunk: hunk, filePath: filePath)
+                    reviewAffordances(
+                        for: line, hunk: hunk, file: file,
+                        fileIndex: fileIndex, hunkIndex: hunkIndex, lineIndex: li
+                    )
                 }
             }
         }
@@ -353,14 +375,48 @@ struct DiffView: View {
         file.newPath.isEmpty ? file.oldPath : file.newPath
     }
 
+    /// The (side, lineNo) a comment on this row would anchor to, or `nil` for a
+    /// non-anchorable row (the `\ No newline` marker carries no line number).
+    /// `.added → .new`, `.removed → .old`, `.context → .context` (new side no.).
+    private func anchorPoint(for line: UnifiedDiff.Line) -> (side: LineAnchor.Side, lineNo: Int)? {
+        switch line.kind {
+        case .added:
+            guard let n = line.newLineNo else { return nil }
+            return (.new, n)
+        case .removed:
+            guard let n = line.oldLineNo else { return nil }
+            return (.old, n)
+        case .context:
+            guard let n = line.newLineNo ?? line.oldLineNo else { return nil }
+            return (.context, n)
+        case .noNewline:
+            return nil
+        }
+    }
+
+    /// The `ComposerTarget` the gutter "Add comment" button opens for this row,
+    /// or `nil` if the row isn't anchorable or there's no review session.
+    private func addCommentTarget(
+        for line: UnifiedDiff.Line,
+        fileIndex: Int, hunkIndex: Int, lineIndex: Int
+    ) -> ComposerTarget? {
+        guard reviewSession != nil, let pt = anchorPoint(for: line) else { return nil }
+        return ComposerTarget(
+            fileIndex: fileIndex, hunkIndex: hunkIndex, lineIndex: lineIndex,
+            side: pt.side, lineNo: pt.lineNo
+        )
+    }
+
     /// Comment threads anchored to this line, plus the inline composer when
     /// the user has opened it on this line. Only invoked when
     /// `reviewSession != nil`.
     @ViewBuilder
     private func reviewAffordances(
-        for line: UnifiedDiff.Line, hunk: UnifiedDiff.Hunk, filePath: String
+        for line: UnifiedDiff.Line, hunk: UnifiedDiff.Hunk, file: UnifiedDiff.File,
+        fileIndex: Int, hunkIndex: Int, lineIndex: Int
     ) -> some View {
         if let session = reviewSession {
+            let filePath = filePath(of: file)
             let lineNo = line.newLineNo ?? line.oldLineNo
             // Threads whose anchor start lands on this line.
             let topLevel = session.review.comments.filter {
@@ -382,6 +438,30 @@ struct DiffView: View {
                 )
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
+            }
+
+            // TSK-912: the inline composer, when the user has opened "Add
+            // comment" on exactly this row.
+            if let target = composerTarget,
+               target.fileIndex == fileIndex,
+               target.hunkIndex == hunkIndex,
+               target.lineIndex == lineIndex {
+                CommentEditorView(
+                    doc: doc,
+                    onCommit: { severity, body in
+                        _ = session.addComment(
+                            file: file, hunk: hunk,
+                            side: target.side,
+                            lineRange: target.lineNo...target.lineNo,
+                            severity: severity, body: body
+                        )
+                        composerTarget = nil
+                    },
+                    onCancel: { composerTarget = nil }
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .accessibilityIdentifier("mdv.review.composer")
             }
         }
     }
@@ -407,8 +487,29 @@ struct DiffView: View {
     }
 
     private func lineRow(_ line: UnifiedDiff.Line,
-                         coordinate: DiffFind.Match) -> some View {
+                         coordinate: DiffFind.Match,
+                         addCommentTarget: ComposerTarget? = nil) -> some View {
         HStack(spacing: 0) {
+            // TSK-912: review-mode gutter "Add comment" control. Only present
+            // when a session is attached AND the row is anchorable. Tapping it
+            // opens the inline composer on this row (toggles closed if re-tapped).
+            if let target = addCommentTarget {
+                Button {
+                    composerTarget = (composerTarget == target) ? nil : target
+                } label: {
+                    Image(systemName: "plus.bubble")
+                        .font(.system(size: doc.uiSize(10)))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+                .frame(width: 18)
+                .help("Add comment on this line")
+                .accessibilityIdentifier("mdv.review.addComment")
+            } else if reviewSession != nil {
+                // Keep the gutter column width stable across anchorable and
+                // non-anchorable rows in review mode.
+                Color.clear.frame(width: 18)
+            }
             lineNoCell(line.oldLineNo)
             lineNoCell(line.newLineNo)
             // Gutter +/- column
