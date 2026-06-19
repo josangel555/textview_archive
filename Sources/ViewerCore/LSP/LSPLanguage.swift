@@ -319,22 +319,35 @@ public struct LSPLanguageRegistry: Sendable {
     ///      A binary checked into / dropped under the workspace is the
     ///      exact RCE vector we refuse: `./node_modules/.bin/evil`,
     ///      `./.tools/sourcekit-lsp`, etc.
-    ///   2. **When `command` is not trusted we ignore it** and fall
-    ///      back to default discovery for this language's real server
-    ///      binary, re-applying the override's `args` (on top of the
-    ///      language's `defaultArguments`) and `env`. This lets a repo
-    ///      tune flags/env for a server we already trust without
-    ///      letting it pick the executable. If discovery also fails we
-    ///      return nil (no server) rather than spawn an untrusted path.
+    ///   2. **When `command` is not trusted we ignore the WHOLE
+    ///      override** (TSK-963) and fall back to default discovery for
+    ///      this language's real server binary, spawned with ONLY the
+    ///      language's `defaultArguments` and the scrubbed base env —
+    ///      the override's `args`, `env`, and `initializationOptions`
+    ///      are all dropped. A hostile `lsp.json` that names an
+    ///      untrusted command also controls those fields, and many
+    ///      servers honour args (`--require`/`--plugin`/`--tsserver`/
+    ///      config-path flags) or env (`NODE_OPTIONS`-class vars are not
+    ///      name-scrubbed) that load attacker-controlled code from the
+    ///      workspace — so applying them would turn a trusted binary
+    ///      into the injection vector even though no untrusted
+    ///      executable was named. The conservative posture is "an
+    ///      untrusted override contributes nothing". If discovery also
+    ///      fails we return nil (no server) rather than spawn an
+    ///      untrusted path.
     ///   3. **The child env is scrubbed** at this boundary
-    ///      (`scrubbedLaunchEnvironment`) before the override's `env`
-    ///      is layered on, so the language server never inherits the
-    ///      app's `*_TOKEN` / `*_SECRET` / `AWS_*` / cloud creds.
+    ///      (`scrubbedLaunchEnvironment`) on BOTH paths, so the language
+    ///      server never inherits the app's `*_TOKEN` / `*_SECRET` /
+    ///      `AWS_*` / cloud creds. On the trusted-command path the
+    ///      override's `env` is layered on top of that scrubbed base;
+    ///      on the untrusted/discovered path only the scrubbed base is
+    ///      used (no override env).
     ///
-    /// `defaultArguments` are prepended to the override's `args` only
-    /// on the untrusted/discovered path (where we own spawn config);
-    /// when a trusted `command` is honoured the user's `args` are used
-    /// verbatim (they are taking over spawn configuration).
+    /// The override's `args`/`env`/`initializationOptions` are honoured
+    /// ONLY when the `command` itself passed the trust gate (the user is
+    /// then knowingly taking over spawn configuration). On the
+    /// untrusted/discovered path the discovered server is spawned with
+    /// `defaultArguments` and the scrubbed base env exclusively.
     public static func overrideConfig(
         for language: LSPLanguage,
         workspaceRoot: URL,
@@ -355,18 +368,21 @@ public struct LSPLanguageRegistry: Sendable {
             return nil
         }
 
-        // SEC-002: scrubbed base env, override env layered on top.
+        // SEC-002: scrubbed base env is the floor on BOTH branches. A
+        // server spawned via an override never inherits the app's
+        // unscrubbed environment (no `*_TOKEN`/`*_SECRET`/`AWS_*` leak).
         // `mergedEnvironment` returns nil when the override declares no
         // env of its own; we deliberately do NOT propagate that nil
         // (which `LSPClient` treats as "inherit the full parent env").
-        // We always hand `LSPClient` an explicit, scrubbed dictionary so
-        // the server never sees the app's unscrubbed environment.
         let baseEnv = scrubbedLaunchEnvironment()
-        let environment = overrides.mergedEnvironment(
-            for: language, parent: baseEnv) ?? baseEnv
 
         // SEC-001-interim: decide whether to trust the override command.
         if isOverrideCommandTrusted(binaryURL, workspaceRoot: workspaceRoot) {
+            // Trusted command — the user is knowingly taking over spawn
+            // config, so honour the override's args and env (env still
+            // floored at the scrubbed base; the override layers on top).
+            let environment = overrides.mergedEnvironment(
+                for: language, parent: baseEnv) ?? baseEnv
             return LSPClient.Config(
                 executable: binaryURL,
                 arguments: entry.arguments,
@@ -376,20 +392,34 @@ public struct LSPLanguageRegistry: Sendable {
         }
 
         // Untrusted command. Refuse to spawn it; instead discover the
-        // real server binary and apply only the override's args/env.
+        // real server binary.
+        //
+        // SEC-001 (TSK-963): on this fallback we apply NEITHER the
+        // override's `args` NOR its `env` to the trusted discovered
+        // server. A hostile `lsp.json` that names an untrusted command
+        // also controls those fields, and many servers honour args
+        // (`--require`/`--plugin`/`--tsserver`/config-path flags) or
+        // env (`NODE_OPTIONS`-class vars are not name-scrubbed) that
+        // load attacker-controlled code from the workspace — turning a
+        // trusted binary into the injection vector without ever naming
+        // an untrusted executable. The conservative posture is "an
+        // untrusted override contributes nothing": only `defaultArguments`
+        // and the scrubbed base env. The override's `args`/`env`/
+        // `initializationOptions` are honoured ONLY when the command
+        // itself passed the trust gate (the trusted branch above).
         LSPLog.warn(
             "LSP override command refused (untrusted: inside workspace or "
             + "writable dir): \(entry.command) (\(overrides.sourceFile.path)); "
-            + "falling back to discovered \(language.binaryName ?? "<server>")")
+            + "falling back to discovered \(language.binaryName ?? "<server>") "
+            + "with default args/env (override args/env ignored)")
         guard let discovered = discoverServerBinary(for: language) else {
             return nil
         }
         return LSPClient.Config(
             executable: discovered,
-            arguments: defaultArguments + entry.arguments,
+            arguments: defaultArguments,
             workspaceRoot: workspaceRoot,
-            environment: environment,
-            initializationOptions: entry.initializationOptions)
+            environment: baseEnv)
     }
 
     /// A workspace-supplied override `command` is trusted iff its

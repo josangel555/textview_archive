@@ -400,6 +400,140 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
             "expected a refusal warning; got \(LSPLog.captured())")
     }
 
+    func test_overrideConfig_untrustedFallback_dropsArgsAndEnv() throws {
+        // TSK-963: when the override command is refused (in-workspace),
+        // the fallback to the discovered trusted server must use ONLY
+        // `defaultArguments` and the scrubbed base env — NOT the
+        // override's repo-controlled `args`/`env`. Repo args like
+        // `--require`/`--plugin`/config-path and `NODE_OPTIONS`-class
+        // env would otherwise load attacker-controlled code into a
+        // trusted binary.
+        //
+        // We drive this through .typescript so we can fake the discovered
+        // server binary on PATH (avoids depending on sourcekit-lsp being
+        // installed). The discovered binary lives in `trustedBinDir`
+        // (outside the workspace, not world-writable).
+        let serverName = "typescript-language-server"
+        let discovered = makeFakeBinary(named: serverName)
+        // Make discovery resolve to our fake by putting trustedBinDir on PATH.
+        let savedPath = ProcessInfo.processInfo.environment["PATH"]
+        setenv("PATH", trustedBinDir.path, 1)
+        setenv("AWS_SECRET_ACCESS_KEY", "leakme", 1)
+        LSPDiscovery.resetDiscoveryCache()
+        defer {
+            if let savedPath { setenv("PATH", savedPath, 1) }
+            else { unsetenv("PATH") }
+            unsetenv("AWS_SECRET_ACCESS_KEY")
+            LSPDiscovery.resetDiscoveryCache()
+        }
+
+        // Untrusted command (inside the workspace) + hostile args/env.
+        let evil = makeFakeBinary(named: "evil-ts", inWorkspace: true)
+        try writeOverride("""
+        {
+          "servers": {
+            "typescript": {
+              "command": "\(evil.path)",
+              "args": ["--require", "./.evil/pwn.js", "--plugin", "./.evil"],
+              "env": { "NODE_OPTIONS": "--require ./.evil/pwn.js",
+                       "EVIL_FLAG": "1" }
+            }
+          }
+        }
+        """)
+
+        let defaults = ["--stdio"]
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .typescript, workspaceRoot: tmpRoot,
+            defaultArguments: defaults)
+
+        let unwrapped = try XCTUnwrap(
+            cfg, "discovery should resolve the faked server on PATH")
+        // Must spawn the discovered trusted binary, NOT the in-workspace one.
+        XCTAssertEqual(unwrapped.executable.path, discovered.path)
+        XCTAssertNotEqual(unwrapped.executable.path, evil.path)
+        // FIX 1: arguments are exactly the language defaults — the
+        // override's repo args are dropped entirely.
+        XCTAssertEqual(unwrapped.arguments, defaults,
+                       "untrusted fallback must use defaultArguments only")
+        XCTAssertFalse(unwrapped.arguments.contains("--require"),
+                       "repo-controlled --require must not reach the trusted server")
+        XCTAssertFalse(unwrapped.arguments.contains("--plugin"))
+        // FIX 1: env is exactly the scrubbed base — the override's env
+        // (incl. NODE_OPTIONS / EVIL_FLAG) is dropped.
+        let env = try XCTUnwrap(unwrapped.environment)
+        XCTAssertEqual(env, LSPLanguageRegistry.scrubbedLaunchEnvironment(),
+                       "untrusted fallback must use scrubbedLaunchEnvironment() only")
+        XCTAssertNil(env["NODE_OPTIONS"],
+                     "repo-controlled NODE_OPTIONS must not reach the trusted server")
+        XCTAssertNil(env["EVIL_FLAG"])
+        XCTAssertNil(env["AWS_SECRET_ACCESS_KEY"],
+                     "credential-shaped var stays scrubbed")
+        // initializationOptions from an untrusted override must be dropped.
+        XCTAssertNil(unwrapped.initializationOptions,
+                     "untrusted override initializationOptions must not be forwarded")
+    }
+
+    func test_overrideConfig_untrustedFallback_dropsInitializationOptions() throws {
+        // FIX 1 corollary: initializationOptions are also repo-controlled
+        // and must NOT survive the untrusted fallback.
+        let serverName = "pyright-langserver"
+        _ = makeFakeBinary(named: serverName)
+        let savedPath = ProcessInfo.processInfo.environment["PATH"]
+        setenv("PATH", trustedBinDir.path, 1)
+        LSPDiscovery.resetDiscoveryCache()
+        defer {
+            if let savedPath { setenv("PATH", savedPath, 1) }
+            else { unsetenv("PATH") }
+            LSPDiscovery.resetDiscoveryCache()
+        }
+
+        let evil = makeFakeBinary(named: "evil-py", inWorkspace: true)
+        try writeOverride("""
+        {
+          "servers": {
+            "python": {
+              "command": "\(evil.path)",
+              "initializationOptions": { "loadPluginFrom": "./.evil" }
+            }
+          }
+        }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .python, workspaceRoot: tmpRoot, defaultArguments: ["--stdio"])
+        let unwrapped = try XCTUnwrap(cfg)
+        XCTAssertNotEqual(unwrapped.executable.path, evil.path)
+        XCTAssertNil(unwrapped.initializationOptions)
+    }
+
+    func test_overrideConfig_trustedCommand_stillHonoursArgsAndEnv() throws {
+        // Regression guard: the FIX 1 narrowing must NOT touch the
+        // trusted-command branch. A command that passes the trust gate
+        // (outside the workspace, non-writable dir) still gets its
+        // args/env applied verbatim (env floored at the scrubbed base).
+        let good = makeFakeBinary(named: "trusted-ts")
+        try writeOverride("""
+        {
+          "servers": {
+            "typescript": {
+              "command": "\(good.path)",
+              "args": ["--my-stdio"],
+              "env": { "MY_TUNING": "1" }
+            }
+          }
+        }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .typescript, workspaceRoot: tmpRoot,
+            defaultArguments: ["--stdio"])
+        let unwrapped = try XCTUnwrap(cfg)
+        XCTAssertEqual(unwrapped.executable.path, good.path)
+        XCTAssertEqual(unwrapped.arguments, ["--my-stdio"],
+                       "trusted command keeps user args (no defaults prepended)")
+        XCTAssertEqual(unwrapped.environment?["MY_TUNING"], "1",
+                       "trusted command keeps its override env")
+    }
+
     func test_overrideConfig_honoursTrustedCommandOutsideWorkspace() throws {
         // Binary outside the workspace subtree, dir not world-writable
         // → trusted, honoured verbatim.

@@ -273,4 +273,105 @@ final class LSPDiscoveryTests: XCTestCase {
             )
         )
     }
+
+    // MARK: - Ancestor-directory walk (TSK-963)
+
+    func test_isBinarySafeToSpawn_refusesWorldWritableAncestor() throws {
+        // FIX 2: a clean 0755 LEAF dir nested under a 0777 ANCESTOR must
+        // be refused. The rename-swap vector: an attacker who can write
+        // the 0777 ancestor can `rename` the leaf out from under us and
+        // slip in a hostile tree, so the leaf is only as trustworthy as
+        // the weakest dir above it.
+        //
+        //   tmpRoot/world-write-ancestor   (0777)
+        //     └── clean-leaf               (0755)
+        //           └── lsp-server         <- refused
+        let ancestor = tmpRoot.appendingPathComponent("world-write-ancestor")
+        let leaf = ancestor.appendingPathComponent("clean-leaf")
+        try FileManager.default.createDirectory(
+            at: leaf, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755])
+        // Set the ancestor world-writable AFTER creating the leaf
+        // (createDirectory(withIntermediate:) would otherwise apply the
+        // attrs only to the deepest created component).
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o777], ofItemAtPath: ancestor.path)
+        defer {
+            // Restore so tearDown can remove the tree.
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: ancestor.path)
+        }
+        let bin = leaf.appendingPathComponent("lsp-server")
+        FileManager.default.createFile(atPath: bin.path, contents: nil)
+
+        XCTAssertFalse(
+            LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path),
+            "0755 leaf under a 0777 ancestor must be refused (rename-swap vector)")
+    }
+
+    func test_isBinarySafeToSpawn_refusesGroupWritableAncestor() throws {
+        let ancestor = tmpRoot.appendingPathComponent("group-write-ancestor")
+        let leaf = ancestor.appendingPathComponent("clean-leaf")
+        try FileManager.default.createDirectory(
+            at: leaf, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755])
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o775], ofItemAtPath: ancestor.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: ancestor.path)
+        }
+        let bin = leaf.appendingPathComponent("lsp-server")
+        FileManager.default.createFile(atPath: bin.path, contents: nil)
+
+        XCTAssertFalse(
+            LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path),
+            "0755 leaf under a 0775 (group-writable) ancestor must be refused")
+    }
+
+    func test_isBinarySafeToSpawn_acceptsCleanAncestorChain() throws {
+        // Sanity: a fully-clean chain (all 0755) under our user-owned
+        // temp tree is accepted — the walk must not over-refuse.
+        let a = tmpRoot.appendingPathComponent("a")
+        let b = a.appendingPathComponent("b")
+        let c = b.appendingPathComponent("c")
+        try FileManager.default.createDirectory(
+            at: c, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755])
+        // Re-apply 0755 to each created level (intermediate dirs may
+        // inherit the process umask otherwise).
+        for d in [a, b, c] {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: d.path)
+        }
+        let bin = c.appendingPathComponent("lsp-server")
+        FileManager.default.createFile(atPath: bin.path, contents: nil)
+        XCTAssertTrue(LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path))
+    }
+
+    // MARK: - sourcekit-lsp discovery is gated (TSK-963)
+
+    func test_locateSourceKitLSP_appliesSafetyGate_xcrunPathInUnsafeDir() throws {
+        // FIX 2: the xcrun-resolved sourcekit-lsp path is now run through
+        // isBinarySafeToSpawn. We can't easily fake `xcrun -f`, but we
+        // CAN prove the gate refuses an xcrun-style absolute path landing
+        // in a world-writable dir — the exact check locateSourceKitLSP
+        // applies before returning that path.
+        let unsafeDir = tmpRoot.appendingPathComponent("xcode-toolchain")
+        try FileManager.default.createDirectory(
+            at: unsafeDir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o777])
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: unsafeDir.path)
+        }
+        let fakeSourcekit = unsafeDir.appendingPathComponent("sourcekit-lsp")
+        FileManager.default.createFile(
+            atPath: fakeSourcekit.path, contents: Data("#!/bin/sh\n".utf8),
+            attributes: [.posixPermissions: 0o755])
+        // The gate locateSourceKitLSP now applies to the xcrun result:
+        XCTAssertFalse(
+            LSPDiscovery.isBinarySafeToSpawn(atPath: fakeSourcekit.path),
+            "an xcrun-resolved sourcekit-lsp in a 0777 dir must be refused")
+    }
 }

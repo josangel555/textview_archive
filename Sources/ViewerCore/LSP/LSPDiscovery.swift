@@ -23,12 +23,20 @@ public enum LSPDiscovery {
                 executable: "/usr/bin/xcrun", arguments: ["-f", "sourcekit-lsp"]
             ), !viaXcrun.isEmpty {
                 let path = viaXcrun.trimmingCharacters(in: .whitespacesAndNewlines)
-                if FileManager.default.fileExists(atPath: path) {
+                // S3.1 / TSK-963: gate the xcrun-resolved path through the
+                // same writable-dir ownership check applied to PATH/`which`
+                // candidates. In practice this resolves into the SIP-/root-
+                // owned Xcode toolchain (safe), but an unusual / hostile
+                // DEVELOPER_DIR could point it elsewhere — don't trust it
+                // unchecked just because it came from `xcrun`.
+                if FileManager.default.fileExists(atPath: path),
+                   isBinarySafeToSpawn(atPath: path) {
                     return URL(fileURLWithPath: path)
                 }
             }
             let fallback = "/usr/bin/sourcekit-lsp"
-            if FileManager.default.fileExists(atPath: fallback) {
+            if FileManager.default.fileExists(atPath: fallback),
+               isBinarySafeToSpawn(atPath: fallback) {
                 return URL(fileURLWithPath: fallback)
             }
             return nil
@@ -119,18 +127,42 @@ public enum LSPDiscovery {
     /// preserve "language servers Just Work" than to lock out a user
     /// whose dev setup we don't understand. The narrow case we're
     /// blocking is the obviously-bad `0o777` lab-machine scenario.
+    ///
+    /// TSK-963: the check walks the binary's containing directory AND
+    /// every ANCESTOR directory up to the filesystem root, refusing if
+    /// ANY of them is group- or world-writable. A single-level check
+    /// (immediate parent only) misses the rename-swap vector: if
+    /// `/tmp/x` is `0o777` but `/tmp/x/bin` is `0o755`, an attacker who
+    /// can write `/tmp/x` can `rename` the `bin` directory and slip a
+    /// hostile tree underneath an otherwise-clean leaf. A directory is
+    /// only as trustworthy as the least-trustworthy directory above it.
+    /// An ancestor we can't stat is skipped (conservative-allow, per the
+    /// "don't lock out unknown setups" stance) rather than treated as a
+    /// refusal.
     static func isBinarySafeToSpawn(atPath path: String) -> Bool {
-        let dir = (path as NSString).deletingLastPathComponent
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: dir),
-              let perms = attrs[.posixPermissions] as? NSNumber else {
-            return true
-        }
-        let mode = perms.uint16Value
-        // Group-write (020) or world-write (002) on the dir means
-        // someone else can drop a binary in or replace the existing
-        // one. Refuse.
-        if (mode & 0o022) != 0 {
-            return false
+        // Canonicalise first so `..` / symlink games can't dodge an
+        // ancestor: resolve symlinks then standardise the path.
+        let canonical = URL(fileURLWithPath: path)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        var dir = (canonical as NSString).deletingLastPathComponent
+        while true {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: dir),
+               let perms = attrs[.posixPermissions] as? NSNumber {
+                // Group-write (020) or world-write (002) on the dir
+                // means someone else can drop a binary in or rename it
+                // out from under us. Refuse the whole chain.
+                if (perms.uint16Value & 0o022) != 0 {
+                    return false
+                }
+            }
+            // Stop at the filesystem root: `deletingLastPathComponent`
+            // on "/" returns "/" (a fixed point), and on a relative or
+            // empty tail returns "" — both terminate the walk.
+            let parent = (dir as NSString).deletingLastPathComponent
+            if parent == dir || parent.isEmpty { break }
+            dir = parent
         }
         return true
     }
