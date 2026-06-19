@@ -64,6 +64,18 @@ public enum RustMarkdownAdapter {
             case .escape:   return visitor.htmlEscape(chunk.payload)
             }
         case "code":
+            // NOTE (TSK-713): diagram routing for dot/plantuml fences on the
+            // rust render path is NOT done here. The rust core emits a `code`
+            // chunk for the fence BODY only — it has already written the
+            // enclosing `<pre><code class="language-…">` wrapper to the
+            // structural HTML (see rust-core markdown.rs `TagEnd::CodeBlock`).
+            // Returning a `<figure>` host element from here would nest it
+            // inside that `<pre><code>` and break the markup. Centralized
+            // diagram routing for the rust path is a follow-up slice that needs
+            // a Rust-side full-host render (the same treatment mermaid already
+            // gets via `crate::mermaid::render_host`, TSK-661) so no chunk
+            // round-trips. The Swift fallback path (`HTMLVisitor.visitCodeBlock`)
+            // routes dot/plantuml through the registry today.
             let lang = HighlightLanguage.detect(fromInfoString: chunk.lang)
             if lang != .plainText {
                 let runs = RustHighlightAdapter.tokenize(chunk.payload, language: lang)

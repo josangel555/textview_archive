@@ -88,6 +88,47 @@ final class HTMLRendererMermaidTests: XCTestCase {
         XCTAssertFalse(html.contains("mdv-mermaid"))
     }
 
+    // MARK: - Diagram-registry routing (TSK-713)
+    //
+    // These exercise the Swift visitor path (`renderSwiftPath`) directly — the
+    // path the diagram intercept lives on — so the assertion is deterministic
+    // regardless of the `.markdown` rust-engine gate (which, when on, takes a
+    // separate chunk-splice path that wraps fence bodies; dot/plantuml host
+    // routing there is a follow-up slice noted in RustMarkdownAdapter.enrich).
+
+    func test_dotFence_emitsLabeledDiagramBlock() {
+        let md = "```dot\ndigraph G {\n  a -> b;\n}\n```\n"
+        let html = HTMLRenderer.renderSwiftPath(md)
+        XCTAssertTrue(html.contains("data-mdv-diagram=\"dot\""),
+                      "dot fence should route to the labeled diagram block")
+        XCTAssertTrue(html.contains("Graphviz DOT (digraph)"),
+                      "caption should name the format + directedness")
+        XCTAssertTrue(html.contains("a -&gt; b"), "source must be preserved + escaped")
+        XCTAssertFalse(html.contains("mdv-mermaid"))
+    }
+
+    func test_plantUMLFence_emitsLabeledDiagramBlock() {
+        let md = "```plantuml\n@startuml\nAlice -> Bob\n@enduml\n```\n"
+        let html = HTMLRenderer.renderSwiftPath(md)
+        XCTAssertTrue(html.contains("data-mdv-diagram=\"plantuml\""))
+        XCTAssertTrue(html.contains("PlantUML (uml)"),
+                      "caption should name PlantUML + detected diagram type")
+        XCTAssertTrue(html.contains("@startuml"))
+    }
+
+    func test_pumlAlias_routesToPlantUML() {
+        let md = "```puml\n@startuml\nA -> B\n@enduml\n```\n"
+        let html = HTMLRenderer.renderSwiftPath(md)
+        XCTAssertTrue(html.contains("data-mdv-diagram=\"plantuml\""))
+    }
+
+    func test_unknownFence_unaffectedByRegistry() {
+        let md = "```rust\nfn main() {}\n```\n"
+        let html = HTMLRenderer.renderSwiftPath(md)
+        XCTAssertFalse(html.contains("mdv-diagram"),
+                       "a non-diagram language must not route to a diagram block")
+    }
+
     func test_renderPage_inlinesExtraStylesheet() {
         let renderer = HTMLRenderer()
         let page = renderer.renderPage(

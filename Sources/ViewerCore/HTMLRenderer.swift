@@ -285,14 +285,26 @@ struct HTMLVisitor: MarkupVisitor {
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
         let infoString = codeBlock.language ?? ""
 
-        // Mermaid intercept (case-insensitive). Emit a host <div> that
-        // the JS shim picks up on DOMContentLoaded — `mermaid.run({ nodes })`
-        // reads the raw source from the element's text content. Step
-        // annotations + an optional `%% @id` are parsed Swift-side once
-        // and serialized into data-attributes so the shim doesn't have
-        // to re-walk the source.
-        if infoString.lowercased() == "mermaid" {
-            return renderMermaidHost(source: codeBlock.code)
+        // Diagram routing (TSK-713): the fence info-string is resolved through
+        // the central `DiagramRegistry` rather than scattered `== "foo"`
+        // checks. Mermaid keeps its bespoke host-<div> path (the JS shim reads
+        // the raw source); dot/plantuml emit a labeled source block until their
+        // layout backends land. An unrecognized language falls through to the
+        // normal highlighted code fence below.
+        if let renderer = DiagramRegistry.standard.renderer(forLanguage: infoString) {
+            switch renderer.kind {
+            case .mermaid:
+                // Emit a host <div> that the JS shim picks up on
+                // DOMContentLoaded — `mermaid.run({ nodes })` reads the raw
+                // source from the element's text content. Step annotations +
+                // an optional `%% @id` are parsed Swift-side once and
+                // serialized into data-attributes so the shim doesn't re-walk
+                // the source.
+                return renderMermaidHost(source: codeBlock.code)
+            case .dot, .plantuml:
+                let descriptor = renderer.descriptor(for: codeBlock.code, language: infoString.lowercased())
+                return renderDiagramSourceBlock(descriptor)
+            }
         }
 
         let langAttr = infoString.isEmpty
@@ -340,6 +352,35 @@ struct HTMLVisitor: MarkupVisitor {
         // mermaid's tokenizer is whitespace-sensitive and our stylesheet
         // rules for `pre`/`code` would visually leak into the host.
         return "<div \(attrs)>\(htmlEscape(source))</div>\n"
+    }
+
+    /// Emit a labeled source block for a diagram family that has no on-host
+    /// layout backend yet (dot, plantuml — TSK-713). The block is a normal
+    /// `<pre><code>` carrying the diagram source verbatim, tagged with a
+    /// `data-mdv-diagram` attribute so the stylesheet / a later layout slice
+    /// can target it, plus a small caption naming the format. This keeps the
+    /// content visible and copyable instead of silently dropping it.
+    func renderDiagramSourceBlock(_ descriptor: DiagramDescriptor) -> String {
+        let kind = descriptor.kind.rawValue
+        let label: String
+        switch descriptor.kind {
+        case .dot:      label = "Graphviz DOT"
+        case .plantuml: label = "PlantUML"
+        case .mermaid:  label = "Mermaid"
+        }
+        var caption = label
+        if let type = descriptor.metadata["diagramType"] {
+            caption += " (\(type))"
+        } else if descriptor.metadata["directed"] == "true" {
+            caption += " (digraph)"
+        } else if descriptor.metadata["directed"] == "false" {
+            caption += " (graph)"
+        }
+        let body = htmlEscape(descriptor.source)
+        return "<figure class=\"mdv-diagram\" data-mdv-diagram=\"\(htmlEscape(kind))\">"
+            + "<figcaption class=\"mdv-diagram-caption\">\(htmlEscape(caption))</figcaption>"
+            + "<pre><code class=\"language-\(htmlEscape(descriptor.language))\">\(body)</code></pre>"
+            + "</figure>\n"
     }
 
     /// Emit text with per-run `<span class="tok-X">` wrappers using
