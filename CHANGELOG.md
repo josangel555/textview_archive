@@ -45,6 +45,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **Image "Save a Copy" reports write failures** instead of silently losing data; other previously-swallowed save/export/decode errors now surface too.
 - **Horizontal scrollbar no longer flickers while typing**, and the **hovered-row highlight is no longer offset** in the editor.
 - **Browser-preview & git-diff temp files no longer pile up forever** — the scratch caches behind "Open in Browser" and the git diff/commit tabs are now pruned (old/excess files evicted), so they stop slowly accumulating on disk.
+- **Your sessions and unsaved work are safer across crashes and external edits** — saved state (sessions, bookmarks, history) is now flushed to disk durably so it survives a crash or power loss; a legacy/older session index is no longer discarded as "corrupt" (your open-session list and ordering are kept); and when restoring unsaved edits after a relaunch the app now notices if the file changed on disk while it was closed, instead of silently overwriting it.
 
 ### Security
 - **Hardened HTML export / Open-in-Browser against XSS** — author HTML is escaped on the export path and a restrictive Content-Security-Policy is shipped; the in-app HTML sanitizer's event-handler and `javascript:`-scheme bypasses are closed; exported image inlining refuses path-traversal.
