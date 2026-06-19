@@ -80,6 +80,11 @@
   // Flag set while we're applying a Swift-driven setText so the
   // updateListener doesn't echo it back as a `change`.
   let suppressEmit = false;
+  // TSK-705 — true while a snippet tab-stop session is live (set by Swift via
+  // `setSnippetSessionActive`). When set, the highest-precedence Tab binding
+  // swallows Tab / Shift-Tab and posts `snippetTab` to Swift (which walks the
+  // session and pushes a `setSelection`) instead of indenting.
+  let snippetSessionActive = false;
 
   // Debounced change emitter. CM6 transactions can fire many times per
   // keystroke (composing edits, selection changes). 200 ms keeps Swift
@@ -642,6 +647,28 @@
     run: () => { emitChangeImmediate(); post("save", {}); return true; },
   };
 
+  // TSK-705 — snippet tab-stop navigation. Highest-precedence Tab / Shift-Tab
+  // bindings: when a snippet session is live, swallow the keypress and tell
+  // Swift to walk the session (Swift pushes a `setSelection` to land the caret
+  // on the next `$N`). When no session is active they return false, so CM6's
+  // normal `indentWithTab` binding handles Tab as usual.
+  const snippetTabBinding = {
+    key: "Tab",
+    run: () => {
+      if (!snippetSessionActive) return false;
+      post("snippetTab", { forward: true });
+      return true;
+    },
+  };
+  const snippetShiftTabBinding = {
+    key: "Shift-Tab",
+    run: () => {
+      if (!snippetSessionActive) return false;
+      post("snippetTab", { forward: false });
+      return true;
+    },
+  };
+
   // updateListener — every transaction. Emit change / cursor / scroll
   // signals; bump docVersion on docChanged.
   const updateListener = EditorView.updateListener.of((update) => {
@@ -845,6 +872,10 @@
       highlightSelectionMatches(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       keymap.of([
+        // Snippet tab-stops first — when a session is live they win over
+        // indentWithTab; otherwise they return false and Tab indents normally.
+        snippetTabBinding,
+        snippetShiftTabBinding,
         saveBinding,
         ...searchKeymap,   // ⌘F open search, ⌘G next, ⇧⌘G prev
         ...historyKeymap,  // ⌘Z / ⇧⌘Z
@@ -943,6 +974,7 @@
         case "replaceAll":         replaceAll(view); emitFindResult(); break;
         case "setDiagnostics":     applySetDiagnostics(msg); break;
         case "setShowInvisibles":  applySetShowInvisibles(msg); break;
+        case "setSnippetSessionActive": snippetSessionActive = !!msg.active; break;
         case "setVimMode":         applySetVimMode(msg); break;
         case "foldAll":            foldAll(view); break;
         case "unfoldAll":          unfoldAll(view); break;

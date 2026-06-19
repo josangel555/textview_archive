@@ -144,6 +144,13 @@ public enum CMInboundMessage: Equatable, Sendable {
         selection: String,
         hasSelection: Bool
     )
+    /// JS → Swift snippet tab navigation (TSK-705). Posted when the user
+    /// presses Tab / Shift-Tab while a snippet session is active (the host's
+    /// Tab keymap, gated on `setSnippetSessionActive`, swallows the keypress).
+    /// `forward == true` for Tab (advance to the next `$N`), false for
+    /// Shift-Tab (retreat). Swift walks the `SnippetSession` and pushes a
+    /// `setSelection` to land the caret on the next stop.
+    case snippetTab(forward: Bool)
     /// Recognized envelope, unknown `type`. Surfaced so the host can
     /// log once + drop, rather than treat as a hard parse error.
     case unknown(type: String)
@@ -242,6 +249,11 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// `ViewPlugin` that draws vertical rules at each indent level.
     /// Pure decoration; no language dependency.
     case setIndentGuides(Bool)
+    /// **v2.** TSK-705 — tell the host whether a snippet tab-stop session is
+    /// live. When true, the host's high-precedence Tab keymap swallows Tab /
+    /// Shift-Tab and posts `snippetTab` to Swift (which walks the session)
+    /// instead of indenting. When false, Tab falls through to normal indent.
+    case setSnippetSessionActive(Bool)
 
     /// The lowest protocol version in which this message's `type` exists
     /// on the JS side. Outbound encoding consults this against the
@@ -256,7 +268,7 @@ public enum CMOutboundMessage: Equatable, Sendable {
     public var minimumVersion: Int {
         switch self {
         case .applyEdits, .setFoldingRanges, .setGutterMarkers, .setIndentGuides,
-             .insertAtCursor:
+             .insertAtCursor, .setSnippetSessionActive:
             return 2
         default:
             return 1
@@ -406,6 +418,10 @@ public enum CMBridgeCodec {
             )
         case "editorBlurred":
             return .editorBlurred
+        case "snippetTab":
+            // TSK-705 — Tab / Shift-Tab inside a live snippet session.
+            // Default to forward (Tab) when the flag is absent.
+            return .snippetTab(forward: dict["forward"] as? Bool ?? true)
         case "vimModeChanged":
             return .vimModeChanged(mode: dict["mode"] as? String ?? "")
         case "errorOccurred":
@@ -638,6 +654,9 @@ public enum CMBridgeCodec {
         case .setIndentGuides(let enabled):
             dict["type"] = "setIndentGuides"
             dict["enabled"] = enabled
+        case .setSnippetSessionActive(let active):
+            dict["type"] = "setSnippetSessionActive"
+            dict["active"] = active
         }
         return dict
     }

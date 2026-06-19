@@ -92,6 +92,96 @@ public final class EditorCoordinator: ObservableObject {
         editorInsertRequest = CMInsertRequest(text: text)
     }
 
+    // MARK: - Snippet tab-stop navigation (TSK-705)
+
+    /// Set to a fresh `CMSelectRequest` to move the caret / select a range in
+    /// the active CM6 editor (drives `setSelection`). One-shot; nonce-distinct.
+    /// Used by the snippet tab-stop walker to jump the caret to each `$N`.
+    @Published public var editorSelectRequest: CMSelectRequest? = nil
+
+    /// The snippet expansion currently being navigated, if any. While non-nil
+    /// the CM6 host intercepts Tab / Shift-Tab (it posts `snippetTab` /
+    /// `snippetShiftTab` to Swift instead of indenting) so `snippetTab()` /
+    /// `snippetShiftTab()` can walk the caret through the `$1 → $2 → … → $0`
+    /// stops. Cleared once the final stop is passed (`isFinished`) or the user
+    /// inserts another snippet / switches tabs.
+    @Published public private(set) var activeSnippetSession: SnippetSession? = nil
+
+    /// True while a snippet session is live — the flag handed to the CM6 host so
+    /// its Tab keymap routes to the snippet walker. Mirrors
+    /// `activeSnippetSession != nil`; a plain Bool the editor view can observe
+    /// without unwrapping the value type.
+    public var isSnippetSessionActive: Bool { activeSnippetSession != nil }
+
+    /// Begin a tab-stop navigation session for `snippet` whose expanded plain
+    /// text was just inserted at `baseOffset` (absolute UTF-16 doc offset).
+    /// Selects the FIRST stop (`$1`, or `$0` for a single-stop snippet) and
+    /// returns true; a snippet with no tab stops can't be navigated, so it
+    /// returns false and leaves no session.
+    @discardableResult
+    public func beginSnippetSession(_ snippet: Snippet, insertedAt baseOffset: Int) -> Bool {
+        guard let session = SnippetSession(snippet: snippet.parsed, insertedAt: baseOffset) else {
+            activeSnippetSession = nil
+            return false
+        }
+        activeSnippetSession = session
+        selectCurrentSnippetStop()
+        return true
+    }
+
+    /// Advance the active snippet session to the next stop and select it.
+    /// Returns true when a session was active (the caller — the CM6 host's Tab
+    /// binding — should then swallow the Tab); false when no session is live
+    /// (Tab falls through to normal indent). When the final stop is passed the
+    /// session ends (`endSnippetSession`) but the call still returns true: the
+    /// snippet "consumed" that Tab to land the caret at `$0`.
+    @discardableResult
+    public func snippetTab() -> Bool {
+        guard var session = activeSnippetSession else { return false }
+        session.advance()
+        if session.isFinished {
+            // Walked off the end of a snippet with no explicit `$0` — leave the
+            // caret where it is; the session is done.
+            endSnippetSession()
+            return true
+        }
+        activeSnippetSession = session
+        selectCurrentSnippetStop()
+        // Landing on the final `$0` is the exit: place the caret there, then end
+        // the session so the next Tab indents normally.
+        if session.current?.index == 0 {
+            endSnippetSession()
+        }
+        return true
+    }
+
+    /// Retreat the active snippet session to the previous stop and select it.
+    /// Returns true when a session is live (clamped at the first stop), false
+    /// otherwise.
+    @discardableResult
+    public func snippetShiftTab() -> Bool {
+        guard var session = activeSnippetSession else { return false }
+        session.retreat()
+        activeSnippetSession = session
+        selectCurrentSnippetStop()
+        return true
+    }
+
+    /// Tear down the active snippet session (final stop passed, or the user did
+    /// something that invalidates the offsets — switching tabs, inserting
+    /// another snippet). Idempotent.
+    public func endSnippetSession() {
+        activeSnippetSession = nil
+    }
+
+    /// Select the current stop of the active session, if any.
+    private func selectCurrentSnippetStop() {
+        guard let stop = activeSnippetSession?.current else { return }
+        editorSelectRequest = CMSelectRequest(
+            anchor: stop.offset, head: stop.offset + stop.length
+        )
+    }
+
     /// Indent setting for CM6 editor. Drives CM6's `indentUnit` + tab
     /// size facets via the v1 bridge. Defaults to 2 spaces (matches
     /// the bundle's `applySetIndentation` default).

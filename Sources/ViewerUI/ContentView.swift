@@ -656,6 +656,8 @@ public struct ContentView: View {
                     indentation: model.editorIndentation,
                     gotoLineRequest: model.editorGotoLine,
                     insertRequest: model.editorInsertRequest,
+                    selectRequest: model.editorSelectRequest,
+                    snippetSessionActive: model.isSnippetSessionActive,
                     showInvisibles: model.showInvisibleChars,
                     vimMode: model.vimModeEnabled,
                     editorFocusRequest: model.editorFocusRequest,
@@ -713,6 +715,10 @@ public struct ContentView: View {
                         if model.saveEditorOnBlur {
                             _ = model.saveActiveEditor()
                         }
+                    },
+                    onSnippetTab: { forward in
+                        // TSK-705: walk the active snippet session's tab stops.
+                        model.snippetTab(forward: forward)
                     }
                 )
                 .accessibilityIdentifier("mdv.editor")

@@ -35,6 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// windows above so Help → Keyboard Shortcuts re-focuses rather than
     /// spawning a duplicate.
     private var keyboardShortcutsWindow: NSWindow?
+    /// The Manage Snippets window (TSK-705). Retained like the tool windows
+    /// above so Edit → Manage Snippets re-focuses rather than spawning a dup.
+    private var snippetManagerWindow: NSWindow?
     /// The process-wide observability ring buffer (WAVE 2b item 5).
     /// Installed into `Obs` at launch so emitters across ViewerCore land
     /// in it; the same instance backs the instrumentation tool window's
@@ -1975,6 +1978,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             mi.tag = i
             snippetMenu.addItem(mi)
         }
+        snippetMenu.addItem(.separator())
+        // TSK-705: manage user snippets (list / add / edit / delete).
+        let manageSnippetsItem = NSMenuItem(
+            title: "Manage Snippets…",
+            action: #selector(showSnippetManager(_:)), keyEquivalent: "")
+        manageSnippetsItem.target = self
+        snippetMenu.addItem(manageSnippetsItem)
         snippetItem.submenu = snippetMenu
         editMenu.addItem(snippetItem)
         editMenu.addItem(.separator())
@@ -2583,6 +2593,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let snips = model.snippetStore.all
         guard snips.indices.contains(tag) else { return }
         _ = model.insertSnippet(snips[tag])
+    }
+
+    /// Edit → Manage Snippets… (TSK-705) — open (or re-focus) the snippet
+    /// management window: list / add / edit / delete user snippets. Mirrors the
+    /// other retained tool windows. Newly-added user snippets join the Insert
+    /// Snippet submenu on next launch (the submenu is built once at startup).
+    @objc func showSnippetManager(_ sender: Any?) {
+        if let win = snippetManagerWindow {
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let managerModel = SnippetManagerModel(store: model.snippetStore)
+        let host = NSHostingController(rootView: SnippetManagerView(
+            model: managerModel,
+            onDismiss: { [weak self] in self?.snippetManagerWindow?.close() }
+        ))
+        let win = makeToolWindow(
+            title: "Manage Snippets", contentSize: NSSize(width: 660, height: 460),
+            autosave: "SnippetManagerWindow", controller: host
+        )
+        snippetManagerWindow = win
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Menu validation: gray-out items that don't apply to the current

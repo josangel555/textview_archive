@@ -48,6 +48,13 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// One-shot insert-at-caret request (TSK-299). Same nonce semantics
     /// as `gotoLineRequest`.
     public let insertRequest: CMInsertRequest?
+    /// One-shot imperative selection request (TSK-705 snippet tab-stops).
+    /// Drives `setSelection` to walk the caret through snippet `$N` stops.
+    public let selectRequest: CMSelectRequest?
+    /// TSK-705: true while a snippet tab-stop session is live, so the CM6
+    /// host's Tab keymap routes Tab / Shift-Tab to `onSnippetTab` instead of
+    /// indenting. Driven by `EditorCoordinator.isSnippetSessionActive`.
+    public let snippetSessionActive: Bool
     public let showInvisibles: Bool
     /// Vim mode (opt-in; owner-approved 2026-06-15). Drives the JS host's
     /// `vimCompartment` via `setVimMode`. Off by default.
@@ -111,6 +118,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// JS posted `editorBlurred`. Wired to nil to ignore; the editor
     /// always posts blur, but Swift opts into save-on-blur via setting.
     public let onBlur: (() -> Void)?
+    /// JS posted `snippetTab` / `snippetShiftTab` (TSK-705): the user pressed
+    /// Tab / Shift-Tab while a snippet session was active. `forward == true`
+    /// for Tab (advance), false for Shift-Tab (retreat). Swift walks the
+    /// session and pushes a `selectRequest` to land the caret on the next stop.
+    public let onSnippetTab: ((_ forward: Bool) -> Void)?
 
     public init(
         text: String,
@@ -125,6 +137,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         indentation: CMIndentation = .spaces(2),
         gotoLineRequest: CMGotoLineRequest? = nil,
         insertRequest: CMInsertRequest? = nil,
+        selectRequest: CMSelectRequest? = nil,
+        snippetSessionActive: Bool = false,
         showInvisibles: Bool = false,
         vimMode: Bool = false,
         editorFocusRequest: Int = 0,
@@ -150,7 +164,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         onHoverRequest: ((CMHoverRequest) -> Void)? = nil,
         onDefinitionRequest: ((CMPositionRequest) -> Void)? = nil,
         onContextMenuRequest: ((CMContextMenuRequest) -> Void)? = nil,
-        onBlur: (() -> Void)? = nil
+        onBlur: (() -> Void)? = nil,
+        onSnippetTab: ((_ forward: Bool) -> Void)? = nil
     ) {
         self.text = text
         self.fontSize = fontSize
@@ -164,6 +179,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.indentation = indentation
         self.gotoLineRequest = gotoLineRequest
         self.insertRequest = insertRequest
+        self.selectRequest = selectRequest
+        self.snippetSessionActive = snippetSessionActive
         self.showInvisibles = showInvisibles
         self.vimMode = vimMode
         self.editorFocusRequest = editorFocusRequest
@@ -190,6 +207,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.onDefinitionRequest = onDefinitionRequest
         self.onContextMenuRequest = onContextMenuRequest
         self.onBlur = onBlur
+        self.onSnippetTab = onSnippetTab
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
@@ -276,6 +294,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         var onDefinitionRequest: ((CMPositionRequest) -> Void)?
         var onContextMenuRequest: ((CMContextMenuRequest) -> Void)?
         var onBlur: (() -> Void)?
+        var onSnippetTab: ((Bool) -> Void)?
 
         /// Pending state we attempt to flush every `updateNSView`.
         /// Before the bundled HTML finishes loading, all
@@ -295,6 +314,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingGotoLine: CMGotoLineRequest?
         private var pendingFocusRequest: Int = 0
         private var pendingInsert: CMInsertRequest?
+        private var pendingSelect: CMSelectRequest?
+        private var pendingSnippetActive: Bool = false
         private var pendingShowInvisibles: Bool?
         private var pendingVim: Bool?
         private var pendingIndentGuides: Bool?
@@ -329,6 +350,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastAppliedGotoLine: CMGotoLineRequest?
         private var lastAppliedFocusRequest: Int = 0
         private var lastAppliedInsert: CMInsertRequest?
+        private var lastAppliedSelect: CMSelectRequest?
+        private var lastSentSnippetActive: Bool?
         private var lastSentShowInvisibles: Bool?
         private var lastSentIndentGuides: Bool?
         private var lastSentFoldingRanges: [CMFoldRange]?
@@ -362,6 +385,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.onDefinitionRequest = view.onDefinitionRequest
             self.onContextMenuRequest = view.onContextMenuRequest
             self.onBlur = view.onBlur
+            self.onSnippetTab = view.onSnippetTab
             self.pendingText = view.text
             self.pendingFontSize = view.fontSize
             self.pendingLanguage = view.language
@@ -375,6 +399,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingGotoLine = view.gotoLineRequest
             self.pendingFocusRequest = view.editorFocusRequest
             self.pendingInsert = view.insertRequest
+            self.pendingSelect = view.selectRequest
+            self.pendingSnippetActive = view.snippetSessionActive
             self.pendingShowInvisibles = view.showInvisibles
             self.pendingVim = view.vimMode
             self.pendingIndentGuides = view.indentGuides
@@ -500,6 +526,21 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             if let req = pendingInsert, req != lastAppliedInsert {
                 lastAppliedInsert = req
                 dispatch(.insertAtCursor(text: req.text), webView: webView)
+            }
+            // TSK-705: imperative selection (snippet tab-stop walk). Nonce-
+            // gated like insert so re-selecting the same range still fires.
+            if let req = pendingSelect, req != lastAppliedSelect {
+                lastAppliedSelect = req
+                dispatch(
+                    .setSelection(anchor: req.anchor, head: req.head, scroll: req.scroll),
+                    webView: webView
+                )
+            }
+            // TSK-705: tell the host whether a snippet session is live so its
+            // Tab keymap routes to `snippetTab` instead of indenting.
+            if lastSentSnippetActive != pendingSnippetActive {
+                lastSentSnippetActive = pendingSnippetActive
+                dispatch(.setSnippetSessionActive(pendingSnippetActive), webView: webView)
             }
             // TSK-906: refocus the editor after a palette dismiss (the overlay
             // left first responder nowhere). Nonce-gated so stable redraws don't
@@ -679,6 +720,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 break
             case .editorBlurred:
                 onBlur?()
+            case .snippetTab(let forward):
+                // TSK-705: Tab / Shift-Tab inside a live snippet session.
+                onSnippetTab?(forward)
             case .vimModeChanged(let mode):
                 onVimModeChange?(mode)
             case .requestHover(_, let line, let character, let replyId):
@@ -955,6 +999,23 @@ public struct CMInsertRequest: Equatable, Sendable {
     public let text: String
     public init(id: UUID = UUID(), text: String) {
         self.id = id; self.text = text
+    }
+}
+
+/// One-shot "move the caret / select this range" request (TSK-705 snippet
+/// tab-stops). Same nonce pattern as `CMInsertRequest`: the host sets a fresh
+/// value (new `id`) to fire, so selecting the SAME range twice in a row still
+/// fires both times. Unlike `initialSelection` (a once-per-mount seed) this is
+/// an imperative push the editor applies on each distinct `id`, via the same
+/// `setSelection` bridge command. `anchor`/`head` are CM6 doc offsets (UTF-16);
+/// an empty range (`anchor == head`) is a bare caret.
+public struct CMSelectRequest: Equatable, Sendable {
+    public let id: UUID
+    public let anchor: Int
+    public let head: Int
+    public let scroll: Bool
+    public init(id: UUID = UUID(), anchor: Int, head: Int, scroll: Bool = true) {
+        self.id = id; self.anchor = anchor; self.head = head; self.scroll = scroll
     }
 }
 
