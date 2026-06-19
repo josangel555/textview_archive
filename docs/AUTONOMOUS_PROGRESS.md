@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-888 (slice): global-search per-file match-row cap (result-scroll perf)
+
+888's typing side is ALREADY host-optimized — SearchAnywhereSection debounces 200ms + runs the search off-main
+(Task.detached) + cancels in-flight (lines 346-357). The remaining result-SCROLL lag: the results LazyVStack
+virtualizes FILE groups, but each fileGroup renders ALL of its file's matches eagerly (ForEach(file.matches.indices)),
+each building a highlighted AttributedString — so a file with hundreds of matches makes that row + scrolling janky.
+Fix: cap the rows rendered per file (pure ViewerCore SearchResultCap, default 50) + a "+N more in this file — open"
+row that opens the file. Host teeth: SearchResultCapTests (3 — visible clamps to cap, overflow remainder, the cap
+partitions with no loss). Bounds the worst-case per-file render; better UX too (no wall of matches). The common-case
+scroll smoothness (many files, few matches each) is already lazy at the file level; any residual needs a scroll trace.
+
 ## LOG 2026-06-18 — TSK-887 (slice): command-palette `@`-mode heading re-parse memoized (first host-fixable P0)
 
 The first cleanly HOST-FIXABLE P0 (the others were already-optimized or need lifecycle changes). CommandPaletteView's

@@ -260,7 +260,11 @@ struct SearchAnywhereSection: View {
             .padding(.horizontal, 10)
             .padding(.top, 4)
             .help(file.url.path)
-        ForEach(file.matches.indices, id: \.self) { idx in
+        // TSK-888: cap eagerly-rendered match rows per file (each builds a
+        // highlighted AttributedString) so a file with hundreds of matches
+        // doesn't make its group — and scrolling past it — janky.
+        let shown = SearchResultCap.visible(total: file.matches.count)
+        ForEach(0..<shown, id: \.self) { idx in
             let m = file.matches[idx]
             // MARK: - Search result jump (jump-wiring agent)
             // Click a match row: open the file AND scroll/select the
@@ -290,6 +294,20 @@ struct SearchAnywhereSection: View {
             // file at the matched line) with hover + pointing-hand cursor.
             .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
             .accessibilityLabel("\(file.url.lastPathComponent) line \(m.lineNumber): \(m.line)")
+        }
+        let hidden = SearchResultCap.overflow(total: file.matches.count)
+        if hidden > 0 {
+            Button(action: { open(file.url) }) {
+                Text("+\(hidden) more in this file — open")
+                    .font(.system(size: model.uiSize(10)))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+            .accessibilityLabel("\(hidden) more matches in \(file.url.lastPathComponent) — open file")
         }
     }
 

@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-18
 
 ### Performance
+- **Global search: smoother scrolling with high-match files** — a file with hundreds of matches no longer renders them all at once; the results cap each file's rows and show a "+N more — open" row, so scrolling the results stays responsive.
 - **Command palette: faster `@`-symbol typing in large files** — the heading list is no longer re-parsed on every keystroke (computed once per file), so jumping to a heading stays responsive in big documents.
 
 ### Added
