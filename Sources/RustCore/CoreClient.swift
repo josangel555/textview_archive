@@ -318,6 +318,14 @@ public final class CsvSession {
         let status = mdvcore_session_snapshot_window(
             h, UInt64(max(0, offset)), UInt64(max(0, limit)), &buf)
         defer { mdvcore_buf_free(&buf) }
+        if status != MDV_STATUS_OK {
+            // TSK-981: the core emits a rich WireError frame into out_buf on a
+            // wire fault — decode + log it for host-side diagnosis before the
+            // coarse status throws, matching `callBuf`/`CoreEnvelope.call`.
+            // Without this the windowed-snapshot error path discarded the rich
+            // detail (the bare enum can't explain a malformed/too-large fault).
+            Self.logWireErrorIfPresent(buf)
+        }
         try check(status)
         let frame: [UInt8]
         if let data = buf.data, buf.len > 0 {

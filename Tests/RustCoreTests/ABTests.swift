@@ -241,15 +241,70 @@ final class ABTests: XCTestCase {
     /// assertable, so the channel is source-pinned here; the decoder behavior is
     /// pinned by the two tests above.
     func testCallBufSurfacesWireErrorBeforeThrowing() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let src = try String(
-            contentsOf: root.appendingPathComponent("Sources/RustCore/CoreClient.swift"),
-            encoding: .utf8)
+        let src = try Self.coreClientSource()
         XCTAssertTrue(src.contains("Self.logWireErrorIfPresent(buf)"),
                       "callBuf must surface the WireError on the error path")
         XCTAssertTrue(src.contains("decodeWireError(frame)"),
                       "the surfacer must decode the emitted frame")
+    }
+
+    /// TSK-981 — the WINDOWED snapshot path (`snapshotWindow`) hand-rolls its own
+    /// out-buf call (it does NOT route through `callBuf`), and used to throw the
+    /// coarse status straight from `check(status)` — DISCARDING the rich
+    /// WireError frame the core wrote into `out_buf` on a fault. Pin that the
+    /// method now surfaces the detail (decode + log) before the throw, like every
+    /// other error path. os.Logger output isn't assertable, so the channel is
+    /// source-pinned to the `snapshotWindow` body specifically; the decoder
+    /// behavior is pinned by `testWireErrorDetailDecodesEmittedFrame`.
+    func testSnapshotWindowSurfacesWireErrorBeforeThrowing() throws {
+        let body = try Self.functionBody(
+            "public func snapshotWindow(offset: Int, limit: Int) throws -> Snapshot")
+        XCTAssertTrue(body.contains("logWireErrorIfPresent(buf)"),
+                      "snapshotWindow must surface the WireError before throwing the coarse status")
+        // The log MUST precede the throwing `check(status)` — surfacing after the
+        // throw is dead code (check throws first).
+        let logIdx = try XCTUnwrap(body.range(of: "logWireErrorIfPresent(buf)")?.lowerBound,
+                                   "expected a surfacer call in snapshotWindow")
+        let checkIdx = try XCTUnwrap(body.range(of: "try check(status)")?.lowerBound,
+                                     "expected the coarse-status throw in snapshotWindow")
+        XCTAssertLessThan(logIdx, checkIdx,
+                          "the WireError must be surfaced BEFORE check(status) throws")
+    }
+
+    private static func coreClientSource() throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent("Sources/RustCore/CoreClient.swift"),
+            encoding: .utf8)
+    }
+
+    /// Extract the body of the function whose signature line is `signature`
+    /// (everything from the opening `{` to its matching `}`), so a source-pin can
+    /// scope its assertions to one method instead of the whole file.
+    private static func functionBody(_ signature: String) throws -> String {
+        let src = try coreClientSource()
+        guard let sigRange = src.range(of: signature) else {
+            throw XCTSkip("signature not found: \(signature)")
+        }
+        let after = src[sigRange.upperBound...]
+        guard let open = after.firstIndex(of: "{") else {
+            throw XCTSkip("no opening brace after \(signature)")
+        }
+        var depth = 0
+        var idx = open
+        while idx < after.endIndex {
+            let ch = after[idx]
+            if ch == "{" { depth += 1 }
+            else if ch == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return String(after[after.index(after: open)...idx])
+                }
+            }
+            idx = after.index(after: idx)
+        }
+        throw XCTSkip("unbalanced braces after \(signature)")
     }
 }
