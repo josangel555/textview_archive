@@ -227,7 +227,9 @@ public struct LSPLanguageRegistry: Sendable {
                 ) {
                     return cfg
                 }
-                guard let binary = LSPDiscovery.locate(binary: "jdtls") else {
+                // PATH/Homebrew `jdtls` first, then the `redhat.java` VS
+                // Code extension's bundled launcher (TSK-797).
+                guard let binary = LSPLanguageRegistry.discoverServerBinary(for: .java) else {
                     return nil
                 }
                 // jdtls requires `-data <workspaceDir>` — a per-workspace
@@ -464,13 +466,25 @@ public struct LSPLanguageRegistry: Sendable {
     /// `serverLauncher` uses for default discovery (which already runs
     /// every candidate through `isBinarySafeToSpawn`). Returns nil when
     /// the server isn't installed.
+    ///
+    /// Order: PATH + Homebrew + npm prefixes first (an explicitly-installed
+    /// server the user manages wins), then — for languages where a VS
+    /// Code-family extension bundles a reusable stdio server — the
+    /// editor's extensions directory (TSK-797). So a user with VS Code /
+    /// Cursor installed gets LSP "for free" without a separate install.
     static func discoverServerBinary(for language: LSPLanguage) -> URL? {
         switch language {
         case .swift:
+            // The Swift VS Code extension defers to the toolchain's
+            // sourcekit-lsp, so `xcrun` is the right (and only) path here.
             return LSPDiscovery.locateSourceKitLSP()
         default:
-            guard let name = language.binaryName else { return nil }
-            return LSPDiscovery.locate(binary: name)
+            if let name = language.binaryName,
+               let onPath = LSPDiscovery.locate(binary: name) {
+                return onPath
+            }
+            // Fallback: a VS Code-family extension may ship the server.
+            return LSPVSCodeExtensions.locateServer(for: language)
         }
     }
 

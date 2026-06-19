@@ -19,6 +19,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **CSV: keyboard cell navigation + copy** — arrow keys move the focused cell (with Home/End/Page-Up/Down), and ⌘C copies the focused cell's value.
 - **Image editor: paint + annotation tools** — raster paint (brush, flood fill, color-picker eyedropper) plus non-destructive vector annotations (rectangle, line, arrow, ellipse, text) over the image.
 - **LSP: a Problems panel + code completion** — diagnostics are surfaced in a Problems/health view, and editor completion is now wired up.
+- **LSP works "for free" from a VS Code / Cursor install** — if you don't have a language server on your `PATH`, the app now also looks inside your installed VS Code / Cursor / VSCodium / Insiders / Windsurf extensions (newest version wins), so e.g. the Java server bundled by the Red Hat Java extension is found automatically — no separate `brew install` needed.
 - **Worktree management UI** — add / remove / prune git worktrees from the Git panel (was a read-only list).
 - **"View as" lock** — pin a file's view mode by name so reopening it re-applies your choice.
 - **Open dialog shows recents**, **window size + sidebar width are remembered across launches**, and **sessions can be turned off** (single-root mode, no session strip).
