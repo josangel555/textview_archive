@@ -221,6 +221,13 @@ public enum WalkthroughLoader {
         case .addBookmark(let p):     return [p.path]
         case .revealInSidebar(let p): return [p.path]
         case .openGitPanel:           return []
+        case .diagram(let p):
+            // Only the `image` kind references the file system. Mermaid
+            // source and ASCII text are inline literals — `data` is not
+            // a path there, so feeding it to the escape check would
+            // falsely reject (e.g. an ASCII block containing "/" or
+            // "..") a legitimate inline illustration.
+            return p.diagramKind == .image ? [p.data] : []
         case .narrateOnly:            return []
         }
     }

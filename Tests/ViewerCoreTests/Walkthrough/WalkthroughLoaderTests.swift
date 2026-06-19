@@ -116,6 +116,95 @@ final class WalkthroughLoaderTests: XCTestCase {
         XCTAssertEqual(sid, "s1")
     }
 
+    func test_diagramImage_pathEscape_rejected() {
+        // The `image` diagram kind references the file system via `data`,
+        // so the loader's path-escape pass must cover it — otherwise a
+        // script could point an illustration at /etc/passwd.
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "diagram-escape", "title": "Diagram",
+          "rootHint": "/tmp/repo",
+          "steps": [
+            { "id": "s1", "actions": [
+              { "kind": "diagram", "diagramKind": "image",
+                "data": "../../etc/passwd" }
+            ]}
+          ]
+        }
+        """
+        let r = WalkthroughLoader.load(data: Data(json.utf8))
+        guard case .failure(.pathEscape(let sid, let p)) = r else {
+            return XCTFail("Expected pathEscape on diagram image, got \(r)")
+        }
+        XCTAssertEqual(sid, "s1")
+        XCTAssertEqual(p, "../../etc/passwd")
+    }
+
+    func test_diagramImage_inFence_loads() {
+        // An image path that stays inside the fence is accepted.
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "diagram-ok", "title": "Diagram",
+          "rootHint": "/tmp/repo",
+          "steps": [
+            { "id": "s1", "actions": [
+              { "kind": "diagram", "diagramKind": "image",
+                "data": "assets/arch.png", "caption": "arch" }
+            ]}
+          ]
+        }
+        """
+        let r = WalkthroughLoader.load(data: Data(json.utf8))
+        guard case .success = r else {
+            return XCTFail("Expected success for in-fence image, got \(r)")
+        }
+    }
+
+    func test_diagramMermaid_dataNotTreatedAsPath() {
+        // Mermaid (and ASCII) `data` is INLINE content, not a path. A
+        // mermaid source containing slashes / dots must NOT trip the
+        // path-escape check — only the `image` kind is path-bearing.
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "diagram-mermaid", "title": "Diagram",
+          "rootHint": "/tmp/repo",
+          "steps": [
+            { "id": "s1", "actions": [
+              { "kind": "diagram", "diagramKind": "mermaid",
+                "data": "graph TD; ../x-->/etc/passwd;" }
+            ]}
+          ]
+        }
+        """
+        let r = WalkthroughLoader.load(data: Data(json.utf8))
+        guard case .success = r else {
+            return XCTFail("Mermaid data must not be path-checked, got \(r)")
+        }
+    }
+
+    func test_diagramAscii_dataNotTreatedAsPath() {
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "diagram-ascii", "title": "Diagram",
+          "rootHint": "/tmp/repo",
+          "steps": [
+            { "id": "s1", "actions": [
+              { "kind": "diagram", "diagramKind": "ascii",
+                "data": "../../not a path just art" }
+            ]}
+          ]
+        }
+        """
+        let r = WalkthroughLoader.load(data: Data(json.utf8))
+        guard case .success = r else {
+            return XCTFail("ASCII data must not be path-checked, got \(r)")
+        }
+    }
+
     func test_missingRequiredField_rejected() {
         // `title` is required by the model — no default.
         let json = """

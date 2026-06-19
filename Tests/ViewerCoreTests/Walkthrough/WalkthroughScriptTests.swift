@@ -222,6 +222,94 @@ final class WalkthroughScriptTests: XCTestCase {
                       "flash action must encode a `kind` discriminator")
     }
 
+    // MARK: - diagram (illustration) verb
+
+    func test_diagram_mermaid_roundTrips() throws {
+        let a = Action.diagram(DiagramPayload(
+            diagramKind: .mermaid,
+            data: "graph TD; A-->B;",
+            caption: "the flow"
+        ))
+        let r = try roundTrip(makeScript(actions: [a]))
+        XCTAssertEqual(r.steps[0].actions, [a])
+    }
+
+    func test_diagram_ascii_roundTrips() throws {
+        let a = Action.diagram(DiagramPayload(
+            diagramKind: .ascii,
+            data: "+---+\n| A |\n+---+",
+            caption: nil
+        ))
+        let r = try roundTrip(makeScript(actions: [a]))
+        XCTAssertEqual(r.steps[0].actions, [a])
+        guard case .diagram(let p) = r.steps[0].actions[0] else {
+            return XCTFail("not a diagram")
+        }
+        XCTAssertNil(p.caption)
+    }
+
+    func test_diagram_image_roundTrips() throws {
+        let a = Action.diagram(DiagramPayload(
+            diagramKind: .image,
+            data: "assets/arch.png",
+            caption: "architecture"
+        ))
+        let r = try roundTrip(makeScript(actions: [a]))
+        XCTAssertEqual(r.steps[0].actions, [a])
+    }
+
+    func test_diagram_decodesFromWire() throws {
+        // Pin the flat wire shape an external author writes by hand:
+        // `diagramKind` (not `kind`, which is the action discriminator).
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "x", "title": "T",
+          "steps": [{ "id": "s1", "actions": [
+            { "kind": "diagram", "diagramKind": "mermaid",
+              "data": "sequenceDiagram\\n A->>B: hi",
+              "caption": "handshake" }
+          ]}]
+        }
+        """
+        let s = try decoder.decode(WalkthroughScript.self, from: Data(json.utf8))
+        guard case .diagram(let p) = s.steps[0].actions[0] else {
+            return XCTFail("expected diagram, got \(s.steps[0].actions)")
+        }
+        XCTAssertEqual(p.diagramKind, .mermaid)
+        XCTAssertEqual(p.data, "sequenceDiagram\n A->>B: hi")
+        XCTAssertEqual(p.caption, "handshake")
+    }
+
+    func test_diagram_encodesKindDiscriminator() throws {
+        let s = makeScript(actions: [.diagram(DiagramPayload(
+            diagramKind: .ascii, data: "x"
+        ))])
+        let data = try encoder.encode(s)
+        let str = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(str.contains("\"kind\":\"diagram\""),
+                      "diagram action must encode a `kind` discriminator")
+        XCTAssertTrue(str.contains("\"diagramKind\":\"ascii\""),
+                      "diagram medium must encode under `diagramKind`")
+    }
+
+    func test_diagram_unknownKind_isRejected() throws {
+        // An unknown medium must reject the whole script — DiagramKind is
+        // a closed enum so the player never sees a kind it can't render.
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "x", "title": "T",
+          "steps": [{ "id": "s1", "actions": [
+            { "kind": "diagram", "diagramKind": "hologram", "data": "x" }
+          ]}]
+        }
+        """
+        XCTAssertThrowsError(try decoder.decode(
+            WalkthroughScript.self, from: Data(json.utf8)
+        ))
+    }
+
     // MARK: - Reject paths
 
     func test_unknownActionKind_isRejected() throws {

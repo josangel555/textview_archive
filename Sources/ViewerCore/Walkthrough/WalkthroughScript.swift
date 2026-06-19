@@ -179,6 +179,15 @@ public enum Action: Codable, Sendable, Equatable {
     /// `v1` verbs rejects a `flash` action at decode (the `default`
     /// arm below), which is the intended graceful failure.
     case flash(FlashPayload)
+    /// Show an illustration overlay alongside the narration — the user's
+    /// "illustrations" ask (design §6). Three kinds: a `mermaid` diagram
+    /// (rendered via the existing Mermaid bundle), an `ascii` block
+    /// (monospace text in a callout), or an `image` (a PNG/SVG shipped
+    /// next to the script). No live JS beyond Mermaid — keeps the
+    /// supply-chain surface flat. Added in schema `v2`; an older `v1`
+    /// binary rejects a `diagram` action at decode (the `default` arm
+    /// below), the intended graceful failure.
+    case diagram(DiagramPayload)
     case narrateOnly
 
     enum CodingKeys: String, CodingKey { case kind }
@@ -211,6 +220,8 @@ public enum Action: Codable, Sendable, Equatable {
             self = .openGitPanel(try OpenGitPanelPayload(from: decoder))
         case "flash":
             self = .flash(try FlashPayload(from: decoder))
+        case "diagram":
+            self = .diagram(try DiagramPayload(from: decoder))
         case "narrateOnly":
             self = .narrateOnly
         default:
@@ -248,6 +259,8 @@ public enum Action: Codable, Sendable, Equatable {
             try c.encode("openGitPanel", forKey: .kind); try p.encode(to: encoder)
         case .flash(let p):
             try c.encode("flash", forKey: .kind); try p.encode(to: encoder)
+        case .diagram(let p):
+            try c.encode("diagram", forKey: .kind); try p.encode(to: encoder)
         case .narrateOnly:
             try c.encode("narrateOnly", forKey: .kind)
         }
@@ -381,6 +394,66 @@ public struct FlashPayload: Codable, Sendable, Equatable {
         self.endLine = endLine
         self.style = style
         self.durationMs = durationMs
+    }
+}
+
+/// The medium an illustration step renders (design §6 "diagram"). A
+/// closed enum (not a free-form string) so an unknown kind rejects the
+/// script at load time rather than silently no-op'ing in the player.
+///
+/// Named `Walkthrough*` to avoid colliding with `DiagramKind` in
+/// `DiagramRegistry` — that one classifies rendered-markdown diagram
+/// *families* (mermaid/dot/plantuml); this one is the walkthrough
+/// illustration *medium* (mermaid/ascii/image), a different axis.
+public enum WalkthroughDiagramKind: String, Codable, Sendable, Equatable {
+    /// `data` is Mermaid source — rendered via the existing Mermaid
+    /// bundle in a small overlay WebView.
+    case mermaid
+    /// `data` is a literal ASCII/Unicode block — shown monospace in a
+    /// callout. No JS, no rendering engine.
+    case ascii
+    /// `data` is a path (absolute, or relative to the script's
+    /// `rootHint`) to a PNG/SVG shipped next to the script. Because this
+    /// kind reaches the file system, the loader runs the same
+    /// path-escape containment check it applies to `openFile` et al.
+    case image
+}
+
+/// Illustration overlay for a step (schema `v2`+). Carries the medium
+/// (`kind`) and its payload (`data`) plus an optional caption shown
+/// under the illustration.
+///
+/// `data` is interpreted per `kind`:
+///   - `.mermaid`: Mermaid source text.
+///   - `.ascii`:   literal text to show monospace.
+///   - `.image`:   a file path. The loader treats it as a path and runs
+///                 the `..`-escape containment check, so a malicious
+///                 script can't point `image` at `/etc/passwd` to coax
+///                 the renderer into reading outside the fence.
+///
+/// Why one `data: String` rather than a per-kind associated value: it
+/// keeps the wire shape flat (`{ "kind": "diagram", "diagramKind":
+/// "mermaid", "data": "...", "caption": "..." }`) so an external author
+/// writes it by hand without nesting, matching the rest of the verbs.
+public struct DiagramPayload: Codable, Sendable, Equatable {
+    /// The illustration medium. Encoded under `diagramKind` (not `kind`)
+    /// because `kind` is already the action-union discriminator on the
+    /// enclosing object — reusing it would collide at decode.
+    public let diagramKind: WalkthroughDiagramKind
+    /// Mermaid source / ASCII text / image path, interpreted per
+    /// `diagramKind`.
+    public let data: String
+    /// Optional caption rendered beneath the illustration.
+    public let caption: String?
+
+    public init(
+        diagramKind: WalkthroughDiagramKind,
+        data: String,
+        caption: String? = nil
+    ) {
+        self.diagramKind = diagramKind
+        self.data = data
+        self.caption = caption
     }
 }
 

@@ -132,6 +132,49 @@ public final class WalkthroughBridge: ObservableObject {
         popoverNonce &+= 1
     }
 
+    // MARK: - Diagram (illustration) request
+    //
+    // The illustration overlay for the active step (the "diagram" verb,
+    // design §6). Separate channel from popover/highlight so a step can
+    // show an illustration *and* a popover without the two channels
+    // fighting. The view layer reads (kind, data, caption) and renders:
+    // a Mermaid WebView, a monospace ASCII callout, or an image —
+    // re-rendering when `diagramNonce` changes. Cleared on every step
+    // transition (`willApplyStep`), same as popover/highlight/flash.
+
+    public struct DiagramRequest: Equatable, Sendable {
+        public let kind: WalkthroughDiagramKind
+        /// Mermaid source / ASCII text, OR — for `.image` — the resolved
+        /// absolute file URL of the image (the delegate resolves the
+        /// payload path against the script's rootHint before publishing).
+        public let data: String
+        public let imageURL: URL?
+        public let caption: String?
+        public init(
+            kind: WalkthroughDiagramKind, data: String,
+            imageURL: URL? = nil, caption: String? = nil
+        ) {
+            self.kind = kind
+            self.data = data
+            self.imageURL = imageURL
+            self.caption = caption
+        }
+    }
+
+    @Published public private(set) var diagram: DiagramRequest? = nil
+    @Published public private(set) var diagramNonce: Int = 0
+
+    public func requestDiagram(_ request: DiagramRequest) {
+        diagram = request
+        diagramNonce &+= 1
+    }
+
+    public func clearDiagram() {
+        guard diagram != nil else { return }
+        diagram = nil
+        diagramNonce &+= 1
+    }
+
     // MARK: - Note request (Code Review hookup is a follow-up)
     //
     // Per design decision: the per-step Note button is visual-only in

@@ -81,6 +81,50 @@ final class WalkthroughBridgeTests: XCTestCase {
         XCTAssertEqual(b.popoverNonce, before &+ 1)
     }
 
+    func test_requestDiagram_bumpsNonceAndStores() {
+        let m = DocumentModel()
+        let b = m.walkthroughBridge
+        let before = b.diagramNonce
+        b.requestDiagram(
+            .init(kind: .mermaid, data: "graph TD; A-->B;", caption: "flow")
+        )
+        XCTAssertEqual(b.diagramNonce, before &+ 1)
+        XCTAssertEqual(b.diagram?.kind, .mermaid)
+        XCTAssertEqual(b.diagram?.data, "graph TD; A-->B;")
+        XCTAssertEqual(b.diagram?.caption, "flow")
+    }
+
+    func test_requestDiagram_sameRequest_stillBumps() {
+        let m = DocumentModel()
+        let b = m.walkthroughBridge
+        let req = WalkthroughBridge.DiagramRequest(
+            kind: .ascii, data: "+--+"
+        )
+        b.requestDiagram(req)
+        let n1 = b.diagramNonce
+        b.requestDiagram(req)
+        XCTAssertEqual(b.diagramNonce, n1 &+ 1)
+    }
+
+    func test_clearDiagram_noOpsWhenNoneSet() {
+        let m = DocumentModel()
+        let b = m.walkthroughBridge
+        let before = b.diagramNonce
+        b.clearDiagram()
+        XCTAssertEqual(b.diagramNonce, before,
+                       "clear with nothing set must not bump nonce")
+    }
+
+    func test_clearDiagram_bumpsNonce_whenSet() {
+        let m = DocumentModel()
+        let b = m.walkthroughBridge
+        b.requestDiagram(.init(kind: .ascii, data: "x"))
+        let after = b.diagramNonce
+        b.clearDiagram()
+        XCTAssertEqual(b.diagramNonce, after &+ 1)
+        XCTAssertNil(b.diagram)
+    }
+
     func test_requestNote_bumpsNonceAndStashesStepID() {
         let m = DocumentModel()
         let b = m.walkthroughBridge

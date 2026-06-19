@@ -67,6 +67,7 @@ public final class WalkthroughPlayerImpl: WalkthroughEngineDelegate {
         model?.walkthroughBridge.clearPopover()
         model?.walkthroughBridge.clearHighlight()
         model?.walkthroughBridge.clearFlash()
+        model?.walkthroughBridge.clearDiagram()
         pendingAwaitUser = nil
     }
 
@@ -219,6 +220,27 @@ public final class WalkthroughPlayerImpl: WalkthroughEngineDelegate {
             }
             model.sidebar.isVisible = true
             model.showGitPanel(tab: target)
+
+        case .diagram(let p):
+            // Resolve the image path against rootHint for the `.image`
+            // kind so the overlay receives an absolute URL (the loader
+            // already ran the path-escape check on this path). Mermaid /
+            // ASCII carry inline text — `data` passes through unchanged
+            // and there's no URL to resolve.
+            let imageURL: URL?
+            if p.diagramKind == .image {
+                imageURL = resolve(p.data)
+            } else {
+                imageURL = nil
+            }
+            model.walkthroughBridge.requestDiagram(
+                WalkthroughBridge.DiagramRequest(
+                    kind: p.diagramKind,
+                    data: p.data,
+                    imageURL: imageURL,
+                    caption: p.caption
+                )
+            )
 
         case .narrateOnly:
             // No side effect. The player view picks up the step's
