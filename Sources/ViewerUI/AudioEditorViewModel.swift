@@ -58,6 +58,8 @@ public final class AudioEditorViewModel: ObservableObject {
     private var player: AVAudioPlayer?
     private var playbackTask: Task<Void, Never>?
     private var lastColumns = 600
+    /// Re-entrancy guard for `load()` (TSK-993): true while a decode is in flight.
+    private var isDecoding = false
 
     public init(url: URL) {
         self.url = url
@@ -89,9 +91,23 @@ public final class AudioEditorViewModel: ObservableObject {
 
     // MARK: - Loading
 
+    /// Claim the decode slot if idle (TSK-993 re-entrancy guard): returns true +
+    /// marks in-flight if no decode is running; false if one already is, so a
+    /// second concurrent `load()` is a no-op rather than a duplicate decode.
+    /// @MainActor-serialized; `load()` releases it via `endDecode()`.
+    func beginDecodeIfIdle() -> Bool {
+        if isDecoding { return false }
+        isDecoding = true
+        return true
+    }
+
+    func endDecode() { isDecoding = false }
+
     /// Decode the file off the main actor, then publish the overview + initial
-    /// peaks. Safe to call once on appear.
+    /// peaks. Re-entrant calls while a decode is in flight are no-ops (TSK-993).
     public func load() async {
+        guard beginDecodeIfIdle() else { return }
+        defer { endDecode() }
         let target = url
         do {
             // Decode the full multi-channel buffer once; the mono overview is its
