@@ -2165,6 +2165,11 @@ public final class DocumentModel: ObservableObject {
     /// 1 MiB covers any realistic hand-edit.
     public static let hotExitMaxBytes = 1 << 20  // 1 MiB
 
+    /// Directory for >1 MiB hot-exit spill files (TSK-1026). Defaults to the
+    /// real per-user spill dir; host tests point it at scratch so a capture
+    /// never writes into the user's real store (the BUG-027 class).
+    public var hotExitSpillDirectory: URL = HotExitSpill.directory()
+
     /// TSK-718 hot exit: stamp each tab's unsaved editor-buffer text onto its
     /// `Tab.unsavedText` so the next `makeSnapshot` persists it (and a relaunch
     /// restores the in-flight edits, VS Code-style). A clean buffer — or one
@@ -2183,13 +2188,26 @@ public final class DocumentModel: ObservableObject {
             var captured: String? = nil
             var baseMTime: Date? = nil
             var baseSize: Int? = nil
-            if let buf = editor.editorBuffers[tab.id], buf.isDirty,
-               buf.text.utf8.count <= Self.hotExitMaxBytes {
-                captured = buf.text
+            if let buf = editor.editorBuffers[tab.id], buf.isDirty {
                 // TSK-1025: capture the baseline the edits were made FROM so a
                 // relaunch can detect an external change to the file on disk.
                 baseMTime = buf.lastSavedMTime
                 baseSize = buf.lastSavedSize
+                if buf.text.utf8.count <= Self.hotExitMaxBytes {
+                    captured = buf.text                                   // small → inline
+                    if let p = tab.url?.path { HotExitSpill.remove(forPath: p, in: hotExitSpillDirectory) }
+                } else if let p = tab.url?.path {
+                    // TSK-1026: a large dirty buffer (1 MiB..32 MiB editor cap)
+                    // spills to a sidecar instead of being dropped; unsavedText
+                    // stays nil and restore reads it back by file path.
+                    if !HotExitSpill.write(buf.text, forPath: p, in: hotExitSpillDirectory) {
+                        baseMTime = nil; baseSize = nil                   // spill failed → can't preserve
+                    }
+                } else {
+                    baseMTime = nil; baseSize = nil                       // untitled >1 MiB → drop
+                }
+            } else if let p = tab.url?.path {
+                HotExitSpill.remove(forPath: p, in: hotExitSpillDirectory)                           // clean → clear any stale spill
             }
             guard tab.unsavedText != captured
                 || tab.unsavedBaseMTime != baseMTime
@@ -2213,8 +2231,18 @@ public final class DocumentModel: ObservableObject {
     func restoreUnsavedTextIfNeeded(forTabAt index: Int) -> Bool {
         guard tabs.tabs.indices.contains(index) else { return false }
         let tab = tabs.tabs[index]
-        guard let unsaved = tab.unsavedText, !unsaved.isEmpty,
-              case .loaded(let file) = tab.state else { return false }
+        guard case .loaded(let file) = tab.state else { return false }
+        // Inline unsaved text (≤1 MiB), else a spilled large buffer (TSK-1026,
+        // keyed by file PATH — the tab id is regenerated on restore).
+        let unsaved: String?
+        if let inline = tab.unsavedText, !inline.isEmpty {
+            unsaved = inline
+        } else if let p = tab.url?.path {
+            unsaved = HotExitSpill.read(forPath: p, in: hotExitSpillDirectory)
+        } else {
+            unsaved = nil
+        }
+        guard let unsaved, !unsaved.isEmpty else { return false }
         // Seed the baseline from disk, then overlay — `updateEditorText`
         // recomputes `isDirty` (unsaved vs disk) and mirrors it onto the Tab.
         editor.ensureEditorBuffer(for: file, tabID: tab.id)

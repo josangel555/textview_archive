@@ -42,12 +42,15 @@ final class HotExitTests: XCTestCase {
     }
 
     private func makeModel() -> DocumentModel {
-        DocumentModel(
+        let m = DocumentModel(
             controller: DocumentController(),
             history: HistoryStore(storeURL: tmpDir.appendingPathComponent("history.json")),
             sidebar: SidebarModel(),
             preferences: PreferencesStore(defaults: defaults)
         )
+        // TSK-1026: keep >1 MiB spill writes out of the user's real store.
+        m.hotExitSpillDirectory = tmpDir.appendingPathComponent("spill", isDirectory: true)
+        return m
     }
 
     @discardableResult
@@ -253,5 +256,31 @@ final class HotExitTests: XCTestCase {
         let buf = try XCTUnwrap(model.editor.editorBuffers[id])
         XCTAssertFalse(buf.hasExternalEdit(currentMTime: curMTime, currentSize: curSize),
                        "an unchanged file must not raise a false conflict on restore")
+    }
+
+    // MARK: - 5. large-buffer sidecar spill (TSK-1026)
+
+    func test_capture_oversizedBuffer_spillsAndRestores() throws {
+        // A >1 MiB dirty buffer is SPILLED to a sidecar (not inlined, not
+        // dropped) and restored on relaunch. TEETH: pre-1026 the buffer was
+        // silently discarded, so restore had nothing.
+        let url = try writeFile("big.txt", "disk")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        let huge = String(repeating: "z", count: DocumentModel.hotExitMaxBytes + 4096)
+        model.editor.updateEditorText(huge, forTabID: id)
+        model.captureUnsavedTextForAllTabs()
+        XCTAssertNil(model.tabs.tabs[0].unsavedText, "over the cap → not inlined")
+        XCTAssertEqual(HotExitSpill.read(forPath: url.path, in: model.hotExitSpillDirectory), huge,
+                       "the large buffer is spilled to the sidecar")
+
+        // Relaunch: fresh model + tab (same scratch spill dir, no inline text)
+        // → restore reads the spill back.
+        let model2 = makeModel()
+        model2.open(url: url)
+        let id2 = model2.tabs.selected!.id
+        XCTAssertTrue(model2.restoreUnsavedTextIfNeeded(forTabAt: 0))
+        XCTAssertEqual(model2.editor.editorBuffer(forTabID: id2)?.text, huge,
+                       "the >1 MiB unsaved buffer is restored from the spill")
     }
 }
