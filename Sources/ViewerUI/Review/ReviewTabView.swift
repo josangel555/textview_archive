@@ -130,14 +130,37 @@ struct ReviewTabView: View {
             .controlSize(.small)
             .disabled(!session.review.state.canTransition(to: .complete))
 
-            Button("Export…") {
+            // TSK-530: two export modes. The menu's primary action (clicking
+            // the label) keeps the with-code default + the ⇧⌘E shortcut; the
+            // disclosure offers the without-code payload (comments + anchors
+            // only — leaner, and the source never leaves the machine).
+            Menu {
+                Button("Copy with Code Snippets") {
+                    ReviewExportCoordinator.exportToClipboard(
+                        session, instructions: draftInstructions, mode: .withCode
+                    )
+                }
+                .accessibilityIdentifier("mdv.review.exportWithCode")
+                Button("Copy without Code Snippets") {
+                    ReviewExportCoordinator.exportToClipboard(
+                        session, instructions: draftInstructions, mode: .withoutCode
+                    )
+                }
+                .accessibilityIdentifier("mdv.review.exportWithoutCode")
+            } label: {
+                Label("Export…", systemImage: "square.and.arrow.up")
+            } primaryAction: {
                 ReviewExportCoordinator.exportToClipboard(
-                    session, instructions: draftInstructions
+                    session, instructions: draftInstructions, mode: .withCode
                 )
             }
+            .menuStyle(.borderlessButton)
             .controlSize(.small)
+            .fixedSize()
             .keyboardShortcut("e", modifiers: [.command, .shift])
+            .help("Copy the review to the clipboard (with or without code snippets)")
             .disabled(session.review.comments.isEmpty)
+            .accessibilityIdentifier("mdv.review.exportMenu")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

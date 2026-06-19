@@ -15,22 +15,34 @@ import ViewerCore
 enum ReviewExportCoordinator {
 
     /// Build the export JSON string for `session`'s review with the given
-    /// instructions. Pure — no side effects. Returns `nil` only on an
-    /// encoder failure (effectively never for these value types).
-    static func renderJSON(_ session: ReviewSession, instructions: String?) -> String? {
-        try? ReviewExporter.exportAsString(session.review, instructions: instructions)
+    /// instructions and snippet `mode`. Pure — no side effects. Returns `nil`
+    /// only on an encoder failure (effectively never for these value types).
+    ///
+    /// `mode` selects whether each comment carries its verbatim hunk snippet
+    /// (`.withCode`, the default) or just the comment + line anchor
+    /// (`.withoutCode`, for when the receiver already has the source or the
+    /// code shouldn't leave the machine). TSK-530.
+    static func renderJSON(
+        _ session: ReviewSession,
+        instructions: String?,
+        mode: ReviewExporter.ExportMode = .withCode
+    ) -> String? {
+        try? ReviewExporter.exportAsString(
+            session.review, instructions: instructions, mode: mode
+        )
     }
 
     /// Export to the system pasteboard (JSON as a UTF-8 string). Records the
     /// export + transitions to `.sent`. Returns the JSON that was copied, or
-    /// `nil` on failure.
+    /// `nil` on failure. `mode` picks the with/without-snippet payload (TSK-530).
     @discardableResult
     static func exportToClipboard(
         _ session: ReviewSession,
         instructions: String?,
+        mode: ReviewExporter.ExportMode = .withCode,
         pasteboard: NSPasteboard = .general
     ) -> String? {
-        guard let json = renderJSON(session, instructions: instructions) else { return nil }
+        guard let json = renderJSON(session, instructions: instructions, mode: mode) else { return nil }
         Pasteboard.copy(json, to: pasteboard)
         session.recordExport(target: .clipboard, destination: "clipboard")
         return json
@@ -38,14 +50,15 @@ enum ReviewExportCoordinator {
 
     /// Export to a file URL the caller resolved (e.g. via NSSavePanel).
     /// Records the export + transitions to `.sent`. Returns `true` on a
-    /// successful write.
+    /// successful write. `mode` picks the with/without-snippet payload (TSK-530).
     @discardableResult
     static func exportToFile(
         _ session: ReviewSession,
         instructions: String?,
-        url: URL
+        url: URL,
+        mode: ReviewExporter.ExportMode = .withCode
     ) -> Bool {
-        guard let json = renderJSON(session, instructions: instructions) else { return false }
+        guard let json = renderJSON(session, instructions: instructions, mode: mode) else { return false }
         do {
             try json.data(using: .utf8)!.write(to: url, options: .atomic)
             session.recordExport(target: .file, destination: url.path)
