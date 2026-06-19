@@ -30,6 +30,13 @@ public final class WalkthroughPlayerImpl: WalkthroughEngineDelegate {
     /// to render the await-user prompt + replies.
     public private(set) var pendingAwaitUser: AwaitUserPayload?
 
+    /// Clear the pending checkpoint. The controller calls this once the
+    /// user has replied so the next transport step advances past the
+    /// checkpoint rather than re-rendering it.
+    public func clearPendingAwaitUser() {
+        pendingAwaitUser = nil
+    }
+
     public init(model: DocumentModel, engine: WalkthroughEngine) {
         self.model = model
         self.engine = engine

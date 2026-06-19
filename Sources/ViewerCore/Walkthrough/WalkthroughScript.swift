@@ -330,6 +330,16 @@ public struct AwaitUserPayload: Codable, Sendable, Equatable {
     public let prompt: String
     public let placeholder: String?
     public let pills: [String]?         // suggested replies
+
+    public init(
+        prompt: String,
+        placeholder: String? = nil,
+        pills: [String]? = nil
+    ) {
+        self.prompt = prompt
+        self.placeholder = placeholder
+        self.pills = pills
+    }
 }
 
 public struct AddBookmarkPayload: Codable, Sendable, Equatable {

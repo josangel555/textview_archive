@@ -243,7 +243,20 @@ public final class WalkthroughPlayerController: ObservableObject {
     public let impl: WalkthroughPlayerImpl
     private weak var model: DocumentModel?
 
-    public init(model: DocumentModel) {
+    /// File-based bidirectional checkpoint channel. When a step is an
+    /// `awaitUser`, the controller writes the prompt here; on the user's
+    /// reply it persists the answer — so a polling agent (Claude) sees
+    /// both the question and the answer even though the MCP server is
+    /// strict request/response and drops notifications. Injectable so
+    /// tests can point it at a temp dir; nil disables persistence (the
+    /// transport simply isn't configured), which is the headless default
+    /// when no drop dir is in play.
+    public let checkpointStore: WalkthroughCheckpointStore?
+
+    public init(
+        model: DocumentModel,
+        checkpointStore: WalkthroughCheckpointStore? = nil
+    ) {
         let e = WalkthroughEngine()
         let impl = WalkthroughPlayerImpl(model: model, engine: e)
         e.delegate = impl
@@ -251,6 +264,7 @@ public final class WalkthroughPlayerController: ObservableObject {
         self.impl = impl
         self.autoAdvance = WalkthroughAutoAdvance(engine: e)
         self.model = model
+        self.checkpointStore = checkpointStore
         // The auto-advance Task calls engine.next() directly, bypassing
         // our next(); without this hook the published mirrors would go
         // stale and — critically — the dwell timer would never re-arm,
@@ -349,6 +363,34 @@ public final class WalkthroughPlayerController: ObservableObject {
         )
     }
 
+    // MARK: - Checkpoint reply (awaitUser)
+
+    /// True while the current step is an `awaitUser` checkpoint waiting
+    /// for the user. The strip swaps its narration row for the prompt +
+    /// pills + free-form field when this is set. Mirrors the engine's
+    /// "paused with a pending payload" model (see `WalkthroughPlayerImpl`).
+    public var pendingAwaitUser: AwaitUserPayload? { impl.pendingAwaitUser }
+
+    /// Answer the current `awaitUser` checkpoint. Persists the reply to
+    /// the checkpoint store (the bidirectional channel back to the agent
+    /// — always written, even with no listener, per design §4.1) and
+    /// then resumes + advances the tour.
+    ///
+    /// No-op when there is no pending checkpoint, so a stray reply (e.g.
+    /// a double-click on a pill) can't corrupt the tour state.
+    public func reply(_ answer: CheckpointAnswer) {
+        guard impl.pendingAwaitUser != nil,
+              let step = currentStep,
+              let scriptId = script?.id else { return }
+        persistReply(answer, stepId: step.id, walkthroughId: scriptId)
+        // The awaitUser handler paused the engine; clear the pending
+        // payload and resume so the next() below advances rather than
+        // re-entering the same checkpoint.
+        impl.clearPendingAwaitUser()
+        if engine.state == .paused { engine.resume() }
+        next()
+    }
+
     // MARK: - Private
 
     private func syncFromEngine() {
@@ -356,6 +398,48 @@ public final class WalkthroughPlayerController: ObservableObject {
         isPaused = engine.state == .paused
         if engine.state == .done {
             autoAdvance.cancel()
+        }
+        // Whenever we land on (or re-enter) an awaitUser checkpoint,
+        // publish the prompt so a polling agent knows we're waiting.
+        // Idempotent: re-entering the same step overwrites the same file.
+        writeCheckpointIfNeeded()
+    }
+
+    /// Write the `awaitUser` prompt to the checkpoint store when the
+    /// current step is a pending checkpoint. No store ⇒ no-op (the
+    /// transport simply isn't configured). Best-effort: a write failure
+    /// is logged, never thrown into the transport path (a tour mustn't
+    /// die because a sidecar file couldn't be written).
+    private func writeCheckpointIfNeeded() {
+        guard let store = checkpointStore,
+              let payload = impl.pendingAwaitUser,
+              let step = currentStep,
+              let scriptId = script?.id else { return }
+        do {
+            try store.writeCheckpoint(
+                walkthroughId: scriptId, stepId: step.id, payload: payload
+            )
+        } catch {
+            FileHandle.standardError.write(
+                Data("walkthrough: checkpoint write failed: \(error)\n".utf8)
+            )
+        }
+    }
+
+    /// Persist a user reply to the checkpoint store. Best-effort, same
+    /// rationale as `writeCheckpointIfNeeded`.
+    private func persistReply(
+        _ answer: CheckpointAnswer, stepId: String, walkthroughId: String
+    ) {
+        guard let store = checkpointStore else { return }
+        do {
+            try store.writeReply(
+                walkthroughId: walkthroughId, stepId: stepId, answer: answer
+            )
+        } catch {
+            FileHandle.standardError.write(
+                Data("walkthrough: reply write failed: \(error)\n".utf8)
+            )
         }
     }
 
