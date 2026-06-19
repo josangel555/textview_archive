@@ -1081,7 +1081,7 @@ public func mdvCoreHighlightRuns(text: String, lang: String) throws -> [CoreHigh
         let map = try reader.decode().mapValue()
         guard case .bool(true) = map["supported"] ?? .bool(false) else { return nil }
         guard let runs = map["runs"] else { throw CoreError.decode("missing 'runs'") }
-        return try runs.arrayValue().map { el in
+        return try runs.arrayValue().compactMap { el -> CoreHighlightRun? in
             // TSK-841: each run is a POSITIONAL [start, len, kind] array (was a
             // {start,len,kind} map) — 4× smaller / ~5× faster decode. The Rust
             // encoder (`runs.rs` Run::serialize) emits the matching tuple.
@@ -1089,11 +1089,27 @@ public func mdvCoreHighlightRuns(text: String, lang: String) throws -> [CoreHigh
             guard a.count >= 3 else {
                 throw CoreError.decode("highlight run wire arity \(a.count) < 3")
             }
-            return CoreHighlightRun(
-                start: Int(try a[0].u64Value()),
-                len: Int(try a[1].u64Value()),
-                kind: try a[2].stringValue()
-            )
+            // TSK-978: `Int(UInt64)` TRAPS on values > Int.max. Highlight is a
+            // capability bit, so a remote producer can route a `start`/`len` of
+            // 2^63 here and crash the app at DECODE time, BEFORE any length
+            // clamp. Bound-check via `Int(exactly:)` and DROP a span that can't
+            // fit `Int` rather than synthesize a bogus one — the wire fault
+            // (string `kind`, arity) still throws; only an over-range offset is
+            // benign-dropped. (`kind` decoded first to keep type faults loud.)
+            // TSK-978: `Int(UInt64)` TRAPS on values > Int.max. Highlight is a
+            // capability bit, so a remote producer can route a `start`/`len` of
+            // 2^63 here and crash the app at DECODE time, BEFORE any length
+            // clamp. Bound-check via `Int(exactly:)` and DROP a span that can't
+            // fit `Int` rather than synthesize a bogus one — the wire fault
+            // (string `kind`, arity) still throws; only an over-range offset is
+            // benign-dropped. (`kind` decoded first to keep type faults loud.)
+            let kind = try a[2].stringValue()
+            guard let start = Int(exactly: try a[0].u64Value()),
+                  let len = Int(exactly: try a[1].u64Value())
+            else {
+                return nil
+            }
+            return CoreHighlightRun(start: start, len: len, kind: kind)
         }
     } catch let e as MsgPackError {
         throw CoreError.decode("\(e)")
