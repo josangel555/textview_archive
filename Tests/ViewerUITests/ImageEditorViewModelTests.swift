@@ -192,4 +192,87 @@ final class ImageEditorViewModelTests: XCTestCase {
         let onDisk = try Data(contentsOf: url)
         XCTAssertEqual(decodedDims(onDisk)?.w, 40, "written PNG decodes at the edited document's size")
     }
+
+    // MARK: - Undo / redo stack (TSK-749)
+
+    func test_commitGeometry_pushesUndoStack_undoRedoRoundTrip() throws {
+        let vm = try makeVM()
+        XCTAssertFalse(vm.canUndo)
+        XCTAssertFalse(vm.canRedo)
+
+        vm.commitGeometry(.resize(width: 20, height: 15))
+        XCTAssertTrue(vm.canUndo)
+        XCTAssertFalse(vm.canRedo)
+        XCTAssertEqual(vm.rendered?.width, 20)
+
+        vm.undo()
+        XCTAssertEqual(vm.rendered?.width, 40, "undo restores the source dims")
+        XCTAssertTrue(vm.base.ops.isEmpty)
+        XCTAssertFalse(vm.canUndo)
+        XCTAssertTrue(vm.canRedo, "undone resize is redoable")
+
+        vm.redo()
+        XCTAssertEqual(vm.rendered?.width, 20, "redo re-applies the resize")
+        XCTAssertEqual(vm.base.ops.count, 1)
+        XCTAssertFalse(vm.canRedo)
+    }
+
+    func test_commitAfterUndo_truncatesRedo() throws {
+        let vm = try makeVM()
+        vm.commitGeometry(.resize(width: 20, height: 20))
+        vm.commitGeometry(.orient(.right90))
+        vm.undo()                       // back to the resize-only state
+        XCTAssertTrue(vm.canRedo)
+        vm.commitGeometry(.resize(width: 10, height: 10)) // new edit discards redo
+        XCTAssertFalse(vm.canRedo, "a fresh commit after undo discards the redo branch")
+        XCTAssertEqual(vm.rendered?.width, 10)
+    }
+
+    func test_commitDraw_isUndoable_andPaintsPixels() throws {
+        let vm = try makeVM(r: 1, g: 1, b: 1) // white 40x30 canvas
+        vm.commitDraw(.fillRect(CGRect(x: 0, y: 0, width: 40, height: 30),
+                                DrawColor(red: 1, green: 0, blue: 0)))
+        // The whole canvas should now be red.
+        let painted = sample(vm.rendered!, x: 20, y: 15)
+        XCTAssertGreaterThan(painted.r, 200)
+        XCTAssertLessThan(painted.g, 60)
+        XCTAssertTrue(vm.canUndo, "a draw op is committed history (undoable)")
+
+        vm.undo()
+        let restored = sample(vm.rendered!, x: 20, y: 15)
+        XCTAssertGreaterThan(restored.r, 200)
+        XCTAssertGreaterThan(restored.g, 200, "undo removes the red fill (back to white)")
+        XCTAssertGreaterThan(restored.b, 200)
+    }
+
+    func test_revertAll_clearsUndoAndRedo() throws {
+        let vm = try makeVM()
+        vm.commitGeometry(.resize(width: 20, height: 15))
+        vm.undo()
+        XCTAssertTrue(vm.canRedo)
+        vm.commitGeometry(.orient(.right90))
+        XCTAssertTrue(vm.canUndo)
+
+        vm.revertAll()
+        XCTAssertFalse(vm.canUndo, "revertAll clears the undo history")
+        XCTAssertFalse(vm.canRedo, "revertAll clears the redo branch")
+        XCTAssertTrue(vm.base.ops.isEmpty)
+    }
+
+    func test_undoStack_handlesManyDrawCommits() throws {
+        let vm = try makeVM(r: 1, g: 1, b: 1)
+        // A long draw session — well into the 1000+ undo regime (kept modest so
+        // the headless render loop stays fast; the deep cap is pinned in the
+        // pure EditUndoStack tests).
+        for i in 0..<60 {
+            vm.commitDraw(.fillRect(CGRect(x: 0, y: 0, width: 1, height: 1),
+                                    DrawColor(red: Double(i % 2), green: 0, blue: 0)))
+        }
+        XCTAssertEqual(vm.undoStack.count, 61, "60 draw commits + baseline retained")
+        XCTAssertTrue(vm.canUndo)
+        // Undo all the way back to the pristine baseline.
+        for _ in 0..<60 { vm.undo() }
+        XCTAssertFalse(vm.canUndo)
+        XCTAssertTrue(vm.base.ops.isEmpty, "deep undo reaches the pristine document")
+    }
 }

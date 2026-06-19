@@ -107,6 +107,61 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// edge contrast (an unsharp-mask-style overshoot at edges). A no-op on flat
     /// regions — only edges are affected. Geometry-preserving.
     case sharpen(sharpness: Double)
+    /// Paint a filled rectangle in **source pixel space** (top-left origin)
+    /// onto the raster (TSK-749). The rect is integralized at render time; an
+    /// out-of-bounds rect is clipped to the canvas. Geometry (dimensions) is
+    /// preserved — drawing never resizes the canvas.
+    case fillRect(CGRect, DrawColor)
+    /// Stroke a rectangle's outline in source pixel space (TSK-749). `lineWidth`
+    /// is in pixels; the stroke straddles the rect edge (CoreGraphics default).
+    case strokeRect(CGRect, DrawColor, lineWidth: Double)
+    /// Paint a filled ellipse inscribed in `rect` (source pixel space; TSK-749).
+    case fillEllipse(CGRect, DrawColor)
+    /// Stroke an ellipse inscribed in `rect` (source pixel space; TSK-749).
+    case strokeEllipse(CGRect, DrawColor, lineWidth: Double)
+    /// Stroke a line segment from `from` to `to` in source pixel space
+    /// (top-left origin; TSK-749). `lineWidth` is in pixels; the cap is round so
+    /// short segments still paint.
+    case strokeLine(from: CGPoint, to: CGPoint, DrawColor, lineWidth: Double)
+    /// Rasterize `text` anchored at `origin` (top-left of the first glyph's em
+    /// box, source pixel space; TSK-749). `fontSize` is in pixels; the system
+    /// font is used so the op is self-contained (no bundled font dependency).
+    case drawText(String, origin: CGPoint, DrawColor, fontSize: Double)
+}
+
+/// A straight (non-premultiplied) RGBA color for the draw ops, each channel in
+/// `0...1`. A tiny value type rather than `CGColor` so `EditOp` stays
+/// `Codable`/`Equatable`/`Sendable` (CGColor is none of those) and the lossless
+/// op-list serializes cleanly into a workspace snapshot. Channels are clamped to
+/// `0...1` at construction so an out-of-range caller value can't produce an
+/// undefined `CGColor`.
+public struct DrawColor: Sendable, Codable, Equatable {
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+    public let alpha: Double
+
+    public init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
+        func clamp(_ v: Double) -> Double { min(max(v, 0), 1) }
+        self.red = clamp(red)
+        self.green = clamp(green)
+        self.blue = clamp(blue)
+        self.alpha = clamp(alpha)
+    }
+
+    /// The `CGColor` the renderer fills/strokes with, in the working sRGB space.
+    /// Falls back to device RGB if the named sRGB space is somehow unavailable.
+    public var cgColor: CGColor {
+        let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let comps: [CGFloat] = [CGFloat(red), CGFloat(green), CGFloat(blue), CGFloat(alpha)]
+        return CGColor(colorSpace: space, components: comps)
+            ?? CGColor(red: CGFloat(red), green: CGFloat(green),
+                       blue: CGFloat(blue), alpha: CGFloat(alpha))
+    }
+
+    public static let black = DrawColor(red: 0, green: 0, blue: 0)
+    public static let white = DrawColor(red: 1, green: 1, blue: 1)
+    public static let red = DrawColor(red: 1, green: 0, blue: 0)
 }
 
 extension EditOp {

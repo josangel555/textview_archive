@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreImage
+import CoreText
 import Foundation
 import ImageIO
 
@@ -116,6 +117,98 @@ public enum Renderer {
         case .shadowHighlight(let s, let h):
             return try shadowHighlight(image, shadow: s, highlight: h)
         case .sharpen(let amount): return try sharpen(image, sharpness: amount)
+        case .fillRect(let rect, let color):
+            return try draw(on: image) { ctx in
+                ctx.setFillColor(color.cgColor)
+                ctx.fill(rect)
+            }
+        case .strokeRect(let rect, let color, let lineWidth):
+            return try draw(on: image) { ctx in
+                ctx.setStrokeColor(color.cgColor)
+                ctx.setLineWidth(CGFloat(max(lineWidth, 0)))
+                ctx.stroke(rect)
+            }
+        case .fillEllipse(let rect, let color):
+            return try draw(on: image) { ctx in
+                ctx.setFillColor(color.cgColor)
+                ctx.fillEllipse(in: rect)
+            }
+        case .strokeEllipse(let rect, let color, let lineWidth):
+            return try draw(on: image) { ctx in
+                ctx.setStrokeColor(color.cgColor)
+                ctx.setLineWidth(CGFloat(max(lineWidth, 0)))
+                ctx.strokeEllipse(in: rect)
+            }
+        case .strokeLine(let from, let to, let color, let lineWidth):
+            return try draw(on: image) { ctx in
+                ctx.setStrokeColor(color.cgColor)
+                ctx.setLineWidth(CGFloat(max(lineWidth, 0)))
+                ctx.setLineCap(.round)
+                ctx.move(to: from)
+                ctx.addLine(to: to)
+                ctx.strokePath()
+            }
+        case .drawText(let text, let origin, let color, let fontSize):
+            return try drawText(on: image, text: text, origin: origin,
+                                color: color, fontSize: fontSize)
+        }
+    }
+
+    // MARK: - Draw ops (rasterize shapes/text onto the buffer; TSK-749)
+
+    /// Redraw `image` into a fresh canonical context of the same dimensions, run
+    /// `body` against that context (coordinates are TOP-LEFT origin: the context
+    /// is pre-flipped so callers can express rects/points in image/pixel space),
+    /// and snapshot the result. Geometry-preserving — the canvas size is fixed
+    /// to the input's. The single chokepoint shared by every shape op so the
+    /// coordinate convention and format are defined in exactly one place.
+    static func draw(on image: CGImage, _ body: (CGContext) -> Void) throws -> CGImage {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0 else { throw ImageEditError.degenerateGeometry }
+        let ctx = try makeContext(width: width, height: height)
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Flip to a top-left origin so draw-op coordinates match the engine's
+        // crop coordinate space (CGImage is row-major from the top). All shape
+        // geometry the caller passes is therefore in the SAME frame as `.crop`.
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+        body(ctx)
+        ctx.restoreGState()
+        guard let out = ctx.makeImage() else { throw ImageEditError.contextCreationFailed }
+        return out
+    }
+
+    /// Rasterize `text` at `origin` (top-left of the layout box, source pixel
+    /// space) using the system font at `fontSize`. Uses Core Text through a
+    /// `CTLine` so there is no AppKit/UIKit dependency and the op is headless.
+    /// An empty string is a no-op (returns the input unchanged).
+    static func drawText(
+        on image: CGImage, text: String, origin: CGPoint,
+        color: DrawColor, fontSize: Double
+    ) throws -> CGImage {
+        guard !text.isEmpty else { return image }
+        let size = CGFloat(max(fontSize, 1))
+        let font = CTFontCreateWithName("Helvetica" as CFString, size, nil)
+        // Use the Core Text attribute keys (CFString) directly rather than the
+        // AppKit `NSAttributedString.Key` mappings: on macOS `.foregroundColor`
+        // expects an `NSColor`, but Core Text's `kCTForegroundColorAttributeName`
+        // wants a `CGColor`. Going through CT keeps this op AppKit-free / headless.
+        let attrs: [CFString: Any] = [
+            kCTFontAttributeName: font,
+            kCTForegroundColorAttributeName: color.cgColor,
+        ]
+        let attributed = CFAttributedStringCreate(
+            kCFAllocatorDefault, text as CFString, attrs as CFDictionary)!
+        let line = CTLineCreateWithAttributedString(attributed)
+        // CTLine draws from a baseline; offset the baseline down from the
+        // top-left `origin` by the font's ascent so `origin` is the visual top.
+        let ascent = CTFontGetAscent(font)
+        return try draw(on: image) { ctx in
+            ctx.textPosition = CGPoint(x: origin.x, y: origin.y + ascent)
+            CTLineDraw(line, ctx)
         }
     }
 

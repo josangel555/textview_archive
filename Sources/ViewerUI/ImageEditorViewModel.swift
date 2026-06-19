@@ -21,10 +21,19 @@ import ViewerCore
 @MainActor
 public final class ImageEditorViewModel: ObservableObject {
 
-    /// Source + committed GEOMETRY ops (crop / resize / orient). Tonal ops are
-    /// NOT stored here — they are derived from the live slider state below so a
-    /// drag never spams the lossless history.
+    /// Source + committed GEOMETRY/DRAW ops (crop / resize / orient / shapes /
+    /// text). Tonal ops are NOT stored here — they are derived from the live
+    /// slider state below so a drag never spams the lossless history. `base.ops`
+    /// is kept in lock-step with `undoStack.current` (the source of truth for
+    /// undo/redo); mutate it only through `commitGeometry` / `undo` / `redo` /
+    /// `revertAll`, which drive the stack.
     @Published public private(set) var base: ImageDocument
+
+    /// Bounded undo/redo history of the committed op list (TSK-749). Supports
+    /// 1000+ entries (a long draw session) with a FIFO cap, plus redo — which
+    /// the bare `ImageDocument.undoingLast()` could not. The view binds its
+    /// Undo/Redo buttons to `canUndo` / `canRedo`.
+    @Published public private(set) var undoStack: EditUndoStack
 
     // MARK: Live tonal slider state (identity defaults match the EditOp docs).
 
@@ -54,8 +63,14 @@ public final class ImageEditorViewModel: ObservableObject {
 
     public init(_ document: ImageDocument) {
         self.base = document
+        self.undoStack = EditUndoStack(baseline: document.ops)
         render()
     }
+
+    /// `true` when there is a committed edit to undo (delegates to the stack).
+    public var canUndo: Bool { undoStack.canUndo }
+    /// `true` when there is a previously-undone edit to redo.
+    public var canRedo: Bool { undoStack.canRedo }
 
     /// The full document to render / export: committed geometry history plus
     /// each non-identity tonal slider folded into a single op, applied in a
@@ -101,19 +116,41 @@ public final class ImageEditorViewModel: ObservableObject {
         }
     }
 
-    /// Commit a GEOMETRY op (crop / resize / orient) to the lossless history,
-    /// then re-render. Tonal ops must NOT be committed this way — they ride the
-    /// live slider state. A debug assertion guards that contract.
+    /// Commit a GEOMETRY or DRAW op (crop / resize / orient / shape / text) to
+    /// the lossless history via the undo stack, then re-render. Tonal ops must
+    /// NOT be committed this way — they ride the live slider state. A debug
+    /// assertion guards that contract. Pushing onto the stack truncates any redo
+    /// branch and enforces the cap (TSK-749).
     public func commitGeometry(_ op: EditOp) {
-        assert(op.isGeometry, "commitGeometry expects a geometry op; tonal ops ride the slider state")
+        assert(op.isCommittable, "commitGeometry expects a geometry/draw op; tonal ops ride the slider state")
+        let next = base.appending(op).ops
+        undoStack.push(next)
         base = base.appending(op)
         render()
     }
 
-    /// Undo the most recently committed geometry op (no-op when the history is
-    /// empty). Does not touch the tonal sliders.
-    public func undoGeometry() {
-        base = base.undoingLast()
+    /// Commit a draw op (filled/stroked rect, ellipse, line, or text) — a thin,
+    /// intention-revealing alias over `commitGeometry` for the draw-tool UI
+    /// (TSK-749). Draw ops are committed history (undoable), not slider state.
+    public func commitDraw(_ op: EditOp) { commitGeometry(op) }
+
+    /// Undo the most recently committed geometry/draw op via the stack (no-op
+    /// when there is nothing to undo). Does not touch the tonal sliders.
+    public func undoGeometry() { undo() }
+
+    /// Undo the most recent committed op, syncing `base.ops` to the stack's new
+    /// current state, then re-render.
+    public func undo() {
+        let state = undoStack.undo()
+        base = ImageDocument(source: base.source, ops: state)
+        render()
+    }
+
+    /// Redo the most recently undone committed op (no-op when there is no redo
+    /// branch), then re-render.
+    public func redo() {
+        let state = undoStack.redo()
+        base = ImageDocument(source: base.source, ops: state)
         render()
     }
 
@@ -125,10 +162,12 @@ public final class ImageEditorViewModel: ObservableObject {
         render()
     }
 
-    /// Revert ALL edits: drop the geometry history and reset the tonal sliders,
-    /// returning the preview to the pristine source.
+    /// Revert ALL edits: drop the committed history (and its undo/redo stack)
+    /// and reset the tonal sliders, returning the preview to the pristine
+    /// source. Clears redo as well — a deliberate "start over".
     public func revertAll() {
         base = base.reverted()
+        undoStack.reset(to: [])
         resetTonal()   // re-renders
     }
 
@@ -152,10 +191,28 @@ public final class ImageEditorViewModel: ObservableObject {
 extension EditOp {
     /// `true` for the geometry-class ops that ride the lossless history
     /// (crop / resize / orient); `false` for the tonal ops the editor view-model
-    /// derives from live slider state.
+    /// derives from live slider state, and the draw ops (those are committable
+    /// via `isCommittable` but are not "geometry" — they don't change dims).
     var isGeometry: Bool {
         switch self {
         case .crop, .resize, .orient:
+            return true
+        case .colorControls, .exposure, .shadowHighlight, .sharpen,
+             .fillRect, .strokeRect, .fillEllipse, .strokeEllipse,
+             .strokeLine, .drawText:
+            return false
+        }
+    }
+
+    /// `true` for ops the view-model commits to the lossless undo history —
+    /// geometry (crop/resize/orient) plus the draw ops (shapes/text). Tonal ops
+    /// are excluded: they ride the live slider state and fold into one op each at
+    /// render time, so committing them would spam the history (TSK-749).
+    var isCommittable: Bool {
+        switch self {
+        case .crop, .resize, .orient,
+             .fillRect, .strokeRect, .fillEllipse, .strokeEllipse,
+             .strokeLine, .drawText:
             return true
         case .colorControls, .exposure, .shadowHighlight, .sharpen:
             return false

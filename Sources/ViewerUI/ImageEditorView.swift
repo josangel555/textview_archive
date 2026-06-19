@@ -86,10 +86,31 @@ struct ImageEditorView: View {
                         Label("Rotate", systemImage: "rotate.right")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.rotate")
-                    Button { vm.undoGeometry() } label: {
+                    Button { vm.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
+                    .disabled(!vm.canUndo)
                     .accessibilityIdentifier("mdv.imageEditor.undo")
+                    Button { vm.redo() } label: {
+                        Label("Redo", systemImage: "arrow.uturn.forward")
+                    }
+                    .disabled(!vm.canRedo)
+                    .accessibilityIdentifier("mdv.imageEditor.redo")
+                }
+
+                // Minimal draw-tool affordance (TSK-749): commits a shape / text
+                // op to the undo history. Each draw is undoable via the buttons
+                // above. A full marquee/drag tool is the render-gated remainder.
+                groupLabel("Draw")
+                HStack {
+                    Button { commitCenteredShape() } label: {
+                        Label("Box", systemImage: "rectangle")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.drawBox")
+                    Button { commitSampleText() } label: {
+                        Label("Text", systemImage: "textformat")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.drawText")
                 }
 
                 groupLabel("Document")
@@ -114,6 +135,25 @@ struct ImageEditorView: View {
         Text(text.uppercased())
             .font(.caption2).foregroundStyle(.secondary)
             .padding(.top, 4)
+    }
+
+    /// Commit a centered, half-size stroked box onto the current render. Sized
+    /// from the rendered raster's dimensions so it lands sensibly on any image;
+    /// the precise placement/drag tool is the render-gated remainder (TSK-749).
+    private func commitCenteredShape() {
+        guard let image = vm.rendered else { return }
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        let rect = CGRect(x: w * 0.25, y: h * 0.25, width: w * 0.5, height: h * 0.5)
+        vm.commitDraw(.strokeRect(rect, .red, lineWidth: max(2, w / 100)))
+    }
+
+    /// Commit a sample text label near the top-left of the current render. A
+    /// placeholder for the (render-gated) text-entry tool; proves the wiring.
+    private func commitSampleText() {
+        guard let image = vm.rendered else { return }
+        let h = CGFloat(image.height)
+        vm.commitDraw(.drawText("Text", origin: CGPoint(x: 12, y: 12),
+                                .black, fontSize: Double(max(16, h / 12))))
     }
 
     private func slider(
