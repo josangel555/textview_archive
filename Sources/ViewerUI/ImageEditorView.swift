@@ -113,6 +113,9 @@ struct ImageEditorView: View {
                     .accessibilityIdentifier("mdv.imageEditor.drawText")
                 }
 
+                groupLabel("Paint")
+                paintControls
+
                 groupLabel("Document")
                 HStack {
                     Button("Reset Tone") { vm.resetTonal() }
@@ -154,6 +157,73 @@ struct ImageEditorView: View {
         let h = CGFloat(image.height)
         vm.commitDraw(.drawText("Text", origin: CGPoint(x: 12, y: 12),
                                 .black, fontSize: Double(max(16, h / 12))))
+    }
+
+    // MARK: - paint tools (TSK-285)
+
+    /// Raster paint affordance: tool picker (eyedropper / brush / bucket), color
+    /// swatch, brush size, fill tolerance, and a discard. The tap-to-paint surface
+    /// is the preview itself, wired on the VM via `applyTool(atX:y:)` — that
+    /// gesture mapping (image point → canvas pixel) is the render-gated remainder
+    /// validated on the VM; the model behaviour each control drives is host-tested.
+    @ViewBuilder private var paintControls: some View {
+        Picker("Tool", selection: $vm.tool) {
+            Text("Off").tag(ImageEditorViewModel.RasterTool.none)
+            Image(systemName: "eyedropper").tag(ImageEditorViewModel.RasterTool.colorPicker)
+            Image(systemName: "paintbrush.pointed").tag(ImageEditorViewModel.RasterTool.brush)
+            Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .accessibilityIdentifier("mdv.imageEditor.paintTool")
+
+        ColorPicker("Color", selection: paintColorBinding, supportsOpacity: true)
+            .accessibilityIdentifier("mdv.imageEditor.paintColor")
+
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Brush Size: \(vm.brushRadius)").font(.caption)
+            Slider(
+                value: Binding(
+                    get: { Double(vm.brushRadius) },
+                    set: { vm.brushRadius = Int($0.rounded()) }),
+                in: 0...32)
+                .accessibilityIdentifier("mdv.imageEditor.brushSize")
+        }
+
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Fill Tolerance: \(vm.fillTolerance)").font(.caption)
+            Slider(
+                value: Binding(
+                    get: { Double(vm.fillTolerance) },
+                    set: { vm.fillTolerance = UInt8(max(0, min(255, $0.rounded()))) }),
+                in: 0...255)
+                .accessibilityIdentifier("mdv.imageEditor.fillTolerance")
+        }
+
+        if vm.hasPaint {
+            Button("Discard Paint") { vm.discardPaint() }
+                .accessibilityIdentifier("mdv.imageEditor.discardPaint")
+        }
+    }
+
+    /// Bridge the VM's straight-RGBA8 `paintColor` to SwiftUI's `Color` for the
+    /// `ColorPicker`. The setter resolves the picked `Color` into 8-bit sRGB
+    /// components via `NSColor`.
+    private var paintColorBinding: Binding<Color> {
+        Binding(
+            get: {
+                let c = vm.paintColor
+                return Color(.sRGB,
+                             red: Double(c.r) / 255, green: Double(c.g) / 255,
+                             blue: Double(c.b) / 255, opacity: Double(c.a) / 255)
+            },
+            set: { newColor in
+                let ns = NSColor(newColor).usingColorSpace(.sRGB) ?? NSColor(newColor)
+                func byte(_ v: CGFloat) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
+                vm.paintColor = RGBAColor(
+                    r: byte(ns.redComponent), g: byte(ns.greenComponent),
+                    b: byte(ns.blueComponent), a: byte(ns.alphaComponent))
+            })
     }
 
     private func slider(

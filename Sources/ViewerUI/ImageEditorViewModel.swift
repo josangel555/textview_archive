@@ -52,6 +52,39 @@ public final class ImageEditorViewModel: ObservableObject {
     /// `CISharpenLuminance` amount — identity 0.
     @Published public var sharpness: Double = 0
 
+    // MARK: Raster paint tools (TSK-285) — color picker, brush, flood fill.
+
+    /// The active raster paint tool. `.none` is the default (non-paint) mode where
+    /// clicks select/inspect rather than mark the surface. Selecting a paint tool
+    /// flips the editor into a destructive-paint session over a baked pixel buffer.
+    public enum RasterTool: Sendable, Equatable, CaseIterable {
+        /// No paint tool — sliders / geometry only (the default editor mode).
+        case none
+        /// Eyedropper: a click reads the pixel color into `paintColor` (no mutation).
+        case colorPicker
+        /// Brush: a click/drag stamps `paintColor` discs of radius `brushRadius`.
+        case brush
+        /// Paint bucket: a click flood-fills the contiguous region under it.
+        case floodFill
+    }
+
+    /// The currently-selected paint tool.
+    @Published public var tool: RasterTool = .none
+    /// The active paint / fill color (the eyedropper writes here; brush & bucket
+    /// read from here). Straight RGBA8.
+    @Published public var paintColor: RGBAColor = .black
+    /// Brush radius in pixels (0 = single pixel). Clamped non-negative on use.
+    @Published public var brushRadius: Int = 4
+    /// Flood-fill per-channel tolerance (0…255). 0 requires an exact color match.
+    @Published public var fillTolerance: UInt8 = 0
+
+    /// The destructive paint buffer for the current session, or `nil` when no
+    /// paint has happened yet. Lazily baked from the rendered preview on the first
+    /// paint op (or color pick), so an editor that never paints pays nothing.
+    /// Once non-nil, it shadows the tonal/geometry render — `rendered` and export
+    /// reflect the painted pixels (paint is destructive and cannot ride `ops`).
+    @Published public private(set) var paintCanvas: RasterCanvas?
+
     // MARK: Derived outputs (republished on `render()`).
 
     /// The rendered preview of `document`, or `nil` if the last render failed.
@@ -95,15 +128,26 @@ public final class ImageEditorViewModel: ObservableObject {
         return doc
     }
 
-    /// `true` once any geometry op is committed or any tonal slider leaves
-    /// identity — i.e. the rendered preview differs from the source.
-    public var isEdited: Bool { !document.isPristine }
+    /// `true` once any geometry op is committed, any tonal slider leaves identity,
+    /// OR a destructive paint session has marked the surface — i.e. the rendered
+    /// preview differs from the source.
+    public var isEdited: Bool { !document.isPristine || paintCanvas != nil }
 
     /// Re-render the preview + histogram from the current `document`. Call after
     /// any slider change (the view debounces) or geometry commit. Failures are
     /// captured in `lastError` rather than thrown, so the editor can surface
     /// them without the binding layer having to handle errors.
     public func render() {
+        // Once a paint session is active the painted buffer IS the document — paint
+        // is destructive and cannot be re-derived from `source + ops`, so it
+        // shadows the tonal/geometry render. The buffer was itself baked from a
+        // prior tonal/geometry render, so committed edits are not lost.
+        if let canvas = paintCanvas, let image = canvas.cgImage() {
+            rendered = image
+            histogram = try? Renderer.histogram(image)
+            lastError = nil
+            return
+        }
         do {
             let image = try Renderer.render(document)
             rendered = image
@@ -168,8 +212,98 @@ public final class ImageEditorViewModel: ObservableObject {
     public func revertAll() {
         base = base.reverted()
         undoStack.reset(to: [])
+        paintCanvas = nil          // discard the destructive paint session too
         resetTonal()   // re-renders
     }
+
+    // MARK: - Raster paint (TSK-285)
+
+    /// Bake the current tonal/geometry render into a destructive `RasterCanvas`,
+    /// creating the paint session on first use. Idempotent once a session exists
+    /// (returns the existing buffer so a stroke never re-bakes mid-drag). Returns
+    /// `false` if the current document can't be rendered/decoded into a buffer.
+    @discardableResult
+    public func beginPaintSessionIfNeeded() -> Bool {
+        if paintCanvas != nil { return true }
+        guard let image = (try? Renderer.render(document)),
+              let canvas = RasterCanvas.from(image) else { return false }
+        paintCanvas = canvas
+        return true
+    }
+
+    /// Eyedropper: read the color at canvas pixel `(x, y)` into `paintColor`.
+    /// Bakes a paint session if needed (so the read is against the same buffer the
+    /// brush/bucket will mutate). A pure read — the canvas is unchanged. Returns
+    /// the picked color, or `nil` if the point is outside the canvas.
+    @discardableResult
+    public func pickColor(atX x: Int, y: Int) -> RGBAColor? {
+        guard beginPaintSessionIfNeeded(), let picked = paintCanvas?.pickColor(x: x, y: y)
+        else { return nil }
+        paintColor = picked
+        return picked
+    }
+
+    /// Brush: stamp a single circular dab of `paintColor` (radius `brushRadius`)
+    /// centred on canvas pixel `(x, y)`, then re-render. Returns the pixel count
+    /// written (0 if off-canvas or the session couldn't be baked).
+    @discardableResult
+    public func brushDab(atX x: Int, y: Int) -> Int {
+        guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
+        let n = canvas.brushDab(cx: x, cy: y, radius: brushRadius, color: paintColor)
+        paintCanvas = canvas
+        render()
+        return n
+    }
+
+    /// Brush drag: sweep a `paintColor` stroke (radius `brushRadius`) between two
+    /// canvas pixels so a drag leaves a continuous mark, then re-render. Returns
+    /// the distinct pixel count written.
+    @discardableResult
+    public func brushStroke(fromX x0: Int, y0: Int, toX x1: Int, y1: Int) -> Int {
+        guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
+        let n = canvas.brushStroke(
+            from: (x0, y0), to: (x1, y1), radius: brushRadius, color: paintColor)
+        paintCanvas = canvas
+        render()
+        return n
+    }
+
+    /// Paint bucket: flood-fill the contiguous region under canvas pixel `(x, y)`
+    /// with `paintColor` (using `fillTolerance`), then re-render. Returns the
+    /// pixel count changed.
+    @discardableResult
+    public func floodFill(atX x: Int, y: Int) -> Int {
+        guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
+        let n = canvas.floodFill(x: x, y: y, with: paintColor, tolerance: fillTolerance)
+        paintCanvas = canvas
+        render()
+        return n
+    }
+
+    /// Apply the paint tool currently selected (`tool`) at canvas pixel `(x, y)`.
+    /// The single entry point the view's click handler calls — it dispatches to
+    /// the eyedropper / brush / bucket, and is a no-op for `.none`. Returns the
+    /// pixels affected (or `1`/`0` for the eyedropper's read).
+    @discardableResult
+    public func applyTool(atX x: Int, y: Int) -> Int {
+        switch tool {
+        case .none:        return 0
+        case .colorPicker: return pickColor(atX: x, y: y) == nil ? 0 : 1
+        case .brush:       return brushDab(atX: x, y: y)
+        case .floodFill:   return floodFill(atX: x, y: y)
+        }
+    }
+
+    /// Discard the destructive paint session, returning the preview to the
+    /// tonal/geometry render. Geometry/tonal edits are untouched.
+    public func discardPaint() {
+        guard paintCanvas != nil else { return }
+        paintCanvas = nil
+        render()
+    }
+
+    /// `true` when a destructive paint session has marked the surface.
+    public var hasPaint: Bool { paintCanvas != nil }
 
     // MARK: - Export
 
@@ -178,8 +312,16 @@ public final class ImageEditorViewModel: ObservableObject {
     /// and ignored for the lossless PNG format. This is the editor's "Export"
     /// flow — it re-derives from `source + ops`, so it always exports the WYSIWYG
     /// preview, never the untouched source.
+    ///
+    /// When a destructive paint session is active, the painted buffer IS the
+    /// WYSIWYG preview (it can't ride the lossless op-list), so export encodes
+    /// the painted `CGImage` directly instead of re-deriving from `source + ops`.
     public func exportData(format: ExportSpec.Format, quality: Double = 0.9) throws -> Data {
-        try Exporter.export(document, ExportSpec(format: format, quality: quality))
+        let spec = ExportSpec(format: format, quality: quality)
+        if let canvas = paintCanvas, let image = canvas.cgImage() {
+            return try Exporter.encode(image, spec)
+        }
+        return try Exporter.export(document, spec)
     }
 
     /// Encode the current edited `document` and write it atomically to `url`.
