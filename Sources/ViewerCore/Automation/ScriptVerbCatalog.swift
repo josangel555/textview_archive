@@ -158,6 +158,7 @@ public enum ScriptVerbCatalog {
         ScriptVerb("set-open-as", .files, .enumToken, "Override the current tab's viewer category (or 'auto')"),
         ScriptVerb("reload", .files, .none, "Re-read the current file from disk"),
         ScriptVerb("save-copy", .files, .path, "Write a copy of the current tab to an absolute path"),
+        ScriptVerb("clear-recents", .files, .none, "Clear the Recent Files / history list"),
 
         // ---- Editor (CM6) ----
         ScriptVerb("editor-set-mode", .editor, .enumToken, "Force the active tab into a view mode"),
@@ -173,6 +174,8 @@ public enum ScriptVerbCatalog {
         ScriptVerb("edit-insert-toc", .editor, .none, "Insert a Markdown table of contents"),
         ScriptVerb("edit-insert-date", .editor, .none, "Insert the current date and time"),
         ScriptVerb("toggle-blame", .editor, .none, "Toggle the editor git-blame gutter"),
+        ScriptVerb("fold-all", .editor, .none, "Fold all foldable regions in the active editor"),
+        ScriptVerb("unfold-all", .editor, .none, "Unfold all regions in the active editor"),
 
         // ---- Language Server ----
         ScriptVerb("editor-goto-definition", .lsp, .none, "Go to definition at the cursor"),
@@ -216,6 +219,7 @@ public enum ScriptVerbCatalog {
 
         // ---- Git ----
         ScriptVerb("show-git-panel", .git, .none, "Show the git panel"),
+        ScriptVerb("show-repo-history", .git, .none, "Open the git panel on the Log (history) tab"),
         ScriptVerb("git-file-history", .git, .none, "Show file history for the current file"),
         ScriptVerb("file-history", .git, .path, "Open file history for a given path"),
         ScriptVerb("git-panel-root", .git, .path, "Pin the git panel repo root (empty = sidebar root)"),

@@ -71,7 +71,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 11)
+        XCTAssertEqual(names.count, 12)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
