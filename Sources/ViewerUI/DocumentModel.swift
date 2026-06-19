@@ -4492,6 +4492,25 @@ public final class DocumentModel: ObservableObject {
         ViewModeControl.showsEditor(available: availableViewModes)
     }
 
+    /// TSK-898 — the ordered list of primary lenses the segmented mode
+    /// control should surface for the current file, leftmost first:
+    /// Render (if a rich lens exists) → Editor (if a text lens exists) →
+    /// HEX (always, every file with bytes offers it). This is the single
+    /// source of truth the segmented group iterates, so the segment set +
+    /// order can't drift from the per-button `showsRenderPrimary` /
+    /// `showsEditorPrimary` gating. Examples:
+    ///   • markdown → [.render, .editor, .hex]
+    ///   • plain `.txt` → [.editor, .hex] (no rich lens)
+    ///   • image / media / PDF → [.render, .hex] (no text lens)
+    ///   • binary / unknown → [.hex] only
+    public var visibleViewPrimaries: [ViewModeControl.Primary] {
+        var primaries: [ViewModeControl.Primary] = []
+        if showsRenderPrimary { primaries.append(.render) }
+        if showsEditorPrimary { primaries.append(.editor) }
+        primaries.append(.hex)
+        return primaries
+    }
+
     // MARK: - UX-A (#224) breadcrumb (file-path navigation)
 
     /// One clickable segment of the current file's path breadcrumb.

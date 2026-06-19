@@ -215,6 +215,87 @@ final class ContentToolbarMappingTests: XCTestCase {
         XCTAssertTrue(m.showsEditorPrimary)
     }
 
+    // MARK: - TSK-898: segmented mode-control source-of-truth (visibleViewPrimaries)
+
+    /// Markdown offers a rich render lens + a text lens + bytes, so the
+    /// segmented group surfaces all three, leftmost Render → Editor → HEX.
+    func test_visiblePrimaries_markdown_renderEditorHex() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("doc.md", "# Hi\n"))
+        XCTAssertEqual(m.visibleViewPrimaries, [.render, .editor, .hex])
+    }
+
+    /// A plain `.txt` has no rich lens → no Render segment; Editor + HEX only.
+    func test_visiblePrimaries_plainText_editorHex_noRender() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("notes.txt", "plain\n"))
+        XCTAssertEqual(m.visibleViewPrimaries, [.editor, .hex])
+        XCTAssertFalse(m.visibleViewPrimaries.contains(.render))
+    }
+
+    /// CSV has a rich (table) lens + text + bytes → Render + Editor + HEX.
+    func test_visiblePrimaries_csv_renderEditorHex() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("data.csv", "a,b,c\n1,2,3\n"))
+        XCTAssertEqual(m.visibleViewPrimaries, [.render, .editor, .hex])
+    }
+
+    /// A true binary (NUL-laden, never decodes as text) offers only bytes →
+    /// the segmented group collapses to a single HEX segment (no Render, no
+    /// Editor).
+    func test_visiblePrimaries_binary_hexOnly() throws {
+        let m = makeModel()
+        var bytes: [UInt8] = []
+        for i in 0..<2048 { bytes.append(UInt8((i &* 37) % 256)) }
+        bytes[0] = 0x00; bytes[1] = 0xFF
+        let url = tmpRoot.appendingPathComponent("blob.bak")
+        try Data(bytes).write(to: url)
+        m.open(url: url)
+        XCTAssertEqual(m.availableViewModes, [.hex], "true binary offers only HEX")
+        XCTAssertEqual(m.visibleViewPrimaries, [.hex],
+                       "binary → a single HEX segment, no Render/Editor")
+    }
+
+    /// HEX is ALWAYS the trailing segment — every file with bytes offers it.
+    func test_visiblePrimaries_alwaysIncludeHexLast() throws {
+        let m = makeModel()
+        for name in ["doc.md", "notes.txt", "code.swift", "data.csv", "config.json"] {
+            m.open(url: try writeFile(name))
+            let primaries = m.visibleViewPrimaries
+            XCTAssertEqual(primaries.last, .hex, "\(name): HEX must be the trailing segment")
+            XCTAssertEqual(primaries.filter { $0 == .hex }.count, 1,
+                           "\(name): exactly one HEX segment")
+        }
+    }
+
+    /// Tapping each visible segment routes through selectViewPrimary and the
+    /// presentation's primary follows — i.e. selecting a segment sets p.primary.
+    func test_segment_selection_setsPresentationPrimary() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("doc.md", "# Hi\n"))
+        for primary in m.visibleViewPrimaries {
+            m.selectViewPrimary(primary, viewOnly: m.viewModePresentation.viewOnly)
+            XCTAssertEqual(m.viewModePresentation.primary, primary,
+                           "selecting the \(primary) segment must select it in the presentation")
+        }
+    }
+
+    /// While the Format lens is active the Render/Editor segments read as
+    /// NOT selected (Format owns the selection) — but HEX selection is
+    /// independent of Format. This pins the segment-selection rule the
+    /// segmented view's `isSelected(_:_:)` mirrors.
+    func test_segment_selection_deselectedUnderFormat() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("config.json", "{\"a\":1}"))
+        m.toggleFormatLens()
+        let p = m.viewModePresentation
+        XCTAssertTrue(p.isFormatted)
+        // Editor primary is reported but isFormatted is set → the segment
+        // must render deselected (the toolbar gates on `&& !isFormatted`).
+        XCTAssertEqual(p.primary, .editor)
+        XCTAssertTrue(p.isFormatted, "Editor segment is NOT highlighted while Format is active")
+    }
+
     // MARK: - LOADBUG SAFETY: control never desyncs picker from an unavailable mode
 
     func test_render_onSwift_doesNotForceRendered() throws {

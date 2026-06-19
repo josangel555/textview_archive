@@ -171,20 +171,19 @@ private struct ViewModeControlView: View {
     var body: some View {
         let p = model.viewModePresentation
         HStack(spacing: model.uiSize(8)) {
-            // Primary lens buttons. Media/PDF/binary hide Editor; a plain
-            // .txt hides Render — so the row only shows lenses the file
-            // actually offers.
-            HStack(spacing: model.uiSize(2)) {
-                if model.showsRenderPrimary {
-                    primaryButton(.render, selected: p.primary == .render && !p.isFormatted)
-                }
-                if model.showsEditorPrimary {
-                    primaryButton(.editor,
-                                  selected: p.primary == .editor && !p.isFormatted)
-                }
-                primaryButton(.hex, selected: p.primary == .hex)
-            }
-            .accessibilityIdentifier("mdv.viewModeControl")
+            // TSK-898 — the primary lenses as a single unified SEGMENTED
+            // group (continuous rounded container, hairline dividers between
+            // segments, the selected segment filled) instead of three loose
+            // buttons. The segment SET + order come from
+            // `model.visibleViewPrimaries` (media/PDF/binary hide Editor; a
+            // plain .txt hides Render; .hex is always last), so the group
+            // only shows lenses the file actually offers. Each segment still
+            // routes through the unchanged `selectViewPrimary` — the model is
+            // untouched; only the chrome is unified.
+            segmentedPrimaries(p)
+                .accessibilityIdentifier("mdv.viewModeControl")
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("View mode")
 
             // View Only toggle. Meaningful for the Editor lens (Source ↔
             // editable CM6) and HEX (read-only ↔ byte-edit, deferred). For
@@ -220,8 +219,58 @@ private struct ViewModeControlView: View {
         }
     }
 
+    /// Whether a given primary reads as selected for the current
+    /// presentation. Render/Editor are deselected while the Format lens is
+    /// active (`isFormatted`) — the Format button owns the selection then.
+    private func isSelected(
+        _ primary: ViewModeControl.Primary, _ p: ViewModeControl.Presentation
+    ) -> Bool {
+        switch primary {
+        case .render, .editor: return p.primary == primary && !p.isFormatted
+        case .hex:             return p.primary == .hex
+        }
+    }
+
+    /// TSK-898 — the unified segmented mode control: one continuous rounded
+    /// container holding the currently-visible primaries, with a hairline
+    /// divider between adjacent segments and the selected segment filled.
+    /// Built from `model.visibleViewPrimaries` so the segment set/order is
+    /// the model's single source of truth.
     @ViewBuilder
-    private func primaryButton(
+    private func segmentedPrimaries(_ p: ViewModeControl.Presentation) -> some View {
+        let primaries = model.visibleViewPrimaries
+        let radius = model.uiSize(5)
+        HStack(spacing: 0) {
+            ForEach(Array(primaries.enumerated()), id: \.element) { idx, primary in
+                if idx > 0 {
+                    // Hairline divider between segments. Dim it next to a
+                    // filled segment so the selection's edge reads cleanly.
+                    Rectangle()
+                        .fill(Color.primary.opacity(
+                            isSelected(primary, p)
+                            || isSelected(primaries[idx - 1], p) ? 0.0 : 0.12))
+                        .frame(width: 1, height: model.uiSize(13))
+                }
+                segment(primary, selected: isSelected(primary, p))
+            }
+        }
+        .background(
+            // Continuous capsule/rounded container behind the whole group.
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+
+    /// One segment of the segmented group. The selected segment paints an
+    /// accent-tinted fill; the tap still routes through the unchanged
+    /// `selectViewPrimary` (model untouched — TSK-898).
+    @ViewBuilder
+    private func segment(
         _ primary: ViewModeControl.Primary, selected: Bool
     ) -> some View {
         Button {
@@ -235,15 +284,20 @@ private struct ViewModeControlView: View {
             Text(primary.label)
                 .font(.system(size: model.uiSize(11),
                               weight: selected ? .semibold : .regular))
-                .padding(.horizontal, model.uiSize(8))
+                .padding(.horizontal, model.uiSize(9))
                 .padding(.vertical, model.uiSize(2))
                 .foregroundStyle(selected ? Color.accentColor : .secondary)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .background(
+                    // Selected segment fill. Sits INSIDE the group's clip so
+                    // the fill's corners follow the container on the ends.
+                    selected
+                        ? Color.accentColor.opacity(0.18)
+                        : Color.clear
+                )
         }
-        // UX-H (#230): the shared icon style owns the resting (accent when
-        // `selected`) + hover + press fill and the subtle scale — replacing
-        // the hand-rolled `.background` switch this lens button carried.
-        .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
-                                          isSelected: selected))
+        .buttonStyle(.plain)
         .helpInfo(title: "\(primary.label) view", description: helpText(primary))
         .accessibilityIdentifier("mdv.viewMode.\(primary.rawValue)")
         .accessibilityAddTraits(selected ? .isSelected : [])
