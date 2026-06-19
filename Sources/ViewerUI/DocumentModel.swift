@@ -79,9 +79,8 @@ public final class DocumentModel: ObservableObject {
         tabCoordinator.setCsvFilterState(state, forTabID: id)
     }
 
-    public func clearCsvFilterState(forTabID id: UUID) {
-        tabCoordinator.clearCsvFilterState(forTabID: id)
-    }
+    // `clearCsvFilterState(forTabID:)` moved to `DocumentModel+Split.swift`
+    // (TSK-308) — it sits with the split-pane forwarder cluster.
 
     /// Forwarder. New code should call `tabCoordinator.hexBytesPerRow`.
     public var hexBytesPerRow: [UUID: Int] { tabCoordinator.hexBytesPerRow }
@@ -2261,37 +2260,13 @@ public final class DocumentModel: ObservableObject {
         return renderedScrollByURL[url]
     }
 
-    // MARK: - Split view (forwarders to TabCoordinator)
+    // MARK: - Split view
     //
-    // The split pane lives on `tabCoordinator` because it shares the
-    // "what's currently on screen" lifecycle with the tab list.
-    // Forwarders here preserve the existing `model.splitURL` /
-    // `model.openInSplit` / `model.closeSplit` / `model.toggleSplit`
-    // call sites.
-
-    public var splitURL: URL? {
-        get { tabCoordinator.splitURL }
-        set { tabCoordinator.splitURL = newValue }
-    }
-    public var isSplitOpen: Bool { tabCoordinator.isSplitOpen }
-
-    public func openInSplit(_ url: URL) {
-        tabCoordinator.openInSplit(url)
-        // CHANGE 2: feed the split pane's gutter diff. The `$splitURL`
-        // Combine sink in RepoFocusTracker keeps the registry demand set
-        // in sync; this drives the per-file gutter (which needs diff
-        // TEXT, not status, so it stays a separate path).
-        refreshSplitDiffMarks()
-    }
-    public func closeSplit() {
-        tabCoordinator.closeSplit()
-        // Clears the split task + leaves no markers (splitURL is now nil).
-        refreshSplitDiffMarks()
-    }
-    public func toggleSplit() {
-        if tabCoordinator.splitURL != nil { closeSplit() }
-        else if let url = currentURL { openInSplit(url) }
-    }
+    // The split-pane forwarders (`splitURL`, `isSplitOpen`, `openInSplit`,
+    // `closeSplit`, `toggleSplit`, `swapSplit`) and `splitPaneText` moved to
+    // `DocumentModel+Split.swift` (TSK-308). `refreshSplitDiffMarks()` stays
+    // here — it reaches the file-private `splitDiffMarksTask` /
+    // `resolveGutterRoot` state.
 
     // MARK: - Git panel focus
 
@@ -2518,13 +2493,7 @@ public final class DocumentModel: ObservableObject {
         try? md.write(to: out, atomically: true, encoding: .utf8)
         openInNewTab(out)
     }
-    /// Swap which file is in each pane. Convenience for the user
-    /// who wants to flip primary/secondary.
-    public func swapSplit() {
-        guard let secondary = splitURL, let primary = currentURL else { return }
-        splitURL = primary
-        openPath(secondary)
-    }
+    // `swapSplit()` moved to `DocumentModel+Split.swift` (TSK-308).
     // MARK: Find bar (source mode) — match state forwarders
 
     public var sourceFindMatchSummary: String {
@@ -4091,20 +4060,8 @@ public final class DocumentModel: ObservableObject {
         displayedText(for: file).text
     }
 
-    /// TSK-806: the text the SPLIT pane should render for `url` — the live
-    /// UNSAVED edits when that file is open in a tab with a DIRTY editor buffer,
-    /// else the on-disk `fallback`. Unlike `displayedText(for:)` this keys on the
-    /// file's OWN tab (matched by URL), NOT `tabs.selected`: the split pane can
-    /// show a DIFFERENT file than the active tab (`splitURL` is independent and
-    /// swappable), so consulting the selected tab's buffer would render the wrong
-    /// file's edits. A clean/absent buffer ⇒ on-disk text (same bytes anyway).
-    public func splitPaneText(for url: URL, fallback: String) -> String {
-        if let tab = tabs.tabs.first(where: { $0.url == url }),
-           let buf = editor.editorBuffer(forTabID: tab.id), buf.isDirty {
-            return buf.text
-        }
-        return fallback
-    }
+    // `splitPaneText(for:fallback:)` (TSK-806) moved to
+    // `DocumentModel+Split.swift` (TSK-308) — split-pane API cluster.
 
     // MARK: Syntax highlighting
 
