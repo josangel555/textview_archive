@@ -152,7 +152,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // never resized it — that's the bug where opening any non-markdown
         // file revealed a sliver of UI (line numbers only) inside a vast
         // empty white background.
-        let rootView = ContentView(model: model, sessionsApp: sessions)
+        // TSK-264: gate the session tab strip on the persisted
+        // `sessionsEnabled` flag (default true). Read once at launch — the
+        // providers aren't hot-swappable mid-run in this foundation slice.
+        let rootView = ContentView(
+            model: model,
+            sessionsApp: sessions,
+            sessionsUIEnabled: PreferencesStore().sessionsEnabled
+        )
         // Stash the walkthrough controller so the --walkthrough flag
         // handler below can call `start(_:)` on it without rebuilding
         // ContentView's body state. F-WCR-STRIP: read it off the MODEL,

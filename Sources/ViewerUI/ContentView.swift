@@ -37,17 +37,25 @@ public struct ContentView: View {
     /// don't need to spin up the full SessionStore stack — the
     /// session tab row is simply hidden when nil.
     var sessionsApp: SessionsAppCoordinator?
+    /// Whether the multi-session UI (the `SessionTabBar` strip) is shown
+    /// (TSK-264). Sourced from `PreferencesStore.sessionsEnabled` at launch.
+    /// Defaults to `true` so existing callers / previews are unaffected; the
+    /// strip is shown only when BOTH this is `true` AND `sessionsApp != nil`.
+    let sessionsUIEnabled: Bool
     @State private var isDropTargeted = false
     private let renderer = HTMLRenderer()
     private let stylesheet: String
 
-    public init(model: DocumentModel, sessionsApp: SessionsAppCoordinator? = nil) {
+    public init(model: DocumentModel,
+                sessionsApp: SessionsAppCoordinator? = nil,
+                sessionsUIEnabled: Bool = true) {
         self.model = model
         self.sidebar = model.sidebar
         self.find = model.find
         self.panelLayout = model.panelLayout
         self.terminalPane = model.terminalPane
         self.sessionsApp = sessionsApp
+        self.sessionsUIEnabled = sessionsUIEnabled
         self.stylesheet = MarkdownStylesheet.load()
         // Persist the controller across body re-evals. The controller
         // owns the engine, delegate, and auto-advance scheduler — all
@@ -81,7 +89,11 @@ public struct ContentView: View {
         #endif
         ZStack {
             VStack(spacing: 0) {
-                if let sessionsApp {
+                // TSK-264: the session tab strip shows only when the
+                // multi-session experience is enabled. With sessions off
+                // (`SingleRootContext`) the strip is hidden — we do NOT
+                // rip sessions out, just gate the chrome.
+                if sessionsUIEnabled, let sessionsApp {
                     SessionTabBar(sessionsApp: sessionsApp)
                     Divider()
                 }

@@ -41,6 +41,10 @@ public final class PreferencesStore: @unchecked Sendable {
         /// Per-file-category default view-mode overrides (TSK-671). A
         /// primitives-only `[categoryRaw: modeRaw]` dict.
         static let viewModeDefaults = "MarkdownViewer.viewModeDefaults"
+        /// Multi-session experience toggle (TSK-264). When off, the app
+        /// builds a `SingleRootContext` (one root, no session index /
+        /// snapshots / trash) and hides the session tab strip.
+        static let sessionsEnabled = "MarkdownViewer.sessionsEnabled"
     }
 
     /// Defaults to the pristine-aware store (TSK-618): `.standard`
@@ -163,6 +167,19 @@ public final class PreferencesStore: @unchecked Sendable {
                 defaults.removeObject(forKey: Key.themeOverride)
             }
         }
+    }
+
+    /// Whether the multi-session experience is enabled (TSK-264). Default
+    /// `true` — preserves today's behavior, so an existing user sees no
+    /// change until they explicitly opt out. When `false`, the launch path
+    /// builds a `SingleRootContext` (one root folder, no `Sessions/` index /
+    /// snapshots / trash) and the view layer hides `SessionTabBar`. Read
+    /// once at launch to select the `RootContextProviding` implementation;
+    /// changing it takes effect on the next launch (the providers aren't
+    /// hot-swappable mid-run in this foundation slice).
+    public var sessionsEnabled: Bool {
+        get { defaults.object(forKey: Key.sessionsEnabled) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.sessionsEnabled) }
     }
 
     // MARK: Zoom
