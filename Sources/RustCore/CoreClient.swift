@@ -436,10 +436,34 @@ public final class CsvSession {
     static func logWireErrorIfPresent(_ buf: MdvBuf) {
         guard let data = buf.data, buf.len > 0 else { return }
         let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
-        guard let detail = decodeWireError(frame) else { return }
-        log.error(
-            "FFI wire fault [\(detail.kind, privacy: .public)] code=\(detail.code, privacy: .public): \(detail.message, privacy: .public)"
-        )
+        switch classifyErrorBuffer(frame) {
+        case .empty:
+            break
+        case .wireError(let detail):
+            log.error(
+                "FFI wire fault [\(detail.kind, privacy: .public)] code=\(detail.code, privacy: .public): \(detail.message, privacy: .public)"
+            )
+        case .undecodable(let bytes):
+            // TSK-995: a non-empty error-path buffer that ISN'T a decodable
+            // WireError must be surfaced, not silently dropped (the gap was the
+            // bare `guard let … else { return }`).
+            log.error("FFI error buffer present (\(bytes, privacy: .public) bytes) but not a decodable WireError")
+        }
+    }
+
+    /// Classification of an error-path out-buffer for logging (TSK-995). The
+    /// `.undecodable` case is the observability gap this closes: a non-empty
+    /// buffer the core emitted on a fault that doesn't parse as a WireError.
+    enum ErrorBufferClass: Equatable {
+        case empty
+        case wireError(WireErrorDetail)
+        case undecodable(bytes: Int)
+    }
+
+    static func classifyErrorBuffer(_ frame: [UInt8]) -> ErrorBufferClass {
+        if frame.isEmpty { return .empty }
+        if let detail = decodeWireError(frame) { return .wireError(detail) }
+        return .undecodable(bytes: frame.count)
     }
 
     // MARK: - Frame + wire decoding
