@@ -58,13 +58,25 @@ let package = Package(
         // to any future 0.x that bumps an arbitrary amount of API;
         // `.upToNextMinor` caps the drift to patch releases of 0.8.
         .package(url: "https://github.com/apple/swift-markdown.git", .upToNextMinor(from: "0.8.0")),
-        // Spike-only: TreeSitter binding + one grammar to validate
-        // (a) Swift 6 strict-concurrency clean build, (b) binary-size
-        // delta, (c) cold-build-time delta. Both pull-throughs (the
-        // ChimeHQ URL is the canonical URL in the json grammar's
-        // Package.swift; GitHub redirects to the new tree-sitter org).
-        .package(url: "https://github.com/ChimeHQ/SwiftTreeSitter",               from: "0.9.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-json",          from: "0.24.0"),
+        // TreeSitter binding + grammars. Both pull-throughs (the ChimeHQ
+        // URL is the canonical URL in the json grammar's Package.swift;
+        // GitHub redirects to the new tree-sitter org).
+        //
+        // PIN POLICY (TSK-974): every grammar dependency is `exact:` —
+        // NOT `from:`. `from:` is a caret range (SemVer: any version up
+        // to the next major; for these pre-1.0 0.x packages SwiftPM
+        // treats the MINOR as the major bound, so `from: "0.23.0"` would
+        // silently walk to 0.24.x / 0.25.x on the next `swift package
+        // update`). A parser-grammar bump can change tokenization,
+        // node-kind names, and our vendored highlight `.scm` queries'
+        // behavior with NO review — a supply-chain + correctness drift
+        // surface. `exact:` makes every version change a deliberate,
+        // reviewable one-line manifest edit (mirrors the swift-markdown
+        // `.upToNextMinor` and tree-sitter-swift exact-revision intent).
+        // The pinned versions are exactly what Package.resolved already
+        // locked; bumping is a manual edit here + a re-resolve.
+        .package(url: "https://github.com/ChimeHQ/SwiftTreeSitter",               exact: "0.25.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-json",          exact: "0.24.8"),
         // alex-pinkus' main branch ships only grammar.json — parser.c
         // lives on the `with-generated-files` branch (and its tagged
         // -with-generated-files variants). We pin to an exact revision
@@ -75,23 +87,25 @@ let package = Package(
         // Package.resolved already locked. Re-pin deliberately (and
         // re-diff the generated parser.c) when bumping.
         .package(url: "https://github.com/alex-pinkus/tree-sitter-swift",         revision: "7b7909f2f6b9414be0958275f4c8e5d69c3bca43"),
-        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-xml",  from: "0.7.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-python",        from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-javascript",    from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-typescript",    from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-markdown", from: "0.4.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-bash",          from: "0.23.0"),
+        // exact: pins (TSK-974) — see the PIN POLICY note above.
+        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-xml",  exact: "0.7.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-python",        exact: "0.25.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-javascript",    exact: "0.25.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-typescript",    exact: "0.23.2"),
+        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-markdown", exact: "0.5.3"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-bash",          exact: "0.25.1"),
         // Phase 5 lazy grammars. Each lives in its own
         // `.library(.dynamic)` product so ViewerCore never pays for
         // them in the executable; the runtime loader dlopens by path.
         // Canonical upstream URLs only — picked for "tree-sitter org
         // or grammars org owns it" stability, not popularity.
-        .package(url: "https://github.com/tree-sitter/tree-sitter-java",          from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-c",             from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-cpp",           from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-c-sharp",       from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-rust",          from: "0.23.0"),
-        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-lua",  from: "0.2.0"),
+        // exact: pins (TSK-974) — see the PIN POLICY note above.
+        .package(url: "https://github.com/tree-sitter/tree-sitter-java",          exact: "0.23.5"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-c",             exact: "0.24.2"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-cpp",           exact: "0.23.4"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-c-sharp",       exact: "0.23.5"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-rust",          exact: "0.24.2"),
+        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-lua",  exact: "0.5.0"),
     ],
     targets: [
         // Patch targets — the upstream tree-sitter-python and
