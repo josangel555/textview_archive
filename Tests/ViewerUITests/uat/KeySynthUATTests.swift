@@ -66,13 +66,20 @@ final class KeySynthUATTests: LiveAppTestCase {
     func test_KEY_01_typeStringReachesEditorModel() throws {
         try skipUnlessBuilt()
         let file = try harness.writeFile("note.md", "")
-        // editor mode → CM6 field is the focused first responder; ui-type posts
-        // real keydown/keyup; delays let WindowServer deliver + the CM6 bridge
-        // debounce-flush the change back to the model before the dump.
+        // editor mode flips the active tab to CM6, but `editor-set-mode editor`
+        // alone does NOT give the CM6 WKWebView keyboard first-responder (the
+        // KEY_01 root cause, TSK-1020) — synthesized keydowns then insert into
+        // nothing. `editor-focus` bumps `editorFocusRequest`, which the CM6
+        // representable consumes (`makeFirstResponder(webView)` + JS `.focus()`),
+        // so the following `ui-type` posts real keydown/keyup into the focused
+        // CM6 field. Delays let WindowServer deliver the focus + keys and the
+        // CM6 bridge debounce-flush the change back to the model before the dump.
         let dumps = try harness.runScript(
             """
             delay 1.0
             editor-set-mode editor
+            delay 0.5
+            editor-focus
             delay 0.8
             ui-type Hello
             delay 1.0

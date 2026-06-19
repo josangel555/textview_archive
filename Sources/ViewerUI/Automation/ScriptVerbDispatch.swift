@@ -143,6 +143,19 @@ public enum ScriptVerb {
             if let mode = ViewMode(rawValue: arg) {
                 model.setCurrentViewMode(mode)
             }
+        case "editor-focus":
+            // TSK-1020: hand keyboard first-responder to the ACTIVE document
+            // surface for the current view mode — for an `.editor` tab that
+            // bumps `editorFocusRequest`, which the CM6 representable consumes
+            // (`webView.window?.makeFirstResponder(webView)` + JS `.focus()`),
+            // so a following `ui-type` posts real keydowns into the CM6 field
+            // rather than into nothing. Reuses the host-tested, mode-aware
+            // `returnFocusToActiveDocument` (the SAME nonce TSK-905/906/938
+            // drive) — `editor-set-mode editor` alone only sets the view mode,
+            // it does NOT focus the editor (the KEY_01 root cause). No-op when
+            // there's no active document or the mode owns its first-responder
+            // by other means (source/hex/table/diff NSTextView surfaces).
+            _ = model.returnFocusToActiveDocument(currentFocusIsDocument: false)
         case "editor-set-text":
             // Push text into the active tab's editor buffer — same
             // entry point the CM6 JS bridge would fire on every
