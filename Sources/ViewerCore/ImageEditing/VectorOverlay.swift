@@ -28,7 +28,7 @@ import Foundation
 /// here (rather than leaning on `CGColor`, which is neither `Codable` nor
 /// `Equatable` in a stable way) so the overlay round-trips losslessly through
 /// JSON. The view layer converts to `SwiftUI.Color` / `CGColor` at draw time.
-public struct RGBAColor: Sendable, Codable, Equatable {
+public struct OverlayColor: Sendable, Codable, Equatable {
     public var r: Double
     public var g: Double
     public var b: Double
@@ -60,10 +60,10 @@ public struct RGBAColor: Sendable, Codable, Equatable {
             a: try c.decode(Double.self, forKey: .a))
     }
 
-    public static let black = RGBAColor(r: 0, g: 0, b: 0)
-    public static let white = RGBAColor(r: 1, g: 1, b: 1)
-    public static let red = RGBAColor(r: 1, g: 0, b: 0)
-    public static let clear = RGBAColor(r: 0, g: 0, b: 0, a: 0)
+    public static let black = OverlayColor(r: 0, g: 0, b: 0)
+    public static let white = OverlayColor(r: 1, g: 1, b: 1)
+    public static let red = OverlayColor(r: 1, g: 0, b: 0)
+    public static let clear = OverlayColor(r: 0, g: 0, b: 0, a: 0)
 }
 
 // MARK: - Style
@@ -72,16 +72,16 @@ public struct RGBAColor: Sendable, Codable, Equatable {
 /// black stroke with no fill — the conventional "draw an outline" default.
 public struct ShapeStyle: Sendable, Codable, Equatable {
     /// Stroke color. `stroke.a == 0` ⇒ unstroked (e.g. a pure-fill rectangle).
-    public var stroke: RGBAColor
+    public var stroke: OverlayColor
     /// Stroke width in **points** (screen-space, not normalized): a hairline
     /// outline should look the same thickness regardless of image dimensions.
     /// Clamped to `>= 0`; `0` ⇒ no stroke is drawn.
     public var lineWidth: Double
     /// Fill color for closed shapes (rect / ellipse). `fill == nil` ⇒ outline
     /// only; ignored by open shapes (line / arrow), which are never filled.
-    public var fill: RGBAColor?
+    public var fill: OverlayColor?
 
-    public init(stroke: RGBAColor = .black, lineWidth: Double = 2, fill: RGBAColor? = nil) {
+    public init(stroke: OverlayColor = .black, lineWidth: Double = 2, fill: OverlayColor? = nil) {
         self.stroke = stroke
         self.lineWidth = Self.sanitize(lineWidth)
         self.fill = fill

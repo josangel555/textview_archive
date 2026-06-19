@@ -95,9 +95,9 @@ struct VectorOverlayView: View {
 }
 
 extension Color {
-    /// Bridge the host-testable `RGBAColor` (straight-alpha sRGB `0...1`) into a
+    /// Bridge the host-testable `OverlayColor` (straight-alpha sRGB `0...1`) into a
     /// SwiftUI `Color` for the draw path.
-    init(rgba: RGBAColor) {
+    init(rgba: OverlayColor) {
         self.init(.sRGB, red: rgba.r, green: rgba.g, blue: rgba.b, opacity: rgba.a)
     }
 }

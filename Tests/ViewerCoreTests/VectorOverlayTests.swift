@@ -162,15 +162,15 @@ final class VectorOverlayTests: XCTestCase {
 
     // MARK: - Color / style clamping
 
-    func testRGBAColorClampsOutOfGamutComponents() {
-        let c = RGBAColor(r: 2, g: -1, b: 0.5, a: 99)
+    func testOverlayColorClampsOutOfGamutComponents() {
+        let c = OverlayColor(r: 2, g: -1, b: 0.5, a: 99)
         XCTAssertEqual(c.r, 1)
         XCTAssertEqual(c.g, 0)
         XCTAssertEqual(c.b, 0.5)
         XCTAssertEqual(c.a, 1)
         // Non-finite collapses to 0.
-        XCTAssertEqual(RGBAColor(r: .nan, g: .infinity, b: 0, a: 1).r, 0)
-        XCTAssertEqual(RGBAColor(r: .nan, g: .infinity, b: 0, a: 1).g, 0)
+        XCTAssertEqual(OverlayColor(r: .nan, g: .infinity, b: 0, a: 1).r, 0)
+        XCTAssertEqual(OverlayColor(r: .nan, g: .infinity, b: 0, a: 1).g, 0)
     }
 
     func testShapeStyleSanitizesLineWidth() {
