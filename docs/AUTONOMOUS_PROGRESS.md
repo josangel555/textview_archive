@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-961: vm-profile.sh `reopen` mode shipped → isolated 889's warm-path lag
+
+Built the P0-front unblock: a `reopen` trace mode in scripts/vm-profile.sh (cold-open the file, switch AWAY to
+another, switch BACK = warm re-display) — the warm path the cold `open` mode couldn't reach. VALIDATED by running it
+(it produced the warm-path os_signpost trace). PAYOFF — it isolated 889: the warm (re)display runs
+DocumentModel.openResolved 29.3 ms + SourceTextController.apply (source-text render) 19.77 ms (vs cold openResolved
+8.4 ms), so the warm switch-back is NOT a cheap tab-reselect — it re-runs the full open+render, and the SOURCE-TEXT
+render (~20 ms for 852 KB) is the dominant per-display cost. Recorded the attribution + fix directions on TSK-889
+(optimize SourceTextController.apply for large files: async/incremental highlight + virtualized layout; and/or reuse
+the rendered source view on warm switch-back). NEXT to pin the hotspot within apply: a debug-config reopen trace
+(symbolicated). The `hover` mode (for 892) is the remaining half of 961 — a follow-on (needs mouse-synth).
+
 ## LOG 2026-06-18 — P0 perf front: host side is already optimized; lag needs structured VM traces (892/908/889)
 
 Investigated the top P0 perf items host-side. PATTERN: the app's host code is already well-optimized, so the felt

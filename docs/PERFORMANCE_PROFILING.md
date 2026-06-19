@@ -36,6 +36,17 @@ open *.trace
 Stop the recording from the Instruments UI (or Ctrl-C the `xctrace`
 process) once you've reproduced the slow open.
 
+## Trace modes (`vm-profile.sh [file] [secs] [mode] [config]`)
+
+`open` (cold launch-with-file, default), `resize` (relayout sweep), `nav`
+(tab-walk + toggles), and **`reopen`** — cold-open the file, switch away to
+another, then switch back, to isolate the **WARM re-display** path the cold
+`open` mode can't reach (TSK-961). The `reopen` mode isolated 889: the warm
+switch-back is *not* a cheap tab-reselect — it re-runs `openResolved` (~29 ms)
++ `SourceTextController.apply` (source-text render, ~20 ms for an 852 KB JSON).
+Append `debug` as the config arg for symbolicated Time-Profiler stacks within a
+hot phase (release samples are addresses only).
+
 ## The master switch: `MDV_SIGNPOSTS=1`
 
 `PerfSignpost` reads `MDV_SIGNPOSTS` **once** at first touch and caches it.

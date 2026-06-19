@@ -19,6 +19,11 @@
 #                         workspace restore), then run `nav-sweep 2`
 #                         (tab walk + sidebar/view toggles, signpost-
 #                         anchored in the `interact` category) (TSK-603)
+#                reopen — cold-open the file, switch AWAY to another file,
+#                         then switch BACK to it (warm re-display) — isolates
+#                         the WARM re-render/re-highlight path that the cold
+#                         `open` mode can't reach (TSK-961; for 889's warm lag,
+#                         which a cold-open trace showed is NOT the slow part)
 #        config: release (default) | debug — debug keeps symbols, use it
 #                when you need SYMBOLICATED Time Profiler stacks (the
 #                release bundle is stripped; its timings are honest but
@@ -59,8 +64,8 @@ if [[ ! "$SECONDS_ARG" =~ ^[0-9]+$ ]]; then
   echo "Error: seconds must be an integer: $SECONDS_ARG" >&2
   exit 1
 fi
-case "$MODE" in open|resize|nav) ;; *)
-  echo "Error: mode must be open|resize|nav: $MODE" >&2; exit 1 ;; esac
+case "$MODE" in open|resize|nav|reopen) ;; *)
+  echo "Error: mode must be open|resize|nav|reopen: $MODE" >&2; exit 1 ;; esac
 case "$CONFIG" in release|debug) ;; *)
   echo "Error: config must be release|debug: $CONFIG" >&2; exit 1 ;; esac
 case "$SCOPE" in app|system) ;; *)
@@ -147,6 +152,21 @@ nav-sweep 2
 delay 8
 SCRIPT
     LAUNCH_ARGS="--script /tmp/mdv-nav-driver.txt"
+  elif [ "$MODE" = "reopen" ]; then
+    # Driver: cold-open the target, switch AWAY to another file (making it
+    # current), then `open` the target again — which re-selects its existing
+    # tab and RE-DISPLAYS it warm. The signposts around that final open are
+    # the WARM re-render/re-highlight path (TSK-961). 889's cold-open trace
+    # was fast/no-hang, so the felt lag must live here; this mode captures it.
+    cat > /tmp/mdv-reopen-driver.txt <<SCRIPT
+open $FILE_ARG_VM
+delay 4
+open /Users/vm-tester/markdown_viewer/README.md
+delay 2
+open $FILE_ARG_VM
+delay 6
+SCRIPT
+    LAUNCH_ARGS="--script /tmp/mdv-reopen-driver.txt"
   else
     LAUNCH_ARGS="$FILE_ARG_VM"
   fi
