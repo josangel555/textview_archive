@@ -59,8 +59,8 @@ public struct LSPProblemsViewModel: Sendable {
         public let url: URL
         public let diagnostics: [LSPDiagnostic]
 
-        public var errorCount: Int { diagnostics.lazy.filter { $0.severity == .error }.count }
-        public var warningCount: Int { diagnostics.lazy.filter { $0.severity == .warning }.count }
+        public var errorCount: Int { diagnostics.count { $0.severity == .error } }
+        public var warningCount: Int { diagnostics.count { $0.severity == .warning } }
 
         public init(url: URL, diagnostics: [LSPDiagnostic]) {
             self.url = url
@@ -281,9 +281,9 @@ public struct LSPProblemsViewModel: Sendable {
     // MARK: - Server-health roll-up summary
 
     /// Count of servers currently live.
-    public var liveServerCount: Int { servers.lazy.filter { $0.state == .live }.count }
+    public var liveServerCount: Int { servers.count { $0.state == .live } }
     /// Count of servers currently dead.
-    public var deadServerCount: Int { servers.lazy.filter { $0.state == .dead }.count }
+    public var deadServerCount: Int { servers.count { $0.state == .dead } }
     /// Total crash count across all tracked servers.
     public var totalCrashCount: Int { servers.reduce(0) { $0 + $1.crashCount } }
     /// Whether any tracked server is dead OR has crashed at least once —

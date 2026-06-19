@@ -78,19 +78,19 @@ public final class LSPDiagnosticsStore: ObservableObject {
     }
 
     public var errorCount: Int {
-        byURL.values.reduce(0) { $0 + $1.filter { $0.severity == .error }.count }
+        byURL.values.reduce(0) { $0 + $1.count { $0.severity == .error } }
     }
 
     public var warningCount: Int {
-        byURL.values.reduce(0) { $0 + $1.filter { $0.severity == .warning }.count }
+        byURL.values.reduce(0) { $0 + $1.count { $0.severity == .warning } }
     }
 
     public var informationCount: Int {
-        byURL.values.reduce(0) { $0 + $1.filter { $0.severity == .information }.count }
+        byURL.values.reduce(0) { $0 + $1.count { $0.severity == .information } }
     }
 
     public var hintCount: Int {
-        byURL.values.reduce(0) { $0 + $1.filter { $0.severity == .hint }.count }
+        byURL.values.reduce(0) { $0 + $1.count { $0.severity == .hint } }
     }
 
     /// Number of files with at least one diagnostic — the "N files with

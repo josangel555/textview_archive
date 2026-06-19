@@ -36,7 +36,7 @@ public struct ReviewSummary: Codable, Equatable, Sendable, Identifiable {
         self.state = review.state
         self.updatedAt = review.updatedAt
         self.commentCount = review.comments.count
-        self.unresolvedCount = review.comments.filter { !$0.resolved }.count
+        self.unresolvedCount = review.comments.count { !$0.resolved }
     }
 }
 

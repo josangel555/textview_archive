@@ -222,7 +222,7 @@ public enum ReviewExporter {
         var bySeverity: [ReviewComment.Severity: Int] = [:]
         for sev in ReviewComment.Severity.allCases { bySeverity[sev] = 0 }
         for c in topLevel { bySeverity[c.severity, default: 0] += 1 }
-        let unresolved = topLevel.filter { !$0.resolved }.count
+        let unresolved = topLevel.count { !$0.resolved }
         let fileCount = Set(topLevel.map(\.filePath)).count
 
         return ExportStats(

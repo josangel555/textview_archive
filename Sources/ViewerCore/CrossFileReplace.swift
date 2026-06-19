@@ -39,7 +39,7 @@ public enum CrossFileReplace {
         public let failures: [FileOutcome]
 
         public init(outcomes: [FileOutcome]) {
-            self.filesChanged = outcomes.filter { $0.succeeded && $0.replacements > 0 }.count
+            self.filesChanged = outcomes.count { $0.succeeded && $0.replacements > 0 }
             self.totalReplacements = outcomes.filter { $0.succeeded }.reduce(0) { $0 + $1.replacements }
             self.failures = outcomes.filter { !$0.succeeded }
         }
