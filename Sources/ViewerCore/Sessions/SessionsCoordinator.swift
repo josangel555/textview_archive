@@ -388,15 +388,32 @@ public final class SessionsCoordinator: ObservableObject {
 
     // MARK: - private
 
-    /// Write the index + every per-session snapshot through the
-    /// coalescing write queue. Returns immediately.
-    private func persist() {
-        // PERSIST-04: when the on-disk index was written by a newer
-        // schema (downgrade), skip the index write so we don't truncate
-        // the newer build's fields. Per-session snapshot writes below
-        // are still issued — each carries its own schemaVersion and the
-        // newer build's reader applies the same forward-compat guard, so
-        // they can't be silently truncated by us.
+    /// One queued write in the crash-safe persist order (TSK-1029).
+    enum PersistOp {
+        case snapshot(SessionSnapshot)
+        case index(SessionIndex)
+    }
+
+    /// Build the persist plan: every per-session SNAPSHOT first, THEN the index.
+    ///
+    /// Snapshots-before-index is the crash-safety invariant (TSK-1029): both
+    /// writes go through one FIFO queue, so on a crash mid-flush the index (which
+    /// references snapshots) must never be a generation AHEAD of the snapshots on
+    /// disk — that would dangle-reference a not-yet-written snapshot (data loss).
+    /// The reverse (a snapshot with a stale index) is harmless: an orphan
+    /// snapshot, recovered on the next clean persist.
+    ///
+    /// PERSIST-04: when the on-disk index was written by a NEWER schema
+    /// (downgrade), the index write is skipped so we don't truncate the newer
+    /// build's fields — snapshots still go out (each carries its own
+    /// schemaVersion + the newer reader's forward-compat guard). Pure +
+    /// host-testable.
+    static func persistPlan(
+        sessions: [SessionSnapshot], activeID: UUID?, indexWriteBlocked: Bool, saveTime: Date
+    ) -> [PersistOp] {
+        // Stamp `savedAt` on the disk copy without disturbing the in-memory
+        // value (which uses `lastActiveAt` for LRU).
+        var ops: [PersistOp] = sessions.map { .snapshot($0.with(savedAt: saveTime)) }
         if !indexWriteBlocked {
             let entries = sessions.map { s in
                 SessionIndex.Entry(
@@ -406,14 +423,23 @@ public final class SessionsCoordinator: ObservableObject {
                     lastActiveAt: s.lastActiveAt
                 )
             }
-            let idx = SessionIndex(sessions: entries, lastActiveID: activeID)
-            store.enqueueSaveIndex(idx)
+            ops.append(.index(SessionIndex(sessions: entries, lastActiveID: activeID)))
         }
-        let saveTime = Date()
-        for s in sessions {
-            // Stamp `savedAt` on the disk copy without disturbing the
-            // in-memory value (which uses `lastActiveAt` for LRU).
-            store.enqueueSave(s.with(savedAt: saveTime))
+        return ops
+    }
+
+    /// Write every per-session snapshot then the index through the coalescing
+    /// write queue, in the crash-safe order (see `persistPlan`). Returns
+    /// immediately.
+    private func persist() {
+        for op in Self.persistPlan(
+            sessions: sessions, activeID: activeID,
+            indexWriteBlocked: indexWriteBlocked, saveTime: Date()
+        ) {
+            switch op {
+            case .snapshot(let s): store.enqueueSave(s)
+            case .index(let idx): store.enqueueSaveIndex(idx)
+            }
         }
     }
 

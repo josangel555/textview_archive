@@ -514,6 +514,37 @@ final class SessionsCoordinatorTests: XCTestCase {
         )
         return url
     }
+
+    // MARK: - persist ordering (TSK-1029)
+
+    func test_persistPlan_writesAllSnapshotsBeforeIndex() {
+        let d = Date(timeIntervalSince1970: 1_700_000_000)
+        func snap(_ name: String) -> SessionSnapshot {
+            SessionSnapshot(id: UUID(), displayName: name, createdAt: d,
+                            lastActiveAt: d, sidebarRootPath: nil)
+        }
+        let s1 = snap("A"), s2 = snap("B")
+        let plan = SessionsCoordinator.persistPlan(
+            sessions: [s1, s2], activeID: s1.id, indexWriteBlocked: false, saveTime: d)
+        let lastSnap = plan.lastIndex { if case .snapshot = $0 { return true }; return false }
+        let firstIndex = plan.firstIndex { if case .index = $0 { return true }; return false }
+        XCTAssertNotNil(lastSnap)
+        XCTAssertNotNil(firstIndex)
+        // Crash-safety: every snapshot is enqueued BEFORE the index that
+        // references them (teeth: pre-fix the index was enqueued first).
+        XCTAssertLessThan(lastSnap!, firstIndex!)
+        XCTAssertEqual(plan.count, 3)
+    }
+
+    func test_persistPlan_indexWriteBlocked_omitsIndex() {
+        let d = Date(timeIntervalSince1970: 1_700_000_000)
+        let plan = SessionsCoordinator.persistPlan(
+            sessions: [SessionSnapshot(id: UUID(), displayName: "A", createdAt: d,
+                                       lastActiveAt: d, sidebarRootPath: nil)],
+            activeID: nil, indexWriteBlocked: true, saveTime: d)
+        XCTAssertFalse(plan.contains { if case .index = $0 { return true }; return false })
+        XCTAssertEqual(plan.count, 1)
+    }
 }
 
 /// Records every `mount` / `detach` callback in order so tests can
