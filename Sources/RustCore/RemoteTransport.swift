@@ -48,8 +48,9 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     private var subs: [UInt64: @Sendable (RemoteEvent) -> Void] = [:]
     /// Events that arrived for a sub id whose handler isn't registered yet
     /// (the window between the server creating the sub and `subscribe`
-    /// decoding the response). Bounded; flushed on registration.
-    private var orphanEvents: [UInt64: [RemoteEvent]] = [:]
+    /// decoding the response). Bounded on THREE axes (see `OrphanStore`);
+    /// flushed on registration.
+    private var orphans = OrphanStore()
     private var closedError: RemoteError?
     /// Serializes socket writes (requests only — the reader never writes).
     private let writeLock = NSLock()
@@ -66,7 +67,100 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     /// adapter thread forever (the Swift fallback fires instead).
     public static let callDeadline: TimeInterval = 30
 
-    private static let orphanBufferCap = 256
+    /// Globally-bounded pre-registration orphan buffer (TSK-987).
+    ///
+    /// The orphan dict bridges ONLY the narrow race where a pushed event for
+    /// a freshly-created sub arrives before `subscribe()` decodes the response
+    /// and registers the handler. A buggy/compromised `mdv-serve` could stream
+    /// events for monotonically-increasing, never-subscribed sub ids; capping
+    /// only the per-list length (the old `orphanBufferCap`) bounds neither the
+    /// NUMBER of distinct keys nor the aggregate retained bytes, so the dict
+    /// (each body up to a 16 MiB frame) grows until the client OOMs.
+    ///
+    /// This store enforces three independent ceilings:
+    ///   - `keyCap`  — max distinct pending sub ids; a new key past the cap
+    ///     evicts the OLDEST key (insertion-order LRU) before inserting.
+    ///   - `byteCap` — total retained body bytes; appends that would exceed it
+    ///     are dropped (the bridge is best-effort — a missed pre-registration
+    ///     event is far cheaper than an OOM, and the steady-state path never
+    ///     touches the buffer at all).
+    ///   - `listCap` — per-sub list length (the pre-existing single-key cap).
+    ///
+    /// Pure value type with no I/O: driven directly by host tests. All access
+    /// is under `RemoteTransport.state`, so it needs no internal locking.
+    struct OrphanStore {
+        static let keyCap = 64
+        static let byteCap = 8 * 1024 * 1024  // 8 MiB aggregate ceiling
+        static let listCap = 256
+
+        /// Insertion-ordered (oldest key first) so eviction is O(1)-ish LRU.
+        private(set) var byKey: [UInt64: [RemoteEvent]] = [:]
+        /// Oldest-first key order, kept in lock-step with `byKey`.
+        private(set) var order: [UInt64] = []
+        private(set) var totalBytes: Int = 0
+
+        var keyCount: Int { byKey.count }
+
+        /// Buffer one event for a not-yet-registered sub. Enforces all three
+        /// ceilings; returns false if the event was dropped (cap hit).
+        @discardableResult
+        mutating func buffer(_ event: RemoteEvent) -> Bool {
+            let sub = event.sub
+            let cost = event.body.count
+
+            if var list = byKey[sub] {
+                // Existing key: per-list AND byte ceilings.
+                guard list.count < Self.listCap,
+                      totalBytes + cost <= Self.byteCap else { return false }
+                list.append(event)
+                byKey[sub] = list
+                totalBytes += cost
+                return true
+            }
+
+            // New key: a single event must itself fit the byte budget.
+            guard cost <= Self.byteCap else { return false }
+            // Evict oldest keys until the new key fits the key cap AND the
+            // event fits the byte budget. Never evict to make room for an
+            // event larger than the whole budget (guarded above).
+            while (byKey.count >= Self.keyCap || totalBytes + cost > Self.byteCap),
+                  let oldest = order.first {
+                evict(oldest)
+            }
+            // If eviction still couldn't free enough bytes (shouldn't happen
+            // once the store is empty, since cost <= byteCap), drop.
+            guard totalBytes + cost <= Self.byteCap else { return false }
+            byKey[sub] = [event]
+            order.append(sub)
+            totalBytes += cost
+            return true
+        }
+
+        /// Remove + return a sub's buffered events (on handler registration).
+        mutating func take(_ sub: UInt64) -> [RemoteEvent] {
+            guard let list = byKey.removeValue(forKey: sub) else { return [] }
+            order.removeAll { $0 == sub }
+            totalBytes -= list.reduce(0) { $0 + $1.body.count }
+            return list
+        }
+
+        /// Drop a sub's buffer without delivering (unsubscribe).
+        mutating func drop(_ sub: UInt64) {
+            _ = take(sub)
+        }
+
+        mutating func removeAll() {
+            byKey.removeAll()
+            order.removeAll()
+            totalBytes = 0
+        }
+
+        private mutating func evict(_ sub: UInt64) {
+            guard let list = byKey.removeValue(forKey: sub) else { return }
+            order.removeAll { $0 == sub }
+            totalBytes -= list.reduce(0) { $0 + $1.body.count }
+        }
+    }
 
     public enum RemoteError: Error, Equatable {
         case connect(String)
@@ -246,7 +340,7 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
         let map = try reader.decode().mapValue()
         let sub = try map.require("sub").u64Value()
         state.lock()
-        let raced = orphanEvents.removeValue(forKey: sub) ?? []
+        let raced = orphans.take(sub)
         subs[sub] = handler
         state.unlock()
         // Flush raced events through the SAME serial queue used for live
@@ -279,7 +373,7 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     private func dropHandler(_ sub: UInt64) {
         state.lock()
         subs[sub] = nil
-        orphanEvents[sub] = nil
+        orphans.drop(sub)
         state.unlock()
         // Barrier: wait out anything already on the queue. We never call this
         // FROM the delivery queue, so this cannot deadlock.
@@ -391,13 +485,11 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
                 deliveryQueue.async { [weak self] in self?.deliver(event) }
                 return
             }
-            // Pre-registration race: buffer (bounded) until subscribe()
-            // registers the handler.
-            var buffered = orphanEvents[event.sub] ?? []
-            if buffered.count < Self.orphanBufferCap {
-                buffered.append(event)
-                orphanEvents[event.sub] = buffered
-            }
+            // Pre-registration race: buffer (globally bounded — key cap,
+            // byte budget, per-list cap) until subscribe() registers the
+            // handler. A new sub id past the key cap evicts the oldest;
+            // events past the byte budget are dropped (TSK-987).
+            orphans.buffer(event)
             state.unlock()
         }
     }
@@ -426,7 +518,7 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
         let waiting = Array(pending.values)
         pending.removeAll()
         subs.removeAll()
-        orphanEvents.removeAll()
+        orphans.removeAll()
         let closeHandler = onClose
         state.unlock()
         for slot in waiting {
