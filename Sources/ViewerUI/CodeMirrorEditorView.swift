@@ -1244,6 +1244,62 @@ public struct CMCurrentLineHighlightState: Equatable, Sendable {
     }
 }
 
+/// TSK-890 (editor drag-select perf): the gate that decides whether the
+/// expensive selection-match highlight scan should run for a given editor
+/// update. Pure value type, host-testable without a WKWebView — it mirrors the
+/// drag-gating logic the selection-match wrapper applies in `codemirror.html`.
+///
+/// THE PERF BUG it models: CM6's stock `highlightSelectionMatches` ViewPlugin
+/// recomputes its decorations on EVERY `selectionSet` transaction. A mouse
+/// drag-select fires one such transaction per mousemove, so the plugin runs a
+/// viewport-wide occurrence scan (RegExpCursor over every visible line) on each
+/// frame of the drag — unthrottled, on the WebView main thread, which is what
+/// makes a drag feel sluggish on a large/wide document.
+///
+/// THE FIX (same drag-gating principle as TSK-894's active-line highlight):
+/// suppress the selection-match scan while a drag is in flight, and recompute
+/// exactly once when the drag ends. The match decorations are visually
+/// irrelevant DURING the sweep anyway (the selection itself is what the user is
+/// watching), so skipping the scan is invisible — it just removes the per-frame
+/// cost. On drag-end the scan runs once against the final selection.
+///
+/// `shouldRunSelectionMatchScan` is the single source of truth: the scan runs
+/// when NOT dragging. The transitions (`beginningDrag` / `endingDrag`) flip the
+/// flag so a host test pins the behaviour even though the pixel/perf effect is
+/// WebView-only.
+public struct CMSelectionMatchHighlightGate: Equatable, Sendable {
+
+    /// Whether a pointer drag-select is currently sweeping. While true, the
+    /// selection-match viewport scan is suppressed.
+    public var isDragging: Bool
+
+    public init(isDragging: Bool = false) {
+        self.isDragging = isDragging
+    }
+
+    /// The selection-match occurrence scan runs ONLY when no drag is in flight.
+    /// During a drag the per-mousemove scan is the perf cost we are removing;
+    /// the prior decoration set simply stays put until the drag ends.
+    public var shouldRunSelectionMatchScan: Bool {
+        !isDragging
+    }
+
+    // MARK: - Transitions (pure)
+
+    /// Pointer pressed down — a drag-select may begin. Enters the suppressed
+    /// state so the next mousemove-driven `selectionSet` updates don't re-scan.
+    public func beginningDrag() -> CMSelectionMatchHighlightGate {
+        CMSelectionMatchHighlightGate(isDragging: true)
+    }
+
+    /// Drag released (anywhere — a document-level mouseup ends it even off the
+    /// editor). Leaves the suppressed state so the scan recomputes once against
+    /// the final selection.
+    public func endingDrag() -> CMSelectionMatchHighlightGate {
+        CMSelectionMatchHighlightGate(isDragging: false)
+    }
+}
+
 /// TSK-641 (editor surface): resolve what `setTheme` should carry for the
 /// current appearance + selected theme. Pure — host-testable without a
 /// WKWebView. A selected theme's palette wins; nil reproduces the TSK-602

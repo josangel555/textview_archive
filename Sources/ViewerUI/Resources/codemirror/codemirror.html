@@ -257,6 +257,15 @@
   const diffGutterCompartment  = new Compartment(); // diff bars + blame swatches
   const indentGuidesCompartment = new Compartment(); // hand-rolled indent guides
   const vimCompartment         = new Compartment(); // vim mode (opt-in, off by default)
+  // TSK-890: selection-match highlight, drag-gated. CM6's stock
+  // `highlightSelectionMatches` recomputes a viewport-wide occurrence scan on
+  // EVERY `selectionSet` transaction; a drag-select fires one per mousemove, so
+  // the scan runs unthrottled on each drag frame (the perf bug). We wrap it in
+  // a compartment and reconfigure it OFF for the duration of a drag (2 dispatches
+  // total — down + up — not one per move), then back ON at drag-end so the scan
+  // runs once against the final selection. Mirrors `CMSelectionMatchHighlightGate`
+  // in CodeMirrorEditorView.swift, which host-tests the gate decision.
+  const selectionMatchCompartment = new Compartment();
 
   // ---- show-invisibles decoration plugin ------------------------------
   // Toggled via `setShowInvisibles`. Renders middle-dot for spaces,
@@ -953,7 +962,10 @@
       // (replaces stock `highlightActiveLine()`; same `.cm-activeLine` class
       // so CM6's default styling still applies).
       activeLineExtension(),
-      highlightSelectionMatches(),
+      // TSK-890: drag-gated so the viewport-wide occurrence scan doesn't run
+      // on every mousemove during a drag-select. `installDragSelectionMatchGate`
+      // reconfigures this OFF for the drag's duration and back ON at drag-end.
+      selectionMatchCompartment.of(highlightSelectionMatches()),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       keymap.of([
         // Snippet tab-stops first — when a session is live they win over
@@ -1015,6 +1027,38 @@
   // page is local, sandboxed, and never loads remote content.
   window.__mdvView = view;
   attachScrollListener();
+
+  // ---- TSK-890: drag-gate for selection-match highlighting -------------
+  // Reconfigure the selectionMatchCompartment OFF while a drag-select is in
+  // flight so CM6's stock occurrence scan doesn't re-run on every mousemove,
+  // then back ON at drag-end (one scan against the final selection). Listeners
+  // are document-level (attach ONCE — they survive view.setState, which the
+  // editor DOM listeners do not) so a release outside the editor still ends
+  // the drag. `dragGateActive` mirrors `CMSelectionMatchHighlightGate.isDragging`.
+  let dragGateActive = false;
+  function setSelectionMatchEnabled(enabled) {
+    view.dispatch({
+      effects: selectionMatchCompartment.reconfigure(
+        enabled ? highlightSelectionMatches() : []),
+    });
+  }
+  function installDragSelectionMatchGate() {
+    // mousedown on the editor surface begins a potential drag-select. A
+    // document-level mouseup ends it even if released off the editor.
+    view.dom.addEventListener("mousedown", function (e) {
+      // Only a primary-button press on the content begins a sweep. (⌥-drag
+      // rectangular select also benefits — same primary button.)
+      if (e.button !== 0 || dragGateActive) return;
+      dragGateActive = true;
+      setSelectionMatchEnabled(false);
+    });
+    document.addEventListener("mouseup", function () {
+      if (!dragGateActive) return;
+      dragGateActive = false;
+      setSelectionMatchEnabled(true);
+    });
+  }
+  installDragSelectionMatchGate();
 
   // ---- Dispatch entry point (Swift → JS) -------------------------------
   // Single switch keeps the surface narrow + auditable. Swift side
