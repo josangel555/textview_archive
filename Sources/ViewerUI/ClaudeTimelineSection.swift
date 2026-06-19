@@ -27,14 +27,25 @@ struct ClaudeTimelineSection: View {
     @State private var events: [ClaudeEvent] = []
     @State private var refreshTask: Task<Void, Never>?
     @State private var transcriptCount: Int = 0
+    // TSK-336 slice (a): the Hooks sub-segment — live tool activity captured by
+    // the `monitor-log.sh` Claude Code hook, scoped to this project's `cwd`.
+    // Captured + parsed by `ClaudeMonitorLog` (long dead code with no UI
+    // consumer); this surfaces it. Collapsed by default and persisted like the
+    // parent section.
+    @State private var hookEvents: [ClaudeMonitorEvent] = []
+    @AppStorage("MarkdownViewer.sidebar.claudeTimeline.hooksExpanded")
+    private var isHooksExpanded = false
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         Group {
-            if transcriptCount > 0 {
+            if transcriptCount > 0 || !hookEvents.isEmpty {
                 VStack(spacing: 0) {
                     header
-                    if isExpanded { eventList }
+                    if isExpanded {
+                        eventList
+                        hooksSegment
+                    }
                 }
                 .sidebarSectionContainer()
             } else if forcedShown {
@@ -100,6 +111,95 @@ struct ClaudeTimelineSection: View {
         .frame(height: bodyHeight)
     }
 
+    // MARK: - Hooks sub-segment (TSK-336 slice (a))
+
+    /// Collapsible "Hooks" segment nested under the Claude section, listing the
+    /// live tool-activity events captured by the `monitor-log.sh` hook for this
+    /// project. Hidden entirely when no hook events are attributed to the
+    /// current `cwd` — non-monitor workflows see no extra chrome.
+    @ViewBuilder private var hooksSegment: some View {
+        if !hookEvents.isEmpty {
+            VStack(spacing: 0) {
+                hooksHeader
+                if isHooksExpanded { hookEventList }
+            }
+        }
+    }
+
+    private var hooksHeader: some View {
+        Button(action: { isHooksExpanded.toggle() }) {
+            HStack(spacing: 4) {
+                Image(systemName: isHooksExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: model.uiSize(8), weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: model.uiSize(10))
+                Text("Hooks")
+                    .font(.system(size: model.uiSize(10), weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(hookEvents.count)")
+                    .font(.system(size: model.uiSize(10), weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, model.uiSize(10))
+            .padding(.vertical, model.uiSize(3))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("mdv.claudeTimeline.hooks")
+    }
+
+    private var hookEventList: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(hookEvents) { event in
+                hookRow(event)
+            }
+        }
+    }
+
+    private func hookRow(_ event: ClaudeMonitorEvent) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: hookGlyph(event))
+                .font(.system(size: model.uiSize(10), weight: .medium))
+                .foregroundStyle(event.isFailure ? Color.red : hookColor(event.event))
+                .frame(width: model.uiSize(18), alignment: .center)
+                .help(event.event)
+                .accessibilityLabel(event.event)
+            Text(event.summary)
+                .font(.system(size: model.uiSize(11), design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(event.isFailure ? Color.red : Color.primary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, model.uiSize(16))
+        .padding(.vertical, model.uiSize(2))
+        .help(event.summary)
+    }
+
+    private func hookGlyph(_ event: ClaudeMonitorEvent) -> String {
+        if event.isFailure { return "exclamationmark.triangle.fill" }
+        if event.tool != nil { return "hammer.fill" }
+        switch event.event {
+        case "UserPromptSubmit": return "person.fill"
+        case "Stop":             return "stop.circle"
+        case "SessionStart":     return "play.circle"
+        case "SessionEnd":       return "xmark.circle"
+        case "Notification":     return "bell.fill"
+        default:                 return "bolt.fill"
+        }
+    }
+
+    private func hookColor(_ event: String) -> Color {
+        switch event {
+        case "UserPromptSubmit": return .blue
+        case "Stop", "SessionEnd": return .gray
+        case "SessionStart": return .green
+        case "Notification": return .purple
+        default: return .orange
+        }
+    }
+
     private func row(_ event: ClaudeEvent) -> some View {
         HStack(alignment: .top, spacing: 6) {
             // SF Symbol glyph instead of text badge — visually denser
@@ -160,9 +260,10 @@ struct ClaudeTimelineSection: View {
     private func refresh() {
         refreshTask?.cancel()
         guard let root = sidebar.rootURL else {
-            events = []; transcriptCount = 0; return
+            events = []; transcriptCount = 0; hookEvents = []; return
         }
         let dir = ClaudeLogParser.transcriptDirectory(for: root)
+        let monitorDir = ClaudeMonitorLog.defaultMonitorDir()
         refreshTask = Task.detached(priority: .utility) {
             let urls = (try? FileManager.default.contentsOfDirectory(
                 at: dir, includingPropertiesForKeys: [.contentModificationDateKey]
@@ -181,9 +282,14 @@ struct ClaudeTimelineSection: View {
                 // Load through the testable redaction kernel (see `timelineEvents`).
                 parsed = Self.timelineEvents(from: latest)
             }
+            // Hook-monitor feed for this project (TSK-336 slice (a)). The
+            // monitor envelope is privacy-bounded by the writer, so it needs no
+            // redaction barrier — surface the project-scoped events directly.
+            let hooks = ClaudeMonitorLog().projectEvents(inDir: monitorDir, root: root)
             await MainActor.run {
                 self.events = parsed
                 self.transcriptCount = count
+                self.hookEvents = hooks
             }
         }
     }

@@ -55,6 +55,53 @@ public struct ClaudeMonitorEvent: Equatable, Sendable, Identifiable {
 
     public var id: Int { sequence }
 
+    /// A compact, privacy-safe one-line description for a sidebar row. Built
+    /// ONLY from the flat, bounded envelope fields (event name, tool name, a
+    /// status/size hint) — never the raw prompt/tool payload (which the writer
+    /// already declines to persist). The hook envelope is privacy-conscious by
+    /// construction (TSK-336): unlike transcript events it carries no secrets,
+    /// so this needs no redaction barrier. Examples:
+    ///   "Edit · 81 B"      (a PostToolUse with a tool + input size)
+    ///   "Bash · failed"    (a failure)
+    ///   "UserPromptSubmit" (an event with no tool)
+    public var summary: String {
+        if let tool, !tool.isEmpty {
+            if isFailure {
+                return "\(tool) · failed"
+            }
+            if let bytes = toolInputBytes, bytes > 0 {
+                return "\(tool) · \(ClaudeMonitorEvent.formatBytes(bytes))"
+            }
+            return tool
+        }
+        if isFailure, let msg = errorMessage, !msg.isEmpty {
+            return "\(event) · \(msg)"
+        }
+        return event
+    }
+
+    /// True when this record represents a failure — a `PostToolUseFailure`
+    /// event, any event carrying an `errorMessage`, or a tool call whose
+    /// response reported `success:false`. Mirrors `ClaudeMonitorLog.failures`'s
+    /// predicate so the UI's per-row failure styling stays consistent with the
+    /// aggregate failure list.
+    public var isFailure: Bool {
+        event == "PostToolUseFailure"
+            || errorMessage != nil
+            || toolSucceeded == false
+    }
+
+    /// Human-readable byte size for the summary (`81 B`, `3.2 KB`, `1.1 MB`).
+    /// Foundation-only, locale-independent — kept tiny and deterministic so the
+    /// summary is host-testable without `ByteCountFormatter`'s locale variance.
+    static func formatBytes(_ bytes: Int) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        let kb = Double(bytes) / 1024
+        if kb < 1024 { return String(format: "%.1f KB", kb) }
+        let mb = kb / 1024
+        return String(format: "%.1f MB", mb)
+    }
+
     public init(
         sequence: Int,
         timestamp: Date?,
@@ -191,6 +238,65 @@ public struct ClaudeMonitorLog: Sendable {
             out.append((child.deletingPathExtension().lastPathComponent, events))
         }
         return out.sorted { $0.0 < $1.0 }
+    }
+
+    // MARK: - Project-scoped feed (pure)
+
+    /// Load the hook-monitor feed for ONE project root: every event across all
+    /// session files in `dir` whose `cwd` is at or under `root`, ordered most-
+    /// recent-first and capped at `cap`.
+    ///
+    /// The monitor files are keyed by SESSION, not project, but each record
+    /// carries the `cwd` it fired in — so we filter by directory containment to
+    /// surface only this project's activity in the sidebar (TSK-336 slice (a)).
+    /// Records with no parseable `cwd` are dropped (they can't be attributed to
+    /// a project). Records with no timestamp sort to the end (treated as oldest)
+    /// so a malformed `ts` never jumps to the top.
+    ///
+    /// Pure given the directory contents — read-only, bounded by `maxBytes`
+    /// per file and `cap` overall. Returns `[]` for a missing/empty dir.
+    public func projectEvents(inDir dir: URL, root: URL, cap: Int = 200) -> [ClaudeMonitorEvent] {
+        let target = Self.canonicalPath(root)
+        var matched: [ClaudeMonitorEvent] = []
+        for (_, events) in sessions(inDir: dir) {
+            for e in events where Self.cwd(e.cwd, isUnder: target) {
+                matched.append(e)
+            }
+        }
+        matched.sort { lhs, rhs in
+            // Most-recent first; nil timestamps sink to the bottom. Stable
+            // tie-break on sequence keeps equal-timestamp rows deterministic.
+            switch (lhs.timestamp, rhs.timestamp) {
+            case let (l?, r?) where l != r: return l > r
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return lhs.sequence > rhs.sequence
+            }
+        }
+        if matched.count > cap { matched = Array(matched.prefix(cap)) }
+        return matched
+    }
+
+    /// Normalize a filesystem path for containment comparison: resolve symlinks,
+    /// standardize, and strip a trailing slash. `nil`/blank → `""`.
+    static func canonicalPath(_ url: URL) -> String {
+        let p = url.standardizedFileURL.resolvingSymlinksInPath().path
+        return p.count > 1 && p.hasSuffix("/") ? String(p.dropLast()) : p
+    }
+
+    /// True when `cwd` (a recorded working directory string) is exactly `target`
+    /// or a descendant of it. Path-component aware so `/repo` does NOT match
+    /// `/repo-other` (a plain `hasPrefix` would). Both sides are canonicalized
+    /// (symlinks resolved, trailing slash stripped) so the result is independent
+    /// of how either path was spelled.
+    static func cwd(_ cwd: String?, isUnder target: String) -> Bool {
+        guard let cwd, !cwd.isEmpty, !target.isEmpty else { return false }
+        let c = canonicalPath(URL(fileURLWithPath: cwd))
+        let t = canonicalPath(URL(fileURLWithPath: target))
+        guard !t.isEmpty else { return false }
+        if c == t { return true }
+        // Descendant: canonical target + "/" must prefix the canonical cwd.
+        return c.hasPrefix(t + "/")
     }
 
     // MARK: - Aggregations (pure)
