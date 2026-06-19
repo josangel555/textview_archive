@@ -1,5 +1,17 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — P0 perf front opened: TSK-889 traced (cold JSON open is fast; lag is warm-path)
+
+Pivoted to the owner's TOP priority (P0 perf) now that the VM lane is confirmed. Ran an os_signpost trace of a
+large-JSON open (scripts/vm-profile.sh open, 852 KB fixture; corrected invocation — the file must exist on the HOST,
+vm-profile.sh scp's it). FINDING: the COLD open is FAST + NO hang — DocumentModel.openResolved 8.42 ms, render
+pipeline sub-ms, potential-hangs (≥250 ms) EMPTY. So 889's felt lag is NOT the cold open and NOT a single hang; it
+matches the ticket's "WARM path" note (re-open of an already-loaded file), which vm-profile.sh's cold-launch `open`
+mode doesn't exercise. Recorded on TSK-889 with the next step: a warm-reopen capture + a DEBUG-config time-profile
+(symbolicated) to attribute the warm re-render/re-highlight; host suspects = source/editor re-highlight + tab-reactivate
+re-layout for a large JSON. Measure-don't-guess: ruled out the cold-open + hang theories. Fixtures cleaned up.
+Tooling: vm-profile.sh + vm-uitest.sh run on the HOST (orchestrate the VM), not via ssh-onto-VM.
+
 ## LOG 2026-06-18 — TSK-924 (slice): CSV copy-row / copy-column
 
 A bounded, host-testable slice of "CSV multi-cell select + copy/paste": the cell context menu gains Copy Row (cells
