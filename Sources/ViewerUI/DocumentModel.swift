@@ -2707,6 +2707,32 @@ public final class DocumentModel: ObservableObject {
         set { editor.saveEditorOnBlur = newValue }
     }
 
+    // MARK: - Shared LSP gate + position conversion (TSK-963)
+    //
+    // Every LSP entry point used to re-derive these two facts inline, three
+    // different ways: some gated on `lspPool.registry.language(for:)`, others
+    // on the GLOBAL `LSPLanguageRegistry.default` (a subtle bug — the pool
+    // routes with its *injected* registry, which a test/workspace can override,
+    // not the default), and each repeated the 1-based→0-based + non-negative
+    // clamp by hand. These two helpers are the single source of truth so the
+    // gate and conversion can never drift between call sites again.
+
+    /// True when the pool has a language server configured for `url`. THE gate
+    /// for every LSP feature (hover, go-to, references, format, rename, code
+    /// actions, completion). Uses the POOL's registry — the one it actually
+    /// routes with — not `LSPLanguageRegistry.default`.
+    func lspLanguageConfigured(for url: URL) -> Bool {
+        lspPool.registry.language(for: url) != nil
+    }
+
+    /// Convert a CM6 editor position (1-based line, 0-based UTF-16 character)
+    /// to the LSP wire position (0-based line + character), clamped non-negative.
+    /// The pool re-encodes the character offset if the server negotiated a
+    /// non-UTF-16 position encoding.
+    func lspPosition(line: Int, character: Int) -> (line: Int, character: Int) {
+        (line: max(0, line - 1), character: max(0, character))
+    }
+
     /// JS posted a hover request. Fire the LSP `hover` round-trip
     /// asynchronously, then reply through the bridge so CM6's
     /// `hoverTooltip` callback resolves. Empty contents → no popover.
@@ -2715,17 +2741,15 @@ public final class DocumentModel: ObservableObject {
     ) {
         // Reply with empty if no LSP language is configured — avoids
         // a pointless server roundtrip that would just time out.
-        let lang = effectiveLanguage(forTabID: tabID, url: fileURL)
-        _ = lang
-        guard LSPLanguageRegistry.default.language(for: fileURL) != nil else {
+        guard lspLanguageConfigured(for: fileURL) else {
             sendEditorHoverResponse(replyId: request.replyId, contents: "")
             return
         }
         // CM6 line is 1-based; LSP wants 0-based. character is
         // UTF-16 code units; the pool converts internally if the
         // server negotiated a different encoding.
-        let lspLine = max(0, request.line - 1)
-        let lspChar = max(0, request.character)
+        let (lspLine, lspChar) = lspPosition(
+            line: request.line, character: request.character)
         Task { [weak self] in
             guard let self = self else { return }
             do {
@@ -2745,6 +2769,80 @@ public final class DocumentModel: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - CM6 completion bridge (TSK-963 / TSK-463)
+    //
+    // The DocumentModel-side entry point for editor completion, mirroring the
+    // hover bridge above. It routes through the SAME consolidated gate +
+    // position conversion, so the language predicate and 1-based→0-based
+    // semantics can never drift from the rest of the LSP surface.
+    //
+    // Scope note (honest): the LSP design (`LSP_DESIGN.md` §0) deliberately
+    // scoped completion OUT — there is no `completion` method on `LSPPool`/
+    // `LSPClient` and no `textDocument/completion` round-trip yet, and adding
+    // those crosses `Sources/ViewerCore/LSP/` + the CM6 JS bundle (a separate,
+    // multi-file slice that collides with this consolidation slice's
+    // DocumentModel-only scope). What lands here is the model-layer entry +
+    // its gate contract: a completion request with NO LSP language replies
+    // empty WITHOUT spawning a server. The pool/JS round-trip is the follow-up
+    // (TSK-463 reopened) — it plugs into `_lastCompletionRequest` and the
+    // `requestCompletions(...)` seam below with no further DocumentModel churn.
+
+    /// A single completion candidate surfaced to the editor. Minimal by
+    /// design — label + optional detail/insert text — so the pool round-trip
+    /// can map an `LSPCompletionItem` onto it without leaking the wire type
+    /// into the UI layer.
+    public struct EditorCompletionItem: Equatable, Sendable {
+        public let label: String
+        public let detail: String?
+        public let insertText: String?
+        public init(label: String, detail: String? = nil, insertText: String? = nil) {
+            self.label = label; self.detail = detail; self.insertText = insertText
+        }
+    }
+
+    #if DEBUG
+    /// Test-only: the last completion request that PASSED the language gate
+    /// (URL + the 0-based position handed downstream). nil when the gate
+    /// refused (no LSP language) — lets the host gate pin "no language ⇒ no
+    /// dispatch / no spawn" without a live server.
+    var _lastCompletionRequest: (url: URL, line: Int, character: Int)?
+    #endif
+
+    /// Resolve completions at a CM6 editor position. Returns `[]` immediately
+    /// (no Task, no pool touch, no server spawn) when the file has no LSP
+    /// language — the same honest gate as hover/go-to. When a language IS
+    /// configured it records the (converted) request and delegates to the
+    /// `requestCompletions` seam, which the pool round-trip will fill in.
+    /// `async` so the future pool call slots in without changing callers.
+    @discardableResult
+    public func handleCompletionRequest(
+        tabID: UUID, fileURL: URL, request: CMHoverRequest
+    ) async -> [EditorCompletionItem] {
+        guard lspLanguageConfigured(for: fileURL) else { return [] }
+        let (lspLine, lspChar) = lspPosition(
+            line: request.line, character: request.character)
+        #if DEBUG
+        _lastCompletionRequest = (fileURL, lspLine, lspChar)
+        #endif
+        return await requestCompletions(
+            fileURL: fileURL, line: lspLine, character: lspChar)
+    }
+
+    /// The pool seam for completion (0-based LSP position). Returns `[]` until
+    /// `textDocument/completion` is wired through `LSPPool`/`LSPClient` +
+    /// the CM6 autocomplete source (TSK-463 follow-up). Kept as a private
+    /// override-able point so that wiring is a single localized change.
+    private func requestCompletions(
+        fileURL: URL, line: Int, character: Int
+    ) async -> [EditorCompletionItem] {
+        // No `lspPool.completion(...)` exists yet — see the scope note above.
+        // Returning empty is correct (degrades to "no completions"), and the
+        // gate above already guaranteed we never spawned a server for a
+        // non-LSP file.
+        _ = (fileURL, line, character)
+        return []
     }
 
     /// The four LSP go-to verbs surfaceable as deliberate commands
@@ -2781,10 +2879,9 @@ public final class DocumentModel: ObservableObject {
     public func navigateViaLSP(
         kind: LSPNavigationKind, tabID: UUID, fileURL: URL, request: CMPositionRequest
     ) {
-        _ = effectiveLanguage(forTabID: tabID, url: fileURL)
-        guard lspPool.registry.language(for: fileURL) != nil else { return }
-        let lspLine = max(0, request.line - 1)
-        let lspChar = max(0, request.character)
+        guard lspLanguageConfigured(for: fileURL) else { return }
+        let (lspLine, lspChar) = lspPosition(
+            line: request.line, character: request.character)
         #if DEBUG
         _lastLSPNavigation = (kind, fileURL, lspLine, lspChar)
         #endif
@@ -2853,9 +2950,8 @@ public final class DocumentModel: ObservableObject {
     public func findReferencesAtCursor() -> Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
         guard let cursor = editor.editorCursorByTab[tab.id] else { return false }
-        guard lspPool.registry.language(for: url) != nil else { return false }
-        let lspLine = max(0, cursor.line - 1)
-        let lspChar = max(0, cursor.column)
+        guard lspLanguageConfigured(for: url) else { return false }
+        let (lspLine, lspChar) = lspPosition(line: cursor.line, character: cursor.column)
         #if DEBUG
         _lastReferencesRequest = (url, lspLine, lspChar)
         #endif
@@ -2883,7 +2979,7 @@ public final class DocumentModel: ObservableObject {
     public var canFindReferences: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
         guard editor.editorCursorByTab[tab.id] != nil else { return false }
-        return lspPool.registry.language(for: url) != nil
+        return lspLanguageConfigured(for: url)
     }
 
     #if DEBUG
@@ -2903,7 +2999,7 @@ public final class DocumentModel: ObservableObject {
     @discardableResult
     public func formatActiveEditorViaLSP() -> Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
-        guard lspPool.registry.language(for: url) != nil else { return false }
+        guard lspLanguageConfigured(for: url) else { return false }
         guard let buf = editor.editorBuffers[tab.id] else { return false }
         let tabID = tab.id
         let snapshot = buf.text
@@ -2986,7 +3082,7 @@ public final class DocumentModel: ObservableObject {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard let tab = tabs.selected, let url = tab.url else { return false }
-        guard lspPool.registry.language(for: url) != nil else { return false }
+        guard lspLanguageConfigured(for: url) else { return false }
         guard let buf = editor.editorBuffers[tab.id] else { return false }
         guard let cursor = editor.editorCursorByTab[tab.id] else { return false }
         let tabID = tab.id
@@ -3021,7 +3117,7 @@ public final class DocumentModel: ObservableObject {
     /// context. (TSK-640.)
     public var canRenameActiveEditorSymbol: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
-        guard lspPool.registry.language(for: url) != nil else { return false }
+        guard lspLanguageConfigured(for: url) else { return false }
         guard editor.editorBuffers[tab.id] != nil else { return false }
         guard editor.editorCursorByTab[tab.id] != nil else { return false }
         return true
@@ -3107,7 +3203,7 @@ public final class DocumentModel: ObservableObject {
     /// on any failure — the same silent contract as the go-to verbs.
     public func codeActionsAtCursor() async -> [LSPCodeAction] {
         guard let tab = tabs.selected, let url = tab.url,
-              lspPool.registry.language(for: url) != nil,
+              lspLanguageConfigured(for: url),
               let cursor = editor.editorCursorByTab[tab.id] else { return [] }
         let pos = LSPPosition(line: cursor.line, character: cursor.column)
         return (try? await lspPool.codeActions(
@@ -3132,7 +3228,7 @@ public final class DocumentModel: ObservableObject {
     /// a recorded cursor). Gates the command/menu + showCodeActionPicker. (TSK-640.)
     public var canRequestCodeActions: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
-        guard lspPool.registry.language(for: url) != nil else { return false }
+        guard lspLanguageConfigured(for: url) else { return false }
         return editor.editorCursorByTab[tab.id] != nil
     }
 
@@ -3194,8 +3290,11 @@ public final class DocumentModel: ObservableObject {
         // no LSP item was added (no target to park).
         var menuTargetKey: ObjectIdentifier?
 
-        // LSP nav submenu — only when a language is configured.
-        if LSPLanguageRegistry.default.language(for: fileURL) != nil {
+        // LSP nav submenu — only when a language is configured. Gates on the
+        // POOL's registry (TSK-963) so the menu item appears exactly when the
+        // navigation it triggers will actually dispatch, not when the global
+        // default registry happens to map the language.
+        if lspLanguageConfigured(for: fileURL) {
             let target = EditorMenuTarget { [weak self] in
                 guard let self = self else { return }
                 self.handleEditorDefinition(
@@ -4361,7 +4460,7 @@ public final class DocumentModel: ObservableObject {
     /// `.md`, `.txt`), where the all-clear copy is genuinely correct.
     public var activeFileUnanalyzedByLSP: Bool {
         guard let url = currentURL else { return false }
-        guard LSPLanguageRegistry.default.language(for: url) != nil else { return false }
+        guard lspLanguageConfigured(for: url) else { return false }
         return lspDiagnostics.byURL[url] == nil
     }
 
