@@ -449,6 +449,39 @@ public final class CsvSession {
         return 4
     }
 
+    /// Single-copy unframe straight off the raw FFI out-buffer (TSK-826).
+    ///
+    /// The pre-existing receive path materialized every response frame TWICE:
+    /// `Array(UnsafeBufferPointer(...))` copied the whole framed buffer out of
+    /// the C `MdvBuf`, then `unframe` did `Array(frame[4...])` to strip the
+    /// 4-byte length prefix — a second full-body copy that scales with the
+    /// payload (a >1 MB markdown/find/transcript response copies >1 MB twice).
+    ///
+    /// This validates the LE length prefix directly against the FFI buffer and
+    /// copies ONLY the body subrange `[4..<len]` into a single `[UInt8]` — one
+    /// copy, the unavoidable one (the C buffer is freed right after by the
+    /// caller's `defer mdvcore_buf_free`). Returns `nil` for a length-0 body
+    /// (an empty response, e.g. hunk marks), matching the old
+    /// `buf.len > 0` guard the callers used before unframing.
+    ///
+    /// `base`/`count` are the raw `MdvBuf.data`/`MdvBuf.len`. The pointer is
+    /// borrowed for the duration of this call only.
+    static func copyFrameBody(_ base: UnsafePointer<UInt8>, _ count: Int) throws -> [UInt8] {
+        guard count >= 4 else {
+            throw CoreError.decode("frame shorter than length prefix")
+        }
+        let declared =
+            UInt32(base[0]) | (UInt32(base[1]) << 8)
+            | (UInt32(base[2]) << 16) | (UInt32(base[3]) << 24)
+        let bodyLen = count - 4
+        guard Int(declared) == bodyLen else {
+            throw CoreError.decode("frame length \(declared) != body \(bodyLen)")
+        }
+        // The single, unavoidable copy: the body subrange [4..<count]. No
+        // intermediate full-frame Array, no second `frame[4...]` copy.
+        return [UInt8](UnsafeBufferPointer(start: base + 4, count: bodyLen))
+    }
+
     /// Diagnostics channel for FFI faults (TSK-669).
     static let log = Logger(subsystem: "com.markdownviewer.RustCore", category: "ffi")
 
@@ -561,8 +594,9 @@ func mdvFrameCall(
     defer { mdvcore_buf_free(&buf) }
     guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
     guard let data = buf.data, buf.len > 0 else { return nil }
-    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
-    return try CsvSession.unframe(frame)
+    // TSK-826: single-copy unframe — copy ONLY the body off the FFI buffer,
+    // skipping the old full-frame Array + `Array(frame[4...])` double copy.
+    return try CsvSession.copyFrameBody(data, Int(buf.len))
 }
 
 /// Same ritual as `mdvFrameCall`, but routes through the thin-waist envelope
@@ -585,8 +619,8 @@ func mdvEnvelopeCall(_ name: String, _ methodId: UInt16, body: [UInt8]) throws -
         throw CoreError(status: status)
     }
     guard let data = buf.data, buf.len > 0 else { return nil }
-    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
-    return try CsvSession.unframe(frame)
+    // TSK-826: single-copy unframe (see mdvFrameCall).
+    return try CsvSession.copyFrameBody(data, Int(buf.len))
 }
 
 /// Envelope call WITH the `aux` bulk side-channel (TSK-580 slice 3) for the
@@ -879,8 +913,11 @@ public func mdvCoreHexSearch(data: Data, query: String, mode: HexSearchKind) thr
         try mdvEnvelopeCallAux("hex_search", UInt16(MDV_METHOD_HEX_SEARCH), body: req, aux: raw)
     }
     guard let frame else { return [] }
-    let body = try CsvSession.unframe(frame)
-    var reader = MsgPackReader(body)
+    // TSK-826: `mdvEnvelopeCallAux` already materialized the full frame once
+    // (the aux helper is shared with raw-output methods, so it can't unframe).
+    // Decode the body IN PLACE from offset 4 (frameBodyStart) rather than
+    // copying `frame[4...]` into a second Array.
+    var reader = MsgPackReader(frame, startingAt: try CsvSession.frameBodyStart(frame))
     do {
         let map = try reader.decode().mapValue()
         guard let v = map["offsets"] else { throw CoreError.decode("missing 'offsets'") }
