@@ -57,6 +57,20 @@ public struct CSVFind: Sendable, Equatable {
     /// Performance: O(cells × |query|) — one full sweep. The caller debounces
     /// (typical: re-run on query change, cache the result for next/prev).
     public func matches(in result: CSVParser.Result) -> [Match] {
+        matches(header: result.header, rows: result.rows)
+    }
+
+    /// Search the supplied `header` + `rows` directly, rather than a parsed
+    /// `CSVParser.Result`. This is the overload the GRID UI uses: it passes the
+    /// *displayed* rows (after filter + sort), so each returned `Match.row` /
+    /// `.column` is an index into what's actually on screen — the coordinates
+    /// line up with the rendered cells for highlighting and scroll-to. Header
+    /// matches still carry `row == headerRow`.
+    ///
+    /// Same reading order and matching semantics as `matches(in:)`: header
+    /// first (when `includeHeader`), then data rows top-to-bottom, each row
+    /// left-to-right; case-insensitive substring; column scope honored.
+    public func matches(header: [String], rows: [[String]]) -> [Match] {
         if query.isEmpty { return [] }
         let needle = query.lowercased()
         let scopeColumn: Int?
@@ -74,9 +88,43 @@ public struct CSVFind: Sendable, Equatable {
                 }
             }
         }
-        if includeHeader { scan(row: CSVFind.headerRow, cells: result.header) }
-        for (i, row) in result.rows.enumerated() { scan(row: i, cells: row) }
+        if includeHeader { scan(row: CSVFind.headerRow, cells: header) }
+        for (i, row) in rows.enumerated() { scan(row: i, cells: row) }
         return out
+    }
+
+    /// Per-cell highlight verdict for the grid. Pure mapping from a cell
+    /// coordinate + the current match set to one of three render states, so
+    /// the view layer is a thin lookup and the logic is host-testable.
+    public enum Highlight: Sendable, Equatable {
+        /// No find match in this cell — render it normally.
+        case none
+        /// A find match, but NOT the one the cursor is on — dim wash.
+        case match
+        /// The current (cursor) match — strong wash + scroll target.
+        case current
+    }
+
+    /// Classify the cell at (`row`, `column`) against `matches` and the
+    /// `current` cursor index (an index into `matches`, or nil = none active).
+    ///
+    /// O(|matches|) — fine for the typical handful-to-hundreds of hits a user
+    /// pages through; the caller can pre-build a `Set`/dictionary if a table
+    /// has pathologically many matches, but the straight scan keeps the common
+    /// case allocation-free.
+    public static func highlight(row: Int, column: Int,
+                                 matches: [Match],
+                                 current: Int?) -> Highlight {
+        guard !matches.isEmpty else { return .none }
+        let target = Match(row: row, column: column)
+        var isMatch = false
+        for m in matches where m == target { isMatch = true; break }
+        guard isMatch else { return .none }
+        if let cur = current, matches.indices.contains(cur),
+           matches[cur] == target {
+            return .current
+        }
+        return .match
     }
 
     /// The number of matches without materializing the array — same sweep,

@@ -19,6 +19,23 @@ struct CSVTableView: View {
     @State private var sortColumn: Int?
     @State private var sortAscending: Bool = true
 
+    // TSK-303: find-in-table. Find is DISTINCT from the row FILTER above —
+    // filter REMOVES non-matching rows; find KEEPS every row and highlights
+    // matching CELLS, stepping a cursor through them (prev/next). State is
+    // view-local @State (not on DocumentModel): find is an ephemeral,
+    // per-view-instance interaction (no need to survive a tab switch), so we
+    // keep it self-contained rather than threading new per-tab model storage.
+    @State private var findVisible: Bool = false
+    @State private var findQuery: String = ""
+    /// Cursor into `findMatches` — nil = nothing selected yet. Drives which
+    /// match gets the strong "current" highlight + the scroll target.
+    @State private var findCurrent: Int?
+    /// Cached match list, recomputed (debounced) when the query or the
+    /// displayed rows change. Coordinates index the DISPLAYED rows.
+    @State private var findMatches: [CSVFind.Match] = []
+    @State private var findDebounceTask: Task<Void, Never>?
+    @FocusState private var findFieldFocused: Bool
+
     // Filter state lives on DocumentModel keyed by tab id so it
     // survives tab switches. These computed properties bridge the
     // SwiftUI Binding API to the model's `csvFilterState(forTabID:)`
@@ -113,6 +130,10 @@ struct CSVTableView: View {
         } ?? filtered.rows
         VStack(spacing: 0) {
             filterBar(result: result, filteredCount: filtered.rows.count)
+            if findVisible {
+                Divider()
+                findBar(header: result.header)
+            }
             Divider()
             // Single shared horizontal+vertical ScrollView so the
             // per-column filter row, header, and data rows all share
@@ -122,20 +143,31 @@ struct CSVTableView: View {
             // time. ForEach uses Int range directly rather than
             // Array(rows.enumerated()), which allocated a fresh
             // tuple-array on every body re-eval.
-            ScrollView([.horizontal, .vertical]) {
-                LazyVStack(alignment: .leading, spacing: 0,
-                           pinnedViews: [.sectionHeaders]) {
-                    if advancedShown {
-                        perColumnRow(result: result)
-                    }
-                    Section {
-                        ForEach(displayRows.indices, id: \.self) { i in
-                            cellRow(displayRows[i], isAlt: i % 2 == 1,
-                                    header: result.header, allRows: displayRows)
+            //
+            // TSK-303: ScrollViewReader so the find cursor can scroll the
+            // current match's row into view. Each data row is `.id`'d by its
+            // display index; jumping calls `proxy.scrollTo(rowIndex)`.
+            ScrollViewReader { proxy in
+                ScrollView([.horizontal, .vertical]) {
+                    LazyVStack(alignment: .leading, spacing: 0,
+                               pinnedViews: [.sectionHeaders]) {
+                        if advancedShown {
+                            perColumnRow(result: result)
                         }
-                    } header: {
-                        headerRow(result)
+                        Section {
+                            ForEach(displayRows.indices, id: \.self) { i in
+                                cellRow(displayRows[i], isAlt: i % 2 == 1,
+                                        header: result.header, allRows: displayRows,
+                                        rowIndex: i)
+                                    .id(i)
+                            }
+                        } header: {
+                            headerRow(result)
+                        }
                     }
+                }
+                .onChange(of: findCurrent) { _, _ in
+                    scrollToCurrentMatch(proxy)
                 }
             }
         }
@@ -149,7 +181,98 @@ struct CSVTableView: View {
         .onChange(of: currentFilter) { _, newFilter in
             scheduleFilterCommit(newFilter)
         }
+        // TSK-303: recompute matches when the query, the displayed rows
+        // (filter/sort change), or the underlying parse change. Search the
+        // DISPLAYED rows so coordinates map to on-screen cells.
+        .onChange(of: findQuery) { _, _ in
+            scheduleFindCommit(header: result.header, rows: displayRows)
+        }
+        .onChange(of: displayRows) { _, newRows in
+            recomputeFind(header: result.header, rows: newRows)
+        }
         .accessibilityIdentifier("mdv.csvTable")
+    }
+
+    /// Toggle the find bar (Cmd-F-style entry point — wired to a button in the
+    /// filter bar). Showing it focuses the field; hiding it clears the query so
+    /// highlights disappear and the next open starts clean.
+    private func toggleFind() {
+        if findVisible {
+            closeFind()
+        } else {
+            findVisible = true
+            findFieldFocused = true
+        }
+    }
+
+    private func closeFind() {
+        findVisible = false
+        findQuery = ""
+        findMatches = []
+        findCurrent = nil
+        findDebounceTask?.cancel()
+        findDebounceTask = nil
+    }
+
+    /// 150 ms debounce on find recompute — keystrokes stay responsive while
+    /// the O(cells) sweep runs only after the user pauses. An empty query
+    /// commits immediately so clearing the field feels instant.
+    private func scheduleFindCommit(header: [String], rows: [[String]]) {
+        findDebounceTask?.cancel()
+        if findQuery.isEmpty {
+            recomputeFind(header: header, rows: rows)
+            findDebounceTask = nil
+            return
+        }
+        findDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return }
+            recomputeFind(header: header, rows: rows)
+        }
+    }
+
+    /// Re-run the matcher over the DISPLAYED rows and reset the cursor to the
+    /// first match (or nil when there are none). Keeping the cursor pinned to
+    /// "first" on every recompute is the conventional find-bar behavior: a new
+    /// query starts you at the top of its results.
+    private func recomputeFind(header: [String], rows: [[String]]) {
+        let finder = CSVFind(query: findQuery)
+        findMatches = finder.matches(header: header, rows: rows)
+        findCurrent = findMatches.isEmpty ? nil : 0
+    }
+
+    private func findStep(forward: Bool) {
+        findCurrent = CSVFind.step(count: findMatches.count,
+                                   from: findCurrent, forward: forward)
+    }
+
+    /// Scroll the row owning the current match into view. Header matches
+    /// (`row == headerRow`) need no scroll — the header is pinned.
+    private func scrollToCurrentMatch(_ proxy: ScrollViewProxy) {
+        guard let cur = findCurrent, findMatches.indices.contains(cur) else { return }
+        let match = findMatches[cur]
+        guard match.row != CSVFind.headerRow else { return }
+        withAnimation(.easeInOut(duration: 0.12)) {
+            proxy.scrollTo(match.row, anchor: .center)
+        }
+    }
+
+    /// Per-cell find verdict — thin lookup over `CSVFind.highlight`. `row`
+    /// uses display indices; pass `CSVFind.headerRow` for header cells.
+    private func findHighlight(row: Int, column: Int) -> CSVFind.Highlight {
+        CSVFind.highlight(row: row, column: column,
+                          matches: findMatches, current: findCurrent)
+    }
+
+    /// SwiftUI fill for a find highlight state, or nil for `.none`. Reuses the
+    /// shared find-highlight palette so CSV find reads like the editor/source
+    /// find highlights.
+    private func findHighlightColor(_ state: CSVFind.Highlight) -> Color? {
+        switch state {
+        case .none: return nil
+        case .match: return Color(nsColor: Palette.findHighlightInactive)
+        case .current: return Color(nsColor: Palette.findHighlightCurrent)
+        }
     }
 
     /// 200 ms debounce on filter commits — typing into the global
@@ -258,6 +381,23 @@ struct CSVTableView: View {
             .helpInfo(title: "Per-column filter",
                       description: "Show the per-column filter row (supports >, <, >=, <=, =, !=)")
 
+            // TSK-303: open/close the find bar. Distinct from the row filter:
+            // find highlights matching cells and steps through them.
+            Button {
+                toggleFind()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.magnifyingglass")
+                    Text("Find")
+                }
+                .font(.system(size: cellFontSize))
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut("f", modifiers: [.command])
+            .helpInfo(title: "Find in table",
+                      description: "Highlight matching cells and step through them (Cmd-F)")
+            .accessibilityIdentifier("mdv.csvFind.toggle")
+
             Spacer()
 
             if !currentFilter.isEmpty {
@@ -280,6 +420,87 @@ struct CSVTableView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Palette.controlBackground)
+    }
+
+    /// TSK-303: find-in-table bar. Query field + "n of N" / "No results" count
+    /// + prev/next stepper + Done. Mirrors the native find-bar layout used by
+    /// the rendered/source/editor `FindBar` (we don't reuse that view because
+    /// it's bound to `FindCoordinator`; this is the lightweight grid variant).
+    @ViewBuilder
+    private func findBar(header: [String]) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "text.magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: cellFontSize))
+
+            TextField("Find in table…", text: $findQuery)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+                .frame(maxWidth: 280)
+                .focused($findFieldFocused)
+                .onSubmit { findStep(forward: true) }
+                .accessibilityIdentifier("mdv.csvFind.field")
+
+            Text(findCountLabel)
+                .font(.system(size: cellFontSize, design: .monospaced))
+                .foregroundStyle(findMatches.isEmpty && !findQuery.isEmpty
+                                 ? Color(nsColor: .systemOrange) : .secondary)
+                .accessibilityIdentifier("mdv.csvFind.count")
+
+            HStack(spacing: 0) {
+                Button { findStep(forward: false) } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: cellFontSize, weight: .semibold))
+                        .frame(minWidth: 22)
+                }
+                .keyboardShortcut(.return, modifiers: [.shift])
+                .helpInfo(title: "Previous match",
+                          description: "Jump to the previous match (Shift+Return)")
+                .accessibilityIdentifier("mdv.csvFind.prev")
+
+                Divider().frame(height: 14)
+
+                Button { findStep(forward: true) } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: cellFontSize, weight: .semibold))
+                        .frame(minWidth: 22)
+                }
+                .helpInfo(title: "Next match",
+                          description: "Jump to the next match (Return)")
+                .accessibilityIdentifier("mdv.csvFind.next")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(findMatches.isEmpty)
+
+            Spacer()
+
+            Button("Done") { closeFind() }
+                .controlSize(.small)
+                .keyboardShortcut(.escape, modifiers: [])
+                .helpInfo(title: "Done", description: "Close the find bar (Esc)")
+                .accessibilityIdentifier("mdv.csvFind.done")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Palette.controlBackground)
+    }
+
+    /// "n of N" when a match is selected, "N matches" before stepping, "No
+    /// results" for a non-empty query with no hits, empty for an empty query.
+    /// `internal` so `CSVFindLabelTests` can pin the pure label math.
+    static func findCountLabel(matchCount: Int, current: Int?, query: String) -> String {
+        if query.isEmpty { return "" }
+        if matchCount == 0 { return "No results" }
+        if let cur = current, cur >= 0, cur < matchCount {
+            return "\(cur + 1) of \(matchCount)"
+        }
+        return matchCount == 1 ? "1 match" : "\(matchCount) matches"
+    }
+
+    private var findCountLabel: String {
+        Self.findCountLabel(matchCount: findMatches.count,
+                            current: findCurrent, query: findQuery)
     }
 
     @ViewBuilder
@@ -348,6 +569,14 @@ struct CSVTableView: View {
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .background(Palette.controlBackground)
+                    // TSK-303: find highlight overlays the opaque header
+                    // background (translucent wash, so the title stays legible).
+                    .overlay {
+                        if let c = findHighlightColor(
+                            findHighlight(row: CSVFind.headerRow, column: i)) {
+                            c
+                        }
+                    }
                     .contentShape(Rectangle())
                     // TSK-925: click toggles sort by this column (asc → desc → asc).
                     .onTapGesture { toggleSort(column: i) }
@@ -365,7 +594,7 @@ struct CSVTableView: View {
 
     @ViewBuilder
     private func cellRow(_ row: [String], isAlt: Bool, header: [String],
-                         allRows: [[String]]) -> some View {
+                         allRows: [[String]], rowIndex: Int) -> some View {
         HStack(spacing: 0) {
             ForEach(row.indices, id: \.self) { i in
                 let cell = row[i]
@@ -375,6 +604,9 @@ struct CSVTableView: View {
                     .truncationMode(.tail)
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
+                    // TSK-303: per-cell find highlight (display-row coords).
+                    .background(findHighlightColor(findHighlight(row: rowIndex, column: i))
+                                ?? Color.clear)
                     .overlay(alignment: .trailing) {
                         Rectangle().fill(Palette.separator).frame(width: 0.5)
                     }

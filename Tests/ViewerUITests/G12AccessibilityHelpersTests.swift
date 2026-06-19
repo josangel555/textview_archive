@@ -81,4 +81,49 @@ final class G12AccessibilityHelpersTests: XCTestCase {
         XCTAssertNil(MotionGate.animation(.linear(duration: 0.05),
                                           reduceMotion: true))
     }
+
+    // MARK: - TSK-303: CSV find-bar count label
+
+    func test_findCountLabel_emptyQuery_isEmptyString() {
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 0, current: nil, query: ""),
+            "")
+        // Even with stale match state, an empty query shows nothing.
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 5, current: 2, query: ""),
+            "")
+    }
+
+    func test_findCountLabel_noMatches_saysNoResults() {
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 0, current: nil, query: "zzz"),
+            "No results")
+    }
+
+    func test_findCountLabel_withCursor_showsPositionOfTotal() {
+        // 1-based "n of N" so it reads like a native find bar.
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 12, current: 0, query: "a"),
+            "1 of 12")
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 12, current: 11, query: "a"),
+            "12 of 12")
+    }
+
+    func test_findCountLabel_noCursor_showsMatchTally() {
+        // Before stepping (current == nil) we show the tally, pluralized.
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 1, current: nil, query: "a"),
+            "1 match")
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 4, current: nil, query: "a"),
+            "4 matches")
+    }
+
+    func test_findCountLabel_outOfRangeCursor_fallsBackToTally() {
+        // A stale cursor past the end shouldn't print "100 of 4".
+        XCTAssertEqual(
+            CSVTableView.findCountLabel(matchCount: 4, current: 99, query: "a"),
+            "4 matches")
+    }
 }

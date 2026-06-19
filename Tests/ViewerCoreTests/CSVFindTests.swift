@@ -131,4 +131,92 @@ final class CSVFindTests: XCTestCase {
         XCTAssertEqual(CSVFind.step(count: 3, from: 99, forward: false), 1)
         XCTAssertEqual(CSVFind.step(count: 3, from: -5, forward: false), 2)
     }
+
+    // MARK: - matches(header:rows:) overload (TSK-303 grid wiring)
+
+    func test_matchesHeaderRows_overload_matchesParsedResultOverload() {
+        // The grid passes the DISPLAYED header + rows directly; the result
+        // must be identical to feeding the same data via a CSVParser.Result.
+        let f = CSVFind(query: "a")
+        XCTAssertEqual(
+            f.matches(header: sample.header, rows: sample.rows),
+            f.matches(in: sample),
+            "overload must agree with the Result-taking entry point")
+    }
+
+    func test_matchesHeaderRows_coordsMapToSuppliedRows() {
+        // Simulate a filtered/sorted view: a 2-row subset in a different
+        // order than the file. Coordinates index THESE rows, not the original.
+        let displayHeader = ["Name", "City"]
+        let displayRows = [["Carol", "Austin"], ["Bob", "LA"]]
+        let m = CSVFind(query: "b").matches(header: displayHeader, rows: displayRows)
+        // "b" hits only "Bob" — which is row 1 in the DISPLAYED ordering.
+        XCTAssertEqual(m, [CSVFind.Match(row: 1, column: 0)])
+    }
+
+    func test_matchesHeaderRows_emptyQueryAndScopeHonored() {
+        let h = ["Name", "City"]
+        let r = [["Alice", "NYC"], ["Bob", "LA"]]
+        XCTAssertEqual(CSVFind(query: "").matches(header: h, rows: r), [])
+        // Scope to column 1 (City): "a" → no City contains 'a' here except none.
+        let scoped = CSVFind(query: "l", scope: .column(1))
+            .matches(header: h, rows: r)
+        XCTAssertEqual(scoped, [CSVFind.Match(row: 1, column: 1)], "LA only")
+    }
+
+    // MARK: - highlight(row:column:matches:current:) (cell → render state)
+
+    private let hlMatches = [
+        CSVFind.Match(row: CSVFind.headerRow, column: 0),
+        CSVFind.Match(row: 0, column: 1),
+        CSVFind.Match(row: 2, column: 0),
+    ]
+
+    func test_highlight_noMatches_alwaysNone() {
+        XCTAssertEqual(CSVFind.highlight(row: 0, column: 0, matches: [], current: nil),
+                       .none)
+        XCTAssertEqual(CSVFind.highlight(row: 0, column: 0, matches: [], current: 0),
+                       .none)
+    }
+
+    func test_highlight_nonMatchingCell_isNone() {
+        XCTAssertEqual(
+            CSVFind.highlight(row: 1, column: 1, matches: hlMatches, current: 0),
+            .none)
+    }
+
+    func test_highlight_matchingButNotCurrent_isMatch() {
+        // current = 0 (the header match); the data match at (0,1) is a
+        // non-current match.
+        XCTAssertEqual(
+            CSVFind.highlight(row: 0, column: 1, matches: hlMatches, current: 0),
+            .match)
+    }
+
+    func test_highlight_currentCell_isCurrent() {
+        // current = 1 → matches[1] == (0,1) is the current match.
+        XCTAssertEqual(
+            CSVFind.highlight(row: 0, column: 1, matches: hlMatches, current: 1),
+            .current)
+        // The header match becomes current at index 0.
+        XCTAssertEqual(
+            CSVFind.highlight(row: CSVFind.headerRow, column: 0,
+                              matches: hlMatches, current: 0),
+            .current)
+    }
+
+    func test_highlight_nilCurrent_matchesAreNonCurrent() {
+        // No cursor yet → every match renders as the dim "match" wash.
+        XCTAssertEqual(
+            CSVFind.highlight(row: 2, column: 0, matches: hlMatches, current: nil),
+            .match)
+    }
+
+    func test_highlight_outOfRangeCurrent_doesNotCrashAndDowngrades() {
+        // A stale cursor index past the end → the matched cell falls back to
+        // the non-current wash rather than crashing on the lookup.
+        XCTAssertEqual(
+            CSVFind.highlight(row: 0, column: 1, matches: hlMatches, current: 99),
+            .match)
+    }
 }
