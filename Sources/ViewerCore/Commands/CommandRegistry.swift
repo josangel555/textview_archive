@@ -39,6 +39,31 @@ public enum CommandCategory: String, Sendable, CaseIterable, Comparable {
     }
 }
 
+/// Whether a command is safe to capture into a recorded macro and re-dispatch
+/// later without a live pointer / selection / interactive prompt (TSK-957,
+/// app-wide command macros).
+///
+/// A macro is a deterministic, headless re-run of a *command sequence*. Many
+/// commands are not deterministic out of their original interaction context:
+///
+///   - **pointer/selection-dependent** — they resolve against the live caret
+///     or mouse (LSP go-to-at-cursor, sidebar select-next/prev), so replaying
+///     them later lands somewhere unrelated;
+///   - **interactive-prompt** — they only open a panel/sheet that needs the
+///     user to type or pick (Open…, Find…, Rename Symbol…, Go to Line…), so a
+///     replay would either stall waiting for input or do nothing useful.
+///
+/// Everything else — text-edit transforms, pure view/state toggles, clipboard
+/// text tools, tab/zoom/session navigation that resolves against model state —
+/// is `.replayable`: re-dispatching it through the registry reproduces the
+/// recorded effect.
+public enum CommandReplayability: String, Sendable, Hashable, CaseIterable {
+    /// Safe to capture + re-dispatch headlessly; reproduces the recorded effect.
+    case replayable
+    /// Pointer/selection-dependent or interactive-prompt — excluded from macros.
+    case excluded
+}
+
 /// One user-invokable action.
 ///
 /// **Why `scriptVerb` is the canonical invoker.** The app already has a
@@ -74,24 +99,42 @@ public struct CommandDescriptor: Sendable, Hashable, Identifiable {
     /// report). When the verb takes an argument the descriptor stores the
     /// invariant prefix only; the invoker appends the runtime arg.
     public let scriptVerb: String?
+    /// Whether this command is safe to capture into a recorded macro and
+    /// re-dispatch later (TSK-957). Defaults to `.replayable` for commands
+    /// that have a pure script verb (those are headlessly dispatchable) and
+    /// `.excluded` for the window/`NSApp`-coupled `scriptVerb == nil`
+    /// commands. The built-in catalog overrides this for the handful of
+    /// verb-backed commands that are still pointer/selection-dependent or
+    /// open an interactive prompt (LSP go-to-at-cursor, sidebar select,
+    /// Go-to / Rename / Code-Actions panels) — see `CommandRegistry+BuiltIn`.
+    public let replayability: CommandReplayability
 
     public init(
         id: String,
         title: String,
         category: CommandCategory,
         defaultShortcut: Shortcut? = nil,
-        scriptVerb: String? = nil
+        scriptVerb: String? = nil,
+        replayability: CommandReplayability? = nil
     ) {
         self.id = id
         self.title = title
         self.category = category
         self.defaultShortcut = defaultShortcut
         self.scriptVerb = scriptVerb
+        // Default: a command with a pure verb is replayable; a
+        // window/`NSApp`-coupled one (no verb) cannot be re-dispatched
+        // headlessly, so it is excluded. Explicit values override.
+        self.replayability = replayability ?? (scriptVerb != nil ? .replayable : .excluded)
     }
 
     /// `true` when this command can be invoked via the pure
     /// `ScriptVerb.apply` path (and thus by the palette headlessly).
     public var isPaletteInvokable: Bool { scriptVerb != nil }
+
+    /// `true` when this command may be captured into / replayed from a macro
+    /// (TSK-957). A convenience over `replayability == .replayable`.
+    public var isMacroReplayable: Bool { replayability == .replayable }
 }
 
 /// The one canonical catalog of every user action.
@@ -155,7 +198,8 @@ public struct CommandRegistry: Sendable {
                 title: cmd.title,
                 category: cmd.category,
                 defaultShortcut: override,
-                scriptVerb: cmd.scriptVerb
+                scriptVerb: cmd.scriptVerb,
+                replayability: cmd.replayability
             )
         }
         return CommandRegistry(commands: merged)

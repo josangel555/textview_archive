@@ -46,7 +46,9 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "file.goToPath", title: "Go to File or Folder…", category: .file,
             defaultShortcut: Shortcut(key: "g", modifiers: [.command, .shift]),
-            scriptVerb: "show-goto"),
+            // Opens an interactive go-to overlay (needs the user to type/pick) —
+            // not a deterministic macro step (TSK-957).
+            scriptVerb: "show-goto", replayability: .excluded),
         CommandDescriptor(
             id: "file.closeTab", title: "Close Tab", category: .file,
             defaultShortcut: Shortcut(key: "w", modifiers: [.command]),
@@ -99,7 +101,9 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "view.quickOpen", title: "Quick Open…", category: .view,
             defaultShortcut: Shortcut(key: "k", modifiers: [.command]),
-            scriptVerb: "show-palette"),
+            // Opens the interactive command palette — excluded from macros
+            // (a macro recorded FROM the palette shouldn't reopen it; TSK-957).
+            scriptVerb: "show-palette", replayability: .excluded),
         CommandDescriptor(
             id: "view.zoomIn", title: "Zoom In", category: .view,
             defaultShortcut: Shortcut(key: "=", modifiers: [.command]),
@@ -195,7 +199,9 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "find.inFolder", title: "Find in Folder…", category: .find,
             defaultShortcut: Shortcut(key: "f", modifiers: [.command, .shift]),
-            scriptVerb: "show-cross-search"),
+            // Opens the cross-file search panel (needs a typed query) — not a
+            // deterministic macro step (TSK-957).
+            scriptVerb: "show-cross-search", replayability: .excluded),
         CommandDescriptor(
             id: "find.next", title: "Find Next", category: .find,
             defaultShortcut: Shortcut(key: "g", modifiers: [.command]),
@@ -206,7 +212,8 @@ extension CommandRegistry {
             scriptVerb: "find-prev"),
         CommandDescriptor(
             id: "find.renderedShow", title: "Find in Rendered View", category: .find,
-            scriptVerb: "show-find"),
+            // Opens the rendered find bar (needs a typed query) — excluded (TSK-957).
+            scriptVerb: "show-find", replayability: .excluded),
 
         // MARK: Tabs
         CommandDescriptor(
@@ -242,43 +249,52 @@ extension CommandRegistry {
             // reserved for print/PDF, TSK-638), unlike VS Code which overrides
             // it. So VS Code users get ⇧⌘P; ⌘P stays Print.
             defaultShortcut: Shortcut(key: "p", modifiers: [.command, .shift]),
-            scriptVerb: "show-palette"),
+            // Opens the interactive command palette — excluded from macros (TSK-957).
+            scriptVerb: "show-palette", replayability: .excluded),
         CommandDescriptor(
             id: "nav.crossSearch", title: "Search Across Files", category: .navigation,
-            scriptVerb: "show-cross-search"),
+            // Opens the cross-file search panel (needs a typed query) — excluded (TSK-957).
+            scriptVerb: "show-cross-search", replayability: .excluded),
 
         // MARK: LSP go-to (TSK-464 — deliberate-command form of the
         // editor's Cmd-click navigation; resolved at the active cursor)
+        // All five go-to verbs resolve against the LIVE caret position, so
+        // replaying them in a macro lands wherever the cursor happens to be —
+        // excluded as pointer/selection-dependent (TSK-957).
         CommandDescriptor(
             id: "lsp.gotoDefinition", title: "Go to Definition", category: .lsp,
-            scriptVerb: "editor-goto-definition"),
+            scriptVerb: "editor-goto-definition", replayability: .excluded),
         CommandDescriptor(
             id: "lsp.gotoDeclaration", title: "Go to Declaration", category: .lsp,
-            scriptVerb: "editor-goto-declaration"),
+            scriptVerb: "editor-goto-declaration", replayability: .excluded),
         CommandDescriptor(
             id: "lsp.gotoTypeDefinition", title: "Go to Type Definition", category: .lsp,
-            scriptVerb: "editor-goto-type-definition"),
+            scriptVerb: "editor-goto-type-definition", replayability: .excluded),
         CommandDescriptor(
             id: "lsp.gotoImplementation", title: "Go to Implementation", category: .lsp,
-            scriptVerb: "editor-goto-implementation"),
+            scriptVerb: "editor-goto-implementation", replayability: .excluded),
         CommandDescriptor(
             // TSK-950: list all references in the LSP navigation panel (was
             // source-view right-click only). Resolved at the active editor cursor.
             id: "lsp.findReferences", title: "Find References", category: .lsp,
-            scriptVerb: "editor-find-references"),
+            scriptVerb: "editor-find-references", replayability: .excluded),
         CommandDescriptor(
             id: "lsp.format", title: "Format Document", category: .lsp,
             // TSK-757: ⇧⌥F — VS Code's universal "Format Document" chord. ⌘⌥F is
             // taken by find.replace; ⇧⌥F is free. Auto-wires the Edit-menu item
             // via applyShortcut("lsp.format", …) in main.swift.
+            // Whole-document transform — deterministic, so it stays replayable.
             defaultShortcut: Shortcut(key: "f", modifiers: [.option, .shift]),
             scriptVerb: "editor-format"),
         CommandDescriptor(
             id: "lsp.rename", title: "Rename Symbol…", category: .lsp,
-            scriptVerb: "show-lsp-rename"),
+            // Opens a rename prompt at the cursor (interactive + selection-
+            // dependent) — excluded (TSK-957).
+            scriptVerb: "show-lsp-rename", replayability: .excluded),
         CommandDescriptor(
             id: "lsp.codeActions", title: "Code Actions…", category: .lsp,
-            scriptVerb: "show-code-actions"),
+            // Opens an interactive code-actions menu at the cursor — excluded (TSK-957).
+            scriptVerb: "show-code-actions", replayability: .excluded),
 
         // MARK: Git
         CommandDescriptor(
@@ -316,17 +332,20 @@ extension CommandRegistry {
             scriptVerb: "session-close-active"),
 
         // MARK: Sidebar
+        // Sidebar navigation moves relative to the CURRENT selection, so a
+        // replay lands relative to wherever the user is now, not where the
+        // macro was recorded — excluded as selection-dependent (TSK-957).
         CommandDescriptor(
             id: "sidebar.selectNext", title: "Sidebar: Select Next", category: .navigation,
-            scriptVerb: "sidebar-select-next"),
+            scriptVerb: "sidebar-select-next", replayability: .excluded),
         CommandDescriptor(
             id: "sidebar.selectPrevious", title: "Sidebar: Select Previous",
             category: .navigation,
-            scriptVerb: "sidebar-select-prev"),
+            scriptVerb: "sidebar-select-prev", replayability: .excluded),
         CommandDescriptor(
             id: "sidebar.walkUp", title: "Sidebar: Focus Parent Folder",
             category: .navigation,
-            scriptVerb: "sidebar-walk-up"),
+            scriptVerb: "sidebar-walk-up", replayability: .excluded),
 
         // MARK: Window
         CommandDescriptor(
