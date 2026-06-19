@@ -46,9 +46,26 @@ enum MsgPackError: Error, Equatable {
     case unsupportedTag(UInt8)
     case typeMismatch(String)
     case missingKey(String)
+    /// Container nesting exceeded `MsgPackReader.maxDepth`. The reader recurses
+    /// per `array`/`map` level, so an adversarial frame of repeated container
+    /// tags (e.g. ~8M `0x91` fixarray bytes inside a sub-16 MiB remote envelope)
+    /// would overflow the native stack -> uncatchable SIGSEGV. The cap turns
+    /// that DoS into a typed, catchable throw (TSK-965).
+    case tooDeep
 }
 
 struct MsgPackReader {
+    /// Maximum container nesting `decode()` will descend before throwing
+    /// `MsgPackError.tooDeep`. Each `array`/`map` level is a native recursion
+    /// frame; without a bound an adversarial frame of repeated container tags
+    /// overflows the stack -> uncatchable SIGSEGV on the remote path
+    /// (`RemoteTransport` admits up to a 16 MiB envelope, ~8M `0x91` tags deep).
+    /// 128 matches the Rust core's JSON-parse `MAX_DEPTH` (`format.rs`) and is
+    /// far deeper than any real `to_vec_named` response (the wire envelope is a
+    /// shallow named map whose body is an opaque `bin`; the deepest decoded
+    /// shape — `stringMatrix`, array-of-array-of-string — is depth 3).
+    static let maxDepth = 128
+
     private let bytes: [UInt8]
     private var pos: Int = 0
 
@@ -89,7 +106,12 @@ struct MsgPackReader {
         }
     }
 
-    mutating func decode() throws -> MsgPackValue {
+    /// `depth` is the current container-nesting level (0 at the top call).
+    /// `array`/`map` recurse with `depth + 1`; once it would exceed
+    /// `maxDepth` the reader throws `MsgPackError.tooDeep` BEFORE descending,
+    /// bounding native stack use to a fixed maximum regardless of input size.
+    mutating func decode(depth: Int = 0) throws -> MsgPackValue {
+        guard depth <= Self.maxDepth else { throw MsgPackError.tooDeep }
         let tag = try u8()
         switch tag {
         case 0x00...0x7f: return .uint(UInt64(tag))                     // positive fixint
@@ -112,12 +134,12 @@ struct MsgPackReader {
         case 0xc6: return .binary(try bin(Int(try uintN(4))))
         case 0xda: return .string(try str(Int(try uintN(2))))
         case 0xdb: return .string(try str(Int(try uintN(4))))
-        case 0x90...0x9f: return try array(Int(tag & 0x0f))             // fixarray
-        case 0xdc: return try array(Int(try uintN(2)))
-        case 0xdd: return try array(Int(try uintN(4)))
-        case 0x80...0x8f: return try map(Int(tag & 0x0f))               // fixmap
-        case 0xde: return try map(Int(try uintN(2)))
-        case 0xdf: return try map(Int(try uintN(4)))
+        case 0x90...0x9f: return try array(Int(tag & 0x0f), depth: depth) // fixarray
+        case 0xdc: return try array(Int(try uintN(2)), depth: depth)
+        case 0xdd: return try array(Int(try uintN(4)), depth: depth)
+        case 0x80...0x8f: return try map(Int(tag & 0x0f), depth: depth)   // fixmap
+        case 0xde: return try map(Int(try uintN(2)), depth: depth)
+        case 0xdf: return try map(Int(try uintN(4)), depth: depth)
         default: throw MsgPackError.unsupportedTag(tag)
         }
     }
@@ -154,7 +176,7 @@ struct MsgPackReader {
         return s
     }
 
-    private mutating func array(_ n: Int) throws -> MsgPackValue {
+    private mutating func array(_ n: Int, depth: Int) throws -> MsgPackValue {
         var out: [MsgPackValue] = []
         // Clamp the reserve to the bytes actually remaining: every MessagePack
         // element is >= 1 byte (its tag), so `remaining` is a lossless upper
@@ -165,19 +187,19 @@ struct MsgPackReader {
         // throw). The `for` loop still fails with `.truncated` once the body
         // runs out, so a short-but-large-count frame errors cleanly.
         out.reserveCapacity(min(n, max(0, bytes.count - pos)))
-        for _ in 0..<n { out.append(try decode()) }
+        for _ in 0..<n { out.append(try decode(depth: depth + 1)) }
         return .array(out)
     }
 
-    private mutating func map(_ n: Int) throws -> MsgPackValue {
+    private mutating func map(_ n: Int, depth: Int) throws -> MsgPackValue {
         var out: [(MsgPackValue, MsgPackValue)] = []
         // Same OOM-abort guard as `array`: a map pair is >= 2 bytes, so the
         // remaining byte count bounds the pair count too (clamp is conservative
         // but always >= the real count). See `array` for the rationale.
         out.reserveCapacity(min(n, max(0, bytes.count - pos)))
         for _ in 0..<n {
-            let k = try decode()
-            let v = try decode()
+            let k = try decode(depth: depth + 1)
+            let v = try decode(depth: depth + 1)
             out.append((k, v))
         }
         return .map(out)
