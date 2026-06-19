@@ -46,6 +46,39 @@ final class TerminalPaneLayoutTests: XCTestCase {
         XCTAssertEqual(loaded.height, 333)
     }
 
+    func test_tabSet_persistence_roundTrip() {
+        // TSK-368: the tab set (names/cwds/active id) survives a save/load.
+        let d = freshDefaults()
+        var set = TerminalTabSet()
+        _ = set.addTab(cwd: URL(fileURLWithPath: "/a/one"))
+        let b = set.addTab()
+        _ = set.rename(b, to: "build")
+        _ = set.select(b)
+        var l = TerminalPaneLayout(isOpen: true, tabSet: set)
+        l.save(to: d)
+
+        let loaded = TerminalPaneLayout.load(from: d)
+        XCTAssertEqual(loaded.tabSet.tabs.map(\.id), set.tabs.map(\.id))
+        XCTAssertEqual(loaded.tabSet.activeID, b)
+        XCTAssertEqual(loaded.tabSet.tab(b)?.customName, "build")
+        XCTAssertEqual(loaded.tabSet.tabs.first?.cwd, URL(fileURLWithPath: "/a/one"))
+    }
+
+    func test_load_missingTabSet_isEmpty() {
+        // A fresh install (no persisted tab set) loads an empty set; the pane
+        // seeds one tab when it opens.
+        let d = freshDefaults()
+        let loaded = TerminalPaneLayout.load(from: d)
+        XCTAssertTrue(loaded.tabSet.isEmpty)
+    }
+
+    func test_load_corruptTabSet_degradesToEmpty() {
+        let d = freshDefaults()
+        d.set(Data("not json".utf8), forKey: TerminalPaneLayout.tabSetKey)
+        let loaded = TerminalPaneLayout.load(from: d)
+        XCTAssertTrue(loaded.tabSet.isEmpty)
+    }
+
     func test_load_unsetHeight_usesDefault_notZero() {
         let d = freshDefaults()
         // Only the open flag was ever written.

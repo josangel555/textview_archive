@@ -70,6 +70,8 @@ public struct TerminalPaneLayout: Sendable, Equatable {
     public static let paneEdgeKey = "MarkdownViewer.terminal.paneEdge"
     /// Pane width in points when docked left/right. Pinned by test. (TSK-491)
     public static let sideWidthKey = "MarkdownViewer.terminal.sideWidth"
+    /// Persisted tab set (JSON-encoded `TerminalTabSet`). Pinned by test. (TSK-368)
+    public static let tabSetKey = "MarkdownViewer.terminal.tabSet"
 
     /// Sensible bounds so a corrupted / hostile default can't make the
     /// pane swallow the window or collapse to nothing.
@@ -89,19 +91,25 @@ public struct TerminalPaneLayout: Sendable, Equatable {
     public var paneEdge: TerminalPaneEdge
     /// Side-column width when `paneEdge` is `.left`/`.right` (TSK-491).
     public private(set) var sideWidth: CGFloat
+    /// Persisted terminal tab set — names/cwds/active id (TSK-368). Live shells
+    /// don't survive relaunch; only the tab descriptors do, so a restored pane
+    /// re-spawns fresh shells with these names + spawn directories.
+    public var tabSet: TerminalTabSet
 
     public init(
         isOpen: Bool = false,
         height: CGFloat = TerminalPaneLayout.defaultHeight,
         tabPosition: TerminalTabPosition = .left,
         paneEdge: TerminalPaneEdge = .bottom,
-        sideWidth: CGFloat = TerminalPaneLayout.defaultWidth
+        sideWidth: CGFloat = TerminalPaneLayout.defaultWidth,
+        tabSet: TerminalTabSet = TerminalTabSet()
     ) {
         self.isOpen = isOpen
         self.height = TerminalPaneLayout.clampHeight(height)
         self.tabPosition = tabPosition
         self.paneEdge = paneEdge
         self.sideWidth = TerminalPaneLayout.clampWidth(sideWidth)
+        self.tabSet = tabSet
     }
 
     /// Clamp a height into `[minHeight, maxHeight]`. NaN (garbage) falls back
@@ -149,9 +157,18 @@ public struct TerminalPaneLayout: Sendable, Equatable {
         } else {
             storedWidth = defaultWidth
         }
+        // Decode the persisted tab set; a missing/corrupt value degrades to an
+        // empty set (the pane seeds one fresh tab when it opens).
+        let set: TerminalTabSet
+        if let raw = defaults.data(forKey: tabSetKey),
+           let decoded = try? JSONDecoder().decode(TerminalTabSet.self, from: raw) {
+            set = decoded
+        } else {
+            set = TerminalTabSet()
+        }
         return TerminalPaneLayout(
             isOpen: open, height: storedHeight, tabPosition: pos,
-            paneEdge: edge, sideWidth: storedWidth)
+            paneEdge: edge, sideWidth: storedWidth, tabSet: set)
     }
 
     public func save(to defaults: UserDefaults) {
@@ -160,5 +177,8 @@ public struct TerminalPaneLayout: Sendable, Equatable {
         defaults.set(tabPosition.rawValue, forKey: TerminalPaneLayout.tabPositionKey)
         defaults.set(paneEdge.rawValue, forKey: TerminalPaneLayout.paneEdgeKey)
         defaults.set(Double(sideWidth), forKey: TerminalPaneLayout.sideWidthKey)
+        if let encoded = try? JSONEncoder().encode(tabSet) {
+            defaults.set(encoded, forKey: TerminalPaneLayout.tabSetKey)
+        }
     }
 }

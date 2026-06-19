@@ -3,7 +3,7 @@ import Combine
 import ViewerCore
 
 /// Observable owner of the bottom terminal pane: open/closed state, pane
-/// height, and the lazily-spawned `TerminalModel` (the live shell).
+/// height, and the lazily-spawned `TerminalModel`s (the live shells).
 ///
 /// OBSERVATION DISCIPLINE (load-bearing — same narrow pattern as
 /// `PanelLayoutStore`): observed DIRECTLY by `ContentView` + the
@@ -18,10 +18,21 @@ import ViewerCore
 /// synchronously (user-paced; no debounce needed). The shell process is
 /// spawned LAZILY on first open and reaped on `shutdown()` — an app that
 /// never opens the terminal never forks a shell.
-/// One terminal tab — a live shell session plus a stable id + display
-/// number. Multiple tabs each fork their own PTY (like iTerm tabs).
+///
+/// TAB MODEL (TSK-368): the ordered tab collection + active-tab tracking +
+/// new/close/select/reorder/rename + cwd-derived default titles all live in
+/// the pure, host-testable `TerminalTabSet` (ViewerCore). This store delegates
+/// every ordering/selection/naming decision to it and keeps a parallel
+/// id→`TerminalModel` map of the LIVE shells (the part that can't be a value
+/// type because it owns a PTY). The tab set (count + names + cwds + active id)
+/// is persisted per tool-window; live shells don't survive relaunch, so a
+/// restored set re-spawns fresh shells with the persisted names/cwds.
+
+/// One terminal tab — the live shell session plus the descriptor that names it.
+/// `id`/`number`/`title` mirror the `TerminalTabSet.Tab` it shadows so existing
+/// view code (`tab.id`, `tab.number`) keeps working unchanged.
 public struct TerminalTab: Identifiable {
-    public let id = UUID()
+    public let id: UUID
     public let number: Int
     public let model: TerminalModel
 }
@@ -35,16 +46,6 @@ public final class TerminalPaneStore: ObservableObject {
     /// to `[minHeight, maxHeight]`.
     @Published public private(set) var height: CGFloat
 
-    /// Open terminal tabs (each its own shell), in display order.
-    @Published public private(set) var tabs: [TerminalTab] = []
-    /// The selected tab's id, or nil when the pane has no tabs.
-    @Published public private(set) var selectedTabID: UUID?
-
-    /// Per-tab user-chosen names (TSK-771). Session-only: a tab (and its
-    /// shell) doesn't survive relaunch, so its name doesn't either. Keyed by
-    /// tab id; the entry is dropped when the tab closes so the map can't leak.
-    @Published public private(set) var customNames: [UUID: String] = [:]
-
     /// Where the tab strip sits relative to the terminal surface (TSK-488).
     /// Default `.left`; persisted in `TerminalPaneLayout`.
     @Published public private(set) var tabPosition: TerminalTabPosition
@@ -57,12 +58,42 @@ public final class TerminalPaneStore: ObservableObject {
     /// Clamped + persisted. (`height` still drives the bottom band.)
     @Published public private(set) var sideWidth: CGFloat
 
-    private var nextNumber = 1
+    /// The pure tab-collection model (ordering/selection/naming). Published so
+    /// the strip re-renders on any tab mutation. The store keeps the live
+    /// shells in `models`, keyed by `TerminalTabSet.Tab.id`.
+    @Published public private(set) var tabSet: TerminalTabSet
+
+    /// Live shells, keyed by tab id. A 1:1 shadow of `tabSet.tabs`.
+    private var models: [UUID: TerminalModel] = [:]
+
+    /// Open terminal tabs (each its own shell), in display order. Derived from
+    /// `tabSet` + `models`, so the existing `ForEach(store.tabs)` UI keeps
+    /// working unchanged.
+    public var tabs: [TerminalTab] {
+        tabSet.tabs.compactMap { tab in
+            guard let model = models[tab.id] else { return nil }
+            return TerminalTab(id: tab.id, number: tab.number, model: model)
+        }
+    }
+
+    /// The active tab's id, or nil when the pane has no tabs.
+    public var selectedTabID: UUID? { tabSet.activeID }
+
+    /// Per-tab user-chosen names (compat accessor). Backed by `tabSet`'s
+    /// `customName`; the entry is absent for a default-named tab.
+    public var customNames: [UUID: String] {
+        var out: [UUID: String] = [:]
+        for tab in tabSet.tabs where tab.customName != nil {
+            out[tab.id] = tab.customName
+        }
+        return out
+    }
 
     /// The selected tab's live terminal — created on first open so the app
     /// pays no PTY cost until the user actually wants a shell.
     public var terminal: TerminalModel? {
-        tabs.first { $0.id == selectedTabID }?.model
+        guard let id = tabSet.activeID else { return nil }
+        return models[id]
     }
 
     private let defaults: UserDefaults
@@ -76,10 +107,21 @@ public final class TerminalPaneStore: ObservableObject {
         self.tabPosition = loaded.tabPosition
         self.paneEdge = loaded.paneEdge
         self.sideWidth = loaded.sideWidth
+        // Restore the persisted tab set (names/cwds/active id) — but NOT the
+        // shells: a relaunch re-spawns fresh shells lazily when the view
+        // mounts. An empty restored set is fine; `ensureTerminal()` seeds one.
+        self.tabSet = loaded.tabSet
         // Restore "open" intent, but DON'T spawn the shell here — the
         // shell spawns when the view first mounts (the terminal getter is
         // exercised by ContentView only while `isOpen`).
         self.isOpen = loaded.isOpen
+        // Re-materialize live models for every restored tab descriptor so the
+        // pane shows them again (with their persisted name + spawn cwd).
+        for tab in self.tabSet.tabs {
+            let model = TerminalModel()
+            model.initialWorkingDirectory = tab.cwd
+            models[tab.id] = model
+        }
         if loaded.isOpen { ensureTerminal() }
         syncForeground()
     }
@@ -101,7 +143,7 @@ public final class TerminalPaneStore: ObservableObject {
         layout.isOpen = open
         if open { ensureTerminal() }
         syncForeground()
-        layout.save(to: defaults)
+        persist()
     }
 
     // MARK: - Height
@@ -113,7 +155,7 @@ public final class TerminalPaneStore: ObservableObject {
         guard clamped != height else { return }
         height = clamped
         layout.setHeight(clamped)
-        layout.save(to: defaults)
+        persist()
     }
 
     // MARK: - Tab-strip position (TSK-488)
@@ -124,7 +166,7 @@ public final class TerminalPaneStore: ObservableObject {
         guard pos != tabPosition else { return }
         tabPosition = pos
         layout.tabPosition = pos
-        layout.save(to: defaults)
+        persist()
     }
 
     // MARK: - Pane dock edge (TSK-491)
@@ -135,7 +177,7 @@ public final class TerminalPaneStore: ObservableObject {
         guard edge != paneEdge else { return }
         paneEdge = edge
         layout.paneEdge = edge
-        layout.save(to: defaults)
+        persist()
     }
 
     public var minWidth: CGFloat { TerminalPaneLayout.minWidth }
@@ -148,87 +190,86 @@ public final class TerminalPaneStore: ObservableObject {
         guard clamped != sideWidth else { return }
         sideWidth = clamped
         layout.setWidth(clamped)
-        layout.save(to: defaults)
+        persist()
     }
 
     // MARK: - Tabs
 
     /// Add a new shell tab and select it. The model spawns its shell when
     /// the representable mounts; `workingDirectory` (TSK-769) seeds that first
-    /// spawn's cwd (nil → the shell's default home).
+    /// spawn's cwd (nil → the shell's default home) AND the tab's cwd-derived
+    /// default title (TSK-368).
     public func addTab(workingDirectory: URL? = nil) {
+        let id = tabSet.addTab(cwd: workingDirectory)
         let model = TerminalModel()
         model.initialWorkingDirectory = workingDirectory
-        let tab = TerminalTab(number: nextNumber, model: model)
-        nextNumber += 1
-        tabs.append(tab)
-        selectedTabID = tab.id
+        models[id] = model
         syncForeground()
+        persist()
     }
 
     /// Rename a tab (TSK-771). A whitespace-only / empty name CLEARS the
-    /// custom name (reverting to the default "Terminal N"). No-op for an
-    /// unknown id or when the value is unchanged (so the strip doesn't
-    /// republish on a no-op rename).
+    /// custom name (reverting to the default title). No-op for an unknown id
+    /// or when the value is unchanged (so the strip doesn't republish).
     public func renameTab(_ id: UUID, to name: String) {
-        guard tabs.contains(where: { $0.id == id }) else { return }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            guard customNames[id] != nil else { return }
-            customNames[id] = nil
-        } else {
-            guard customNames[id] != trimmed else { return }
-            customNames[id] = trimmed
-        }
+        guard tabSet.rename(id, to: name) else { return }
+        persist()
     }
 
-    /// The short chip label: the custom name if set, else the bare tab number.
+    /// The short chip label: the custom name if set, else the cwd folder name,
+    /// else the bare tab number (TSK-368 cwd-derived titles).
     public func tabLabel(for tab: TerminalTab) -> String {
-        customNames[tab.id] ?? "\(tab.number)"
+        guard let descriptor = tabSet.tab(tab.id) else { return "\(tab.number)" }
+        return tabSet.label(for: descriptor)
     }
 
     /// The full title (tooltip / accessibility): the custom name if set, else
-    /// the default "Terminal N".
+    /// "Terminal N — <folder>" when a cwd is known, else "Terminal N".
     public func tabTitle(for tab: TerminalTab) -> String {
-        customNames[tab.id] ?? "Terminal \(tab.number)"
+        guard let descriptor = tabSet.tab(tab.id) else { return "Terminal \(tab.number)" }
+        return tabSet.title(for: descriptor)
     }
 
     /// Select an existing tab by id (no-op for an unknown id).
     public func selectTab(_ id: UUID) {
-        guard selectedTabID != id, tabs.contains(where: { $0.id == id }) else { return }
-        selectedTabID = id
+        guard tabSet.select(id) else { return }
         syncForeground()
+        persist()
     }
 
     /// Cycle to the next (`forward`) or previous tab, wrapping around.
     /// No-op with fewer than two tabs. Drives ⌃Tab / ⌃⇧Tab.
     public func cycleTab(forward: Bool) {
-        guard tabs.count > 1, let id = selectedTabID,
-              let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let n = tabs.count
-        let next = forward ? (idx + 1) % n : (idx - 1 + n) % n
-        selectedTabID = tabs[next].id
+        let before = tabSet.activeID
+        _ = tabSet.cycle(forward: forward)
+        guard tabSet.activeID != before else { return }
         syncForeground()
+        persist()
+    }
+
+    /// Reorder a tab (drag in the strip): move the tab at `from` to land at
+    /// `to` in the post-removal list. The active tab stays active. Persisted.
+    public func moveTab(from: Int, to: Int) {
+        let before = tabSet.tabs.map(\.id)
+        tabSet.move(from: from, to: to)
+        guard tabSet.tabs.map(\.id) != before else { return }
+        persist()
     }
 
     /// Close a tab, reaping its shell. Closing the last tab closes the
     /// whole pane; closing the selected tab selects a neighbor.
     public func closeTab(_ id: UUID) {
-        guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let tab = tabs.remove(at: idx)
-        tab.model.stop()
-        customNames[id] = nil        // drop the closed tab's name (TSK-771)
-        if tabs.isEmpty {
-            selectedTabID = nil
-            nextNumber = 1            // fresh numbering next time it opens
-            customNames.removeAll()   // no tabs → no names
+        guard tabSet.tab(id) != nil else { return }
+        let model = models[id]
+        guard tabSet.close(id) else { return }
+        model?.stop()
+        models[id] = nil
+        if tabSet.isEmpty {
             setOpen(false)            // last tab closed → close the pane
             return
         }
-        if selectedTabID == id {
-            selectedTabID = tabs[min(idx, tabs.count - 1)].id
-        }
         syncForeground()
+        persist()
     }
 
     // MARK: - Shell lifecycle
@@ -236,7 +277,7 @@ public final class TerminalPaneStore: ObservableObject {
     /// Ensure the pane has at least one tab (called on open). The model
     /// spawns the shell itself when the representable mounts.
     private func ensureTerminal() {
-        if tabs.isEmpty { addTab() }
+        if tabSet.isEmpty { addTab() }
     }
 
     /// Mark exactly the visible shell foreground (pane open AND selected)
@@ -244,13 +285,21 @@ public final class TerminalPaneStore: ObservableObject {
     /// scheduling UI bumps no view observes (TSK-459). Cheap + idempotent
     /// (each model's `setForeground` early-returns on no change).
     private func syncForeground() {
-        for tab in tabs {
-            tab.model.setForeground(isOpen && tab.id == selectedTabID)
+        let active = tabSet.activeID
+        for (id, model) in models {
+            model.setForeground(isOpen && id == active)
         }
+    }
+
+    /// Persist the layout + tab set so the pane (and its named/cwd'd tabs +
+    /// active selection) survive relaunch. User-paced — no debounce needed.
+    private func persist() {
+        layout.tabSet = tabSet
+        layout.save(to: defaults)
     }
 
     /// Reap every shell on app teardown. Idempotent.
     public func shutdown() {
-        for tab in tabs { tab.model.stop() }
+        for model in models.values { model.stop() }
     }
 }
