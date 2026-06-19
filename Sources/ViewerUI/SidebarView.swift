@@ -770,11 +770,10 @@ struct SidebarView: View {
                             : Color.clear)
             }
             .buttonStyle(.plain)
-            .onHover { hovering in
-                filesHeaderHovering = hovering
-                if hovering { NSCursor.pointingHand.push() }
-                else { NSCursor.pop() }
-            }
+            // TSK-892: balanced cursor push/pop (the old open-coded
+            // push/pop double-pushed on AppKit's repeat onHover(true) and
+            // had no onDisappear pop — see HoverCursorBalance).
+            .hoverCursor(isHovering: $filesHeaderHovering)
             .helpInfo(title: filesExpanded ? "Collapse Files" : "Expand Files",
                       description: "Show or hide the file tree")
             .accessibilityIdentifier("mdv.sidebar.filesHeader")
@@ -1452,11 +1451,12 @@ private struct FileRowView: View, Equatable {
         // UIRESP-01/13: pointer affordance for file rows. Hover updates
         // the tint (via `rowBackground`) and shows the pointing-hand
         // cursor so rows read as clickable.
-        .onHover { hovering in
-            isHovering = hovering
-            if hovering { NSCursor.pointingHand.push() }
-            else { NSCursor.pop() }
-        }
+        // TSK-892: balanced cursor push/pop — the prior open-coded
+        // push/pop double-pushed on AppKit's repeat onHover(true) and
+        // over-popped on a stray onHover(false), storming the global
+        // cursor stack during a sustained drag across rows (the felt
+        // "file-tree hover is slow" jank). See HoverCursorBalance.
+        .hoverCursor(isHovering: $isHovering)
     }
 
     // MARK: - Recency stripe rendering
