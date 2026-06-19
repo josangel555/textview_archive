@@ -1028,6 +1028,10 @@ struct SourceModeView: View {
                         wordWrap: model.sourceWordWrap,
                         showInvisibles: model.showInvisibleChars,
                         isLargeReadOnly: file.isLargeReadOnly,
+                        // TSK-889: key the warm-reopen cache by this tab's stable
+                        // identity (not URL) so switch-back reuses the laid-out
+                        // controller. No-op unless MDV_PRESERVE_RECENT_SOURCE_VIEWS.
+                        tabID: tabID,
                         scrollLineRequest: TextDisplayView.ScrollLineRequest(
                             line: sourceView.sourceScrollLineTarget,
                             nonce: sourceView.sourceScrollLineNonce

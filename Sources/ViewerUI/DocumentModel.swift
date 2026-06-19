@@ -6301,6 +6301,13 @@ public final class DocumentModel: ObservableObject {
             // UUID can't inherit a stale "JS on" decision (the set is
             // keyed by tab id; absence = secure default off).
             htmlJavaScriptOptIn.remove(tabID)
+
+            // TSK-889: real close → tear down + drop any preserved (warm-reopen)
+            // source-view controller for this tab. A no-op unless the
+            // preservation flag is on and a controller was resident. Must fire
+            // here (not on dismantle) so the glyph store frees on actual close,
+            // and a recycled UUID can't inherit a stale laid-out view.
+            SourceControllerCache.shared.purge(tabID: tabID)
         }
         // Drop any hosted-view payloads no longer referenced by a live
         // tab. `purgeCaches` runs AFTER the coordinator has mutated

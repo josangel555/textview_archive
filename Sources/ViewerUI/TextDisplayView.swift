@@ -49,6 +49,12 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     /// selection highlight) that would make a few-hundred-MB file
     /// unusable. Default false keeps every existing call site unchanged.
     public let isLargeReadOnly: Bool
+    /// TSK-889: stable identity of the tab hosting this source view, used to
+    /// key the warm-reopen `SourceControllerCache`. `nil` opts a call site out
+    /// of preservation entirely (it then always makes fresh + tears down on
+    /// dismantle, exactly as before). Default `nil` keeps existing call sites
+    /// unchanged; only the tab-hosted source pane passes a real id.
+    public let tabID: UUID?
     /// Scroll-to-line request. (`line: nil` = no-op; otherwise scroll
     /// to that 1-based line and place the caret there.) The nonce
     /// distinguishes repeat requests for the same line.
@@ -78,6 +84,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         wordWrap: Bool = false,
         showInvisibles: Bool = false,
         isLargeReadOnly: Bool = false,
+        tabID: UUID? = nil,
         scrollLineRequest: ScrollLineRequest = .none,
         onFindSummary: ((String) -> Void)? = nil,
         onScrollChange: ((SourceScrollState) -> Void)? = nil,
@@ -94,6 +101,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         self.wordWrap = wordWrap
         self.showInvisibles = showInvisibles
         self.isLargeReadOnly = isLargeReadOnly
+        self.tabID = tabID
         self.scrollLineRequest = scrollLineRequest
         self.onFindSummary = onFindSummary
         self.onScrollChange = onScrollChange
@@ -144,10 +152,36 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         }
     }
 
+    /// Carries the tab identity from `makeNSViewController` to the static
+    /// `dismantleNSViewController` (which only sees the controller + the
+    /// coordinator), so dismantle can ask the cache whether this tab is merely
+    /// deactivated (preserve) or truly closed (teardown). `nil` tabID = the
+    /// representable opted out of preservation; behaves exactly as before.
+    @MainActor
+    public final class Coordinator {
+        let tabID: UUID?
+        init(tabID: UUID?) { self.tabID = tabID }
+    }
+
+    public func makeCoordinator() -> Coordinator {
+        Coordinator(tabID: tabID)
+    }
+
     public func makeNSViewController(context: Context) -> SourceTextController {
-        SourceTextController(
+        let cache = SourceControllerCache.shared
+        // TSK-889 warm reopen: reuse a preserved (still-laid-out) controller
+        // for this tab so switch-back is a cheap viewport re-layout, not a full
+        // O(N) re-typeset. `acquire` returns nil when disabled or absent.
+        if let tabID, let preserved = cache.acquire(tabID: tabID) as? SourceTextController {
+            return preserved
+        }
+        let controller = SourceTextController(
             text: text, fontSize: fontSize, theme: theme, wordWrap: wordWrap
         )
+        if let tabID {
+            cache.store(tabID: tabID, controller: controller)
+        }
+        return controller
     }
 
     /// RC-7 (memory-on-close): when SwiftUI discards the source-view
@@ -165,8 +199,19 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     /// repeated open/close of a 5 MB file plateaus rather than ratchets)
     /// and become reclaimable on memory pressure right away.
     public static func dismantleNSViewController(
-        _ controller: SourceTextController, coordinator: ()
+        _ controller: SourceTextController, coordinator: Coordinator
     ) {
+        // TSK-889: if warm-reopen preservation kept this tab's controller
+        // cache-resident, the dismantle is a mere DEACTIVATION (SwiftUI removed
+        // it from the hierarchy on a tab switch) — DON'T tear down, the laid-out
+        // glyph store must survive so switch-back is cheap. Teardown happens on
+        // real close (`purge`) or LRU/byte-budget eviction inside the cache.
+        // When preservation is OFF (or this call site opted out with a nil
+        // tabID), the cache reports not-resident and we tear down as before.
+        if let tabID = coordinator.tabID,
+           SourceControllerCache.shared.isResident(tabID: tabID) {
+            return
+        }
         controller.teardownStorage()
     }
 
@@ -199,6 +244,24 @@ public extension SourceTextController {
     /// Exposed so the LSP attachment can install event monitors on
     /// the real text view. Returns the same object every call.
     var lspTextView: NSTextView { textView }
+}
+
+/// TSK-889: lets `SourceControllerCache` preserve a laid-out controller
+/// across tab deactivations and tear it down on close / eviction.
+extension SourceTextController: PreservableSourceController {
+    /// Approximate resident bytes this controller pins. We can't cheaply read
+    /// the real `NSLayoutManager` glyph-store size, so estimate from the text
+    /// storage's UTF-16 length: empirically a laid-out store costs many bytes
+    /// per character (glyph + layout metadata), so a per-char multiplier gives
+    /// a conservative-ish budget signal. Exact precision isn't needed — this
+    /// only orders byte-budget eviction, and over-estimating evicts sooner
+    /// (memory-safe). An empty / torn-down storage reports ~0.
+    public var retainedByteCount: Int {
+        let utf16Len = textView.textStorage?.length ?? 0
+        // ~16 bytes/char: 2 bytes UTF-16 backing + laid-out glyph/layout
+        // metadata that dwarfs the source bytes for a typeset document.
+        return utf16Len * 16
+    }
 }
 
 /// Scroll state we publish from `SourceTextController` to whatever
@@ -534,7 +597,10 @@ public final class SourceTextController: NSViewController {
     /// forces the glyph store to drop now rather than at some later
     /// autorelease drain. Cancel any pending selection-highlight work too,
     /// so a queued closure can't resurrect attributes on a torn-down view.
-    func teardownStorage() {
+    ///
+    /// `public` so it can satisfy the `PreservableSourceController` requirement
+    /// (TSK-889): the warm-reopen cache calls this on real close / eviction.
+    public func teardownStorage() {
         pendingSelectionHighlightWork?.cancel()
         // CRITICAL: drop the notification observers BEFORE mutating storage.
         // `endEditing()` below flushes layout, which makes NSTextView clamp
