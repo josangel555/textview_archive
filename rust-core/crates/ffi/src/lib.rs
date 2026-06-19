@@ -379,6 +379,10 @@ pub extern "C" fn mdvcore_force_panic() -> MdvStatus {
 /// # Safety
 /// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
 /// `out_buf` must be a valid, writable pointer.
+// TSK-1015: legacy direct symbol — production routes diff parsing through the
+// envelope (`mdvcore_call` → `diff::parse_wire`). Retained test-only as the
+// envelope-parity oracle (`ffi/tests.rs`), kept OFF the production ABI surface.
+#[cfg(test)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mdvcore_diff_parse(
     req: *const u8,
@@ -400,6 +404,10 @@ pub unsafe extern "C" fn mdvcore_diff_parse(
 /// # Safety
 /// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
 /// `out_buf` must be a valid, writable pointer.
+// TSK-1015: legacy direct symbol — production routes through the envelope
+// (`mdvcore_call` → `diff::hunk_marks_wire`). Retained test-only as the
+// envelope-parity oracle (`ffi/tests.rs`), kept OFF the production ABI surface.
+#[cfg(test)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
     req: *const u8,
@@ -425,6 +433,10 @@ pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
 /// # Safety
 /// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
 /// `out_buf` must be a valid, writable pointer.
+// TSK-1015: legacy direct symbol — production routes through the envelope
+// (`mdvcore_call` → `highlight_runs::runs_wire`). Retained test-only as the
+// envelope-parity oracle (`ffi/tests.rs`), kept OFF the production ABI surface.
+#[cfg(test)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mdvcore_highlight_runs(
     req: *const u8,
