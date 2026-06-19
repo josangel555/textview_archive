@@ -131,7 +131,7 @@ struct CSVTableView: View {
                     Section {
                         ForEach(displayRows.indices, id: \.self) { i in
                             cellRow(displayRows[i], isAlt: i % 2 == 1,
-                                    header: result.header)
+                                    header: result.header, allRows: displayRows)
                         }
                     } header: {
                         headerRow(result)
@@ -364,7 +364,8 @@ struct CSVTableView: View {
     }
 
     @ViewBuilder
-    private func cellRow(_ row: [String], isAlt: Bool, header: [String]) -> some View {
+    private func cellRow(_ row: [String], isAlt: Bool, header: [String],
+                         allRows: [[String]]) -> some View {
         HStack(spacing: 0) {
             ForEach(row.indices, id: \.self) { i in
                 let cell = row[i]
@@ -379,6 +380,10 @@ struct CSVTableView: View {
                     }
                     .contextMenu {
                         Button("Copy Cell") { Pasteboard.copy(cell) }
+                        // TSK-924: multi-cell copy — the whole row (TSV) or the
+                        // whole column (newline-joined), pasteable into a sheet.
+                        Button("Copy Row") { Pasteboard.copy(CSVCopy.rowTSV(row)) }
+                        Button("Copy Column") { Pasteboard.copy(CSVCopy.columnText(i, in: allRows)) }
                     }
                     // A11Y-01: per-cell VoiceOver label "<column>: <value>"
                     // so each cell announces which column it belongs to

@@ -1,5 +1,15 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-924 (slice): CSV copy-row / copy-column
+
+A bounded, host-testable slice of "CSV multi-cell select + copy/paste": the cell context menu gains Copy Row (cells
+joined by TAB → TSV) + Copy Column (each row's cell joined by NEWLINE), alongside the existing Copy Cell. New pure
+ViewerCore `CSVCopy.rowTSV/columnText` (host-tested: tab-join, newline-join, short-row padding, out-of-range) wired
+into CSVTableView.cellRow (threaded `allRows` for the column). Host teeth: CSVCopyTests (3). The full arbitrary
+shift-select rectangle is the bigger follow-up (CSVTableView has no cursor/selection wiring yet — from-scratch
+render interaction); this slice delivers the common multi-cell-copy need (whole row/column) cleanly. Menu render =
+owner-eyeball / batched VM-validate (minimal: 2 context-menu items).
+
 ## LOG 2026-06-18 — TSK-374: find-match LIST for in-document find (feature)
 
 Built the in-document find match-list (the richer companion to the tick minimap; cross-file search already had a
