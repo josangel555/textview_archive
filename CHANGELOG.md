@@ -14,6 +14,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Command palette: faster `@`-symbol typing in large files** — the heading list is no longer re-parsed on every keystroke (computed once per file), so jumping to a heading stays responsive in big documents.
 
 ### Added
+- **Folder size treemap (bundle analyzer)** — a folder's contents can now be shown as a size-proportional treemap: the bigger the file or subfolder, the bigger its tile, color-coded by file type, so "what's eating this folder" reads at a glance. Subfolders are summed recursively; build/VCS dirs and hidden files are skipped.
 - **Git log: more commit actions** — right-clicking a commit now offers **Copy SHA**, **Copy Short SHA**, **Copy Subject**, and **Copy Reference** (`<short-sha> <subject>`, git-oneline style), not just "Review Commit".
 - **CSV viewer: copy a whole row or column** — the cell right-click menu now has **Copy Row** (tab-separated) and **Copy Column** (one value per line) alongside Copy Cell, so you can paste a row or column straight into a spreadsheet.
 - **Find in source: a "show all matches" list** — next to the match minimap, a new list button opens a popover listing every match (line number + that line's text); click a row to jump straight to it. Complements the existing tick minimap and Next/Previous.
