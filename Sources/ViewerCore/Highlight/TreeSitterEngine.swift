@@ -91,11 +91,24 @@ public final class TreeSitterEngine: @unchecked Sendable {
         // (which would need a locals query we don't run) is treated as
         // satisfied — i.e. NO capture that renders today is dropped, only
         // wrongly-firing regex/eq-gated ones are filtered out.
-        let ns = text as NSString
+        // Predicate text resolution against a cached UTF-16 code-unit
+        // buffer instead of `text as NSString` + a fresh
+        // `substring(with:)` per eval. SwiftTreeSitter parses with
+        // UTF-16LE encoding, so a node's `range` (and the range handed
+        // to this provider) is in UTF-16 offsets — `units` is exactly
+        // that coordinate space. The old path bridged the whole file to
+        // `NSString` and allocated a new `String` (via ObjC dispatch)
+        // for every gated capture's text; on a large file with many
+        // `#match?`/`#eq?` captures that is per-pass alloc churn. Here
+        // the buffer is materialized once and each resolution builds a
+        // String straight from the in-range code units — one minimal
+        // allocation, no ObjC hop. Behaviour is byte-identical to
+        // `NSString.substring(with:)`: identical coordinate space,
+        // identical out-of-range guard, and `String(utf16CodeUnits:)`
+        // preserves lone surrogates the same way a substring would.
+        let units = Array(text.utf16)
         let predicateContext = Predicate.Context(textProvider: { range, _ in
-            guard range.location != NSNotFound, range.location >= 0,
-                  range.location + range.length <= ns.length else { return nil }
-            return ns.substring(with: range)
+            Self.predicateSubstring(in: units, range: range)
         })
         for match in cursor.resolve(with: predicateContext) {
             for cap in match.captures {
@@ -115,6 +128,34 @@ public final class TreeSitterEngine: @unchecked Sendable {
         // that nested-specific captures override their parent.
         return PerfSignpost.withInterval(.highlight, "ts.paintOver") {
             Self.paintOver(runs: runs, textCount: text.utf16.count)
+        }
+    }
+
+    /// Resolve a predicate `textProvider` query against a cached UTF-16
+    /// code-unit buffer. `range` is in UTF-16 offsets (SwiftTreeSitter
+    /// parses UTF-16LE, so a node's NSRange is UTF-16-based — see
+    /// `Encoding+Helpers`). Returns nil for an out-of-range request
+    /// (same as the old `NSString.substring(with:)` guard), an empty
+    /// string for a zero-length range, else the in-range code units as
+    /// a `String`. Byte-identical to `(text as NSString).substring(with:)`
+    /// — including lone-surrogate preservation — but with no NSString
+    /// bridge and a single minimal allocation per call (the old path
+    /// dispatched into ObjC and allocated a fresh String per gated
+    /// capture every tokenize pass). Static + internal so the equivalence
+    /// can be pinned directly against `NSString.substring` in tests.
+    internal static func predicateSubstring(
+        in units: [unichar], range: NSRange
+    ) -> String? {
+        guard range.location != NSNotFound, range.location >= 0,
+              range.length >= 0,
+              range.location + range.length <= units.count else { return nil }
+        // Empty slice → "" (matches NSString.substring(with:) for a
+        // zero-length range). Also dodges the nil baseAddress an empty
+        // backing array yields under withUnsafeBufferPointer.
+        guard range.length > 0 else { return "" }
+        return units.withUnsafeBufferPointer { buf in
+            String(utf16CodeUnits: buf.baseAddress! + range.location,
+                   count: range.length)
         }
     }
 
