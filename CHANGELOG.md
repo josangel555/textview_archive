@@ -13,6 +13,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 
 ### Added
 - **More commands runnable from the `>` palette** — Fold All, Unfold All, Show Repository History, and Clear Recent Files are no longer menu-only; type `>` in Quick Open and run them like any other command.
+- **Review agent-written diffs in-app** — in the Claude session monitor, an agent's `Edit`/`Write`/`MultiEdit` tool call now renders as a colored unified diff (red removals, green additions, per-file +/- stats) instead of a raw `old_string:`/`new_string:` text dump.
 - **Code-review comments** — you can now add and view review comments on a diff (the add-comment control + comment list are reachable from the review surface).
 - **Code-review export — with or without code snippets** — the review Export menu now offers two clipboard payloads: copy with the verbatim diff snippets inline (for handing the whole context to Claude), or copy a leaner version with just the comments + line anchors (when the receiver already has the source, or the code shouldn't leave the machine).
 - **CSV: keyboard cell navigation + copy** — arrow keys move the focused cell (with Home/End/Page-Up/Down), and ⌘C copies the focused cell's value.

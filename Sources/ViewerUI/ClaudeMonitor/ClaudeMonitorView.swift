@@ -663,10 +663,20 @@ public struct ClaudeMonitorView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            Text(detailText(event))
-                .font(.system(size: 12, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // TSK-940 — when the event is a file-mutating agent tool call
+            // (Edit / Write / MultiEdit), render its payload as a reviewable
+            // colored unified diff instead of a raw `old_string:`/`new_string:`
+            // arg dump. The extractor returns nil for any other tool / no-op
+            // edit, in which case we fall back to the plain arg text.
+            if let (toolName, input) = diffableToolCall(event),
+               AgentDiffExtractor.unifiedDiffText(toolName: toolName, input: input) != nil {
+                AgentDiffInlineView(toolName: toolName, input: input)
+            } else {
+                Text(detailText(event))
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(8)
         .background(isHighlighted
@@ -699,6 +709,15 @@ public struct ClaudeMonitorView: View {
         case .toolResult(_, let summary):
             return summary
         }
+    }
+
+    /// Extracts `(toolName, input)` from a `toolUse` event whose tool is a
+    /// file-mutating one we can render as a diff (Edit/Write/MultiEdit); nil
+    /// for any other event/tool. TSK-940.
+    private func diffableToolCall(_ event: ClaudeEvent) -> (String, [String: String])? {
+        guard case let .toolUse(_, name, input) = event.kind,
+              AgentDiffExtractor.isDiffable(toolName: name) else { return nil }
+        return (name, input)
     }
 
     private func kindGlyph(_ k: ClaudeEvent.Kind) -> String {
