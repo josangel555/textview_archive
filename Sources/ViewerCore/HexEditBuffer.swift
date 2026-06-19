@@ -53,6 +53,16 @@ public struct HexEditBuffer: Equatable, Sendable {
     private var undoStack: [Edit] = []
     private var redoStack: [Edit] = []
 
+    /// Cap on retained undo history — bounds memory on a long edit session.
+    /// Trimmed in slack-sized batches so the trim is amortized O(1) per edit
+    /// (not O(n) per push once full). Oldest edits drop first: you can undo at
+    /// most ~`maxUndoDepth` steps back; `edited` stays the source of truth.
+    static let maxUndoDepth = 10_000
+    private static let undoTrimSlack = 256
+
+    /// Inspection/test seam: current retained undo depth.
+    var undoDepth: Int { undoStack.count }
+
     public init(original: [UInt8]) {
         self.original = original
         self.edited = original
@@ -128,6 +138,9 @@ public struct HexEditBuffer: Equatable, Sendable {
         guard old != new else { return false }
         edited[index] = new
         undoStack.append(Edit(index: index, old: old, new: new))
+        if undoStack.count > Self.maxUndoDepth + Self.undoTrimSlack {
+            undoStack.removeFirst(undoStack.count - Self.maxUndoDepth)
+        }
         redoStack.removeAll(keepingCapacity: true)
         return true
     }

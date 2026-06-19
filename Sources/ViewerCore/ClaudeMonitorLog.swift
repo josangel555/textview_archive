@@ -366,12 +366,17 @@ public struct ClaudeMonitorLog: Sendable {
         return f
     }()
 
-    private static func parseTimestamp(_ raw: Any?) -> Date? {
+    static func parseTimestamp(_ raw: Any?) -> Date? {
         if let s = raw as? String {
             if let d = iso.date(from: s) { return d }
             return isoFractional.date(from: s)
         }
-        if let n = raw as? NSNumber { return Date(timeIntervalSince1970: n.doubleValue) }
+        if let n = raw as? NSNumber {
+            let d = n.doubleValue
+            // Guard non-finite (NaN/±Inf) seconds — they yield a garbage Date.
+            guard d.isFinite else { return nil }
+            return Date(timeIntervalSince1970: d)
+        }
         return nil
     }
 }

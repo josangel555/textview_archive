@@ -268,12 +268,15 @@ public struct ClaudeLogParser: Sendable {
         return f
     }()
 
-    private static func parseTimestamp(_ raw: Any?) -> Date? {
+    static func parseTimestamp(_ raw: Any?) -> Date? {
         if let s = raw as? String {
             if let d = isoFractional.date(from: s) { return d }
             return iso.date(from: s)
         }
         if let n = raw as? Double {
+            // A non-finite seconds value (NaN/±Inf) makes Date(timeIntervalSince1970:)
+            // produce a garbage/distant Date; treat it as "no timestamp".
+            guard n.isFinite else { return nil }
             return Date(timeIntervalSince1970: n)
         }
         return nil
