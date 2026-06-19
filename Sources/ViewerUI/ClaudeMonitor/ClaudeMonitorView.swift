@@ -38,7 +38,15 @@ final class ClaudeMonitorModel: ObservableObject {
     /// Root scanned for transcripts (`~/.claude`).
     let root: URL
 
-    @Published private(set) var sessions: [ClaudeSessionSummary] = []
+    @Published private(set) var sessions: [ClaudeSessionSummary] = [] {
+        didSet { rebuildSessionDerived() }
+    }
+    /// Sorted-once (most-recent-first) projection of `sessions` + a parallel
+    /// per-session lowercased search haystack, rebuilt ONLY when `sessions`
+    /// changes — so the per-keystroke `filteredSessions` doesn't re-sort or
+    /// re-`lowercased()` every session on each render (TSK-985).
+    private var sortedSessions: [ClaudeSessionSummary] = []
+    private var sortedHaystacks: [String] = []
     @Published private(set) var isLoadingSessions = false
     /// Selected session key (`ClaudeSessionSummary.id`), or `nil`.
     @Published var selectedKey: String?
@@ -108,20 +116,31 @@ final class ClaudeMonitorModel: ObservableObject {
     }
 
     /// Filtered + most-recent-first session list driving the master pane.
+    /// Uses the pre-sorted projection + cached lowercased haystacks
+    /// (`rebuildSessionDerived`), so a keystroke costs one `needle.lowercased()`
+    /// + N substring checks — no per-session `lowercased()` allocs, no re-sort.
     var filteredSessions: [ClaudeSessionSummary] {
         let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base: [ClaudeSessionSummary]
-        if needle.isEmpty {
-            base = sessions
-        } else {
-            base = sessions.filter { s in
-                (s.title?.lowercased().contains(needle) ?? false)
-                    || (s.cwd?.lowercased().contains(needle) ?? false)
-                    || s.projectDirName.lowercased().contains(needle)
-            }
+        if needle.isEmpty { return sortedSessions }
+        var out: [ClaudeSessionSummary] = []
+        out.reserveCapacity(sortedSessions.count)
+        for (i, s) in sortedSessions.enumerated() where sortedHaystacks[i].contains(needle) {
+            out.append(s)
         }
-        return base.sorted { lhs, rhs in
-            (lhs.lastTimestamp ?? .distantPast) > (rhs.lastTimestamp ?? .distantPast)
+        return out
+    }
+
+    /// Rebuild the sorted projection + parallel lowercased haystacks. Called from
+    /// `sessions.didSet` (TSK-985) so the sort + per-session lowercasing is paid
+    /// once per index refresh, not once per keystroke.
+    private func rebuildSessionDerived() {
+        let sorted = sessions.sorted {
+            ($0.lastTimestamp ?? .distantPast) > ($1.lastTimestamp ?? .distantPast)
+        }
+        sortedSessions = sorted
+        // Single separator (\u{1}) so a needle can't match across two fields.
+        sortedHaystacks = sorted.map {
+            "\($0.title ?? "")\u{1}\($0.cwd ?? "")\u{1}\($0.projectDirName)".lowercased()
         }
     }
 

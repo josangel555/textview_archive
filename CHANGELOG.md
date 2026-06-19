@@ -57,6 +57,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **Faster editor + highlighting plumbing** — the Rust FFI no longer double-copies every response frame, syntax tokenization stops re-bridging the whole file per highlight, and `cm_apply` is moving to keystroke-sized edits instead of shipping the whole document each tick.
 - **Folder stats no longer block** other folder lookups (the git walk runs off the actor + coalesces duplicate work).
 - **Smoother window & pane resizing** — the sidebar no longer rebuilds itself on every resize frame; resize ticks that can't change any panel's size are now dropped, so dragging the window edge (and internal panes) feels less janky.
+- **Snappier Claude-monitor search** — typing in the monitor's session filter no longer re-lowercases every session and re-sorts the whole list on each keystroke; the sorted list + per-session search text are precomputed once per refresh, so filtering a large session list stays fluid.
 
 ## 2026-06-18
 
