@@ -69,6 +69,21 @@ select_toolchain() {
 }
 select_toolchain
 
+# TSK-851: opt-in compiler-cache wiring for the TreeSitter grammar C compiles.
+# When ccache/sccache is on PATH (or forced via MDV_CC_CACHE_BIN), this exports a
+# CC wrapper so SwiftPM routes the ~165 MB of grammar `parser.c` compiles through
+# the cache — the 2nd clean build's C phase becomes a cache hit. A host WITHOUT a
+# cache tool degrades to a normal build (no-op, no hard dependency). The wrapper
+# only ever touches C compiles; Swift modules go straight through `swiftc`.
+# shellcheck source=lib/ccache-env.sh
+source "$SCRIPT_DIR/lib/ccache-env.sh"
+mdv_setup_cc_cache "$SCRIPT_DIR"
+if [[ -n "${MDV_CC_CACHE:-}" ]]; then
+  echo "==> C compiler cache: $MDV_CC_CACHE (CC=$CC → $MDV_CC_REAL)"
+else
+  echo "==> C compiler cache: none (install ccache/sccache to speed clean rebuilds)"
+fi
+
 echo "==> swift build -c $CONFIG"
 ( cd "$ROOT_DIR" && swift build -c "$CONFIG" )
 
