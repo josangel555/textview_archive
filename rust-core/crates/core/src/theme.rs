@@ -19,9 +19,35 @@ pub struct Rgb {
 }
 
 impl Rgb {
-    #[must_use] 
+    #[must_use]
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Rgb { r, g, b }
+    }
+}
+
+/// A 24-bit color with an 8-bit alpha channel — the full result of parsing a
+/// theme/CSS hex string that may carry transparency (`#rrggbbaa`). The opaque
+/// [`parse_hex`] discards the alpha; [`parse_rgba`] preserves it for front-ends
+/// that need the channel (theme imports, CSS color tokens).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Rgba {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    /// 0 = fully transparent, 255 = fully opaque.
+    pub a: u8,
+}
+
+impl Rgba {
+    #[must_use]
+    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Rgba { r, g, b, a }
+    }
+
+    /// Drop the alpha channel, keeping the RGB triple.
+    #[must_use]
+    pub const fn rgb(self) -> Rgb {
+        Rgb { r: self.r, g: self.g, b: self.b }
     }
 }
 
@@ -191,20 +217,79 @@ impl Palette {
     }
 }
 
-/// Parse a `#rrggbb` (or bare `rrggbb`) hex color, case-insensitive. Returns
-/// `None` for any malformed input (wrong length, non-hex digits, empty) — never
-/// panics. Offered for front-ends / future user theme config; the built-in
-/// palettes use `Rgb` literals directly.
-#[must_use] 
+/// Parse a hex color in any of the CSS / theme forms the macOS host's Swift
+/// `ThemeColor.parse` accepts — `#rgb`, `#rrggbb`, `#rrggbbaa` — case-
+/// insensitive, leading `#` optional, surrounding ASCII whitespace trimmed.
+/// The alpha channel is **discarded** (the opaque RGB triple); use
+/// [`parse_rgba`] when transparency matters. Returns `None` for any malformed
+/// input (wrong length, non-hex digits, empty) — never panics.
+///
+/// TSK-379 (Rust-core migration parity slice): the previous implementation
+/// accepted ONLY the 6-digit form, so a VS Code theme / CSS token using the
+/// `#abc` shorthand or an `#rrggbbaa` alpha color parsed in the Swift host yet
+/// returned `None` here — a Swift↔Rust parity gap in the shared color contract.
+/// This brings the Rust twin to parity (oracle: `ViewerCore.ThemeColor.parse`).
+#[must_use]
 pub fn parse_hex(s: &str) -> Option<Rgb> {
-    let body = s.strip_prefix('#').unwrap_or(s);
-    if body.len() != 6 || !body.bytes().all(|b| b.is_ascii_hexdigit()) {
+    parse_rgba(s).map(Rgba::rgb)
+}
+
+/// Parse a hex color, preserving the alpha channel. Matches Swift's
+/// `ThemeColor.parse` accept/reject set exactly:
+/// - leading/trailing ASCII whitespace is trimmed; a single leading `#` is
+///   stripped; matching is case-insensitive;
+/// - `rgb` (3 digits) → each nibble doubled (`#abc` == `#aabbcc`), alpha 255;
+/// - `rrggbb` (6 digits) → alpha 255;
+/// - `rrggbbaa` (8 digits) → explicit alpha;
+/// - any other length, an empty body, or a non-hex digit → `None`.
+///
+/// Never panics (the no-panic gate denies indexing/unwrap): every byte access
+/// goes through `get`/`from_str_radix` and the lengths are checked first.
+#[must_use]
+pub fn parse_rgba(s: &str) -> Option<Rgba> {
+    // Swift trims `.whitespaces` (space + tab, not newlines); mirror that with
+    // the ASCII space/tab set so interior or stray whitespace still rejects via
+    // the hex-digit check below.
+    let trimmed = s.trim_matches(|c| c == ' ' || c == '\t');
+    let body = trimmed.strip_prefix('#').unwrap_or(trimmed);
+    if body.is_empty() || !body.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    let r = u8::from_str_radix(body.get(0..2)?, 16).ok()?;
-    let g = u8::from_str_radix(body.get(2..4)?, 16).ok()?;
-    let b = u8::from_str_radix(body.get(4..6)?, 16).ok()?;
-    Some(Rgb::new(r, g, b))
+    match body.len() {
+        3 => {
+            // `#abc` → `#aabbcc`: each single hex digit is the value's both nibbles.
+            let r = nibble(body.as_bytes().first().copied()?)?;
+            let g = nibble(body.as_bytes().get(1).copied()?)?;
+            let b = nibble(body.as_bytes().get(2).copied()?)?;
+            Some(Rgba::new(r * 17, g * 17, b * 17, 255))
+        }
+        6 => {
+            let r = u8::from_str_radix(body.get(0..2)?, 16).ok()?;
+            let g = u8::from_str_radix(body.get(2..4)?, 16).ok()?;
+            let b = u8::from_str_radix(body.get(4..6)?, 16).ok()?;
+            Some(Rgba::new(r, g, b, 255))
+        }
+        8 => {
+            let r = u8::from_str_radix(body.get(0..2)?, 16).ok()?;
+            let g = u8::from_str_radix(body.get(2..4)?, 16).ok()?;
+            let b = u8::from_str_radix(body.get(4..6)?, 16).ok()?;
+            let a = u8::from_str_radix(body.get(6..8)?, 16).ok()?;
+            Some(Rgba::new(r, g, b, a))
+        }
+        _ => None,
+    }
+}
+
+/// Map a single ASCII hex digit byte to its 0..=15 value. `None` for a non-hex
+/// byte (the caller has already screened the whole body, so this is the
+/// belt-and-braces no-panic path, not a hot check).
+fn nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 /// Format an [`Rgb`] as a CSS `#rrggbb` string (always 6 lowercase hex digits).
@@ -230,14 +315,39 @@ mod tests {
     }
 
     #[test]
+    fn parse_hex_accepts_the_shorthand_and_alpha_forms() {
+        // TSK-379 parity: `#abc` expands each nibble (`a→aa`); 8-digit drops
+        // the alpha in the opaque path but still parses the RGB.
+        assert_eq!(parse_hex("#abc"), Some(Rgb::new(0xaa, 0xbb, 0xcc)));
+        assert_eq!(parse_hex("fff"), Some(Rgb::new(255, 255, 255)));
+        assert_eq!(parse_hex("#11223344"), Some(Rgb::new(0x11, 0x22, 0x33)));
+        // Surrounding whitespace is trimmed (Swift `.whitespaces`).
+        assert_eq!(parse_hex("  #56b6c2  "), Some(Rgb::new(0x56, 0xb6, 0xc2)));
+    }
+
+    #[test]
+    fn parse_rgba_preserves_alpha_across_forms() {
+        assert_eq!(parse_rgba("#abc"), Some(Rgba::new(0xaa, 0xbb, 0xcc, 255)));
+        assert_eq!(parse_rgba("#56b6c2"), Some(Rgba::new(0x56, 0xb6, 0xc2, 255)));
+        assert_eq!(parse_rgba("#11223344"), Some(Rgba::new(0x11, 0x22, 0x33, 0x44)));
+        assert_eq!(parse_rgba("#000000ff"), Some(Rgba::new(0, 0, 0, 255)));
+        assert_eq!(parse_rgba("#00000000"), Some(Rgba::new(0, 0, 0, 0)));
+        // The opaque accessor drops alpha.
+        assert_eq!(parse_rgba("#11223344").map(Rgba::rgb), Some(Rgb::new(0x11, 0x22, 0x33)));
+    }
+
+    #[test]
     fn parse_hex_rejects_malformed_without_panicking() {
         assert_eq!(parse_hex(""), None);
         assert_eq!(parse_hex("#"), None);
-        assert_eq!(parse_hex("#fff"), None); // 3-digit shorthand not supported
-        assert_eq!(parse_hex("#1234567"), None); // too long
+        assert_eq!(parse_hex("#ff"), None); // 2-digit: no such form
+        assert_eq!(parse_hex("#fffff"), None); // 5-digit: no such form
+        assert_eq!(parse_hex("#1234567"), None); // 7-digit: between 6 and 8
+        assert_eq!(parse_hex("#123456789"), None); // 9-digit: too long
         assert_eq!(parse_hex("#gggggg"), None); // non-hex
         assert_eq!(parse_hex("rrggbb"), None); // non-hex letters
-        assert_eq!(parse_hex("#12 456"), None); // space
+        assert_eq!(parse_hex("#12 456"), None); // interior space → non-hex body
+        assert_eq!(parse_rgba("#12g"), None); // 3-digit with a non-hex nibble
     }
 
     /// EXHAUSTIVE list of every [`Role`]. The `non_exhaustive`-by-omission trap:
