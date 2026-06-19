@@ -106,6 +106,80 @@ final class SQLiteReaderTests: XCTestCase {
         XCTAssertTrue(sql?.contains("CREATE TABLE users") ?? false)
     }
 
+    // MARK: - SQL-03: sqlite3_bind_text use-after-free regression
+
+    /// `schemaFor` binds the name with SQLITE_TRANSIENT so SQLite copies
+    /// the bytes before `sqlite3_step` runs. Asserting the CORRECT schema
+    /// for every table AND view is the durable teeth: under the old
+    /// SQLITE_STATIC bind, the bound pointer dangled after the
+    /// `withUnsafeBufferPointer` closure returned, so SQLite read
+    /// reclaimed heap and the WHERE name=? filter matched the wrong row
+    /// (or none) — a wrong/nil schema rather than the exact CREATE text.
+    func testSchemaForEachObjectReturnsCorrectSchema() throws {
+        let r = try SQLiteReader(url: dbURL)
+
+        let usersSchema = try r.schemaFor("users")
+        XCTAssertNotNil(usersSchema)
+        XCTAssertTrue(usersSchema?.contains("CREATE TABLE users") ?? false,
+                      "users schema must round-trip its own CREATE TABLE, got: \(String(describing: usersSchema))")
+        XCTAssertTrue(usersSchema?.contains("name TEXT NOT NULL") ?? false)
+        // Must be the users CREATE, not a different object's row.
+        XCTAssertFalse(usersSchema?.contains("orders") ?? true)
+
+        let ordersSchema = try r.schemaFor("orders")
+        XCTAssertNotNil(ordersSchema)
+        XCTAssertTrue(ordersSchema?.contains("CREATE TABLE orders") ?? false,
+                      "orders schema must round-trip its own CREATE TABLE, got: \(String(describing: ordersSchema))")
+        XCTAssertFalse(ordersSchema?.contains("CREATE TABLE users") ?? true)
+
+        let viewSchema = try r.schemaFor("adult_users")
+        XCTAssertNotNil(viewSchema)
+        XCTAssertTrue(viewSchema?.contains("CREATE VIEW adult_users") ?? false,
+                      "view schema must round-trip its own CREATE VIEW, got: \(String(describing: viewSchema))")
+
+        // A name that doesn't exist must return nil (not a stale match).
+        XCTAssertNil(try r.schemaFor("no_such_object"))
+    }
+
+    /// Drive `schemaFor` over names sourced from `tableNames()` /
+    /// `viewNames()` (the real call path) in a tight loop with heap
+    /// churn between iterations, so the dangling-pointer read is far more
+    /// likely to surface garbage on the unfixed (SQLITE_STATIC) build.
+    /// Each result must still be the OBJECT'S OWN schema — the assertion
+    /// is what fails if the bind dangles.
+    func testSchemaForUnderHeapChurnReturnsOwnSchema() throws {
+        let r = try SQLiteReader(url: dbURL)
+        let tableNames = try r.tableNames()
+        let viewNames = try r.viewNames()
+        XCTAssertFalse(tableNames.isEmpty)
+
+        for _ in 0..<200 {
+            for name in tableNames {
+                // Churn the heap so a dangling baseAddress is likely to
+                // point at clobbered bytes by the time sqlite3_step reads.
+                let scratch = Array(repeating: UInt8(0xAB), count: 4096)
+                _ = scratch.reduce(0, &+)
+                guard let schema = try r.schemaFor(name) else {
+                    XCTFail("schemaFor(\(name)) returned nil under churn")
+                    continue
+                }
+                // The returned CREATE statement must name THIS object.
+                XCTAssertTrue(schema.contains(name),
+                              "schemaFor(\(name)) returned a schema not naming it: \(schema)")
+            }
+            for name in viewNames {
+                let scratch = Array(repeating: UInt8(0xCD), count: 4096)
+                _ = scratch.reduce(0, &+)
+                guard let schema = try r.schemaFor(name) else {
+                    XCTFail("schemaFor(\(name)) returned nil under churn")
+                    continue
+                }
+                XCTAssertTrue(schema.contains(name),
+                              "schemaFor(\(name)) returned a schema not naming it: \(schema)")
+            }
+        }
+    }
+
     func testReadOnlyByConstruction() throws {
         let r = try SQLiteReader(url: dbURL)
         // Any write should fail.

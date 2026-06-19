@@ -158,9 +158,21 @@ public final class SQLiteReader {
     public func schemaFor(_ name: String) throws -> String? {
         let stmt = try prepare("SELECT sql FROM sqlite_master WHERE name=?;")
         defer { sqlite3_finalize(stmt) }
-        let bytes = Array(name.utf8CString)
-        bytes.withUnsafeBufferPointer { buf in
-            _ = sqlite3_bind_text(stmt, 1, buf.baseAddress, -1, nil)
+        // SQL-03: pass SQLITE_TRANSIENT (not nil = SQLITE_STATIC) so
+        // SQLite copies the bound bytes immediately. The previous code
+        // passed nil, which promises the pointer stays valid until the
+        // statement is reset/finalized — but `name.utf8CString`'s buffer
+        // is only valid for the duration of `withUnsafeBufferPointer`,
+        // and `sqlite3_step` runs AFTER that closure returns. That was a
+        // use-after-free: SQLite could read reclaimed heap, yielding the
+        // wrong row / garbage / a crash. SQLITE_TRANSIENT is the constant
+        // (cast of -1) SQLite documents for "make your own copy".
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        let rc = name.utf8CString.withUnsafeBufferPointer { buf in
+            sqlite3_bind_text(stmt, 1, buf.baseAddress, -1, SQLITE_TRANSIENT)
+        }
+        guard rc == SQLITE_OK else {
+            throw SQLiteError.prepareFailed(String(cString: sqlite3_errmsg(db)))
         }
         if sqlite3_step(stmt) == SQLITE_ROW {
             if let cstr = sqlite3_column_text(stmt, 0) {
