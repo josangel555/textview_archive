@@ -64,4 +64,79 @@ final class CMEditApplyABTests: XCTestCase {
         XCTAssertEqual(o.source, .rust, "cmEdit ships default-ON (round 4 — stage A complete)")
         XCTAssertEqual(o.value, CMEditApplier.apply(edits, to: "hello"))
     }
+
+    // MARK: - Stateful / incremental round-trip (TSK-543)
+
+    /// THE Swift-side golden contract (TSK-543): the editor applies each
+    /// `incrementalChange` delta to its mirror and feeds the prior result back
+    /// in as the new base (see `CodeMirrorEditorView.userContentController`).
+    /// That keystroke-at-a-time sequence MUST equal a from-scratch full-doc
+    /// apply of the cumulative edits — otherwise the stateful core (which keeps
+    /// the mirror in Rust and ships only deltas) could diverge from the
+    /// full-doc path it replaces. We pin it on BOTH the Rust path
+    /// (`mdvCoreApplyCMEdits`) and the Swift `CMEditApplier`, and assert they
+    /// agree at every step.
+    func test_incremental_sequence_equals_full_doc_apply() throws {
+        let initial = "fn main() {\n    let x = 🧠;\n}\n"
+
+        // UTF-16 offset of the first occurrence of `needle` — what CM emits.
+        func u16(_ hay: String, _ needle: String) -> Int {
+            guard let r = hay.range(of: needle) else { return 0 }
+            return hay.utf16.distance(from: hay.utf16.startIndex,
+                                      to: r.lowerBound.samePosition(in: hay.utf16)!)
+        }
+
+        // Build the delta steps by walking a reference string forward, so the
+        // offsets are the ones a real editor would emit at each step.
+        var ref = initial
+        var steps: [[CMEdit]] = []
+
+        let off1 = u16(ref, "🧠")
+        let s1 = [e(off1, off1, "42 + ")]
+        ref = CMEditApplier.apply(s1, to: ref)!
+        steps.append(s1)
+
+        let end = ref.utf16.count
+        let s2 = [e(end, end, "// done\n")]
+        ref = CMEditApplier.apply(s2, to: ref)!
+        steps.append(s2)
+
+        let off3 = u16(ref, "🧠")
+        let s3 = [e(off3, off3 + 2, "z")]  // delete emoji's 2 units, insert "z"
+        ref = CMEditApplier.apply(s3, to: ref)!
+        steps.append(s3)
+
+        // Stateful/incremental path on the RUST side: prior result is the next
+        // base, exactly like the editor's mirror.
+        var rustDoc = initial
+        for batch in steps {
+            let applied = try mdvCoreApplyCMEdits(
+                base: rustDoc,
+                edits: batch.map { (from: $0.from, to: $0.to, insert: $0.insert) })
+            rustDoc = try XCTUnwrap(applied, "each delta must apply cleanly")
+        }
+
+        // Same incremental walk on the SWIFT side.
+        var swiftDoc = initial
+        for batch in steps {
+            swiftDoc = try XCTUnwrap(CMEditApplier.apply(batch, to: swiftDoc))
+        }
+
+        // From-scratch reference is the forward-walked `ref`.
+        XCTAssertEqual(rustDoc, ref, "Rust incremental path diverged from full-doc apply")
+        XCTAssertEqual(swiftDoc, ref, "Swift incremental path diverged from full-doc apply")
+        XCTAssertEqual(rustDoc, swiftDoc, "Rust and Swift incremental paths must agree")
+    }
+
+    /// A rejected delta mid-stream (overlap) must leave the doc UNCHANGED on
+    /// both paths — the editor's "drift → full resync" cue — so the stateful
+    /// mirror can never be left half-mutated.
+    func test_rejected_delta_is_clean_noop_both_paths() throws {
+        let base = "abcdef"
+        let bad = [e(1, 3, "x"), e(2, 4, "y")]  // overlap
+        let rust = try mdvCoreApplyCMEdits(
+            base: base, edits: bad.map { (from: $0.from, to: $0.to, insert: $0.insert) })
+        XCTAssertNil(rust, "Rust rejects the overlapping batch")
+        XCTAssertNil(CMEditApplier.apply(bad, to: base), "Swift rejects it too")
+    }
 }

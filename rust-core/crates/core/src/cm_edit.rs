@@ -43,18 +43,39 @@ impl CmEdit {
 /// prior one, or yields ill-formed UTF-16. A non-`None` result is byte-identical
 /// to what CM6 produces from the same batch — the parity contract the A/B test
 /// pins against the Swift `CMEditApplier`.
-#[must_use] 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss,
-        reason = "TSK-575: the :60-69 loop validates every from/to is in 0..=base_len, \
-                  non-negative + well-ordered, before these splice casts; base_units.get \
-                  also bounds-checks — provably no truncation or sign loss")]
+#[must_use]
 pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
     if edits.is_empty() {
         return Some(base.to_owned());
     }
-
     let base_units: Vec<u16> = base.encode_utf16().collect();
-    let base_len = base_units.len() as i64;
+    let out = splice_units(&base_units, edits)?;
+    // Validating decode: `String::from_utf16` errors on a lone surrogate (it
+    // does NOT substitute U+FFFD), so a split-surrogate edit returns None and
+    // the caller can resync rather than corrupt the buffer silently.
+    String::from_utf16(&out).ok()
+}
+
+/// Splice `edits` into the UTF-16 `base` units, returning the resulting units or
+/// `None` if any edit is out of bounds, overlaps a prior one, or is malformed.
+/// This is the shared reducer kernel: [`apply`] (stateless) and [`CmDoc`]
+/// (stateful) both route through it, so the stateful mirror is byte-for-byte
+/// the same buffer a from-scratch full-doc apply produces — the golden
+/// equivalence the differential test pins.
+///
+/// Surrogate validity of the RESULT is NOT checked here (a `Vec<u16>` can hold a
+/// lone surrogate); the caller decodes-and-validates when it needs a `String`.
+/// [`CmDoc`] keeps the units form and never decodes mid-stream, so its mirror
+/// can transiently hold a lone surrogate only if an edit split a pair — and that
+/// path is rejected up front by the same range checks (a split lands a `from`/`to`
+/// between the two halves, which is a legal offset, so the result-decode guard in
+/// [`apply`]/[`CmDoc::text`] is the backstop).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss,
+        reason = "TSK-575: the validation loop proves every from/to is in 0..=base_len, \
+                  non-negative + well-ordered, before these splice casts; base.get \
+                  also bounds-checks — provably no truncation or sign loss")]
+fn splice_units(base: &[u16], edits: &[CmEdit]) -> Option<Vec<u16>> {
+    let base_len = base.len() as i64;
 
     // Stable sort ascending by (from, to) — CM's iterChangedRanges is already
     // sorted, but JS may reorder during debounce accumulation.
@@ -75,25 +96,140 @@ pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
 
     // Walk the base, splicing inserts in. Indices are valid by the checks above
     // (each `from >= cursor` because sorted + non-overlapping, and `to <= len`).
-    let mut out: Vec<u16> = Vec::with_capacity(base_units.len());
+    let mut out: Vec<u16> = Vec::with_capacity(base.len());
     let mut cursor: i64 = 0;
     for e in &sorted {
         if e.from > cursor
-            && let Some(slice) = base_units.get(cursor as usize..e.from as usize) {
+            && let Some(slice) = base.get(cursor as usize..e.from as usize) {
                 out.extend_from_slice(slice);
             }
         out.extend(e.insert.encode_utf16());
         cursor = e.to;
     }
     if cursor < base_len
-        && let Some(slice) = base_units.get(cursor as usize..base_len as usize) {
+        && let Some(slice) = base.get(cursor as usize..base_len as usize) {
             out.extend_from_slice(slice);
         }
+    Some(out)
+}
 
-    // Validating decode: `String::from_utf16` errors on a lone surrogate (it
-    // does NOT substitute U+FFFD), so a split-surrogate edit returns None and
-    // the caller can resync rather than corrupt the buffer silently.
-    String::from_utf16(&out).ok()
+// MARK: - Stateful doc mirror (TSK-543)
+
+/// The changed window an [`CmDoc::apply_delta`] produced, in UTF-16 code units
+/// of the POST-edit doc. `[from, from+len_after)` is the smallest contiguous
+/// span that differs from the pre-edit doc; `removed` is how many units that
+/// span replaced (so a consumer can re-tokenize / re-decorate only the affected
+/// region instead of the whole buffer). The empty change (`from == 0`,
+/// `len_after == 0`, `removed == 0`) results from an empty edit batch.
+///
+/// This is the wire datum that lets a stateful response carry only the *changed
+/// region* — not the whole post-edit buffer — which is the core's half of the
+/// "~10× typing traffic" reduction (the doc no longer crosses FFI in either
+/// direction once the mirror lives in Rust).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChangedRegion {
+    /// Start of the changed span, UTF-16 offset into the POST-edit doc.
+    pub from: usize,
+    /// Length of the changed span in the POST-edit doc (units inserted/kept).
+    pub len_after: usize,
+    /// Units the span replaced from the PRE-edit doc (a pure insert ⇒ 0).
+    pub removed: usize,
+}
+
+/// A rust-owned, UTF-16-indexed mirror of one `CodeMirror` document. The whole
+/// point (TSK-543): once the core holds the doc, the keystroke path sends only
+/// edit *deltas* across the boundary — `apply_delta` mutates this mirror in
+/// place — instead of shipping the entire buffer per edit batch in BOTH
+/// directions (~10× typing traffic). The mirror stays in code-unit form and is
+/// only decoded to a `String` on demand ([`CmDoc::text`]).
+///
+/// Reject-and-resync contract (unchanged from [`apply`]): an out-of-bounds,
+/// overlapping, or otherwise malformed batch leaves the mirror UNTOUCHED and
+/// returns `None` — the caller's cue to push a full resync. The mirror is never
+/// left half-mutated, so a rejected batch is a clean no-op, not a divergence.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CmDoc {
+    /// The document as UTF-16 code units — CM6's native indexing.
+    units: Vec<u16>,
+}
+
+impl CmDoc {
+    /// Create a mirror seeded from `text` (the one full-doc transfer that
+    /// bootstraps a session; every subsequent edit is a delta).
+    #[must_use]
+    pub fn new(text: &str) -> Self {
+        Self { units: text.encode_utf16().collect() }
+    }
+
+    /// Document length in UTF-16 code units (CM6's `doc.length`).
+    #[must_use]
+    pub fn len_utf16(&self) -> usize {
+        self.units.len()
+    }
+
+    /// The current mirror decoded to a `String`, or `None` if the units form an
+    /// ill-formed UTF-16 sequence (a lone surrogate — the same backstop
+    /// [`apply`] applies). A clean mirror always decodes.
+    #[must_use]
+    pub fn text(&self) -> Option<String> {
+        String::from_utf16(&self.units).ok()
+    }
+
+    /// Apply an edit batch to the mirror IN PLACE, returning the
+    /// [`ChangedRegion`] it touched, or `None` on a rejected batch (the mirror
+    /// is left untouched — atomic apply-or-reject).
+    ///
+    /// The resulting mirror is byte-for-byte the `Vec<u16>` that
+    /// `splice_units(&pre_units, edits)` produces, which is the SAME kernel
+    /// [`apply`] uses — so a sequence of `apply_delta` calls is provably
+    /// equivalent to a single from-scratch [`apply`] of the cumulative text,
+    /// the golden contract the differential test pins.
+    pub fn apply_delta(&mut self, edits: &[CmEdit]) -> Option<ChangedRegion> {
+        if edits.is_empty() {
+            return Some(ChangedRegion { from: 0, len_after: 0, removed: 0 });
+        }
+        let next = splice_units(&self.units, edits)?;
+        let region = changed_region(&self.units, &next);
+        self.units = next;
+        Some(region)
+    }
+}
+
+/// Compute the smallest contiguous changed span between `before` and `after`
+/// (both UTF-16 unit slices) as a [`ChangedRegion`] in `after`'s coordinates:
+/// strip the common prefix and the common suffix, and what remains in `after`
+/// is the changed window; what remains in `before` is `removed`.
+///
+/// This is a pure derivation from the two buffers, independent of how many
+/// edits were in the batch — so the changed region is exact even when the batch
+/// reordered or coalesced (CM debounce). For a single-keystroke edit it
+/// collapses to the inserted/removed character span, which is what makes the
+/// stateful response cheap.
+fn changed_region(before: &[u16], after: &[u16]) -> ChangedRegion {
+    // Common prefix length. `.get()` keeps this panic-free for the no-panic FFI
+    // lint wall (indices are loop-bounded but the get-form locks it in).
+    let mut prefix = 0usize;
+    let max_prefix = before.len().min(after.len());
+    while prefix < max_prefix && before.get(prefix) == after.get(prefix) {
+        prefix += 1;
+    }
+    // Common suffix length, not overlapping the prefix on either side. Index
+    // from the end via checked subtraction + `.get()`.
+    let mut suffix = 0usize;
+    let max_suffix = max_prefix - prefix;
+    while suffix < max_suffix {
+        let b = before.len().checked_sub(1 + suffix).and_then(|i| before.get(i));
+        let a = after.len().checked_sub(1 + suffix).and_then(|i| after.get(i));
+        if b.is_none() || a.is_none() || b != a {
+            break;
+        }
+        suffix += 1;
+    }
+    ChangedRegion {
+        from: prefix,
+        len_after: after.len() - prefix - suffix,
+        removed: before.len() - prefix - suffix,
+    }
 }
 
 // MARK: - Wire seam (stateless FFI request/response)
@@ -144,6 +280,69 @@ pub fn apply_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
         .collect();
     let text = apply(&req.base, &edits);
     crate::wire::encode_frame(&ApplyResponse { text })
+}
+
+// MARK: - Stateful delta wire seam (TSK-543)
+
+/// Changed-region wire record (positional-friendly named map). Mirrors
+/// [`ChangedRegion`]; `null` in the response means the batch was rejected.
+#[derive(Serialize, Deserialize)]
+struct ChangedRegionWire {
+    from: u64,
+    len_after: u64,
+    removed: u64,
+}
+
+/// Response payload for the stateful delta apply: the changed region (so the
+/// host re-tokenizes only that span), plus the new doc length. The whole buffer
+/// does NOT cross the wire — that is the traffic win. `changed: null` means the
+/// batch was rejected (the host full-resyncs). On a clean apply the host knows
+/// the resulting mirror length without shipping the doc.
+#[derive(Serialize, Deserialize)]
+struct DeltaResponse {
+    changed: Option<ChangedRegionWire>,
+    /// Length of the post-edit doc in UTF-16 code units (CM6 `doc.length`),
+    /// 0 on a rejected batch. Lets the host sanity-check drift cheaply.
+    len_utf16: u64,
+}
+
+/// Stateful delta-apply wire seam (the TSK-543 foundation): decode a
+/// `{base, edits:[{from,to,insert}]}` request frame, build a [`CmDoc`] mirror
+/// from `base`, apply the deltas IN PLACE, and encode a `{changed, len_utf16}`
+/// response frame — the CHANGED REGION, never the whole buffer.
+///
+/// This is the transport-agnostic core for the eventual session-keyed FFI
+/// export (where `base` is sent ONCE at session open and subsequent calls carry
+/// only the deltas + the session id, so the doc crosses the boundary zero times
+/// per keystroke). Pure + sans-IO, fully cargo-testable without the C edge.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a malformed/oversized request frame or an
+/// encode failure. (A *rejected edit batch* is NOT an error — `changed: null`.)
+#[allow(clippy::cast_possible_truncation,
+        reason = "usize→u64 widens losslessly on every supported target (usize is \
+                  ≤ 64 bits); the changed-region offsets/lengths are bounded by the \
+                  doc length, itself bounded by the 16 MiB wire cap")]
+pub fn apply_delta_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let req: ApplyRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
+    let edits: Vec<CmEdit> = req
+        .edits
+        .into_iter()
+        .map(|e| CmEdit { from: e.from, to: e.to, insert: e.insert })
+        .collect();
+    let mut doc = CmDoc::new(&req.base);
+    let resp = match doc.apply_delta(&edits) {
+        Some(region) => DeltaResponse {
+            changed: Some(ChangedRegionWire {
+                from: region.from as u64,
+                len_after: region.len_after as u64,
+                removed: region.removed as u64,
+            }),
+            len_utf16: doc.len_utf16() as u64,
+        },
+        None => DeltaResponse { changed: None, len_utf16: 0 },
+    };
+    crate::wire::encode_frame(&resp)
 }
 
 #[cfg(test)]
@@ -265,5 +464,243 @@ mod tests {
     fn wire_malformed_frame_errors() {
         assert!(apply_wire(&[0x00, 0x01]).is_err());        // too short for prefix
         assert!(apply_wire(&[]).is_err());
+    }
+
+    // --- stateful CmDoc mirror (TSK-543) ---
+
+    #[test]
+    fn cmdoc_new_and_text_round_trip() {
+        let d = CmDoc::new("hello 🧠 world");
+        assert_eq!(d.text().as_deref(), Some("hello 🧠 world"));
+        // "🧠" is 2 UTF-16 units, so len is 13 chars - 1 + 2 = "hello " (6) +
+        // 2 + " world" (6) = 14.
+        assert_eq!(d.len_utf16(), "hello 🧠 world".encode_utf16().count());
+    }
+
+    #[test]
+    fn cmdoc_apply_delta_mutates_in_place() {
+        let mut d = CmDoc::new("hello");
+        let region = d.apply_delta(&[CmEdit::new(2, 2, "X")]).unwrap();
+        assert_eq!(d.text().as_deref(), Some("heXllo"));
+        // A pure 1-unit insert at offset 2: changed span is [2,3) in the new
+        // doc, replacing 0 units.
+        assert_eq!(region, ChangedRegion { from: 2, len_after: 1, removed: 0 });
+    }
+
+    #[test]
+    fn cmdoc_empty_batch_is_noop_empty_region() {
+        let mut d = CmDoc::new("abc");
+        let region = d.apply_delta(&[]).unwrap();
+        assert_eq!(region, ChangedRegion { from: 0, len_after: 0, removed: 0 });
+        assert_eq!(d.text().as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn cmdoc_rejected_batch_leaves_mirror_untouched() {
+        // Overlapping edits are rejected; the mirror must NOT be half-mutated —
+        // apply-or-reject is atomic, the caller's resync cue is a clean state.
+        let mut d = CmDoc::new("abcdef");
+        assert_eq!(d.apply_delta(&[CmEdit::new(1, 3, "x"), CmEdit::new(2, 4, "y")]), None);
+        assert_eq!(d.text().as_deref(), Some("abcdef"), "rejected batch must not mutate");
+        assert_eq!(d.len_utf16(), 6);
+        // Out-of-bounds is also rejected, also a no-op.
+        assert_eq!(d.apply_delta(&[CmEdit::new(0, 99, "")]), None);
+        assert_eq!(d.text().as_deref(), Some("abcdef"));
+    }
+
+    #[test]
+    fn cmdoc_changed_region_is_minimal_span() {
+        // Edit in the middle of an otherwise-unchanged doc: the changed region
+        // strips the common prefix AND suffix.
+        let mut d = CmDoc::new("the quick brown fox");
+        // Replace "quick" [4,9) with "slow" → "the slow brown fox".
+        let region = d.apply_delta(&[CmEdit::new(4, 9, "slow")]).unwrap();
+        assert_eq!(d.text().as_deref(), Some("the slow brown fox"));
+        // Common prefix "the " (4). Replaced 5 units with 4. Common suffix is
+        // " brown fox" — but the derivation is from buffer diff, so:
+        assert_eq!(region.from, 4);
+        assert_eq!(region.len_after, 4);  // "slow"
+        assert_eq!(region.removed, 5);    // "quick"
+    }
+
+    #[test]
+    fn cmdoc_changed_region_pure_delete() {
+        let mut d = CmDoc::new("abcXYZdef");
+        // Delete "XYZ" [3,6).
+        let region = d.apply_delta(&[CmEdit::new(3, 6, "")]).unwrap();
+        assert_eq!(d.text().as_deref(), Some("abcdef"));
+        assert_eq!(region, ChangedRegion { from: 3, len_after: 0, removed: 3 });
+    }
+
+    /// THE golden contract (TSK-543): applying a SEQUENCE of deltas to the
+    /// stateful mirror must equal a single from-scratch full-doc [`apply`] of
+    /// the cumulative text — keystroke-at-a-time equals one big batch. This is
+    /// what proves the stateful path can replace the full-doc-per-edit path
+    /// without diverging.
+    /// UTF-16 offset of the first occurrence of `needle` in `hay` — test helper
+    /// so the golden sequence reads in terms of "where the cursor is".
+    fn u16_off(hay: &str, needle: &str) -> i64 {
+        let byte = hay.find(needle).expect("needle present");
+        let prefix = hay.get(..byte).expect("byte is on a char boundary");
+        i64::try_from(prefix.encode_utf16().count()).expect("offset fits i64")
+    }
+
+    #[test]
+    fn cmdoc_sequence_equals_from_scratch_apply() {
+        // A realistic typing/edit sequence over an astral-plane-containing doc.
+        // Each batch is computed against the doc AS IT STANDS at that step
+        // (mirroring how CM emits pre-edit offsets), then replayed identically
+        // onto BOTH the stateful mirror and a from-scratch string.
+        let initial = "fn main() {\n    let x = 🧠;\n}\n";
+
+        // Build the steps by walking a reference string forward — so the
+        // offsets are exactly the ones a real editor would emit.
+        let mut ref_text = initial.to_string();
+        let mut steps: Vec<Vec<CmEdit>> = Vec::new();
+
+        // Step 1: type "42 + " right before the emoji.
+        let off = u16_off(&ref_text, "🧠");
+        let s1 = vec![CmEdit::new(off, off, "42 + ")];
+        ref_text = apply(&ref_text, &s1).unwrap();
+        steps.push(s1);
+
+        // Step 2: append a trailing comment line at end of doc.
+        let end = i64::try_from(ref_text.encode_utf16().count()).unwrap();
+        let s2 = vec![CmEdit::new(end, end, "// done\n")];
+        ref_text = apply(&ref_text, &s2).unwrap();
+        steps.push(s2);
+
+        // Step 3: delete the emoji (its two-unit surrogate pair) → replace "z".
+        let emoji_off = u16_off(&ref_text, "🧠");
+        let s3 = vec![CmEdit::new(emoji_off, emoji_off + 2, "z")];
+        ref_text = apply(&ref_text, &s3).unwrap();
+        steps.push(s3);
+
+        // Stateful path: seed once, then apply each delta to the SAME mirror.
+        let mut doc = CmDoc::new(initial);
+        for batch in &steps {
+            doc.apply_delta(batch).expect("each delta applies cleanly");
+        }
+        let stateful = doc.text().expect("clean mirror decodes");
+
+        // From-scratch reference: replay the exact same edits onto a string,
+        // one batch at a time, via the stateless full-doc `apply`.
+        let mut scratch = initial.to_string();
+        for batch in &steps {
+            scratch = apply(&scratch, batch).expect("each batch applies cleanly");
+        }
+
+        assert_eq!(stateful, scratch, "stateful mirror diverged from from-scratch apply");
+        assert_eq!(stateful, ref_text, "both paths must match the forward reference");
+        assert_eq!(doc.len_utf16(), scratch.encode_utf16().count());
+    }
+
+    /// Randomised differential fuzz: a long stream of in-bounds single edits on
+    /// the stateful mirror must always match the from-scratch apply. A
+    /// deterministic LCG keeps it reproducible (no dev-dependency on `rand`).
+    #[test]
+    fn cmdoc_fuzz_matches_from_scratch() {
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            // High bits of an LCG are the well-distributed ones; mask to 32 so
+            // the value provably fits a usize on every target (no truncation).
+            usize::try_from((state >> 33) & 0xFFFF_FFFF).unwrap()
+        };
+        let inserts = ["x", "ab", "🧠", "\n", "", "λ", "  "];
+
+        let mut doc = CmDoc::new("seed text");
+        let mut scratch = String::from("seed text");
+        for _ in 0..500 {
+            let units: Vec<u16> = scratch.encode_utf16().collect();
+            let len = units.len();
+            // A UTF-16 offset is a valid char boundary unless the unit BEFORE it
+            // is a high surrogate (0xD800..=0xDBFF) — that would split a pair,
+            // which is a separately-tested reject path we avoid here.
+            let is_boundary = |i: usize| -> bool {
+                match i.checked_sub(1).and_then(|p| units.get(p)) {
+                    Some(&u) => !(0xD800..=0xDBFF).contains(&u),
+                    None => true, // i == 0 or past the end
+                }
+            };
+            let mut from = next() % (len + 1);
+            while !is_boundary(from) {
+                from += 1;
+            }
+            let mut to = from + next() % (len - from + 1);
+            while !is_boundary(to) {
+                to += 1;
+            }
+            let to = to.min(len);
+            let ins = inserts.get(next() % inserts.len()).copied().unwrap_or("");
+            let batch = [CmEdit::new(
+                i64::try_from(from).unwrap(),
+                i64::try_from(to).unwrap(),
+                ins,
+            )];
+
+            let region = doc.apply_delta(&batch);
+            let reference = apply(&scratch, &batch);
+            // Both paths must AGREE on accept-vs-reject. Compare the accept-ness
+            // directly (Option booleans) so a divergence fails on `assert_eq!`
+            // rather than a `panic!` arm (no-panic lint wall, even in tests).
+            assert_eq!(
+                region.is_some(),
+                reference.is_some(),
+                "apply_delta/apply disagreed on accept at from={from} to={to} ins={ins:?}"
+            );
+            if let Some(r) = reference {
+                scratch = r;
+                assert_eq!(
+                    doc.text().as_deref(),
+                    Some(scratch.as_str()),
+                    "mirror diverged at from={from} to={to} ins={ins:?}"
+                );
+            }
+        }
+    }
+
+    // --- stateful delta wire seam (TSK-543) ---
+
+    fn delta_resp(frame: &[u8]) -> DeltaResponse {
+        crate::wire::decode_frame(frame).unwrap()
+    }
+
+    #[test]
+    fn delta_wire_returns_changed_region_not_whole_buffer() {
+        // Insert "X" at offset 2 of "hello": the response carries the changed
+        // REGION (from=2, len_after=1, removed=0) + new length, NOT "heXllo".
+        let out = apply_delta_wire(&req_frame("hello", &[(2, 2, "X")])).unwrap();
+        let r = delta_resp(&out);
+        let c = r.changed.expect("clean apply yields a region");
+        assert_eq!((c.from, c.len_after, c.removed), (2, 1, 0));
+        assert_eq!(r.len_utf16, 6);
+    }
+
+    #[test]
+    fn delta_wire_rejected_batch_is_null_changed() {
+        let out = apply_delta_wire(&req_frame("abcdef", &[(1, 3, "x"), (2, 4, "y")])).unwrap();
+        let r = delta_resp(&out);
+        assert!(r.changed.is_none(), "rejected batch carries changed:null");
+        assert_eq!(r.len_utf16, 0);
+    }
+
+    #[test]
+    fn delta_wire_astral_changed_region() {
+        // Replace the emoji [0,2) of "🧠x" with "y" → changed region from=0,
+        // len_after=1, removed=2; new length 2.
+        let out = apply_delta_wire(&req_frame("🧠x", &[(0, 2, "y")])).unwrap();
+        let r = delta_resp(&out);
+        let c = r.changed.unwrap();
+        assert_eq!((c.from, c.len_after, c.removed), (0, 1, 2));
+        assert_eq!(r.len_utf16, 2);
+    }
+
+    #[test]
+    fn delta_wire_malformed_frame_errors() {
+        assert!(apply_delta_wire(&[0x00, 0x01]).is_err());
+        assert!(apply_delta_wire(&[]).is_err());
     }
 }
