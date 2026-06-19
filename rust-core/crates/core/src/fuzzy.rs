@@ -45,14 +45,20 @@ fn is_boundary(ch: char) -> bool {
 /// Score `query` against `target`. `None` = no match. Mirrors the Swift
 /// `FuzzyMatcher.match(_:against:)` exactly (see the scoring table above).
 #[must_use]
-#[allow(clippy::cast_possible_truncation,
-        reason = "TSK-575: ti is a char position within a fuzzy candidate (filename/path) — \
-                  bounded far below u32::MAX")]
 pub fn match_query(query: &str, target: &str) -> Option<Match> {
     if query.is_empty() {
         return Some(Match { score: 0, indices: Vec::new() });
     }
     let q: Vec<char> = query.chars().collect();
+    match_query_chars(&q, target)
+}
+
+/// `match_query` with a PRE-COLLECTED, non-empty query, so `rank` collects the
+/// query's chars ONCE instead of once per candidate (TSK-996).
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: ti is a char position within a fuzzy candidate (filename/path) — \
+                  bounded far below u32::MAX")]
+fn match_query_chars(q: &[char], target: &str) -> Option<Match> {
     let t: Vec<char> = target.chars().collect();
     if t.is_empty() {
         return None;
@@ -107,10 +113,19 @@ pub fn rank<'a, I>(query: &str, candidates: I) -> Vec<(u32, Match)>
 where
     I: IntoIterator<Item = &'a str>,
 {
+    // Collect the query's chars ONCE, not once per candidate (TSK-996).
+    let q: Vec<char> = query.chars().collect();
     let mut scored: Vec<(u32, Match)> = candidates
         .into_iter()
         .enumerate()
-        .filter_map(|(i, c)| match_query(query, c).map(|m| (i as u32, m)))
+        .filter_map(|(i, c)| {
+            let m = if q.is_empty() {
+                Some(Match { score: 0, indices: Vec::new() })
+            } else {
+                match_query_chars(&q, c)
+            };
+            m.map(|m| (i as u32, m))
+        })
         .collect();
     // sort_by is stable in Rust; key = score desc, ties keep input order.
     scored.sort_by(|a, b| b.1.score.cmp(&a.1.score));
@@ -216,6 +231,23 @@ mod tests {
         let out = rank("zz", ["abc", "az", "zz"]);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, 2);
+    }
+
+    #[test]
+    fn rank_equals_per_candidate_match_query() {
+        // TSK-996: hoisting the query Vec<char> out of the per-candidate loop
+        // must not change results — rank == match_query on each candidate.
+        let cands = ["foobar", "fzbz", "nope", "fb", "", "F_Bar"];
+        for query in ["fb", "", "z", "FB"] {
+            let ranked: Vec<(u32, i64)> =
+                rank(query, cands.iter().copied()).iter().map(|(i, m)| (*i, m.score)).collect();
+            let mut expected: Vec<(u32, i64)> = cands.iter().enumerate()
+                .filter_map(|(i, c)| match_query(query, c)
+                    .map(|m| (u32::try_from(i).unwrap(), m.score)))
+                .collect();
+            expected.sort_by(|a, b| b.1.cmp(&a.1));
+            assert_eq!(ranked, expected, "rank vs per-candidate mismatch for query {query:?}");
+        }
     }
 
     #[test]
