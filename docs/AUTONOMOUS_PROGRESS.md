@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 PM — WAVE 3 harvest + shift to INLINE cadence
+
+Owner refined the method mid-run: **do the work INLINE in-session, a few tickets per tick** (no
+more giant background fleets); same goal (all tasks → done). Two things happened this segment:
+
+**Inline tickets (fix → host tests w/ teeth → commit → self-validated):** TSK-1013 (parseTimestamp
+non-finite guard, `449bb858`), TSK-1004 (HexEditBuffer bounded undo, `449bb858`), TSK-1002 (terminal
+eraseLineFromCursor Range-trap clamp, `3eac2c4a`), TSK-1003 (git cumulativeDiff/commitDiff
+option-injection guard, `7eb85668`). All 4 → **validated** with proof.
+
+**Wave 3 (50-item drain `w99dpfj2i`) STALLED after batch 1** — 7 of 8 agents committed but no batch 2
+spawned across ~15 ticks (slot-freeing hung; 969 never committed). Per the inline directive, STOPPED
+the wave, **harvested the 7 done commits** onto `wave3/harvest`, cherry-picked clean (7/7, no
+conflicts), ran the **rust-core gate** (green, 0 fail — validates 973's `find_engine`/`search.rs`,
+header-drift OK = ABI-stable) + the **Swift headless gate** (PASSED, 0 fail), ff `main` → **`61e3e28f`**.
+The 7 (971 statusbar-rescan, 972 git-off-main, 973 search.files-prune, 974 exact-grammar-pins, 975
+supply-chain-CI-gate, 980 lsp-env-denylist, 981 WireError-surface) all → **validated**; CHANGELOG
+union-merged the agents' perf entries. Worktree reaped (disk 78 GB). 2 spikes (589/810) parked.
+Remaining wave-3 items (969 + batch 2-50) return to the inline pool.
+
 ## LOG 2026-06-19 PM — WAVE 2 backlog-drain (50 agents) integrated to main
 
 Owner directive recalibrated: **drive every task → done; never idle.** Launched a 50-item ultracode
