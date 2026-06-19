@@ -59,6 +59,24 @@ public struct CSVCellCursor: Sendable, Equatable {
     /// Cmd-Down / bottom: last row, current column.
     @discardableResult public mutating func moveToBottom() -> Bool { setRow(rowCount - 1) }
 
+    /// PageUp: jump up by `pageRows` (one viewport of rows), clamped to the
+    /// first row. The view supplies its visible-row count so a page matches
+    /// what the user sees; a non-positive `pageRows` is treated as a single
+    /// row so the verb is never a silent no-op away from an edge. Column is
+    /// unchanged.
+    @discardableResult
+    public mutating func movePageUp(pageRows: Int) -> Bool {
+        setRow(row - max(1, pageRows))
+    }
+
+    /// PageDown: jump down by `pageRows` (one viewport of rows), clamped to
+    /// the last row. See `movePageUp(pageRows:)` for the `pageRows`
+    /// normalization. Column is unchanged.
+    @discardableResult
+    public mutating func movePageDown(pageRows: Int) -> Bool {
+        setRow(row + max(1, pageRows))
+    }
+
     /// Jump to an arbitrary cell (e.g. a click), clamped into range. No-op on
     /// an empty grid. Returns whether the position changed.
     @discardableResult
@@ -83,6 +101,19 @@ public struct CSVCellCursor: Sendable, Equatable {
         let r = rows[row]
         guard column >= 0, column < r.count else { return nil }
         return r[column]
+    }
+
+    /// The exact text to put on the pasteboard for a whole-cell ⌘C of the
+    /// focused cell — the **unescaped** cell value. `CSVParser` already
+    /// decodes RFC-4180 escaping during tokenization (a quoted `"a,""b"""`
+    /// is stored as the literal `a,"b"`, with surrounding quotes and `""`
+    /// escapes removed), so this is just the bounded read of the parsed
+    /// cell: no re-escaping, no surrounding quotes, no markup. Returns nil
+    /// when the cursor doesn't address a real cell (empty grid / ragged
+    /// row / stale data) so the view can no-op the copy rather than write
+    /// garbage to the pasteboard.
+    public func copyText(from rows: [[String]]) -> String? {
+        cell(in: rows)
     }
 
     // MARK: - Private
