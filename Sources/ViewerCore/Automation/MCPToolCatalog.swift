@@ -17,6 +17,7 @@ public enum MCPToolCatalog {
         openPathDescriptor,
         selectTabDescriptor,
         setViewModeDescriptor,
+        setZoomDescriptor,
         findDescriptor,
         gotoLineDescriptor,
         visibleTextDescriptor,
@@ -38,6 +39,7 @@ public enum MCPToolCatalog {
         case "open_path":         return try openPath(args, host)
         case "select_tab":        return try selectTab(args, host)
         case "set_view_mode":     return try setViewMode(args, host)
+        case "set_zoom":          return try setZoom(args, host)
         case "find":              return try find(args, host)
         case "goto_line":         return try gotoLine(args, host)
         case "visible_text":      return try visibleText(args, host)
@@ -129,6 +131,43 @@ public enum MCPToolCatalog {
         }
         host.automationSetViewMode(mode)
         return .object(["mode": .string(mode.rawValue)])
+    }
+
+    // MARK: - set_zoom
+
+    private static let setZoomDescriptor = MCP.ToolDescriptor(
+        name: "set_zoom",
+        description: """
+        Set the absolute content zoom multiplier. Clamped to \
+        [\(PreferencesStore.minZoom), \(PreferencesStore.maxZoom)]; \
+        the applied (post-clamp) value is returned, along with whether a \
+        clamp occurred. 1.0 = 100%.
+        """,
+        inputSchema: schema([
+            "zoom": .object(["type": .string("number"),
+                             "description": .string(
+                                "Zoom multiplier; 1.0 = 100%. "
+                                + "Clamped to [\(PreferencesStore.minZoom), "
+                                + "\(PreferencesStore.maxZoom)].")]),
+        ], required: ["zoom"])
+    )
+
+    private static func setZoom(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let requested = try args.double("zoom")
+        // Clamp HERE (the catalog is where policy/limits live, mirroring
+        // open_path's path jail) rather than in the host — and report the
+        // applied value + a `clamped` flag so a client that asked for an
+        // out-of-range zoom can SEE that its request was reshaped instead
+        // of silently no-op'ing. `automationSetZoom` applies verbatim.
+        let lo = PreferencesStore.minZoom
+        let hi = PreferencesStore.maxZoom
+        let applied = min(max(requested, lo), hi)
+        host.automationSetZoom(applied)
+        return .object([
+            "zoom": .double(applied),
+            "requested": .double(requested),
+            "clamped": .bool(applied != requested),
+        ])
     }
 
     // MARK: - find

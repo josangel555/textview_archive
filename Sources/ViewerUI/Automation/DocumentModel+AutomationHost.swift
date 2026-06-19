@@ -56,6 +56,14 @@ extension DocumentModel: AutomationHost {
         scrollSource(toLine: line)
     }
 
+    public func automationSetZoom(_ zoom: Double) {
+        // The catalog already clamped to [minZoom, maxZoom]; assign
+        // verbatim. `zoom`'s didSet persists it through PreferencesStore
+        // (same path as zoomIn/zoomOut), so an automated zoom survives a
+        // relaunch exactly like a menu-driven one.
+        self.zoom = zoom
+    }
+
     public func automationFind(_ query: FindQuery) -> [FindMatch] {
         // Pull the source text out of the currently-selected tab.
         // For non-text tabs (binary / preview / error / empty) there's

@@ -102,6 +102,28 @@ public enum MCP {
                 throw MCPError.invalidParams("'\(key)' is not an integer")
             }
         }
+        public func double(_ key: String) throws -> Double {
+            guard case .object(let o) = self, let v = o[key] else {
+                throw MCPError.invalidParams("missing field '\(key)'")
+            }
+            switch v {
+            // Accept an integer-valued number too: JSON `2` decodes to
+            // `.int` (Int is tried before Double in `init(from:)`), but a
+            // Double-typed arg like `zoom` should still accept `2` as
+            // `2.0`. Widen via `Double(Int)` (always exact for Int's range).
+            case .int(let i): return Double(i)
+            case .double(let d):
+                // Reject NaN / ±Inf from untrusted input — they propagate
+                // into clamps/comparisons in surprising ways (NaN compares
+                // false against every bound). Callers want a finite number.
+                guard d.isFinite else {
+                    throw MCPError.invalidParams("'\(key)' is not a finite number")
+                }
+                return d
+            default:
+                throw MCPError.invalidParams("'\(key)' is not a number")
+            }
+        }
         public func optionalString(_ key: String) -> String? {
             guard case .object(let o) = self, case .string(let s)? = o[key] else { return nil }
             return s

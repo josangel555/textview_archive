@@ -13,9 +13,11 @@ private final class StubHost: AutomationHost {
         tabs: [], selectedTabIndex: nil, viewMode: "rendered",
         zoom: 1.0, sidebarRoot: nil, isPalettePresented: false
     )
+    var setZoomArg: Double?
     func automationOpenPath(_ url: URL, newTab: Bool) -> UUID { UUID() }
     func automationSelectTab(byIndex index: Int?, byId id: UUID?) -> Bool { true }
     func automationSetViewMode(_ mode: ViewMode) {}
+    func automationSetZoom(_ zoom: Double) { setZoomArg = zoom }
     func automationGotoLine(_ line: Int, column: Int?) {}
     func automationFind(_ query: FindQuery) -> [FindMatch] { [] }
     func automationVisibleText() -> String { "" }
@@ -116,7 +118,7 @@ final class MCPServerTests: XCTestCase {
         XCTAssertEqual(info["name"], .string("TextView"))
     }
 
-    func test_toolsList_returnsTenTools() throws {
+    func test_toolsList_returnsFullCatalog() throws {
         let req = Data(#"""
         {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
         """#.utf8)
@@ -126,7 +128,10 @@ final class MCPServerTests: XCTestCase {
               case .array(let tools)? = o["tools"] else {
             return XCTFail("missing tools array")
         }
-        XCTAssertEqual(tools.count, 10)
+        // Pin to the catalog itself rather than a magic literal so adding a
+        // tool can't silently drift this expectation out of sync.
+        XCTAssertEqual(tools.count, MCPToolCatalog.all.count)
+        XCTAssertEqual(tools.count, 11)
     }
 
     func test_unknownMethod_returnsMethodNotFound() throws {
@@ -168,5 +173,28 @@ final class MCPServerTests: XCTestCase {
         XCTAssertNil(resp.error, "expected success envelope with isError flag")
         guard case .object(let o)? = resp.result else { return XCTFail() }
         XCTAssertEqual(o["isError"], .bool(true))
+    }
+
+    func test_toolsCall_setZoom_roundTripsAppliedAndClamped() throws {
+        // End-to-end through the framed server: an over-max zoom comes
+        // back clamped, with the clamp visible on the wire. Proves the
+        // new tool is dispatchable (not just unit-testable in isolation).
+        let req = Data(#"""
+        {"jsonrpc":"2.0","id":6,"method":"tools/call",
+         "params":{"name":"set_zoom","arguments":{"zoom":99}}}
+        """#.utf8)
+        let resp = try roundTrip(req)
+        XCTAssertNil(resp.error, "expected success envelope")
+        // tools/call wraps the structured result in a single-text block.
+        guard case .object(let o)? = resp.result,
+              case .array(let content)? = o["content"],
+              case .object(let block)? = content.first,
+              case .string(let text)? = block["text"] else {
+            return XCTFail("unexpected tools/call shape")
+        }
+        XCTAssertEqual(o["isError"], .bool(false))
+        // The JSON payload reports the clamped value + the clamp flag.
+        XCTAssertTrue(text.contains("\"clamped\""), "missing clamped flag: \(text)")
+        XCTAssertTrue(text.contains("true"), "expected clamped:true: \(text)")
     }
 }

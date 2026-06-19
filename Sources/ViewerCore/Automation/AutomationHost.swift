@@ -34,6 +34,15 @@ public protocol AutomationHost: AnyObject {
     /// advisory — most implementations only honour line.
     func automationGotoLine(_ line: Int, column: Int?)
 
+    /// Set the absolute zoom multiplier. The caller (`MCPToolCatalog`)
+    /// clamps the requested value to `[PreferencesStore.minZoom,
+    /// PreferencesStore.maxZoom]` BEFORE handing it here and reports the
+    /// applied value back to the client, so a clamp is observable on the
+    /// wire. The host applies it verbatim — clamping policy lives in the
+    /// catalog (mirroring `open_path`'s path-jail validation), not the
+    /// host, so the security/limits model stays reviewable in one place.
+    func automationSetZoom(_ zoom: Double)
+
     // MARK: Find
 
     /// Run an in-doc find against the currently-selected tab's text.

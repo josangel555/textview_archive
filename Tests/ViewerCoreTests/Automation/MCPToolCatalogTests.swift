@@ -14,6 +14,7 @@ final class FakeAutomationHost: AutomationHost {
     var selectedByIndex: Int?
     var selectedById: UUID?
     var setViewModeArg: ViewMode?
+    var setZoomArg: Double?
     var gotoLineArg: (Int, Int?)?
     var findQuery: FindQuery?
     var findResult: [FindMatch] = []
@@ -36,6 +37,7 @@ final class FakeAutomationHost: AutomationHost {
         return true
     }
     func automationSetViewMode(_ mode: ViewMode) { setViewModeArg = mode }
+    func automationSetZoom(_ zoom: Double) { setZoomArg = zoom }
     func automationGotoLine(_ line: Int, column: Int?) { gotoLineArg = (line, column) }
     func automationFind(_ query: FindQuery) -> [FindMatch] {
         findQuery = query
@@ -69,15 +71,15 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 10)
+        XCTAssertEqual(names.count, 11)
     }
 
-    func test_allDescriptors_includeTenSpecifiedTools() {
+    func test_allDescriptors_includeAllSpecifiedTools() {
         let names = Set(MCPToolCatalog.all.map(\.name))
         let expected: Set<String> = [
-            "open_path", "select_tab", "set_view_mode", "find", "goto_line",
-            "visible_text", "current_state", "toggle_bookmark",
-            "list_bookmarks", "snapshot_window",
+            "open_path", "select_tab", "set_view_mode", "set_zoom",
+            "find", "goto_line", "visible_text", "current_state",
+            "toggle_bookmark", "list_bookmarks", "snapshot_window",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -212,6 +214,89 @@ final class MCPToolCatalogTests: XCTestCase {
         XCTAssertThrowsError(
             try MCPToolCatalog.dispatch(name: "set_view_mode", args: args, host: host)
         )
+    }
+
+    // MARK: - set_zoom
+
+    func test_setZoom_inRange_dispatchesVerbatimAndReportsNotClamped() throws {
+        let args: MCP.Value = .object(["zoom": .double(1.5)])
+        let result = try MCPToolCatalog.dispatch(name: "set_zoom", args: args, host: host)
+        XCTAssertEqual(host.setZoomArg, 1.5)
+        guard case .object(let o) = result else { return XCTFail("result not object") }
+        XCTAssertEqual(o["zoom"], .double(1.5))
+        XCTAssertEqual(o["requested"], .double(1.5))
+        XCTAssertEqual(o["clamped"], .bool(false))
+    }
+
+    func test_setZoom_integerArg_acceptedAsDouble() throws {
+        // JSON `2` decodes to `.int` (Int is tried before Double); a
+        // Double-typed zoom arg must still accept it as 2.0.
+        let args: MCP.Value = .object(["zoom": .int(2)])
+        let result = try MCPToolCatalog.dispatch(name: "set_zoom", args: args, host: host)
+        XCTAssertEqual(host.setZoomArg, 2.0)
+        guard case .object(let o) = result else { return XCTFail("result not object") }
+        XCTAssertEqual(o["zoom"], .double(2.0))
+        XCTAssertEqual(o["clamped"], .bool(false))
+    }
+
+    func test_setZoom_aboveMax_clampsAndReportsClamped() throws {
+        let tooBig = PreferencesStore.maxZoom + 5.0
+        let args: MCP.Value = .object(["zoom": .double(tooBig)])
+        let result = try MCPToolCatalog.dispatch(name: "set_zoom", args: args, host: host)
+        // Host received the CLAMPED value, never the raw out-of-range one.
+        XCTAssertEqual(host.setZoomArg, PreferencesStore.maxZoom)
+        guard case .object(let o) = result else { return XCTFail("result not object") }
+        XCTAssertEqual(o["zoom"], .double(PreferencesStore.maxZoom))
+        XCTAssertEqual(o["requested"], .double(tooBig))
+        XCTAssertEqual(o["clamped"], .bool(true))
+    }
+
+    func test_setZoom_belowMin_clampsToMin() throws {
+        let tooSmall = PreferencesStore.minZoom - 5.0
+        let args: MCP.Value = .object(["zoom": .double(tooSmall)])
+        let result = try MCPToolCatalog.dispatch(name: "set_zoom", args: args, host: host)
+        XCTAssertEqual(host.setZoomArg, PreferencesStore.minZoom)
+        guard case .object(let o) = result else { return XCTFail("result not object") }
+        XCTAssertEqual(o["zoom"], .double(PreferencesStore.minZoom))
+        XCTAssertEqual(o["clamped"], .bool(true))
+    }
+
+    func test_setZoom_missingArg_throwsInvalidParams() {
+        XCTAssertThrowsError(
+            try MCPToolCatalog.dispatch(name: "set_zoom", args: .object([:]), host: host)
+        ) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected .invalidParams, got \(error)"); return
+            }
+        }
+        XCTAssertNil(host.setZoomArg)
+    }
+
+    func test_setZoom_nonNumericArg_throwsInvalidParams() {
+        let args: MCP.Value = .object(["zoom": .string("big")])
+        XCTAssertThrowsError(
+            try MCPToolCatalog.dispatch(name: "set_zoom", args: args, host: host)
+        ) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected .invalidParams, got \(error)"); return
+            }
+        }
+        XCTAssertNil(host.setZoomArg)
+    }
+
+    func test_setZoom_nonFiniteArg_throwsInvalidParams() {
+        // NaN / Inf must be rejected before reaching the clamp — NaN
+        // compares false against every bound, so it would slip past
+        // min/max and corrupt the persisted zoom.
+        let args: MCP.Value = .object(["zoom": .double(Double.nan)])
+        XCTAssertThrowsError(
+            try MCPToolCatalog.dispatch(name: "set_zoom", args: args, host: host)
+        ) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected .invalidParams, got \(error)"); return
+            }
+        }
+        XCTAssertNil(host.setZoomArg)
     }
 
     // MARK: - find

@@ -23,6 +23,7 @@ private final class StubHost: AutomationHost {
     func automationOpenPath(_ url: URL, newTab: Bool) -> UUID { UUID() }
     func automationSelectTab(byIndex index: Int?, byId id: UUID?) -> Bool { true }
     func automationSetViewMode(_ mode: ViewMode) {}
+    func automationSetZoom(_ zoom: Double) {}
     func automationGotoLine(_ line: Int, column: Int?) {}
     func automationFind(_ query: FindQuery) -> [FindMatch] { [] }
     func automationVisibleText() -> String { "" }

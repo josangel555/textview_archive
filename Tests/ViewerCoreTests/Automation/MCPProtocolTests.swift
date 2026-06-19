@@ -143,4 +143,49 @@ final class MCPProtocolTests: XCTestCase {
         XCTAssertEqual(try v.int("n"), 42)
         XCTAssertEqual(v.optionalInt("n"), 42)
     }
+
+    // MARK: - double(_:)
+
+    func test_double_decodesDoubleField() throws {
+        let v: MCP.Value = .object(["zoom": .double(1.5)])
+        XCTAssertEqual(try v.double("zoom"), 1.5)
+    }
+
+    func test_double_widensIntegerField() throws {
+        // JSON `2` decodes to `.int` (Int tried before Double); a
+        // Double-typed accessor must still accept it as 2.0.
+        let v: MCP.Value = .object(["zoom": .int(2)])
+        XCTAssertEqual(try v.double("zoom"), 2.0)
+    }
+
+    func test_double_missingField_throwsInvalidParams() {
+        let v: MCP.Value = .object([:])
+        XCTAssertThrowsError(try v.double("zoom")) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected invalidParams, got \(error)"); return
+            }
+        }
+    }
+
+    func test_double_nonNumericField_throwsInvalidParams() {
+        let v: MCP.Value = .object(["zoom": .string("big")])
+        XCTAssertThrowsError(try v.double("zoom")) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected invalidParams, got \(error)"); return
+            }
+        }
+    }
+
+    func test_double_nonFiniteField_throwsInvalidParams() {
+        // NaN / ±Inf must be rejected — they compare false against every
+        // bound and corrupt downstream clamps/comparisons.
+        for bad in [Double.nan, .infinity, -.infinity] {
+            let v: MCP.Value = .object(["zoom": .double(bad)])
+            XCTAssertThrowsError(try v.double("zoom"), "should reject \(bad)") { error in
+                guard case .invalidParams = error as? MCPError else {
+                    XCTFail("expected invalidParams for \(bad), got \(error)"); return
+                }
+            }
+        }
+    }
 }
