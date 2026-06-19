@@ -528,4 +528,38 @@ public final class TabCoordinator: ObservableObject {
     }
 
     public func closeSplit() { splitURL = nil }
+
+    // MARK: - Split ↔ tab correlation (TSK-923)
+    //
+    // The split pane shows a file independently of the tab list, but the
+    // user has no cue in the tab strip telling them WHICH open file is
+    // pinned to the right pane. These pure predicates let the TabBar draw a
+    // "right-pane indicator" badge on the matching tab. Both normalize via
+    // `TabsState.dedupKey` (the same `standardizedFileURL.resolvingSymlinks`
+    // key the tab list and `openInSplit` already store under) so a caller
+    // that passes an unresolved URL still matches — `splitURL` is itself
+    // stored resolved, so this is symmetric and order-independent.
+
+    /// True when `url` is the file currently shown in the split (right)
+    /// pane. False when no split is open or it shows a different file.
+    /// Drives the tab strip's right-pane indicator: the tab whose file is
+    /// in the split gets a badge. Pure → host-testable without a render.
+    public func isURLInSplit(_ url: URL) -> Bool {
+        guard let split = splitURL else { return false }
+        return TabsState.dedupKey(url) == TabsState.dedupKey(split)
+    }
+
+    /// The id of the open TAB whose file is currently shown in the split
+    /// pane, or nil when the split is closed or its file isn't open in any
+    /// tab (the split pane can show a file that has no tab — it reads from
+    /// disk directly). Lets the strip target the indicator at one tab
+    /// without re-scanning by URL in the view body.
+    public var splitTabID: UUID? {
+        guard let split = splitURL else { return nil }
+        let key = TabsState.dedupKey(split)
+        return tabs.tabs.first { tab in
+            guard let u = tab.url else { return false }
+            return TabsState.dedupKey(u) == key
+        }?.id
+    }
 }

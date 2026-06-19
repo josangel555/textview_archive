@@ -146,6 +146,7 @@ final class ChromeZoomScalingTests: HeadlessUITestCase {
         let tab = model.tabs.tabs[0]
         func item(_ scale: CGFloat) -> TabBarItem {
             TabBarItem(tab: tab, isSelected: false, isBookmarked: false,
+                       isInSplit: false,
                        scale: scale, width: 180, onSelect: {}, onClose: {})
         }
         let h1 = fittingHeight(item(1))

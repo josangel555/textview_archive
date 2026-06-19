@@ -194,6 +194,7 @@ final class TabBarIntrinsicSizeTests: HeadlessUITestCase {
             tab: model.tabs.tabs[1],
             isSelected: true,           // selected → close button is visible
             isBookmarked: false,
+            isInSplit: false,
             scale: 1,
             width: 180,
             onSelect: {},
@@ -225,6 +226,7 @@ final class TabBarIntrinsicSizeTests: HeadlessUITestCase {
                 tab: model.tabs.tabs[0],
                 isSelected: selected,
                 isBookmarked: false,
+                isInSplit: false,
                 scale: 1,
                 width: 180,
                 onSelect: {},

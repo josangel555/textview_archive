@@ -379,4 +379,79 @@ final class TabCoordinatorTests: XCTestCase {
         XCTAssertNil(c.splitURL)
         XCTAssertFalse(c.isSplitOpen)
     }
+
+    // MARK: - Split ↔ tab correlation (TSK-923)
+
+    /// `isURLInSplit` is false when the split is closed, regardless of URL.
+    func test_isURLInSplit_falseWhenSplitClosed() {
+        let c = TabCoordinator()
+        XCTAssertNil(c.splitURL, "precondition: no split")
+        XCTAssertFalse(c.isURLInSplit(URL(fileURLWithPath: "/a")))
+    }
+
+    /// The file pinned in the split pane matches; a different file does not.
+    func test_isURLInSplit_matchesSplitFileOnly() {
+        let c = TabCoordinator()
+        let a = URL(fileURLWithPath: "/a")
+        let b = URL(fileURLWithPath: "/b")
+        c.openInSplit(a)
+        XCTAssertTrue(c.isURLInSplit(a), "the split file matches")
+        XCTAssertFalse(c.isURLInSplit(b), "a different file does not match")
+    }
+
+    /// `isURLInSplit` normalizes via `dedupKey`, so an unresolved /
+    /// non-standard URL still matches the resolved `splitURL` the
+    /// coordinator stores (path with a trailing `.` segment here).
+    func test_isURLInSplit_normalizesURL() {
+        let c = TabCoordinator()
+        let a = URL(fileURLWithPath: "/tmp/a")
+        c.openInSplit(a)
+        let messy = URL(fileURLWithPath: "/tmp/./a")
+        XCTAssertEqual(TabsState.dedupKey(messy), TabsState.dedupKey(a),
+                       "precondition: the two URLs normalize to the same key")
+        XCTAssertTrue(c.isURLInSplit(messy),
+                      "an un-normalized URL still matches the split file")
+    }
+
+    /// `splitTabID` is nil when no split is open.
+    func test_splitTabID_nilWhenSplitClosed() {
+        let c = TabCoordinator()
+        c.append(Tab(url: URL(fileURLWithPath: "/a")))
+        XCTAssertNil(c.splitTabID, "no split ⇒ no indicated tab")
+    }
+
+    /// `splitTabID` resolves to the open tab whose file is in the split.
+    func test_splitTabID_resolvesToMatchingOpenTab() {
+        let c = TabCoordinator()
+        let a = URL(fileURLWithPath: "/a")
+        let b = URL(fileURLWithPath: "/b")
+        c.append(Tab(url: a))
+        c.append(Tab(url: b))
+        let bID = c.tabs.tabs[1].id
+        c.openInSplit(b)
+        XCTAssertEqual(c.splitTabID, bID,
+                       "the indicator targets the tab whose file is in the split")
+    }
+
+    /// `splitTabID` is nil when the split shows a file that has no open tab
+    /// (the split pane reads from disk and is independent of the tab list).
+    func test_splitTabID_nilWhenSplitFileHasNoTab() {
+        let c = TabCoordinator()
+        c.append(Tab(url: URL(fileURLWithPath: "/a")))
+        c.openInSplit(URL(fileURLWithPath: "/not-open"))
+        XCTAssertTrue(c.isSplitOpen, "precondition: split is open")
+        XCTAssertNil(c.splitTabID,
+                     "a split file with no matching tab indicates no tab")
+    }
+
+    /// Closing the split clears the indicated tab.
+    func test_splitTabID_clearsOnCloseSplit() {
+        let c = TabCoordinator()
+        let a = URL(fileURLWithPath: "/a")
+        c.append(Tab(url: a))
+        c.openInSplit(a)
+        XCTAssertNotNil(c.splitTabID, "precondition: a tab is indicated")
+        c.closeSplit()
+        XCTAssertNil(c.splitTabID, "close clears the indicated tab")
+    }
 }

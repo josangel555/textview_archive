@@ -77,6 +77,11 @@ struct TabBar: View {
                                 tab: tab,
                                 isSelected: model.tabs.selectedIndex == index,
                                 isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
+                                // TSK-923: right-pane indicator. The tab whose
+                                // file is currently shown in the split (right)
+                                // pane gets a sidebar-right badge so the user
+                                // can see WHICH open file is pinned there.
+                                isInSplit: tabCoordinator.splitTabID == tab.id,
                                 scale: CGFloat(model.zoom),
                                 width: tabWidth,
                                 onSelect: { model.selectTab(at: index) },
@@ -350,6 +355,10 @@ struct TabBarItem: View {
     let tab: ViewerCore.Tab
     let isSelected: Bool
     let isBookmarked: Bool
+    /// TSK-923: this tab's file is the one currently shown in the split
+    /// (right) pane. Drives a small `sidebar.right` indicator badge so the
+    /// user can tell at a glance which open file is pinned to the right.
+    let isInSplit: Bool
     let scale: CGFloat
     /// item12: width assigned by the strip's width budget. The tab shrinks
     /// toward `minShrunkWidth` (icon + close) under crowding; the title
@@ -426,6 +435,20 @@ struct TabBarItem: View {
                             .helpInfo(title: "Bookmarked",
                                       description: "This file is bookmarked")
                             .accessibilityLabel("Bookmarked")
+                    }
+                    if isInSplit {
+                        // TSK-923: right-pane indicator — this tab's file is
+                        // shown in the split (right) pane. The accent tint ties
+                        // it to the selected-tab accent so the two read as one
+                        // surface; `sidebar.right` is the standard glyph for a
+                        // right-docked pane.
+                        Image(systemName: "sidebar.right")
+                            .font(.system(size: 9 * scale, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                            .helpInfo(title: "Shown in split",
+                                      description: "This file is displayed in the right-hand split pane")
+                            .accessibilityLabel("Shown in split pane")
+                            .accessibilityIdentifier("mdv.tab.splitIndicator")
                     }
                     Button(action: onClose) {
                         // H4: centered `xmark` glyph over a circular
