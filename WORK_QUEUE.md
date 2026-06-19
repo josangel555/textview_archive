@@ -22,7 +22,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [ ] **TSK-888** — Global search typing + result-scroll laggy `[trace]`
 - [ ] **TSK-890 / 891 / 895** — CM6 editor feel: drag-select slow / Page-Up janky / h-scrollbar flicker on type (MD≫Swift; ties TSK-791) `[trace]`
 - [ ] **TSK-889** — ~699KB JSON open laggy (warm path; distinct from TSK-842 cold/iCloud) `[trace]`
-- [ ] **TSK-908** — Right-click commit very slow (menu build) `[trace]`
+- [~] **TSK-908** — Right-click commit very slow (menu build) `[dedf45b → review; "only shows Review Commit" FIXED — added Copy SHA/Short SHA/Subject/Reference (host-tested CommitClipboard). SLOW half: hot path already lazy (reviewsForCommit in submenu, TSK-909) → residual = SwiftUI .contextMenu framework cost, likely resolved by 909; VM-confirm]`
 
 **P1 — broken user-facing behavior (host-fixable bugs; ship model + leave render at review):**
 - [ ] **TSK-910** — Git diff: only one line selectable → multi-line selection `(537)` `[DESIGN-ON-BOARD: SwiftUI per-Text .textSelection can't span; needs per-hunk AttributedString vs per-line review affordances → render slice, not a quick fix]`
