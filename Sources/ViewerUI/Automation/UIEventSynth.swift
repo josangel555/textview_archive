@@ -164,6 +164,144 @@ public enum UIEventSynth {
         _ = pump(until: Date().addingTimeInterval(timeoutPerRung))
     }
 
+    // MARK: - Key synthesis (TSK-818)
+
+    /// Translate a `UIKeySpec.Modifiers` set to the AppKit flag family
+    /// (`NSEvent.keyEvent`'s `modifierFlags`).
+    public static func nsFlags(for mods: UIKeySpec.Modifiers) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if mods.contains(.command) { flags.insert(.command) }
+        if mods.contains(.shift)   { flags.insert(.shift) }
+        if mods.contains(.control) { flags.insert(.control) }
+        if mods.contains(.option)  { flags.insert(.option) }
+        return flags
+    }
+
+    /// Translate a `UIKeySpec.Modifiers` set to the CoreGraphics flag family
+    /// (`CGEvent.flags`) — the channel real keydown injection uses on the VM.
+    public static func cgFlags(for mods: UIKeySpec.Modifiers) -> CGEventFlags {
+        var flags: CGEventFlags = []
+        if mods.contains(.command) { flags.insert(.maskCommand) }
+        if mods.contains(.shift)   { flags.insert(.maskShift) }
+        if mods.contains(.control) { flags.insert(.maskControl) }
+        if mods.contains(.option)  { flags.insert(.maskAlternate) }
+        return flags
+    }
+
+    /// The `characters` an `NSEvent` keyDown should report for a stroke — the
+    /// glyph the field actually inserts. Letters/symbols carry their base
+    /// glyph, uppercased when `.shift` is held; a stroke with a command/control
+    /// modifier or no base glyph (named navigation keys) reports `""` (no
+    /// insertion). This is the same rule AppKit applies before routing a key to
+    /// `insertText:` vs `doCommandBySelector:`.
+    public static func characters(for stroke: UIKeySpec.KeyStroke) -> String {
+        guard let base = stroke.baseCharacter else { return "" }
+        // Command / control chords are commands, not text — they don't insert.
+        if stroke.modifiers.contains(.command) || stroke.modifiers.contains(.control) {
+            return ""
+        }
+        if stroke.modifiers.contains(.shift) {
+            return shiftedGlyph(forBase: base)
+        }
+        return base
+    }
+
+    /// The glyph a base key produces when ⇧ is held (US ANSI). Letters
+    /// uppercase; the number row + punctuation map to their shifted symbol.
+    public static func shiftedGlyph(forBase base: String) -> String {
+        switch base {
+        case "1": return "!"
+        case "2": return "@"
+        case "3": return "#"
+        case "4": return "$"
+        case "5": return "%"
+        case "6": return "^"
+        case "7": return "&"
+        case "8": return "*"
+        case "9": return "("
+        case "0": return ")"
+        case "-": return "_"
+        case "=": return "+"
+        case "[": return "{"
+        case "]": return "}"
+        case "\\": return "|"
+        case ";": return ":"
+        case "'": return "\""
+        case ",": return "<"
+        case ".": return ">"
+        case "/": return "?"
+        case "`": return "~"
+        default:  return base.uppercased()
+        }
+    }
+
+    /// Build the `NSEvent` keyDown/keyUp pair stream for `spec` against
+    /// `window` — host-testable, no GUI session. Each stroke yields a keyDown
+    /// then a keyUp carrying the stroke's keycode + AppKit modifier flags +
+    /// reported characters. Returns `nil` if any event could not be
+    /// constructed (AppKit can refuse on a malformed keycode). Split from
+    /// delivery (`typeKeys`) so the keycode/modifier/characters mapping is
+    /// pinned headlessly while real injection stays VM-only.
+    public static func keyEvents(spec: UIKeySpec, in window: NSWindow) -> [NSEvent]? {
+        var out: [NSEvent] = []
+        for stroke in spec.strokes {
+            let flags = nsFlags(for: stroke.modifiers)
+            let chars = characters(for: stroke)
+            for isDown in [true, false] {
+                guard let event = NSEvent.keyEvent(
+                    with: isDown ? .keyDown : .keyUp,
+                    location: .zero,
+                    modifierFlags: flags,
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    characters: isDown ? chars : "",
+                    charactersIgnoringModifiers: isDown ? (stroke.baseCharacter ?? "") : "",
+                    isARepeat: false,
+                    keyCode: stroke.keyCode)
+                else { return nil }
+                out.append(event)
+            }
+        }
+        return out
+    }
+
+    /// Trace of the most recent `typeKeys` — embedded in the step dump so a
+    /// failing VM scenario shows WHAT keystrokes were posted and via which
+    /// channel instead of a silent no-op.
+    public private(set) static var lastKeyTrace: String = ""
+
+    /// VM-ONLY: post REAL keydown/keyup CGEvents for `spec` into the focused
+    /// field of the spawned app. CGEvent posting requires a WindowServer + a
+    /// GUI login session (and, off the asuser bridge, Accessibility TCC) — it
+    /// is a no-op stub on the host headless lane (the `keyEvents` builder above
+    /// is the host coverage). Drives the window key first; posts to the session
+    /// event tap so the events traverse the real WindowServer → focused-field
+    /// pipeline that the CM6/AppKit key-routing tail (894/896/921/730/728) bugs
+    /// live on.
+    @discardableResult
+    public static func typeKeys(spec: UIKeySpec, in window: NSWindow) -> Bool {
+        makeWindowKey(window)
+        let source = CGEventSource(stateID: .hidSystemState)
+        var posted = 0
+        for stroke in spec.strokes {
+            let flags = cgFlags(for: stroke.modifiers)
+            for isDown in [true, false] {
+                guard let event = CGEvent(
+                    keyboardEventSource: source,
+                    virtualKey: stroke.keyCode,
+                    keyDown: isDown)
+                else { continue }
+                event.flags = flags
+                event.post(tap: .cgSessionEventTap)
+                posted += 1
+            }
+        }
+        lastKeyTrace = "typeKeys(\(spec.strokes.count) strokes): posted=\(posted) "
+            + "key=\(window.isKeyWindow) active=\(NSApp.isActive)"
+        return posted > 0
+    }
+
     /// Synthesize the click described by `spec`: deliver its event
     /// sequence through `window.sendEvent` — the call that drives
     /// NSWindow-level routing INCLUDING gesture recognizers, which is

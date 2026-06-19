@@ -629,10 +629,19 @@ public enum ScriptVerb {
             case .preview: return "preview"
             }
         }()
+        // Active editor buffer projection (TSK-818). Lets the VM key-synthesis
+        // smoke assert the live `DocumentModel` actually received injected
+        // keystrokes (`ui-type`/`ui-key` posting real CGEvents into the focused
+        // CM6 field). Read-only: `editorBuffer` returns nil until a tab's buffer
+        // is materialized, so an un-edited tab projects "" / false — never
+        // forces a buffer into existence here.
+        let activeEditor = model.tabs.selected.flatMap { model.editorBuffer(forTabID: $0.id) }
         return [
             "zoom": model.zoom,
             "currentViewMode": model.currentViewMode.rawValue,
             "currentStateKind": stateKind,
+            "editorText": activeEditor?.text ?? "",
+            "editorIsDirty": activeEditor?.isDirty ?? false,
             // `windowTitle` is a pure model projection (`tabs.selected?.title
             // ?? "TextView"` — see DocumentModel) that `main.swift` mirrors
             // onto `NSWindow.title`. Surfacing it here lets the title-based

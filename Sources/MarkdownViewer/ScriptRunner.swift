@@ -169,6 +169,29 @@ extension AppDelegate {
                 FileHandle.standardError.write(
                     Data("script: \(cmd) target '\(spec.identifier)' not found\n".utf8))
             }
+        case "ui-type", "ui-key":
+            // REAL-keydown interaction layer (UIEventSynth.typeKeys, TSK-818):
+            // post genuine CGEvent keyDown/keyUp (+ modifier chords) into the
+            // focused field of the live app — the keyboard sibling of ui-click.
+            //   ui-type <literal text>          (one keystroke per char)
+            //   ui-key  <chord> [<chord> ...]   (cmd+c, shift+a, left, enter …)
+            // VM GUI lane only (CGEvent posting needs a WindowServer + GUI
+            // session); on host these tiers self-skip. LOUD on a bad parse so
+            // an assertion harness refuses a run that typed nothing.
+            guard let spec = UIKeySpec.parse(verb: cmd, arg: arg) else {
+                FileHandle.standardError.write(
+                    Data("script: bad \(cmd) syntax '\(line)'\n".utf8))
+                return
+            }
+            guard let win = self.window else {
+                FileHandle.standardError.write(
+                    Data("script: \(cmd) with no window\n".utf8))
+                return
+            }
+            if !UIEventSynth.typeKeys(spec: spec, in: win) {
+                FileHandle.standardError.write(
+                    Data("script: \(cmd) posted no events '\(line)'\n".utf8))
+            }
         default:
             FileHandle.standardError.write(
                 Data("script: unknown command '\(cmd)'\n".utf8))
@@ -200,6 +223,11 @@ extension AppDelegate {
         // failing interaction scenario shows what was clicked and where.
         if !UIEventSynth.lastTrace.isEmpty {
             enriched["uiClickTrace"] = UIEventSynth.lastTrace
+        }
+        // TSK-818: same self-describing-failure channel for the ui-type/ui-key
+        // real-keydown layer — a failing VM key scenario shows what was posted.
+        if !UIEventSynth.lastKeyTrace.isEmpty {
+            enriched["uiKeyTrace"] = UIEventSynth.lastKeyTrace
         }
         // TSK-522/523: same self-describing-failure channel for the Git
         // Log action closures (root → range → git body → write → tab).
