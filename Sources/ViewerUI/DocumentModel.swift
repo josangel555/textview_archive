@@ -3678,6 +3678,14 @@ public final class DocumentModel: ObservableObject {
     /// `ContentView` calls this for the `.hostedView` document state.
     public func hostedView(forID id: UUID) -> AnyView? { hostedViews[id] }
 
+    /// TSK-721 — open the in-app HTTP request tool in a fresh hosted tab.
+    /// The view is self-contained (owns its `HTTPClientViewModel`); all
+    /// request logic lives in the pure, host-tested `HTTPClientCore`.
+    @discardableResult
+    public func openHTTPClient() -> UUID {
+        openHostedView(title: "HTTP Request", rootView: HTTPClientView())
+    }
+
     /// Open a new tab that hosts an arbitrary SwiftUI `rootView`. Always a
     /// fresh tab (these aren't file-backed, so there's nothing to reveal /
     /// dedup against). Returns the tab id so callers can identify it. The

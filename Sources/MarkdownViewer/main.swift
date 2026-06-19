@@ -824,6 +824,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.newScratchTabFromClipboard()
     }
 
+    /// TSK-721 — File → New HTTP Request: open the in-app HTTP request tool.
+    @objc func newHTTPRequest(_ sender: Any?) {
+        model.openHTTPClient()
+    }
+
     @objc func closeCurrentTab(_ sender: Any?) {
         guard model.tabs.selectedIndex != nil else {
             window?.performClose(nil)
@@ -1275,6 +1280,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(newTabFromClipboard(_:)), keyEquivalent: "")
         newFromClipItem.target = self
         fileMenu.addItem(newFromClipItem)
+
+        // TSK-721: File → New HTTP Request — opens the in-app HTTP request tool
+        // (method/URL/headers/body form + response view) in a hosted tab.
+        let newHTTPItem = NSMenuItem(
+            title: "New HTTP Request",
+            action: #selector(newHTTPRequest(_:)), keyEquivalent: "")
+        newHTTPItem.target = self
+        fileMenu.addItem(newHTTPItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
