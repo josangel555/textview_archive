@@ -17,12 +17,27 @@ public protocol CoreTransport: Sendable {
     /// throw `CoreError` for transport/bridge faults. Byte-level on purpose:
     /// a remote carrier moves bytes; the value layer stays client-side.
     func call(_ method: String, requestBody: [UInt8]) throws -> [UInt8]?
+
+    /// Invoke an AUX-bearing method (TSK-651): the small scalar request rides
+    /// `requestBody`; the frame-cap-exempt bulk input (the indent text, the
+    /// hex-search/render buffer) rides `aux`. Returns the response body bytes
+    /// VERBATIM — the caller knows by method whether they are a response frame
+    /// (hex search) or a raw payload (indent detect / hex render). Default
+    /// impl rejects it so a transport that hasn't joined the aux seam fails
+    /// loudly rather than silently dropping the bulk channel.
+    func callAux(_ method: String, requestBody: [UInt8], aux: [UInt8]) throws -> [UInt8]?
 }
 
 extension CoreTransport {
     /// Wrapper-side convenience over the byte-level requirement.
     func call(_ method: String, request: MsgPackValue) throws -> [UInt8]? {
         try call(method, requestBody: request.encode())
+    }
+
+    /// Default: a transport that hasn't joined the aux seam can't carry the
+    /// bulk side-channel. (Both shipping transports override this.)
+    func callAux(_ method: String, requestBody: [UInt8], aux: [UInt8]) throws -> [UInt8]? {
+        throw CoreError.decode("transport does not support the aux side-channel for '\(method)'")
     }
 }
 
@@ -54,6 +69,13 @@ public struct InProcessTransport: CoreTransport {
         "highlight_runs": UInt16(MDV_METHOD_HIGHLIGHT_RUNS),
     ]
 
+    /// AUX-bearing method ids (TSK-651): the bulk input rides the `aux`
+    /// side-channel. `indent_detect` is the first to join the transport seam;
+    /// hex search/render follow when their wrappers route through `callAux`.
+    static let auxMethodIds: [String: UInt16] = [
+        "indent_detect": UInt16(MDV_METHOD_INDENT_DETECT),
+    ]
+
     /// Per-method-symbol fallback — now EMPTY: every stateless method routes
     /// through the envelope. Kept (with `mdvFrameCall`) as the ready path for
     /// any future method that lands as a symbol before joining the envelope.
@@ -72,6 +94,23 @@ public struct InProcessTransport: CoreTransport {
                 // surfaced as a typed decode fault, never a crash.
                 CoreTransportRegistry.audit(method, transport: "in-process", ok: false)
                 throw CoreError.decode("no in-process export for core method '\(method)'")
+            }
+            CoreTransportRegistry.audit(method, transport: "in-process", ok: true)
+            return result
+        } catch {
+            CoreTransportRegistry.audit(method, transport: "in-process", ok: false)
+            throw error
+        }
+    }
+
+    public func callAux(_ method: String, requestBody: [UInt8], aux: [UInt8]) throws -> [UInt8]? {
+        do {
+            guard let id = Self.auxMethodIds[method] else {
+                CoreTransportRegistry.audit(method, transport: "in-process", ok: false)
+                throw CoreError.decode("no in-process aux export for core method '\(method)'")
+            }
+            let result = try aux.withUnsafeBytes { raw in
+                try mdvEnvelopeCallAux(method, id, body: requestBody, aux: raw)
             }
             CoreTransportRegistry.audit(method, transport: "in-process", ok: true)
             return result

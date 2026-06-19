@@ -82,6 +82,10 @@ final class RemoteTransportLoopbackTests: XCTestCase {
         XCTAssertEqual(remote.capabilities & ~engineMask,
                        CoreCapabilities.transcriptList.rawValue,
                        "unexpected server-only bits for a root-less spawn")
+        // indent_detect now rides the wire (TSK-651) — its bit is part of the
+        // engine mask, so the server must advertise it.
+        XCTAssertNotEqual(remote.capabilities & CoreCapabilities.indent.rawValue, 0,
+                          "indent_detect must be advertised once served over the wire")
     }
 
     /// Every stateless wrapper, byte-equal local vs remote — the carrier-swap
@@ -126,6 +130,19 @@ final class RemoteTransportLoopbackTests: XCTestCase {
         }
         try both("highlight_runs") {
             try mdvCoreHighlightRuns(text: "fn main() { let x = 7; } // é😀", lang: "rust")
+        }
+        // TSK-651: the first AUX-bearing method on the wire. The source text
+        // rides the envelope `a` (aux) key; {sample_lines} rides `b`. If the
+        // server dropped aux, detect would see empty text → "—" ≠ "Spaces (4)",
+        // so the byte-equality below has teeth on the aux carrier.
+        try both("indent_detect:spaces") {
+            try mdvCoreIndentDetect(text: "    a\n    b\n      c\n")
+        }
+        try both("indent_detect:tabs") {
+            try mdvCoreIndentDetect(text: "\tx\n\ty\n")
+        }
+        try both("indent_detect:none") {
+            try mdvCoreIndentDetect(text: "no indentation here\nstill none\n")
         }
         try both("highlight_runs:unsupported") {
             // The in-band supported:false (nil) signal must survive the wire.

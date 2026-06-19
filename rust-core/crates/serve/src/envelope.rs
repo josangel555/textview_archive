@@ -8,8 +8,15 @@
 /// Frame type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Frame {
-    /// Request: correlation id, method, body bytes (unframed msgpack doc).
-    Request { id: u64, method: String, body: Vec<u8> },
+    /// Request: correlation id, method, body bytes (unframed msgpack doc),
+    /// and an optional `aux` bulk side-channel (key `"a"`). `aux` mirrors the
+    /// dispatch `aux` argument the core uses for frame-cap-exempt bulk inputs
+    /// (the text to indent-detect, the buffer to hex-search/render — TSK-580
+    /// §"Aux side-channel"). It is OMITTED from the wire when empty, so every
+    /// existing `req`-only method's bytes stay byte-identical; a peer that
+    /// never sends `aux` is unaffected (unknown-key tolerance covers the
+    /// reverse direction).
+    Request { id: u64, method: String, body: Vec<u8>, aux: Vec<u8> },
     /// Response: correlation id, body XOR error.
     Response { id: u64, body: Option<Vec<u8>>, error: Option<WireError> },
     /// Event: subscription id, sequence, kind, body.
@@ -67,8 +74,11 @@ fn push_bin(out: &mut Vec<u8>, b: &[u8]) {
 pub fn encode(frame: &Frame) -> Vec<u8> {
     let mut out = Vec::with_capacity(64);
     match frame {
-        Frame::Request { id, method, body } => {
-            out.push(0x84); // fixmap(4)
+        Frame::Request { id, method, body, aux } => {
+            // 4 base keys (t/i/m/b); the `a` aux key is added ONLY when
+            // non-empty so req-only methods stay byte-identical on the wire.
+            let n = 4 + usize::from(!aux.is_empty());
+            out.push(0x80 | u8::try_from(n).unwrap_or(5));
             push_fixstr(&mut out, "t");
             push_fixstr(&mut out, "q");
             push_fixstr(&mut out, "i");
@@ -77,6 +87,10 @@ pub fn encode(frame: &Frame) -> Vec<u8> {
             push_fixstr(&mut out, method);
             push_fixstr(&mut out, "b");
             push_bin(&mut out, body);
+            if !aux.is_empty() {
+                push_fixstr(&mut out, "a");
+                push_bin(&mut out, aux);
+            }
         }
         Frame::Response { id, body, error } => {
             let n = 2 + usize::from(body.is_some()) + usize::from(error.is_some());
@@ -255,6 +269,7 @@ pub fn decode(bytes: &[u8]) -> Result<Frame, EnvelopeError> {
     let mut i: Option<u64> = None;
     let mut m: Option<String> = None;
     let mut b: Option<Vec<u8>> = None;
+    let mut a: Option<Vec<u8>> = None;
     let mut e: Option<WireError> = None;
     let mut s: Option<u64> = None;
     let mut n: Option<u64> = None;
@@ -267,6 +282,7 @@ pub fn decode(bytes: &[u8]) -> Result<Frame, EnvelopeError> {
             "i" => i = Some(c.uint()?),
             "m" => m = Some(c.str_()?),
             "b" => b = Some(c.bin()?),
+            "a" => a = Some(c.bin()?),
             "s" => s = Some(c.uint()?),
             "n" => n = Some(c.uint()?),
             "k" => k = Some(c.str_()?),
@@ -298,6 +314,7 @@ pub fn decode(bytes: &[u8]) -> Result<Frame, EnvelopeError> {
                 id,
                 method,
                 body: b.unwrap_or_default(),
+                aux: a.unwrap_or_default(),
             }),
             _ => Err(EnvelopeError("request missing i/m".into())),
         },
@@ -325,7 +342,9 @@ mod tests {
     #[test]
     fn round_trip_all_frame_types() {
         let frames = [
-            Frame::Request { id: 7, method: "find_search".into(), body: vec![1, 2, 3] },
+            Frame::Request { id: 7, method: "find_search".into(), body: vec![1, 2, 3], aux: vec![] },
+            // A request carrying an aux side-channel must also round-trip.
+            Frame::Request { id: 9, method: "indent_detect".into(), body: vec![4], aux: vec![5, 6, 7] },
             Frame::Response { id: 7, body: Some(vec![9, 9]), error: None },
             Frame::Response {
                 id: 8,
@@ -345,6 +364,7 @@ mod tests {
             id: u64::MAX,
             method: "m".into(),
             body: vec![0xAB; 70_000], // forces bin32 read path
+            aux: vec![],
         };
         assert_eq!(decode(&encode(&f)).unwrap(), f);
     }
@@ -377,7 +397,52 @@ mod tests {
         let f = decode(&bytes).unwrap();
         assert_eq!(
             f,
-            Frame::Request { id: 5, method: "ping".into(), body: vec![7] }
+            Frame::Request { id: 5, method: "ping".into(), body: vec![7], aux: vec![] }
+        );
+    }
+
+    #[test]
+    fn aux_key_is_omitted_when_empty_but_carried_when_present() {
+        // The req-only case must NOT spend bytes on an `a` key — a fixmap(4),
+        // byte-identical to the pre-aux wire (forward/backward compat).
+        let bare = encode(&Frame::Request {
+            id: 1,
+            method: "find_search".into(),
+            body: vec![1, 2, 3],
+            aux: vec![],
+        });
+        assert_eq!(bare.first(), Some(&0x84), "empty aux ⇒ fixmap(4), no `a` key");
+
+        // A non-empty aux promotes the map to fixmap(5) and survives the
+        // round-trip with its bytes intact (the indent/hex bulk channel).
+        let withaux = Frame::Request {
+            id: 2,
+            method: "indent_detect".into(),
+            body: vec![0x91, 0x32], // {sample_lines: 50}-ish doc
+            aux: b"    a\n    b\n".to_vec(),
+        };
+        let enc = encode(&withaux);
+        assert_eq!(enc.first(), Some(&0x85), "non-empty aux ⇒ fixmap(5)");
+        assert_eq!(decode(&enc).unwrap(), withaux, "aux round-trips byte-for-byte");
+    }
+
+    #[test]
+    fn pre_aux_request_without_a_key_decodes_with_empty_aux() {
+        // A peer that predates the aux field sends fixmap(4) {t,i,m,b}. It must
+        // decode to a request with an EMPTY aux (no key ⇒ default), so an old
+        // client talking to a new server is fine.
+        let mut bytes = vec![0x84];
+        push_fixstr(&mut bytes, "t");
+        push_fixstr(&mut bytes, "q");
+        push_fixstr(&mut bytes, "i");
+        push_uint(&mut bytes, 3);
+        push_fixstr(&mut bytes, "m");
+        push_fixstr(&mut bytes, "ping");
+        push_fixstr(&mut bytes, "b");
+        push_bin(&mut bytes, &[]);
+        assert_eq!(
+            decode(&bytes).unwrap(),
+            Frame::Request { id: 3, method: "ping".into(), body: vec![], aux: vec![] }
         );
     }
 
@@ -386,7 +451,7 @@ mod tests {
         assert!(decode(&[]).is_err());
         assert!(decode(&[0x92]).is_err(), "array is not an envelope");
         // Truncated mid-body.
-        let good = encode(&Frame::Request { id: 1, method: "x".into(), body: vec![1, 2, 3] });
+        let good = encode(&Frame::Request { id: 1, method: "x".into(), body: vec![1, 2, 3], aux: vec![] });
         let cut = good.get(..good.len() - 2).unwrap_or_default();
         assert!(decode(cut).is_err());
         // Request missing method.

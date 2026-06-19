@@ -91,7 +91,7 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
 
     public func call(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {
         do {
-            let result = try callInner(method, requestBody: requestBody)
+            let result = try callInner(method, requestBody: requestBody, aux: [])
             CoreTransportRegistry.audit(method, transport: "remote", ok: true)
             return result
         } catch {
@@ -100,7 +100,21 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
         }
     }
 
-    private func callInner(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {
+    public func callAux(_ method: String, requestBody: [UInt8], aux: [UInt8]) throws -> [UInt8]? {
+        do {
+            // The bulk input rides the envelope `a` (aux) key (TSK-651); the
+            // server routes it to `dispatch::call`'s aux argument. Same demux,
+            // deadline, and error mapping as a plain call.
+            let result = try callInner(method, requestBody: requestBody, aux: aux)
+            CoreTransportRegistry.audit(method, transport: "remote", ok: true)
+            return result
+        } catch {
+            CoreTransportRegistry.audit(method, transport: "remote", ok: false)
+            throw error
+        }
+    }
+
+    private func callInner(_ method: String, requestBody: [UInt8], aux: [UInt8]) throws -> [UInt8]? {
         state.lock()
         if let dead = closedError {
             state.unlock()
@@ -120,7 +134,7 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
         do {
             writeLock.lock()
             defer { writeLock.unlock() }
-            try Self.writeEnvelope(fd, Self.request(id: id, method: method, body: requestBody))
+            try Self.writeEnvelope(fd, Self.request(id: id, method: method, body: requestBody, aux: aux))
         }
 
         slot.cond.lock()
@@ -411,13 +425,20 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
 
     // MARK: - Envelope plumbing
 
-    private static func request(id: UInt64, method: String, body: [UInt8]) -> [UInt8] {
-        MsgPackValue.map([
+    private static func request(id: UInt64, method: String, body: [UInt8], aux: [UInt8] = []) -> [UInt8] {
+        // The `a` (aux) key is appended ONLY when non-empty so req-only calls
+        // stay byte-identical to the pre-aux wire (the server's encoder does
+        // the same — see envelope.rs `aux_key_is_omitted_when_empty`).
+        var pairs: [(MsgPackValue, MsgPackValue)] = [
             (.string("t"), .string("q")),
             (.string("i"), .uint(id)),
             (.string("m"), .string(method)),
             (.string("b"), .binary(body)),
-        ]).encode()
+        ]
+        if !aux.isEmpty {
+            pairs.append((.string("a"), .binary(aux)))
+        }
+        return MsgPackValue.map(pairs).encode()
     }
 
     private static func writeEnvelope(_ fd: Int32, _ envelope: [UInt8]) throws {

@@ -8,15 +8,19 @@ import XCTest
 /// tests fail.
 final class CoreTransportSeamTests: XCTestCase {
 
-    /// Captures calls; replays a canned response (or throws).
+    /// Captures calls; replays a canned response (or throws). `rawResponse`
+    /// feeds the aux path (raw bytes, not a frame); `response` feeds `call`.
     final class SpyTransport: CoreTransport, @unchecked Sendable {
         let lock = NSLock()
         private(set) var calls: [(method: String, body: [UInt8])] = []
+        private(set) var auxCalls: [(method: String, body: [UInt8], aux: [UInt8])] = []
         var response: [UInt8]?
+        var rawResponse: [UInt8]?
         var error: CoreError?
 
-        init(response: MsgPackValue? = nil) {
+        init(response: MsgPackValue? = nil, rawResponse: [UInt8]? = nil) {
             self.response = response?.encode()
+            self.rawResponse = rawResponse
         }
 
         func call(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {
@@ -25,6 +29,14 @@ final class CoreTransportSeamTests: XCTestCase {
             lock.unlock()
             if let error { throw error }
             return response
+        }
+
+        func callAux(_ method: String, requestBody: [UInt8], aux: [UInt8]) throws -> [UInt8]? {
+            lock.lock()
+            auxCalls.append((method, requestBody, aux))
+            lock.unlock()
+            if let error { throw error }
+            return rawResponse
         }
     }
 
@@ -79,6 +91,23 @@ final class CoreTransportSeamTests: XCTestCase {
             XCTAssertFalse(spy.calls.first?.body.isEmpty ?? true,
                            "\(c.method): request body must carry the encoded args")
         }
+    }
+
+    func test_indentDetect_routesThroughTheAuxSeam_withTextInAux() throws {
+        // TSK-651: mdvCoreIndentDetect must route through the registry's
+        // callAux, carrying the source text in `aux` (NOT `body`) so a remote
+        // carrier sees the bulk channel. The spy returns the raw style string.
+        let spy = SpyTransport(rawResponse: [UInt8]("Spaces (4)".utf8))
+        CoreTransportRegistry.current = spy
+        let result = try mdvCoreIndentDetect(text: "    a\n    b\n", sampleLines: 50)
+        XCTAssertEqual(result, "Spaces (4)", "the raw aux response must pass through verbatim")
+        XCTAssertEqual(spy.auxCalls.count, 1, "exactly one aux transport call")
+        XCTAssertEqual(spy.auxCalls.first?.method, "indent_detect")
+        XCTAssertEqual(spy.auxCalls.first?.aux, [UInt8]("    a\n    b\n".utf8),
+                       "the source text must ride the aux side-channel")
+        XCTAssertFalse(spy.auxCalls.first?.body.isEmpty ?? true,
+                       "the {sample_lines} scalar must ride the request body")
+        XCTAssertTrue(spy.calls.isEmpty, "indent_detect must NOT use the plain call path")
     }
 
     func test_transportFault_surfacesAsCoreError() {

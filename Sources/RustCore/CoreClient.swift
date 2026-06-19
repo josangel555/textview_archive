@@ -940,13 +940,16 @@ public func mdvCoreIndentDetect(text: String, sampleLines: Int = 50) throws -> S
     // the small request frame (named map → the Rust `DetectAuxRequest`). Result
     // is the RAW UTF-8 style string (not a frame). Byte-identical (FFI
     // envelope_routes_indent_detect A/B pin + IndentDetectABTests corpus).
+    // TSK-651: route through the transport seam so a remote `mdv-serve`
+    // carries indent detection too (the loopback acceptance pins byte-equality
+    // local vs remote). `aux` carries the source text; `body` carries the
+    // {sample_lines} scalar frame. In-process this lands back on
+    // `mdvEnvelopeCallAux` (byte-identical to the prior direct call).
     let req = MsgPackValue.map([
         (.string("sample_lines"), .uint(UInt64(UInt32(truncatingIfNeeded: sampleLines)))),
     ]).encode()
-    let bytes = [UInt8](text.utf8)
-    let out = try bytes.withUnsafeBytes { raw in
-        try mdvEnvelopeCallAux("indent_detect", UInt16(MDV_METHOD_INDENT_DETECT), body: req, aux: raw)
-    }
+    let out = try CoreTransportRegistry.current.callAux(
+        "indent_detect", requestBody: req, aux: [UInt8](text.utf8))
     guard let out, !out.isEmpty else { return "—" }  // unreachable: detect is never empty
     return String(decoding: out, as: UTF8.self)
 }

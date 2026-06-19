@@ -2,7 +2,7 @@
 
 use std::os::unix::net::UnixStream;
 
-use mdvcore_core::{cm_edit, diff, find_engine, fuzzy, markdown, transcript, wire};
+use mdvcore_core::{cm_edit, diff, find_engine, fuzzy, indent, markdown, transcript, wire};
 use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_CAP_GIT, MDV_CAP_SEARCH, MDV_CAP_TRANSCRIPT_LIST, MDV_WIRE_VERSION};
 
 use crate::fs::FsCtx;
@@ -60,7 +60,7 @@ pub fn handle_connection(
     // --- hello (must be the first frame) ---
     let Some(first) = read_frame(&mut reader)? else { return Ok(()) };
     let hello = match envelope::decode(&first) {
-        Ok(Frame::Request { id, method, body }) if method == "hello" => (id, body),
+        Ok(Frame::Request { id, method, body, .. }) if method == "hello" => (id, body),
         _ => return Ok(()), // anything else first = protocol violation, hang up
     };
     let client_version = hello_wire_version(&hello.1);
@@ -80,6 +80,9 @@ pub fn handle_connection(
         let _ = write_locked(&resp);
         return Ok(());
     }
+    // MDV_CAPABILITIES already carries MDV_CAP_INDENT (it is a staticlib
+    // engine family); the server now actually serves indent_detect over the
+    // wire (TSK-651) so the advertised bit is no longer aspirational.
     let mut capabilities = MDV_CAPABILITIES | MDV_CAP_TRANSCRIPT_LIST;
     if fs_ctx.enabled() {
         capabilities |= MDV_CAP_FS | MDV_CAP_GIT | MDV_CAP_SEARCH;
@@ -136,7 +139,7 @@ pub fn handle_connection(
                 Ok(f) => f,
                 Err(_) => return Ok(()), // malformed envelope: hang up
             };
-            let Frame::Request { id, method, body } = frame else {
+            let Frame::Request { id, method, body, aux } = frame else {
                 continue; // responses/events from a client are ignored in v1
             };
             let resp = match method.as_str() {
@@ -152,7 +155,7 @@ pub fn handle_connection(
                     Ok(out) => Frame::Response { id, body: Some(out), error: None },
                     Err(e) => Frame::Response { id, body: None, error: Some(e) },
                 },
-                _ => dispatch(id, &method, &body, fs_ctx, transcript_ctx),
+                _ => dispatch(id, &method, &body, &aux, fs_ctx, transcript_ctx),
             };
             write_locked(&resp)?;
         }
@@ -169,11 +172,32 @@ fn dispatch(
     id: u64,
     method: &str,
     body: &[u8],
+    aux: &[u8],
     fs_ctx: &FsCtx,
     transcript_ctx: &TranscriptCtx,
 ) -> Frame {
     if method == "ping" {
         return Frame::Response { id, body: Some(Vec::new()), error: None };
+    }
+    // RAW-OUTPUT aux method (TSK-651): indent detection. The source text rides
+    // the `aux` bulk side-channel (frame-cap-exempt); `req` carries only
+    // {sample_lines}. Unlike the framed engine methods, the result is the tiny
+    // raw UTF-8 string ("Tabs", "Spaces (4)", "—") — NOT a msgpack frame — so
+    // it is placed in the response body VERBATIM (no unframe), byte-identical
+    // to `indent::detect_wire_aux(req, aux)` called directly.
+    if method == "indent_detect" {
+        let framed_req = frame_bytes(body);
+        return match indent::detect_wire_aux(&framed_req, aux) {
+            Ok(raw) => Frame::Response { id, body: Some(raw), error: None },
+            Err(_) => Frame::Response {
+                id,
+                body: None,
+                error: Some(WireError {
+                    code: "wire_error".into(),
+                    text: format!("method '{method}' rejected the request frame"),
+                }),
+            },
+        };
     }
     if method.starts_with("fs.") {
         return match fs_ctx.dispatch(method, body) {
@@ -287,6 +311,18 @@ mod tests {
         unframe_or_empty(framed)
     }
 
+    /// Build a request frame with an empty aux side-channel (the common
+    /// case). Keeps the aux-field addition (TSK-651) from rippling across
+    /// every test call site.
+    fn req(id: u64, method: &str, body: Vec<u8>) -> Frame {
+        Frame::Request { id, method: method.into(), body, aux: vec![] }
+    }
+
+    /// Build a request frame WITH an aux bulk side-channel.
+    fn req_aux(id: u64, method: &str, body: Vec<u8>, aux: Vec<u8>) -> Frame {
+        Frame::Request { id, method: method.into(), body, aux }
+    }
+
     fn send(stream: &UnixStream, frame: &Frame) {
         let mut w = stream;
         #[allow(clippy::unwrap_used, reason = "test io")]
@@ -329,7 +365,7 @@ mod tests {
             let _ = handle_connection(&server, &ctx, &tctx);
         });
 
-        send(&client, &Frame::Request { id: 1, method: "hello".into(), body: hello_body() });
+        send(&client, &req(1, "hello", hello_body()));
         let Frame::Response { id: 1, body: Some(_), error: None } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -352,7 +388,7 @@ mod tests {
             })
             .unwrap(),
         );
-        send(&client, &Frame::Request { id: 2, method: "fs.watch".into(), body });
+        send(&client, &req(2, "fs.watch", body));
         let Frame::Response { id: 2, body: Some(resp), error: None } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -405,7 +441,7 @@ mod tests {
         }
         #[allow(clippy::unwrap_used, reason = "test fixture")]
         let body = unframe_or_empty(wire::encode_frame(&UnReq { sub: sub_id }).unwrap());
-        send(&client, &Frame::Request { id: 3, method: "fs.unwatch".into(), body });
+        send(&client, &req(3, "fs.unwatch", body));
         let Frame::Response { id: 3, error: None, .. } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -452,11 +488,79 @@ mod tests {
     }
 
     #[test]
+    fn indent_detect_dispatch_is_byte_identical_to_detect_wire_aux() {
+        // TSK-651: indent_detect is the first RAW-OUTPUT aux method on the wire.
+        // The text rides `aux`; `req` carries {sample_lines}; the response body
+        // is the raw UTF-8 string, byte-identical to indent::detect_wire_aux.
+        let text = "    a\n    b\n"; // 4-space indent
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let req_body = unframe_or_empty(
+            wire::encode_frame(&indent::DetectAuxRequest { sample_lines: 50 }).unwrap(),
+        );
+        #[allow(clippy::unwrap_used, reason = "test setup")]
+        let ctx = FsCtx::new(None).unwrap();
+        let tctx = TranscriptCtx::new(Some("/nonexistent"));
+        let frame = dispatch(9, "indent_detect", &req_body, text.as_bytes(), &ctx, &tctx);
+        let Frame::Response { id: 9, body: Some(out), error: None } = frame else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("indent_detect must dispatch to a body response");
+            }
+        };
+        // Raw bytes — NOT a frame. Byte-identical to calling the wire fn direct.
+        let direct = indent::detect_wire_aux(&frame_bytes(&req_body), text.as_bytes())
+            .expect("detect_wire_aux must succeed");
+        assert_eq!(out, direct, "wire body must equal the direct *_wire result");
+        assert_eq!(String::from_utf8(out).ok().as_deref(), Some("Spaces (4)"));
+    }
+
+    #[test]
+    fn indent_detect_end_to_end_over_the_socket_carries_aux() {
+        // The aux carrier must survive a real hello → indent_detect round-trip:
+        // if the text didn't ride `aux`, detect would see empty input → "—".
+        let (client, server) = connected_pair();
+        let h = serve_on(server);
+        send(&client, &req(1, "hello", hello_body()));
+        let Frame::Response { id: 1, body: Some(hello_resp), error: None } = recv(&client) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("hello must succeed");
+            }
+        };
+        // The hello mask must advertise MDV_CAP_INDENT now that it is served.
+        #[derive(serde::Deserialize)]
+        struct Hello {
+            capabilities: u64,
+        }
+        #[allow(clippy::unwrap_used, reason = "test decode")]
+        let hello: Hello = wire::decode_frame(&frame_bytes(&hello_resp)).unwrap();
+        assert_ne!(hello.capabilities & mdvcore_ffi::MDV_CAP_INDENT, 0, "indent bit must be advertised");
+
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let req_body = unframe_or_empty(
+            wire::encode_frame(&indent::DetectAuxRequest { sample_lines: 50 }).unwrap(),
+        );
+        send(&client, &req_aux(2, "indent_detect", req_body, b"\tx\n\ty\n".to_vec()));
+        let Frame::Response { id: 2, body: Some(out), error: None } = recv(&client) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("indent_detect must succeed over the wire");
+            }
+        };
+        // Tab indent over the aux channel ⇒ "Tabs" (NOT "—", which is what an
+        // empty/dropped aux would produce — that is the teeth).
+        assert_eq!(String::from_utf8(out).ok().as_deref(), Some("Tabs"));
+
+        drop(client);
+        let _ = h.join();
+    }
+
+    #[test]
     fn hello_then_engine_call_end_to_end() {
         let (client, server) = connected_pair();
         let h = serve_on(server);
 
-        send(&client, &Frame::Request { id: 1, method: "hello".into(), body: hello_body() });
+        send(&client, &req(1, "hello", hello_body()));
         let Frame::Response { id: 1, body: Some(_), error: None } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -484,7 +588,7 @@ mod tests {
             })
             .unwrap(),
         );
-        send(&client, &Frame::Request { id: 2, method: "find_search".into(), body });
+        send(&client, &req(2, "find_search", body));
         let Frame::Response { id: 2, body: Some(resp), error: None } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -518,7 +622,7 @@ mod tests {
         }
         #[allow(clippy::unwrap_used, reason = "test fixture")]
         let body = unframe_or_empty(wire::encode_frame(&H { wire_version: 999 }).unwrap());
-        send(&client, &Frame::Request { id: 1, method: "hello".into(), body });
+        send(&client, &req(1, "hello", body));
         let Frame::Response { error: Some(e), .. } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -538,10 +642,10 @@ mod tests {
     fn unknown_method_and_ping() {
         let (client, server) = connected_pair();
         let h = serve_on(server);
-        send(&client, &Frame::Request { id: 1, method: "hello".into(), body: hello_body() });
+        send(&client, &req(1, "hello", hello_body()));
         let _ = recv(&client);
 
-        send(&client, &Frame::Request { id: 5, method: "ping".into(), body: vec![] });
+        send(&client, &req(5, "ping", vec![]));
         let Frame::Response { id: 5, error: None, .. } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -549,7 +653,7 @@ mod tests {
             }
         };
 
-        send(&client, &Frame::Request { id: 6, method: "no.such".into(), body: vec![] });
+        send(&client, &req(6, "no.such", vec![]));
         let Frame::Response { id: 6, error: Some(e), .. } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
             {
@@ -566,7 +670,7 @@ mod tests {
     fn non_hello_first_frame_hangs_up() {
         let (client, server) = connected_pair();
         let h = serve_on(server);
-        send(&client, &Frame::Request { id: 1, method: "ping".into(), body: vec![] });
+        send(&client, &req(1, "ping", vec![]));
         let mut r = &client;
         #[allow(clippy::unwrap_used, reason = "test io")]
         let eof = crate::read_frame(&mut r).unwrap();
