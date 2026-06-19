@@ -49,6 +49,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 ### Security
 - **Hardened HTML export / Open-in-Browser against XSS** — author HTML is escaped on the export path and a restrictive Content-Security-Policy is shipped; the in-app HTML sanitizer's event-handler and `javascript:`-scheme bypasses are closed; exported image inlining refuses path-traversal.
 - **Robustness/DoS hardening** in the rust-core remote path (MessagePack recursion-depth cap, bounded orphan-event buffer), a SQLite use-after-free fix, an `ffmpeg` locator safety check, and several timer/observer memory-leak backstops.
+- **Closed a `javascript:` URL-smuggling XSS in rendered markdown** — a link whose scheme hides a stripped tab/newline (`java⇥script:`) that the browser collapses back to `javascript:` is now rewritten to `about:blank` instead of passed through.
 
 ### Performance
 - **Smoother typing in big files** — the bottom status bar (Lines / Chars / Size / indent / line-endings) no longer re-encodes and rescans the whole editor buffer on every keystroke; the readout now reuses its last result when the text hasn't changed and only recomputes on a real edit, so typing into large source files stays fluid.

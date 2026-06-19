@@ -505,7 +505,13 @@ pub enum UrlContext {
 /// and `data:` are rewritten so malicious markdown can't smuggle them.
 #[must_use]
 pub fn safe_url(raw: &str, ctx: UrlContext) -> String {
-    let trimmed = raw.trim();
+    // WebKit removes ASCII tab/LF/CR from a URL before parsing, so a scheme like
+    // "java\tscript:" would slip past the prefix check below and then execute
+    // (TSK-1000). Strip those control chars first so we evaluate the scheme the
+    // browser will actually see.
+    let normalized: String =
+        raw.chars().filter(|&c| c != '\t' && c != '\n' && c != '\r').collect();
+    let trimmed = normalized.trim();
     if trimmed.is_empty() {
         return "about:blank".to_owned();
     }
@@ -741,6 +747,25 @@ mod tests {
         // Fragment + relative survive untouched.
         assert_eq!(html("[s](#sec)"), "<p><a href=\"#sec\">s</a></p>\n");
         assert_eq!(html("[r](docs/x.md)"), "<p><a href=\"docs/x.md\">r</a></p>\n");
+    }
+
+    #[test]
+    fn safe_url_rejects_whitespace_smuggled_javascript() {
+        // TSK-1000: WebKit strips ASCII tab/LF/CR, so each of these collapses to
+        // "javascript:" in the browser — they must be rewritten to about:blank,
+        // not returned verbatim (the pre-fix behaviour, since the embedded control
+        // char made the scheme prefix look non-schemey).
+        for raw in [
+            "java\tscript:alert(1)",
+            "java\nscript:alert(1)",
+            "java\rscript:alert(1)",
+            "javascript\t:alert(1)",
+        ] {
+            assert_eq!(safe_url(raw, UrlContext::Link), "about:blank",
+                       "smuggled scheme {raw:?} must be rejected");
+        }
+        // A legitimate https URL is unaffected.
+        assert_eq!(safe_url("https://example.com", UrlContext::Link), "https://example.com");
     }
 
     #[test]
