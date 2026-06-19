@@ -1519,6 +1519,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         vimItem.target = self
         viewMenu.addItem(vimItem)
 
+        // Markdown Overview — the scaled document minimap drawn top-right in
+        // the source view for markdown files (TSK-305). Checkable, persisted,
+        // on by default. No default key equivalent.
+        let overviewItem = NSMenuItem(
+            title: "Markdown Overview",
+            action: #selector(toggleMarkdownOverview(_:)),
+            keyEquivalent: ""
+        )
+        overviewItem.target = self
+        viewMenu.addItem(overviewItem)
+
         // Editor (CM6) — code folding + go to line. Validated to
         // only enable when an editor tab is on screen.
         let foldAllItem = NSMenuItem(
@@ -2791,6 +2802,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(toggleVimMode(_:)):
             item.state = model.vimModeEnabled ? .on : .off
             return true   // a global editor preference — settable anytime
+        case #selector(toggleMarkdownOverview(_:)):
+            item.state = model.showMarkdownOverview ? .on : .off
+            return true   // a global view preference — settable anytime
         case #selector(cmFoldAll(_:)), #selector(cmUnfoldAll(_:)),
              #selector(cmGotoLine(_:)),
              #selector(lspGotoDefinition(_:)), #selector(lspGotoDeclaration(_:)),
@@ -3135,6 +3149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleVimMode(_ sender: Any?) {
         model.toggleVimMode()
+    }
+
+    @objc func toggleMarkdownOverview(_ sender: Any?) {
+        model.toggleMarkdownOverview()
     }
 
     @objc func cmFoldAll(_ sender: Any?) {

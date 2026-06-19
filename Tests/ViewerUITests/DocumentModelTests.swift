@@ -168,6 +168,25 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertTrue(makeModel().vimModeEnabled)
     }
 
+    // MARK: Markdown overview (TSK-305 — View → Markdown Overview preference)
+
+    func test_showMarkdownOverview_proxiesPreferences_andSeedsOnInit() {
+        let model = makeModel()
+        XCTAssertTrue(model.showMarkdownOverview, "on by default")
+
+        // The menu action toggles it OFF; that must persist + reseed.
+        model.toggleMarkdownOverview()
+        XCTAssertFalse(model.showMarkdownOverview)
+        XCTAssertFalse(PreferencesStore(defaults: defaults).showMarkdownOverview)
+        XCTAssertFalse(makeModel().showMarkdownOverview,
+                       "a fresh model over the same defaults seeds from prefs")
+
+        // Toggling back ON round-trips.
+        model.toggleMarkdownOverview()
+        XCTAssertTrue(model.showMarkdownOverview)
+        XCTAssertTrue(makeModel().showMarkdownOverview)
+    }
+
     func test_setEditorVimMode_normalizesAndClears() {
         let model = makeModel()
         XCTAssertEqual(model.editorVimMode, "", "off by default")

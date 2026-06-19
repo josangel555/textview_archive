@@ -193,6 +193,14 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleVimMode() { vimModeEnabled.toggle() }
 
+    /// Show the scaled document overview / minimap (top-right) for markdown
+    /// source views (TSK-305). On by default; toggled via View → Markdown
+    /// Overview. Persisted.
+    @Published public var showMarkdownOverview: Bool {
+        didSet { preferences.showMarkdownOverview = showMarkdownOverview }
+    }
+    public func toggleMarkdownOverview() { showMarkdownOverview.toggle() }
+
     /// The live vim mode reported by the editor ("NORMAL"/"INSERT"/"VISUAL…"),
     /// shown in the footer status bar. Empty when vim mode is off. Transient
     /// (not persisted) — driven by `CodeMirrorEditorView.onVimModeChange`.
@@ -428,6 +436,7 @@ public final class DocumentModel: ObservableObject {
         self.showPreviewMetadataPanel = preferences.previewMetadataVisible
         self.showInvisibleChars = preferences.showInvisibleChars
         self.vimModeEnabled = preferences.vimModeEnabled
+        self.showMarkdownOverview = preferences.showMarkdownOverview
         self.sourceFontName = preferences.sourceFontName
         self.editorIndentGuides = preferences.editorIndentGuides
         self.audioFFmpegPath = preferences.audioFFmpegPath

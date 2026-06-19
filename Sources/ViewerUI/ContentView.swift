@@ -1005,6 +1005,30 @@ struct SourceModeView: View {
                         hoveredLine: hoveredSourceLine,
                         theme: model.activeTheme
                     )
+                    // TSK-305: scaled document overview / minimap, top-right.
+                    // Markdown only (it maps the heading structure). Drawn
+                    // AFTER the text in the ZStack so its own layer sits above
+                    // the source rows; .compositingGroup() guards against the
+                    // sibling-occlusion class (LESSONS) in every layout branch.
+                    if lang == .markdown && model.showMarkdownOverview {
+                        let segments = MarkdownOverview.segments(in: displayed)
+                        if !segments.isEmpty {
+                            MarkdownOverviewView(
+                                segments: segments,
+                                topVisibleLine: sourceView.sourceScrollState.topVisibleLine,
+                                visibleLineCount: Self.visibleLineCount(
+                                    sourceView.sourceScrollState),
+                                theme: model.activeTheme,
+                                onClickLine: { line in
+                                    model.scrollSource(toLine: line)
+                                }
+                            )
+                            .compositingGroup()
+                            .padding(.trailing, 2)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity,
+                                   alignment: .topTrailing)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onContinuousHover { phase in
@@ -1073,6 +1097,15 @@ struct SourceModeView: View {
             return model.effectiveLanguage(forTabID: id, url: file.url)
         }
         return HighlightLanguage.detect(from: file.url)
+    }
+
+    /// Estimate how many source lines fit in the viewport — drives the
+    /// markdown overview's "you are here" marker height (TSK-305). Falls back
+    /// to nil when the geometry isn't usable yet (pre-first-paint), so the
+    /// marker degrades to a thin line at the top-visible line.
+    static func visibleLineCount(_ state: SourceScrollState) -> Int? {
+        guard state.lineHeight > 0, state.viewportHeight > 0 else { return nil }
+        return max(1, Int((state.viewportHeight / state.lineHeight).rounded()))
     }
 
     /// Cache lookup via the per-tab actor. .diff/.patch use the

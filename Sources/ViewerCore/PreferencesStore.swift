@@ -21,6 +21,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
         static let vimModeEnabled = "MarkdownViewer.vimModeEnabled"
+        static let showMarkdownOverview = "MarkdownViewer.showMarkdownOverview"
         static let editorIndentGuides = "MarkdownViewer.editorIndentGuides"
         static let themeOverride = "MarkdownViewer.themeOverride"
         /// Legacy chrome-scale preference, retired when `uiScale` and
@@ -125,6 +126,15 @@ public final class PreferencesStore: @unchecked Sendable {
     public var vimModeEnabled: Bool {
         get { defaults.object(forKey: Key.vimModeEnabled) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.vimModeEnabled) }
+    }
+
+    /// Show the scaled document overview / minimap in the source view's
+    /// top-right for markdown documents (TSK-305). On by default — it's a
+    /// passive structure map you can click to scroll. Backs the
+    /// View → Markdown Overview menu toggle.
+    public var showMarkdownOverview: Bool {
+        get { defaults.object(forKey: Key.showMarkdownOverview) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.showMarkdownOverview) }
     }
 
     /// Render vertical indentation guide lines in the CM6 editor (the
@@ -342,6 +352,7 @@ public final class PreferencesStore: @unchecked Sendable {
         s.sourceFontName = sourceFontName
         s.showInvisibleChars = showInvisibleChars
         s.vimModeEnabled = vimModeEnabled
+        s.showMarkdownOverview = showMarkdownOverview
         s.editorIndentGuides = editorIndentGuides
         s.themeOverride = themeOverrideRaw
         s.hexBytesPerRow = hexBytesPerRow
@@ -367,6 +378,7 @@ public final class PreferencesStore: @unchecked Sendable {
         if let v = s.sourceFontName { sourceFontName = v }
         if let v = s.showInvisibleChars { showInvisibleChars = v }
         if let v = s.vimModeEnabled { vimModeEnabled = v }
+        if let v = s.showMarkdownOverview { showMarkdownOverview = v }
         if let v = s.editorIndentGuides { editorIndentGuides = v }
         if let v = s.themeOverride { themeOverrideRaw = v }
         if let v = s.hexBytesPerRow { hexBytesPerRow = v }
@@ -395,6 +407,7 @@ public struct SettingsSnapshot: Codable, Equatable {
     public var sourceFontName: String?
     public var showInvisibleChars: Bool?
     public var vimModeEnabled: Bool?
+    public var showMarkdownOverview: Bool?
     public var editorIndentGuides: Bool?
     public var themeOverride: String?
     public var hexBytesPerRow: Int?
