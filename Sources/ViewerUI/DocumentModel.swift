@@ -1128,6 +1128,22 @@ public final class DocumentModel: ObservableObject {
         goToPathHistory.record(absolutePath)
     }
 
+    /// Recents to surface alongside the native Open dialog (TSK-746).
+    /// Merges the two persisted sources — typed Go-to paths
+    /// (`goToPathHistory`, newest-first) ahead of opened files/folders
+    /// (`history`, newest-first) — then de-dups, drops paths that no
+    /// longer exist, and caps. The Go-to paths lead because they're the
+    /// user's most deliberate "open this" intents. Pure derivation lives
+    /// in `OpenPanelRecents` (host-tested); this just supplies the merged
+    /// source list.
+    public func openPanelRecents(
+        limit: Int = OpenPanelRecents.defaultLimit
+    ) -> [OpenPanelRecentEntry] {
+        let merged = goToPathHistory.recent()
+            + history.recent().map { $0.url.path }
+        return OpenPanelRecents.derive(from: merged, limit: limit)
+    }
+
     /// Headless equivalent of `GoToPathPrompt.submit(newSession:)`. The
     /// script runner can't drive the prompt's local TextField, so this
     /// method exposes the same expand → validate → open path so VM UI
