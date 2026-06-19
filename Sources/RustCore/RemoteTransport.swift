@@ -3,7 +3,8 @@ import Foundation
 /// One pushed subscription event (protocol §5): per-sub monotonic `seq`,
 /// a `kind` (`created`/`changed`/`deleted`/`resync` for fs.watch;
 /// `events`/`resync` for transcript.follow), and the unframed MessagePack
-/// body. Delivered ON THE READER THREAD — consumers hop as needed.
+/// body. Delivered ON A PER-TRANSPORT SERIAL QUEUE (TSK-976), in arrival
+/// order — consumers hop as needed.
 public struct RemoteEvent: Sendable {
     public let sub: UInt64
     public let seq: UInt64
@@ -18,11 +19,22 @@ public struct RemoteEvent: Sendable {
 ///
 /// Concurrency model (TSK-664): one background READER THREAD owns every
 /// socket read and demuxes frames — responses fill per-call slots (callers
-/// block on an NSCondition with a deadline), events dispatch to registered
-/// subscription handlers. Writes serialize under their own lock, so calls
-/// from multiple threads interleave correctly with pushed events. Reader
-/// failure (EOF, io error) fails ALL pending calls, drops subscriptions,
-/// and fires `onClose` once.
+/// block on an NSCondition with a deadline), events are handed to a
+/// per-transport SERIAL DELIVERY QUEUE (TSK-976) that invokes the registered
+/// subscription handlers in arrival order, OFF the reader thread (so a slow
+/// handler can't stall the demux). Writes serialize under their own lock, so
+/// calls from multiple threads interleave correctly with pushed events.
+/// Reader failure (EOF, io error) fails ALL pending calls, drops
+/// subscriptions, and fires `onClose` once.
+///
+/// Unsubscribe contract (TSK-976): `unsubscribe` nils the handler under the
+/// `state` lock and then drains the delivery queue with a `sync` barrier, so
+/// NO handler invocation for that sub can run after `unsubscribe` returns.
+/// The delivery block also re-checks the sub under the lock at the instant of
+/// the call, so an event the reader demuxed before the nil-out is dropped
+/// rather than delivered to a torn-down handler (the prior copy-out-then-call
+/// raced: a handler could fire after `unsubscribe` had already returned and
+/// the closure's captured state had been torn down).
 public final class RemoteTransport: CoreTransport, @unchecked Sendable {
 
     private let fd: Int32
@@ -41,6 +53,11 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     private var closedError: RemoteError?
     /// Serializes socket writes (requests only — the reader never writes).
     private let writeLock = NSLock()
+    /// Serial queue that invokes subscription handlers in arrival order, off
+    /// the reader thread (TSK-976). `unsubscribe` issues a `sync` barrier on
+    /// it so no handler runs after `unsubscribe` returns; a slow handler
+    /// stalls only this queue, never the reader's demux.
+    private let deliveryQueue = DispatchQueue(label: "RemoteTransport.delivery")
     /// Fired once when the reader exits (nil error = clean EOF). Set it
     /// before issuing calls/subscriptions; delivered on the reader thread.
     public var onClose: (@Sendable (RemoteError?) -> Void)?
@@ -81,11 +98,55 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     }
 
     deinit {
+        guard fd >= 0 else { return }   // socket-less test instance
         // shutdown() wakes a reader blocked in read(); close() alone does
         // not reliably interrupt a blocked read on macOS.
         shutdown(fd, SHUT_RDWR)
         close(fd)
     }
+
+#if DEBUG
+    /// TSK-976 test seam: a socket-less instance (no fd, no reader thread) so
+    /// the subscription state machine — `subscribe`-registered handler,
+    /// `route` event delivery, `dropHandler` teardown — is exercisable in a
+    /// pure-logic host test with NO `mdv-serve` and NO socket. The dialing
+    /// init is the only production path; this one never touches the wire.
+    init(testSocketlessCapabilities caps: UInt64 = 0) {
+        self.fd = -1
+        self.capabilities = caps
+    }
+
+    /// Register a handler WITHOUT the server round-trip (the part of
+    /// `subscribe` after the `call`). Returns nothing the wire would have
+    /// minted — the caller supplies the sub id.
+    func _testRegister(_ sub: UInt64, handler: @escaping @Sendable (RemoteEvent) -> Void) {
+        state.lock()
+        let raced = orphanEvents.removeValue(forKey: sub) ?? []
+        subs[sub] = handler
+        state.unlock()
+        for event in raced {
+            deliveryQueue.async { [weak self] in self?.deliver(event) }
+        }
+    }
+
+    /// Drive the reader-side event path directly (no socket frame to decode).
+    func _testRoute(_ event: RemoteEvent) {
+        route(.event(event))
+    }
+
+    /// The local half of `unsubscribe` (nil-out + barrier), WITHOUT the
+    /// server `call` — this is the part that provides the no-events-after
+    /// guarantee, and the part a socket-less test can exercise.
+    func _testDropHandler(_ sub: UInt64) {
+        dropHandler(sub)
+    }
+
+    /// Block until the delivery queue has drained everything enqueued so far
+    /// — a deterministic flush point for assertions in tests.
+    func _testDrainDelivery() {
+        deliveryQueue.sync {}
+    }
+#endif
 
     // MARK: - CoreTransport
 
@@ -169,8 +230,10 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     // MARK: - Subscriptions (TSK-664)
 
     /// Issue a subscription request (`fs.watch`, `transcript.follow`) and
-    /// register `handler` for its events. Events that raced the response
-    /// are flushed to the handler in order before this returns.
+    /// register `handler` for its events. Events that raced the response are
+    /// flushed to the handler IN ORDER on the delivery queue (ahead of any
+    /// later-arriving live events, since the queue is FIFO and the reader has
+    /// not yet routed any post-registration event).
     public func subscribe(
         _ method: String,
         requestBody: [UInt8],
@@ -186,19 +249,41 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
         let raced = orphanEvents.removeValue(forKey: sub) ?? []
         subs[sub] = handler
         state.unlock()
-        raced.forEach(handler)
+        // Flush raced events through the SAME serial queue used for live
+        // delivery, so a concurrent unsubscribe's barrier drains them too and
+        // they never overtake / fall behind live events for this sub.
+        for event in raced {
+            deliveryQueue.async { [weak self] in self?.deliver(event) }
+        }
         return sub
     }
 
     /// Drop the handler and tell the server (`fs.unwatch` serves every
     /// subscription kind; `transcript.unfollow` is an accepted alias).
+    ///
+    /// The local teardown (nil-out + delivery-queue drain) happens BEFORE the
+    /// server round-trip so the no-events-after-unsubscribe guarantee holds
+    /// even if the `call` itself throws (e.g. the server died) — see
+    /// `dropHandler`.
     public func unsubscribe(_ sub: UInt64, method: String = "fs.unwatch") throws {
+        dropHandler(sub)
+        let body = MsgPackValue.map([(.string("sub"), .uint(sub))]).encode()
+        _ = try call(method, requestBody: body)
+    }
+
+    /// Local half of unsubscribe (TSK-976): forget the handler under the lock,
+    /// then drain the delivery queue with a `sync` barrier so any event the
+    /// reader already enqueued runs (and is dropped by the live re-check) or
+    /// completes BEFORE this returns. After this, no `deliver(_:)` for `sub`
+    /// can invoke its handler — `deliver` re-checks `subs[sub]` under the lock.
+    private func dropHandler(_ sub: UInt64) {
         state.lock()
         subs[sub] = nil
         orphanEvents[sub] = nil
         state.unlock()
-        let body = MsgPackValue.map([(.string("sub"), .uint(sub))]).encode()
-        _ = try call(method, requestBody: body)
+        // Barrier: wait out anything already on the queue. We never call this
+        // FROM the delivery queue, so this cannot deadlock.
+        deliveryQueue.sync {}
     }
 
     // MARK: - Reader thread
@@ -295,9 +380,15 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
             slot.cond.unlock()
         case .event(let event):
             state.lock()
-            if let handler = subs[event.sub] {
+            if subs[event.sub] != nil {
                 state.unlock()
-                handler(event)
+                // Hand off to the serial delivery queue rather than calling
+                // the handler on the reader thread. `deliver` re-checks the
+                // sub under the lock at call time, so an unsubscribe that
+                // lands between here and the dequeue drops this event — and
+                // its `sync` barrier guarantees no handler runs after
+                // `unsubscribe` returns (TSK-976).
+                deliveryQueue.async { [weak self] in self?.deliver(event) }
                 return
             }
             // Pre-registration race: buffer (bounded) until subscribe()
@@ -309,6 +400,17 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
             }
             state.unlock()
         }
+    }
+
+    /// Runs on the serial delivery queue. Re-reads the live handler UNDER the
+    /// `state` lock — if `unsubscribe`/`readerDidExit` nilled it after the
+    /// reader enqueued this event, the event is dropped, never delivered to a
+    /// torn-down handler (TSK-976).
+    private func deliver(_ event: RemoteEvent) {
+        state.lock()
+        let handler = subs[event.sub]
+        state.unlock()
+        handler?(event)
     }
 
     /// Reader teardown: fail every waiting call, drop subscriptions, fire
