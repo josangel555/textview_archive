@@ -35,6 +35,7 @@ use mdvcore_core::image::{self, ImageInfo};
 use mdvcore_core::meta;
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
+use mdvcore_core::theme::{self, Mode, Role};
 use mdvcore_core::view::{self, DiffLine, DiffLineKind, FileKind, ViewBody, ViewMode};
 use mdvcore_core::whitespace;
 use mdvcore_highlight::{Lang, Segment, TokenKind};
@@ -1701,46 +1702,59 @@ fn base64_encode(data: &[u8]) -> String {
     out
 }
 
-fn page(title: &str, nav: &str, main_html: &str) -> String {
+/// CSS hex for `role` in `mode`, sourced from the shared `core::theme` contract
+/// (TSK-573). Every semantic palette color the web paints flows through this so
+/// the look lives in ONE place across all front-ends — not as inline literals.
+fn rc(mode: Mode, role: Role) -> String {
+    theme::css_hex(theme::Palette::for_mode(mode).color(role))
+}
+
+/// The page `<style>` body, with every semantic color resolved from
+/// `core::theme` (TSK-573). Pure-neutral chrome (hairline greys, subtle fills,
+/// the fixed yellow/orange find-hit backgrounds) stays as literals — those have
+/// no contract role yet; the palette-able colors (link, body text/background,
+/// surface, success/warning, diff, syntax tokens, the accent) are role-driven.
+fn palette_css() -> String {
+    // Light = the base CSS; Dark = the `prefers-color-scheme` override block.
+    let l = Mode::Light;
+    let d = Mode::Dark;
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t} · mdv-web</title>\
-<style>\
-*{{box-sizing:border-box}}\
-body{{margin:0;font:13px -apple-system,Segoe UI,sans-serif;color:#222;background:#fff}}\
+        "*{{box-sizing:border-box}}\
+body{{margin:0;font:13px -apple-system,Segoe UI,sans-serif;color:{l_text};background:{l_bg}}}\
 .app{{display:flex;height:100vh}}\
-nav{{width:300px;min-width:240px;overflow:auto;border-right:1px solid #ddd;background:#fafafa;padding:8px}}\
+nav{{width:300px;min-width:240px;overflow:auto;border-right:1px solid #ddd;background:{l_surface};padding:8px}}\
 nav ul{{list-style:none;margin:0;padding:0}}\
 nav li{{padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}\
-nav a{{text-decoration:none;color:#1a5fb4}}\
-nav .dir a{{color:#0a7;font-weight:600}}\
-nav .sel{{background:#1a5fb4;border-radius:4px}} nav .sel a{{color:#fff}}\
+nav a{{text-decoration:none;color:{l_link}}}\
+nav .dir a{{color:{l_success};font-weight:600}}\
+nav .sel{{background:{l_link};border-radius:4px}} nav .sel a{{color:#fff}}\
 main{{flex:1;overflow:auto;padding:12px}}\
 .bar{{font:12px ui-monospace,Menlo,monospace;color:#666;margin:6px 0}}\
 .crumbs{{font:12px ui-monospace,Menlo,monospace;color:#666;margin:6px 0;word-break:break-all}}\
-.crumbs a{{color:#1a5fb4;text-decoration:none}}\
+.crumbs a{{color:{l_link};text-decoration:none}}\
 .crumbs .sep{{color:#bbb;margin:0 4px}} .crumbs .here{{color:#333;font-weight:600}}\
-.banner{{font:12px -apple-system,Segoe UI,sans-serif;color:#8a6d00;background:#fff8e1;border:1px solid #f0e0a0;border-radius:4px;padding:4px 8px;margin:0 0 8px}}\
-.reload{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}} .reload a{{color:#1a5fb4;text-decoration:none}}\
+.banner{{font:12px -apple-system,Segoe UI,sans-serif;color:{l_warning};background:#fff8e1;border:1px solid #f0e0a0;border-radius:4px;padding:4px 8px;margin:0 0 8px}}\
+.reload{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}} .reload a{{color:{l_link};text-decoration:none}}\
 .find{{display:flex;gap:4px;align-items:center;margin:0 0 6px;flex-wrap:wrap}}\
 .find input[type=text]{{flex:1;min-width:80px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
 .find button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
-.find .clear{{font:11px -apple-system,Segoe UI,sans-serif;color:#1a5fb4;text-decoration:none}}\
+.find .clear{{font:11px -apple-system,Segoe UI,sans-serif;color:{l_link};text-decoration:none}}\
 .find .count{{font:11px ui-monospace,Menlo,monospace;color:#888;margin-left:4px}}\
 .minimap{{display:inline-flex;gap:1px;align-items:center;height:14px;margin-left:6px}}\
 .minimap i{{width:3px;height:12px;background:#e6e6e6;border-radius:1px}}\
-.minimap i.hit{{background:#1a5fb4}} .minimap i.cur{{background:#f0a020}}\
+.minimap i.hit{{background:{l_link}}} .minimap i.cur{{background:#f0a020}}\
 .gitstatus{{font:11px ui-monospace,Menlo,monospace;margin:0 0 6px;padding:2px 6px;border-radius:4px;display:inline-block}}\
-.gitstatus.clean{{color:#1a7f37;background:#eaf6ec}} .gitstatus.dirty{{color:#8a6d00;background:#fff8e1}}\
+.gitstatus.clean{{color:{l_success};background:#eaf6ec}} .gitstatus.dirty{{color:{l_warning};background:#fff8e1}}\
 .sort{{font:11px -apple-system,Segoe UI,sans-serif;color:#888;margin:0 0 4px}}\
-.sort a{{color:#1a5fb4;margin-right:6px}} .sort b{{margin-right:6px;color:#333}}\
+.sort a{{color:{l_link};margin-right:6px}} .sort b{{margin-right:6px;color:#333}}\
 .hidden-toggle{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}}\
-.hidden-toggle a{{color:#1a5fb4}}\
+.hidden-toggle a{{color:{l_link}}}\
 .modes a,.modes b{{margin-right:10px}}\
-.outline{{margin:0 0 10px;border:1px solid #e3e3e3;border-radius:6px;padding:4px 10px;background:#fafafa}}\
+.outline{{margin:0 0 10px;border:1px solid #e3e3e3;border-radius:6px;padding:4px 10px;background:{l_surface}}}\
 .outline summary{{cursor:pointer;font:11px -apple-system,Segoe UI,sans-serif;color:#666;user-select:none}}\
 .outline ul{{list-style:none;margin:4px 0 2px;padding:0}}\
 .outline li{{padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}\
-.outline a{{text-decoration:none;color:#1a5fb4}}\
+.outline a{{text-decoration:none;color:{l_link}}}\
 .outline .lvl1{{padding-left:0;font-weight:600}}\
 .outline .lvl2{{padding-left:14px}} .outline .lvl3{{padding-left:28px}}\
 .outline .lvl4{{padding-left:42px}} .outline .lvl5{{padding-left:56px}}\
@@ -1748,65 +1762,108 @@ main{{flex:1;overflow:auto;padding:12px}}\
 .goto{{display:flex;gap:4px;align-items:center;margin:0 0 6px;flex-wrap:wrap}}\
 .goto input[type=number]{{width:90px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
 .goto button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
-.goto .jump{{font:11px -apple-system,Segoe UI,sans-serif;color:#1a5fb4;text-decoration:none}}\
+.goto .jump{{font:11px -apple-system,Segoe UI,sans-serif;color:{l_link};text-decoration:none}}\
 pre{{font:12px ui-monospace,Menlo,monospace;white-space:pre;overflow:auto;margin:0}}\
 .code{{display:flex;align-items:flex-start}}\
 .code pre{{line-height:1.4}}\
-.gutter{{-webkit-user-select:none;user-select:none;text-align:right;color:#999;padding-right:10px;border-right:1px solid #eee;margin-right:10px;overflow:visible;flex:none}}\
+.gutter{{-webkit-user-select:none;user-select:none;text-align:right;color:{l_gutter};padding-right:10px;border-right:1px solid #eee;margin-right:10px;overflow:visible;flex:none}}\
 .src{{flex:1}}\
 .code .cur{{background:#fff3b0;scroll-margin-top:12px}}\
-.tok-kw{{color:#a626a4}} .tok-str{{color:#50a14f}} .tok-num{{color:#b76b01}}\
-.tok-com{{color:#a0a1a7;font-style:italic}} .tok-fn{{color:#4078f2}} .tok-ty{{color:#c18401}}\
-.tok-at{{color:#0184bc}} .tok-tag{{color:#4078f2}}\
+.tok-kw{{color:{l_kw}}} .tok-str{{color:{l_str}}} .tok-num{{color:{l_num}}}\
+.tok-com{{color:{l_com};font-style:italic}} .tok-fn{{color:{l_fn}}} .tok-ty{{color:{l_ty}}}\
+.tok-at{{color:{l_at}}} .tok-tag{{color:{l_fn}}}\
 table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace;table-layout:fixed}}\
 th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}\
 th{{background:#eef;position:sticky;top:0}}\
 th.hit,td.hit{{background:#fff3b0}} th.cur,td.cur{{background:#f0a020;color:#000;scroll-margin-top:40px}}\
 .hint{{color:#999}}\
 .help{{margin:12px 0;font:13px -apple-system,Segoe UI,sans-serif;max-width:640px}}\
-.help summary{{cursor:pointer;color:#1a5fb4;user-select:none}}\
+.help summary{{cursor:pointer;color:{l_link};user-select:none}}\
 .help ul{{margin:6px 0 0;padding-left:18px}} .help li{{margin:3px 0;color:#444}}\
 .grep-box{{display:flex;gap:6px;margin:0 0 12px;max-width:640px}}\
 .grep-box input[type=text]{{flex:1;font:13px -apple-system,Segoe UI,sans-serif;padding:4px 8px;border:1px solid #ccc;border-radius:4px}}\
 .grep-box button{{font:12px -apple-system,Segoe UI,sans-serif;padding:4px 10px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
 ul.grep{{list-style:none;margin:8px 0;padding:0;font:13px -apple-system,Segoe UI,sans-serif}}\
 ul.grep ul{{list-style:none;margin:2px 0 8px;padding-left:16px}}\
-.grepfile>a{{font-weight:600;color:#1a5fb4;text-decoration:none}}\
+.grepfile>a{{font-weight:600;color:{l_link};text-decoration:none}}\
 ul.grep li a{{text-decoration:none;color:#333}} ul.grep li a:hover{{background:#f0f4ff}}\
 ul.grep .ln{{display:inline-block;min-width:3em;color:#999;text-align:right;margin-right:8px;font:12px ui-monospace,Menlo,monospace}}\
 pre.diff{{line-height:1.4}}\
 pre.diff span{{display:block}}\
-.diff-file{{color:#1a5fb4;font-weight:600}}\
-.diff-hunk{{color:#7a3fb4;background:#f3eefb}}\
-.diff-add{{color:#0a7d28;background:#e9f7ec}}\
-.diff-del{{color:#c01c28;background:#fbecec}}\
-.diff-ctx{{color:#444}}\
-.imgcard{{font:12px ui-monospace,Menlo,monospace;color:#444;margin:0 0 10px;padding:6px 10px;border:1px solid #e3e3e3;border-radius:6px;background:#fafafa}}\
+.diff-file{{color:{l_link};font-weight:600}}\
+.diff-hunk{{color:{l_hunk};background:#f3eefb}}\
+.diff-add{{color:{l_add};background:#e9f7ec}}\
+.diff-del{{color:{l_del};background:#fbecec}}\
+.diff-ctx{{color:{l_ctx}}}\
+.imgcard{{font:12px ui-monospace,Menlo,monospace;color:#444;margin:0 0 10px;padding:6px 10px;border:1px solid #e3e3e3;border-radius:6px;background:{l_surface}}}\
 .imgview{{max-width:100%;height:auto;border:1px solid #ddd;border-radius:4px;background:repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 50%/16px 16px}}\
 @media (prefers-color-scheme: dark){{\
-body{{color:#ddd;background:#1e1e1e}}\
-nav{{background:#252526;border-right-color:#333}}\
-a,nav a,.crumbs a,.sort a,.find .clear,.reload a,.hidden-toggle a,.outline a,.goto .jump{{color:#5a9cf5}}\
-nav .dir a{{color:#3ec9a0}} nav .sel{{background:#0d57b5}}\
+body{{color:{d_text};background:{d_bg}}}\
+nav{{background:{d_surface};border-right-color:#333}}\
+a,nav a,.crumbs a,.sort a,.find .clear,.reload a,.hidden-toggle a,.outline a,.goto .jump{{color:{d_link}}}\
+nav .dir a{{color:{d_success}}} nav .sel{{background:#0d57b5}}\
 .bar,.crumbs,.sort,.find .count,.hint,.outline summary{{color:#9aa0a6}}\
 .crumbs .sep{{color:#666}} .crumbs .here{{color:#ddd}}\
 input,textarea,.find button,.goto button{{background:#2d2d2d;border-color:#444;color:#ddd}}\
-.outline,.imgcard{{background:#252526;border-color:#3a3a3a;color:#bbb}}\
+.outline,.imgcard{{background:{d_surface};border-color:#3a3a3a;color:#bbb}}\
 .banner{{background:#3a3320;border-color:#6b5e2a;color:#e6d48a}}\
-.gutter{{color:#777;border-right-color:#333}} .code .cur{{background:#5a4b00}}\
-.tok-kw{{color:#c678dd}} .tok-str{{color:#98c379}} .tok-num{{color:#d19a66}}\
-.tok-com{{color:#7f848e}} .tok-fn{{color:#61afef}} .tok-ty{{color:#e5c07b}}\
-.tok-at{{color:#56b6c2}} .tok-tag{{color:#61afef}}\
+.gutter{{color:{d_gutter};border-right-color:#333}} .code .cur{{background:#5a4b00}}\
+.tok-kw{{color:{d_kw}}} .tok-str{{color:{d_str}}} .tok-num{{color:{d_num}}}\
+.tok-com{{color:{d_com}}} .tok-fn{{color:{d_fn}}} .tok-ty{{color:{d_ty}}}\
+.tok-at{{color:{d_at}}} .tok-tag{{color:{d_fn}}}\
 th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
-.diff-hunk{{color:#c8a6ff;background:#2a2336}}\
-.diff-add{{color:#7ee2a8;background:#16301f}}\
-.diff-del{{color:#ff9aa2;background:#3a1f22}}\
-.diff-ctx{{color:#bbb}} .diff-file{{color:#5a9cf5}}\
-.minimap i{{background:#3a3a3a}} .minimap i.hit{{background:#5a9cf5}} .minimap i.cur{{background:#f0a020}}\
-.gitstatus.clean{{color:#7ee787;background:#16291b}} .gitstatus.dirty{{color:#e3b341;background:#2b2410}}\
-}}\
-</style></head><body><div class=\"app\"><nav><div class=\"reload\"><a href=\"/recent\">\u{2605} Recent</a></div>{nav}</nav><main>{main_html}</main></div></body></html>",
-        t = esc(title)
+.diff-hunk{{color:{d_hunk};background:#2a2336}}\
+.diff-add{{color:{d_add};background:#16301f}}\
+.diff-del{{color:{d_del};background:#3a1f22}}\
+.diff-ctx{{color:{d_ctx}}} .diff-file{{color:{d_link}}}\
+.minimap i{{background:#3a3a3a}} .minimap i.hit{{background:{d_link}}} .minimap i.cur{{background:#f0a020}}\
+.gitstatus.clean{{color:{d_success};background:#16291b}} .gitstatus.dirty{{color:{d_warning};background:#2b2410}}\
+}}",
+        l_text = rc(l, Role::Text),
+        l_bg = rc(l, Role::Background),
+        l_surface = rc(l, Role::Surface),
+        l_link = rc(l, Role::Link),
+        l_success = rc(l, Role::Success),
+        l_warning = rc(l, Role::Warning),
+        l_gutter = rc(l, Role::Gutter),
+        l_kw = rc(l, Role::SynKeyword),
+        l_str = rc(l, Role::SynString),
+        l_num = rc(l, Role::SynNumber),
+        l_com = rc(l, Role::SynComment),
+        l_fn = rc(l, Role::SynFunction),
+        l_ty = rc(l, Role::SynType),
+        l_at = rc(l, Role::SynAttribute),
+        l_hunk = rc(l, Role::Hunk),
+        l_add = rc(l, Role::Added),
+        l_del = rc(l, Role::Removed),
+        l_ctx = rc(l, Role::Context),
+        d_text = rc(d, Role::Text),
+        d_bg = rc(d, Role::Background),
+        d_surface = rc(d, Role::Surface),
+        d_link = rc(d, Role::Link),
+        d_success = rc(d, Role::Success),
+        d_warning = rc(d, Role::Warning),
+        d_gutter = rc(d, Role::Gutter),
+        d_kw = rc(d, Role::SynKeyword),
+        d_str = rc(d, Role::SynString),
+        d_num = rc(d, Role::SynNumber),
+        d_com = rc(d, Role::SynComment),
+        d_fn = rc(d, Role::SynFunction),
+        d_ty = rc(d, Role::SynType),
+        d_at = rc(d, Role::SynAttribute),
+        d_hunk = rc(d, Role::Hunk),
+        d_add = rc(d, Role::Added),
+        d_del = rc(d, Role::Removed),
+        d_ctx = rc(d, Role::Context),
+    )
+}
+
+fn page(title: &str, nav: &str, main_html: &str) -> String {
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t} · mdv-web</title>\
+<style>{css}</style></head><body><div class=\"app\"><nav><div class=\"reload\"><a href=\"/recent\">\u{2605} Recent</a></div>{nav}</nav><main>{main_html}</main></div></body></html>",
+        t = esc(title),
+        css = palette_css(),
     )
 }
 
@@ -2032,6 +2089,108 @@ mod tests {
         png.extend_from_slice(&8u32.to_be_bytes());
         fs::write(dir.join("pixel.png"), &png).unwrap();
         dir
+    }
+
+    // --- TSK-573: the web CSS palette is sourced from `core::theme` ---
+
+    /// Every CSS class the web routes through a [`Role`], paired with the role
+    /// it maps and the CSS selector substring whose color must equal the
+    /// contract's hex. The light value lands in the base block, the dark value
+    /// in the `@media (prefers-color-scheme: dark)` override.
+    ///
+    /// This is the contract: a regression that hard-codes a literal again (or
+    /// drifts a role's value) fails here because the generated CSS no longer
+    /// contains `css_hex(color(role))`.
+    const WEB_ROLE_RULES: &[(&str, Role)] = &[
+        ("nav a{text-decoration:none;color:", Role::Link),
+        ("nav .dir a{color:", Role::Success),
+        (".gitstatus.dirty{color:", Role::Warning),
+        (".tok-kw{color:", Role::SynKeyword),
+        (".tok-str{color:", Role::SynString),
+        (".tok-num{color:", Role::SynNumber),
+        (".tok-com{color:", Role::SynComment),
+        (".tok-fn{color:", Role::SynFunction),
+        (".tok-ty{color:", Role::SynType),
+        (".tok-at{color:", Role::SynAttribute),
+        (".diff-hunk{color:", Role::Hunk),
+        (".diff-add{color:", Role::Added),
+        (".diff-del{color:", Role::Removed),
+        (".diff-ctx{color:", Role::Context),
+        (".gutter{-webkit-user-select:none;user-select:none;text-align:right;color:", Role::Gutter),
+    ];
+
+    #[test]
+    fn web_css_emits_contract_hex_for_every_mapped_role_light() {
+        // The base (light) block must carry each role's LIGHT contract hex.
+        let css = palette_css();
+        for &(selector, role) in WEB_ROLE_RULES {
+            let want = theme::css_hex(theme::Palette::for_mode(Mode::Light).color(role));
+            let rule = format!("{selector}{want}");
+            assert!(
+                css.contains(&rule),
+                "light CSS for {role:?} must be the contract hex {want} \
+                 (looked for `{rule}`):\n{css}"
+            );
+        }
+        // Body fg/bg + surface come straight from the contract too.
+        assert!(css.contains(&format!(
+            "color:{};background:{}",
+            theme::css_hex(theme::Palette::for_mode(Mode::Light).color(Role::Text)),
+            theme::css_hex(theme::Palette::for_mode(Mode::Light).color(Role::Background)),
+        )));
+    }
+
+    #[test]
+    fn web_css_emits_contract_hex_for_every_mapped_role_dark() {
+        // The dark override block must carry each role's DARK contract hex.
+        let css = palette_css();
+        let (_, dark) = css
+            .split_once("@media (prefers-color-scheme: dark){")
+            .expect("dark override block present");
+        for &(_selector, role) in WEB_ROLE_RULES {
+            let want = theme::css_hex(theme::Palette::for_mode(Mode::Dark).color(role));
+            assert!(
+                dark.contains(&format!("color:{want}")) || dark.contains(&format!("background:{want}")),
+                "dark CSS must carry the contract hex {want} for {role:?}:\n{dark}"
+            );
+        }
+        // Dark body background == the contract Background value (not a literal).
+        let bg = theme::css_hex(theme::Palette::for_mode(Mode::Dark).color(Role::Background));
+        assert!(dark.contains(&format!("background:{bg}")), "dark body bg from contract:\n{dark}");
+    }
+
+    #[test]
+    fn web_css_has_no_silently_divergent_role_color() {
+        // Guard: for each mapped role, the value the web emits must be EXACTLY
+        // the contract value in both modes — never a stale near-duplicate. We
+        // assert the contract hex is present AND that the OTHER mode's hex for
+        // that role does not appear where this mode's should (caught via the
+        // split above being non-overlapping for distinct values).
+        let css = palette_css();
+        let (light, dark) = css
+            .split_once("@media (prefers-color-scheme: dark){")
+            .expect("dark override block present");
+        for &(_selector, role) in WEB_ROLE_RULES {
+            let l = theme::css_hex(theme::Palette::for_mode(Mode::Light).color(role));
+            let d = theme::css_hex(theme::Palette::for_mode(Mode::Dark).color(role));
+            assert!(light.contains(&l), "light block missing contract {role:?} {l}");
+            assert!(dark.contains(&d), "dark block missing contract {role:?} {d}");
+            // Contract guarantees light != dark per role; if the web ever emitted
+            // the same literal in both, that's the divergence we forbid.
+            assert_ne!(l, d, "contract must keep {role:?} distinct per mode");
+        }
+    }
+
+    #[test]
+    fn web_rc_helper_matches_contract() {
+        // The `rc` shim is a thin wrapper — pin it so a refactor can't silently
+        // point it at the wrong palette.
+        assert_eq!(
+            rc(Mode::Light, Role::Link),
+            theme::css_hex(theme::Palette::for_mode(Mode::Light).color(Role::Link))
+        );
+        assert_eq!(rc(Mode::Dark, Role::Background), "#1e1e1e");
+        assert_eq!(rc(Mode::Light, Role::Link), "#1a5fb4");
     }
 
     #[test]
@@ -2586,9 +2745,10 @@ mod tests {
             "dark-mode media query present in the page CSS:\n{browse}"
         );
         // A representative dark override (the body background) is inside the block.
+        // Now emitted via core::theme (TSK-573) — `css_hex(Background)` = 6 digits.
         assert!(browse.contains("background:#1e1e1e"), "dark body background defined:\n{browse}");
         // The light defaults are still present (dark is an override, not a replacement).
-        assert!(browse.contains("background:#fff"), "light default still present:\n{browse}");
+        assert!(browse.contains("background:#ffffff"), "light default still present:\n{browse}");
         let view = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(
             view.contains("@media (prefers-color-scheme: dark)"),
