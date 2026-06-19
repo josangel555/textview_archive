@@ -113,6 +113,33 @@ final class AudioExporterTests: XCTestCase {
         }
     }
 
+    // MARK: - ffmpeg argv sentinel (argument-injection hardening)
+
+    func test_mp3Args_outputPathIsPrecededByEndOfOptionsSentinel() {
+        let args = AudioExporter.mp3Args(input: "/tmp/in.wav", output: "/tmp/out.mp3", bitRate: 128_000)
+        guard let outIdx = args.firstIndex(of: "/tmp/out.mp3") else {
+            return XCTFail("output path not in argv: \(args)")
+        }
+        XCTAssertGreaterThan(outIdx, 0)
+        XCTAssertEqual(args[outIdx - 1], "--", "output path must be preceded by a -- sentinel")
+    }
+
+    func test_mp3Args_dashLeadingOutputPath_isFencedAsPositional() {
+        // An output name beginning with '-' must NOT be the last token without a
+        // preceding '--', or ffmpeg parses it as a flag (argument injection).
+        let args = AudioExporter.mp3Args(input: "/tmp/in.wav", output: "-evil.mp3", bitRate: 128_000)
+        guard let outIdx = args.firstIndex(of: "-evil.mp3") else {
+            return XCTFail("output path not in argv: \(args)")
+        }
+        XCTAssertEqual(args[outIdx - 1], "--")
+        XCTAssertEqual(outIdx, args.count - 1, "the -- sentinel + output must be the trailing tokens")
+    }
+
+    func test_mp3Args_bitRateFloor() {
+        let args = AudioExporter.mp3Args(input: "/i", output: "/o", bitRate: 1)
+        XCTAssertTrue(args.contains("8k"), "bit rate floored to 8 kbps")
+    }
+
     func test_format_fileExtensions() {
         XCTAssertEqual(AudioExportSpec.Format.aac.fileExtension, "m4a")
         XCTAssertEqual(AudioExportSpec.Format.wav.fileExtension, "wav")

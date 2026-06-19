@@ -152,13 +152,24 @@ public enum AudioExporter {
         defer { try? FileManager.default.removeItem(at: tempWav) }
         try encode(buffer, spec: AudioExportSpec(format: .wav, sampleFormat: .int16), to: tempWav)
 
-        let kbps = max(8, spec.bitRate / 1000)
-        try runFFmpeg(ffmpeg, [
+        try runFFmpeg(ffmpeg, mp3Args(input: tempWav.path, output: url.path, bitRate: spec.bitRate))
+    }
+
+    /// Build the `ffmpeg` argv for an MP3 transcode. The output path is placed
+    /// AFTER a `--` end-of-options sentinel so an output path beginning with `-`
+    /// (e.g. an NSSavePanel name like `-foo.mp3`) parses as a positional file,
+    /// not an ffmpeg flag (argument-injection nuisance). The input path is
+    /// already fenced behind `-i` and is our own UUID temp name, but we keep it
+    /// before the sentinel since ffmpeg's `--` applies to the trailing output.
+    /// Internal so the sentinel placement is host-testable without spawning.
+    static func mp3Args(input: String, output: String, bitRate: Int) -> [String] {
+        let kbps = max(8, bitRate / 1000)
+        return [
             "-y", "-hide_banner", "-loglevel", "error",
-            "-i", tempWav.path,
+            "-i", input,
             "-codec:a", "libmp3lame", "-b:a", "\(kbps)k",
-            "-f", "mp3", url.path,
-        ])
+            "-f", "mp3", "--", output,
+        ]
     }
 
     /// Run `ffmpeg` with an explicit args array (NO shell — paths can't inject)

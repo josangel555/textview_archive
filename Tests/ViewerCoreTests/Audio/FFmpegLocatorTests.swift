@@ -13,7 +13,8 @@ final class FFmpegLocatorTests: XCTestCase {
     }
 
     /// Create a real executable (or plain) file under a fresh temp dir; return its path.
-    private func makeFile(_ name: String, executable: Bool) throws -> String {
+    /// `dirPerms` controls the CONTAINING directory's mode (default 0o755 = safe).
+    private func makeFile(_ name: String, executable: Bool, dirPerms: Int = 0o755) throws -> String {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("mdv-ffloc-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -22,6 +23,8 @@ final class FFmpegLocatorTests: XCTestCase {
         try "#!/bin/sh\nexit 0\n".data(using: .utf8)!.write(to: url)
         try FileManager.default.setAttributes(
             [.posixPermissions: executable ? 0o755 : 0o644], ofItemAtPath: url.path)
+        // Set the dir perms LAST — writing the file first needs the dir writable.
+        try FileManager.default.setAttributes([.posixPermissions: dirPerms], ofItemAtPath: dir.path)
         return url.path
     }
 
@@ -74,5 +77,54 @@ final class FFmpegLocatorTests: XCTestCase {
                                         environment: ["PATH": pathDir],
                                         commonPaths: [])
         XCTAssertEqual(got?.path, onPath)
+    }
+
+    // MARK: - Ownership / writable-dir safety (mirrors LSPDiscovery.isBinarySafeToSpawn)
+
+    func test_isUsable_acceptsExecutableInSafeDir() throws {
+        let exe = try makeFile("ffmpeg", executable: true, dirPerms: 0o755)
+        XCTAssertTrue(FFmpegLocator.isUsable(exe))
+    }
+
+    func test_isUsable_rejectsWorldWritableDir() throws {
+        let exe = try makeFile("ffmpeg", executable: true, dirPerms: 0o777)
+        XCTAssertFalse(FFmpegLocator.isUsable(exe), "0o777 containing dir must be refused")
+    }
+
+    func test_isUsable_rejectsGroupWritableDir() throws {
+        let exe = try makeFile("ffmpeg", executable: true, dirPerms: 0o775)
+        XCTAssertFalse(FFmpegLocator.isUsable(exe), "group-writable (020) containing dir must be refused")
+    }
+
+    func test_resolve_refusesFfmpegInWorldWritableDir_andPrefersSafeOne() throws {
+        // A hostile ffmpeg sits FIRST on $PATH in a 0o777 dir; a legitimate one
+        // in a 0o755 dir comes second. resolve() must skip the unsafe one.
+        let hostile = try makeFile("ffmpeg", executable: true, dirPerms: 0o777)
+        let hostileDir = (hostile as NSString).deletingLastPathComponent
+        let safe = try makeFile("ffmpeg", executable: true, dirPerms: 0o755)
+        let safeDir = (safe as NSString).deletingLastPathComponent
+
+        let got = FFmpegLocator.resolve(override: nil,
+                                        environment: ["PATH": "\(hostileDir):\(safeDir)"],
+                                        commonPaths: [])
+        XCTAssertEqual(got?.path, safe, "must skip the 0o777-dir ffmpeg and pick the safe one")
+    }
+
+    func test_resolve_disablesWhenOnlyUnsafeCandidate() throws {
+        let hostile = try makeFile("ffmpeg", executable: true, dirPerms: 0o777)
+        let hostileDir = (hostile as NSString).deletingLastPathComponent
+        let got = FFmpegLocator.resolve(override: nil,
+                                        environment: ["PATH": hostileDir],
+                                        commonPaths: [])
+        XCTAssertNil(got, "only an unsafe-dir ffmpeg ⇒ feature disabled")
+    }
+
+    func test_resolve_overrideInWorldWritableDir_isRefused() throws {
+        // Even an explicit Settings override must pass the dir-safety check.
+        let hostile = try makeFile("myffmpeg", executable: true, dirPerms: 0o777)
+        let got = FFmpegLocator.resolve(override: hostile,
+                                        environment: ["PATH": "/nonexistent"],
+                                        commonPaths: [])
+        XCTAssertNil(got)
     }
 }
