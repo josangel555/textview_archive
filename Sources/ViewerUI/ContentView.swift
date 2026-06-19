@@ -582,16 +582,29 @@ public struct ContentView: View {
             ZStack {
                 ForEach(mounted) { tab in
                     let isActive = (tab.id == model.tabs.selected?.id)
+                    // Per-pane render attributes are driven from the named,
+                    // host-testable `PaneCompositingPolicy` contract (TSK-839)
+                    // rather than inline ternaries — so the per-nav CA-commit
+                    // decisions (visibility, hit-testing, z-order, and the
+                    // per-pane compositing isolation) are pinned by a host test
+                    // even though the commit-cost win itself is VM-only.
+                    let render = PaneCompositingPolicy.render(isActive: isActive)
                     tabContent(for: tab, isActive: isActive)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Each retained pane gets its OWN compositing layer so a
+                        // sibling pane's (or surrounding chrome's) re-layout does
+                        // not pull every pane's opaque-representable subtree into
+                        // one CA commit reconciliation per nav action (TSK-839 /
+                        // LESSONS compositor rule, TSK-488).
+                        .compositingGroup()
                         // opacity:0 (NOT `.hidden()`): keeps the inactive
                         // WKWebView "visible" to WebKit so it never fires
                         // `visibilitychange` → no page self-reload (cmux #1228).
                         // Background-throttled only.
-                        .opacity(isActive ? 1 : 0)
-                        .allowsHitTesting(isActive)
-                        .accessibilityHidden(!isActive)
-                        .zIndex(isActive ? 1 : 0)
+                        .opacity(render.opacity)
+                        .allowsHitTesting(render.hitTesting)
+                        .accessibilityHidden(render.accessibilityHidden)
+                        .zIndex(render.zIndex)
                 }
             }
         }
