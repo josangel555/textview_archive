@@ -82,12 +82,39 @@ public enum JSONFileStore {
             at: dir, withIntermediateDirectories: true
         )
         guard let data = try? Self.encoder.encode(value) else { return false }
+        return writeDurably(data, to: url)
+    }
+
+    /// Atomic + DURABLE write (TSK-1011). `Data.write(.atomic)` does a temp +
+    /// rename but does NOT fsync, so a crash/power-loss right after the rename
+    /// can leave a zero-length or truncated file (silent data loss — the very
+    /// thing the prior comment claimed was handled). Here we fsync the temp
+    /// file's data BEFORE the rename and fsync the directory AFTER, so the
+    /// rename entry itself is durable. Internal so host tests can exercise it.
+    static func writeDurably(_ data: Data, to url: URL) -> Bool {
+        let dir = url.deletingLastPathComponent()
+        let tmp = dir.appendingPathComponent(".tmp-\(UUID().uuidString)")
         do {
-            try data.write(to: url, options: .atomic)
-            return true
+            try data.write(to: tmp)
+            let fh = try FileHandle(forWritingTo: tmp)
+            try fh.synchronize()   // fsync(2): flush data to disk before the rename
+            try fh.close()
         } catch {
+            try? FileManager.default.removeItem(at: tmp)
             return false
         }
+        // rename(2) is atomic and overwrites the destination in place.
+        guard rename(tmp.path, url.path) == 0 else {
+            try? FileManager.default.removeItem(at: tmp)
+            return false
+        }
+        // fsync the directory so the rename entry survives a crash too.
+        let dfd = open(dir.path, O_RDONLY)
+        if dfd >= 0 {
+            fsync(dfd)
+            close(dfd)
+        }
+        return true
     }
 
     // MARK: - Off-main coalescing write (P2 — main-thread I/O)

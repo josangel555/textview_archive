@@ -254,4 +254,27 @@ final class JSONFileStoreTests: XCTestCase {
         XCTAssertEqual(JSONFileStore.read(Sample.self, from: a)?.name, "A")
         XCTAssertEqual(JSONFileStore.read(Sample.self, from: b)?.name, "B")
     }
+
+    // MARK: - durable write (TSK-1011)
+
+    func test_writeDurably_overwritesAtomically_andLeavesNoTempFile() throws {
+        let url = dir.appendingPathComponent("durable.json")
+        XCTAssertTrue(JSONFileStore.write(
+            Sample(name: "first", when: Date(timeIntervalSince1970: 1), count: 1), to: url))
+        XCTAssertTrue(JSONFileStore.write(
+            Sample(name: "second", when: Date(timeIntervalSince1970: 2), count: 2), to: url))
+        // Atomic overwrite — the latest snapshot, never appended/corrupted.
+        XCTAssertEqual(JSONFileStore.read(Sample.self, from: url)?.name, "second")
+        // TEETH: the rename must consume the temp — no `.tmp-*` leak in the dir.
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasPrefix(".tmp-") }
+        XCTAssertTrue(leftovers.isEmpty, "durable write leaked temp files: \(leftovers)")
+    }
+
+    func test_writeDurably_persistsExactBytes() {
+        let url = dir.appendingPathComponent("raw.json")
+        let payload = Data(#"{"k":1}"#.utf8)
+        XCTAssertTrue(JSONFileStore.writeDurably(payload, to: url))
+        XCTAssertEqual(try? Data(contentsOf: url), payload)
+    }
 }
