@@ -1270,6 +1270,10 @@ struct ModeBar: View {
                 // label length and at high zoom would push trailing
                 // toggles past the right edge of the toolbar.
                 .fixedSize()
+                // Per-filename view-mode LOCK (TSK-811). Pins the chosen
+                // lens for THIS file so reopening re-applies it. The glyph
+                // reflects locked/unlocked; clicking toggles the override.
+                lockButton
             }
             Spacer()
             // Source-view-only toggles. Both control rendering of the
@@ -1363,6 +1367,27 @@ struct ModeBar: View {
             // mode-switch controls).
         }
         .frame(height: 22)
+    }
+
+    /// Per-filename view-mode lock toggle (TSK-811). A lock/unlock glyph next
+    /// to the segmented mode picker: locked = the current file's view mode is
+    /// pinned (reopening re-applies it), unlocked = transient per-tab. Clicking
+    /// toggles the override (locks to the tab's current mode, or clears it).
+    @ViewBuilder
+    private var lockButton: some View {
+        let locked = model.currentViewModeIsLocked
+        Button(action: { model.toggleCurrentViewModeLock() }) {
+            Image(systemName: locked ? "lock.fill" : "lock.open")
+                .font(.system(size: model.uiSize(11)))
+                .foregroundStyle(locked ? Color.accentColor : .secondary)
+        }
+        .buttonStyle(.borderless)
+        .help(locked
+              ? "View mode is locked for this file — click to unlock "
+              + "(reopening will use the auto-detected default)"
+              : "Lock this file to the current view mode — reopening will "
+              + "re-apply it")
+        .accessibilityIdentifier("mdv.viewModeLock")
     }
 
     /// The "Open As…" chip + dropdown (WAVE 2b item 6). Lists every

@@ -350,6 +350,11 @@ public final class DocumentModel: ObservableObject {
     /// User-defined snippets merged over the built-ins (TSK-705). Read by the
     /// Insert-Snippet menu + `insertSnippet`.
     public let snippetStore: SnippetStore
+    /// Per-file view-mode LOCKS (TSK-811). When the user locks the chosen lens
+    /// for a file, reopening it re-applies that mode. Distinct from the
+    /// per-CATEGORY `viewModeDefaults` (TSK-671): this pins one file (or one
+    /// extension). Read on open (`resolveOpenMode`) and by the ModeBar lock icon.
+    public let viewModeLocks: ViewModeLockStore
     private let preferences: PreferencesStore
     /// The app's preference store, exposed for the Settings export/import menu
     /// actions (TSK-681) which serialize/apply a `SettingsSnapshot`.
@@ -418,6 +423,9 @@ public final class DocumentModel: ObservableObject {
         ),
         bookmarks: BookmarksStore = BookmarksStore(storeURL: BookmarksStore.defaultStoreURL()),
         snippets: SnippetStore = SnippetStore(storeURL: SnippetStore.defaultStoreURL()),
+        viewModeLocks: ViewModeLockStore = ViewModeLockStore(
+            storeURL: ViewModeLockStore.defaultStoreURL()
+        ),
         sidebar: SidebarModel = SidebarModel(),
         preferences: PreferencesStore = PreferencesStore(),
         // Injectable for tests (TSK-627: fake-server registry e2e). The
@@ -431,6 +439,7 @@ public final class DocumentModel: ObservableObject {
         self.scrollMemory = scrollMemory
         self.bookmarksStore = bookmarks
         self.snippetStore = snippets
+        self.viewModeLocks = viewModeLocks
         self.sidebar = sidebar
         self.preferences = preferences
         // Shoulder-rail layout shares the SAME defaults instance the
@@ -4684,6 +4693,24 @@ public final class DocumentModel: ObservableObject {
         objectWillChange.send()
     }
 
+    // MARK: - Per-file view-mode lock (TSK-811)
+
+    /// Whether the current file has a view-mode LOCK (the ModeBar lock-icon
+    /// filled/unfilled state). `false` when no file is open.
+    public var currentViewModeIsLocked: Bool {
+        guard let url = currentURL else { return false }
+        return viewModeLocks.isLocked(for: url)
+    }
+
+    /// Toggle the current file's view-mode lock (the lock-icon click): if
+    /// already locked, clear it; otherwise lock the file to the tab's CURRENT
+    /// mode so reopening re-applies it. Publishes so the icon updates at once.
+    public func toggleCurrentViewModeLock() {
+        guard let url = currentURL else { return }
+        viewModeLocks.toggle(url, mode: currentViewMode)
+        objectWillChange.send()
+    }
+
     /// Best-effort magic-byte category sniff for the "Open As…" auto-hint.
     /// Reads only the file's header — cheap, never the whole file. Returns
     /// `nil` when nothing recognizable matches (then the menu just uses
@@ -5096,10 +5123,23 @@ public final class DocumentModel: ObservableObject {
     private func resolveOpenMode(
         _ resolved: URL, forceNewTab: Bool, isRenderableText: Bool?
     ) -> ViewMode {
-        let initialMode = ViewModeOptions.defaultMode(
+        // The per-CATEGORY default (TSK-671), then the per-FILE lock (TSK-811)
+        // layered on top: a filename/extension lock WINS over the category
+        // default for the matching file, but only when the locked lens is in
+        // this file's `availableModes` (stale/cross-type locks degrade to the
+        // category default rather than desyncing the picker from the pane).
+        let categoryDefault = ViewModeOptions.defaultMode(
             for: resolved, isRenderableText: isRenderableText,
             preferred: preferences.viewModeDefaults)
+        let available = ViewModeOptions.availableModes(
+            for: resolved, isRenderableText: isRenderableText)
+        let initialMode = viewModeLocks.resolvedMode(
+            for: resolved, available: available, inferredDefault: categoryDefault)
         if forceNewTab { return initialMode }
+        // A per-file lock is the user's EXPLICIT pin for THIS file, so it wins
+        // over carrying the active tab's mode forward — opening a locked file
+        // always lands in its locked lens (TSK-811).
+        if viewModeLocks.isLocked(for: resolved) { return initialMode }
         // If the active tab has a non-default mode the user explicitly picked
         // (e.g. HEX, Format), carry it. Otherwise use the new file's default.
         if let cur = tabs.selected, cur.viewMode != .rendered, cur.viewMode != .source {
