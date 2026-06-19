@@ -39,6 +39,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **Smoother drag-selection in the editor** — dragging to select text no longer re-scans the visible page for matching words on every mouse-move (it was doing that on each frame of the drag); the match highlight now runs once when you let go, so the selection sweep stays fluid in large/wide files.
 - **Faster editor + highlighting plumbing** — the Rust FFI no longer double-copies every response frame, syntax tokenization stops re-bridging the whole file per highlight, and `cm_apply` is moving to keystroke-sized edits instead of shipping the whole document each tick.
 - **Folder stats no longer block** other folder lookups (the git walk runs off the actor + coalesces duplicate work).
+- **Smoother window & pane resizing** — the sidebar no longer rebuilds itself on every resize frame; resize ticks that can't change any panel's size are now dropped, so dragging the window edge (and internal panes) feels less janky.
 
 ## 2026-06-18
 

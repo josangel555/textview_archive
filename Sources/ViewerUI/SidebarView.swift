@@ -244,12 +244,23 @@ struct SidebarView: View {
                         sidebarContentWidth = geo.size.width
                     }
                     .onChange(of: geo.size.height) { _, h in
-                        // EPSILON-GUARD (PERF — see BoundedAccordionScroll):
-                        // this height feeds the per-panel clamp + the accordion
-                        // ceiling, then re-bodies the sidebar. Suppress sub-point
-                        // jitter so it doesn't re-body every frame in the live
-                        // run loop. Real height changes are pt-scale.
-                        if abs(h - sidebarContentHeight) > Self.measureEpsilon {
+                        // TSK-592 — RESIZE-JANK SUPPRESSION (PERF). This height
+                        // feeds the per-panel `clamp(_:availableHeight:)` ceiling,
+                        // then re-bodies the WHOLE sidebar. A live window/pane
+                        // resize changes `h` by points every frame; committing
+                        // each one re-runs the clamp for every accordion panel
+                        // even when the resolved heights are byte-identical (the
+                        // common "roomy" regime, where the ceiling sits above
+                        // every stored height). `shouldCommitAvailableHeight`
+                        // commits ONLY when some panel's resolved body height
+                        // would actually change — dropping the no-op resize frames
+                        // before they touch `@State`. (The old sub-point epsilon
+                        // guard only caught jitter, not the pt-scale resize churn.)
+                        if SidebarPanelHeights.shouldCommitAvailableHeight(
+                            current: sidebarContentHeight,
+                            measured: h,
+                            storedHeights: accordionStoredHeights
+                        ) {
                             sidebarContentHeight = h
                         }
                     }
@@ -464,6 +475,18 @@ struct SidebarView: View {
                 )
             )
         }
+    }
+
+    /// TSK-592: the per-panel stored body heights (pre-clamp `@AppStorage`
+    /// values) fed to `SidebarPanelHeights.shouldCommitAvailableHeight` so
+    /// a resize frame is committed only when it would change some panel's
+    /// resolved height. Mirrors the `accordionHeight(for:)` mapping; kept in
+    /// the same order, though the predicate is order-insensitive.
+    private var accordionStoredHeights: [CGFloat] {
+        [
+            bookmarksHeight, searchHeight, gitHeight, claudeHeight,
+            lspHeight, lspNavHeight, lspProblemsHeight, recentsHeight,
+        ].map { CGFloat($0) }
     }
 
     /// The stored accordion body height (points) for a resizable section.

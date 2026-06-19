@@ -79,6 +79,71 @@ public enum SidebarPanelHeights {
         return min(stored, ceiling)
     }
 
+    /// TSK-592 — RESIZE-JANK SUPPRESSION.
+    ///
+    /// The sidebar measures its allotted content height via a background
+    /// `GeometryReader` and commits it to a `@State`. During a live window
+    /// (or pane) resize that height changes by points *every frame*, and
+    /// each commit re-bodies the whole `SidebarView` — re-running
+    /// `clamp(_:availableHeight:)` for every accordion panel. VM Time
+    /// Profiler attributed a slice of the per-resize-frame cost to exactly
+    /// this re-evaluation (the felt jank in TSK-592).
+    ///
+    /// But the committed height only MATTERS when it changes a panel's
+    /// rendered body height. In the common "roomy" regime the per-panel
+    /// ceiling (`available * fraction`) sits above every stored height, so
+    /// `min(stored, ceiling) == stored` regardless of the measured height —
+    /// the commit re-bodies the sidebar for a layout that is byte-identical.
+    /// In the "pinned at floor" regime (a very small sidebar) every panel is
+    /// already at `minExpandedHeight`, so again the height is irrelevant.
+    ///
+    /// This predicate answers "would committing `measured` instead of
+    /// `current` change ANY panel's resolved body height?" — the EXACT
+    /// condition under which a re-body is observable. The view wires it into
+    /// the `GeometryReader` `onChange` so a resize frame that can't change
+    /// any panel height is dropped before it touches `@State`. It is defined
+    /// directly in terms of `clamp(_:availableHeight:fraction:)` (the same
+    /// function that produces the rendered height), so it can never drift
+    /// from the real layout math.
+    ///
+    /// `current` is the height presently committed to the `@State`;
+    /// `measured` is the fresh `GeometryReader` reading; `storedHeights` is
+    /// the per-panel stored bodies (the `@AppStorage` values, pre-clamp).
+    /// `fraction` mirrors the rendering call's fraction.
+    ///
+    /// Returns `true` (commit) whenever the first measurement arrives from
+    /// the unmeasured state (`current <= 0` while `measured > 0`), so the
+    /// initial settle is never suppressed.
+    public static func shouldCommitAvailableHeight(
+        current: CGFloat,
+        measured: CGFloat,
+        storedHeights: [CGFloat],
+        fraction: CGFloat = 0.5
+    ) -> Bool {
+        guard measured.isFinite else { return false }
+        // First real measurement after the pre-measurement zero pass — the
+        // ceiling switches on, so the panels genuinely need it.
+        let currentUsable = current.isFinite && current > 0
+        let measuredUsable = measured > 0
+        if measuredUsable != currentUsable { return true }
+        if !measuredUsable { return false }   // both unusable → nothing to do
+        // Both heights usable: commit only if some panel's RESOLVED body
+        // height differs between the two. Evaluating the real clamp keeps
+        // this in lockstep with what actually renders.
+        for stored in storedHeights {
+            let before = clamp(stored, availableHeight: current, fraction: fraction)
+            let after = clamp(stored, availableHeight: measured, fraction: fraction)
+            if abs(before - after) > heightCommitEpsilon { return true }
+        }
+        return false
+    }
+
+    /// Sub-point resolved-height delta that still counts as "unchanged" for
+    /// the resize-commit predicate — guards against float noise re-bodying
+    /// the sidebar at a clamp boundary. Tighter than the view's measure
+    /// epsilon: this compares *resolved panel heights*, not raw measures.
+    public static let heightCommitEpsilon: CGFloat = 0.5
+
     /// Read a persisted height from any defaults-like store. Falls
     /// back to the section's default when the key is missing.
     /// Always returns a clamped value.
