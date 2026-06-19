@@ -20,7 +20,9 @@
   // bootstrap readable.
   const {
     EditorState, EditorView, EditorSelection, Compartment, Transaction,
-    keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
+    // `highlightActiveLine` (stock) is replaced by our custom
+    // `activeLineExtension()` (TSK-894) — drag-aware, no stuck last-line.
+    keymap, lineNumbers, highlightActiveLineGutter,
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
     defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
     searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel,
@@ -310,6 +312,84 @@
     if (!enabled) return [];
     if (!invisiblesPluginCached) invisiblesPluginCached = buildInvisiblesPlugin();
     return invisiblesPluginCached;
+  }
+
+  // ---- current-line highlight (TSK-894) --------------------------------
+  // Replaces CM6's stock `highlightActiveLine()`. The stock plugin keeps the
+  // .cm-activeLine decoration on the selection-head line for ANY single
+  // empty range, which produces two coupled bugs while/after a drag-select:
+  //   (a) the highlight flickers / fights the sweep during the drag, and
+  //   (b) after the drag it STICKS on the line the mouse was released on and
+  //       stops following the caret (other rows still hover-highlight).
+  //
+  // We model visibility as an explicit interaction state (idle/hovering vs
+  // dragging) — pinned host-side by `CMCurrentLineHighlightState` in
+  // CodeMirrorEditorView.swift, which must stay in lock-step with this logic.
+  // RULE (mirrors `shouldShowCurrentLineHighlight`): paint the active line
+  // ONLY when NOT dragging AND the selection is a single empty range. On
+  // drag-end / selection-collapse the decoration is recomputed (clears the
+  // stuck line), so hover/caret tracking resumes.
+  //
+  // `isDragging` is owned here (mousedown→true, mouseup/blur→false on the
+  // document so a release outside the editor still clears it). An explicit
+  // `update()` on dragging-end forces the decoration to recompute.
+  function shouldShowActiveLine(state, isDragging) {
+    if (isDragging) return false;
+    const sel = state.selection;
+    // Suppress for any non-empty selection or multi-range (multi-cursor /
+    // rectangular) selection — same predicate as the Swift state machine.
+    if (sel.ranges.length !== 1) return false;
+    return sel.main.empty;
+  }
+  function buildActiveLinePlugin() {
+    const lineDeco = Decoration.line({ attributes: { class: "cm-activeLine" } });
+    return ViewPlugin.fromClass(class {
+      constructor(view) {
+        this.isDragging = false;
+        this.decorations = this.compute(view);
+        // mousedown on the editor surface begins a potential drag-select;
+        // a document-level mouseup ends it even if released off the editor.
+        this.onDown = () => {
+          this.isDragging = true;
+          // Recompute now so the highlight vanishes immediately on press.
+          view.dispatch({});
+        };
+        this.onUp = () => {
+          if (!this.isDragging) return;
+          this.isDragging = false;
+          // Force a recompute so a collapsed caret re-acquires the highlight
+          // and a stuck last-line decoration is cleared.
+          view.dispatch({});
+        };
+        view.dom.addEventListener("mousedown", this.onDown);
+        document.addEventListener("mouseup", this.onUp);
+      }
+      compute(view) {
+        if (!shouldShowActiveLine(view.state, this.isDragging)) {
+          return Decoration.none;
+        }
+        const head = view.state.selection.main.head;
+        const line = view.state.doc.lineAt(head);
+        return Decoration.set([lineDeco.range(line.from)]);
+      }
+      update(u) {
+        // Recompute on every update. The drag flag (`isDragging`) flips
+        // outside the transaction system — our `view.dispatch({})` from
+        // onDown/onUp produces an update with no doc/selection change yet we
+        // still must re-read `isDragging`, so we can't gate on
+        // `selectionSet || docChanged`. The line decoration is one range, so
+        // recomputing is cheap.
+        this.decorations = this.compute(u.view);
+      }
+      destroy() {
+        document.removeEventListener("mouseup", this.onUp);
+      }
+    }, { decorations: v => v.decorations });
+  }
+  let activeLinePluginCached = null;
+  function activeLineExtension() {
+    if (!activeLinePluginCached) activeLinePluginCached = buildActiveLinePlugin();
+    return activeLinePluginCached;
   }
 
   // ---- Phase 4 (v2): LSP fold ranges via foldService ------------------
@@ -868,7 +948,11 @@
       history(),
       indentOnInput(),
       bracketMatching(),
-      highlightActiveLine(),
+      // TSK-894: custom active-line highlight that suppresses during a
+      // drag-select and clears the stuck last-line decoration on drag-end
+      // (replaces stock `highlightActiveLine()`; same `.cm-activeLine` class
+      // so CM6's default styling still applies).
+      activeLineExtension(),
       highlightSelectionMatches(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       keymap.of([

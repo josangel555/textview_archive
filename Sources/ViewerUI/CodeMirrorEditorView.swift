@@ -1136,6 +1136,105 @@ public func jsLanguageName(for lang: HighlightLanguage) -> String {
     }
 }
 
+/// TSK-894 (editor current-line highlight): the interaction state that
+/// decides whether the CM6 editor paints its current-line highlight, and on
+/// which line. Pure value type, host-testable without a WKWebView — it mirrors
+/// the decision made by the custom active-line ViewPlugin in `codemirror.html`
+/// so a regression of that JS logic fails on the host gate too.
+///
+/// The bug this models (two coupled symptoms):
+///   (a) while drag-selecting, the current-line highlight must be SUPPRESSED
+///       (it flickers / fights the selection otherwise); and
+///   (b) after a drag ends, the highlight used to STICK on the last line and
+///       stop following the caret — the state machine never transitioned out
+///       of the drag/selection state.
+///
+/// Modeling the visibility explicitly (idle / hovering / dragging /
+/// has-non-empty-selection) makes both transitions testable: the highlight is
+/// hidden while `dragging` or while a non-empty selection exists, and on
+/// drag-end with a collapsed caret it tracks the caret line again.
+public struct CMCurrentLineHighlightState: Equatable, Sendable {
+
+    /// What the pointer / selection is doing right now.
+    public enum Phase: Equatable, Sendable {
+        /// No interaction in flight — the caret is at rest.
+        case idle
+        /// Pointer is hovering (moving without a button held). Treated the
+        /// same as `idle` for the line-highlight decision; kept distinct so
+        /// the hover-tracking transition is explicit and testable.
+        case hovering
+        /// A mouse drag is in progress (button held, selection being swept).
+        case dragging
+    }
+
+    /// The interaction phase.
+    public var phase: Phase
+    /// Whether the current selection is non-empty (any range covers ≥1 char,
+    /// or there is more than one range — a rectangular / multi-cursor select).
+    public var hasNonEmptySelection: Bool
+    /// 1-based document line containing the selection head (the caret). Drives
+    /// WHICH line is highlighted when the highlight is shown.
+    public var caretLine: Int
+
+    public init(phase: Phase = .idle, hasNonEmptySelection: Bool = false, caretLine: Int = 1) {
+        self.phase = phase
+        self.hasNonEmptySelection = hasNonEmptySelection
+        self.caretLine = caretLine
+    }
+
+    /// The current-line highlight is shown ONLY when the user is at rest with a
+    /// collapsed caret: not mid-drag, and no non-empty selection. This is the
+    /// single source of truth both (a) suppress-during-drag and
+    /// (b) clear-the-stuck-decoration are derived from.
+    public var shouldShowCurrentLineHighlight: Bool {
+        if phase == .dragging { return false }
+        if hasNonEmptySelection { return false }
+        return true
+    }
+
+    /// The line to highlight, or `nil` when nothing should be highlighted.
+    /// Callers use `nil` to CLEAR the (possibly stuck) decoration so hover
+    /// resumes tracking after a drag/selection collapses.
+    public var highlightedLine: Int? {
+        shouldShowCurrentLineHighlight ? caretLine : nil
+    }
+
+    // MARK: - Transitions (pure)
+
+    /// Pointer pressed down to begin a drag-select. Enters `dragging`; the
+    /// highlight is suppressed until the drag ends.
+    public func beginningDrag() -> CMCurrentLineHighlightState {
+        var next = self
+        next.phase = .dragging
+        return next
+    }
+
+    /// Drag released. Leaves `dragging`. If the resulting selection collapsed
+    /// to a caret on `caretLine`, the highlight resumes there; if a non-empty
+    /// selection remains it stays suppressed. This is the transition that fixes
+    /// the "stuck on the last line" symptom — `dragging` is always exited.
+    public func endingDrag(hasNonEmptySelection: Bool, caretLine: Int) -> CMCurrentLineHighlightState {
+        CMCurrentLineHighlightState(
+            phase: hasNonEmptySelection ? .idle : .hovering,
+            hasNonEmptySelection: hasNonEmptySelection,
+            caretLine: caretLine
+        )
+    }
+
+    /// Selection changed without a drag (keyboard move, programmatic set,
+    /// click). Stays out of `dragging`; refreshes the caret line + selection
+    /// emptiness so the highlight follows the caret.
+    public func selectionChanged(hasNonEmptySelection: Bool, caretLine: Int) -> CMCurrentLineHighlightState {
+        var next = self
+        // A non-drag selection change can never be `dragging` — a programmatic
+        // or keyboard change is not a pointer sweep.
+        if next.phase == .dragging { next.phase = .idle }
+        next.hasNonEmptySelection = hasNonEmptySelection
+        next.caretLine = caretLine
+        return next
+    }
+}
+
 /// TSK-641 (editor surface): resolve what `setTheme` should carry for the
 /// current appearance + selected theme. Pure — host-testable without a
 /// WKWebView. A selected theme's palette wins; nil reproduces the TSK-602

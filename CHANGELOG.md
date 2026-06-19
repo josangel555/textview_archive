@@ -7,6 +7,11 @@ This file is the at-a-glance "what's new" view of the app's progress.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-19
+
+### Fixed
+- **Editor current-line highlight no longer sticks after a drag-select** — while you drag to select text the current-line highlight now stays out of the way, and once you let go it follows your caret again instead of getting stuck on the line where you released the mouse.
+
 ## 2026-06-18
 
 ### Performance
