@@ -116,3 +116,45 @@ jobs:
 
       - name: Verify .app bundle
         run: bash scripts/verify-app.sh
+
+  # Supply-chain gate (TSK-975) — cargo-deny (licenses / bans / sources) +
+  # cargo-audit (RustSec advisories) over rust-core, via the SAME script the
+  # nightly lane and a developer run locally (scripts/rust-supply-chain-audit.sh).
+  #
+  # Why this MUST be a PR gate, not nightly-only: before this, a PR that pulled
+  # in a CVE-affected transitive dep, a crate with a banned license, an unknown
+  # registry/git source, or a yanked version sailed through the merge gate and
+  # was only caught by `nightly-supply-chain.yml` HOURS AFTER it landed on main.
+  # The supply chain is exactly the surface we want to block at review time —
+  # so the audit runs per-PR here and stays a hard, blocking failure.
+  #
+  # Lockfile-level scanning is platform-independent (deny.toml pins the dependency
+  # GRAPH targets to the macOS triples we actually build), so this runs on the
+  # cheap ubuntu runner in PARALLEL with headless-gate above — it does not add
+  # macOS-runner minutes or serialize behind the Swift build.
+  #
+  # Deliberately NO third-party setup actions (the supply-chain lane should not
+  # itself widen the supply chain): the tools are `cargo install --locked`,
+  # cached by version key — mirrors nightly-supply-chain.yml exactly.
+  supply-chain-gate:
+    name: Supply-chain gate (cargo-deny + cargo-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache audit tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-audit
+          key: audit-tools-${{ runner.os }}-deny0.18-audit0.22
+
+      - name: Install tools (cache miss only)
+        run: |
+          command -v cargo-deny  >/dev/null || cargo install --locked cargo-deny
+          command -v cargo-audit >/dev/null || cargo install --locked cargo-audit
+
+      - name: Run supply-chain audit
+        run: bash scripts/rust-supply-chain-audit.sh

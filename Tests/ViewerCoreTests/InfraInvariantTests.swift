@@ -35,6 +35,41 @@ final class InfraInvariantTests: XCTestCase {
                       "CARGO_TARGET_DIR no longer pinned inside the workspace (TSK-170)")
     }
 
+    /// TSK-975 — the supply-chain audit MUST gate a PR, not only run nightly.
+    /// Before this, `scripts/rust-supply-chain-audit.sh` (cargo-deny licenses/
+    /// bans/sources + cargo-audit advisories) ran ONLY in nightly-supply-chain
+    /// .yml, so a PR pulling in a CVE-affected transitive dep, a banned license,
+    /// an unknown registry/git source, or a yanked crate merged clean and was
+    /// caught hours after it landed. This pin fails if the per-PR supply-chain
+    /// gate is removed or stops invoking the shared audit script.
+    func test_prWorkflow_gatesSupplyChainAudit() throws {
+        let yml = try contents(".github/workflows/pr.yml")
+        XCTAssertTrue(yml.contains("supply-chain-gate:"),
+                      "PR workflow lost its supply-chain gate job — a PR can now "
+                      + "introduce a vulnerable/banned dependency unblocked (TSK-975)")
+        XCTAssertTrue(yml.contains("scripts/rust-supply-chain-audit.sh"),
+                      "PR workflow no longer runs the supply-chain audit script "
+                      + "(cargo-deny + cargo-audit) at PR time (TSK-975)")
+        // The audit script the PR gate calls must actually still invoke BOTH
+        // tools — a stubbed-out script would be a silent false green.
+        let audit = try contents("scripts/rust-supply-chain-audit.sh")
+        XCTAssertTrue(audit.contains("cargo deny check"),
+                      "audit script no longer runs cargo-deny (TSK-975 / TSK-554)")
+        XCTAssertTrue(audit.contains("cargo audit"),
+                      "audit script no longer runs cargo-audit (TSK-975 / TSK-554)")
+        // `--deny warnings` is what turns warn-class advisories (unmaintained/
+        // unsound) into a hard failure — without it the gate has no teeth on
+        // anything below a CVSS-scored vulnerability.
+        XCTAssertTrue(audit.contains("--deny warnings"),
+                      "audit script no longer denies warn-class advisories — the "
+                      + "gate would pass on unmaintained/unsound deps (TSK-975)")
+        // `set -euo pipefail` is load-bearing: without it a cargo-deny failure
+        // mid-script would not propagate as a nonzero exit and the gate passes.
+        XCTAssertTrue(audit.contains("set -euo pipefail"),
+                      "audit script lost `set -euo pipefail` — a tool failure "
+                      + "would not fail the PR gate (TSK-975)")
+    }
+
     /// TSK-171 — the VM `all` lane must not run the live-app
     /// ViewModeMatrixSmokeTests twice (build-app smoke gate + full
     /// sweep). Two independent layers: the all branch skips the gate
