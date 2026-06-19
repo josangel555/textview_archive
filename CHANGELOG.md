@@ -51,6 +51,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **Robustness/DoS hardening** in the rust-core remote path (MessagePack recursion-depth cap, bounded orphan-event buffer), a SQLite use-after-free fix, an `ffmpeg` locator safety check, and several timer/observer memory-leak backstops.
 
 ### Performance
+- **Smoother typing in big files** — the bottom status bar (Lines / Chars / Size / indent / line-endings) no longer re-encodes and rescans the whole editor buffer on every keystroke; the readout now reuses its last result when the text hasn't changed and only recomputes on a real edit, so typing into large source files stays fluid.
 - **Smoother drag-selection in the editor** — dragging to select text no longer re-scans the visible page for matching words on every mouse-move (it was doing that on each frame of the drag); the match highlight now runs once when you let go, so the selection sweep stays fluid in large/wide files.
 - **Faster editor + highlighting plumbing** — the Rust FFI no longer double-copies every response frame, syntax tokenization stops re-bridging the whole file per highlight, and `cm_apply` is moving to keystroke-sized edits instead of shipping the whole document each tick.
 - **Folder stats no longer block** other folder lookups (the git walk runs off the actor + coalesces duplicate work).

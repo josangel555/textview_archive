@@ -468,7 +468,9 @@ struct StatusBar: View {
     }
 
     /// Lightweight per-render stats from the in-memory TextFile.
-    private struct Metrics {
+    /// `internal` (not `private`) so the host test suite can pin the
+    /// computed values against the cache (TSK-971).
+    struct Metrics: Equatable {
         let lineCount: Int
         let charCount: Int
         let byteCount: Int
@@ -505,16 +507,17 @@ struct StatusBar: View {
             // buffer has been materialized yet.
             if tab.viewMode == .editor,
                let buf = tabCoordinator.editorBuffer(forTabID: tab.id) {
-                let bytes = buf.text.data(using: buf.encoding)?.count
-                    ?? f.byteCount
-                let bufferFile = TextFile(
+                // TSK-971: read metrics straight off the live buffer text.
+                // The byte count is computed via `Self.byteCount` (utf8.count
+                // fast path for UTF-8 — no full-buffer `Data` re-encode per
+                // keystroke) and the scan is cached on a CONTENT key (not the
+                // byte length), so a same-length edit (replace one char) still
+                // invalidates correctly and an unchanged re-eval (caret move,
+                // scroll, hover) hits the cache instead of rescanning.
+                return Self.metrics(
+                    forText: buf.text,
                     url: buf.url,
-                    contents: buf.text,
-                    encoding: buf.encoding,
-                    byteCount: bytes,
-                    modifiedTime: f.modifiedTime
-                )
-                return Self.metrics(for: bufferFile)
+                    encoding: buf.encoding)
             }
             return Self.metrics(for: f)
         case .binary(let b):
@@ -560,36 +563,101 @@ struct StatusBar: View {
         }
     }
 
-    /// Cache of (url, length) → Metrics for loaded text files.
+    /// Cheap byte count of `text` in `encoding`, WITHOUT the full-buffer
+    /// `Data` allocation the old `data(using:)?.count` paid on every
+    /// keystroke (TSK-971). UTF-8 — the overwhelmingly common buffer
+    /// encoding — is `utf8.count`, which is amortized O(1) once Swift has
+    /// the UTF-8 view (its native storage) and allocates nothing. ASCII
+    /// is exactly that count too. Only the rare non-UTF-8 buffers
+    /// (Latin-1 / UTF-16 / …) fall back to a real `data(using:)` encode;
+    /// `nil` (encoding can't represent the text) yields `0` rather than a
+    /// crash. This is the byte count `EditorWriter.save` will produce
+    /// (modulo a 2-byte BOM for explicit-endianness UTF-16, which the
+    /// status-bar size readout rounds away).
+    static func byteCount(of text: String, encoding: String.Encoding) -> Int {
+        switch encoding {
+        case .utf8, .ascii:
+            return text.utf8.count
+        default:
+            return text.data(using: encoding)?.count ?? 0
+        }
+    }
+
+    /// Content-keyed cache entry. The key is `(url, contentHash)` — NOT
+    /// `(url, byteCount)`. The old byte-length key was BROKEN two ways
+    /// (TSK-971): (a) it required re-encoding the whole buffer to a `Data`
+    /// just to get the length, so a heavy alloc ran every keystroke; and
+    /// (b) keying on length alone let a same-length edit (swap one char)
+    /// return STALE metrics — and conversely never deduplicated the far
+    /// more frequent zero-content-change re-evals if they touched length.
+    /// Hashing the content (SIMD-fast, no alloc) is cheaper than the
+    /// `lineCount`/EOL/indent scans it gates and is content-exact.
     nonisolated(unsafe) private static var metricsCache:
-        (key: AnyHashable, value: Metrics)? = nil
+        (url: URL, contentHash: Int, value: Metrics)? = nil
     private static let metricsLock = NSLock()
 
-    private static func metrics(for f: TextFile) -> Metrics {
-        struct Key: Hashable { let url: URL; let bytes: Int }
-        let key = Key(url: f.url, bytes: f.byteCount)
+    #if DEBUG
+    /// Test-only counter of how many times the heavy metric scan actually
+    /// ran (i.e. cache misses). A repeat call with identical content must
+    /// NOT bump this; a real edit must (TSK-971 teeth). DEBUG-only and
+    /// guarded by `metricsLock` so it tracks the miss path exactly.
+    nonisolated(unsafe) static var metricsScanCount = 0
+    static func resetMetricsCache() {
         metricsLock.lock()
-        if let hit = metricsCache, hit.key == AnyHashable(key) {
+        metricsCache = nil
+        metricsScanCount = 0
+        metricsLock.unlock()
+    }
+    #endif
+
+    private static func metrics(for f: TextFile) -> Metrics {
+        metrics(forText: f.contents, url: f.url, encoding: f.encoding,
+                byteCount: f.byteCount)
+    }
+
+    /// Compute (or cache-serve) the status-bar metrics for `text`.
+    ///
+    /// `byteCount` is optional: when the caller already knows the on-disk
+    /// byte count (the loaded `TextFile` path) it's passed straight
+    /// through; for the live editor buffer it's computed cheaply via
+    /// `Self.byteCount` (no `Data` re-encode). The heavy scans
+    /// (`lineCount`, `utf16.count`, EOL sample, indent detect) run ONLY
+    /// on a content-hash cache miss, so a caret move / scroll / hover that
+    /// re-bodies the bar with unchanged text serves from cache, and a real
+    /// edit (even a same-length one) recomputes.
+    static func metrics(
+        forText text: String,
+        url: URL,
+        encoding: String.Encoding,
+        byteCount precomputedBytes: Int? = nil
+    ) -> Metrics {
+        let contentHash = text.hashValue
+        metricsLock.lock()
+        if let hit = metricsCache, hit.url == url, hit.contentHash == contentHash {
             metricsLock.unlock()
             return hit.value
         }
         metricsLock.unlock()
+        #if DEBUG
+        metricsLock.lock(); metricsScanCount += 1; metricsLock.unlock()
+        #endif
+        let bytes = precomputedBytes ?? Self.byteCount(of: text, encoding: encoding)
         // .utf16.count without NSString bridge — String.UTF16View.count
         // is O(1) on UTF-8 storage post-first-access (Swift caches).
         let m = Metrics(
-            lineCount: lineCount(in: f.contents),
-            charCount: f.contents.utf16.count,
-            byteCount: f.byteCount,
-            lineEndings: LineEndingDetector.displayString(in: f.contents, sampleScalars: 4096),
-            encodingShort: encodingShort(f.encoding),
+            lineCount: lineCount(in: text),
+            charCount: text.utf16.count,
+            byteCount: bytes,
+            lineEndings: LineEndingDetector.displayString(in: text, sampleScalars: 4096),
+            encodingShort: encodingShort(encoding),
             // Routed through the `.indent` gate (TSK-649 A0): Rust core when
             // on (the shipped default since stage A), Swift IndentDetector
-            // otherwise. Cached per (url, bytes) above, so the detect runs
-            // once per file version either way.
-            indent: RustIndentAdapter.detect(in: f.contents)
+            // otherwise. Cached per (url, contentHash) above, so the detect
+            // runs once per file version either way.
+            indent: RustIndentAdapter.detect(in: text)
         )
         metricsLock.lock()
-        metricsCache = (AnyHashable(key), m)
+        metricsCache = (url, contentHash, m)
         metricsLock.unlock()
         return m
     }
