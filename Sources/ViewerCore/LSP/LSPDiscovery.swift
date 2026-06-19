@@ -146,6 +146,17 @@ public enum LSPDiscovery {
             .resolvingSymlinksInPath()
             .standardizedFileURL
             .path
+        // L-sec2 (TSK-998): also refuse a group/world-WRITABLE binary FILE
+        // itself. Even inside a safe (non-writable) dir, a writable file can be
+        // overwritten IN PLACE by another user. The ancestor-dir walk below
+        // (full-depth, TSK-963) covers swap-by-rename; this covers swap-in-place.
+        // Mirrors the dir bits exactly (group-write 020 / world-write 002); a
+        // legit user install is 0o755, so this never locks out a real server.
+        if let fattrs = try? FileManager.default.attributesOfItem(atPath: canonical),
+           let fperms = fattrs[.posixPermissions] as? NSNumber,
+           (fperms.uint16Value & 0o022) != 0 {
+            return false
+        }
         var dir = (canonical as NSString).deletingLastPathComponent
         while true {
             if let attrs = try? FileManager.default.attributesOfItem(atPath: dir),

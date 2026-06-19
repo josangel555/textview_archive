@@ -239,6 +239,24 @@ final class LSPDiscoveryTests: XCTestCase {
         XCTAssertTrue(LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path))
     }
 
+    func test_isBinarySafeToSpawn_refusesGroupOrWorldWritableFile() throws {
+        // L-sec2 (TSK-998): even in a SAFE (0o755) dir, a group/world-writable
+        // binary FILE can be overwritten in place by another user — refuse it.
+        // The ancestor-dir walk passes here (dir is 0o755); the new file-perm
+        // check is the teeth (pre-fix this returned true).
+        let dir = tmpRoot.appendingPathComponent("safe-dir-writable-file")
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755]
+        )
+        let bin = dir.appendingPathComponent("lsp-server")
+        FileManager.default.createFile(
+            atPath: bin.path, contents: Data("#!/bin/sh\n".utf8),
+            attributes: [.posixPermissions: 0o777]
+        )
+        XCTAssertFalse(LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path))
+    }
+
     func test_isBinarySafeToSpawn_refusesGroupWritableDir() throws {
         let dir = tmpRoot.appendingPathComponent("group-write-bin")
         try FileManager.default.createDirectory(
