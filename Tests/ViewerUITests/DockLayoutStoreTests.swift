@@ -143,6 +143,79 @@ final class DockLayoutStoreTests: HeadlessUITestCase {
         XCTAssertEqual(count, 0, "Re-dropping on the same edge must be a no-op")
     }
 
+    // MARK: - placement validation: illegal moves are rejected (TSK-495)
+
+    func test_move_nonDockablePanel_isRejected() async {
+        let store = makeStore()
+        // FILES is not a free-standing tool window — moving it to a dock
+        // must be rejected by the placement validator, not stored.
+        store.move(.files, to: .right)
+        await Task.yield()
+        XCTAssertEqual(store.edge(of: .files), .left,
+                       "A non-dockable panel must stay on .left")
+        // And it must NOT have been force-shown by the rejected move.
+        XCTAssertEqual(store.override(for: .files), .auto)
+    }
+
+    func test_move_nonDockablePanel_doesNotRepublish() async {
+        let store = makeStore()
+        var count = 0
+        let sub = store.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        store.move(.files, to: .bottom)   // illegal ⇒ no-op
+        await Task.yield()
+        XCTAssertEqual(count, 0, "A rejected move must not republish the store")
+    }
+
+    func test_setEdge_nonDockablePanel_isRejected() {
+        let store = makeStore()
+        store.setEdge(.files, .right)   // illegal low-level setter call
+        XCTAssertEqual(store.edge(of: .files), .left,
+                       "setEdge must route through the validator too")
+    }
+
+    func test_setEdge_dockablePanel_isApplied() {
+        let store = makeStore()
+        store.setEdge(.git, .bottom)
+        XCTAssertEqual(store.edge(of: .git), .bottom)
+    }
+
+    // MARK: - global default edge (TSK-495)
+
+    func test_setDefaultEdge_movesUntouchedPanels_andPersists() async {
+        let store = makeStore()
+        XCTAssertEqual(store.edge(of: .git), .left)
+        store.setDefaultEdge(.right)
+        await Task.yield()
+        // An untouched panel now resolves to the new default.
+        XCTAssertEqual(store.edge(of: .git), .right)
+        // FILES still resolves to the default too (the default applies to
+        // every panel's absence) — but FILES is never *rendered* as a dock
+        // (DockResolution filters non-dockable), and you still can't
+        // explicitly move it off .left.
+        let reloaded = PanelLayoutStore(defaults: defaults)
+        XCTAssertEqual(reloaded.edge(of: .git), .right,
+                       "Global default edge must persist across a relaunch")
+    }
+
+    func test_setDefaultEdge_sameValue_isNoOp() async {
+        let store = makeStore()
+        var count = 0
+        let sub = store.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        store.setDefaultEdge(.left)   // already the default
+        await Task.yield()
+        XCTAssertEqual(count, 0, "Re-setting the same default edge is a no-op")
+    }
+
+    func test_setDefaultEdge_explicitOverrideStillWins() {
+        let store = makeStore()
+        store.setEdge(.git, .bottom)        // explicit override
+        store.setDefaultEdge(.right)         // flip the global default
+        XCTAssertEqual(store.edge(of: .git), .bottom,
+                       "An explicit per-panel override beats the global default")
+    }
+
     // MARK: - dock resolution: container picks up the moved panel
 
     func test_dockResolution_visiblePanels_reflectsMove() {
@@ -164,10 +237,16 @@ final class DockLayoutStoreTests: HeadlessUITestCase {
 
     func test_dockResolution_filtersOutFiles() {
         let store = makeStore()
+        // TSK-495: the assignment itself is now rejected at the model layer
+        // (FILES is not dockable), so this setEdge is a no-op — FILES stays
+        // on .left. The resolution filter is the SECOND, defense-in-depth
+        // guard: even if a panel slipped through assignment, a non-dockable
+        // kind is never a free-standing tool window.
         store.setEdge(.files, .bottom)
+        XCTAssertEqual(store.edge(of: .files), .left,
+                       "Assigning FILES to a dock must be rejected")
         store.setOverride(.files, .shown)
         let presence = SidebarDataPresence.evaluate(.init(hasRoot: true))
-        // FILES is never a free-standing tool window even if assigned + shown.
         XCTAssertFalse(
             DockResolution.visiblePanels(on: .bottom, panelLayout: store, presence: presence)
                 .contains(.files)

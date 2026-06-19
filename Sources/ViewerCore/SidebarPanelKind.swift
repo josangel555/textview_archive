@@ -69,6 +69,28 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         }
     }
 
+    /// Whether this panel can become a free-standing tool window docked
+    /// to a non-`.left` shoulder (right / bottom), and therefore whether
+    /// it is a legal drag/redock target.
+    ///
+    /// SINGLE SOURCE OF TRUTH for the "FILES is never a free-standing tool
+    /// window" rule that was previously open-coded as `kind == .files`
+    /// checks scattered across `ShoulderRailView` (drag source + redock
+    /// menu) and `DockResolution`. The FILES tree is the accordion's
+    /// flex-fill panel — it has no fixed-size tool-window form — so it is
+    /// pinned to the left accordion and rejected by `PanelPlacement`'s
+    /// validator for any non-`.left` edge.
+    ///
+    /// Every other panel is dockable. Pinned by
+    /// `PanelPlacementTests` so a new panel defaults to dockable unless it
+    /// is explicitly opted out here.
+    public var isDockable: Bool {
+        switch self {
+        case .files: return false
+        default:     return true
+        }
+    }
+
     /// Default uncollapsed height for the panel's scrollable body.
     /// Matches the previous fixed `SidebarConstants.sectionBodyHeight`
     /// (220) for parity with the pre-resize layout.

@@ -439,7 +439,9 @@ struct DockedToolWindow: View {
                 } label: {
                     Label("Move to \(dest.displayName)", systemImage: dest.systemImage)
                 }
-                .disabled(dest == edge)
+                // Grey the current dock + any illegal placement (the
+                // placement validator is the single arbiter of legality).
+                .disabled(dest == edge || !PanelPlacement.isLegal(kind, to: dest))
             }
         } label: {
             Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
@@ -548,8 +550,11 @@ enum DockResolution {
         presence: [SidebarPanelKind: Bool]
     ) -> [SidebarPanelKind] {
         panelLayout.railPanels(on: edge).filter { kind in
-            // FILES is never a free-standing tool window.
-            kind != .files
+            // A non-dockable panel (FILES) is never a free-standing tool
+            // window. Single source of truth: `isDockable`, the same rule
+            // `PanelPlacement` enforces at assignment time — so a panel
+            // can't be both rejected by the validator yet shown here.
+            kind.isDockable
                 && panelLayout.isVisible(kind, dataPresent: presence[kind] ?? false)
         }
     }

@@ -117,11 +117,27 @@ public final class PanelLayoutStore: ObservableObject {
         overrides.save(to: defaults)
     }
 
-    /// Reassign a panel to a different rail (deferred panel-moving;
-    /// exposed now so the value type stays the single mutation point).
-    /// Persists synchronously.
+    /// Reassign a panel to a different rail. Rejects illegal placements
+    /// (a non-dockable panel — e.g. FILES — on a non-`.left` edge) via
+    /// the pure `PanelPlacement` validator, so a programmatic caller can't
+    /// pin an undockable panel to a dock it has no form for. Persists
+    /// synchronously. Equality-guarded: an illegal/no-op move doesn't
+    /// republish.
     public func setEdge(_ k: SidebarPanelKind, _ edge: PanelEdge) {
-        edges.setEdge(k, edge)
+        let next = PanelPlacement.move(k, to: edge, in: edges)
+        guard next != edges else { return }
+        edges = next
+        edges.save(to: defaults)
+    }
+
+    /// Change the GLOBAL default dock edge (the shoulder a panel without a
+    /// per-panel override lands on). Pure re-anchor in the value type;
+    /// persisted synchronously. Equality-guarded.
+    public func setDefaultEdge(_ edge: PanelEdge) {
+        guard edge != edges.defaultEdge else { return }
+        var next = edges
+        next.setDefaultEdge(edge)
+        edges = next
         edges.save(to: defaults)
     }
 
@@ -139,8 +155,13 @@ public final class PanelLayoutStore: ObservableObject {
     /// a programmatic reassignment that should leave the visibility
     /// override untouched.
     public func move(_ k: SidebarPanelKind, to edge: PanelEdge, forceShown: Bool = true) {
-        guard edges.edge(k) != edge else { return }
-        edges.setEdge(k, edge)
+        // VALIDATE via the pure placement engine: an illegal placement
+        // (a non-dockable panel onto a non-`.left` dock) is rejected here,
+        // not silently stored and dropped at render time. A no-op redrop
+        // (already on `edge`) likewise produces an equal assignment.
+        let next = PanelPlacement.move(k, to: edge, in: edges)
+        guard next != edges else { return }
+        edges = next
         edges.save(to: defaults)
         // Moving OFF the left accordion onto a free-standing dock: ensure
         // the panel is actually shown there. We only flip an `.auto` (the

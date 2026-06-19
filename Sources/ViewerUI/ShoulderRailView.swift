@@ -185,8 +185,10 @@ struct PanelRailButton: View {
     var onMove: ((PanelEdge) -> Void)? = nil
 
     var body: some View {
-        if kind == .files {
-            // FILES is never a free-standing tool window — no drag source.
+        if !kind.isDockable {
+            // A non-dockable panel (FILES) is never a free-standing tool
+            // window — no drag source. Single source of truth: the
+            // `isDockable` rule, not an open-coded `== .files`.
             core
         } else {
             // TSK-327: the rail ICON is a drag source too — "drag the tool
@@ -224,7 +226,7 @@ struct PanelRailButton: View {
         // UX-E: right-click to redock. FILES is never a free-standing tool
         // window, so it gets no move menu.
         .contextMenu {
-            if let onMove, kind != .files {
+            if let onMove, kind.isDockable {
                 ForEach(PanelEdge.allCases, id: \.self) { dest in
                     Button {
                         onMove(dest)
@@ -234,7 +236,10 @@ struct PanelRailButton: View {
                             systemImage: dest.systemImage
                         )
                     }
-                    .disabled(dest == currentEdge)
+                    // Grey the current dock AND any illegal placement
+                    // (the placement validator is the single arbiter).
+                    .disabled(dest == currentEdge
+                              || !PanelPlacement.isLegal(kind, to: dest))
                 }
             }
         }
