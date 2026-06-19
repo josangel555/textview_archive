@@ -131,3 +131,19 @@ strip = true
 inherits = "release"
 opt-level = 3        # speed; measured ~0 net exec-size cost after dead-strip (overrides release's "z")
 panic = "unwind"
+
+# Test-profile compile-speed lever (TSK-786, build/test-speed homework).
+# `cargo test` uses the `test` profile, which inherits `dev` → `debug = true`
+# (FULL DWARF). The gate (scripts/rust-core-gate.sh) cold-compiles ~14 crate
+# test binaries every run; full debuginfo is the heaviest single cost and the
+# gate never needs variable/type info — only a backtrace with file:line on a
+# panic, which `line-tables-only` preserves. Measured A/B (cargo 1.92, cold
+# CARGO_TARGET_DIR, `cargo test --locked --workspace --no-run`):
+#   debug = true (default) : 12.72 s wall, 1.1 GB target
+#   debug = line-tables-only: 12.04 s wall, 997 MB target
+# ⇒ ~5% off the cold test-compile + ~100 MB less disk, zero behaviour risk
+# (all ~680 workspace tests stay green; panic backtraces keep file:line).
+# Scoped to `test` ONLY — `dev` (plain `cargo build`) keeps full debug for
+# interactive debugging; `dist`/`release` (the shipping link) are untouched.
+[profile.test]
+debug = "line-tables-only"

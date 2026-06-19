@@ -1,5 +1,22 @@
 # Build & Test Pipeline Speedup — Synthesis
 
+> **STATUS UPDATE 2026-06-19 (TSK-786):** several free-wins below have since LANDED.
+> Verified against the current tree:
+> - **F2** (`--disable-index-store` on the gate build) — **DONE** (TSK-832, refined by
+>   TSK-846's dedicated `.build-gate` scratch dir). See `scripts/test-headless-gate.sh:43-91`.
+> - **F3** (one shared `CARGO_TARGET_DIR`) — **DONE** (TSK-833): `build-rust-core.sh:62`,
+>   `rust-core-gate.sh:42`, and `rust-core/.cargo/config.toml` all default to
+>   `/private/tmp/mdv-rust-target`.
+> - **F5** (Rust `dev`/`test` codegen-units) — **superseded / re-scoped.** cargo 1.92's
+>   `dev` profile ALREADY defaults to `codegen-units = 256` (incremental on), so the
+>   original F5 was a no-op for `dev`. The real measurable test-compile lever was
+>   `[profile.test] debug = "line-tables-only"` — LANDED under TSK-786 (measured ~5% off
+>   the cold `cargo test --no-run` + ~100 MB less target disk; all ~680 workspace tests
+>   stay green; pinned by `crates/core/tests/test_profile_debuginfo_speed_lever.rs`).
+> - **F1 / F4** (kill the duplicate index-build tree / reap stale dirs) remain one-time
+>   cleanup + an editor setting, not a code change. **T1 (cargo-nextest)** remains the top
+>   owner-approval-gated lever.
+
 **Date:** 2026-06-14 · **Author:** research pass (`claude-mdv`) · **Status:** analysis only, not committed
 **Scope:** SwiftPM build + headless test gate + Rust-core gate + `.build`/target-dir disk.
 **Machine measured:** Apple-silicon, 12 logical cores (8 P + 4 E), Swift 6.3.2, cargo 1.92 / rustc 1.92.
