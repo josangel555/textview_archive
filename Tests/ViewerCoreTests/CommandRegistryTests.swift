@@ -99,6 +99,8 @@ final class CommandRegistryTests: XCTestCase {
             "toggle-blame",
             // open a terminal in the focused file's folder (TSK-769)
             "terminal-open-here",
+            // focus shortcuts: move focus to a surface (TSK-937)
+            "focus-terminal", "focus-file-nav", "focus-git", "focus-document",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

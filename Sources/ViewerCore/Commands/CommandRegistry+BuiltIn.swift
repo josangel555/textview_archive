@@ -150,6 +150,24 @@ extension CommandRegistry {
             defaultShortcut: Shortcut(key: "i", modifiers: [.command, .control]),
             scriptVerb: "folder-stats"),
 
+        // Focus shortcuts (TSK-937): move keyboard focus to a specific
+        // surface. NO default shortcut — these keys overlap existing
+        // bindings (the TSK-936 muscle-memory concern), so the ACTIONS ship
+        // discoverable via menu + palette; key choice is a deliberate
+        // follow-up rather than a blind conflicting default.
+        CommandDescriptor(
+            id: "view.focusTerminal", title: "Focus Terminal", category: .view,
+            scriptVerb: "focus-terminal"),
+        CommandDescriptor(
+            id: "view.focusFileNav", title: "Focus File Navigator", category: .view,
+            scriptVerb: "focus-file-nav"),
+        CommandDescriptor(
+            id: "view.focusGit", title: "Focus Git Panel", category: .view,
+            scriptVerb: "focus-git"),
+        CommandDescriptor(
+            id: "view.focusDocument", title: "Focus Active File", category: .view,
+            scriptVerb: "focus-document"),
+
         // MARK: Edit
         CommandDescriptor(
             id: "edit.undo", title: "Undo", category: .edit,

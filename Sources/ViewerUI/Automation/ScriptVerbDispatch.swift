@@ -238,6 +238,13 @@ public enum ScriptVerb {
         // Omni-invokability (git.showPanel / view.toggleLineBookmark previously
         // had no script verb). Both wire to existing @MainActor model methods.
         case "show-git-panel":  model.showGitPanel()
+        // Focus shortcuts (TSK-937): move keyboard focus to a specific
+        // surface. Each opens/shows its target if needed then bumps the
+        // surface's focus-request nonce.
+        case "focus-terminal":  model.focusTerminal()
+        case "focus-file-nav":  model.focusFileNav()
+        case "focus-git":       model.focusGitPanel()
+        case "focus-document":  model.focusActiveDocument()
         case "toggle-line-bookmark": model.toggleCurrentLineBookmark()
         case "git-file-history":
             // Omni-invokable "Show File History" for the CURRENT file (the

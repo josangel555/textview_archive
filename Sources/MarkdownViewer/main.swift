@@ -1756,6 +1756,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         repoHistoryItem.target = self
         viewMenu.addItem(repoHistoryItem)
 
+        // Focus shortcuts (TSK-937): move keyboard focus to a specific
+        // surface. No default key-equivalents — the obvious keys clash with
+        // existing bindings (the TSK-936 concern), so these ship as
+        // discoverable menu items (+ palette entries) and the user can bind
+        // keys via keybinding.json. Each is gated in `validateMenuItem`.
+        viewMenu.addItem(.separator())
+        let focusTerminalItem = NSMenuItem(
+            title: "Focus Terminal",
+            action: #selector(focusTerminal(_:)),
+            keyEquivalent: ""
+        )
+        focusTerminalItem.target = self
+        applyShortcut("view.focusTerminal", to: focusTerminalItem)
+        viewMenu.addItem(focusTerminalItem)
+
+        let focusFileNavItem = NSMenuItem(
+            title: "Focus File Navigator",
+            action: #selector(focusFileNav(_:)),
+            keyEquivalent: ""
+        )
+        focusFileNavItem.target = self
+        applyShortcut("view.focusFileNav", to: focusFileNavItem)
+        viewMenu.addItem(focusFileNavItem)
+
+        let focusGitItem = NSMenuItem(
+            title: "Focus Git Panel",
+            action: #selector(focusGitPanel(_:)),
+            keyEquivalent: ""
+        )
+        focusGitItem.target = self
+        applyShortcut("view.focusGit", to: focusGitItem)
+        viewMenu.addItem(focusGitItem)
+
+        let focusDocumentItem = NSMenuItem(
+            title: "Focus Active File",
+            action: #selector(focusActiveDocument(_:)),
+            keyEquivalent: ""
+        )
+        focusDocumentItem.target = self
+        applyShortcut("view.focusDocument", to: focusDocumentItem)
+        viewMenu.addItem(focusDocumentItem)
+
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
@@ -2873,6 +2915,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // TSK-947: needs a tab AND find must be available (greyed in
             // HTML-rendered mode — no find runtime / no hosted bar).
             return hasTab && model.canFindInPage
+        case #selector(focusTerminal(_:)):
+            // TSK-937: only when the terminal pane is open.
+            return model.canFocusTerminal
+        case #selector(focusFileNav(_:)):
+            // TSK-937: only when a folder root is open (the Files tree).
+            return model.canFocusFileNav
+        case #selector(focusGitPanel(_:)):
+            // TSK-937: only when a repo is open under the active root.
+            return model.canFocusGitPanel
+        case #selector(focusActiveDocument(_:)):
+            // TSK-937: only when there's an active document tab.
+            return model.canFocusActiveDocument
         case #selector(reloadCurrentFile(_:)),
              #selector(closeCurrentTab(_:)),
              #selector(nextTab(_:)),
@@ -2962,6 +3016,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// Show Repository History — opens the Git panel on the Log tab.
     @objc func showRepoHistory(_ sender: Any?) {
         model.showGitPanel(tab: .log)
+    }
+
+    // MARK: - Focus shortcuts (TSK-937)
+    //
+    // Each moves keyboard focus to a specific surface; `validateMenuItem`
+    // greys the item out when its target surface isn't currently available.
+
+    /// Focus Terminal — opens the pane if closed and takes its first responder.
+    @objc func focusTerminal(_ sender: Any?) {
+        model.focusTerminal()
+    }
+
+    /// Focus File Navigator — reveals the sidebar's Files tree and focuses it.
+    @objc func focusFileNav(_ sender: Any?) {
+        model.focusFileNav()
+    }
+
+    /// Focus Git Panel — expands + focuses the sidebar Git section (Status tab).
+    @objc func focusGitPanel(_ sender: Any?) {
+        model.focusGitPanel()
+    }
+
+    /// Focus Active File — moves focus to the active document surface.
+    @objc func focusActiveDocument(_ sender: Any?) {
+        model.focusActiveDocument()
     }
 
     // MARK: - Debug tool windows (WAVE 2b items 4 + 5)
