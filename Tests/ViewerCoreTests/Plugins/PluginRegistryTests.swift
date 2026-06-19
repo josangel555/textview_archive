@@ -610,6 +610,184 @@ final class PluginRegistryTests: XCTestCase {
         XCTAssertEqual(PluginRegistry.shared.menuItems.all.count, 1)
     }
 
+    // MARK: - Sidebar row actions / "buttons" (TSK-375)
+
+    // A plain Tier A row (no action) registers a non-actionable row — the
+    // UI renders it as plain text (no button).
+    func test_tier_a_plain_row_is_not_actionable() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.row.plain", manifestJSON: #"""
+        {
+          "id": "com.test.row.plain", "name": "P", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar"],
+          "contributes": [
+            { "type": "sidebar_section", "id": "s", "title": "S",
+              "provider": { "tier": "A", "rows": [
+                { "id": "r1", "label": "Plain", "detail": "x" }
+              ] } }
+          ]
+        }
+        """#)
+        grant("com.test.row.plain", ["ui.sidebar"])
+        _ = PluginRegistry.shared.loadAll(from: dir)
+        let entry = PluginRegistry.shared.sidebarSections.all.first
+        let rows = entry?.provider(.init(openFileContents: [:])) ?? []
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertFalse(rows[0].isActionable, "a plain row must carry no action/button")
+        XCTAssertNil(rows[0].invoke)
+    }
+
+    // A Tier A row action registers an actionable (button) row whose invoke
+    // closure is a host-side noop — present (so the UI shows a button) but
+    // does nothing when clicked.
+    func test_tier_a_row_action_is_actionable_noop() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.row.a", manifestJSON: #"""
+        {
+          "id": "com.test.row.a", "name": "A", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar"],
+          "contributes": [
+            { "type": "sidebar_section", "id": "s", "title": "S",
+              "provider": { "tier": "A", "rows": [
+                { "id": "r1", "label": "Noop", "action": { "tier": "A" } }
+              ] } }
+          ]
+        }
+        """#)
+        grant("com.test.row.a", ["ui.sidebar"])
+        _ = PluginRegistry.shared.loadAll(from: dir)
+        let rows = PluginRegistry.shared.sidebarSections.all.first?
+            .provider(.init(openFileContents: [:])) ?? []
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertTrue(rows[0].isActionable, "a Tier A row action must render a button")
+        XCTAssertNotNil(rows[0].invoke)
+        rows[0].invoke?()  // noop — must not crash.
+    }
+
+    // End-to-end: a Tier B row action wires an invoke closure that SPAWNS
+    // the plugin bin (proven by the side-effect sentinel) — the "button"
+    // interaction. This is the row-level analogue of the menu-item Tier B
+    // invoke test.
+    func test_tier_b_row_action_invoke_runs_subprocess() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let folder = try writePlugin(in: dir, id: "com.test.row.b", manifestJSON: #"""
+        {
+          "id": "com.test.row.b", "name": "B", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar", "shell.exec"],
+          "contributes": [
+            { "type": "sidebar_section", "id": "s", "title": "S",
+              "provider": { "tier": "A", "rows": [
+                { "id": "r1", "label": "Copy as Crux URL", "detail": "Copy",
+                  "action": { "tier": "B", "bin": "bin.sh", "args": [] } }
+              ] } }
+          ]
+        }
+        """#)
+        let sentinel = folder.appendingPathComponent("ran.flag")
+        let binURL = folder.appendingPathComponent("bin.sh")
+        try """
+        #!/bin/sh
+        cat >/dev/null
+        echo ran > "\(sentinel.path)"
+        echo '{}'
+        """.data(using: .utf8)!.write(to: binURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: binURL.path)
+
+        grant("com.test.row.b", ["shell.exec", "ui.sidebar"])
+        let results = PluginRegistry.shared.loadAll(from: dir)
+        XCTAssertEqual(results.count, 1)
+        if case .loaded = results[0].status {} else {
+            XCTFail("expected .loaded, got \(results[0].status)")
+        }
+
+        let rows = PluginRegistry.shared.sidebarSections.all.first?
+            .provider(.init(openFileContents: [:])) ?? []
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].label, "Copy as Crux URL")
+        XCTAssertTrue(rows[0].isActionable)
+
+        // Click the button — the wired invoke spawns the bin.
+        rows[0].invoke?()
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: sentinel.path),
+            "Tier B row action invoke should have spawned the bin (sentinel missing)")
+    }
+
+    // A Tier A section whose static row carries a Tier B action but the
+    // manifest doesn't declare `shell.exec`: the whole section is dropped
+    // with a capability warning (no silent escalation — design §5).
+    func test_tier_b_row_action_without_shell_exec_is_skipped() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.row.b.nocap", manifestJSON: #"""
+        {
+          "id": "com.test.row.b.nocap", "name": "B", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar"],
+          "contributes": [
+            { "type": "sidebar_section", "id": "s", "title": "S",
+              "provider": { "tier": "A", "rows": [
+                { "id": "r1", "label": "Run", "action": { "tier": "B", "bin": "bin.sh" } }
+              ] } }
+          ]
+        }
+        """#)
+        grant("com.test.row.b.nocap", ["ui.sidebar"])
+        let results = PluginRegistry.shared.loadAll(from: dir)
+        XCTAssertEqual(results.count, 1)
+        if case .loadedWithWarnings(let w) = results[0].status {
+            XCTAssertTrue(w.contains { $0.contains("shellExec") || $0.contains("shell.exec") },
+                          "expected a shell.exec capability warning, got: \(w)")
+        } else {
+            XCTFail("expected loadedWithWarnings, got \(results[0].status)")
+        }
+        XCTAssertTrue(PluginRegistry.shared.sidebarSections.all.isEmpty)
+    }
+
+    // A Tier C / unknown row action renders as a plain (non-actionable) row
+    // — the action is parsed but not wired in v1 (same posture as Tier C
+    // providers). The section still loads and its OTHER rows are unaffected.
+    func test_tier_c_and_unknown_row_actions_render_plain() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.row.c", manifestJSON: #"""
+        {
+          "id": "com.test.row.c", "name": "C", "version": "1.0.0",
+          "author": { "name": "T" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar"],
+          "contributes": [
+            { "type": "sidebar_section", "id": "s", "title": "S",
+              "provider": { "tier": "A", "rows": [
+                { "id": "rc", "label": "WebView", "action": { "tier": "C" } },
+                { "id": "rz", "label": "Future", "action": { "tier": "Z" } },
+                { "id": "ra", "label": "Noop", "action": { "tier": "A" } }
+              ] } }
+          ]
+        }
+        """#)
+        grant("com.test.row.c", ["ui.sidebar"])
+        _ = PluginRegistry.shared.loadAll(from: dir)
+        let rows = PluginRegistry.shared.sidebarSections.all.first?
+            .provider(.init(openFileContents: [:])) ?? []
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertFalse(rows[0].isActionable, "Tier C action ⇒ plain row in v1")
+        XCTAssertFalse(rows[1].isActionable, "unknown tier action ⇒ plain row")
+        XCTAssertTrue(rows[2].isActionable, "Tier A action ⇒ button (unaffected)")
+    }
+
     // A bundled menu item registered via the bundled seam parks + restores
     // across disable/enable without re-running a launch hook.
     func test_bundled_menu_item_parks_and_restores() {

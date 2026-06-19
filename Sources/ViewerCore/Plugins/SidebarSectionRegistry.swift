@@ -25,8 +25,36 @@ public final class SidebarSectionRegistry {
         public let id: String
         public let label: String
         public let detail: String?
-        public init(id: String, label: String, detail: String?) {
+        /// Optional inline action (TSK-375 — the "button/widget" surface).
+        /// When non-nil the sidebar renders a button on the row that runs
+        /// this closure (on the main actor) when clicked. `nil` ⇒ a plain
+        /// text row. Excluded from `Equatable` (closures aren't comparable);
+        /// row identity + text drive equality, the action is presence-only.
+        public let invoke: (@MainActor () -> Void)?
+
+        public init(
+            id: String,
+            label: String,
+            detail: String?,
+            invoke: (@MainActor () -> Void)? = nil
+        ) {
             self.id = id; self.label = label; self.detail = detail
+            self.invoke = invoke
+        }
+
+        /// Whether this row carries a clickable action. Drives the UI's
+        /// decision to render a button — host-testable without a closure
+        /// comparison.
+        public var isActionable: Bool { invoke != nil }
+
+        // Closures are not `Equatable`; compare the value fields and treat
+        // the action as a presence flag so existing row-equality tests (which
+        // construct rows without an action) keep passing.
+        public static func == (lhs: Row, rhs: Row) -> Bool {
+            lhs.id == rhs.id
+                && lhs.label == rhs.label
+                && lhs.detail == rhs.detail
+                && lhs.isActionable == rhs.isActionable
         }
     }
 

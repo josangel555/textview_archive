@@ -110,6 +110,14 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
                 // permissions. v1 ships Tier B only; Tier C is parsed
                 // and rejected as not-supported (§3.3).
                 if case .b = s.provider { req.insert(.shellExec) }
+                // TSK-375: a Tier A section whose static rows carry a Tier B
+                // (subprocess) action ALSO needs `shell.exec` — clicking the
+                // button spawns a process, the same gate as a Tier B provider.
+                if case .a(let rows) = s.provider {
+                    for row in rows {
+                        if case .b = row.action { req.insert(.shellExec); break }
+                    }
+                }
                 return req
             case .menuItem(let m):
                 var req: Set<Capability> = [.uiMenu]
@@ -249,15 +257,89 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
 
         /// One static row of a Tier A section, declared verbatim in
         /// plugin.json (`{"id": "...", "label": "...", "detail": "..."}`).
+        ///
+        /// A row may carry an optional `action` (TSK-375) — the "button/
+        /// widget" surface. An actionable row renders an inline button the
+        /// user can click (e.g. a "Copy as Crux URL" row). The action is a
+        /// tagged union over `tier`, mirroring `MenuItemContribution.Action`
+        /// so plugin authors learn one action shape across every extension
+        /// point. Absent `action` ⇒ a plain text row (the pre-375 shape).
         public struct StaticRow: Decodable, Sendable, Equatable {
             public let id: String
             public let label: String
             public let detail: String?
+            /// Optional inline action. `nil` ⇒ a plain (inert) text row.
+            public let action: RowAction?
 
-            public init(id: String, label: String, detail: String? = nil) {
+            public init(
+                id: String,
+                label: String,
+                detail: String? = nil,
+                action: RowAction? = nil
+            ) {
                 self.id = id
                 self.label = label
                 self.detail = detail
+                self.action = action
+            }
+
+            private enum CodingKeys: String, CodingKey {
+                case id, label, detail, action
+            }
+        }
+
+        /// The behaviour bound to an actionable sidebar row (TSK-375). A
+        /// tagged union over `tier`, mirroring `MenuItemContribution.Action`
+        /// exactly:
+        ///
+        ///   - **Tier A** — declarative-only. The row renders a button, but
+        ///     selecting it does nothing host-side (forward-compat label).
+        ///     No subprocess.
+        ///   - **Tier B** — clicking the button spawns the plugin's `bin`
+        ///     with a `runCommand` envelope, dispatched through the same
+        ///     `PluginSubprocessHost` the sidebar/menu use. Carries `bin`
+        ///     (path relative to the plugin folder), optional `args`, and an
+        ///     optional `timeoutMs`.
+        ///
+        /// Tier C (WebView) is parsed-and-rejected like the others.
+        public enum RowAction: Decodable, Sendable, Equatable {
+            case a
+            case b(bin: String, args: [String], timeoutMs: Int?)
+            case c
+            case unknown(tier: String)
+
+            private enum CodingKeys: String, CodingKey {
+                case tier, bin, args, timeoutMs
+            }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                let tier = try c.decode(String.self, forKey: .tier)
+                switch tier {
+                case "A":
+                    self = .a
+                case "B":
+                    // Tier B *must* declare a `bin` — surface a missing one
+                    // as a decode error (same contract as the menu item).
+                    let bin = try c.decode(String.self, forKey: .bin)
+                    let args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
+                    let timeoutMs = try c.decodeIfPresent(Int.self, forKey: .timeoutMs)
+                    self = .b(bin: bin, args: args, timeoutMs: timeoutMs)
+                case "C":
+                    self = .c
+                default:
+                    self = .unknown(tier: tier)
+                }
+            }
+
+            /// Human-readable label for log + warning messages.
+            var tierLabel: String {
+                switch self {
+                case .a: return "A"
+                case .b: return "B"
+                case .c: return "C"
+                case .unknown(let t): return t
+                }
             }
         }
 

@@ -88,27 +88,46 @@ struct PluginSidebarSections: View {
                             SidebarEmptyPlaceholder(message: "(empty)")
                         }
                         ForEach(rows) { row in
-                            HStack(spacing: 6) {
-                                Text(row.label)
-                                    .font(.system(size: model.uiSize(11)))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Spacer(minLength: 4)
-                                if let detail = row.detail {
-                                    Text(detail)
-                                        .font(.system(size: model.uiSize(10),
-                                                      design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.horizontal, model.uiSize(14))
-                            .padding(.vertical, model.uiSize(2))
+                            rowView(row)
                         }
                     }
                 }
                 .frame(height: bodyHeight)
             }
         }
+    }
+
+    /// One sidebar row. A plain row is text-only (label + optional
+    /// monospaced detail). An *actionable* row (TSK-375 — the "button/
+    /// widget" surface) renders an inline button bound to the row's
+    /// `invoke` closure; clicking it runs the plugin's action (e.g. a
+    /// "Copy as Crux URL" command). The button replaces the detail text
+    /// when present so the row stays single-line.
+    @ViewBuilder
+    private func rowView(_ row: SidebarSectionRegistry.Row) -> some View {
+        HStack(spacing: 6) {
+            Text(row.label)
+                .font(.system(size: model.uiSize(11)))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            if let invoke = row.invoke {
+                Button(action: invoke) {
+                    Text(row.detail ?? "Run")
+                        .font(.system(size: model.uiSize(10)))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.borderless)
+                .help(row.detail ?? row.label)
+            } else if let detail = row.detail {
+                Text(detail)
+                    .font(.system(size: model.uiSize(10),
+                                  design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, model.uiSize(14))
+        .padding(.vertical, model.uiSize(2))
     }
 
     /// The snapshot exposed to plugin providers. v1: the URL+contents

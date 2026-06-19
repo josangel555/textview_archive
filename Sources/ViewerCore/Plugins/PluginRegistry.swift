@@ -377,8 +377,25 @@ public final class PluginRegistry {
             // Tier A static-bind (TSK-469): the rows are declared verbatim
             // in plugin.json and extracted at load time — no subprocess,
             // no placeholder. An empty `rows` is a valid (empty) section.
-            let staticRows = rows.map {
-                SidebarSectionRegistry.Row(id: $0.id, label: $0.label, detail: $0.detail)
+            //
+            // TSK-375: a static row may carry an `action` (the "button/
+            // widget" surface). We bind it to the row's `invoke` closure
+            // here, the same way `registerMenuItem` binds a menu action —
+            // a Tier A action is a noop button, a Tier B action spawns the
+            // plugin's `bin` through the shared subprocess host.
+            let host = self.subprocessHost
+            let staticRows = rows.map { row -> SidebarSectionRegistry.Row in
+                SidebarSectionRegistry.Row(
+                    id: row.id,
+                    label: row.label,
+                    detail: row.detail,
+                    invoke: Self.rowInvoke(
+                        action: row.action,
+                        pluginID: manifest.id,
+                        folder: folder,
+                        host: host
+                    )
+                )
             }
             let entry = SidebarSectionRegistry.Entry(
                 pluginID: manifest.id,
@@ -454,6 +471,49 @@ public final class PluginRegistry {
             return "sidebar_section '\(s.id)' uses tier C (WebView) — not supported in v1"
         case .unknown(let t):
             return "sidebar_section '\(s.id)' uses unknown tier '\(t)' — skipped"
+        }
+    }
+
+    /// Build the `invoke` closure for an actionable sidebar row (TSK-375).
+    /// Returns `nil` for a plain (no-action) row or a Tier C / unknown-tier
+    /// action — those rows render without a button. A Tier A action is a
+    /// noop button (its closure does nothing); a Tier B action spawns the
+    /// plugin `bin` with a `runCommand` envelope through the subprocess host,
+    /// mirroring `registerMenuItem`'s Tier B path.
+    ///
+    /// `static` + parameterised on `host`/`folder` so it captures nothing
+    /// from `self` — the closure outlives the registration call and must not
+    /// retain the registry.
+    private static func rowInvoke(
+        action: PluginManifest.SidebarSectionContribution.RowAction?,
+        pluginID: String,
+        folder: URL,
+        host: PluginSubprocessHost
+    ) -> (@MainActor () -> Void)? {
+        guard let action else { return nil }
+        switch action {
+        case .a:
+            // Tier A: a button that does nothing host-side (declarative).
+            return {}
+        case .b(let bin, let args, let timeoutMs):
+            return {
+                // Fire-and-observe: the outcome is captured in the audit log
+                // by `PluginSubprocessHost`; a sidebar button click has no row
+                // to repaint with a return value. Bounded by the host timeout.
+                _ = host.call(
+                    pluginID: pluginID,
+                    pluginFolder: folder,
+                    bin: bin,
+                    args: args,
+                    timeoutMs: timeoutMs,
+                    request: .init(kind: "runCommand")
+                )
+            }
+        case .c, .unknown:
+            // Tier C (WebView) / unknown tiers aren't supported in v1 — the
+            // row renders as plain text (no button), same posture as a Tier C
+            // provider being skipped with a warning.
+            return nil
         }
     }
 
