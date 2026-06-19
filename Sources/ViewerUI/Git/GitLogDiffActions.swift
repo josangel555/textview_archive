@@ -86,11 +86,12 @@ public enum GitLogDiffActions {
     }
 
     private static func writeDiffFile(_ body: String, name: String) -> URL? {
-        let cache = FileManager.default
-            .urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = cache.appendingPathComponent("MarkdownViewer/diffs", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // TSK-752: disk-backed scratch (the diff opens in-process as a tab, but
+        // disk keeps it cheap + lets the OS page-cache do the in-memory fast
+        // path). Centralized resolution + bounded pruning so the cache doesn't
+        // grow one file per commit forever.
+        let dir = ScratchStore.cacheSubdir("diffs")
+        ScratchStore.prune(directory: dir)
         let out = dir.appendingPathComponent(name)
         do {
             try body.write(to: out, atomically: true, encoding: .utf8)

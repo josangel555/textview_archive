@@ -5729,7 +5729,13 @@ public final class DocumentModel: ObservableObject {
         guard let url = tabs.selected?.url,
               let html = htmlExportForActiveMarkdown(inlineImages: true) else { return nil }
         let name = BrowserPreview.tempFileName(stem: url.deletingPathExtension().lastPathComponent)
-        let dest = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        // TSK-752: disk-mandatory here — the consumer is `NSWorkspace.open`, i.e.
+        // the user's browser in a SEPARATE process, which can only read a real
+        // `file://` URL. Centralized scratch dir + prune so previews don't pile
+        // up one-per-document forever.
+        let dir = ScratchStore.cacheSubdir("preview")
+        ScratchStore.prune(directory: dir)
+        let dest = dir.appendingPathComponent(name)
         do { try Data(html.utf8).write(to: dest, options: .atomic) } catch { return nil }
         return dest
     }

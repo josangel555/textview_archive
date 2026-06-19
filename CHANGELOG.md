@@ -35,6 +35,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **Session tab name tracks the current folder** — it relabels when you change the root (e.g. Open Folder), unless you've manually renamed the session.
 - **Image "Save a Copy" reports write failures** instead of silently losing data; other previously-swallowed save/export/decode errors now surface too.
 - **Horizontal scrollbar no longer flickers while typing**, and the **hovered-row highlight is no longer offset** in the editor.
+- **Browser-preview & git-diff temp files no longer pile up forever** — the scratch caches behind "Open in Browser" and the git diff/commit tabs are now pruned (old/excess files evicted), so they stop slowly accumulating on disk.
 
 ### Security
 - **Hardened HTML export / Open-in-Browser against XSS** — author HTML is escaped on the export path and a restrictive Content-Security-Policy is shipped; the in-app HTML sanitizer's event-handler and `javascript:`-scheme bypasses are closed; exported image inlining refuses path-traversal.
