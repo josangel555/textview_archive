@@ -34,30 +34,39 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
     public static func detect(from url: URL) -> HighlightLanguage {
         switch url.pathExtension.lowercased() {
         case "swift":                                  return .swift
-        case "json", "jsonl":                          return .json
+        case "json", "jsonl", "json5", "jsonc",
+             "ndjson":                                 return .json
         case "xml", "plist", "xib", "storyboard",
-             "svg":                                    return .xml
-        case "py", "pyw", "pyi":                       return .python
-        case "js", "mjs", "cjs", "jsx":                return .javascript
-        case "ts":                                     return .typescript
+             "svg", "xsd", "xsl", "xslt", "wsdl",
+             "rss", "atom", "pom", "csproj", "vbproj",
+             "vcxproj", "props", "targets":            return .xml
+        case "py", "pyw", "pyi", "pyx", "pxd":         return .python
+        case "js", "mjs", "cjs", "jsx", "es", "es6":   return .javascript
+        case "ts", "mts", "cts":                       return .typescript
         // `.tsx` needs the JSX-aware grammar — the plain TS grammar
         // cannot parse JSX and litters the tree with ERROR nodes,
         // wrecking highlighting for the whole file. See `Grammar.tsx`.
         case "tsx":                                    return .tsx
-        case "md", "markdown", "mdown", "mkd", "mkdn": return .markdown
-        case "sh", "bash", "zsh", "fish":              return .shell
+        case "md", "markdown", "mdown", "mkd", "mkdn",
+             "mdwn", "mkdown", "ronn", "qmd":          return .markdown
+        case "sh", "bash", "zsh", "fish", "ksh",
+             "ash", "dash", "command", "bashrc",
+             "zshrc", "bash_profile", "zprofile",
+             "profile":                                return .shell
         case "yaml", "yml":                            return .yaml
         case "html", "htm", "xhtml":                   return .html
         case "css", "scss", "sass":                    return .css
         case "sql":                                    return .sql
         case "go":                                     return .go
         case "rs":                                     return .rust
-        case "c", "h":                                 return .c
-        case "cpp", "cc", "cxx", "hpp", "hh":          return .cpp
-        case "rb":                                     return .ruby
+        case "c", "h", "m":                            return .c
+        case "cpp", "cc", "cxx", "c++", "hpp", "hh",
+             "hxx", "h++", "ipp", "ixx", "cppm",
+             "tcc", "inl", "ino":                      return .cpp
+        case "rb", "rake", "gemspec", "podspec", "ru": return .ruby
         case "java":                                   return .java
         case "kt", "kts":                              return .kotlin
-        case "cs":                                     return .csharp
+        case "cs", "csx":                              return .csharp
         case "lua":                                    return .lua
         default:                                       return .plainText
         }
@@ -72,25 +81,26 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
             .first.map(String.init) ?? ""
         switch key {
         case "swift":                              return .swift
-        case "json", "jsonl":                      return .json
-        case "xml", "plist", "svg":                return .xml
+        case "json", "jsonl", "json5", "jsonc":    return .json
+        case "xml", "plist", "svg", "xsl", "xslt": return .xml
         case "py", "python", "python3":            return .python
-        case "js", "javascript", "node":           return .javascript
+        case "js", "javascript", "node", "jsx":    return .javascript
         case "ts", "typescript":                   return .typescript
         case "tsx":                                return .tsx
         case "md", "markdown":                     return .markdown
-        case "sh", "bash", "zsh", "shell":         return .shell
+        case "sh", "bash", "zsh", "shell", "ksh",
+             "fish", "console":                    return .shell
         case "yaml", "yml":                        return .yaml
         case "html", "xhtml":                      return .html
         case "css", "scss", "sass":                return .css
         case "sql":                                return .sql
         case "go", "golang":                       return .go
         case "rs", "rust":                         return .rust
-        case "c":                                  return .c
-        case "cpp", "c++", "cc", "cxx":            return .cpp
+        case "c", "objc", "objective-c":           return .c
+        case "cpp", "c++", "cc", "cxx", "cplusplus": return .cpp
         case "rb", "ruby":                         return .ruby
         case "java":                               return .java
-        case "kt", "kotlin":                       return .kotlin
+        case "kt", "kotlin", "kts":               return .kotlin
         case "cs", "csharp", "c#":                 return .csharp
         case "lua":                                return .lua
         default:                                   return .plainText
@@ -162,38 +172,91 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
     public var fileExtensions: [String] {
         switch self {
         case .swift:      return ["swift"]
-        case .json:       return ["json", "jsonl"]
-        case .xml:        return ["xml", "plist", "xib", "storyboard", "svg"]
-        case .python:     return ["py", "pyw", "pyi"]
-        case .javascript: return ["js", "mjs", "cjs", "jsx"]
-        case .typescript: return ["ts"]
+        case .json:       return ["json", "jsonl", "json5", "jsonc", "ndjson"]
+        case .xml:        return ["xml", "plist", "xib", "storyboard", "svg",
+                                  "xsd", "xsl", "xslt", "wsdl", "rss", "atom",
+                                  "pom", "csproj", "vbproj", "vcxproj",
+                                  "props", "targets"]
+        case .python:     return ["py", "pyw", "pyi", "pyx", "pxd"]
+        case .javascript: return ["js", "mjs", "cjs", "jsx", "es", "es6"]
+        case .typescript: return ["ts", "mts", "cts"]
         case .tsx:        return ["tsx"]
-        case .markdown:   return ["md", "markdown", "mdown", "mkd", "mkdn"]
-        case .shell:      return ["sh", "bash", "zsh", "fish"]
+        case .markdown:   return ["md", "markdown", "mdown", "mkd", "mkdn",
+                                  "mdwn", "mkdown", "ronn", "qmd"]
+        case .shell:      return ["sh", "bash", "zsh", "fish", "ksh", "ash",
+                                  "dash", "command", "bashrc", "zshrc",
+                                  "bash_profile", "zprofile", "profile"]
         case .yaml:       return ["yaml", "yml"]
         case .html:       return ["html", "htm", "xhtml"]
         case .css:        return ["css", "scss", "sass"]
         case .sql:        return ["sql"]
         case .go:         return ["go"]
         case .rust:       return ["rs"]
-        case .c:          return ["c", "h"]
-        case .cpp:        return ["cpp", "cc", "cxx", "hpp", "hh"]
-        case .ruby:       return ["rb"]
+        case .c:          return ["c", "h", "m"]
+        case .cpp:        return ["cpp", "cc", "cxx", "c++", "hpp", "hh",
+                                  "hxx", "h++", "ipp", "ixx", "cppm",
+                                  "tcc", "inl", "ino"]
+        case .ruby:       return ["rb", "rake", "gemspec", "podspec", "ru"]
         case .java:       return ["java"]
         case .kotlin:     return ["kt", "kts"]
-        case .csharp:     return ["cs"]
+        case .csharp:     return ["cs", "csx"]
         case .lua:        return ["lua"]
         case .plainText:  return []
         }
     }
 
-    /// The highlightable languages to LIST in Settings (TSK-790) — every real
-    /// grammar, sorted by display name; `.plainText` (the no-highlight fallback)
-    /// is excluded. Both the read-only source View (TreeSitter) and the CM6
-    /// editor (Edit) highlight this same set, keyed by `HighlightLanguage`.
+    /// Whether the read-only **View** mode (the TreeSitter engine) can actually
+    /// color this language — i.e. a grammar is bundled for it. TSK-897: the enum
+    /// declares several cases (`.go`, `.html`, `.css`, `.sql`, `.ruby`, `.kotlin`)
+    /// that have file-extension detection and a display name but NO bundled
+    /// TreeSitter grammar, so they render PLAIN despite being advertised as
+    /// "supported". This flag is the single source of truth so the menu / Settings
+    /// stop offering modes that do nothing. It is pinned to the real engine by
+    /// `HighlightLanguageGrammarParityTests` (ViewerCoreTests), which calls
+    /// `TreeSitterEngine.languageHandle(for:)` for every case and fails if the
+    /// engine's grammar coverage drifts from this declaration. Adding a grammar
+    /// ⇒ flip the case here; the parity test forces the two to stay in lock-step.
+    public var isHighlightable: Bool {
+        switch self {
+        case .swift, .json, .markdown, .xml, .python,
+             .javascript, .typescript, .tsx, .shell,
+             .java, .c, .cpp, .csharp, .rust, .lua:
+            return true
+        // No bundled TreeSitter grammar yet — these detect (so the mode badge
+        // names them) but render plain. Tracked for a grammar add (TSK-897
+        // follow-up). MUST NOT be listed as a selectable highlight mode.
+        case .go, .html, .css, .sql, .ruby, .kotlin, .yaml:
+            return false
+        case .plainText:
+            return false
+        }
+    }
+
+    /// Whether the **CM6 Editor** (Edit mode) can color this language. The
+    /// editor is a separate code path from View mode: it ships a prebuilt CM6
+    /// bundle with only a handful of language packs (`codemirror.html`'s
+    /// `languageFor`), NOT the TreeSitter grammar set. TSK-897: this is why a
+    /// file can highlight in View mode yet render plain the moment you switch to
+    /// Edit. Pinned to `jsLanguageName(for:)` by a host test so the two can't
+    /// drift; expanding it needs new `@codemirror/lang-*` packs in the bundle
+    /// (owner-gated dependency add — see the TSK-897 follow-up ticket).
+    public var editorHighlightable: Bool {
+        switch self {
+        case .markdown, .javascript, .typescript, .tsx, .python, .json:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// The highlightable languages to LIST in Settings (TSK-790) and offer in the
+    /// **Language Mode** menu — every case with a real bundled View-mode grammar,
+    /// sorted by display name. `.plainText` (the no-highlight fallback) and any
+    /// case without a grammar (TSK-897: go/html/css/sql/ruby/kotlin) are excluded
+    /// so the UI never advertises a mode that renders plain.
     public static var supportedForDisplay: [HighlightLanguage] {
         allCases
-            .filter { $0 != .plainText }
+            .filter { $0.isHighlightable }
             .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 }

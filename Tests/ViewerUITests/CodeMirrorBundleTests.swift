@@ -1,4 +1,5 @@
 import XCTest
+import ViewerKit
 @testable import ViewerUI
 
 /// Pure-logic tests that don't need a window or WKWebView. Cover:
@@ -214,6 +215,38 @@ final class CodeMirrorBundleTests: XCTestCase {
         XCTAssertEqual(jsLanguageName(for: .ruby),     "plain")
         XCTAssertEqual(jsLanguageName(for: .go),       "plain")
         XCTAssertEqual(jsLanguageName(for: .plainText),"plain")
+    }
+
+    /// TSK-897: `jsLanguageName` (the CM6 Editor's lang token) MUST agree with
+    /// `HighlightLanguage.editorHighlightable` for every case — a language that
+    /// reports it colors in the editor must NOT map to "plain", and vice-versa.
+    /// This is what catches the "highlights in View but plain in Edit" gap: when
+    /// a new `@codemirror/lang-*` pack is bundled, both must flip together.
+    func testJSLanguageNameAgreesWithEditorHighlightable() {
+        for lang in HighlightLanguage.allCases {
+            let token = jsLanguageName(for: lang)
+            if lang.editorHighlightable {
+                XCTAssertNotEqual(token, "plain",
+                    "\(lang.displayName).editorHighlightable == true but jsLanguageName == \"plain\" — editor would render plain")
+            } else {
+                XCTAssertEqual(token, "plain",
+                    "\(lang.displayName).editorHighlightable == false but jsLanguageName == \"\(token)\" — CM6 has no pack for it, must fall back to plain")
+            }
+        }
+    }
+
+    /// The CM6 host's `languageFor` switch must actually handle every non-"plain"
+    /// token `jsLanguageName` can emit — otherwise a token reaches the editor that
+    /// `languageFor` doesn't recognise and silently falls through to plain text.
+    /// Pins the Swift→JS token contract against the bundled `codemirror.html`.
+    func testEveryEmittedLanguageTokenIsHandledByHostHTML() throws {
+        let html = try String(contentsOf: try XCTUnwrap(CodeMirrorResources.hostHTMLURL), encoding: .utf8)
+        let tokens = Set(HighlightLanguage.allCases.map { jsLanguageName(for: $0) })
+            .filter { $0 != "plain" }
+        for token in tokens {
+            XCTAssertTrue(html.contains("case \"\(token)\":"),
+                "codemirror.html `languageFor` has no `case \"\(token)\":` — the editor emits this token but the host can't map it to a language")
+        }
     }
 
     // MARK: - Phase 3: hover / Cmd-click / context-menu wiring

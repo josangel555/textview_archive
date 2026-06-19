@@ -1125,6 +1125,11 @@ public func jsLanguageName(for lang: HighlightLanguage) -> String {
     case .markdown:    return "markdown"
     case .javascript:  return "javascript"
     case .typescript:  return "typescript"
+    // TSK-897: `.tsx` reuses the bundled JS pack's JSX+TS mode (the host's
+    // `languageFor` handles `case "tsx"` → `javascript({ jsx, typescript })`).
+    // Was missing here, so .tsx files rendered PLAIN in the editor despite the
+    // bundle being able to color them.
+    case .tsx:         return "tsx"
     case .python:      return "python"
     case .json:        return "json"
     default:           return "plain"
