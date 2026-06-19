@@ -41,6 +41,8 @@ public struct SettingsView: View {
                     Divider()
                     viewerSection
                     Divider()
+                    fileAssociationsSection
+                    Divider()
                     audioSection
                     Divider()
                     privacySection
@@ -71,6 +73,12 @@ public struct SettingsView: View {
     /// TSK-789: per-language LSP server availability, loaded off-main (the
     /// resolver shells out to xcrun/which). Empty until the .task fills it.
     @State private var lspStatuses: [LSPLanguageRegistry.LanguageStatus] = []
+
+    /// TSK-356: per-group "is TextView the default handler" status, queried via
+    /// LaunchServices off-main. Empty until the .task fills it; `refreshToken`
+    /// bumps re-run the query after the user flips a default.
+    @State private var defaultAppStatuses: [DefaultAppRegistration.GroupStatus] = []
+    @State private var defaultAppRefreshToken = 0
 
     private var lspSection: some View {
         section("Language servers (LSP)") {
@@ -339,6 +347,78 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
             }
+        }
+    }
+
+    /// TSK-356 — "Default anything Viewer". TextView registers as an *alternate*
+    /// viewer for these type groups (so it shows in Finder's "Open With") but is
+    /// intentionally not the system default. This section reports, per group,
+    /// whether TextView is currently the default handler and offers a one-click
+    /// "Make Default" that flips it via LaunchServices.
+    private var fileAssociationsSection: some View {
+        section("File Associations") {
+            if defaultAppStatuses.isEmpty {
+                row("Status") {
+                    Text("Checking…")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(defaultAppStatuses) { st in
+                    row(st.group.name) { fileAssociationControl(st) }
+                }
+            }
+            Text("Set TextView as the default app for these file types. You can still revert in Finder via Get Info → Open With.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
+        .accessibilityIdentifier("mdv.settings.fileAssociations")
+        .task(id: defaultAppRefreshToken) {
+            // Off-main: LaunchServices queries hit the on-disk LS database.
+            defaultAppStatuses = await Task.detached(priority: .utility) {
+                DefaultAppRegistration.status(
+                    using: LiveRoleHandlerService(),
+                    ourBundleID: DefaultAppRegistration.ourBundleID)
+            }.value
+        }
+    }
+
+    @ViewBuilder
+    private func fileAssociationControl(
+        _ st: DefaultAppRegistration.GroupStatus
+    ) -> some View {
+        if st.isDefault {
+            Label("Default", systemImage: "checkmark.circle.fill")
+                .labelStyle(.titleAndIcon)
+                .font(.system(size: 11))
+                .foregroundStyle(.green)
+                .accessibilityIdentifier("mdv.settings.fileAssoc.default.\(st.id)")
+        } else {
+            HStack(spacing: 6) {
+                if st.isPartial {
+                    Text("Partial")
+                        .font(.system(size: 11)).foregroundStyle(.orange)
+                }
+                Button("Make Default") { makeDefault(st.group) }
+                    .font(.system(size: 11))
+                    .accessibilityIdentifier("mdv.settings.fileAssoc.makeDefault.\(st.id)")
+            }
+        }
+    }
+
+    /// Flip the default viewer handler for `group` to TextView, then re-query so
+    /// the row updates. The LS write is fast but off-main to keep the UI live; a
+    /// failure beeps (the row stays "Make Default").
+    private func makeDefault(_ group: DefaultAppRegistration.Group) {
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                DefaultAppRegistration.setDefault(
+                    for: group,
+                    using: LiveRoleHandlerService(),
+                    ourBundleID: DefaultAppRegistration.ourBundleID)
+            }.value
+            if case .failed = result { NSSound.beep() }
+            defaultAppRefreshToken &+= 1  // re-run the .task(id:) query
         }
     }
 
