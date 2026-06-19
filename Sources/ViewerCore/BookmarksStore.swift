@@ -51,6 +51,16 @@ public final class BookmarksStore {
 
     public func all() -> [BookmarkEntry] { entries }
 
+    /// Re-validate `entry`'s target against the identity captured at add time
+    /// (TSK-309). The OPEN-time half of the TOCTOU guard: call this before
+    /// following a bookmark's path so a swapped symlink/dir is refused rather
+    /// than silently followed. `.unverified` (legacy entries) and `.ok` are
+    /// safe; `.missing`/`.identityChanged` are not — see
+    /// `BookmarkValidation.isSafeToOpen`. Pure over the filesystem.
+    public func validate(_ entry: BookmarkEntry) -> BookmarkValidation {
+        BookmarkValidation.validate(url: entry.url, against: entry.identity)
+    }
+
     /// True if **any** bookmark entry (file-level or line-level) is set
     /// for this URL. Kept for the existing "is current file/folder
     /// bookmarked?" check that drives the star indicator.
@@ -74,11 +84,18 @@ public final class BookmarksStore {
         if let existing = entries.first(where: { $0.url == n && $0.line == line }) {
             return existing
         }
+        // Snapshot the resolved target identity NOW so a later symlink/dir
+        // swap is detectable at open time (TSK-309). Captured against the
+        // standardized URL — the same path resolution `openPath` uses. nil
+        // when the path doesn't exist yet (e.g. a bookmark to a not-yet-
+        // created file); such entries validate as `.unverified`.
+        let identity = BookmarkTargetIdentity.capture(at: n)
         let entry = BookmarkEntry(
             url: n,
             addedAt: clock(),
             displayName: displayName ?? n.lastPathComponent,
-            line: line
+            line: line,
+            identity: identity
         )
         entries.insert(entry, at: 0)
         if entries.count > maxEntries {
@@ -240,12 +257,20 @@ public struct BookmarkEntry: Codable, Equatable, Hashable, Sendable, Identifiabl
     /// 1-based line number for line bookmarks; nil for whole-file
     /// bookmarks. Older on-disk entries decode with nil here.
     public let line: Int?
+    /// Filesystem identity `(dev, ino, isDir)` of the resolved target,
+    /// captured at ADD time. Used to detect a TOCTOU symlink/dir swap between
+    /// add and open (TSK-309). `nil` for entries persisted before identity
+    /// tracking existed — those validate as `.unverified` (opened, not
+    /// refused) so legacy bookmarks keep working.
+    public let identity: BookmarkTargetIdentity?
 
-    public init(url: URL, addedAt: Date, displayName: String? = nil, line: Int? = nil) {
+    public init(url: URL, addedAt: Date, displayName: String? = nil, line: Int? = nil,
+                identity: BookmarkTargetIdentity? = nil) {
         self.url = url
         self.addedAt = addedAt
         self.displayName = displayName ?? url.lastPathComponent
         self.line = line
+        self.identity = identity
     }
 
     public init(from decoder: Decoder) throws {
@@ -266,10 +291,14 @@ public struct BookmarkEntry: Codable, Equatable, Hashable, Sendable, Identifiabl
             ?? url.lastPathComponent
         // Optional — old entries don't have it; new entries may set it.
         self.line = try? c.decodeIfPresent(Int.self, forKey: .line)
+        // Optional — entries pinned before identity tracking decode as nil
+        // and validate as `.unverified` (TSK-309). A malformed identity blob
+        // shouldn't poison the whole entry, so swallow the error to nil.
+        self.identity = try? c.decodeIfPresent(BookmarkTargetIdentity.self, forKey: .identity)
     }
 
     public enum CodingKeys: String, CodingKey {
-        case url, addedAt, displayName, line
+        case url, addedAt, displayName, line, identity
     }
 
     /// Shared formatter — was allocated per-entry-decoded, which on a

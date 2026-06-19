@@ -41,6 +41,9 @@ struct BookmarksSection: View {
         VStack(spacing: 0) {
             headerRow
             if isExpanded {
+                if let warning = model.lastBookmarkOpenWarning {
+                    bookmarkWarningBanner(warning)
+                }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(filtered) { entry in
@@ -60,6 +63,35 @@ struct BookmarksSection: View {
         }
         .sidebarSectionContainer()
         .accessibilityIdentifier("mdv.bookmarks")
+    }
+
+    /// Inline warning shown when `openBookmark` refused a target whose
+    /// filesystem identity no longer matches what was captured at add time
+    /// (TSK-309 — a TOCTOU symlink/dir swap or a deleted target). A dismiss
+    /// (X) clears it. The refused file is NOT opened.
+    private func bookmarkWarningBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.system(size: model.uiSize(11)))
+            Text(message)
+                .font(.system(size: model.uiSize(11)))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(action: { model.dismissBookmarkOpenWarning() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: model.uiSize(9), weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+            .accessibilityIdentifier("mdv.bookmarks.warning.dismiss")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.orange.opacity(0.12))
+        .accessibilityIdentifier("mdv.bookmarks.warning")
     }
 
     /// Single-row header: chevron + label on the left, F/D/L filter

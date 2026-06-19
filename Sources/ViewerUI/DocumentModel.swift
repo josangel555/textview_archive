@@ -142,6 +142,13 @@ public final class DocumentModel: ObservableObject {
     public var landingRecents: [HistoryEntry] { Self.landingRecents(from: recents) }
 
     @Published public private(set) var bookmarks: [BookmarkEntry] = []
+
+    /// Set when the last `openBookmark(_:)` was REFUSED because the bookmark's
+    /// target no longer matches the identity captured at add time — a TOCTOU
+    /// symlink/dir swap or a deletion (TSK-309). A user-facing message the
+    /// sidebar can surface as an inline warning; the corresponding file is NOT
+    /// opened. Cleared on the next successful bookmark open.
+    @Published public private(set) var lastBookmarkOpenWarning: String? = nil
     /// Width of the sidebar in points. Mutated frequently during a drag —
     /// see `setSidebarWidthLive` (no persistence) vs `setSidebarWidth`
     /// (persists immediately).
@@ -1331,10 +1338,44 @@ public final class DocumentModel: ObservableObject {
 
     /// Open `entry` and — if it's a line bookmark — scroll to the
     /// stored line and select it.
+    ///
+    /// TOCTOU guard (TSK-309): a bookmark stores a path captured at add time,
+    /// but the path can be re-pointed (symlink/dir swap, `mv`) before the user
+    /// opens it. Re-validate the resolved target's identity against the
+    /// snapshot taken at add time; on a mismatch (or deletion) REFUSE to follow
+    /// the swapped target and surface `lastBookmarkOpenWarning` instead of
+    /// silently opening whatever now sits at the path. Legacy entries with no
+    /// captured identity (`.unverified`) open as before.
     public func openBookmark(_ entry: BookmarkEntry) {
+        let verdict = bookmarksStore.validate(entry)
+        guard verdict.isSafeToOpen else {
+            lastBookmarkOpenWarning = Self.bookmarkWarningMessage(for: entry, verdict: verdict)
+            return
+        }
+        lastBookmarkOpenWarning = nil
         openPath(entry.url)
         if let line = entry.line {
             scrollSource(toLine: line)
+        }
+    }
+
+    /// Dismiss the bookmark-open warning banner (the sidebar's X button).
+    public func dismissBookmarkOpenWarning() {
+        lastBookmarkOpenWarning = nil
+    }
+
+    /// User-facing message for a refused bookmark open. Pure — host-testable.
+    static func bookmarkWarningMessage(for entry: BookmarkEntry,
+                                       verdict: BookmarkValidation) -> String {
+        let name = entry.displayName
+        switch verdict {
+        case .missing:
+            return "Bookmark “\(name)” can no longer be found — its target was moved or deleted."
+        case .identityChanged:
+            return "Bookmark “\(name)” target changed — the path now points at a different file. Not opening it."
+        case .ok, .unverified:
+            // Not a refusal; included for exhaustiveness.
+            return ""
         }
     }
 
