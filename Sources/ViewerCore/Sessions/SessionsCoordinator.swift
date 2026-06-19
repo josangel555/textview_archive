@@ -233,10 +233,10 @@ public final class SessionsCoordinator: ObservableObject {
         }
 
         let now = Date()
-        let displayName: String = {
-            let last = resolved.lastPathComponent
-            return last.isEmpty ? "Untitled" : last
-        }()
+        // TSK-1016: derive the title from the folder name via the single shared
+        // helper so the new-session title and a later root-change relabel can
+        // never diverge. `displayNameIsUserSet` stays nil (folder-derived).
+        let displayName = SessionRename.defaultDisplayName(forRoot: resolved)
         let snap = SessionSnapshot(
             id: UUID(),
             displayName: displayName,

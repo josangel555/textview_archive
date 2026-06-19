@@ -107,6 +107,18 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
     /// layout untouched on hydrate (downgrade-safe).
     public let panelLayout: PanelLayoutSnapshot?
 
+    /// TSK-1016: `true` once the user has MANUALLY renamed this session (via
+    /// the inline tab editor or the "Rename Session…" command). When set, the
+    /// tab label is the user's text and must NEVER be clobbered by a later root
+    /// change (which otherwise auto-relabels the tab to the new folder name).
+    ///
+    /// Additive-optional (downgrade-safe): a pre-TSK-1016 file has no key and
+    /// decodes to `nil`, which the relabel decision treats as "not user-set"
+    /// (auto-relabel on root change). Written as `nil` (omitted) for a
+    /// folder-derived name so a fresh snapshot stays byte-identical to today;
+    /// written `true` only after a manual rename.
+    public let displayNameIsUserSet: Bool?
+
     // GLOBAL (owner LOCKED, #184): zoom / wordWrap / themeOverride are
     // app-wide, NOT per-session. These fields are retained in the schema
     // ONLY so pre-#184 on-disk files still decode (additive-optional,
@@ -131,6 +143,7 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         splitURL: String? = nil,
         sessionType: String? = nil,
         panelLayout: PanelLayoutSnapshot? = nil,
+        displayNameIsUserSet: Bool? = nil,
         zoom: Double? = nil,
         wordWrap: Bool? = nil,
         themeOverride: String? = nil
@@ -149,6 +162,7 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         self.splitURL = splitURL
         self.sessionType = sessionType
         self.panelLayout = panelLayout
+        self.displayNameIsUserSet = displayNameIsUserSet
         self.zoom = zoom
         self.wordWrap = wordWrap
         self.themeOverride = themeOverride
@@ -161,12 +175,19 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
     /// field and silently dropped it — exactly how `sidebarExpandedPaths`
     /// / `splitURL` ended up persisted as `nil` (#184). Add a new field
     /// once, here, and every copy site carries it through automatically.
+    ///
+    /// `displayNameIsUserSet` uses a double-optional so callers can distinguish
+    /// "leave unchanged" (omit the arg) from "explicitly set to a value" — the
+    /// rename path passes `.some(true)` to mark a manual rename, and the
+    /// auto-relabel path can pass `.some(nil)` to clear the flag back to
+    /// folder-derived.
     public func with(
         savedAt: Date? = nil,
         id: UUID? = nil,
         displayName: String? = nil,
         createdAt: Date? = nil,
-        lastActiveAt: Date? = nil
+        lastActiveAt: Date? = nil,
+        displayNameIsUserSet: Bool?? = nil
     ) -> SessionSnapshot {
         SessionSnapshot(
             schemaVersion: schemaVersion,
@@ -183,6 +204,7 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
             splitURL: splitURL,
             sessionType: sessionType,
             panelLayout: panelLayout,
+            displayNameIsUserSet: displayNameIsUserSet ?? self.displayNameIsUserSet,
             zoom: zoom,
             wordWrap: wordWrap,
             themeOverride: themeOverride
@@ -215,6 +237,7 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
             && splitURL == other.splitURL
             && sessionType == other.sessionType
             && panelLayout == other.panelLayout
+            && (displayNameIsUserSet ?? false) == (other.displayNameIsUserSet ?? false)
             && zoom == other.zoom
             && wordWrap == other.wordWrap
             && themeOverride == other.themeOverride

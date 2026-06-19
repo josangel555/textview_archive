@@ -153,4 +153,74 @@ final class SessionSnapshotTests: XCTestCase {
         XCTAssertTrue(idx.sessions.isEmpty)
         XCTAssertNil(idx.lastActiveID)
     }
+
+    // MARK: displayNameIsUserSet (TSK-1016) --------------------------
+
+    func testDisplayNameIsUserSet_roundtripTrue() throws {
+        let pinned = Date(timeIntervalSince1970: 1_700_000_000)
+        let snap = SessionSnapshot(
+            savedAt: pinned, id: UUID(), displayName: "My Work",
+            createdAt: pinned, lastActiveAt: pinned,
+            sidebarRootPath: "/tmp/proj",
+            displayNameIsUserSet: true
+        )
+        let data = try JSONFileStore.encoder.encode(snap)
+        let back = try JSONFileStore.decoder.decode(SessionSnapshot.self, from: data)
+        XCTAssertEqual(back, snap)
+        XCTAssertEqual(back.displayNameIsUserSet, true)
+    }
+
+    func testDisplayNameIsUserSet_missingKeyDecodesNil() throws {
+        // A pre-TSK-1016 file has no `displayNameIsUserSet` key; it must
+        // decode to nil (== not user-set ⇒ auto-relabel allowed).
+        let json = """
+        {
+          "schemaVersion": 2,
+          "savedAt": "2026-01-01T00:00:00Z",
+          "id": "22222222-2222-2222-2222-222222222222",
+          "displayName": "Foo",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "lastActiveAt": "2026-01-01T00:00:00Z",
+          "sidebarRootPath": "/p",
+          "openTabs": [],
+          "selectedTabIndex": null
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONFileStore.decoder.decode(SessionSnapshot.self, from: json)
+        XCTAssertNil(decoded.displayNameIsUserSet)
+    }
+
+    func testWith_displayNameIsUserSet_precedence() {
+        let pinned = Date(timeIntervalSince1970: 1_700_000_000)
+        let base = SessionSnapshot(
+            savedAt: pinned, id: UUID(), displayName: "proj",
+            createdAt: pinned, lastActiveAt: pinned, sidebarRootPath: "/tmp/proj"
+        )
+        XCTAssertNil(base.displayNameIsUserSet)
+        // Omitting the arg leaves the field unchanged…
+        XCTAssertNil(base.with(displayName: "x").displayNameIsUserSet,
+            "omitting displayNameIsUserSet must leave it unchanged")
+        // …passing .some(true) flips it (the rename path)…
+        let renamed = base.with(displayName: "My Work", displayNameIsUserSet: .some(true))
+        XCTAssertEqual(renamed.displayName, "My Work")
+        XCTAssertEqual(renamed.displayNameIsUserSet, true)
+        // …and .some(nil) clears it back to folder-derived.
+        XCTAssertNil(renamed.with(displayNameIsUserSet: .some(nil)).displayNameIsUserSet)
+    }
+
+    func testEqualityGuard_userSetFlagChange_isDifferent() {
+        let pinned = Date(timeIntervalSince1970: 1_700_000_000)
+        let folderDerived = SessionSnapshot(
+            savedAt: pinned, id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            displayName: "proj", createdAt: pinned, lastActiveAt: pinned,
+            sidebarRootPath: "/tmp/proj", displayNameIsUserSet: nil
+        )
+        let userSet = folderDerived.with(displayNameIsUserSet: .some(true))
+        XCTAssertFalse(folderDerived.hasSamePersistedContent(as: userSet),
+            "flipping displayNameIsUserSet is a real persisted change — autosave must fire")
+        // nil and explicit-false must be treated as the same (both = not user-set).
+        let explicitFalse = folderDerived.with(displayNameIsUserSet: .some(false))
+        XCTAssertTrue(folderDerived.hasSamePersistedContent(as: explicitFalse),
+            "nil and false both mean not-user-set — must not spam writes")
+    }
 }

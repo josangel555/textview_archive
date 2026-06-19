@@ -134,7 +134,10 @@ final class SessionStateTests: XCTestCase {
 
         let snap = state.makeSnapshot()
         XCTAssertEqual(snap.id, state.id)
-        XCTAssertEqual(snap.displayName, "TestSession")
+        // TSK-1016: the session was created with a folder-derived (not
+        // user-set) name, so re-rooting to `proj/` relabels the tab to "proj".
+        XCTAssertEqual(snap.displayName, "proj",
+            "tab name tracks the current root folder when not user-renamed (TSK-1016)")
         // sidebarRootPath prefers the model's sidebar root over the
         // session's rootURL when set.
         XCTAssertEqual(snap.sidebarRootPath, subDir.path)
@@ -146,7 +149,12 @@ final class SessionStateTests: XCTestCase {
     func testMakeSnapshotEmptyModelProducesEmptyTabs() {
         let snap = state.makeSnapshot()
         XCTAssertTrue(snap.openTabs.isEmpty)
-        XCTAssertEqual(snap.displayName, "TestSession")
+        // TSK-1016: the empty model has no sidebar root, so the live root falls
+        // back to the session's `rootURL` (tmpDir). The name is folder-derived
+        // (not user-set), so the snapshot relabels to the tmpDir folder name —
+        // NOT the init-time "TestSession" string (which was never user-set).
+        XCTAssertEqual(snap.displayName, tmpDir.lastPathComponent)
+        XCTAssertNil(snap.displayNameIsUserSet)
     }
 
     // MARK: forwarding -----------------------------------------------
@@ -299,5 +307,69 @@ final class SessionStateTests: XCTestCase {
         // Root URL has empty lastPathComponent.
         let url = URL(fileURLWithPath: "/")
         XCTAssertEqual(SessionState.defaultDisplayName(for: url), "Untitled")
+    }
+
+    // MARK: TSK-1016 — tab name tracks the current root folder -------
+
+    /// When the session's root changes (here via the shared sidebar's
+    /// `setRoot`), the next `makeSnapshot()` re-derives the title from the new
+    /// folder name — the live relabel path the SessionTabBar consumes.
+    func testMakeSnapshotRelabelsOnRootChange() throws {
+        let alpha = tmpDir.appendingPathComponent("alpha", isDirectory: true)
+        let beta = tmpDir.appendingPathComponent("beta", isDirectory: true)
+        try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+
+        let s = SessionState(rootURL: alpha, model: DocumentModel())
+        XCTAssertEqual(s.displayName, "alpha")
+        // Root change on the shared sidebar (DocumentModel.openFolder /
+        // revealInSidebar do exactly this).
+        s.model.sidebar.setRoot(beta)
+        let snap = s.makeSnapshot()
+        XCTAssertEqual(snap.displayName, "beta",
+            "tab name must follow the new root folder when not user-renamed")
+        XCTAssertEqual(s.displayName, "beta", "live @Published name updated for the strip")
+        XCTAssertEqual(s.rootURL, beta, "rootURL re-synced to the live sidebar root")
+        XCTAssertNil(snap.displayNameIsUserSet, "folder-derived ⇒ flag omitted")
+    }
+
+    /// A manually-renamed session (displayNameIsUserSet) must keep its name
+    /// across a root change — the manual rename wins.
+    func testMakeSnapshotKeepsManualNameOnRootChange() throws {
+        let alpha = tmpDir.appendingPathComponent("alpha", isDirectory: true)
+        let beta = tmpDir.appendingPathComponent("beta", isDirectory: true)
+        try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+
+        let s = SessionState(rootURL: alpha,
+                             displayName: "My Work",
+                             displayNameIsUserSet: true,
+                             model: DocumentModel())
+        s.model.sidebar.setRoot(beta)
+        let snap = s.makeSnapshot()
+        XCTAssertEqual(snap.displayName, "My Work",
+            "a manual rename must survive a later root change")
+        XCTAssertEqual(snap.displayNameIsUserSet, true, "user-set flag persisted")
+    }
+
+    /// The user-set flag round-trips through hydrate so a restored manual name
+    /// is not auto-relabeled on the first post-restore root change.
+    func testHydrateRestoresUserSetFlag() throws {
+        let beta = tmpDir.appendingPathComponent("beta", isDirectory: true)
+        try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+        let snap = SessionSnapshot(
+            id: state.id, displayName: "My Work",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: beta.path,
+            displayNameIsUserSet: true
+        )
+        state.hydrate(from: snap)
+        XCTAssertTrue(state.displayNameIsUserSet)
+        XCTAssertEqual(state.displayName, "My Work")
+        // A subsequent root change must NOT relabel.
+        let gamma = tmpDir.appendingPathComponent("gamma", isDirectory: true)
+        try FileManager.default.createDirectory(at: gamma, withIntermediateDirectories: true)
+        state.model.sidebar.setRoot(gamma)
+        XCTAssertEqual(state.makeSnapshot().displayName, "My Work")
     }
 }

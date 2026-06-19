@@ -32,6 +32,13 @@ public final class SessionState: ObservableObject {
     public let id: UUID
     @Published public var rootURL: URL
     @Published public var displayName: String
+    /// TSK-1016: `true` once the user MANUALLY renamed this session (inline tab
+    /// editor or "Rename Session…"). A manual rename wins and is never
+    /// clobbered by a later root change. When `false`, `makeSnapshot()`
+    /// auto-relabels the tab to the current root folder name on a root change.
+    /// Persisted via `SessionSnapshot.displayNameIsUserSet` so the manual name
+    /// survives a session switch / relaunch; restored on `hydrate`.
+    @Published public var displayNameIsUserSet: Bool
     public let createdAt: Date
     @Published public var lastActiveAt: Date
 
@@ -56,6 +63,7 @@ public final class SessionState: ObservableObject {
     public init(id: UUID = UUID(),
                 rootURL: URL,
                 displayName: String? = nil,
+                displayNameIsUserSet: Bool = false,
                 createdAt: Date = Date(),
                 lastActiveAt: Date = Date(),
                 sessionType: SessionKind? = nil,
@@ -63,6 +71,7 @@ public final class SessionState: ObservableObject {
         self.id = id
         self.rootURL = rootURL
         self.displayName = displayName ?? Self.defaultDisplayName(for: rootURL)
+        self.displayNameIsUserSet = displayNameIsUserSet
         self.createdAt = createdAt
         self.lastActiveAt = lastActiveAt
         self.sessionType = sessionType
@@ -145,6 +154,24 @@ public final class SessionState: ObservableObject {
         let expandedPaths = model.sidebar.expanded
             .map { $0.path }
             .sorted()
+        // TSK-1016: the session tab name tracks the CURRENT root folder. The
+        // live root can change after init (`DocumentModel.openFolder` /
+        // `revealInSidebar` re-root the shared sidebar; the `$rootURL`
+        // publisher then triggers this snapshot via the autosave). Re-derive
+        // the title from the live root UNLESS the user manually renamed the
+        // session. We mutate the @Published `displayName` / `rootURL` here so
+        // the SessionTabBar (which observes the value-level snapshot list, fed
+        // by this very `makeSnapshot`) relabels live, and so a subsequent
+        // `makeSnapshot` sees the already-updated current name.
+        let liveRoot = model.sidebar.rootURL ?? rootURL
+        if liveRoot != rootURL { rootURL = liveRoot }
+        if let relabeled = SessionRename.relabelForRootChange(
+            newRoot: liveRoot,
+            currentDisplayName: displayName,
+            displayNameIsUserSet: displayNameIsUserSet
+        ) {
+            displayName = relabeled
+        }
         return SessionSnapshot(
             schemaVersion: SessionSnapshot.currentSchema,
             savedAt: Date(),
@@ -163,6 +190,10 @@ public final class SessionState: ObservableObject {
             splitURL: model.tabCoordinator.splitURL?.path,
             sessionType: sessionType?.rawValue,
             panelLayout: model.panelLayout.snapshot(),
+            // TSK-1016: persist the user-set flag so a manual rename survives a
+            // switch / relaunch. `nil` (omitted) when folder-derived keeps a
+            // fresh snapshot byte-identical to pre-TSK-1016 files.
+            displayNameIsUserSet: displayNameIsUserSet ? true : nil,
             // GLOBAL (LOCKED): never persisted per-session — see doc above.
             zoom: nil,
             wordWrap: nil,
@@ -244,6 +275,14 @@ public final class SessionState: ObservableObject {
         if let raw = snapshot.sessionType {
             sessionType = SessionKind(rawValue: raw)
         }
+        // TSK-1016: restore the manual-rename flag so a persisted user-chosen
+        // name is never auto-relabeled on the next root change. A pre-TSK-1016
+        // file (nil) decodes to false = folder-derived (auto-relabel allowed).
+        displayNameIsUserSet = snapshot.displayNameIsUserSet ?? false
+        // Adopt the persisted display name so the relabel decision compares
+        // against the name actually shown for this session (mountSession seeds
+        // it from the snapshot too, but switchSessionFaçade rebuilds the state).
+        displayName = snapshot.displayName
         // Set sidebar root first so any subsequent tab open doesn't
         // implicitly reset it.
         if let rootPath = snapshot.sidebarRootPath {
@@ -424,13 +463,12 @@ public final class SessionState: ObservableObject {
         return true
     }
 
-    /// Best-effort display name from a folder URL. The last path
-    /// component is the natural pick; falls back to "Untitled" when
-    /// the URL is the root (`/`) or empty. URL.lastPathComponent
-    /// returns "/" for the root, not the empty string — handle both.
+    /// Best-effort display name from a folder URL. Delegates to the single
+    /// shared derivation in `SessionRename` (TSK-1016) so the new-session title,
+    /// the value-level `SessionsCoordinator.openFolder`, and a later
+    /// root-change relabel can never diverge. Falls back to "Untitled" for the
+    /// root (`/`) or empty URL.
     public static func defaultDisplayName(for url: URL) -> String {
-        let last = url.lastPathComponent
-        if last.isEmpty || last == "/" { return "Untitled" }
-        return last
+        SessionRename.defaultDisplayName(forRoot: url)
     }
 }

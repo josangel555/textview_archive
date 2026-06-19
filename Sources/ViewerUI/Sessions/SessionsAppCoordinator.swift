@@ -363,9 +363,30 @@ public final class SessionsAppCoordinator: ObservableObject {
         // Cheap early-out for the common empty/stray-Enter case; the full
         // trim + no-op rule lives in the host-tested `SessionRename.sanitize`.
         guard !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        var didRename = false
         core.updateSession(id: id) { snap in
             guard let name = SessionRename.sanitize(newName, current: snap.displayName) else { return }
-            snap = snap.with(displayName: name)
+            // TSK-1016: a manual rename pins the name — flag it user-set so a
+            // later root change never auto-relabels it back to the folder name.
+            snap = snap.with(displayName: name, displayNameIsUserSet: .some(true))
+            didRename = true
+        }
+        // Mirror the user-set flag onto the live SessionState (if this is the
+        // active session) so the in-memory state matches the persisted snapshot
+        // — otherwise the next autosave's `makeSnapshot` (with the flag still
+        // false in memory) would re-derive the folder name and clobber the
+        // just-applied manual name. Also adopt the sanitized name so the
+        // strip + a subsequent snapshot agree.
+        if didRename, let active, active.id == id {
+            active.displayNameIsUserSet = true
+            if let name = SessionRename.sanitize(newName, current: active.displayName) {
+                active.displayName = name
+            }
+        }
+        // Keep the autosave equality baseline in step so the rename isn't
+        // immediately re-evaluated against a stale baseline.
+        if didRename, let snap = core.sessions.first(where: { $0.id == id }) {
+            lastPersistedContent[id] = snap
         }
     }
 
@@ -550,6 +571,10 @@ public final class SessionsAppCoordinator: ObservableObject {
             id: snap.id,
             rootURL: rootURL,
             displayName: snap.displayName,
+            // TSK-1016: seed the manual-rename flag from the snapshot so a
+            // restored user-chosen name isn't auto-relabeled before/without a
+            // hydrate (the `.skip` path never hydrates).
+            displayNameIsUserSet: snap.displayNameIsUserSet ?? false,
             createdAt: snap.createdAt,
             lastActiveAt: snap.lastActiveAt,
             model: model
@@ -616,6 +641,9 @@ public final class SessionsAppCoordinator: ObservableObject {
             id: snap.id,
             rootURL: rootURL,
             displayName: snap.displayName,
+            // TSK-1016: seed the manual-rename flag (hydrate re-applies it too,
+            // but seeding keeps the pre-hydrate state coherent).
+            displayNameIsUserSet: snap.displayNameIsUserSet ?? false,
             createdAt: snap.createdAt,
             lastActiveAt: snap.lastActiveAt,
             model: model
