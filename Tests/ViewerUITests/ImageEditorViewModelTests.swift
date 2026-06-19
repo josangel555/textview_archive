@@ -274,6 +274,8 @@ final class ImageEditorViewModelTests: XCTestCase {
         for _ in 0..<60 { vm.undo() }
         XCTAssertFalse(vm.canUndo)
         XCTAssertTrue(vm.base.ops.isEmpty, "deep undo reaches the pristine document")
+    }
+
     // MARK: - Vector annotations (TSK-287)
 
     /// The view-model passthroughs over the host-tested `VectorOverlay` — the
@@ -352,6 +354,8 @@ final class ImageEditorViewModelTests: XCTestCase {
         // Degenerate inputs ⇒ .zero (overlay draws nothing).
         XCTAssertEqual(ImageEditorView.aspectFitRect(
             imageSize: .zero, in: CGRect(x: 0, y: 0, width: 10, height: 10)), .zero)
+    }
+
     // MARK: - L-eh1: Save-a-Copy surfaces write failures (TSK-1008)
 
     /// A write into a directory that does NOT exist makes the atomic write
