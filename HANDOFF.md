@@ -1,7 +1,19 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run; (06-18 RE-ENGAGED) shipped 905/893/901/307/954/922/947/959/374; VM lane green except TSK-960 capture-artifact  (2026-06-18)
+# Handoff — autonomous run; (06-18) shipped 905/893/901/307/954/922/947/959/374/924/908/961; P0 TSK-889 root-caused (fix scoped); VM lane green except TSK-960  (2026-06-18)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `2393860` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `abe8f10` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
+
+> **LATEST (06-18, after the items below):** also shipped **924-slice** (CSV Copy Row/Column, host-tested), **908**
+> (commit context-menu copy actions: SHA/short/subject/reference) — both → review; and **961** (new `vm-profile.sh
+> reopen` warm-path trace mode). Used 961 to fully root-cause the **#1 P0 TSK-889** (large-JSON re-open lag): switching
+> away DISMANTLES the inactive tab's source view (`teardownStorage` frees the glyph store for memory, TextDisplayView
+> :170), so switching back re-creates an empty-storage controller → full O(N) GLYPH-LAYOUT/typesetting (~20 ms; debug
+> trace confirmed typesetting dominance, NOT buildAttributed). FIX (confirmed, deferred — substantial SwiftUI
+> NSViewController-lifecycle change): preserve the laid-out source view for the N most-recent tabs (LRU), free on
+> close/eviction; a cheap attributed-string cache won't help (layout is per-layoutManager). 889 → triaged. Other P0s
+> (892 file-tree hover, 908-slow): host side already optimized — need 961's *hover* mode (follow-on) to trace. The
+> owner's REAL laggy 699KB file would size 889's actual lag (the indent=1 synthetic is a many-lines worst case).
+> **NEXT:** implement 889's LRU view-preservation (focused effort), or 961 hover mode, or render slices (727/766).
 
 > **OWNER IS BACK + ENGAGED (2026-06-18).** Two corrections this session: (1) STOP no-opping — drain the curated
 > WORK_QUEUE; I re-engaged and shipped **905** (preview kbd focus), **893** (CM6 I-beam cursor), **901** (shebang
