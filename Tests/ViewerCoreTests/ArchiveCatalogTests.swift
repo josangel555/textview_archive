@@ -80,6 +80,21 @@ final class ArchiveCatalogTests: XCTestCase {
             "extraction lands in OUR temp dir, never an archive-chosen path")
     }
 
+    // TSK-1001: an archive entry name that looks like a CLI option must NOT be
+    // interpreted as one — a `--` terminator precedes the positional path/member.
+    // An option-like (non-existent) member therefore errors cleanly instead of
+    // running, say, unzip's `--help`. Normal extraction still works (proving the
+    // `--` doesn't break the happy path).
+    func test_optionLikeEntryName_isNotTreatedAsAFlag() throws {
+        let zip = try makeZip()
+        XCTAssertThrowsError(try ArchiveCatalog.extractEntry(named: "--help", from: zip),
+                             "an option-like entry name must error, not run unzip --help")
+        XCTAssertThrowsError(try ArchiveCatalog.zipEntryBytes(named: "--version", fromZipAt: zip))
+        let ok = try ArchiveCatalog.extractEntry(named: "a.txt", from: zip)
+        defer { try? FileManager.default.removeItem(at: ok.deletingLastPathComponent()) }
+        XCTAssertEqual(try String(contentsOf: ok, encoding: .utf8), "hello zip")
+    }
+
     func test_tarGz_list_and_extract() throws {
         let tgz = try makeTarGz()
         let (entries, _) = try ArchiveCatalog.list(tgz)

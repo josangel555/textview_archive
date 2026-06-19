@@ -75,7 +75,7 @@ public enum ArchiveCatalog {
         switch kind {
         case .zip:
             // `unzip -l`: "  size  date time  name" rows between header/footer.
-            out = try run("/usr/bin/unzip", ["-l", url.path])
+            out = try run("/usr/bin/unzip", ["-l", "--", url.path])
         case .tar, .tarGz, .tarBz2:
             out = try run("/usr/bin/tar", ["-t" + tarFlag(kind), "-f", url.path])
         }
@@ -106,7 +106,7 @@ public enum ArchiveCatalog {
     /// Returns the entry bytes, or throws `toolFailed` when the entry is absent
     /// (unzip exits non-zero), `entryTooLarge` past the cap, or `emptyEntry`.
     public static func zipEntryBytes(named name: String, fromZipAt url: URL) throws -> Data {
-        let data = try run("/usr/bin/unzip", ["-p", url.path, name])
+        let data = try run("/usr/bin/unzip", ["-p", "--", url.path, name])
         guard !data.isEmpty else { throw ArchiveError.emptyEntry }
         guard data.count <= maxEntryBytes else {
             throw ArchiveError.entryTooLarge(limit: maxEntryBytes)
@@ -126,9 +126,9 @@ public enum ArchiveCatalog {
         let data: Data
         switch kind {
         case .zip:
-            data = try run("/usr/bin/unzip", ["-p", url.path, name])
+            data = try run("/usr/bin/unzip", ["-p", "--", url.path, name])
         case .tar, .tarGz, .tarBz2:
-            data = try run("/usr/bin/tar", ["-x" + tarFlag(kind), "-O", "-f", url.path, name])
+            data = try run("/usr/bin/tar", ["-x" + tarFlag(kind), "-O", "-f", url.path, "--", name])
         }
         guard !data.isEmpty else { throw ArchiveError.emptyEntry }
         guard data.count <= maxEntryBytes else {
