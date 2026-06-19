@@ -239,6 +239,38 @@ public struct SourceScrollState: Equatable, Sendable {
     /// text. Callers need this to align their first row to glyph row 1.
     public let topInset: CGFloat
 
+    /// Visual-row counts per logical line, when soft-wrap is active (TSK-896).
+    /// `wrappedRowCounts[i]` is the number of visual rows logical line `i+1`
+    /// occupies (≥1). `nil` (or empty) means "no wrap data" — every logical
+    /// line is exactly one `lineHeight`-tall row, the common case.
+    ///
+    /// WHY: the line-hover / current-line highlight maps a viewport-y back to a
+    /// logical line. The naive inverse, `floor((y+offset-inset)/lineHeight)+1`,
+    /// assumes each logical line is ONE row tall. With soft-wrap on (the user
+    /// pref, OR `SourceWrapPolicy` force-wrapping a pathologically long line) a
+    /// single logical line spans K rows, so every line below it is pushed down
+    /// by `(K-1)*lineHeight` — and the highlight lands several lines off the row
+    /// under the pointer. Carrying the per-line row spans lets `lineAtPointer` /
+    /// `lineViewportY` walk cumulative visual heights instead of assuming
+    /// uniform single-row lines, so the mapping stays exact under wrap.
+    public let wrappedRowCounts: [Int]?
+
+    public init(
+        offsetY: CGFloat,
+        viewportHeight: CGFloat,
+        lineHeight: CGFloat,
+        lineCount: Int,
+        topInset: CGFloat,
+        wrappedRowCounts: [Int]? = nil
+    ) {
+        self.offsetY = offsetY
+        self.viewportHeight = viewportHeight
+        self.lineHeight = lineHeight
+        self.lineCount = lineCount
+        self.topInset = topInset
+        self.wrappedRowCounts = wrappedRowCounts
+    }
+
     /// 1-based source line currently at the top of the viewport (UX-K, #231),
     /// or `nil` when the geometry isn't usable yet (zero line height /
     /// zero-line document, e.g. the first-paint seed before `viewDidLoad`).
@@ -547,16 +579,71 @@ public final class SourceTextController: NSViewController {
         let offset = clip.bounds.origin.y
         let viewport = clip.bounds.size.height
         let topInset = textView.textContainerInset.height
+        let lineH = Self.lineHeight(forFontSize: cachedFontSize, fontName: cachedFontName)
+        // TSK-896: only carry per-line wrap-row spans when soft-wrap is active —
+        // when wrapping is off every logical line is one row, so the hover /
+        // current-line mapping uses the cheap uniform `(n-1)*lineHeight` and we
+        // pay no layout-walk cost. With wrap on, a long line spans K rows and
+        // the uniform inverse drifts the highlight down by (K-1) lines.
+        let wrapRows = lastWordWrap ? wrappedRowCounts(lineHeight: lineH) : nil
         let state = SourceScrollState(
             offsetY: offset,
             viewportHeight: viewport,
-            lineHeight: Self.lineHeight(forFontSize: cachedFontSize, fontName: cachedFontName),
+            lineHeight: lineH,
             lineCount: cachedLineCount,
-            topInset: topInset
+            topInset: topInset,
+            wrappedRowCounts: wrapRows
         )
         if state == lastPublishedScrollState { return }
         lastPublishedScrollState = state
         cb(state)
+    }
+
+    /// Per-logical-line visual-row counts from the layout manager, for the
+    /// wrap-aware hover / current-line mapping (TSK-896). Index `i` holds the
+    /// row span of logical line `i+1`. Returns `nil` when layout isn't usable
+    /// (no layout manager / zero line height / empty doc) so the caller falls
+    /// back to the uniform single-row assumption.
+    ///
+    /// We derive rows from each logical line's bounding height rather than
+    /// enumerating fragments: `ceil(boundingRect.height / lineHeight)` is the
+    /// visual rows that line occupies, matching the `lineHeight`-quantized grid
+    /// the gutter and the inverse mapping both walk. O(lineCount) but only run
+    /// when wrap is on (rare for the dominant short-line files) and deduped by
+    /// the `SourceScrollState` equality guard in `publishScrollState`.
+    private func wrappedRowCounts(lineHeight: CGFloat) -> [Int]? {
+        guard lineHeight > 0,
+              let lm = textView.layoutManager,
+              let tc = textView.textContainer,
+              let storage = textView.textStorage,
+              storage.length > 0 else { return nil }
+        // Force layout for the full container so bounding rects are valid for
+        // off-screen lines too (the mapping needs lines above the viewport).
+        lm.ensureLayout(for: tc)
+        let ns = storage.string as NSString
+        let total = ns.length
+        var counts: [Int] = []
+        counts.reserveCapacity(max(16, cachedLineCount))
+        var loc = 0
+        while loc <= total {
+            let r = ns.lineRange(for: NSRange(location: loc, length: 0))
+            // Empty trailing line (doc ends with '\n'): one row.
+            let charRange = r.length > 0 ? r : NSRange(location: loc, length: 0)
+            let glyphRange = lm.glyphRange(forCharacterRange: charRange,
+                                           actualCharacterRange: nil)
+            let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+            let rows = max(1, Int((rect.height / lineHeight).rounded(.up)))
+            counts.append(rows)
+            if r.location + r.length >= total {
+                // Trailing newline opens a final empty logical line.
+                if total > 0, ns.character(at: total - 1) == 0x0A {
+                    counts.append(1)
+                }
+                break
+            }
+            loc = r.location + r.length
+        }
+        return counts.isEmpty ? nil : counts
     }
 
     /// Cached array of UTF-16 offsets where each newline starts in the
