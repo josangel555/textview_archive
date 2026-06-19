@@ -101,6 +101,8 @@ final class CommandRegistryTests: XCTestCase {
             "terminal-open-here",
             // focus shortcuts: move focus to a surface (TSK-937)
             "focus-terminal", "focus-file-nav", "focus-git", "focus-document",
+            // omni-search coverage: fold/unfold, repo history, clear recents (TSK-326)
+            "fold-all", "unfold-all", "show-repo-history", "clear-recents",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

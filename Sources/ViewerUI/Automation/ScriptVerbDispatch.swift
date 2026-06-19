@@ -133,6 +133,15 @@ public enum ScriptVerb {
         // to existing @MainActor model methods — headless-safe, no window.
         case "toggle-split":    model.toggleSplit()
         case "swap-split":      model.swapSplit()
+        // TSK-326 (omni-search coverage): Fold All / Unfold All previously had
+        // no script verb (menu/⌥⌘[ ⌥⌘]-only), so they greyed out in the `>`
+        // palette. Both route through the SAME host-tested model methods the
+        // View-menu items call (`cmFoldAll`/`cmUnfoldAll`); each is a no-op
+        // (returns false) outside a foldable lens, exactly like the menu's
+        // `validateMenuItem` gate. The collapse RENDERING is the VM tail; the
+        // published `lastFoldDispatch` intent is host-tested.
+        case "fold-all":        _ = model.foldAllActiveDocument()
+        case "unfold-all":      _ = model.unfoldAllActiveDocument()
         // ---- Editor (CM6) — VM-only flow verbs (Phase 6.x) ----
         // These drive the Swift-side editor state machine that backs
         // the CodeMirror WebView. Used by EditorMultiScenarioTests to
@@ -247,10 +256,19 @@ public enum ScriptVerb {
             // editor buffer is preserved (applyReload only rebases a CLEAN
             // buffer), so this never silently clobbers unsaved edits.
             model.reloadCurrentFile()
+        // TSK-326: "Clear Recent Files" previously had no verb (File-menu
+        // only). Routes through the SAME model method the menu's `clearRecents`
+        // action calls — clears the recents/history store. Pure model state,
+        // headless-safe, idempotent (clearing an empty list is a no-op).
+        case "clear-recents":   model.clearRecents()
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
         // Omni-invokability (git.showPanel / view.toggleLineBookmark previously
         // had no script verb). Both wire to existing @MainActor model methods.
         case "show-git-panel":  model.showGitPanel()
+        // TSK-326: "Show Repository History" previously had no verb (View-menu
+        // only). Same call the menu's `showRepoHistory` makes — opens the Git
+        // panel on the Log tab. Pure @MainActor state, headless-safe.
+        case "show-repo-history": model.showGitPanel(tab: .log)
         // Focus shortcuts (TSK-937): move keyboard focus to a specific
         // surface. Each opens/shows its target if needed then bumps the
         // surface's focus-request nonce.

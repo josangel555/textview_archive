@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 _A large batch landed today (the integrated backlog-drain wave). Highlights below; some bigger features shipped their core + wiring with on-screen polish still being validated._
 
 ### Added
+- **More commands runnable from the `>` palette** — Fold All, Unfold All, Show Repository History, and Clear Recent Files are no longer menu-only; type `>` in Quick Open and run them like any other command.
 - **Code-review comments** — you can now add and view review comments on a diff (the add-comment control + comment list are reachable from the review surface).
 - **CSV: keyboard cell navigation + copy** — arrow keys move the focused cell (with Home/End/Page-Up/Down), and ⌘C copies the focused cell's value.
 - **Image editor: paint + annotation tools** — raster paint (brush, flood fill, color-picker eyedropper) plus non-destructive vector annotations (rectangle, line, arrow, ellipse, text) over the image.

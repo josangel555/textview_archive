@@ -51,6 +51,13 @@ final class CommandPaletteRegistryTests: XCTestCase {
         return (model, sessions)
     }
 
+    @discardableResult
+    private func writeFile(_ name: String, _ contents: String) throws -> URL {
+        let url = tmpDir.appendingPathComponent(name)
+        try contents.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
     // MARK: - Palette lists every registered command
 
     func test_palette_listsEveryRegisteredCommand() {
@@ -116,6 +123,98 @@ final class CommandPaletteRegistryTests: XCTestCase {
         let (model, _) = makeModelAndSessions()
         // file.open is window-coupled (NSOpenPanel) — scriptVerb == nil.
         XCTAssertFalse(model.invokeCommand(id: "file.open"))
+    }
+
+    // MARK: - TSK-326: commands newly omni-invokable via `>`
+    //
+    // These four commands previously carried `scriptVerb == nil`, so the
+    // palette greyed them out (menu-only). Each now routes through the SAME
+    // pure model method its View/File-menu item calls. The tests drive the
+    // exact palette path — `invokeCommand(id:)` → `ScriptVerb.apply` → model —
+    // and pin the model-state OUTCOME so a logic regression fails the host gate
+    // (the on-screen render is the VM tail).
+
+    /// Regression guard: every command that this slice converted must now be
+    /// palette-invokable. If a future edit drops a verb back to nil, this fails.
+    func test_tsk326_newlyInvokableCommands_haveScriptVerb() {
+        let nowInvokable = [
+            "view.foldAll", "view.unfoldAll",
+            "git.repoHistory", "file.clearRecents",
+        ]
+        for id in nowInvokable {
+            let cmd = CommandRegistry.builtIn.command(id: id)
+            XCTAssertNotNil(cmd, "\(id) missing from the registry")
+            XCTAssertTrue(cmd?.isPaletteInvokable ?? false,
+                          "\(id) must be omni-invokable (scriptVerb != nil)")
+        }
+    }
+
+    func test_invokeCommand_foldAll_inSource_dispatchesFold() throws {
+        let url = try writeFile("code.swift", "func f() {\n  let x = 1\n}\n")
+        let (model, sessions) = makeModelAndSessions()
+        model.open(url: url)
+        model.setCurrentViewMode(.source)
+        XCTAssertTrue(model.canFoldActiveDocument)
+        XCTAssertNil(model.lastFoldDispatch)
+
+        let dispatched = model.invokeCommand(id: "view.foldAll")
+        XCTAssertTrue(dispatched, "fold-all verb recognised + applied")
+        XCTAssertEqual(model.lastFoldDispatch?.command, .foldAll)
+        XCTAssertEqual(model.lastFoldDispatch?.target, .source)
+        withExtendedLifetime(sessions) {}
+    }
+
+    func test_invokeCommand_unfoldAll_inEditor_dispatchesFold() throws {
+        let url = try writeFile("code.swift", "func f() {\n  let x = 1\n}\n")
+        let (model, sessions) = makeModelAndSessions()
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+
+        let dispatched = model.invokeCommand(id: "view.unfoldAll")
+        XCTAssertTrue(dispatched)
+        XCTAssertEqual(model.lastFoldDispatch?.command, .unfoldAll)
+        XCTAssertEqual(model.lastFoldDispatch?.target, .editor)
+        withExtendedLifetime(sessions) {}
+    }
+
+    func test_invokeCommand_foldAll_inNonFoldableLens_isInertNoOp() throws {
+        let url = try writeFile("doc.md", "# Title\n\nbody\n")
+        let (model, sessions) = makeModelAndSessions()
+        model.open(url: url)
+        // Markdown defaults to .rendered — non-foldable.
+        XCTAssertEqual(model.currentViewMode, .rendered)
+        // The verb is still RECOGNISED (dispatched == true), but the model
+        // method no-ops in a non-foldable lens — exactly the greyed-menu
+        // behaviour, so a `>`-invoked Fold All here does nothing.
+        XCTAssertTrue(model.invokeCommand(id: "view.foldAll"))
+        XCTAssertNil(model.lastFoldDispatch,
+                     "no fold dispatch recorded in a non-foldable lens")
+        withExtendedLifetime(sessions) {}
+    }
+
+    func test_invokeCommand_repoHistory_opensGitPanelOnLogTab() {
+        let (model, sessions) = makeModelAndSessions()
+        let beforeNonce = model.gitPanelFocusRequest
+        XCTAssertTrue(model.invokeCommand(id: "git.repoHistory"))
+        XCTAssertEqual(model.gitPanelDesiredTab, .log,
+                       "Show Repository History opens the Git panel on Log")
+        XCTAssertEqual(model.gitPanelFocusRequest, beforeNonce + 1,
+                       "the focus-request nonce bumps so the panel surfaces")
+        withExtendedLifetime(sessions) {}
+    }
+
+    func test_invokeCommand_clearRecents_emptiesRecents() throws {
+        let url = try writeFile("seen.md", "# Seen\n")
+        let (model, sessions) = makeModelAndSessions()
+        // Open a file so it lands in the recents/history store.
+        model.open(url: url)
+        XCTAssertFalse(model.recents.isEmpty,
+                       "opening a file should populate recents")
+
+        XCTAssertTrue(model.invokeCommand(id: "file.clearRecents"))
+        XCTAssertTrue(model.recents.isEmpty,
+                      "Clear Recent Files empties the recents list")
+        withExtendedLifetime(sessions) {}
     }
 
     func test_invokeCommand_unknownID_returnsFalse() {

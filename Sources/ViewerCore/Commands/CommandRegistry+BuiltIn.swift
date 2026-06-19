@@ -64,7 +64,9 @@ extension CommandRegistry {
             scriptVerb: "reload"),
         CommandDescriptor(
             id: "file.clearRecents", title: "Clear Recent Files", category: .file,
-            scriptVerb: nil),
+            // TSK-326: omni-invokable — clears the recents/history store via the
+            // pure model method the File-menu item calls. Deterministic.
+            scriptVerb: "clear-recents"),
 
         // MARK: View
         CommandDescriptor(
@@ -89,11 +91,15 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "view.foldAll", title: "Fold All", category: .view,
             defaultShortcut: Shortcut(key: "[", modifiers: [.command, .option]),
-            scriptVerb: nil),
+            // TSK-326: omni-invokable — folds the active foldable lens via the
+            // pure model method the View-menu item calls. Resolves against the
+            // active document state (not the caret), so it's deterministic.
+            scriptVerb: "fold-all"),
         CommandDescriptor(
             id: "view.unfoldAll", title: "Unfold All", category: .view,
             defaultShortcut: Shortcut(key: "]", modifiers: [.command, .option]),
-            scriptVerb: nil),
+            // TSK-326: omni-invokable — see view.foldAll.
+            scriptVerb: "unfold-all"),
         CommandDescriptor(
             id: "view.goToLine", title: "Go to Line…", category: .view,
             defaultShortcut: Shortcut(key: "l", modifiers: [.command]),
@@ -326,7 +332,9 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "git.repoHistory", title: "Show Repository History", category: .git,
             defaultShortcut: Shortcut(key: "l", modifiers: [.command, .option, .shift]),
-            scriptVerb: nil),
+            // TSK-326: omni-invokable — opens the Git panel on the Log tab, the
+            // same call the View-menu's "Show Repository History" makes.
+            scriptVerb: "show-repo-history"),
         CommandDescriptor(
             id: "git.toggleBlame", title: "Toggle Git Blame", category: .git,
             scriptVerb: "toggle-blame"),
