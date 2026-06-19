@@ -435,6 +435,23 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
             }
             None => ("404 Not Found", TEXT, "path is outside the served root (or missing)".into()),
         },
+        // Unified command palette (TSK-409): one box → the right primitive.
+        // `?q=<query>` is classified server-side (text/`>`→grep, `path/`→file
+        // find, `:N`→go-to-line) and rendered via the existing handlers. An
+        // optional `?path=` (confined under root) is the file a bare `:N`
+        // targets; an out-of-root path is simply ignored (no file context).
+        "/cmd" => {
+            let query = q.get("q").map(String::as_str).unwrap_or("");
+            let view_path = q
+                .get("path")
+                .and_then(|p| confined(root, Path::new(p)))
+                .map(|p| p.to_string_lossy().into_owned());
+            (
+                "200 OK",
+                HTML,
+                render_cmd(root, query, view_path.as_deref(), sort, show_hidden),
+            )
+        }
         _ => ("404 Not Found", TEXT, "not found".into()),
     }
 }
@@ -581,6 +598,193 @@ fn grep_box(dir: &Path) -> String {
 <button>Search</button></form>",
         esc(&dir.to_string_lossy())
     )
+}
+
+// MARK: - Command palette (TSK-409)
+//
+// A single unified landing — one box that routes a typed query to the right
+// existing primitive instead of scattering find / grep / goto across separate
+// forms. Server-side ONLY: no JS, no client deps; the classifier is pure (so it
+// is host-unit-testable) and the `/cmd` route maps the classified target back
+// onto the established `/browse`, `/grep`, and `/view` handlers. A richer
+// client-side palette (live filtering, keyboard nav) stays dependency-gated;
+// this slice ships the JS-free skeleton that mirrors the TUI's prompt verbs.
+
+/// Where a typed command-palette query routes. Pure classification result —
+/// holds no rendered HTML so it is exhaustively host-testable; `to_url` turns it
+/// into the GET target that lands on the matching existing handler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CommandRoute {
+    /// Empty / whitespace-only query: stay on the palette landing.
+    Empty,
+    /// `>needle` or plain text → cross-file grep under the served root.
+    Grep { needle: String },
+    /// A path-like query (`sub/`, `./x`, `foo/bar`) → the quick file-find
+    /// narrowing of the directory listing (`/browse?filter=`).
+    FileFind { needle: String },
+    /// `:N` → jump to line N. With a known view target it lands on `/view`; with
+    /// no target the line is carried so the palette can prompt for a file.
+    Goto { line: usize, path: Option<String> },
+}
+
+/// Classify a typed command-palette query into one of the existing primitives.
+///
+/// Routing (first match wins, mirroring the TUI prompt verbs):
+/// - leading `:` + digits → `Goto` (go-to-line),
+/// - leading `>` → `Grep` (the explicit grep sigil; the `>` is stripped),
+/// - a path-shaped query (contains `/`, or starts `.`/`~`) → `FileFind`,
+/// - anything else (plain text) → `Grep`.
+///
+/// `view_path` is the file the palette was opened over (if any), so a bare `:N`
+/// can target it. Pure — no IO, no escaping — so the host gate fully covers it.
+fn classify_command(query: &str, view_path: Option<&str>) -> CommandRoute {
+    let q = query.trim();
+    if q.is_empty() {
+        return CommandRoute::Empty;
+    }
+    // `:N` — go-to-line. A trailing non-numeric (`:`, `:foo`) falls through to
+    // the text/grep default rather than silently doing nothing.
+    if let Some(rest) = q.strip_prefix(':')
+        && let Ok(line) = rest.trim().parse::<usize>()
+    {
+        return CommandRoute::Goto {
+            line,
+            path: view_path.map(str::to_owned),
+        };
+    }
+    // `>needle` — explicit grep sigil. Strip the sigil; an empty remainder is
+    // still a (no-op) grep so the box round-trips rather than vanishing.
+    if let Some(rest) = q.strip_prefix('>') {
+        return CommandRoute::Grep { needle: rest.trim().to_owned() };
+    }
+    // Path-shaped → quick file-find narrowing. `/`-containing, or a `.`/`~`
+    // prefix, reads as "I'm typing a path", not a content search.
+    if q.contains('/') || q.starts_with('.') || q.starts_with('~') {
+        return CommandRoute::FileFind { needle: q.to_owned() };
+    }
+    // Plain text → cross-file grep (parity with the brief: `>`/text → grep).
+    CommandRoute::Grep { needle: q.to_owned() }
+}
+
+impl CommandRoute {
+    /// The GET target this command routes to, relative to the served `root`.
+    /// `Empty` returns `/cmd` (the palette landing itself). All query values are
+    /// percent-encoded so a needle with `&`/`/`/space round-trips intact.
+    fn to_url(&self, root: &Path) -> String {
+        let root_q = pct_encode(&root.to_string_lossy());
+        match self {
+            CommandRoute::Empty => "/cmd".to_owned(),
+            CommandRoute::Grep { needle } => {
+                format!("/grep?path={root_q}&q={}", pct_encode(needle))
+            }
+            CommandRoute::FileFind { needle } => {
+                format!("/browse?path={root_q}&filter={}", pct_encode(needle))
+            }
+            CommandRoute::Goto { line, path } => match path {
+                Some(p) => format!("/view?path={}&line={line}#L{line}", pct_encode(p)),
+                // No file context: drop the user on the browser with a hint that a
+                // file must be opened first (the `goto` param echoes their intent).
+                None => format!("/browse?path={root_q}&goto={line}"),
+            },
+        }
+    }
+}
+
+/// The command-palette box: a JS-free GET form pointed at `/cmd`. The single
+/// text input carries the typed query; on submit `/cmd` classifies it and
+/// renders the routed result (or, for `Empty`, the palette landing). Echoes the
+/// active query so a reload keeps it. Mirrors `grep_box`/`goto_box` construction.
+fn cmd_box(query: &str, view_path: Option<&str>) -> String {
+    let mut s = String::from("<form class=\"find cmd-box\" method=\"get\" action=\"/cmd\">");
+    if let Some(p) = view_path {
+        // Preserve the file the palette was opened over so a bare `:N` can target
+        // it across the GET submit.
+        s.push_str(&format!("<input type=\"hidden\" name=\"path\" value=\"{}\">", esc(p)));
+    }
+    s.push_str(&format!(
+        "<input type=\"text\" name=\"q\" value=\"{}\" \
+placeholder=\"command\u{2026} (text/&gt;grep \u{00b7} path/ \u{00b7} :line)\">",
+        esc(query)
+    ));
+    s.push_str("<button type=\"submit\">run</button></form>");
+    s
+}
+
+/// A short legend describing the palette's query verbs (static, escaping-free).
+fn cmd_help() -> &'static str {
+    "<details class=\"help\"><summary>Command syntax</summary><ul>\
+<li><b>text</b> or <b>&gt;text</b> — grep the served tree for text.</li>\
+<li><b>path/</b> (a slash, or a <code>.</code>/<code>~</code> prefix) \u{2014} find files by name.</li>\
+<li><b>:N</b> — go to line N (when a file is open).</li>\
+</ul></details>"
+}
+
+/// The `/cmd` palette landing: render the box + legend (when the query is empty)
+/// or the routed result. Routing is delegated to the existing `/browse`,
+/// `/grep`, and `/view` renderers via `classify_command` → `CommandRoute`, so
+/// there is exactly one query→handler mapping to maintain. `root` confines every
+/// derived target exactly as the direct routes do.
+fn render_cmd(
+    root: &Path,
+    query: &str,
+    view_path: Option<&str>,
+    sort: SortKey,
+    show_hidden: bool,
+) -> String {
+    let routed = classify_command(query, view_path);
+    let box_html = cmd_box(query, view_path);
+    match &routed {
+        CommandRoute::Empty => {
+            let nav = nav_html(root, None, sort, show_hidden, "");
+            let main = format!(
+                "{box_html}<p class=\"hint\">Type a command and run it: \
+plain text or <code>&gt;</code> greps the tree, a <code>path/</code> finds files, \
+<code>:N</code> jumps to a line.</p>{}",
+                cmd_help()
+            );
+            page("Command", &nav, &main)
+        }
+        CommandRoute::Grep { needle } => {
+            // Reuse the cross-file grep renderer, scoped to root, prefixed by the
+            // palette box so the query stays editable on the result page.
+            let body = render_grep(root, root, needle, show_hidden);
+            inject_after_nav(body, &box_html)
+        }
+        CommandRoute::FileFind { needle } => {
+            let body = render_browse(root, sort, show_hidden, needle);
+            inject_after_nav(body, &box_html)
+        }
+        CommandRoute::Goto { line, path } => match path {
+            // A targeted go-to-line lands directly on the viewed file.
+            Some(p) => render_view(Path::new(p), None, sort, show_hidden, Some(*line)),
+            // No file context: show the browser with a hint to open a file first.
+            None => {
+                let nav = nav_html(root, None, sort, show_hidden, "");
+                let main = format!(
+                    "{box_html}<p class=\"hint\">Open a file first, then \
+<code>:{line}</code> jumps to that line.</p>"
+                );
+                page("Command", &nav, &main)
+            }
+        },
+    }
+}
+
+/// Splice `extra` HTML into the `<main>` of an already-rendered page, right after
+/// the opening `<main>` tag, so the palette box sits atop a reused result page
+/// without re-implementing that page's chrome. Falls back to a plain prefix if
+/// the marker is absent (it never is — `page()` always emits `<main>`).
+fn inject_after_nav(page_html: String, extra: &str) -> String {
+    if let Some(idx) = page_html.find("<main>") {
+        let at = idx + "<main>".len();
+        let mut out = String::with_capacity(page_html.len() + extra.len());
+        out.push_str(&page_html[..at]);
+        out.push_str(extra);
+        out.push_str(&page_html[at..]);
+        out
+    } else {
+        format!("{extra}{page_html}")
+    }
 }
 
 /// Caps for the cross-file grep walk so a pathological tree can't hang the
@@ -1780,6 +1984,8 @@ th.hit,td.hit{{background:#fff3b0}} th.cur,td.cur{{background:#f0a020;color:#000
 .help{{margin:12px 0;font:13px -apple-system,Segoe UI,sans-serif;max-width:640px}}\
 .help summary{{cursor:pointer;color:{l_link};user-select:none}}\
 .help ul{{margin:6px 0 0;padding-left:18px}} .help li{{margin:3px 0;color:#444}}\
+.cmd-box{{max-width:640px}}\
+.cmd-box input[type=text]{{font:13px ui-monospace,Menlo,monospace}}\
 .grep-box{{display:flex;gap:6px;margin:0 0 12px;max-width:640px}}\
 .grep-box input[type=text]{{flex:1;font:13px -apple-system,Segoe UI,sans-serif;padding:4px 8px;border:1px solid #ccc;border-radius:4px}}\
 .grep-box button{{font:12px -apple-system,Segoe UI,sans-serif;padding:4px 10px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
@@ -1861,7 +2067,7 @@ th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
 fn page(title: &str, nav: &str, main_html: &str) -> String {
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t} · mdv-web</title>\
-<style>{css}</style></head><body><div class=\"app\"><nav><div class=\"reload\"><a href=\"/recent\">\u{2605} Recent</a></div>{nav}</nav><main>{main_html}</main></div></body></html>",
+<style>{css}</style></head><body><div class=\"app\"><nav><div class=\"reload\"><a href=\"/cmd\">\u{2318} Command</a> \u{00b7} <a href=\"/recent\">\u{2605} Recent</a></div>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title),
         css = palette_css(),
     )
@@ -3363,5 +3569,215 @@ mod tests {
         h.join().unwrap();
         assert!(resp.starts_with("HTTP/1.1 400"), "oversized head → 400:\n{resp}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- TSK-409: command palette (unified server-side query router) ---
+
+    #[test]
+    fn classify_command_routes_each_query_shape() {
+        // The classifier is the heart of the palette: a typed query → exactly one
+        // existing primitive. Pin every shape so a routing regression fails here.
+        assert_eq!(classify_command("", None), CommandRoute::Empty);
+        assert_eq!(classify_command("   ", None), CommandRoute::Empty, "whitespace-only is empty");
+
+        // `:N` → go-to-line. With a view target it carries the path; without, none.
+        assert_eq!(
+            classify_command(":42", Some("/r/file.rs")),
+            CommandRoute::Goto { line: 42, path: Some("/r/file.rs".into()) }
+        );
+        assert_eq!(
+            classify_command(" :7 ", None),
+            CommandRoute::Goto { line: 7, path: None },
+            "surrounding + inner whitespace tolerated"
+        );
+
+        // `>text` → grep, sigil stripped.
+        assert_eq!(
+            classify_command(">needle", None),
+            CommandRoute::Grep { needle: "needle".into() }
+        );
+        assert_eq!(
+            classify_command("> spaced ", None),
+            CommandRoute::Grep { needle: "spaced".into() },
+            "the > sigil and surrounding space are stripped"
+        );
+
+        // Path-shaped → file find.
+        assert_eq!(
+            classify_command("sub/dir", None),
+            CommandRoute::FileFind { needle: "sub/dir".into() }
+        );
+        assert_eq!(
+            classify_command("./local", None),
+            CommandRoute::FileFind { needle: "./local".into() },
+            "a leading dot reads as a path"
+        );
+        assert_eq!(
+            classify_command("~/home", None),
+            CommandRoute::FileFind { needle: "~/home".into() },
+            "a leading tilde reads as a path"
+        );
+
+        // Plain text → grep (the brief's text→grep default).
+        assert_eq!(
+            classify_command("hello", None),
+            CommandRoute::Grep { needle: "hello".into() }
+        );
+    }
+
+    #[test]
+    fn classify_command_colon_without_number_falls_through_to_grep() {
+        // `:` / `:foo` is NOT a valid go-to-line — it must fall through to the
+        // text default (grep) rather than silently classifying as a no-op Goto.
+        assert_eq!(classify_command(":", None), CommandRoute::Grep { needle: ":".into() });
+        assert_eq!(classify_command(":foo", None), CommandRoute::Grep { needle: ":foo".into() });
+    }
+
+    #[test]
+    fn command_route_to_url_lands_on_existing_handlers() {
+        // Each classified route must produce a GET target on the matching
+        // existing handler, with values percent-encoded.
+        let root = Path::new("/served/root");
+        assert_eq!(CommandRoute::Empty.to_url(root), "/cmd");
+
+        let grep = CommandRoute::Grep { needle: "a b&c".into() };
+        let g = grep.to_url(root);
+        assert!(g.starts_with("/grep?path="), "grep → /grep: {g}");
+        assert!(g.contains("&q=a%20b%26c"), "needle percent-encoded (space + &): {g}");
+
+        let find = CommandRoute::FileFind { needle: "src/x".into() };
+        let f = find.to_url(root);
+        assert!(f.starts_with("/browse?path="), "file-find → /browse: {f}");
+        assert!(f.contains("&filter=src/x"), "filter carries the needle: {f}");
+
+        let goto = CommandRoute::Goto { line: 12, path: Some("/served/root/f.rs".into()) };
+        let v = goto.to_url(root);
+        assert!(v.starts_with("/view?path="), "targeted goto → /view: {v}");
+        assert!(v.contains("&line=12") && v.ends_with("#L12"), "line param + anchor: {v}");
+
+        let goto_no_file = CommandRoute::Goto { line: 3, path: None };
+        let nv = goto_no_file.to_url(root);
+        assert!(nv.starts_with("/browse?path="), "untargeted goto → /browse: {nv}");
+        assert!(nv.contains("&goto=3"), "carries the intended line: {nv}");
+    }
+
+    #[test]
+    fn cmd_box_is_a_js_free_get_form() {
+        // The box is a server-rendered GET form (no JS, no client deps) that
+        // echoes the active query and preserves the optional view path.
+        let html = cmd_box("hello", Some("/r/file.rs"));
+        assert!(html.contains("method=\"get\""), "GET method: {html}");
+        assert!(html.contains("action=\"/cmd\""), "submits to /cmd: {html}");
+        assert!(html.contains("name=\"q\""), "query input present: {html}");
+        assert!(html.contains("value=\"hello\""), "query echoed: {html}");
+        assert!(html.contains("name=\"path\""), "view path preserved as hidden input: {html}");
+        // Hard guarantee: no script / event-handler attribute anywhere.
+        assert!(!html.contains("<script"), "no inline script: {html}");
+        assert!(!html.to_ascii_lowercase().contains("onclick"), "no JS handler: {html}");
+        assert!(!html.to_ascii_lowercase().contains("oninput"), "no JS handler: {html}");
+        // Without a view path, no hidden path input is emitted.
+        let bare = cmd_box("", None);
+        assert!(!bare.contains("name=\"path\""), "no path input when none given: {bare}");
+    }
+
+    #[test]
+    fn cmd_box_escapes_a_hostile_query() {
+        // A crafted query must be HTML-escaped — it round-trips into the value
+        // attribute, so a raw `"`/`<` would break out of the input (XSS teeth).
+        let html = cmd_box("\"><script>alert(1)</script>", None);
+        assert!(!html.contains("<script>"), "raw <script> reflected: {html}");
+        assert!(html.contains("&lt;script&gt;"), "query HTML-escaped: {html}");
+        assert!(html.contains("&quot;"), "the quote is escaped so it can't break the attr: {html}");
+    }
+
+    #[test]
+    fn cmd_route_empty_renders_the_palette_landing() {
+        let root = fixture().canonicalize().unwrap();
+        let (status, ctype, body) = route("GET /cmd HTTP/1.1", &root);
+        assert!(status.starts_with("200"), "/cmd → 200, got {status}");
+        assert!(ctype.starts_with("text/html"), "html: {ctype}");
+        assert!(body.contains("action=\"/cmd\""), "palette box present:\n{body}");
+        assert!(body.contains("Command syntax"), "syntax legend shown:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cmd_route_text_query_greps_the_tree() {
+        let root = fixture().canonicalize().unwrap();
+        // Plain text → grep. "section" hits doc.md's "## Section A/B".
+        let (status, _, body) = route("GET /cmd?q=section HTTP/1.1", &root);
+        assert!(status.starts_with("200"), "/cmd grep → 200, got {status}");
+        assert!(body.contains("doc.md"), "grep result listed the matching file:\n{body}");
+        assert!(body.contains("match"), "grep summary line present:\n{body}");
+        // The palette box is spliced atop the reused grep result page.
+        assert!(body.contains("action=\"/cmd\""), "palette box stays on the result page:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cmd_route_explicit_grep_sigil_matches_plain_text() {
+        let root = fixture().canonicalize().unwrap();
+        // `>section` must route identically to `section` (both grep). %3E = '>'.
+        let (_, _, sigil) = route("GET /cmd?q=%3Esection HTTP/1.1", &root);
+        assert!(sigil.contains("doc.md"), "the > sigil greps just like plain text:\n{sigil}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cmd_route_path_shaped_query_finds_files() {
+        let root = fixture().canonicalize().unwrap();
+        // A path-shaped query routes to the /browse quick-find narrowing. "he/"
+        // contains a slash → file-find; the narrowing keeps hello.txt only when
+        // the needle subsequence-matches. Use a clean subsequence "hel" inside a
+        // path-shaped wrapper to prove the file-find arm, not grep.
+        let (status, _, body) = route("GET /cmd?q=.%2Fhello HTTP/1.1", &root); // "./hello"
+        assert!(status.starts_with("200"), "/cmd file-find → 200, got {status}");
+        // The /browse quick-find box has a `name="filter"` input + an
+        // `action="/browse"` find form that the grep result page does NOT —
+        // proves we routed to file-find, not grep (teeth: a misroute to grep
+        // would drop both).
+        assert!(body.contains("name=\"filter\""), "rendered the /browse filter box:\n{body}");
+        assert!(body.contains("action=\"/browse\""), "browse find form present:\n{body}");
+        assert!(body.contains("action=\"/cmd\""), "palette box spliced atop browse:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cmd_route_goto_with_confined_path_lands_on_view() {
+        let root = fixture().canonicalize().unwrap();
+        let file = root.join("hello.txt");
+        let target = format!(
+            "GET /cmd?q=%3A2&path={} HTTP/1.1", // ":2" + the file path
+            pct_encode(&file.to_string_lossy())
+        );
+        let (status, _, body) = route(&target, &root);
+        assert!(status.starts_with("200"), "/cmd goto → 200, got {status}");
+        // The view page tags the target row with id="L2" so the #L2 fragment
+        // scrolls there — proves we landed on /view with the line honored.
+        assert!(body.contains("id=\"L2\""), "go-to-line tagged the target row:\n{body}");
+        assert!(body.contains("second line"), "rendered the viewed file:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cmd_route_goto_out_of_root_path_is_ignored() {
+        let root = fixture().canonicalize().unwrap();
+        // An out-of-root `?path=` must NOT leak a file view — confined() rejects
+        // it, so the palette drops to the browse-with-hint fallback (no /view).
+        let (status, _, body) = route("GET /cmd?q=%3A5&path=%2Fetc%2Fhosts HTTP/1.1", &root);
+        assert!(status.starts_with("200"), "still 200 (graceful), got {status}");
+        assert!(!body.contains("/etc/hosts"), "out-of-root path never reflected:\n{body}");
+        assert!(body.contains("Open a file first"), "fell back to the no-file hint:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cmd_route_reflects_no_unescaped_query() {
+        let root = fixture().canonicalize().unwrap();
+        // A hostile query through the live route must never reflect raw markup.
+        // %22%3E%3Cscript%3E = `"><script>`.
+        let (_, _, body) = route("GET /cmd?q=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E HTTP/1.1", &root);
+        assert!(!body.contains("<script>"), "raw <script> reflected via /cmd:\n{body}");
+        let _ = fs::remove_dir_all(&root);
     }
 }
