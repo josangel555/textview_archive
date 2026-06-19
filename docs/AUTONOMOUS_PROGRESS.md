@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 PM — THOROUGH "nothing-lost" MERGE AUDIT (owner ask)
+
+Owner: "absolute thorough audit — all commits merged, nothing lost; don't waste the workflow effort."
+Audited EVERY workflow commit against `main` by **patch-id (`git cherry`)** + code-presence, across two
+exhaustive sources so no orphan escapes:
+
+- **132 reaped worktree-branch commits** (SHAs from the reap log): **80 patch-id-identical on main**;
+  52 patch-id-divergent — each verified its TSK's code is on main (landed via conflict-resolved/squashed
+  commits, hence the different patch-id).
+- **`git fsck --lost-found` dangling commits** (catches orphans from ANY source — pre-squash
+  intermediates, integration-branch tips, reflog drops): **176 TSK-tagged work-commits → 120 patch-id-
+  identical + 56 divergent-but-TSK-on-main**; **7 no-TSK work-commits → 3 docs (no code) + 4 code, each
+  verified present** (multi-repo `trackedRepos`, `ProcessMemory phys_footprint`, view-modes self-guard
+  [main's SC-MENU-01 is a superior re-done version], `cbe68e2e` audit-batch whose flagship MessagePack
+  `maxDepth=128` cap + MCP framing are on main).
+- **One scare resolved:** `3d39813d` (1008/1009 "5 silent error sinks") read as missing under a TSK-id
+  grep, but is on main as **`3ab811c4`** — all 5 sinks verified present (the cherry-pick conflicted
+  precisely *because* main already has them). 1008 + 1009 reconciled reported/review → **validated**.
+- **The only genuine gap** was **BUG-027** (the directive-excluded `4050b4bb` orphan), fixed fresh this
+  session as **TSK-1024** (`0e5645e8`).
+
+**Verdict: nothing is lost — every workflow commit's work is integrated on `main`.** All 133 worktree
+branch refs reaped (0 left, repo clean). Dangling commits are expected post-squash orphans.
+
 ## LOG 2026-06-19 PM — WAVE 3 harvest + shift to INLINE cadence
 
 Owner refined the method mid-run: **do the work INLINE in-session, a few tickets per tick** (no
