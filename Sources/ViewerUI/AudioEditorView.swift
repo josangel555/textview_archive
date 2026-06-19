@@ -20,11 +20,15 @@ import ViewerCore
 /// waveform + controls.
 struct AudioEditorView: View {
     @StateObject private var vm: AudioEditorViewModel
+    /// User-supplied `ffmpeg` path (Settings) forwarded to MP3 export; `nil`
+    /// falls back to `FFmpegLocator`'s auto-discovery. TSK-535.
+    private let ffmpegPath: String?
     /// Called when the user dismisses the editor (returns to the plain player).
     let onClose: () -> Void
 
-    init(url: URL, onClose: @escaping () -> Void) {
+    init(url: URL, ffmpegPath: String? = nil, onClose: @escaping () -> Void) {
         _vm = StateObject(wrappedValue: AudioEditorViewModel(url: url))
+        self.ffmpegPath = ffmpegPath
         self.onClose = onClose
     }
 
@@ -272,31 +276,33 @@ struct AudioEditorView: View {
     }
 
     private func saveCopy() {
+        let base = vm.url.deletingPathExtension().lastPathComponent
+        let accessory = AudioExportAccessory(
+            initial: AudioExportSettings(),
+            mp3Available: FFmpegLocator.isAvailable(override: ffmpegPath))
+
         let panel = NSSavePanel()
         panel.title = "Save a Copy"
         panel.canCreateDirectories = true
-        let base = vm.url.deletingPathExtension().lastPathComponent
-        panel.nameFieldStringValue = "\(base)-edited.wav"
+        panel.nameFieldStringValue = accessory.settings.suggestedFileName(forSource: base)
+        panel.accessoryView = accessory.view
+        // Keep the typed filename's extension in lock-step with the format menu,
+        // and the save panel's allowed type filter honest.
+        accessory.onFormatChange = { [weak panel] settings in
+            panel?.nameFieldStringValue = settings.suggestedFileName(forSource: base)
+            panel?.allowedContentTypes = []   // user-picked format governs, not the extension
+        }
+
         guard panel.runModal() == .OK, let dest = panel.url else { return }
-        let format = Self.exportFormat(for: dest.pathExtension)
+        // The accessory's format choice wins; the typed extension is advisory.
         do {
-            try vm.exportCopy(spec: AudioExportSpec(format: format), to: dest)
+            try vm.exportCopy(spec: accessory.settings.spec(), to: dest, ffmpegOverride: ffmpegPath)
         } catch {
             let alert = NSAlert()
             alert.messageText = "Couldn't save a copy"
             alert.informativeText = Self.describeExport(error)
             alert.alertStyle = .warning
             alert.runModal()
-        }
-    }
-
-    private static func exportFormat(for ext: String) -> AudioExportSpec.Format {
-        switch ext.lowercased() {
-        case "aiff", "aif": return .aiff
-        case "caf": return .caf
-        case "m4a", "aac": return .aac
-        case "mp3": return .mp3
-        default: return .wav
         }
     }
 

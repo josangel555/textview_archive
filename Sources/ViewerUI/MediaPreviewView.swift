@@ -2,6 +2,7 @@ import AVKit
 import AppKit
 import PDFKit
 import SwiftUI
+import ViewerCore
 import ViewerKit
 
 /// Native previews for non-text file types. Routes by `FileCategory`
@@ -699,8 +700,16 @@ private struct AudioPreview: View {
         }
         .overlay {
             if editing {
-                AudioEditorView(url: url) { editing = false }
-                    .transition(.opacity)
+                // ffmpeg path (for MP3 export) comes from Settings; nil ⇒
+                // FFmpegLocator auto-discovery. Read directly from the prefs
+                // store — the only audio-export consumer — to keep this
+                // self-contained without threading DocumentModel through the
+                // public MediaPreviewView API (TSK-535).
+                AudioEditorView(url: url,
+                                ffmpegPath: PreferencesStore().audioFFmpegPath) {
+                    editing = false
+                }
+                .transition(.opacity)
             }
         }
         .accessibilityIdentifier("mdv.audioPreview")
