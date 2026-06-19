@@ -216,6 +216,90 @@ public struct LSPWorkspaceOverrides: Sendable, Equatable {
         }
     }
 
+    // MARK: - Dangerous env-var denylist (TSK-980 / M5)
+
+    /// Environment-variable names that turn an *otherwise-trusted* binary
+    /// into a code-execution vector by injecting attacker-controlled code
+    /// at process start. `lsp.json` lives **inside the workspace**, so a
+    /// hostile repo can name a perfectly-trusted SYSTEM server binary
+    /// (e.g. `/opt/homebrew/bin/typescript-language-server` — passes the
+    /// command trust gate) yet ship an `env` block that loads code from
+    /// the repo: `NODE_OPTIONS=--require ./.evil/pwn.js`,
+    /// `DYLD_INSERT_LIBRARIES=./.evil/lib.dylib`, `PYTHONSTARTUP=...`, etc.
+    /// The command trust gate (SEC-001) only vets *which binary* is
+    /// spawned — it cannot see these. They are name-based and so MUST be
+    /// stripped from any repo-supplied `env` before it reaches the child
+    /// (M5: "untrusted repo args/env reach the trusted discovered server").
+    ///
+    /// This is a DENYLIST of the canonical loader/interpreter hooks across
+    /// the runtimes our servers use (node, python, ruby, java, perl) plus
+    /// the dynamic-linker injection vars (`DYLD_*` on macOS, `LD_*` for
+    /// any Linux-built tools a user wires in). It is intentionally
+    /// conservative — these vars are NEVER legitimately set per-repo to
+    /// configure a language server (the server's own `args` /
+    /// `initializationOptions` are the supported tuning surface). A user
+    /// who genuinely needs one can set it in their *shell* (it then flows
+    /// through the discovered-binary path under their own trust), not via
+    /// a repo-checked-in `lsp.json`.
+    ///
+    /// Matching is by exact uppercased name OR by the `DYLD_` / `LD_`
+    /// prefix (those families have many members — `DYLD_FRAMEWORK_PATH`,
+    /// `DYLD_LIBRARY_PATH`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, …).
+    public static let dangerousEnvNames: Set<String> = [
+        // Node.js: `--require`/`--import` arbitrary modules at startup.
+        "NODE_OPTIONS",
+        // Python: import path + startup-script + site hooks.
+        "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME",
+        "PYTHONEXECUTABLE", "PYTHONUSERBASE",
+        // Ruby: `-r` arbitrary libs at startup.
+        "RUBYOPT", "RUBYLIB",
+        // Perl: include path + `-M` modules.
+        "PERL5LIB", "PERL5OPT", "PERLLIB",
+        // JVM: `-javaagent`, classpath injection, tool options.
+        "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS",
+        "CLASSPATH",
+        // Generic loader / linker (also covered by prefix match below,
+        // listed for clarity).
+        "DYLD_INSERT_LIBRARIES", "LD_PRELOAD",
+    ]
+
+    /// True iff `name` is a code-injection env var that must never be
+    /// honoured from a repo-supplied `lsp.json`. Case-insensitive on the
+    /// exact set; prefix-matches the `DYLD_` and `LD_` linker families.
+    public static func isDangerousEnvName(_ name: String) -> Bool {
+        let upper = name.uppercased()
+        if dangerousEnvNames.contains(upper) { return true }
+        // The dynamic-linker families have many members; block the whole
+        // namespace rather than enumerate every variant.
+        if upper.hasPrefix("DYLD_") || upper.hasPrefix("LD_") {
+            return true
+        }
+        return false
+    }
+
+    /// Strip every code-injection env var (see `isDangerousEnvName`) from
+    /// `env`, emitting one `LSPLog.warn` per dropped key so a refused
+    /// `lsp.json` env is visible in diagnostics. Used to sanitize a
+    /// repo-supplied override `env` before it is layered onto the trusted
+    /// child environment.
+    public static func sanitizedOverrideEnv(
+        _ env: [String: String],
+        sourceFile: URL? = nil
+    ) -> [String: String] {
+        var safe: [String: String] = [:]
+        for (k, v) in env {
+            if isDangerousEnvName(k) {
+                let where_ = sourceFile.map { " (\($0.path))" } ?? ""
+                LSPLog.warn(
+                    "LSP override env var refused (code-injection vector): "
+                    + "\(k)\(where_)")
+                continue
+            }
+            safe[k] = v
+        }
+        return safe
+    }
+
     // MARK: - Env merge
 
     /// Merge override env atop the parent process env. Override keys
@@ -223,10 +307,18 @@ public struct LSPWorkspaceOverrides: Sendable, Equatable {
     /// preserved. Used by the registry's launcher to translate an
     /// override into an `LSPClient.Config.environment` payload.
     ///
-    /// Returns nil if the override's env is empty — signals "no env
-    /// changes; let the LSPClient inherit the parent env normally"
+    /// TSK-980 / M5: the override's own keys are first run through
+    /// `sanitizedOverrideEnv`, so a repo-supplied `NODE_OPTIONS` /
+    /// `DYLD_*` / `PYTHONSTARTUP` / … can NEVER be layered onto a trusted
+    /// server's environment. The command trust gate (SEC-001) vets only
+    /// *which binary* is spawned; these name-based code-injection vectors
+    /// are orthogonal and must be stripped here regardless of how the
+    /// command was vetted.
+    ///
+    /// Returns nil if the override's (sanitized) env is empty — signals
+    /// "no env changes; let the LSPClient inherit the parent env normally"
     /// (avoids forcing a full env materialisation when the user only
-    /// overrode the binary path).
+    /// overrode the binary path, or every override key was denylisted).
     public func mergedEnvironment(
         for language: LSPLanguage,
         parent: [String: String] = ProcessInfo.processInfo.environment
@@ -235,8 +327,15 @@ public struct LSPWorkspaceOverrides: Sendable, Equatable {
               !override.environment.isEmpty else {
             return nil
         }
+        let safeOverride = Self.sanitizedOverrideEnv(
+            override.environment, sourceFile: sourceFile)
+        guard !safeOverride.isEmpty else {
+            // Every override key was a denylisted injection vector → no
+            // net env change.
+            return nil
+        }
         var merged = parent
-        for (k, v) in override.environment {
+        for (k, v) in safeOverride {
             merged[k] = v
         }
         return merged

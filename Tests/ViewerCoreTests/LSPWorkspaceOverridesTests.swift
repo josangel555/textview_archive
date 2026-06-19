@@ -654,6 +654,158 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
         XCTAssertNil(scrubbed["ANTHROPIC_API_KEY"])
     }
 
+    // MARK: - TSK-980 / M5: code-injection env-var denylist
+
+    func test_isDangerousEnvName_flagsKnownInjectionVectors() {
+        // Exact-name matches across the runtimes our servers use.
+        for name in ["NODE_OPTIONS", "PYTHONPATH", "PYTHONSTARTUP",
+                     "RUBYOPT", "PERL5OPT", "JAVA_TOOL_OPTIONS",
+                     "CLASSPATH", "_JAVA_OPTIONS"] {
+            XCTAssertTrue(LSPWorkspaceOverrides.isDangerousEnvName(name),
+                          "\(name) is a code-injection vector")
+        }
+        // Case-insensitive.
+        XCTAssertTrue(LSPWorkspaceOverrides.isDangerousEnvName("node_options"))
+        // Linker families matched by prefix.
+        XCTAssertTrue(LSPWorkspaceOverrides.isDangerousEnvName("DYLD_INSERT_LIBRARIES"))
+        XCTAssertTrue(LSPWorkspaceOverrides.isDangerousEnvName("DYLD_LIBRARY_PATH"))
+        XCTAssertTrue(LSPWorkspaceOverrides.isDangerousEnvName("LD_PRELOAD"))
+        XCTAssertTrue(LSPWorkspaceOverrides.isDangerousEnvName("LD_LIBRARY_PATH"))
+        // Benign / legitimately-tuned vars are NOT flagged.
+        for name in ["PATH", "HOME", "SOURCEKIT_LOGGING", "MY_TUNING",
+                     "LANG", "TMPDIR", "RUST_LOG"] {
+            XCTAssertFalse(LSPWorkspaceOverrides.isDangerousEnvName(name),
+                           "\(name) must not be denylisted")
+        }
+    }
+
+    func test_sanitizedOverrideEnv_dropsDangerousKeepsBenign() {
+        let raw = [
+            "NODE_OPTIONS": "--require ./.evil/pwn.js",
+            "DYLD_INSERT_LIBRARIES": "./.evil/lib.dylib",
+            "PYTHONSTARTUP": "./.evil/start.py",
+            "SOURCEKIT_LOGGING": "1",
+            "MY_TUNING": "yes",
+        ]
+        let safe = LSPWorkspaceOverrides.sanitizedOverrideEnv(raw)
+        XCTAssertNil(safe["NODE_OPTIONS"])
+        XCTAssertNil(safe["DYLD_INSERT_LIBRARIES"])
+        XCTAssertNil(safe["PYTHONSTARTUP"])
+        XCTAssertEqual(safe["SOURCEKIT_LOGGING"], "1")
+        XCTAssertEqual(safe["MY_TUNING"], "yes")
+        // Refusals are logged for diagnostics.
+        XCTAssertTrue(
+            LSPLog.captured().contains(where: {
+                $0.contains("refused") && $0.contains("NODE_OPTIONS")
+            }),
+            "expected a refusal warning for NODE_OPTIONS; got \(LSPLog.captured())")
+    }
+
+    func test_mergedEnvironment_stripsDangerousOverrideKeys() throws {
+        let bin = makeFakeBinary(named: "x")
+        try writeOverride("""
+        {
+          "servers": {
+            "swift": {
+              "command": "\(bin.path)",
+              "env": {
+                "SOURCEKIT_LOGGING": "1",
+                "NODE_OPTIONS": "--require ./.evil/pwn.js",
+                "DYLD_INSERT_LIBRARIES": "./.evil/lib.dylib"
+              }
+            }
+          }
+        }
+        """)
+        let loaded = LSPWorkspaceOverrides.load(workspaceRoot: tmpRoot)
+        let merged = try XCTUnwrap(
+            loaded?.mergedEnvironment(for: .swift, parent: ["PATH": "/usr/bin"]))
+        XCTAssertEqual(merged["SOURCEKIT_LOGGING"], "1",
+                       "benign override key survives")
+        XCTAssertEqual(merged["PATH"], "/usr/bin", "parent key preserved")
+        XCTAssertNil(merged["NODE_OPTIONS"],
+                     "code-injection env var must be stripped from the merge")
+        XCTAssertNil(merged["DYLD_INSERT_LIBRARIES"])
+    }
+
+    func test_mergedEnvironment_allDangerousKeys_returnsNil() throws {
+        // If the override's env is ENTIRELY denylisted vectors, there's
+        // no net env change → nil (inherit parent unchanged, never the
+        // injected vars).
+        let bin = makeFakeBinary(named: "x")
+        try writeOverride("""
+        {
+          "servers": {
+            "swift": {
+              "command": "\(bin.path)",
+              "env": { "NODE_OPTIONS": "--require ./.evil/pwn.js" }
+            }
+          }
+        }
+        """)
+        let loaded = LSPWorkspaceOverrides.load(workspaceRoot: tmpRoot)
+        XCTAssertNil(loaded?.mergedEnvironment(
+            for: .swift, parent: ["PATH": "/usr/bin"]),
+            "override env of only-dangerous keys → nil (no injection survives)")
+    }
+
+    func test_overrideConfig_trustedCommand_stripsDangerousEnv() throws {
+        // THE M5 vector: a hostile repo names a perfectly TRUSTED system
+        // server binary (passes the command trust gate — outside the
+        // workspace, non-writable dir) but ships an `env` block that loads
+        // attacker code into that trusted binary at startup. The
+        // trusted-command branch must STILL strip the injection vars.
+        let trusted = makeFakeBinary(named: "trusted-ts")  // in trustedBinDir
+        try writeOverride("""
+        {
+          "servers": {
+            "typescript": {
+              "command": "\(trusted.path)",
+              "args": ["--stdio"],
+              "env": {
+                "MY_TUNING": "1",
+                "NODE_OPTIONS": "--require ./.evil/pwn.js",
+                "DYLD_INSERT_LIBRARIES": "./.evil/lib.dylib",
+                "PYTHONSTARTUP": "./.evil/start.py"
+              }
+            }
+          }
+        }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .typescript, workspaceRoot: tmpRoot,
+            defaultArguments: ["--stdio"])
+        let unwrapped = try XCTUnwrap(cfg, "trusted command should be honoured")
+        // Spawns the trusted command (sanity).
+        XCTAssertEqual(unwrapped.executable.path, trusted.path)
+        let env = try XCTUnwrap(unwrapped.environment)
+        // Benign override tuning survives.
+        XCTAssertEqual(env["MY_TUNING"], "1")
+        // The injection vectors must NOT reach the trusted child.
+        XCTAssertNil(env["NODE_OPTIONS"],
+                     "NODE_OPTIONS must not reach even a trusted server (M5)")
+        XCTAssertNil(env["DYLD_INSERT_LIBRARIES"])
+        XCTAssertNil(env["PYTHONSTARTUP"])
+    }
+
+    func test_scrubbedLaunchEnvironment_dropsDangerousNamesFromParent() {
+        // Defense-in-depth: even if a code-injection var is present in the
+        // parent process env, the scrubbed base must never carry it.
+        let parent: [String: String] = [
+            "PATH": "/usr/bin",
+            "HOME": "/Users/me",
+            "NODE_OPTIONS": "--require /tmp/x.js",
+            "DYLD_LIBRARY_PATH": "/tmp/lib",
+            "PYTHONPATH": "/tmp/py",
+        ]
+        let scrubbed = LSPLanguageRegistry.scrubbedLaunchEnvironment(parent: parent)
+        XCTAssertEqual(scrubbed["PATH"], "/usr/bin")
+        XCTAssertEqual(scrubbed["HOME"], "/Users/me")
+        XCTAssertNil(scrubbed["NODE_OPTIONS"])
+        XCTAssertNil(scrubbed["DYLD_LIBRARY_PATH"])
+        XCTAssertNil(scrubbed["PYTHONPATH"])
+    }
+
     // MARK: - Default-discovery preservation
 
     func test_defaultRegistry_unchangedWhenNoOverrideFile() {

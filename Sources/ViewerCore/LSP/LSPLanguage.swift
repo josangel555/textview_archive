@@ -383,6 +383,13 @@ public struct LSPLanguageRegistry: Sendable {
             // Trusted command — the user is knowingly taking over spawn
             // config, so honour the override's args and env (env still
             // floored at the scrubbed base; the override layers on top).
+            //
+            // TSK-980 / M5: trusting the *command* does NOT mean trusting
+            // arbitrary code-injection env vars. `mergedEnvironment`
+            // strips the `NODE_OPTIONS` / `DYLD_*` / `PYTHONSTARTUP` / …
+            // denylist from the override's own keys before layering, so a
+            // repo can't weaponise a legitimately-trusted system server
+            // binary by shipping a hostile `env` block.
             let environment = overrides.mergedEnvironment(
                 for: language, parent: baseEnv) ?? baseEnv
             return LSPClient.Config(
@@ -513,6 +520,13 @@ public struct LSPLanguageRegistry: Sendable {
         ]
         var env: [String: String] = [:]
         for (k, v) in parent {
+            // TSK-980 / M5: hard floor — a code-injection env var
+            // (`NODE_OPTIONS`, `DYLD_*`, `PYTHONSTARTUP`, …) must never
+            // survive into an LSP child, even if it were ever added to
+            // `allowExact`. This denylist wins over the allowlist.
+            if LSPWorkspaceOverrides.isDangerousEnvName(k) {
+                continue
+            }
             if allowExact.contains(k) || k.hasPrefix("LC_") {
                 env[k] = v
             }
