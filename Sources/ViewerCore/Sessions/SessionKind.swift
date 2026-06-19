@@ -23,6 +23,10 @@ public enum SessionKind: String, CaseIterable, Sendable, Codable, Identifiable {
     case project
     /// A code-review session — git panel forward, problems visible.
     case codeReview
+    /// An agent / coding-session session — the Claude timeline forward,
+    /// git visible. The "Agent session" kind in the New ▸ Session menu
+    /// (TSK-373): geared at watching a coding-agent's work over a repo.
+    case agent
     /// A CI/CD session — git + problems, files de-emphasised.
     case cicd
     /// A metrics / dashboard session — recents + search forward.
@@ -30,14 +34,41 @@ public enum SessionKind: String, CaseIterable, Sendable, Codable, Identifiable {
 
     public var id: String { rawValue }
 
-    /// Short human-readable label (for a future "New Session ▸ Kind"
-    /// menu / picker). Kept terse — these end up in 1-line UI.
+    /// Short human-readable label (for the "New Session ▸ Kind"
+    /// menu / picker, TSK-373). Kept terse — these end up in 1-line UI.
     public var displayName: String {
         switch self {
         case .project:    return "Project"
         case .codeReview: return "Code Review"
+        case .agent:      return "Agent Session"
         case .cicd:       return "CI / CD"
         case .metrics:    return "Metrics"
+        }
+    }
+
+    /// SF Symbol name for the kind, used by the New Session ▸ Kind menu /
+    /// command-palette rows (TSK-373). Pure data so the menu and palette
+    /// share one icon source of truth.
+    public var symbolName: String {
+        switch self {
+        case .project:    return "folder"
+        case .codeReview: return "checkmark.seal"
+        case .agent:      return "sparkles"
+        case .cicd:       return "arrow.triangle.2.circlepath"
+        case .metrics:    return "chart.bar"
+        }
+    }
+
+    /// One-line description for the menu/palette subtitle (TSK-373).
+    /// Says what panel layout the kind seeds, so the user can pick by
+    /// intent rather than guessing.
+    public var menuSubtitle: String {
+        switch self {
+        case .project:    return "Plain folder — files first"
+        case .codeReview: return "Git + Problems forward, search handy"
+        case .agent:      return "Claude timeline + Git forward"
+        case .cicd:       return "Git + Problems, files de-emphasised"
+        case .metrics:    return "Recents + Search forward"
         }
     }
 
@@ -69,6 +100,15 @@ public enum SessionKind: String, CaseIterable, Sendable, Codable, Identifiable {
                     (.git, .shown),
                     (.lspProblems, .shown),
                     (.searchAnywhere, .shown),
+                ]))
+        case .agent:
+            // Watching a coding agent: the Claude timeline + git forward
+            // so the agent's running transcript and its edits are visible.
+            return PanelLayoutSnapshot(
+                edges: "",
+                overrides: overrides([
+                    (.claudeTimeline, .shown),
+                    (.git, .shown),
                 ]))
         case .cicd:
             // Watching a pipeline: git + problems forward, files hidden.

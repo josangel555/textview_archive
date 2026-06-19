@@ -625,6 +625,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    /// TSK-373: File → New Session ▸ Kind. The menu item's `tag` indexes
+    /// into the shared `NewSessionMenuItems.all` source of truth, so the
+    /// AppKit menu, the SwiftUI session-tab `+` menu, and any palette row
+    /// can never drift on which kinds are offered. Creates a new session of
+    /// the chosen kind (rooted at home), seeding that kind's panel layout.
+    @objc func newSessionOfKind(_ sender: Any?) {
+        let items = NewSessionMenuItems.all
+        guard let item = sender as? NSMenuItem,
+              items.indices.contains(item.tag) else { return }
+        sessions.openNewSession(kind: items[item.tag].kind)
+    }
+
     @objc func nextSession(_ sender: Any?)     { sessions.nextSession() }
     @objc func previousSession(_ sender: Any?) { sessions.previousSession() }
     @objc func closeSession(_ sender: Any?)    { sessions.closeActive() }
@@ -1304,6 +1316,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         newFileItem.submenu = newFileSubmenu
         fileMenu.addItem(newFileItem)
+
+        // TSK-373: File → New Session ▸ Kind. Creates a new session of the
+        // chosen kind (Project / Code Review / Agent Session / CI-CD /
+        // Metrics), seeding that kind's panel layout. The rows mirror the
+        // SwiftUI session-tab `+` menu — both iterate the shared
+        // `NewSessionMenuItems.all` source of truth (tag = index into it).
+        let newSessionItem = NSMenuItem(title: "New Session", action: nil, keyEquivalent: "")
+        let newSessionSubmenu = NSMenu(title: "New Session")
+        for (i, entry) in NewSessionMenuItems.all.enumerated() {
+            let item = NSMenuItem(
+                title: entry.title,
+                action: #selector(newSessionOfKind(_:)),
+                keyEquivalent: "")
+            item.target = self
+            item.tag = i
+            item.image = NSImage(systemSymbolName: entry.symbolName,
+                                 accessibilityDescription: entry.title)
+            newSessionSubmenu.addItem(item)
+        }
+        newSessionItem.submenu = newSessionSubmenu
+        fileMenu.addItem(newSessionItem)
 
         // TSK-935: New Tab from Clipboard — a scratch tab seeded with the
         // clipboard (extension content-detected: JSON → .json, else .txt).

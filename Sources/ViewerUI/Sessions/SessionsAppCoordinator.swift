@@ -267,6 +267,19 @@ public final class SessionsAppCoordinator: ObservableObject {
         openFolder(FileManager.default.homeDirectoryForCurrentUser, forceNew: true)
     }
 
+    /// TSK-373: New ▸ Session ▸ Kind. Open a new session of a chosen
+    /// `SessionKind`, seeding that kind's default panel layout (Code
+    /// Review / Agent Session / etc.). With no `root`, anchors at the
+    /// user's home — same neutral root as `openHomeSession` — so the menu
+    /// item creates the session immediately without a folder prompt. The
+    /// `kind` flows straight into the already-wired, seed-once
+    /// `SessionsCoordinator.openFolder(kind:)` path. Explicit user
+    /// gesture → TSK-599 explicit-open TCC contract applies.
+    public func openNewSession(kind: SessionKind, root: URL? = nil) {
+        let anchor = root ?? FileManager.default.homeDirectoryForCurrentUser
+        openFolder(anchor, forceNew: true, kind: kind)
+    }
+
     /// TSK-315: tab context menu "Open in New Session" / "Move to New
     /// Session". Creates a NEW session rooted at the file's parent folder
     /// and opens the file in it. With `removingFromCurrent`, the file's

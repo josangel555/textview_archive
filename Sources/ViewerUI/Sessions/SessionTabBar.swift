@@ -85,18 +85,38 @@ struct SessionTabBar: View {
                     }
                     // TSK-261: the "+" sits BESIDE the last session tab (inside
                     // the scrolling content), not pinned at the far-right edge.
-                    Button(action: openNewSession) {
+                    // TSK-373: it's now a Menu — a bare click opens a folder in a
+                    // new session (the long-standing primaryAction), while the
+                    // menu offers "New Session ▸ Kind" (Code Review / Agent
+                    // Session / Project view / …), each seeding that kind's panel
+                    // layout via the already-wired openNewSession(kind:) path.
+                    Menu {
+                        Button("Open Folder in New Session…", action: openNewSession)
+                        Divider()
+                        ForEach(NewSessionMenuItems.all) { item in
+                            Button {
+                                sessionsApp.openNewSession(kind: item.kind)
+                            } label: {
+                                Label(item.title, systemImage: item.symbolName)
+                            }
+                            .accessibilityIdentifier("mdv.sessionTab.new.kind.\(item.kind.rawValue)")
+                        }
+                    } label: {
                         Image(systemName: "plus")
                             .font(.system(size: model.uiSize(11), weight: .medium))
                             .frame(width: model.uiSize(24), height: model.uiSize(24))
+                    } primaryAction: {
+                        openNewSession()
                     }
-                    .buttonStyle(IconHoverButtonStyle())
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: model.uiSize(28))
                     .helpInfo(title: "New Session",
-                              description: "Open a folder in a new session")
+                              description: "Open a folder in a new session — or pick a kind")
                     .padding(.horizontal, 4)
                     .accessibilityIdentifier("mdv.sessionTab.new")
                     .uiClickTarget("mdv.sessionTab.new")
-                    .accessibilityLabel("Open Folder in New Session")
+                    .accessibilityLabel("New Session")
                 }
             }
             // TSK-313: double-click the EMPTY strip area = new session at ~

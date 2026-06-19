@@ -85,6 +85,39 @@ final class SessionTypeSeedTests: XCTestCase {
         XCTAssertEqual(coord.core.active?.sessionType, SessionKind.codeReview.rawValue)
     }
 
+    // MARK: New ▸ Session ▸ Kind menu wiring (TSK-373) -----------------
+
+    func test_openNewSessionWithKind_seedsAndStampsTheKind() {
+        // The exact action the New Session ▸ Kind menu row invokes.
+        let coord = makeCoordinator()
+        let root = makeWorkspace(named: "agent-root")
+        coord.openNewSession(kind: .agent, root: root)
+        XCTAssertEqual(coord.core.active?.sessionType, SessionKind.agent.rawValue,
+            "the menu's kind must be stamped onto the new session")
+        XCTAssertEqual(coord.model.panelLayout.override(for: .claudeTimeline), .shown,
+            "the agent kind must seed claudeTimeline=shown")
+        XCTAssertEqual(coord.model.panelLayout.override(for: .git), .shown)
+        XCTAssertEqual(coord.core.active?.sidebarRootPath,
+                       root.standardizedFileURL.resolvingSymlinksInPath().path,
+            "openNewSession(kind:root:) roots the session at the given folder")
+    }
+
+    func test_openNewSessionCodeReview_seedsCodeReviewLayout() {
+        let coord = makeCoordinator()
+        coord.openNewSession(kind: .codeReview, root: makeWorkspace(named: "cr"))
+        XCTAssertEqual(coord.core.active?.sessionType, SessionKind.codeReview.rawValue)
+        XCTAssertEqual(coord.model.panelLayout.override(for: .git), .shown)
+        XCTAssertEqual(coord.model.panelLayout.override(for: .lspProblems), .shown)
+    }
+
+    func test_openNewSessionProject_isPlainDefault() {
+        let coord = makeCoordinator()
+        coord.openNewSession(kind: .project, root: makeWorkspace(named: "plainmenu"))
+        XCTAssertTrue(coord.model.panelLayout.snapshot().isDefault,
+            "the Project menu row must create a plain default session")
+        XCTAssertNil(coord.core.active?.sessionType)
+    }
+
     func test_openFolderProjectKind_doesNotSeedOrStampType() {
         let coord = makeCoordinator()
         coord.openFolder(makeWorkspace(named: "plain"), forceNew: true, kind: .project)
