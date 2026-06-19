@@ -5359,6 +5359,18 @@ public final class DocumentModel: ObservableObject {
             html = HtmlExport.inlineLocalImages(html) { src in
                 let decoded = src.removingPercentEncoding ?? src
                 let imgURL = baseDir.appendingPathComponent(decoded).standardizedFileURL
+                // L-sec1 (TSK-997): containment fence — refuse to read (and
+                // therefore base64-inline) any path that escapes the document's
+                // own directory tree. `standardizedFileURL` collapses `..`, so
+                // without this an `![](../../../../etc/passwd)` — or any
+                // readable file given an image extension — would be embedded
+                // verbatim into the export. Mirrors the in-app `.html`
+                // subresource fence (`HTMLDocumentPolicy.decideSubresource`).
+                // On escape we return nil so `inlineLocalImages` leaves the
+                // `src` as its original (relative) reference instead.
+                guard HTMLDocumentPolicy.isWithinDocumentTree(imgURL, documentURL: url) else {
+                    return nil
+                }
                 return try? Data(contentsOf: imgURL)
             }
         }
