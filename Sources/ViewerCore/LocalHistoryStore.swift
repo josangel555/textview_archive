@@ -80,6 +80,9 @@ public final class LocalHistoryStore: Sendable {
         let dir = fileDirectory(for: path)
         let fm = FileManager.default
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        // TSK-1027: if this dir already belongs to a DIFFERENT path (FNV-1a-64
+        // collision), don't pollute another file's history — bail.
+        guard dirBelongsTo(path, dir: dir) else { return nil }
 
         let millis = Int64((date.timeIntervalSince1970 * 1000).rounded())
         var id = String(millis)
@@ -108,6 +111,7 @@ public final class LocalHistoryStore: Sendable {
     /// All stored revisions of `path`, newest-first.
     public func versions(for path: String) -> [Version] {
         let dir = fileDirectory(for: path)
+        guard dirBelongsTo(path, dir: dir) else { return [] }   // TSK-1027: hash-collision guard
         let fm = FileManager.default
         let urls = (try? fm.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: [.fileSizeKey]
@@ -131,7 +135,9 @@ public final class LocalHistoryStore: Sendable {
     /// The stored content of `version` for `path`, or nil if the snapshot file
     /// is missing / unreadable / not valid UTF-8.
     public func contentString(of version: Version, for path: String) -> String? {
-        let url = fileDirectory(for: path).appendingPathComponent("\(version.id).snapshot")
+        let dir = fileDirectory(for: path)
+        guard dirBelongsTo(path, dir: dir) else { return nil }   // TSK-1027: hash-collision guard
+        let url = dir.appendingPathComponent("\(version.id).snapshot")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return String(data: data, encoding: .utf8)
     }
@@ -143,8 +149,24 @@ public final class LocalHistoryStore: Sendable {
 
     // MARK: - Private
 
-    private func fileDirectory(for path: String) -> URL {
+    /// Locate the per-path revision dir. Internal so tests can plant a
+    /// mismatched `_path` sidecar (a real FNV-1a-64 collision is infeasible
+    /// to construct).
+    func fileDirectory(for path: String) -> URL {
         directory.appendingPathComponent(Self.pathKey(path))
+    }
+
+    /// True if `dir`'s `_path` sidecar is absent (legacy — can't disprove) or
+    /// equals `path`. A PRESENT-but-different sidecar means an FNV hash
+    /// collision: another file's history lives here, so we must neither serve
+    /// it nor pollute it (TSK-1027).
+    private func dirBelongsTo(_ path: String, dir: URL) -> Bool {
+        let sidecar = dir.appendingPathComponent("_path")
+        guard let data = try? Data(contentsOf: sidecar),
+              let stored = String(data: data, encoding: .utf8) else {
+            return true
+        }
+        return stored == path
     }
 
     /// Prune the directory's `.snapshot` files to `maxVersionsPerFile`,

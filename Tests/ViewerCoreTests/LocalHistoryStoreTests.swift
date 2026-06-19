@@ -117,4 +117,23 @@ final class LocalHistoryStoreTests: XCTestCase {
                        "deterministic across calls")
         XCTAssertNotEqual(LocalHistoryStore.pathKey("/a"), LocalHistoryStore.pathKey("/b"))
     }
+
+    func test_collisionGuard_dirBelongingToAnotherPath_servesNoHistory() throws {
+        // TSK-1027: snapshot for `path`, then make the dir's `_path` sidecar
+        // name a DIFFERENT file (simulating an FNV-1a-64 hash collision — a real
+        // one is infeasible to construct). The store must refuse to serve (or
+        // pollute) `path`'s history from a dir that now claims to belong elsewhere.
+        let v = store.snapshot(path: path, content: "alpha", at: date(1_700_000_000))
+        XCTAssertNotNil(v)
+        XCTAssertEqual(store.versions(for: path).count, 1)   // sanity (matches)
+
+        let sidecar = store.fileDirectory(for: path).appendingPathComponent("_path")
+        try Data("/some/other/file.md".utf8).write(to: sidecar)
+
+        // TEETH: pre-fix versions/contentString ignored `_path` and served it.
+        XCTAssertEqual(store.versions(for: path), [], "must not serve a colliding dir's history")
+        XCTAssertNil(store.contentString(of: v!, for: path))
+        // A new snapshot must not pollute the foreign dir either.
+        XCTAssertNil(store.snapshot(path: path, content: "beta", at: date(1_700_000_200)))
+    }
 }
