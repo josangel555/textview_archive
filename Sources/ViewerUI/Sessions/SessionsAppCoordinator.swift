@@ -31,6 +31,22 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// persistence). Exposed for UI binding (`@ObservedObject`).
     public let core: SessionsCoordinator
 
+    /// Multi-window foundation (TSK-265). Tracks which sessions are open in
+    /// which windows and enforces the one-window-per-session ownership
+    /// lease so two windows can't clobber the same session's persisted
+    /// state. Phase-1 the app is single-window: `bootstrap()` allocates the
+    /// primary window id and binds the active session to it; the
+    /// `openInNewWindow` entry point below is a model-level stub (no second
+    /// `NSWindow` yet) that proves the binding + lease + write-ordering
+    /// contract end-to-end. Exposed for UI binding (a future "Window" menu
+    /// observes its `bindings`).
+    public let windows: MultiWindowRegistry
+
+    /// The id of THIS coordinator's primary window in the registry.
+    /// Allocated on `bootstrap()`; bindings for the active session attach
+    /// here until the multi-window UI lands real per-window coordinators.
+    public private(set) var primaryWindowID: WindowID?
+
     /// The currently-mounted session state. Phase 1: nil only when
     /// the user has zero sessions (fresh install, never opened a
     /// folder).
@@ -100,13 +116,15 @@ public final class SessionsAppCoordinator: ObservableObject {
                 store: SessionStore = SessionStore(),
                 initialRoot: URL? = nil,
                 autosaveDebounce: TimeInterval = 0.5,
-                periodicFlushInterval: TimeInterval = 30) {
+                periodicFlushInterval: TimeInterval = 30,
+                windows: MultiWindowRegistry = MultiWindowRegistry()) {
         self.model = model
         self.store = store
         self.core = SessionsCoordinator(store: store)
         self.initialRoot = initialRoot
         self.autosaveDebounce = autosaveDebounce
         self.periodicFlushInterval = periodicFlushInterval
+        self.windows = windows
     }
 
     /// Wire the lifecycle bridge so the value-level coordinator's
@@ -150,6 +168,14 @@ public final class SessionsAppCoordinator: ObservableObject {
         // by the app launch path, but re-wiring here keeps `bootstrap()`
         // self-contained for any direct caller (tests, future entry points).
         wireLifecycle()
+
+        // Multi-window foundation (TSK-265): allocate THIS process's primary
+        // window id so the active session can take its ownership lease. The
+        // bind itself happens in `bindActiveToPrimaryWindow`, called from the
+        // mount/switch seams once `active` is set.
+        if primaryWindowID == nil {
+            primaryWindowID = windows.allocateWindow()
+        }
 
         // P3c: trash GC has ZERO first-frame relevance — a directory
         // enumeration + per-file stat + deletes. Defer it OFF the launch
@@ -279,6 +305,46 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// after each arm. Exposed for the view layer's `onChange` hook.
     public func consumeFirstPaintGoTo() -> Bool {
         firstPaintGate.take()
+    }
+
+    /// Multi-window stub entry point (TSK-265). Allocate a fresh window id
+    /// in the registry and bind `sessionID` to it, taking the session's
+    /// ownership lease. Returns the new `WindowID` on success, or throws if
+    /// the session is already open in another window (the
+    /// one-window-per-session invariant) — the caller surfaces "already open
+    /// in another window" rather than spawning a clobbering duplicate.
+    ///
+    /// This is the FOUNDATION SLICE: it does NOT yet open a real second
+    /// `NSWindow` (the menu/command that drives it can be a stub). It proves
+    /// the binding + lease model end-to-end so the later UI slice only has
+    /// to attach a real window + per-window `DocumentModel` to an id this
+    /// registry already manages.
+    @discardableResult
+    public func openInNewWindow(sessionID: UUID) throws -> WindowID {
+        let id = windows.allocateWindow()
+        do {
+            try windows.bind(window: id, toSession: sessionID)
+        } catch {
+            // Roll the just-allocated window back so a refused bind doesn't
+            // leak an orphaned, unbound window id into the registry.
+            windows.releaseWindow(id)
+            throw error
+        }
+        return id
+    }
+
+    /// Bind the currently-active session to this coordinator's primary
+    /// window in the registry. Called from the mount/switch seams so the
+    /// registry always reflects which session the primary window drives.
+    /// Rebinding the same pair is idempotent; switching sessions releases
+    /// the old lease and takes the new one. A refused bind (session already
+    /// leased by another window — impossible in the Phase-1 single-window
+    /// app, but defensive for the multi-window future) is swallowed: the
+    /// registry stays authoritative and the UI's own open path is what
+    /// enforces the invariant.
+    private func bindActiveToPrimaryWindow() {
+        guard let windowID = primaryWindowID, let active else { return }
+        try? windows.bind(window: windowID, toSession: active.id)
     }
 
     /// Close a session by id (no-op if unknown). Routes through the
@@ -499,6 +565,7 @@ public final class SessionsAppCoordinator: ObservableObject {
         }
         state.mount()
         active = state
+        bindActiveToPrimaryWindow()
         armAutosave(for: state)
     }
 
@@ -562,6 +629,7 @@ public final class SessionsAppCoordinator: ObservableObject {
         seedSessionType(state, from: snap)
         state.mount()
         active = state
+        bindActiveToPrimaryWindow()
         armAutosave(for: state)
     }
 
