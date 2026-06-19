@@ -65,6 +65,18 @@ final class KeySynthUATTests: LiveAppTestCase {
     /// injected text.
     func test_KEY_01_typeStringReachesEditorModel() throws {
         try skipUnlessBuilt()
+        // TSK-1020: synthesized CGEvent keydowns do NOT insert text into the CM6
+        // WKWebView's contentEditable even when the editor is focused. The
+        // `editor-focus` verb correctly makes the webview first responder + calls
+        // CM6 `.focus()`, and sibling KEY_02 confirms CGEvents DO traverse to the
+        // app — but WKWebView's WebContent process only accepts genuine hardware
+        // key events or `evaluateJavaScript` input, not posted CGEvents, so the
+        // real-keydown→editor-model round-trip can't be exercised by the T4
+        // harness (verified on the VM: still `got ''` after focus). Skipped (not
+        // deleted) so the VM nightly isn't a permanent red; the editor-model input
+        // path is covered by host tests. Flip the guard if a JS-input automation
+        // path is ever added.
+        try XCTSkipIf(true, "KEY_01: CGEvent keydowns don't insert into the CM6 WKWebView even when focused (KEY_02 proves delivery) — T4 harness limitation; see TSK-1020")
         let file = try harness.writeFile("note.md", "")
         // editor mode flips the active tab to CM6, but `editor-set-mode editor`
         // alone does NOT give the CM6 WKWebView keyboard first-responder (the
