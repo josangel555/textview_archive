@@ -88,6 +88,76 @@ final class PreferencesStoreTests: XCTestCase {
             PreferencesStore.minSidebarWidth)
     }
 
+    func test_sidebarWidth_defaultMatchesConstant() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(store.sidebarWidth, PreferencesStore.defaultSidebarWidth)
+    }
+
+    /// TSK-358 — reset restores the factory-default left-menu width.
+    func test_resetSidebarWidth_restoresDefault() {
+        let store = PreferencesStore(defaults: defaults)
+        store.sidebarWidth = 360
+        XCTAssertEqual(PreferencesStore(defaults: defaults).sidebarWidth, 360)
+        store.resetSidebarWidth()
+        XCTAssertEqual(
+            PreferencesStore(defaults: defaults).sidebarWidth,
+            PreferencesStore.defaultSidebarWidth)
+    }
+
+    // MARK: Window frame (TSK-358)
+
+    func test_windowFrame_defaultsToNil() {
+        XCTAssertNil(PreferencesStore(defaults: defaults).windowFrame)
+    }
+
+    func test_windowFrame_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        let frame = WindowGeometry.Frame(x: 120, y: 80, width: 1000, height: 700)
+        store.windowFrame = frame
+        XCTAssertEqual(PreferencesStore(defaults: defaults).windowFrame, frame)
+    }
+
+    func test_windowFrame_settingNilClears() {
+        let store = PreferencesStore(defaults: defaults)
+        store.windowFrame = WindowGeometry.Frame(x: 0, y: 0, width: 1000, height: 700)
+        store.windowFrame = nil
+        XCTAssertNil(PreferencesStore(defaults: defaults).windowFrame)
+    }
+
+    /// A degenerate (NaN/zero) frame must not persist — the setter rejects it
+    /// and the getter would reject it on read-back too.
+    func test_windowFrame_degenerateRejectedOnWrite() {
+        let store = PreferencesStore(defaults: defaults)
+        store.windowFrame = WindowGeometry.Frame(x: 0, y: 0, width: 0, height: 0)
+        XCTAssertNil(PreferencesStore(defaults: defaults).windowFrame)
+    }
+
+    /// A corrupt blob stored directly under the key reads back as nil rather
+    /// than crashing launch.
+    func test_windowFrame_corruptBlobReadsAsNil() {
+        defaults.set(Data([0x00, 0x01, 0x02]), forKey: "MarkdownViewer.windowFrame")
+        XCTAssertNil(PreferencesStore(defaults: defaults).windowFrame)
+    }
+
+    /// TSK-358 — "Reset window state" clears OUR frame + sidebar + zoom AND
+    /// AppKit's frame-autosave entry (the bug the prior reset missed).
+    func test_resetWindowState_clearsAllWindowKeys() {
+        let store = PreferencesStore(defaults: defaults)
+        store.windowFrame = WindowGeometry.Frame(x: 1, y: 2, width: 1000, height: 700)
+        store.sidebarWidth = 333
+        store.zoom = 1.5
+        defaults.set("oldframe", forKey: "NSWindow Frame MainWindow")
+
+        store.resetWindowState()
+
+        let reloaded = PreferencesStore(defaults: defaults)
+        XCTAssertNil(reloaded.windowFrame)
+        XCTAssertEqual(reloaded.sidebarWidth, PreferencesStore.defaultSidebarWidth)
+        XCTAssertEqual(reloaded.zoom, 1.0)
+        XCTAssertNil(defaults.string(forKey: "NSWindow Frame MainWindow"),
+                     "AppKit frame-autosave entry must be cleared so the window re-centers")
+    }
+
     // MARK: Last folder
 
     func test_lastFolder_defaultsToNil() {

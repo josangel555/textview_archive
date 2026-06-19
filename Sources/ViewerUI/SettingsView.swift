@@ -408,18 +408,12 @@ public struct SettingsView: View {
     }
 
     /// Clear the persisted UI-state defaults so the next launch starts
-    /// fresh. Previously this only dropped zoom + sidebar width, leaving
-    /// the AppKit frame-autosave entry (`NSWindow Frame MainWindow`, see
-    /// MarkdownViewer/main.swift) untouched — so "Reset window state"
-    /// never actually re-centered the window. We now also remove that
-    /// key so the next launch falls through to `window.center()`.
+    /// fresh. Delegates to `PreferencesStore.resetWindowState()` (TSK-358),
+    /// which clears our own window frame + sidebar width + zoom AND AppKit's
+    /// frame-autosave entry (`NSWindow Frame MainWindow`) in one place — the
+    /// scattered raw-key literals previously lived here and in main.swift.
     private func resetWindowState() {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: "MarkdownViewer.sidebarWidth")
-        defaults.removeObject(forKey: "MarkdownViewer.zoom")
-        // Frame autosave key written by NSWindow.setFrameAutosaveName.
-        // Keep this literal in sync with `autosaveName` in main.swift.
-        defaults.removeObject(forKey: "NSWindow Frame MainWindow")
+        PreferencesStore(defaults: .standard).resetWindowState()
     }
 
     private var privacySection: some View {

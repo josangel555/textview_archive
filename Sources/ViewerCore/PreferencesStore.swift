@@ -45,7 +45,23 @@ public final class PreferencesStore: @unchecked Sendable {
         /// builds a `SingleRootContext` (one root, no session index /
         /// snapshots / trash) and hides the session tab strip.
         static let sessionsEnabled = "MarkdownViewer.sessionsEnabled"
+        /// Persisted main-window frame (TSK-358), stored as JSON for a
+        /// `WindowGeometry.Frame`. Owned by us rather than AppKit's
+        /// `NSWindow Frame MainWindow` autosave so the clamp/restore decision
+        /// runs through the host-tested `WindowGeometry` model.
+        static let windowFrame = "MarkdownViewer.windowFrame"
+        /// AppKit's frame-autosave key for the main window. We don't WRITE
+        /// here, but `resetWindowState()` clears it so a reset truly
+        /// re-centers (the autosave entry would otherwise win on next launch).
+        /// Keep `mainWindowAutosaveName` in sync with `main.swift`.
+        static let appKitMainWindowFrame = "NSWindow Frame \(PreferencesStore.mainWindowAutosaveName)"
     }
+
+    /// The `setFrameAutosaveName` name used for the main window in
+    /// `MarkdownViewer/main.swift`. Centralised so the reset path and the
+    /// window-restore path agree on the AppKit key (was a bare literal
+    /// duplicated across `SettingsView` and `main.swift`).
+    public static let mainWindowAutosaveName = "MainWindow"
 
     /// Defaults to the pristine-aware store (TSK-618): `.standard`
     /// normally, an emptied process suite under `MDV_PRISTINE_CHROME=1`
@@ -64,10 +80,14 @@ public final class PreferencesStore: @unchecked Sendable {
     /// or a direct write that bypasses `setSidebarWidth(_:)` can't persist
     /// or read back an out-of-range value.
     public var sidebarWidth: Double {
-        get { Self.clampSidebarWidth(defaults.object(forKey: Key.sidebarWidth) as? Double ?? 240) }
+        get { Self.clampSidebarWidth(defaults.object(forKey: Key.sidebarWidth) as? Double ?? Self.defaultSidebarWidth) }
         set { defaults.set(Self.clampSidebarWidth(newValue), forKey: Key.sidebarWidth) }
     }
 
+    /// Factory default left-menu (sidebar) width — the value a fresh launch
+    /// and `resetSidebarWidth()` land on. Matches the historical inline `240`
+    /// and `SidebarView`'s `idealWidth: 240`.
+    public static let defaultSidebarWidth: Double = 240
     public static let minSidebarWidth: Double = 160
     // TSK-918: the real upper bound is the runtime window-relative clamp
     // (`PanelResize.clampWidth`, applied during the drag). This persisted
@@ -81,6 +101,49 @@ public final class PreferencesStore: @unchecked Sendable {
 
     public func setSidebarWidth(_ width: Double) {
         sidebarWidth = width
+    }
+
+    /// Restore the left-menu width to its factory default (TSK-358). Used by
+    /// "Reset window state" so the reset path doesn't poke raw defaults keys.
+    public func resetSidebarWidth() {
+        defaults.removeObject(forKey: Key.sidebarWidth)
+    }
+
+    // MARK: Window frame (TSK-358)
+
+    /// The persisted main-window frame, or `nil` if none saved yet (first
+    /// launch). Stored as JSON for a `WindowGeometry.Frame`. A corrupt /
+    /// non-decodable blob reads back as `nil` (the caller then centers a
+    /// default-sized window), so a tampered value can't crash launch.
+    public var windowFrame: WindowGeometry.Frame? {
+        get {
+            guard let data = defaults.data(forKey: Key.windowFrame) else { return nil }
+            let frame = try? JSONDecoder().decode(WindowGeometry.Frame.self, from: data)
+            // Reject a decoded-but-degenerate frame (NaN/zero) the same way a
+            // missing one is rejected — keeps the get/restore contract clean.
+            return (frame?.isUsable == true) ? frame : nil
+        }
+        set {
+            if let frame = newValue, frame.isUsable,
+               let data = try? JSONEncoder().encode(frame) {
+                defaults.set(data, forKey: Key.windowFrame)
+            } else {
+                defaults.removeObject(forKey: Key.windowFrame)
+            }
+        }
+    }
+
+    /// Clear ALL persisted main-window UI state — our own window frame,
+    /// sidebar width, zoom, AND AppKit's frame-autosave entry — so the next
+    /// launch starts from factory defaults and the window re-centers. The
+    /// AppKit key must be cleared too: `setFrameAutosaveName` would otherwise
+    /// restore the old frame regardless of our own store (TSK-358; mirrors
+    /// the prior `SettingsView.resetWindowState`, now centralised + complete).
+    public func resetWindowState() {
+        resetSidebarWidth()
+        defaults.removeObject(forKey: Key.windowFrame)
+        defaults.removeObject(forKey: Key.zoom)
+        defaults.removeObject(forKey: Key.appKitMainWindowFrame)
     }
 
     /// Whether the sidebar is currently visible. Default true — first
