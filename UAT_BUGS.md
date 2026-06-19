@@ -657,7 +657,7 @@ the audit trail survives.
   `Sources/ViewerUI/DocumentModel.swift:1168-1194`.
 
 ### BUG-027 · T4 session smokes pollute the user's real Sessions store (persist fires even under the clean-room flag)
-- **Severity:** S4 · **Kind:** quality · **Status:** OPEN
+- **Severity:** S4 · **Kind:** quality · **Status:** FIXED (2026-06-19, TSK-1024, `0e5645e8`) — AppLauncher now sets `MDV_SESSIONS_DIR=<artifacts>/SessionsScratch` on both spawn paths (the `SessionStore.defaultDirectory` override was already on main); `defaultDirectory` made injectable + 3 host tests. So T4 session smokes write to per-run scratch, never the user's real store.
 - **Area:** Sessions — group 7/12 · **Smoke:** cross-cutting (test scratch / persistence)
 - **Repro:** Run any `session-open-folder` scripted scenario, then inspect
   `~/Library/Application Support/MarkdownViewer/Sessions/index.json` and the
