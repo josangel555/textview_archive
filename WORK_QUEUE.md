@@ -19,7 +19,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 **P0 — user-felt latency (fix first; most need a VM/Instruments trace):**
 - [ ] **TSK-892** — File-nav hover is slow (constant friction; find per-hover compute) `[trace]`
 - [~] **TSK-887** — Command palette typing laggy `[36e66ec → review; @-MODE SLICE: memoized the per-keystroke whole-file heading re-parse (ParseMemo, 2 host teeth). REMAINING: bare-mode merged() rebuild per keystroke (cache on open) + full typing-latency trace]`
-- [ ] **TSK-888** — Global search typing + result-scroll laggy `[trace]`
+- [~] **TSK-888** — Global search typing + result-scroll laggy `[21171a8 → review; RESULT-SCROLL: capped per-file match rows (SearchResultCap, default 50, +"N more — open" row, 3 host teeth) — bounds the high-match-file render. TYPING already debounced/off-main (no change). REMAINING: common-case scroll trace if still felt]`
 - [ ] **TSK-890 / 891 / 895** — CM6 editor feel: drag-select slow / Page-Up janky / h-scrollbar flicker on type (MD≫Swift; ties TSK-791) `[trace]`
 - [ ] **TSK-889** — ~699KB JSON open laggy (warm path; distinct from TSK-842 cold/iCloud) `[trace]`
 - [~] **TSK-908** — Right-click commit very slow (menu build) `[dedf45b → review; "only shows Review Commit" FIXED — added Copy SHA/Short SHA/Subject/Reference (host-tested CommitClipboard). SLOW half: hot path already lazy (reviewsForCommit in submenu, TSK-909) → residual = SwiftUI .contextMenu framework cost, likely resolved by 909; VM-confirm]`
