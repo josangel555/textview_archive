@@ -17,11 +17,23 @@ final class HtmlExportTests: XCTestCase {
         XCTAssertTrue(doc.contains("<meta charset=\"utf-8\">"))
     }
 
-    func test_standaloneDocument_hasNoCSP() {
-        // The export must NOT carry the in-app no-network CSP (would block
-        // external images/fonts in a browser).
+    func test_standaloneDocument_carriesRestrictiveCSPThatStillPermitsImages() {
+        // TSK-966: the export now ships a restrictive <meta> CSP — but a LOOSER
+        // one than the in-app no-network policy, so external images still load
+        // in a browser. Pins both halves: the tag is present, scripts/network
+        // are denied (no relaxation of default-src 'none' for those), and
+        // https/data images + inline styles are explicitly re-permitted.
         let doc = HtmlExport.standaloneDocument(body: "x", stylesheet: "y", title: "t")
-        XCTAssertFalse(doc.contains("Content-Security-Policy"))
+        XCTAssertTrue(doc.contains("<meta http-equiv=\"Content-Security-Policy\""),
+                      "export must carry a CSP meta tag")
+        XCTAssertTrue(doc.contains("default-src 'none'"), "backbone is deny-by-default")
+        XCTAssertTrue(doc.contains("img-src https: data:"),
+                      "external https images + data URIs must still render in a browser")
+        XCTAssertTrue(doc.contains("style-src 'unsafe-inline'"),
+                      "embedded <style>/inline style= must still apply")
+        // No script-src relaxation: scripts stay denied via default-src 'none'.
+        XCTAssertFalse(doc.contains("script-src"),
+                       "must NOT re-permit scripts on the file:// browser path")
     }
 
     func test_standaloneDocument_escapesTitle() {

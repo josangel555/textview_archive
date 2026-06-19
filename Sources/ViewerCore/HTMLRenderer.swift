@@ -11,6 +11,25 @@ import ViewerKit
 public struct HTMLRenderer: Sendable {
     public init() {}
 
+    /// How author-embedded raw HTML (CommonMark §6.6 HTML blocks / inline
+    /// HTML) is treated when rendering the body.
+    ///
+    /// - `.sanitize`: emit it through `HTMLSanitizer.sanitize` (the in-app
+    ///   default). The in-app `WKWebView` document carries a strict
+    ///   `default-src 'none'` CSP that backstops any sanitizer miss, so richer
+    ///   author HTML (figures, asides, MathJax spans) is allowed there.
+    /// - `.escape`: HTML-escape it to VISIBLE TEXT — no live markup at all.
+    ///   Used on the CSP-light standalone EXPORT / Open-in-Browser path
+    ///   (TSK-966): that document is opened in a normal browser with
+    ///   `file://` privileges where the regex sanitizer would be the SOLE
+    ///   defense and has confirmed bypasses. Escaping removes the renderer
+    ///   as an injection vector entirely; the document's own `<meta>` CSP is
+    ///   then the second, independent layer.
+    public enum AuthorHTMLDisposition: Sendable {
+        case sanitize
+        case escape
+    }
+
     /// Pre-parse leading block-nesting ceilings (PARSE-03, input side).
     ///
     /// `HTMLVisitor.maxDepth` bounds *our* visitor recursion, but it sits
@@ -42,18 +61,22 @@ public struct HTMLRenderer: Sendable {
     static let maxLeadingBlockquoteRun = 5500
     static let maxLeadingIndentRun = 1024
 
-    public func render(_ markdown: String) -> String {
+    public func render(_ markdown: String,
+                       authorHTML: AuthorHTMLDisposition = .sanitize) -> String {
         PerfSignpost.withInterval(.render, "HTMLRenderer.render") {
             // Routed through the `.markdown` gate (TSK-648): the Rust core's
             // structural render + host chunk splice when on, the incumbent
-            // Swift visitor path otherwise.
-            RustMarkdownAdapter.render(markdown)
+            // Swift visitor path otherwise. `authorHTML` decides how embedded
+            // raw HTML is treated at BOTH the rust splice and the Swift visitor
+            // (TSK-966): in-app sanitizes (CSP backstops); export escapes.
+            RustMarkdownAdapter.render(markdown, authorHTML: authorHTML)
         }
     }
 
     /// The incumbent Swift visitor path — the rust adapter's fallback arm
     /// (and the only path until the `.markdown` gate defaults on).
-    static func renderSwiftPath(_ markdown: String) -> String {
+    static func renderSwiftPath(_ markdown: String,
+                                authorHTML: AuthorHTMLDisposition = .sanitize) -> String {
         // PARSE-03 input-side guard: reject pathologically deep block
         // nesting BEFORE cmark's native recursive descent can blow the
         // C stack. Emit the same truncation marker the visitor uses so
@@ -68,6 +91,7 @@ public struct HTMLRenderer: Sendable {
         }
         let document = Document(parsing: markdown)
         var visitor = HTMLVisitor()
+        visitor.authorHTML = authorHTML
         return visitor.visit(document)
     }
 
@@ -170,6 +194,11 @@ struct HTMLVisitor: MarkupVisitor {
 
     /// Used to de-dupe heading anchor IDs within a single document.
     var usedSlugs: [String: Int] = [:]
+
+    /// How author-embedded raw HTML is treated (TSK-966). Defaults to
+    /// `.sanitize` so every existing in-app caller is unchanged; the export
+    /// path flips it to `.escape`.
+    var authorHTML: HTMLRenderer.AuthorHTMLDisposition = .sanitize
 
     /// Current AST recursion depth. PARSE-03: `swift-markdown` parses
     /// adversarial input like 5000 nested `>` blockquotes (or list
@@ -414,7 +443,10 @@ struct HTMLVisitor: MarkupVisitor {
     /// `docs/code-review/SECURITY_CONCURRENCY_2026-05-25.md` §2.1 for
     /// the full threat model.
     mutating func visitHTMLBlock(_ html: HTMLBlock) -> String {
-        HTMLSanitizer.sanitize(html.rawHTML)
+        switch authorHTML {
+        case .sanitize: return HTMLSanitizer.sanitize(html.rawHTML)
+        case .escape:   return htmlEscape(html.rawHTML)   // TSK-966 export path
+        }
     }
 
     // MARK: Inline
@@ -506,8 +538,11 @@ struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> String {
         // See visitHTMLBlock for the rationale on routing through
-        // HTMLSanitizer (finding §2.1).
-        HTMLSanitizer.sanitize(inlineHTML.rawHTML)
+        // HTMLSanitizer (finding §2.1); `.escape` is the TSK-966 export path.
+        switch authorHTML {
+        case .sanitize: return HTMLSanitizer.sanitize(inlineHTML.rawHTML)
+        case .escape:   return htmlEscape(inlineHTML.rawHTML)
+        }
     }
 
     mutating func visitSoftBreak(_ softBreak: SoftBreak) -> String { "\n" }

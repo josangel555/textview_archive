@@ -24,13 +24,17 @@ import ViewerKit
 public enum RustMarkdownAdapter {
 
     /// `HTMLRenderer.render`'s routed body.
-    public static func render(_ markdown: String) -> String {
-        outcome(markdown).value
+    public static func render(
+        _ markdown: String,
+        authorHTML: HTMLRenderer.AuthorHTMLDisposition = .sanitize
+    ) -> String {
+        outcome(markdown, authorHTML: authorHTML).value
     }
 
     /// Same, but also reporting which engine produced the html.
     public static func outcome(
         _ markdown: String,
+        authorHTML: HTMLRenderer.AuthorHTMLDisposition = .sanitize,
         defaults: UserDefaults = .standard,
         environment: [String: String]? = nil
     ) -> CoreOutcome<String> {
@@ -38,20 +42,27 @@ public enum RustMarkdownAdapter {
             .markdown, defaults: defaults, environment: environment,
             rust: {
                 let rendered = try mdvCoreMarkdownRender(text: markdown)
-                return rendered.spliced(Self.enrich)
+                return rendered.spliced { enrich($0, authorHTML: authorHTML) }
             },
-            swift: { HTMLRenderer.renderSwiftPath(markdown) }
+            swift: { HTMLRenderer.renderSwiftPath(markdown, authorHTML: authorHTML) }
         )
     }
 
     /// Host-side chunk enrichment — the production twin of the closure the
     /// A/B suite uses (which now calls THIS, so test and app share one
-    /// implementation).
-    public static func enrich(_ chunk: CoreMarkdownChunk) -> String {
+    /// implementation). `authorHTML` mirrors the Swift visitor: in-app
+    /// sanitizes (CSP backstops), the export path escapes (TSK-966).
+    public static func enrich(
+        _ chunk: CoreMarkdownChunk,
+        authorHTML: HTMLRenderer.AuthorHTMLDisposition = .sanitize
+    ) -> String {
         let visitor = HTMLVisitor()
         switch chunk.kind {
         case "raw_html":
-            return HTMLSanitizer.sanitize(chunk.payload)
+            switch authorHTML {
+            case .sanitize: return HTMLSanitizer.sanitize(chunk.payload)
+            case .escape:   return visitor.htmlEscape(chunk.payload)
+            }
         case "code":
             let lang = HighlightLanguage.detect(fromInfoString: chunk.lang)
             if lang != .plainText {

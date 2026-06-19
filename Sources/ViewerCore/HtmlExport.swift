@@ -5,19 +5,51 @@ import Foundation
 /// does NOT modify the (Rust-ported) markdown→HTML engine, so it's migration-safe.
 ///
 /// Crucially this is NOT `HTMLRenderer.renderPage`: that page carries a strict
-/// no-network Content-Security-Policy appropriate for the in-app WKWebView, which
-/// would BLOCK external images/fonts when the user opens the exported file in a
-/// normal browser. The export document omits the CSP so it renders as authored.
+/// `default-src 'none'` Content-Security-Policy appropriate for the in-app
+/// WKWebView. This export document carries a DELIBERATELY LOOSER CSP that still
+/// permits the feature's external images (`img-src https: data:`) so an
+/// exported/Open-in-Browser file renders as authored, while keeping the
+/// no-script / no-frame / no-network backbone.
+///
+/// SECURITY (TSK-966). The standalone document is opened in a normal browser
+/// with `file://` privileges, where the regex `HTMLSanitizer` (which has
+/// confirmed bypasses) would be the SOLE defense. Two independent layers fix
+/// this:
+///   1. The CALLER renders author-embedded HTML in `.escape` mode
+///      (`HTMLRenderer.AuthorHTMLDisposition.escape`), so no author markup
+///      reaches this document live — the renderer is removed as an injection
+///      vector entirely.
+///   2. The `<meta http-equiv="Content-Security-Policy">` below is the second,
+///      independent layer: even if a body somehow carried live markup,
+///      `script-src` is denied (implied by `default-src 'none'`), inline event
+///      handlers can't run, and there is no `connect-src` exfil channel.
 public enum HtmlExport {
 
+    /// CSP for the standalone export / Open-in-Browser document (TSK-966).
+    ///
+    /// Deliberately looser than the in-app `default-src 'none'` so the export's
+    /// headline feature — EXTERNAL images — still renders in a browser:
+    ///   * `img-src https: data:` — remote https images + inline `data:` URIs
+    ///     (the in-app path forbids https images; the export permits them).
+    ///   * `style-src 'unsafe-inline'` — the embedded `<style>` block + any
+    ///     inline `style=` attributes the stylesheet/body rely on.
+    ///   * everything else falls to `default-src 'none'`: NO scripts, NO
+    ///     frames, NO `connect-src` (beacon/exfil), NO `<base>` retargeting,
+    ///     NO form posts, NO objects/plugins.
+    public static let csp: String =
+        "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; "
+        + "font-src data:; base-uri 'none'; form-action 'none';"
+
     /// A complete `<!DOCTYPE html>` document embedding `body` + `stylesheet`, with
-    /// `title` HTML-escaped into `<title>`. No CSP (see type doc).
+    /// `title` HTML-escaped into `<title>` and a restrictive (but image-
+    /// permitting) CSP (TSK-966 — see type doc).
     public static func standaloneDocument(body: String, stylesheet: String, title: String) -> String {
         """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="\(csp)">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>\(escape(title))</title>
         <style>

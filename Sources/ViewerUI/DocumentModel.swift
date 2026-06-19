@@ -5344,7 +5344,12 @@ public final class DocumentModel: ObservableObject {
         guard let tab = tabs.selected, let url = tab.url,
               ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased()),
               let text = activeFileText else { return nil }
-        let body = HTMLRenderer().render(text)
+        // TSK-966: the standalone export / Open-in-Browser document is CSP-light
+        // (so external images render) and runs with file:// privileges in a
+        // browser, where the regex sanitizer (confirmed bypasses) would be the
+        // sole defense. Render author-embedded HTML as ESCAPED TEXT so no live
+        // author markup ever reaches it; the document's own <meta> CSP backstops.
+        let body = HTMLRenderer().render(text, authorHTML: .escape)
         let css = MarkdownStylesheet.load() + "\n" + themedExtraStylesheet
         var html = HtmlExport.standaloneDocument(
             body: body, stylesheet: css, title: url.deletingPathExtension().lastPathComponent)
