@@ -20,9 +20,11 @@ import Darwin
 /// This type is `@unchecked Sendable`: all mutable state is guarded by
 /// `lock`; the read loop runs on its own queue. The PURE screen-buffer
 /// model it ultimately feeds lives in `ViewerCore` and is headless-
-/// testable; THIS file (the live fork/exec path) is NOT unit-testable on
-/// the host without spawning a real shell — see the report's
-/// live-verification gap note.
+/// testable; the live fork/exec path is NOT unit-testable on the host
+/// without spawning a real shell — but the spawn-plan precompute (shell
+/// resolution + argv/env `char**` construction, moved to the PARENT for
+/// signal-safety, M4/TSK-979) is factored into pure host-testable helpers
+/// (`resolveShell`, `CStringArray.make`).
 public final class PTYProcess: @unchecked Sendable {
     /// Called with each raw output chunk from the shell, on `readQueue`
     /// (a background queue — NOT the main actor). Set before `start`.
@@ -75,6 +77,22 @@ public final class PTYProcess: @unchecked Sendable {
             ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0
         )
 
+        // ───── PRECOMPUTE EVERYTHING IN THE PARENT (signal-safety, M4) ─────
+        // The process is heavily multi-threaded (RemoteTransport reader,
+        // FSEvents, GCD, WebKit). Between forkpty() and execve() ONLY
+        // async-signal-safe syscalls are legal in the child — any malloc
+        // (e.g. another thread held the malloc lock at fork time), Swift
+        // String bridging, or Dictionary op can DEADLOCK the child. So build
+        // the resolved shell path, the env `char**`, and the argv `char**`
+        // HERE (all strdup/malloc/String work happens pre-fork), and after
+        // the fork the child does only chdir + execve. The plan's C arrays
+        // are inherited by the child's copy-on-write address space and leak
+        // on exec (the image is replaced) — intentional and correct.
+        let plan = Self.SpawnPlan(environment: environment)
+        // chdir target as a C string, also precomputed (withCString bridges
+        // a String → must not happen in the child).
+        let cwdPlan = workingDirectory.map { CStringBox($0.path) }
+
         // forkpty: allocates a PTY pair, forks, makes the child the
         // session leader with the slave as its controlling terminal, and
         // dup2's slave→0/1/2. Parent gets the master fd back.
@@ -88,14 +106,16 @@ public final class PTYProcess: @unchecked Sendable {
 
         if pid == 0 {
             // ───── CHILD ─────
-            // Only async-signal-safe work here. Set cwd, env, then exec
-            // the login shell. On any failure, _exit (never return into
-            // the parent's Swift runtime).
-            if let cwd = workingDirectory?.path {
-                _ = cwd.withCString { chdir($0) }
+            // ASYNC-SIGNAL-SAFE ONLY. No Swift String bridging, no Dictionary
+            // ops, no malloc — everything was precomputed in the parent above.
+            // On any failure, _exit (never return into the parent's Swift
+            // runtime). `chdir`, `execve`, `_exit` are all on the
+            // signal-safe list (POSIX async-signal-safe functions).
+            if let cwdPlan {
+                _ = chdir(cwdPlan.pointer)
             }
-            execLoginShell(environment: environment)
-            // execLoginShell only returns on failure.
+            _ = execve(plan.path, plan.argv, plan.envp)
+            // execve only returns on failure.
             _exit(127)
         }
 
@@ -110,44 +130,115 @@ public final class PTYProcess: @unchecked Sendable {
         return true
     }
 
-    /// `execvp` the user's login shell as an interactive login shell
-    /// (`-` prefixed argv[0] is the historical "login shell" marker). Only
-    /// reached in the child; must stay async-signal-safe-ish (we allocate
-    /// C strings, which is acceptable post-fork pre-exec on Darwin here
-    /// because we immediately exec).
-    private func execLoginShell(environment: [String: String]?) {
+    // MARK: - Spawn plan (precomputed in the parent — signal-safety, M4)
+
+    /// A NULL-terminated C string array owning its `strdup`'d members, built
+    /// from `[String]` in the PARENT before `forkpty`. Holds the strong C
+    /// pointers so they outlive the call and stay valid in the child's
+    /// copy-on-write image until `execve` replaces it. We deliberately do NOT
+    /// free the members: the child execs (image replaced) and the parent only
+    /// uses this transiently around the fork; the strings are tiny and the
+    /// box is dropped right after. The factory `CStringArray.make` is a PURE
+    /// function of `[String]` → `char**`, host-unit-testable (round-trips back
+    /// to `[String]`), which pins the precompute moved out of the child.
+    final class CStringArray {
+        /// `count`+1 entries: the strdup'd members followed by a NULL terminator.
+        private let storage: [UnsafeMutablePointer<CChar>?]
+        /// Mutable `char **` view suitable for `execve`'s argv/envp params.
+        let pointer: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+
+        private init(strings: [String]) {
+            var buf = strings.map { strdup($0) }
+            buf.append(nil)                                 // NULL terminator
+            self.storage = buf
+            // Allocate a stable backing buffer for the pointer array itself
+            // (an `[T]`'s storage address is not guaranteed stable across the
+            // value's lifetime), so the `char**` we hand to execve stays valid.
+            let p = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+                .allocate(capacity: buf.count)
+            p.initialize(from: buf, count: buf.count)
+            self.pointer = p
+        }
+
+        deinit {
+            // Free the array buffer and each strdup'd member. (In the child
+            // we never reach here — execve replaces the image; this only runs
+            // in the parent after the transient use around fork.)
+            var i = 0
+            while let s = pointer[i] { free(s); i += 1 }
+            pointer.deallocate()
+        }
+
+        /// Build a NULL-terminated `char**` from `strings`. Pure: the result
+        /// round-trips back to `strings` (see `toStringArray`).
+        static func make(_ strings: [String]) -> CStringArray {
+            CStringArray(strings: strings)
+        }
+
+        /// Read the array back to `[String]` (stops at the NULL terminator).
+        /// Host-test seam: proves `make` produced a faithful, correctly
+        /// NULL-terminated array.
+        func toStringArray() -> [String] {
+            var out: [String] = []
+            var i = 0
+            while let s = pointer[i] { out.append(String(cString: s)); i += 1 }
+            return out
+        }
+    }
+
+    /// A single owned C string (for the `chdir` target). Same ownership model
+    /// as `CStringArray` — built in the parent, valid through `execve`.
+    final class CStringBox {
+        let pointer: UnsafeMutablePointer<CChar>
+        init(_ string: String) { self.pointer = strdup(string) }
+        deinit { free(pointer) }
+    }
+
+    /// All C strings the child's `execve` needs, computed entirely in the
+    /// PARENT. After `forkpty` the child references only `path`/`argv`/`envp`
+    /// — no Swift, no malloc.
+    struct SpawnPlan {
+        let path: UnsafePointer<CChar>
+        let argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+        let envp: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+        // Keep the owning boxes alive for the plan's lifetime.
+        private let pathBox: CStringBox
+        private let argvBox: CStringArray
+        private let envpBox: CStringArray
+
+        init(environment: [String: String]?) {
+            let resolved = PTYProcess.resolveShell(environment: environment)
+            self.pathBox = CStringBox(resolved.shellPath)
+            self.argvBox = CStringArray.make(resolved.argv)
+            self.envpBox = CStringArray.make(resolved.envStrings)
+            self.path = UnsafePointer(pathBox.pointer)
+            self.argv = argvBox.pointer
+            self.envp = envpBox.pointer
+        }
+    }
+
+    /// PURE resolver: given an optional custom env, decide the login shell
+    /// path, its `argv` (a single `-<name>` login-shell marker), and the
+    /// `KEY=VALUE` env strings (TERM forced to `xterm-256color`). No fork, no
+    /// C bridging — host-unit-testable. This is the Swift-String / Dictionary
+    /// work that USED to run in the child between forkpty and execve; it now
+    /// runs in the parent.
+    static func resolveShell(
+        environment: [String: String]?
+    ) -> (shellPath: String, argv: [String], envStrings: [String]) {
         let shellPath = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let shellName = (shellPath as NSString).lastPathComponent
         // argv[0] = "-zsh" requests a login shell.
         let argv0 = "-" + shellName
 
-        // Build the env array. If a custom env is supplied use it,
-        // otherwise inherit the parent's. Always force a sane TERM so
-        // programs negotiate against a capability set we roughly model.
+        // If a custom env is supplied use it, otherwise inherit the parent's.
+        // Always force a sane TERM so programs negotiate against a capability
+        // set we roughly model.
         var env = environment ?? ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
-
         let envStrings = env.map { "\($0.key)=\($0.value)" }
 
-        // Convert to C arrays. These leak on exec (the address space is
-        // replaced) — intentional and correct.
-        let cArgv: [UnsafeMutablePointer<CChar>?] =
-            [strdup(argv0), nil]
-        let cEnv: [UnsafeMutablePointer<CChar>?] =
-            envStrings.map { strdup($0) } + [nil]
-
-        _ = shellPath.withCString { path in
-            cArgv.withUnsafeBufferPointer { argvBuf in
-                cEnv.withUnsafeBufferPointer { envBuf in
-                    execve(
-                        path,
-                        UnsafeMutablePointer(mutating: argvBuf.baseAddress),
-                        UnsafeMutablePointer(mutating: envBuf.baseAddress)
-                    )
-                }
-            }
-        }
-        // execve only returns on failure.
+        return (shellPath, [argv0], envStrings)
     }
 
     // MARK: - Read loop
