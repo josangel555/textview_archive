@@ -11,11 +11,19 @@ import ViewerCore
 /// stops over the text view for 300 ms, we issue a hover request at
 /// that point. The choice is documented in `docs/LSP_DESIGN.md` §5.1.
 ///
-/// Lifecycle: caller retains the returned `LSPHoverToken`. The token's
-/// `isolated deinit` (Swift 6 SE-0371) removes the tracking area, the
-/// event monitors, and any pending dwell task. The token also owns
-/// the cancellation token of the most-recent in-flight hover so a fast
-/// mouse-move cancels stale work via `$/cancelRequest`.
+/// Lifecycle: caller retains the returned `LSPHoverToken` and SHOULD call
+/// `invalidate()` (on the main actor) when the editor it's attached to goes
+/// away — that synchronously removes the tracking area, the event monitors,
+/// the NotificationCenter observers, and any pending dwell task. The token
+/// also owns the cancellation token of the most-recent in-flight hover so a
+/// fast mouse-move cancels stale work via `$/cancelRequest`.
+///
+/// The `deinit` is a LAST-RESORT BACKSTOP only: it defers cleanup onto an
+/// unstructured `Task { @MainActor }` (the AppKit refs require the main
+/// actor, and `deinit` runs nonisolated), which may never run — the process
+/// can exit, or the task can be starved — so observers/monitors can leak if
+/// the caller relies on it. RC fix (TSK-963): callers invoke `invalidate()`
+/// explicitly; `deinit` only mops up a token the caller forgot to release.
 ///
 /// Dismiss: NSPopover.behavior = .transient handles Esc + click-outside.
 /// We also dismiss on scroll (which moves text under the popover anchor)
@@ -32,13 +40,18 @@ public final class LSPHoverToken {
     // the production compiler. Marking the fields nonisolated(unsafe)
     // and hopping to MainActor inside the deinit is the portable
     // alternative.
-    nonisolated(unsafe) fileprivate let chain: AnyObject
+    nonisolated(unsafe) fileprivate let chain: ChainedMonitor
     nonisolated(unsafe) fileprivate let trackingArea: NSTrackingArea
     nonisolated(unsafe) fileprivate weak var textView: NSTextView?
     nonisolated(unsafe) fileprivate var notifTokens: [NSObjectProtocol]
+    /// Latch so `invalidate()` is idempotent and `deinit`'s backstop never
+    /// double-removes after an explicit teardown. `nonisolated(unsafe)` for
+    /// the same reason as the fields above — the deinit reads it to decide
+    /// whether the backstop work is still needed.
+    nonisolated(unsafe) fileprivate var isInvalidated = false
 
     fileprivate init(
-        chain: AnyObject,
+        chain: ChainedMonitor,
         trackingArea: NSTrackingArea,
         textView: NSTextView,
         notifTokens: [NSObjectProtocol]
@@ -49,11 +62,63 @@ public final class LSPHoverToken {
         self.notifTokens = notifTokens
     }
 
-    /// Cleanup hops to MainActor because the AppKit refs require it.
-    /// We capture-by-value into the Task so the deinit's own access
-    /// to the stored properties is the only nonisolated-unsafe bit;
-    /// the Task body runs cleanly on main.
+    #if DEBUG
+    /// Test-only factory (TSK-963): build a token over an injected
+    /// `NSTextView` + tracking area + real NotificationCenter observer
+    /// tokens + an empty `ChainedMonitor`, so the host gate can pin
+    /// `invalidate()`'s idempotence + cleanup without spawning an LSP server
+    /// or opening a window. The NSTextView/tracking-area are real AppKit
+    /// objects (headless-safe: `removeTrackingArea` needs no window/screen).
+    static func _makeForTesting(
+        textView: NSTextView,
+        trackingArea: NSTrackingArea,
+        notifTokens: [NSObjectProtocol]
+    ) -> LSPHoverToken {
+        LSPHoverToken(
+            chain: ChainedMonitor(monitors: []),
+            trackingArea: trackingArea,
+            textView: textView,
+            notifTokens: notifTokens)
+    }
+
+    /// Test-only observability: has `invalidate()` run?
+    var _isInvalidatedForTesting: Bool { isInvalidated }
+    /// Test-only observability: count of NotificationCenter observer tokens
+    /// the token still holds (0 after `invalidate()`).
+    var _notifTokenCountForTesting: Int { notifTokens.count }
+    /// Test-only observability: does the token still reference its textView?
+    var _hasTextViewForTesting: Bool { textView != nil }
+    #endif
+
+    /// Synchronously tear down everything this token owns: the tracking
+    /// area, the NotificationCenter block observers, and the event
+    /// monitors (via the chain). Idempotent — a second call is a no-op.
+    /// Callers wire this into the editor-teardown path so cleanup happens
+    /// deterministically on the main actor rather than waiting on the
+    /// deferred-`Task` backstop in `deinit` (which may never run). (TSK-963.)
+    public func invalidate() {
+        guard !isInvalidated else { return }
+        isInvalidated = true
+        if let tv = textView {
+            tv.removeTrackingArea(trackingArea)
+        }
+        textView = nil
+        let center = NotificationCenter.default
+        for tok in notifTokens {
+            center.removeObserver(tok)
+        }
+        notifTokens = []
+        chain.removeAll()
+    }
+
+    /// LAST-RESORT BACKSTOP. If the caller never called `invalidate()`,
+    /// defer the teardown onto the main actor (the AppKit refs require it,
+    /// and `deinit` is nonisolated). This Task may never run — process
+    /// exit / starvation — which is exactly why callers must prefer
+    /// `invalidate()`. We capture-by-value so the deinit's own access to
+    /// the stored properties is the only nonisolated-unsafe bit.
     deinit {
+        if isInvalidated { return }
         let tv = textView
         let tracking = trackingArea
         let tokens = notifTokens
@@ -66,7 +131,7 @@ public final class LSPHoverToken {
             for tok in tokens {
                 center.removeObserver(tok)
             }
-            _ = chainKeepalive // monitors removed in ChainedMonitor.deinit
+            chainKeepalive.removeAll()
         }
     }
 }
@@ -189,12 +254,16 @@ public enum LSPHoverAttachment {
 
         var notifTokens: [NSObjectProtocol] = []
         if let scrollView = textView.enclosingScrollView {
+            // RC fix (TSK-963): capture `state` weakly. A strong capture
+            // kept the HoverState (and its NSPopover) alive for as long as
+            // the observer registration lived — and the observer was only
+            // removed via the deferred-Task deinit, which may never run.
             let tok = NotificationCenter.default.addObserver(
                 forName: NSView.boundsDidChangeNotification,
                 object: scrollView.contentView,
                 queue: .main
-            ) { _ in
-                Task { @MainActor in state.dismiss() }
+            ) { [weak state] _ in
+                Task { @MainActor in state?.dismiss() }
             }
             notifTokens.append(tok)
         }
@@ -203,8 +272,8 @@ public enum LSPHoverAttachment {
                 forName: NSWindow.didResignKeyNotification,
                 object: window,
                 queue: .main
-            ) { _ in
-                Task { @MainActor in state.dismiss() }
+            ) { [weak state] _ in
+                Task { @MainActor in state?.dismiss() }
             }
             notifTokens.append(tok)
         }
@@ -418,13 +487,39 @@ private final class HoverState {
     }
 }
 
-/// Holder that removes event monitors when the hover token deinits.
-private final class ChainedMonitor {
-    let monitors: [Any]
+/// Holder for the hover token's local event monitors. Teardown is
+/// `@MainActor`-isolated (TSK-963): `NSEvent.removeMonitor(_:)` must run on
+/// the main thread, but `deinit` is nonisolated by default — the old version
+/// removed monitors directly from the nonisolated deinit, off the main actor.
+/// `removeAll()` is the explicit, idempotent teardown the token's
+/// `invalidate()` calls synchronously; the deferred-Task `deinit` is the
+/// last-resort backstop for a token whose `invalidate()` was never called.
+@MainActor
+fileprivate final class ChainedMonitor {
+    nonisolated(unsafe) private var monitors: [Any]
     init(monitors: [Any]) { self.monitors = monitors }
-    deinit {
+
+    /// Remove every retained event monitor. Idempotent: clears the array so
+    /// a second call (e.g. backstop deinit after an explicit `invalidate()`)
+    /// is a no-op.
+    func removeAll() {
         for m in monitors {
             NSEvent.removeMonitor(m)
+        }
+        monitors = []
+    }
+
+    /// Backstop only — `LSPHoverToken.invalidate()` should have already
+    /// called `removeAll()` on the main actor. If it didn't, defer the
+    /// removal onto the main actor (it may never run; that's the leak the
+    /// explicit teardown closes).
+    deinit {
+        let pending = monitors
+        guard !pending.isEmpty else { return }
+        Task { @MainActor in
+            for m in pending {
+                NSEvent.removeMonitor(m)
+            }
         }
     }
 }
