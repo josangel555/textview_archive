@@ -19,10 +19,17 @@ struct CommandPaletteView: View {
     @State private var filteredCommands: [(item: CommandDescriptor, match: FuzzyMatcher.Match)] = []
     @FocusState private var fieldFocused: Bool
 
-    /// Unified palette routing (TSK-727): one classifier maps the leading
-    /// operator to a mode — `>` command, `:` go-to-line, `#` in-file text
-    /// search, `@` Markdown-heading jump, bare → files.
-    private var parsed: GotoQuery { GotoQueryParser.parse(query) }
+    /// Unified search routing (TSK-677): one classifier maps the leading
+    /// operator to a SearchSource so the palette is the single front door for
+    /// every search type — `>` commands, `?` global cross-file search, `#`
+    /// in-file text, `@` Markdown-heading jump, `:` go-to-line, bare → recents.
+    /// `route.goto` carries the legacy `GotoQuery` the in-file modes still use.
+    private var route: SearchRouter.Route { SearchRouter.route(query) }
+    /// The parsed goto-query (line/column, in-file term). Kept as the name the
+    /// existing in-file/symbol/line code paths read, sourced from the router.
+    private var parsed: GotoQuery { route.goto }
+    /// `true` when the user is searching across files (`?term`) — TSK-677.
+    private var isGlobalSearchMode: Bool { route.source == .globalText }
     /// `true` when the user is in command mode (query starts with `>`).
     private var isCommandMode: Bool { parsed.mode == .command }
     /// `true` when the user is entering a `:line[:col]` jump.
@@ -44,7 +51,7 @@ struct CommandPaletteView: View {
             HStack(spacing: 8) {
                 Image(systemName: paletteIcon)
                     .foregroundStyle(.secondary)
-                TextField("Search recent files… (› cmds · : line · # in file · @ heading)", text: $query)
+                TextField("Search recent files… (› cmds · ? all files · : line · # in file · @ heading)", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($fieldFocused)
@@ -67,6 +74,8 @@ struct CommandPaletteView: View {
 
             if isCommandMode {
                 commandList
+            } else if isGlobalSearchMode {
+                globalSearchHint
             } else if isLineMode {
                 lineModeHint
             } else if isInFileSearchMode {
@@ -255,6 +264,7 @@ struct CommandPaletteView: View {
 
     private var paletteIcon: String {
         if isCommandMode { return "command" }
+        if isGlobalSearchMode { return "folder.badge.questionmark" }
         if isLineMode { return "number" }
         if isInFileSearchMode { return "doc.text.magnifyingglass" }
         if isSymbolMode { return "list.bullet" }
@@ -263,6 +273,11 @@ struct CommandPaletteView: View {
 
     /// Whether the footer has an actionable Return for the current mode.
     private var footerActionable: Bool {
+        if isGlobalSearchMode {
+            // Actionable once there's a term to hand to the cross-file engine.
+            if case .runGlobalSearch = route.submit { return true }
+            return false
+        }
         if isLineMode { return parsed.line != nil }
         if isInFileSearchMode { return !inFileMatches.isEmpty }
         if isCodeSymbolMode { return !codeSymbolMatches.isEmpty }
@@ -272,6 +287,7 @@ struct CommandPaletteView: View {
     }
 
     private var footerActionLabel: String {
+        if isGlobalSearchMode { return "↵ search all files" }
         if isLineMode { return "↵ go to line" }
         if isInFileSearchMode { return "↵ jump to match" }
         if isCodeSymbolMode { return "↵ jump to symbol" }
@@ -280,19 +296,22 @@ struct CommandPaletteView: View {
         return "↵ open"
     }
 
-    /// Dispatch the parsed query's submit action (TSK-727). The routing rules
-    /// (`GotoQuery.submitAction`) are host-tested in ViewerCore; this is only
-    /// the thin view-side dispatch into the model.
+    /// Dispatch the routed query's submit action (TSK-677). The routing rules
+    /// (`SearchRouter.route`) are host-tested in ViewerCore; this is only the
+    /// thin view-side dispatch into the model.
     private func submit() {
-        // In-file search (`#`) jumps to the first match (the parser's
-        // submitAction can't compute matches — it has no file text).
+        // In-file search (`#`) / symbol (`@`) jump to the SELECTED row (Return
+        // after arrow-navigating); the router's `.jumpInFile` can't carry the
+        // selection, so the view owns it here.
         if isInFileSearchMode || isSymbolMode {
-            // Jump to the SELECTED row (Return after arrow-navigating); falls
-            // back to dismiss when there are no matches.
             jumpToSelectedRow()
             return
         }
-        switch parsed.submitAction {
+        switch route.submit {
+        case .runGlobalSearch(let term):
+            // Hand off to the cross-file engine via the unified front door.
+            model.dismissPalette()
+            model.openGlobalSearch(query: term)
         case .goToLine(let line):
             model.scrollSource(toLine: line)
             model.dismissPalette()
@@ -300,9 +319,34 @@ struct CommandPaletteView: View {
             runSelectedCommand()
         case .openFile:
             openSelected()
+        case .jumpInFile:
+            // Reached only if a future in-file route bypasses the early return.
+            jumpToSelectedRow()
         case .none:
             model.dismissPalette()
         }
+    }
+
+    /// Hint shown in global-search mode (`?term`) — TSK-677. The actual results
+    /// render in the dedicated cross-file overlay after Return (it has its own
+    /// scope picker, regex/case toggles, and replace flow), so the palette only
+    /// frames the action here rather than duplicating that surface.
+    @ViewBuilder private var globalSearchHint: some View {
+        VStack(spacing: 6) {
+            Spacer().frame(height: 24)
+            Image(systemName: "folder.badge.questionmark")
+                .font(.system(size: 22)).foregroundStyle(.secondary)
+            if route.term.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("Search across all files…").foregroundStyle(.secondary).font(.callout)
+            } else {
+                Text("↵ to search all files for “\(route.term.trimmingCharacters(in: .whitespaces))”")
+                    .foregroundStyle(.secondary).font(.callout)
+                    .lineLimit(1).truncationMode(.middle)
+                    .padding(.horizontal, 24)
+            }
+            Spacer().frame(height: 24)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder private var lineModeHint: some View {
@@ -425,7 +469,9 @@ struct CommandPaletteView: View {
         inFileMatches = []
         symbolMatches = []
         codeSymbolMatches = []
-        if isInFileSearchMode {
+        if isGlobalSearchMode {
+            // Hint-only — results live in the cross-file overlay after Return.
+        } else if isInFileSearchMode {
             inFileMatches = InFileSearch.matches(
                 in: model.activeFileText ?? "", query: parsed.term)
         } else if isCodeSymbolMode {

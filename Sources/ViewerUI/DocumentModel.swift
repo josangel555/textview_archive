@@ -1816,6 +1816,21 @@ public final class DocumentModel: ObservableObject {
         isCrossSearchPresented = true
     }
 
+    /// TSK-677 — unified search routing hand-off. When the command palette is in
+    /// global-search mode (`?term`) and the user submits, the palette routes
+    /// here: pre-fill the cross-file query, surface the overlay, and kick the
+    /// existing grep. This makes the palette a single front door that dispatches
+    /// to the SAME cross-file engine the `SearchAnywhereSection` / cross-search
+    /// panel use — no second scanner. `query` is the already-trimmed term from
+    /// `SearchRouter.SubmitAction.runGlobalSearch`.
+    public func openGlobalSearch(query: String) {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return }
+        crossSearchQuery = q
+        isCrossSearchPresented = true
+        runCrossSearch()
+    }
+
     public func dismissCrossSearch() {
         isCrossSearchPresented = false
         crossSearchQuery = ""
