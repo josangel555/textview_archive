@@ -203,6 +203,104 @@ public struct LSPDocumentSymbol: Sendable, Hashable {
     }
 }
 
+/// `CompletionItemKind` values from LSP 3.17 §11.6. Drives the icon /
+/// type-badge an autocomplete UI shows per item. Unknown / absent kinds
+/// map to `.text` (the spec's neutral default) rather than failing — like
+/// `LSPSymbolKind`, servers occasionally ship private extensions and we
+/// must degrade gracefully. Numbering is stable across spec versions.
+public enum LSPCompletionItemKind: Int, Sendable, Codable {
+    case text = 1
+    case method = 2
+    case function = 3
+    case constructor = 4
+    case field = 5
+    case variable = 6
+    case `class` = 7
+    case interface = 8
+    case module = 9
+    case property = 10
+    case unit = 11
+    case value = 12
+    case `enum` = 13
+    case keyword = 14
+    case snippet = 15
+    case color = 16
+    case file = 17
+    case reference = 18
+    case folder = 19
+    case enumMember = 20
+    case constant = 21
+    case `struct` = 22
+    case event = 23
+    case `operator` = 24
+    case typeParameter = 25
+}
+
+/// `textDocument/completion` result item (LSP 3.17 §11.6), normalized to a
+/// flat value type for an autocomplete UI.
+///
+/// Field semantics that the decode boundary enforces so callers don't have
+/// to re-derive them (and so behaviour is host-pinned):
+///   - `label` is required and is the human-visible text in the popup.
+///   - `insert` is the text actually committed on accept. Spec precedence:
+///     `textEdit.newText` > `insertText` > `label`. We pre-resolve it here
+///     so callers always have a non-empty string to insert.
+///   - `editRange` is `textEdit.range` when the server returned a TextEdit
+///     (it tells the editor which span to REPLACE, vs inserting at the
+///     caret). `nil` ⇒ plain caret insertion of `insert`.
+///   - `filterText` / `sortText` default to `label` when absent (per spec),
+///     so a client's fuzzy-filter + ordering never sees a nil.
+///   - `isSnippet` mirrors `insertTextFormat == 2` (Snippet). A viewer that
+///     can't expand `$0`/`${1:…}` placeholders should strip them or fall
+///     back to plain insertion; we surface the flag rather than silently
+///     committing snippet syntax as literal text.
+public struct LSPCompletionItem: Sendable, Hashable {
+    public let label: String
+    public let kind: LSPCompletionItemKind?
+    public let detail: String?
+    public let documentation: String?
+    /// Resolved text to commit on accept (textEdit.newText / insertText /
+    /// label, in spec precedence order). Never empty.
+    public let insert: String
+    /// Range to replace when the server returned a TextEdit; nil ⇒ caret
+    /// insertion.
+    public let editRange: LSPRange?
+    public let filterText: String
+    public let sortText: String
+    public let isSnippet: Bool
+
+    public init(
+        label: String, kind: LSPCompletionItemKind?, detail: String?,
+        documentation: String?, insert: String, editRange: LSPRange?,
+        filterText: String, sortText: String, isSnippet: Bool
+    ) {
+        self.label = label
+        self.kind = kind
+        self.detail = detail
+        self.documentation = documentation
+        self.insert = insert
+        self.editRange = editRange
+        self.filterText = filterText
+        self.sortText = sortText
+        self.isSnippet = isSnippet
+    }
+}
+
+/// `textDocument/completion` normalized response. The server may return a
+/// bare `CompletionItem[]`, a `CompletionList { isIncomplete, items }`, or
+/// `null`; we collapse all three to this. `isIncomplete: true` tells the
+/// client the list is a TRUNCATED prefix match — it must re-request (not
+/// just client-filter) as the user types more, because better matches may
+/// exist server-side that weren't sent.
+public struct LSPCompletionList: Sendable, Hashable {
+    public let isIncomplete: Bool
+    public let items: [LSPCompletionItem]
+    public init(isIncomplete: Bool, items: [LSPCompletionItem]) {
+        self.isIncomplete = isIncomplete
+        self.items = items
+    }
+}
+
 /// `workspace/symbol` response item. Two on-the-wire shapes per LSP
 /// 3.17:
 ///   - Legacy `SymbolInformation`: full `location: {uri, range}`,

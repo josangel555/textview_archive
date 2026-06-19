@@ -535,10 +535,12 @@ public actor LSPClient {
             "workspaceFolders": [
                 ["uri": rootURI, "name": workspaceRoot.lastPathComponent]
             ],
-            // Minimal capability advert. Design doc §3.7 explicitly
-            // does NOT advertise completion / signatureHelp / codeAction
-            // / formatting / rename / linkedEditingRange / codeLens /
-            // workspace.applyEdit — viewer can't accept edits.
+            // Capability advert. The PoC started read-only (no edit-class
+            // capabilities), but the editor now applies server edits, so
+            // formatting / rename / codeAction / completion (TSK-463) are
+            // advertised as they're wired. Still NOT advertised:
+            // signatureHelp / linkedEditingRange / codeLens /
+            // workspace.applyEdit.
             "capabilities": [
                 "textDocument": [
                     "synchronization": [
@@ -551,7 +553,22 @@ public actor LSPClient {
                     ],
                     "definition": [
                         "dynamicRegistration": false, "linkSupport": true
-                    ]
+                    ],
+                    // textDocument/completion (TSK-463). Many servers
+                    // (sourcekit-lsp, pyright, gopls) gate completion
+                    // responses on the client advertising it — without this
+                    // they reply empty. We support a plaintext-only insert
+                    // path; snippet handling is surfaced per-item via the
+                    // `isSnippet` flag but we don't claim full snippet
+                    // expansion here (`snippetSupport: false`).
+                    "completion": [
+                        "dynamicRegistration": false,
+                        "contextSupport": true,
+                        "completionItem": [
+                            "snippetSupport": false,
+                            "documentationFormat": ["markdown", "plaintext"],
+                        ],
+                    ],
                 ],
                 "workspace": [
                     "workspaceFolders": true
@@ -674,6 +691,39 @@ public actor LSPClient {
             method: "textDocument/definition", params: params,
             timeout: .seconds(5), token: token)
         return Self.decodeDefinition(raw)
+    }
+
+    /// `textDocument/completion` (TSK-463) — completion candidates at the
+    /// caret. Returns a normalized `LSPCompletionList`; `isIncomplete`
+    /// tells the UI to re-request (not just client-filter) as the user
+    /// keeps typing. The optional `triggerCharacter` populates the LSP
+    /// `CompletionContext`: nil ⇒ `Invoked` (explicit, e.g. ⌃Space); a
+    /// single character ⇒ `TriggerCharacter` (the server's registered
+    /// trigger fired, e.g. `.`). Completion is latency-sensitive but
+    /// servers can be slow on a cold index — 5s mirrors `definition`.
+    public func completion(
+        url: URL, line: Int, character: Int,
+        triggerCharacter: String? = nil,
+        token: LSPCancellationToken? = nil
+    ) async throws -> LSPCompletionList {
+        guard initialized else { throw LSPError.notInitialized }
+        var params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "position": ["line": line, "character": character],
+        ]
+        // CompletionContext: triggerKind 1 = Invoked, 2 = TriggerCharacter.
+        if let triggerCharacter {
+            params["context"] = [
+                "triggerKind": 2,
+                "triggerCharacter": triggerCharacter,
+            ]
+        } else {
+            params["context"] = ["triggerKind": 1]
+        }
+        let raw = try await request(
+            method: "textDocument/completion", params: params,
+            timeout: .seconds(5), token: token)
+        return Self.decodeCompletion(raw)
     }
 
     /// `textDocument/references` — returns all locations where the
@@ -1154,6 +1204,98 @@ extension LSPClient {
                   let newText = d["newText"] as? String else { return nil }
             return LSPTextEdit(range: range, newText: newText)
         }
+    }
+
+    /// `textDocument/completion` polymorphic decode (TSK-463). Per LSP
+    /// 3.17 §11.6 the result is `CompletionItem[] | CompletionList | null`:
+    ///   - `null` ⇒ empty, complete list.
+    ///   - bare `CompletionItem[]` ⇒ `isIncomplete: false`.
+    ///   - `CompletionList { isIncomplete, items }` ⇒ honored verbatim.
+    ///
+    /// Per-item normalization (so callers never re-derive spec rules):
+    ///   - `label` required; an item without it drops alone (not the list).
+    ///   - `insert` resolves `textEdit.newText` > `insertText` > `label`.
+    ///     `editRange` is taken from `textEdit.range` (InsertReplaceEdit's
+    ///     `insert`/`replace` variant falls back to `replace`); nil ⇒ caret
+    ///     insertion. An EMPTY resolved insert is rejected (a server quirk —
+    ///     never commit empty text).
+    ///   - `filterText`/`sortText` default to `label` when absent.
+    ///   - `isSnippet` ⇔ `insertTextFormat == 2`.
+    ///   - `documentation` flattens both the plain-string and the
+    ///     `MarkupContent {kind, value}` shapes.
+    static func decodeCompletion(_ data: Data) -> LSPCompletionList {
+        guard let any = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]) else {
+            return LSPCompletionList(isIncomplete: false, items: [])
+        }
+        if any is NSNull {
+            return LSPCompletionList(isIncomplete: false, items: [])
+        }
+        // CompletionList object shape. Cast `items` as `[Any]` (not
+        // `[[String: Any]]`) so a single non-object entry doesn't fail the
+        // whole-array cast — bad entries drop individually in
+        // `parseCompletionItem` (it returns nil for non-dicts).
+        if let obj = any as? [String: Any], let rawItems = obj["items"] as? [Any] {
+            let isIncomplete = obj["isIncomplete"] as? Bool ?? false
+            let items = rawItems.compactMap { parseCompletionItem($0 as? [String: Any]) }
+            return LSPCompletionList(isIncomplete: isIncomplete, items: items)
+        }
+        // Bare CompletionItem[] shape (same per-entry tolerance).
+        if let arr = any as? [Any] {
+            return LSPCompletionList(
+                isIncomplete: false,
+                items: arr.compactMap { parseCompletionItem($0 as? [String: Any]) })
+        }
+        return LSPCompletionList(isIncomplete: false, items: [])
+    }
+
+    private static func parseCompletionItem(_ d: [String: Any]?) -> LSPCompletionItem? {
+        guard let d, let label = d["label"] as? String, !label.isEmpty else { return nil }
+
+        // Resolve insert text + optional replace-range (spec precedence:
+        // textEdit.newText > insertText > label).
+        var insert: String?
+        var editRange: LSPRange?
+        if let te = d["textEdit"] as? [String: Any] {
+            insert = te["newText"] as? String
+            // TextEdit has `range`; InsertReplaceEdit has `insert`+`replace`
+            // (no `range`) — prefer `replace` (full span the item supersedes).
+            if let r = te["range"] as? [String: Any] {
+                editRange = parseRange(r)
+            } else if let r = te["replace"] as? [String: Any] {
+                editRange = parseRange(r)
+            } else if let r = te["insert"] as? [String: Any] {
+                editRange = parseRange(r)
+            }
+        }
+        if insert == nil { insert = d["insertText"] as? String }
+        let resolvedInsert = (insert?.isEmpty == false ? insert! : label)
+        guard !resolvedInsert.isEmpty else { return nil }
+
+        let kind = (d["kind"] as? Int).flatMap(LSPCompletionItemKind.init(rawValue:))
+        let detail = d["detail"] as? String
+        let documentation = flattenCompletionDocumentation(d["documentation"])
+        // insertTextFormat: 1 = PlainText (default), 2 = Snippet.
+        let isSnippet = (d["insertTextFormat"] as? Int) == 2
+        let filterText = (d["filterText"] as? String) ?? label
+        let sortText = (d["sortText"] as? String) ?? label
+
+        return LSPCompletionItem(
+            label: label, kind: kind, detail: detail,
+            documentation: documentation, insert: resolvedInsert,
+            editRange: editRange, filterText: filterText,
+            sortText: sortText, isSnippet: isSnippet)
+    }
+
+    /// `CompletionItem.documentation` is `string | MarkupContent`. We
+    /// flatten to a plain string (the popup doc-pane renders it); nil for
+    /// any other / absent shape.
+    private static func flattenCompletionDocumentation(_ raw: Any?) -> String? {
+        if let s = raw as? String { return s.isEmpty ? nil : s }
+        if let d = raw as? [String: Any], let v = d["value"] as? String {
+            return v.isEmpty ? nil : v
+        }
+        return nil
     }
 
     /// `textDocument/documentSymbol` polymorphic decode:

@@ -651,6 +651,28 @@ public actor LSPPool {
         }
     }
 
+    /// `textDocument/completion` (TSK-463) routed through the pool so the
+    /// diagnostics panel reflects the request count + timing like the
+    /// other capability methods.
+    public func completion(
+        fileURL: URL, line: Int, character: Int,
+        triggerCharacter: String? = nil,
+        token: LSPCancellationToken? = nil
+    ) async throws -> LSPCompletionList {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.completion(
+                url: fileURL, line: line, character: character,
+                triggerCharacter: triggerCharacter, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
     public func references(
         fileURL: URL, line: Int, character: Int,
         includeDeclaration: Bool = true,
