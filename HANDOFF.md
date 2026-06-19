@@ -1,7 +1,19 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — ULTRACODE WAVE (nearing compaction): 11 workflows done, 6 in-flight, integration pending  (2026-06-19)
+# Handoff — ✅ ULTRACODE WAVE MERGED TO MAIN (2026-06-19 PM)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `bd1f8ca` (verify `git log -1`; ALL wave work is on `worktree-wf_*` branch refs + the object DB, NOT yet on main)
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `717ccf11` (= `bd1f8ca` + 116 wave commits `d4a8612c` + docs record; verify `git log -1`).
+
+## ✅ STATUS: WAVE MERGED & SHIPPED (the mission's core goal is DONE)
+The full backlog-drain wave is **on `main`** (ff `bd1f8ca`→`d4a8612c`, 116 commits), headless gate GREEN (7329 tests/0 fail), `/Applications` rebuilt + installed. Integration worktree `/tmp/mdv-integration` + branch `ultracode/backlog-drain` REAPED. Details + the 5 clash patterns: `docs/AUTONOMOUS_PROGRESS.md` (2026-06-19 PM) + LESSONS.md.
+
+**WAVE 100% COMPLETE ON MAIN.** 704 landed too (`7361a075` ff, MarkdownPreviewMap, 17/17 host tests confirmed on main). All 4 retry lanes + first/second waves merged. **Integration mission EXHAUSTED → now in FALL-BACK board-drain mode.**
+
+**REMAINING (post-merge — you are HERE, fall-back):**
+1. **Board:** wave items are at `fixed` (merged + gate-recorded). Owner closes `validated→done`; agent may `task_validate` the pure-logic/gate-proven ones (render-path stay at `fixed`/review — host can't validate VM render). Curated list has the MERGED banner.
+2. **Deferred wave follow-ups FILED:** TSK-1018 (tmux controller on PaneNode model + re-land the tmux MODEL coherently — one PaneNode design), TSK-1019 (CSV inline-editor wiring), 897 grammars (needs the owner-approved dep + a non-sandbox build). The render-path VM tails of the wave features (image UI, session-tab redraw, scroll-restore, side-by-side split, etc.) want a VM UI pass.
+3. **FALL-BACK SOP (old):** drain `docs/CURATED_TASKS_2026-06-19.md` (still-open: §Owner-gated=skip, §Deprioritized, the follow-ups) + the board's groomed pools (security/rust-core/parity, fixed→review). Pick next-priority, drive to review/validated, commit per item to main (gate before merge). Consider a VM UI-validation pass for the wave's render tails. Keep batches small + land incrementally to main now (no more mega-waves needed — the backlog is largely drained).
+
+<details><summary>(historical — pre-merge integration log)</summary>
 
 ## Mission (OWNER DIRECTIVE 2026-06-19 — INTEGRATION TO MAINLINE)
 **Get the ~81 ultracode-wave commits + the retry-lane commits MERGED TO `main`, done WELL.** Integrate onto `ultracode/backlog-drain` (worktree `/tmp/mdv-integration`); as I go: REVIEW each change, ADD missing unit/host tests, ADD UI tests for render-path items, run CONSOLIDATED SMOKE + the headless gate, VALIDATE, then rebase + ff `main` (gate BEFORE merge — main stays green). Owner AUTHORIZED mainline merge (overrides the earlier validate-the-branch-first rider). EXCLUDE stale orphans (no-TSK / "NOT landed", e.g. `4050b4bb`). Cron is now every 5 min. NEVER idle — when integration is genuinely exhausted, fall back to draining the board. (Memory: `project_integration_mission`, `feedback_ultracode_parallel_mode`.)

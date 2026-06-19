@@ -7,7 +7,8 @@ The full backlog-drain wave landed on `main` (fast-forward `bd1f8ca` → `d4a861
 - **Integration method:** cherry-pick all curated commits → dedup (drop orphans `4050b4bb`/`abe06af7`; pick-one for 910/948; epic-slices keep-all) → resolve conflicts → `cargo build` + `swift build --build-tests` to clear compile clashes → full `test-headless-gate.sh` → ff `main`. (Full how-to + the 5 clash patterns in LESSONS.md 2026-06-19.)
 - **5 parallel-worktree semantic clashes fixed at integration** (clean git-merge, broken-when-combined): RemoteTransport `orphanEvents`→`OrphanStore` (976+987); `RGBAColor` byte-vs-double (285+287)→renamed vector to `OverlayColor`; 989-vs-963 hover test removed; union-strip brace loss restored; sleep-ratchet baseline 75→77.
 - **DROPPED from the wave (re-land coherently via follow-up):** tmux 964 (4 model slices had 2 incompatible `PaneNode` designs + a competing controller — TSK-1018 + a model-reconcile follow-up); CSV inline-editor wiring (TSK-1019; the EditableCSVModel landed); 897 grammars (landed the coverage test only — grammars need the dep + a non-sandbox build); 704 Markdown side-by-side (lane-A connection-error miss — re-retry).
-- **REMAINING bookkeeping:** board fixed→validated for the wave items (gate = proof) + check off the curated list; re-retry 704; reap `/tmp/mdv-integration`.
+- **704 DONE** (ff `7361a075`, MarkdownPreviewMap scroll-sync model, 17/17 host tests confirmed on main) — the wave is now 100% landed. `/tmp/mdv-integration` + all wave worktrees reaped (1 worktree, ~92 GB free).
+- **REMAINING (fall-back board-drain):** owner closes the wave's `fixed` items `validated→done` (by using the rebuilt app); re-land the deferred follow-ups (TSK-1018 tmux, TSK-1019 CSV-wiring, 897 grammars) + a VM UI pass for the render tails; then drain the curated list / board pools.
 
 ## LOG 2026-06-19 — Ultracode wave: 19 items landed (reconciled→fixed), 47 rate-limited→retrying; /Applications rebuilt
 
