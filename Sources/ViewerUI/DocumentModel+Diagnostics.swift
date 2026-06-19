@@ -58,6 +58,7 @@ extension DocumentModel {
             bookmarksCount: bookmarks.count,
             tempFiles: DiagnosticProbes.ownedTempFiles(),
             openFDs: DiagnosticProbes.openFileDescriptors(),
+            sockets: DiagnosticProbes.openSockets(),
             subprocesses: [],
             obsBufferedEvents: bufferedEvents,
             obsTotalEmitted: totalEmitted)
@@ -96,6 +97,7 @@ extension DocumentModel {
             bookmarksCount: base.bookmarksCount,
             tempFiles: base.tempFiles,
             openFDs: base.openFDs,
+            sockets: base.sockets,
             subprocesses: subs,
             obsBufferedEvents: base.obsBufferedEvents,
             obsTotalEmitted: base.obsTotalEmitted)

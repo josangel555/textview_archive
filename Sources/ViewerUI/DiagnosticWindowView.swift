@@ -38,6 +38,7 @@ public struct DiagnosticWindowView: View {
         case state = "State"
         case tempFiles = "Temp Files"
         case fds = "Open FDs"
+        case sockets = "Sockets"
         case subprocesses = "Subprocesses"
         var id: String { rawValue }
     }
@@ -102,6 +103,7 @@ public struct DiagnosticWindowView: View {
             case .state:        stateSection(snapshot)
             case .tempFiles:    tempFilesSection(snapshot)
             case .fds:          fdsSection(snapshot)
+            case .sockets:      socketsSection(snapshot)
             case .subprocesses: subprocessesSection(snapshot)
             }
         } else {
@@ -185,6 +187,36 @@ public struct DiagnosticWindowView: View {
                     .foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
+    }
+
+    private func socketsSection(_ s: DiagnosticSnapshot) -> some View {
+        listSection(rows: s.sockets, empty: "No open sockets.") { sock in
+            HStack(alignment: .top, spacing: 8) {
+                Text(String(sock.fd)).font(.caption.monospaced())
+                    .frame(width: 36, alignment: .trailing)
+                Text("\(sock.proto)/\(sock.family)").font(.caption2)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Color.secondary.opacity(0.15)).clipShape(Capsule())
+                if sock.isListening {
+                    Text("LISTEN").font(.caption2.bold())
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.25)).clipShape(Capsule())
+                } else {
+                    Text(sock.state).font(.caption2)
+                        .foregroundStyle(sock.state == "established" ? .green : .secondary)
+                }
+                Text(Self.socketPorts(sock)).font(.caption.monospaced())
+                    .foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        }
+    }
+
+    /// Render the local/foreign port pair (addresses are intentionally never
+    /// surfaced — only ports).
+    private static func socketPorts(_ s: DiagnosticSocket) -> String {
+        let local = s.localPort.map(String.init) ?? "—"
+        let foreign = s.foreignPort.map(String.init) ?? "—"
+        return ":\(local) → :\(foreign)"
     }
 
     private func subprocessesSection(_ s: DiagnosticSnapshot) -> some View {

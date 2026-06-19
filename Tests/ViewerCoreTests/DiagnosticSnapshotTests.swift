@@ -201,6 +201,141 @@ final class DiagnosticSnapshotTests: XCTestCase {
         XCTAssertEqual(obj["sidebarRootPath"] as? String, home + "/p")
     }
 
+    // MARK: - Sockets (process-scoped "open ports")
+
+    func testOpenSocketsSurfacesOurListeningTCPPort() throws {
+        // Open a real listening TCP socket on an ephemeral port, then assert
+        // the probe enriches it: family inet, proto tcp, state listen,
+        // isListening true, and the local port matches what we bound.
+        let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        XCTAssertGreaterThanOrEqual(fd, 0, "socket() failed")
+        defer { close(fd) }
+
+        var on: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = INADDR_ANY
+        addr.sin_port = 0  // let the kernel pick an ephemeral port
+        let bindRC = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        XCTAssertEqual(bindRC, 0, "Darwin.bind() failed: \(String(cString: strerror(errno)))")
+        XCTAssertEqual(Darwin.listen(fd, 1), 0, "Darwin.listen() failed")
+
+        // Recover the bound port so we can match it in the probe output.
+        var bound = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let nameRC = withUnsafeMutablePointer(to: &bound) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(fd, $0, &len)
+            }
+        }
+        XCTAssertEqual(nameRC, 0)
+        let expectedPort = Int(UInt16(bigEndian: bound.sin_port))
+        XCTAssertGreaterThan(expectedPort, 0)
+
+        let sockets = DiagnosticProbes.openSockets()
+        let row = try XCTUnwrap(
+            sockets.first { $0.fd == fd },
+            "our listening socket fd \(fd) was not enumerated")
+        XCTAssertEqual(row.family, "inet")
+        XCTAssertEqual(row.proto, "tcp")
+        XCTAssertEqual(row.state, "listen")
+        XCTAssertTrue(row.isListening, "a LISTEN socket must report isListening=true")
+        XCTAssertEqual(row.localPort, expectedPort)
+        // A listening socket has no foreign peer port.
+        XCTAssertNil(row.foreignPort)
+    }
+
+    func testOpenSocketsAddressNeverLeaksIntoJSON() throws {
+        // The probe must carry ports + state ONLY — never a peer address.
+        // Establish a real connected TCP pair (loopback) and assert neither
+        // socket's JSON carries an IP-address-shaped value.
+        let listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        XCTAssertGreaterThanOrEqual(listener, 0)
+        defer { close(listener) }
+        var on: Int32 = 1
+        _ = setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        addr.sin_port = 0
+        _ = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(listener, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        _ = Darwin.listen(listener, 1)
+        var bound = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &bound) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(listener, $0, &len) }
+        }
+
+        let client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        XCTAssertGreaterThanOrEqual(client, 0)
+        defer { close(client) }
+        let connectRC = withUnsafePointer(to: &bound) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        XCTAssertEqual(connectRC, 0, "loopback connect failed: \(String(cString: strerror(errno)))")
+
+        let sockets = DiagnosticProbes.openSockets()
+        // The client socket should now be established with a foreign port.
+        let clientRow = try XCTUnwrap(sockets.first { $0.fd == client })
+        XCTAssertEqual(clientRow.state, "established")
+        XCTAssertNotNil(clientRow.foreignPort)
+        XCTAssertFalse(clientRow.isListening)
+
+        // Crucial privacy assertion: serialise EVERY socket row and confirm no
+        // value carries an IPv4-dotted-quad / "127.0.0.1" address.
+        for sock in sockets {
+            let data = try JSONSerialization.data(withJSONObject: sock.jsonObject(), options: [.sortedKeys])
+            let text = String(decoding: data, as: UTF8.self)
+            XCTAssertFalse(text.contains("127.0.0.1"), "socket JSON leaked an address: \(text)")
+            XCTAssertFalse(text.contains("addr"), "socket JSON exposed an address key: \(text)")
+        }
+    }
+
+    func testSocketRedactionAndSchemaVersionAndSnapshotWiring() throws {
+        // DiagnosticSocket.redactingPaths() is a passthrough (no paths), and
+        // the snapshot threads `sockets` through redaction + JSON. Also pins
+        // the additive schema bump so an exported artifact records v2.
+        XCTAssertEqual(DiagnosticSnapshot.schemaVersion, 2)
+
+        let sock = DiagnosticSocket(
+            fd: 9, family: "inet", proto: "tcp",
+            localPort: 8787, foreignPort: nil, state: "listen", isListening: true)
+        XCTAssertEqual(sock.redactingPaths(), sock)
+
+        let s = DiagnosticSnapshot(
+            pid: 1, capturedAtUnixNanos: 1, isDebugBuild: true,
+            tabs: [], selectedTabIndex: nil, sidebarRootPath: nil,
+            recentsCount: 0, bookmarksCount: 0,
+            tempFiles: [], openFDs: [], sockets: [sock], subprocesses: [],
+            obsBufferedEvents: 0, obsTotalEmitted: 0)
+
+        // redactingPaths preserves the socket rows verbatim (no paths to scrub).
+        XCTAssertEqual(s.redactingPaths().sockets, [sock])
+
+        // JSON carries the sockets array with the listening fact.
+        let obj = s.jsonObject()
+        let arr = try XCTUnwrap(obj["sockets"] as? [[String: Any]])
+        XCTAssertEqual(arr.count, 1)
+        XCTAssertEqual(arr[0]["isListening"] as? Bool, true)
+        XCTAssertEqual(arr[0]["localPort"] as? Int, 8787)
+        XCTAssertEqual(arr[0]["proto"] as? String, "tcp")
+        XCTAssertEqual(obj["schemaVersion"] as? Int, 2)
+        // Round-trips through JSONSerialization (no non-serialisable members).
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]))
+    }
+
     // MARK: - Gate
 
     func testGateEnabledUnderDebug() {

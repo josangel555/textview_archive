@@ -35,7 +35,8 @@ public struct DiagnosticSnapshot: Sendable, Equatable {
 
     /// Schema version of this snapshot shape. Bumped additively if fields
     /// change so an exported artifact records what produced it.
-    public static let schemaVersion = 1
+    /// v2: added `sockets` (process-scoped socket enrichment of socket fds).
+    public static let schemaVersion = 2
 
     // MARK: Process / build
 
@@ -71,6 +72,14 @@ public struct DiagnosticSnapshot: Sendable, Equatable {
     public let tempFiles: [DiagnosticTempFile]
     /// Open file descriptors of this process (`proc_pidinfo PROC_PIDLISTFDS`).
     public let openFDs: [DiagnosticOpenFD]
+    /// This process's own sockets, enriched with family/proto/port/state
+    /// (`proc_pidfdinfo PROC_PIDFDSOCKETINFO`). Process-scoped — NEVER a
+    /// system-wide port scan (that needs entitlements we don't hold and isn't
+    /// our business). Addresses are deliberately omitted (peer IPs are the
+    /// leak surface); we carry ports + state, which is the honest "open
+    /// ports" answer for a viewer: which of OUR sockets are listening or
+    /// connected, on what port.
+    public let sockets: [DiagnosticSocket]
     /// Live subprocesses we manage (LSP servers etc.).
     public let subprocesses: [DiagnosticSubprocess]
 
@@ -92,6 +101,7 @@ public struct DiagnosticSnapshot: Sendable, Equatable {
         bookmarksCount: Int,
         tempFiles: [DiagnosticTempFile],
         openFDs: [DiagnosticOpenFD],
+        sockets: [DiagnosticSocket] = [],
         subprocesses: [DiagnosticSubprocess],
         obsBufferedEvents: Int,
         obsTotalEmitted: UInt64
@@ -106,6 +116,7 @@ public struct DiagnosticSnapshot: Sendable, Equatable {
         self.bookmarksCount = bookmarksCount
         self.tempFiles = tempFiles
         self.openFDs = openFDs
+        self.sockets = sockets
         self.subprocesses = subprocesses
         self.obsBufferedEvents = obsBufferedEvents
         self.obsTotalEmitted = obsTotalEmitted
@@ -128,6 +139,10 @@ public struct DiagnosticSnapshot: Sendable, Equatable {
             bookmarksCount: bookmarksCount,
             tempFiles: tempFiles.map { $0.redactingPaths() },
             openFDs: openFDs.map { $0.redactingPaths() },
+            // Sockets carry no absolute paths (ports/state/family only), so
+            // redaction is a passthrough — but route through it explicitly so
+            // a future address-bearing field can't silently skip redaction.
+            sockets: sockets.map { $0.redactingPaths() },
             subprocesses: subprocesses.map { $0.redactingPaths() },
             obsBufferedEvents: obsBufferedEvents,
             obsTotalEmitted: obsTotalEmitted)
@@ -148,6 +163,7 @@ public struct DiagnosticSnapshot: Sendable, Equatable {
             "tabs": tabs.map { $0.jsonObject() },
             "tempFiles": tempFiles.map { $0.jsonObject() },
             "openFDs": openFDs.map { $0.jsonObject() },
+            "sockets": sockets.map { $0.jsonObject() },
             "subprocesses": subprocesses.map { $0.jsonObject() },
             "obsBufferedEvents": obsBufferedEvents,
             "obsTotalEmitted": obsTotalEmitted
@@ -299,5 +315,79 @@ public struct DiagnosticSubprocess: Sendable, Equatable {
 
     public func jsonObject() -> [String: Any] {
         ["subsystem": subsystem, "label": label, "status": status, "path": path as Any]
+    }
+}
+
+/// One socket owned by THIS process, enriched from `socket_fdinfo`
+/// (`proc_pidfdinfo PROC_PIDFDSOCKETINFO`). This is the curated "open ports"
+/// answer the diagnostic window was originally too conservative to give.
+///
+/// ## Why this is safe (and why it isn't the cut-for-good "port scan")
+/// The original probe deliberately cut "open ports" because a *system-wide*
+/// port enumeration needs entitlements and is a viewer's none-of-its-business.
+/// This is the OTHER thing: introspecting **our own** process's sockets, which
+/// needs no entitlement (same `proc_pidfdinfo` call already used for vnode
+/// paths). It answers the genuinely useful diagnostic question — "is the app
+/// holding a listening socket it shouldn't? what local LSP/automation port is
+/// it connected to?" — without scanning anyone else.
+///
+/// ## Content/privacy
+/// We carry **ports + state + family/proto only — never peer addresses**. A
+/// foreign IP is the exfil surface (who is the app talking to); a port number
+/// and a `listen`/`established` label is a fact about our own resource use.
+/// Nothing here is a filesystem path, so `redactingPaths()` is a passthrough.
+public struct DiagnosticSocket: Sendable, Equatable {
+    /// The backing file descriptor (cross-references the `openFDs` row).
+    public let fd: Int32
+    /// Address family label: `inet`, `inet6`, `unix`, `vsock`, or `other(N)`.
+    public let family: String
+    /// Protocol label: `tcp`, `udp`, `unix`, `kctl`, `kevt`, or `other`.
+    public let proto: String
+    /// Local port (host byte order) for inet/inet6 sockets; nil otherwise.
+    public let localPort: Int?
+    /// Foreign (peer) port (host byte order) for connected inet/inet6
+    /// sockets; nil for unconnected/listening/non-inet sockets. The peer
+    /// ADDRESS is intentionally omitted — only the port is a fact we expose.
+    public let foreignPort: Int?
+    /// TCP state label (`listen`, `established`, `close_wait`, ...) for TCP
+    /// sockets; a coarse `connected`/`unconnected` for other socket kinds.
+    public let state: String
+    /// True when this socket is accepting connections (TCP `listen`). The
+    /// single most diagnostically interesting bit — a viewer should almost
+    /// never be listening.
+    public let isListening: Bool
+
+    public init(
+        fd: Int32,
+        family: String,
+        proto: String,
+        localPort: Int?,
+        foreignPort: Int?,
+        state: String,
+        isListening: Bool
+    ) {
+        self.fd = fd
+        self.family = family
+        self.proto = proto
+        self.localPort = localPort
+        self.foreignPort = foreignPort
+        self.state = state
+        self.isListening = isListening
+    }
+
+    /// No-op: sockets carry no absolute paths. Present for symmetry with the
+    /// other row types so the snapshot's recursion is uniform.
+    public func redactingPaths() -> DiagnosticSocket { self }
+
+    public func jsonObject() -> [String: Any] {
+        [
+            "fd": Int(fd),
+            "family": family,
+            "proto": proto,
+            "localPort": localPort as Any,
+            "foreignPort": foreignPort as Any,
+            "state": state,
+            "isListening": isListening
+        ]
     }
 }
