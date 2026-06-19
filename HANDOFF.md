@@ -1,16 +1,21 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run; shipped 906/917/820/574/836/850/947 + (06-18 RE-ENGAGED) 905/893/901/307/954; VM lane CONFIRMED agent-runnable  (2026-06-18)
+# Handoff — autonomous run; (06-18 RE-ENGAGED) shipped 905/893/901/307/954/922/947/959/374; VM lane green except TSK-960 capture-artifact  (2026-06-18)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `8f91de5` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `2393860` (verify with `git log -1`; the Vim/953 block below is PRIOR-session history, still accurate)
 
 > **OWNER IS BACK + ENGAGED (2026-06-18).** Two corrections this session: (1) STOP no-opping — drain the curated
 > WORK_QUEUE; I re-engaged and shipped **905** (preview kbd focus), **893** (CM6 I-beam cursor), **901** (shebang
 > language-detect), **307** (bookmarks root-scope filter), all gate-green with host teeth → `review`. (2) **The VM
 > GUI/pixel lane is NOT blocked** — it's agent-runnable (`MDV_VM_GUI_SESSION=1 … test-in-vm.sh all`). I'd wrongly
 > parked render items as "VM tail / owner-gated"; corrected. Ran it: 5832 tests incl T5 + WebView, my work
-> regression-clean; FIXED+VALIDATED **TSK-954** (PMA MCPClient→console-user spawn, 8f91de5). GO-FORWARD: render items
-> get the FULL VM pyramid (build→host-test→VM run→validated), and the parked VM-interaction bugs (894/896/921/922) are
-> now actionable. VM baseline reds: TSK-491 (terminal, known) + TSK-959 (flaky scroll test, filed). `main` gate-green.
+> regression-clean; FIXED+VALIDATED **TSK-954** (PMA console-user spawn). SINCE: shipped **922** (split off-main load),
+> **947** (⌘F gating, both halves), **959** (de-flaked PaneScrollRestore, VALIDATED), **374** (find-match list) — all
+> VM-regression-clean → review. **TSK-960** (the last VM red) DIAGNOSED as a T5-**screencapture** artifact, NOT a bug:
+> the terminal right-dock feature WORKS (`vm-uitest.sh run terminal-paneright` PASS + visual capture confirm). So the
+> VM baseline is effectively GREEN for features (the one red is a capture-tool artifact; fix = migrate the T5 test to
+> vm-uitest.sh's capture / owner TCC re-grant / retire). GO-FORWARD: render items get the FULL VM pyramid; **BATCH 2-3
+> before VM-validating** (a VM `all` run is ~17 min — don't spend one per single item). 894/896 (cursor/hover) need the
+> unbuilt input-synth lane (TSK-818); 811 is design-first. NOTE vm-uitest.sh runs on the HOST, not via ssh-onto-VM. `main` gate-green.
 
 ## Mission
 Autonomous loop. The owner re-armed it: a **10-minute cron** drives the Automation SOP to **drain
