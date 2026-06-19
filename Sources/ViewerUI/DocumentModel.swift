@@ -943,6 +943,53 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// TSK-938: which existing focus-request nonce returns first-responder to the
+    /// ACTIVE document for the current view mode. `nil` for modes that own their
+    /// first-responder by other means (NSTextView source/formatted/table/hex/diff
+    /// — the content view is the responder, not a nonce-driven WKWebView/CM6
+    /// surface), so an Esc-to-document there is a UI-layer `makeFirstResponder`,
+    /// not a model nonce bump.
+    private enum DocumentFocusTarget: Equatable { case editor, preview }
+    private var documentFocusTarget: DocumentFocusTarget? {
+        switch currentViewMode {
+        case .editor:   return .editor    // CM6 webview (editorFocusRequest)
+        case .rendered: return .preview   // rendered WKWebView (previewFocusRequest)
+        case .source, .formatted, .table, .diff, .preview, .hex:
+            return nil
+        }
+    }
+
+    /// TSK-938: Esc "return focus to the active document tab." When the keyboard
+    /// is parked in a tool surface (file-nav / search / git / terminal / any
+    /// non-document field) and the user hits Esc, hand first-responder back to the
+    /// active document by bumping the SAME focus-request nonce TSK-905/906 already
+    /// drive — no new focus path. `currentFocusIsDocument` is resolved by the thin
+    /// UI key handler from the live first-responder; passing `true` makes this a
+    /// no-op so a stray Esc never re-grabs focus the document already holds (the
+    /// over-grab guard, mirroring `refreshPreviewFocus`'s change-key).
+    ///
+    /// Returns `true` iff a focus-request nonce was bumped — i.e. the model
+    /// handled the Esc. `false` means nothing to do (focus already on the
+    /// document, no open document, or a mode with no nonce-driven focus target —
+    /// the caller may then fall back to its own `makeFirstResponder`).
+    @discardableResult
+    public func returnFocusToActiveDocument(currentFocusIsDocument: Bool) -> Bool {
+        // Over-grab guard: already on the document ⇒ leave it alone.
+        guard !currentFocusIsDocument else { return false }
+        // No active document ⇒ nothing to focus.
+        guard tabs.selected != nil else { return false }
+        switch documentFocusTarget {
+        case .editor:
+            editorFocusRequest &+= 1
+            return true
+        case .preview:
+            previewFocusRequest &+= 1
+            return true
+        case nil:
+            return false
+        }
+    }
+
     // MARK: - Command registry (UX-M / #232)
 
     /// The effective command catalog: the built-in `CommandRegistry`

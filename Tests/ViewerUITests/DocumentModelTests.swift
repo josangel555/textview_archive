@@ -141,6 +141,148 @@ final class DocumentModelTests: XCTestCase {
                        "leaving rendered for the editor does not request preview focus")
     }
 
+    // MARK: Esc → return focus to the active document (TSK-938)
+
+    /// In EDITOR mode, an Esc fired while focus is on a tool surface
+    /// (`currentFocusIsDocument == false`) bumps the editor focus nonce so the
+    /// CM6 editor re-takes first responder; the preview nonce is untouched.
+    func test_returnFocusToActiveDocument_editorMode_bumpsEditorNonce() throws {
+        let f = try writeFile("note.txt", "hello\n")
+        let model = makeModel()
+        model.open(url: f)
+        model.setCurrentViewMode(.editor)
+        let editorBefore = model.editorFocusRequest
+        let previewBefore = model.previewFocusRequest
+
+        let handled = model.returnFocusToActiveDocument(currentFocusIsDocument: false)
+        XCTAssertTrue(handled, "Esc from a tool surface in editor mode is handled")
+        XCTAssertEqual(model.editorFocusRequest, editorBefore + 1,
+                       "editor focus nonce bumps → CM6 re-takes first responder")
+        XCTAssertEqual(model.previewFocusRequest, previewBefore,
+                       "preview nonce is not touched in editor mode")
+    }
+
+    /// In RENDERED mode, the same Esc bumps the preview focus nonce instead.
+    func test_returnFocusToActiveDocument_renderedMode_bumpsPreviewNonce() throws {
+        let md = try writeFile("doc.md", "# A\n")
+        let model = makeModel()
+        model.open(url: md)
+        model.setCurrentViewMode(.rendered)
+        let editorBefore = model.editorFocusRequest
+        let previewBefore = model.previewFocusRequest
+
+        let handled = model.returnFocusToActiveDocument(currentFocusIsDocument: false)
+        XCTAssertTrue(handled, "Esc from a tool surface in rendered mode is handled")
+        XCTAssertEqual(model.previewFocusRequest, previewBefore + 1,
+                       "preview focus nonce bumps → rendered WKWebView re-takes first responder")
+        XCTAssertEqual(model.editorFocusRequest, editorBefore,
+                       "editor nonce is not touched in rendered mode")
+    }
+
+    /// Over-grab guard (mirrors TSK-905's no-regrab test): when focus is ALREADY
+    /// on the document, Esc is a no-op — no nonce moves, so focus is never
+    /// stolen from a caret/scroll position the document already holds.
+    func test_returnFocusToActiveDocument_noOpWhenAlreadyOnDocument() throws {
+        let f = try writeFile("note.txt", "hello\n")
+        let model = makeModel()
+        model.open(url: f)
+        model.setCurrentViewMode(.editor)
+        let editorBefore = model.editorFocusRequest
+        let previewBefore = model.previewFocusRequest
+
+        let handled = model.returnFocusToActiveDocument(currentFocusIsDocument: true)
+        XCTAssertFalse(handled, "already-on-document Esc is not handled (passes through)")
+        XCTAssertEqual(model.editorFocusRequest, editorBefore,
+                       "no over-grab: editor nonce unchanged when already focused")
+        XCTAssertEqual(model.previewFocusRequest, previewBefore,
+                       "no over-grab: preview nonce unchanged when already focused")
+    }
+
+    /// No active document ⇒ nothing to focus, so Esc is a no-op even from a tool
+    /// surface (no tab open, e.g. the welcome screen).
+    func test_returnFocusToActiveDocument_noOpWithNoOpenDocument() {
+        let model = makeModel()
+        XCTAssertNil(model.tabs.selected, "no document open")
+        let editorBefore = model.editorFocusRequest
+        let previewBefore = model.previewFocusRequest
+
+        let handled = model.returnFocusToActiveDocument(currentFocusIsDocument: false)
+        XCTAssertFalse(handled, "no document ⇒ nothing to focus")
+        XCTAssertEqual(model.editorFocusRequest, editorBefore)
+        XCTAssertEqual(model.previewFocusRequest, previewBefore)
+    }
+
+    /// Modes with no nonce-driven document-focus target (Source / HEX, an
+    /// NSTextView/byte-grid that owns its own first responder) are not handled by
+    /// the model nonce path — the model returns false so the UI key handler can
+    /// fall back to its own `makeFirstResponder` rather than the model
+    /// pretending it focused something. No nonce is moved.
+    func test_returnFocusToActiveDocument_noNonceForSourceOrHexModes() throws {
+        let f = try writeFile("data.txt", "hello\n")
+        let model = makeModel()
+        model.open(url: f)
+
+        for mode in [ViewMode.source, .hex] {
+            model.setCurrentViewMode(mode)
+            let editorBefore = model.editorFocusRequest
+            let previewBefore = model.previewFocusRequest
+            let handled = model.returnFocusToActiveDocument(currentFocusIsDocument: false)
+            XCTAssertFalse(handled, "\(mode) has no nonce-driven document-focus target")
+            XCTAssertEqual(model.editorFocusRequest, editorBefore, "\(mode): no editor bump")
+            XCTAssertEqual(model.previewFocusRequest, previewBefore, "\(mode): no preview bump")
+        }
+    }
+
+    // MARK: Esc focus classifier (TSK-938 — EscFocusMonitor pure helper)
+
+    /// The CM6 editor webview (or a descendant) is a DOCUMENT surface — Esc
+    /// there is a no-op. Uses a plain NSView for the "editor" (a WKWebView is
+    /// one) so the test needs no live WebView, the same shape SidebarKeyMonitor
+    /// uses.
+    func test_escClassifier_editorWebviewIsDocument() {
+        let editor = NSView()
+        let child = NSView()
+        editor.addSubview(child)
+        XCTAssertTrue(EscFocusMonitor.firstResponderIsDocument(editor, editorView: editor),
+                      "the editor view itself is a document surface")
+        XCTAssertTrue(EscFocusMonitor.firstResponderIsDocument(child, editorView: editor),
+                      "a descendant of the editor is a document surface")
+    }
+
+    /// A bare NSView first-responder that is neither the editor, a WKWebView, nor
+    /// an NSText inside the content root (here: a sidebar/tool view) is NOT a
+    /// document surface — Esc returns focus to the document.
+    func test_escClassifier_toolViewIsNotDocument() {
+        let editor = NSView()
+        let toolView = NSView()   // e.g. the sidebar outline view
+        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(toolView, editorView: editor),
+                       "a non-editor non-webview tool view is not a document surface")
+        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(nil, editorView: editor),
+                       "no first responder is not a document surface")
+        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(toolView, editorView: nil),
+                       "no editor registered + a tool view is not a document surface")
+    }
+
+    /// An NSText (NSTextView / field editor) counts as a document surface ONLY
+    /// when it lives inside the content root: the Source/Formatted pane is a
+    /// document NSTextView, but a search field / rename prompt is not.
+    func test_escClassifier_nsTextScopedToContentRoot() {
+        let editor = NSView()
+        let contentRoot = NSView()
+        let sourcePane = NSTextView()           // a document NSTextView…
+        contentRoot.addSubview(sourcePane)
+        XCTAssertTrue(
+            EscFocusMonitor.firstResponderIsDocument(
+                sourcePane, editorView: editor, contentRoot: contentRoot),
+            "an NSText inside the content root is a document surface")
+
+        let searchField = NSTextView()          // …vs a tool-surface NSText
+        XCTAssertFalse(
+            EscFocusMonitor.firstResponderIsDocument(
+                searchField, editorView: editor, contentRoot: contentRoot),
+            "an NSText OUTSIDE the content root is a tool surface, not a document")
+    }
+
     // MARK: Language detection from shebang (TSK-901)
 
     func test_effectiveLanguage_fallsBackToShebang_forExtensionlessScript() throws {

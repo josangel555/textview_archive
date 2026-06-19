@@ -354,6 +354,15 @@ public struct ContentView: View {
             DoubleShiftMonitor(isActive: true) { [model] in model.showPalette() }
                 .frame(width: 0, height: 0)
         )
+        // Esc returns keyboard focus to the active document tab (TSK-938) when
+        // it's parked in a tool surface; a no-op (passes Esc through) when focus
+        // is already on the document.
+        .background(
+            EscFocusMonitor(isActive: true) { [model] onDoc in
+                model.returnFocusToActiveDocument(currentFocusIsDocument: onDoc)
+            }
+            .frame(width: 0, height: 0)
+        )
     }
 
     // MARK: - Body row (sidebar accordion + content + split)
