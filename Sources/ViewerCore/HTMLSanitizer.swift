@@ -18,10 +18,15 @@ import Foundation
 ///  * Drop entire `<script>`, `<style>`, `<iframe>`, `<object>`,
 ///    `<embed>`, `<form>`, `<input>`, `<button>`, `<link>`, `<meta>`
 ///    elements (including their contents).
-///  * Remove `on*=` event-handler attributes from any surviving tag.
+///  * Remove `on*=` event-handler attributes from any surviving tag —
+///    including handlers abutting a previous attribute's closing quote
+///    (`href="x"onclick=…`) or separated only by a `/` (`<svg/onload=…>`).
 ///  * Rewrite `href` / `src` / `xlink:href` attributes whose value
 ///    starts with `javascript:`, `vbscript:`, or `data:text/html`
-///    to `about:blank`.
+///    to `about:blank`. The scheme is compared AFTER HTML-entity
+///    decoding + ASCII-control-char stripping, so browser-decoded but
+///    source-obfuscated schemes (`&#x6a;avascript:`, `jav\tascript:`)
+///    are caught too.
 ///  * Leave all other tags + attributes as-is. CommonMark authors
 ///    legitimately use `<div class=…>`, `<aside>`, `<figure>`, table
 ///    markup, MathJax-style `<span>`s — sanitizing those would break
@@ -215,62 +220,259 @@ public enum HTMLSanitizer {
     /// Remove `on…="…"` (and single-quoted, and bare-token) variants
     /// from every tag. The regex matches inside `<…>` only so body
     /// text containing the literal "onclick=" survives intact.
+    ///
+    /// H1b: the handler-name anchor is `[\s/"']` — NOT just `\s+`. HTML
+    /// treats `/` and a closing quote as attribute separators, so a
+    /// handler can abut the previous attribute's closing quote
+    /// (`href="x"onclick=…`) or follow a slash (`<svg/onload=…>`); both
+    /// are live handlers the old `\s+on` anchor sailed past. We keep the
+    /// preceding boundary char (it belongs to the previous attribute /
+    /// the tag) and drop only the handler that follows it.
     static func stripEventHandlers(in source: String) -> String {
-        // Match attribute, allowing optional whitespace + = + quoted
-        // or unquoted value. Anchored to whitespace boundary before
-        // `on` so `mason-something` doesn't accidentally match.
-        let pattern = #"(?i)\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#
+        // Boundary before `on`: ASCII whitespace, `/`, a closing quote,
+        // or the `<tagname` itself. We capture the boundary char (group 1)
+        // and re-emit it via the template so we don't eat the previous
+        // attribute's quote. Unicode-escaped class avoids a literal quote
+        // inside the raw-string delimiter.
+        let pattern = #"(?i)([\s/"'])on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#
         guard let re = try? NSRegularExpression(
             pattern: pattern, options: []
         ) else { return source }
         // We only want to scrub inside tag bodies, not free text. Pull
         // each `<...>` segment, run the regex on it, then stitch.
         return rewriteTagBodies(source) { body in
-            let r = NSRange(body.startIndex..., in: body)
-            return re.stringByReplacingMatches(
-                in: body, options: [], range: r, withTemplate: ""
-            )
+            // Loop until a pass makes no change: a single pass can leave a
+            // second handler whose boundary char was consumed as the first
+            // handler's match prefix (the captured boundary is re-emitted,
+            // so adjacency is preserved across passes).
+            var current = body
+            while true {
+                let r = NSRange(current.startIndex..., in: current)
+                let next = re.stringByReplacingMatches(
+                    in: current, options: [], range: r, withTemplate: "$1"
+                )
+                if next == current { return next }
+                current = next
+            }
         }
     }
+
+    /// URL-bearing attribute names whose value can drive a navigation /
+    /// resource fetch — the ones worth scheme-checking.
+    private static let urlBearingAttrs: Set<String> = [
+        "href", "src", "xlink:href", "action",
+        "formaction", "background", "poster",
+    ]
+
+    /// Schemes that execute script (or render attacker HTML) when a
+    /// browser resolves the URL. Compared against the *decoded* leading
+    /// scheme token (lowercased, entities + control chars removed).
+    private static let dangerousSchemes: Set<String> = [
+        "javascript", "vbscript",
+    ]
 
     /// Rewrite `href="javascript:…"` / `src="…"` etc. to `about:blank`.
     /// We don't rewrite all attribute values — just the URL-bearing
     /// ones — so `<code>` blocks containing literal "javascript:" text
     /// are unaffected.
     ///
-    /// WV-2: handles BOTH quoted and **unquoted** values. The original
-    /// regex required a surrounding quote (`(["'])…\2`), so
-    /// `<a href=javascript:alert(1)>` (a perfectly valid HTML unquoted
-    /// attribute) sailed through untouched. We run two passes:
-    ///   1. quoted form — rewrites the value between the quotes,
-    ///      preserving the quote char;
-    ///   2. unquoted form — a bare `javascript:`/`vbscript:`/
-    ///      `data:text/html` token up to the next whitespace or `>`.
+    /// H1b: the old regex matched the LITERAL token `javascript` /
+    /// `vbscript` / `data:text/html` in the raw attribute value, so a
+    /// browser-decoded but source-obfuscated scheme slipped past —
+    /// `&#x6a;avascript:` (numeric entity), `&Tab;javascript:` (named
+    /// entity), and `jav\tascript:` / `jav\nascript:` (embedded C0
+    /// control chars) all decode to a live `javascript:` URL in WebKit
+    /// yet never matched the literal. We now tokenize each tag's
+    /// attributes quote-aware, DECODE the value (numeric/named HTML
+    /// entities) and STRIP ASCII control chars BEFORE extracting the
+    /// leading scheme, then rewrite the whole attribute to
+    /// `name="about:blank"` if the decoded scheme is script-bearing.
+    /// This also subsumes the WV-2 unquoted-value case.
     static func neutralizeJavaScriptURLs(in source: String) -> String {
-        let urlAttrs = "href|src|xlink:href|action|formaction|background|poster"
-        // (1) Quoted: capture attr name + quote char, reproduce them.
-        let quoted = #"(?i)("# + urlAttrs + #")\s*=\s*(["'])\s*(?:javascript|vbscript|data:text/html)[^"']*\2"#
-        // (2) Unquoted: value runs to whitespace or the tag close `>`.
-        //     The leading whitespace requirement on the attr name keeps
-        //     us from matching mid-token; `\s*=\s*` allows `href =`.
-        let unquoted = #"(?i)("# + urlAttrs + #")\s*=\s*(?:javascript|vbscript|data:text/html)[^\s>]*"#
-
-        var out = source
-        if let re = try? NSRegularExpression(pattern: quoted, options: []) {
-            let r = NSRange(out.startIndex..., in: out)
-            out = re.stringByReplacingMatches(
-                in: out, options: [], range: r,
-                withTemplate: #"$1=$2about:blank$2"#
-            )
+        return rewriteTagBodies(source) { body in
+            rewriteDangerousURLAttrs(inTag: body)
         }
-        if let re = try? NSRegularExpression(pattern: unquoted, options: []) {
-            let r = NSRange(out.startIndex..., in: out)
-            out = re.stringByReplacingMatches(
-                in: out, options: [], range: r,
-                withTemplate: #"$1=about:blank"#
-            )
+    }
+
+    /// Given a single `<…>` tag segment, rewrite any URL-bearing
+    /// attribute whose decoded value carries a dangerous scheme to
+    /// `name="about:blank"`. Non-URL attrs and safe schemes are left
+    /// byte-for-byte unchanged.
+    private static func rewriteDangerousURLAttrs(inTag tag: String) -> String {
+        // Only operate on a well-formed `<…>` segment.
+        guard let first = tag.first, first == "<" else { return tag }
+        let chars = Array(tag)
+        var out = ""
+        out.reserveCapacity(tag.count)
+        var i = 0
+        let n = chars.count
+        // Emit `<` and the tag name verbatim; attribute scan starts after.
+        out.append(chars[i]); i += 1
+        // Walk the rest, copying through, but recognising `name=value`
+        // attribute spans so we can inspect URL-bearing ones.
+        while i < n {
+            let c = chars[i]
+            // An attribute name starts at a name char following a
+            // separator. Detect a potential `name = value` run.
+            if isAttrNameStart(c) {
+                let nameStart = i
+                var j = i
+                while j < n, isAttrNameChar(chars[j]) { j += 1 }
+                let name = String(chars[nameStart..<j]).lowercased()
+                // Skip whitespace before a possible `=`.
+                var k = j
+                while k < n, isASCIIWhitespace(chars[k]) { k += 1 }
+                if k < n, chars[k] == "=", urlBearingAttrs.contains(name) {
+                    // Parse the value (quoted or unquoted).
+                    var v = k + 1
+                    while v < n, isASCIIWhitespace(chars[v]) { v += 1 }
+                    if v < n, chars[v] == "\"" || chars[v] == "'" {
+                        let quote = chars[v]
+                        let valStart = v + 1
+                        var w = valStart
+                        while w < n, chars[w] != quote { w += 1 }
+                        let value = String(chars[valStart..<w])
+                        if hasDangerousScheme(value) {
+                            out.append("\(name)=\(quote)about:blank\(quote)")
+                        } else {
+                            out.append(contentsOf: chars[nameStart...min(w, n - 1)])
+                        }
+                        i = (w < n) ? w + 1 : w   // skip past closing quote
+                        continue
+                    } else {
+                        // Unquoted: value runs to whitespace or `>`.
+                        let valStart = v
+                        var w = valStart
+                        while w < n, !isASCIIWhitespace(chars[w]), chars[w] != ">" { w += 1 }
+                        let value = String(chars[valStart..<w])
+                        if hasDangerousScheme(value) {
+                            out.append("\(name)=about:blank")
+                        } else {
+                            out.append(contentsOf: chars[nameStart..<w])
+                        }
+                        i = w
+                        continue
+                    }
+                }
+                // Not a URL attr (or no `=`): copy the name verbatim and
+                // continue from j so we don't re-scan it.
+                out.append(contentsOf: chars[nameStart..<j])
+                i = j
+                continue
+            }
+            out.append(c)
+            i += 1
         }
         return out
+    }
+
+    /// True if the attribute value, once HTML-decoded and stripped of
+    /// ASCII control chars, begins with a script-bearing scheme.
+    private static func hasDangerousScheme(_ rawValue: String) -> Bool {
+        let decoded = decodeEntitiesAndStripControls(rawValue)
+        // Leading whitespace is ignored by URL parsers.
+        let trimmed = decoded.drop(while: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" })
+        guard let colon = trimmed.firstIndex(of: ":") else { return false }
+        let scheme = trimmed[trimmed.startIndex..<colon].lowercased()
+        // A real scheme is a single token of [a-z0-9+.-]; anything else
+        // (a path with a `:` in it, e.g. `a:b` in a query) isn't a scheme.
+        guard !scheme.isEmpty,
+              scheme.allSatisfy({ ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "+" || $0 == "-" || $0 == "." })
+        else { return false }
+        if dangerousSchemes.contains(scheme) { return true }
+        // `data:` is only dangerous when it renders attacker HTML; keep
+        // legitimate `data:image/png;…` srcs working (parity with the
+        // pre-H1b literal `data:text/html`).
+        if scheme == "data" {
+            let afterColon = trimmed[trimmed.index(after: colon)...].lowercased()
+            return afterColon.hasPrefix("text/html")
+        }
+        return false
+    }
+
+    /// Decode numeric (`&#NN;` / `&#xHH;`) and a small set of named HTML
+    /// entities, and drop ASCII C0 control chars (`\x00`–`\x1f`) plus
+    /// DEL (`\x7f`). Browsers strip these from a URL scheme before
+    /// resolving it, so we must too before the scheme comparison. We
+    /// deliberately only decode the named entities a scheme-obfuscation
+    /// payload would use (`&Tab;`, `&NewLine;`, `&colon;`); a full named-
+    /// entity table is unnecessary for the scheme prefix.
+    static func decodeEntitiesAndStripControls(_ value: String) -> String {
+        let named: [String: Unicode.Scalar] = [
+            "tab": "\u{09}", "newline": "\u{0a}", "colon": ":",
+            "sol": "/", "lpar": "(", "rpar": ")", "comma": ",",
+        ]
+        let scalars = Array(value.unicodeScalars)
+        var result = String.UnicodeScalarView()
+        var i = 0
+        let n = scalars.count
+        func appendIfPrintable(_ u: Unicode.Scalar) {
+            if u.value > 0x1f && u.value != 0x7f { result.append(u) }
+        }
+        while i < n {
+            let sc = scalars[i]
+            guard sc == "&" else {
+                appendIfPrintable(sc)
+                i += 1
+                continue
+            }
+            var j = i + 1
+            if j < n, scalars[j] == "#" {
+                j += 1
+                var hex = false
+                if j < n, scalars[j] == "x" || scalars[j] == "X" { hex = true; j += 1 }
+                let digitsStart = j
+                while j < n {
+                    let d = scalars[j]
+                    let isDec = ("0"..."9").contains(d)
+                    let isHexAlpha = hex && (("a"..."f").contains(d) || ("A"..."F").contains(d))
+                    if isDec || isHexAlpha { j += 1 } else { break }
+                }
+                if j > digitsStart {
+                    let numStr = String(String.UnicodeScalarView(scalars[digitsStart..<j]))
+                    if let code = UInt32(numStr, radix: hex ? 16 : 10),
+                       let u = Unicode.Scalar(code) {
+                        if j < n, scalars[j] == ";" { j += 1 }  // optional `;`
+                        appendIfPrintable(u)
+                        i = j
+                        continue
+                    }
+                }
+            } else if j < n {
+                // Named entity: letters up to a `;` (bounded length).
+                let nameStart = j
+                while j < n, j - nameStart < 12,
+                      ("a"..."z").contains(scalars[j]) || ("A"..."Z").contains(scalars[j]) {
+                    j += 1
+                }
+                if j > nameStart, j < n, scalars[j] == ";" {
+                    let name = String(String.UnicodeScalarView(scalars[nameStart..<j])).lowercased()
+                    if let u = named[name] {
+                        j += 1  // consume `;`
+                        appendIfPrintable(u)
+                        i = j
+                        continue
+                    }
+                }
+            }
+            // Not a recognised entity: emit the `&` literally.
+            appendIfPrintable(sc)
+            i += 1
+        }
+        return String(result)
+    }
+
+    private static func isASCIIWhitespace(_ c: Character) -> Bool {
+        c == " " || c == "\t" || c == "\n" || c == "\r"
+    }
+
+    /// HTML attribute names are ASCII letters/digits/`-`/`_`/`:`.
+    private static func isAttrNameStart(_ c: Character) -> Bool {
+        c.isLetter || c == "_" || c == ":"
+    }
+
+    private static func isAttrNameChar(_ c: Character) -> Bool {
+        c.isLetter || c.isNumber || c == "-" || c == "_" || c == ":" || c == "."
     }
 
     /// Apply `transform` to every `<…>` segment in `source`, leaving
