@@ -30,20 +30,77 @@ final class GitLogStalePageGuardTests: XCTestCase {
         repoB = tmpDir.appendingPathComponent("b")
         try FileManager.default.createDirectory(at: repoA, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: repoB, withIntermediateDirectories: true)
-        // 210 empty commits via ONE git process (stdin batch through
-        // `git fast-import` would be overkill; a single `sh -c` loop keeps
-        // the fixture ~1s instead of 210 process spawns).
-        try shell(in: repoA, """
-            git init -q -b main && git config user.email t@t && \
-            git config user.name t && git config commit.gpgsign false && \
-            for i in $(seq 1 210); do \
-              git commit -q --allow-empty -m "a-commit-$i"; done
-            """)
+        // 210 empty commits, but via `git fast-import` (ONE process, one
+        // stream) instead of a 210-iteration `git commit` loop (210 process
+        // spawns — the run-floor offender this class was, TSK-849). The
+        // import-built history is byte-equivalent for our purposes: 210 empty
+        // commits, subjects a-commit-1…a-commit-210, strictly increasing
+        // committer timestamps so `git log`'s newest-first ordering is stable
+        // (page 2 = the oldest commits, a-commit-1…). ~70x faster than the
+        // loop (~0.05s vs ~3.7s isolated; far more under parallel host load).
+        try fastImport(in: repoA, commits: 210, subjectPrefix: "a-commit-")
         try shell(in: repoB, """
             git init -q -b main && git config user.email t@t && \
             git config user.name t && git config commit.gpgsign false && \
             git commit -q --allow-empty -m "b-only-commit"
             """)
+    }
+
+    /// Build a repo of `commits` empty commits in ONE `git fast-import` run.
+    /// Subjects are `<subjectPrefix><1…commits>`; committer timestamps strictly
+    /// increase so newest-first `git log` order is deterministic. Replaces a
+    /// per-commit `git commit` loop (one process spawn per commit) — the cost
+    /// that made this the slowest class in the headless sweep.
+    private func fastImport(in dir: URL, commits: Int,
+                            subjectPrefix: String) throws {
+        var stream = ""
+        for i in 1...commits {
+            let ts = 1_700_000_000 + i  // strictly increasing → stable log order
+            let subject = "\(subjectPrefix)\(i)"
+            let byteLen = subject.utf8.count
+            stream += "commit refs/heads/main\n"
+            stream += "mark :\(i)\n"
+            stream += "committer Tester <t@example.com> \(ts) +0000\n"
+            stream += "data \(byteLen)\n"
+            stream += subject + "\n"
+            if i > 1 { stream += "from :\(i - 1)\n" }
+            stream += "\n"
+        }
+
+        // `git init` first (fast-import needs an existing repo), config to
+        // match the prior fixture, then pipe the import stream on stdin, then
+        // reset the working tree to the imported branch tip.
+        try shell(in: dir, """
+            git init -q -b main && git config user.email t@example.com && \
+            git config user.name Tester && git config commit.gpgsign false
+            """)
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.arguments = ["fast-import", "--quiet"]
+        p.currentDirectoryURL = dir
+        let stdin = Pipe()
+        p.standardInput = stdin
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = out
+        try p.run()
+        // Feed stdin on a background thread so a large stream can't deadlock
+        // against git's stdout (pipe-buffer back-pressure) — we read stdout to
+        // EOF on this thread concurrently. Safe at any `commits` count.
+        let payload = Data(stream.utf8)
+        let writer = Thread {
+            stdin.fileHandleForWriting.write(payload)
+            try? stdin.fileHandleForWriting.close()
+        }
+        writer.start()
+        let outData = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        XCTAssertEqual(p.terminationStatus, 0,
+            "git fast-import failed: " + String(decoding: outData, as: UTF8.self))
+
+        // Point HEAD/index at the imported tip (fast-import only moves the ref).
+        try shell(in: dir, "git reset -q --hard main")
     }
 
     override func tearDown() async throws {
