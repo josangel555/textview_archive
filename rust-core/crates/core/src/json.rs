@@ -261,27 +261,56 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a number per the JSON grammar (RFC 8259 §6), matching what
+    /// Foundation's `JSONSerialization` accepts so the Swift twin and this
+    /// port agree on every transcript record (TSK-983). The hand-rolled loops
+    /// previously permitted ZERO digits and had no leading-zero rule, so this
+    /// port accepted `0123`, `1.`, `-.5`, `01.5` — all of which Foundation
+    /// REJECTS, silently dropping the JSONL record on the Swift side. Each
+    /// component now enforces its digit requirement and the leading-zero rule
+    /// up front, returning [`Self::err`] on violation.
     fn number(&mut self) -> Result<JsonValue, JsonError> {
         let start = self.i;
         if self.peek() == Some(b'-') {
             self.bump();
         }
-        while matches!(self.peek(), Some(b'0'..=b'9')) {
-            self.bump();
+        // Integer part: a single `0`, OR `1-9` followed by any digits. A
+        // leading `0` may NOT be followed by another digit (reject `01`,
+        // `0123`); at least one digit is required (reject a bare `-`/`.`).
+        match self.peek() {
+            Some(b'0') => {
+                self.bump();
+            }
+            Some(b'1'..=b'9') => {
+                self.bump();
+                while matches!(self.peek(), Some(b'0'..=b'9')) {
+                    self.bump();
+                }
+            }
+            _ => return self.err("expected digit in number"),
         }
         let mut integral = true;
+        // Fractional part: `.` MUST be followed by ≥1 digit (reject `1.`).
         if self.peek() == Some(b'.') {
             integral = false;
             self.bump();
+            if !matches!(self.peek(), Some(b'0'..=b'9')) {
+                return self.err("expected digit after decimal point");
+            }
             while matches!(self.peek(), Some(b'0'..=b'9')) {
                 self.bump();
             }
         }
+        // Exponent: `e`/`E`, optional sign, then ≥1 digit (reject `1e`,
+        // `1e+`).
         if matches!(self.peek(), Some(b'e' | b'E')) {
             integral = false;
             self.bump();
             if matches!(self.peek(), Some(b'+' | b'-')) {
                 self.bump();
+            }
+            if !matches!(self.peek(), Some(b'0'..=b'9')) {
+                return self.err("expected digit in exponent");
             }
             while matches!(self.peek(), Some(b'0'..=b'9')) {
                 self.bump();
@@ -368,6 +397,39 @@ mod tests {
             matches!(overflowed, JsonValue::Float(f) if f > 9.2e18),
             "expected float, got {overflowed:?}"
         );
+    }
+
+    #[test]
+    fn number_grammar_matches_foundation() {
+        // TSK-983: the hand-rolled loops used to accept these malformed forms
+        // (returning 123, 1.0, -0.5, 1.5 respectively), but Foundation's
+        // JSONSerialization REJECTS all of them — silently dropping the whole
+        // JSONL record on the Swift side (an A/B parity divergence). They must
+        // now be errors here too.
+        for bad in ["0123", "1.", "-.5", "01.5"] {
+            assert!(
+                parse(bad).is_err(),
+                "{bad:?} is malformed per the JSON grammar — must be rejected (Foundation parity)"
+            );
+        }
+        // Additional malformed forms that share the same grammar violations.
+        assert!(parse("00").is_err(), "leading-zero rule: 00");
+        assert!(parse("-01").is_err(), "leading-zero rule applies after sign");
+        assert!(parse(".5").is_err(), "bare fraction has no integer part");
+        assert!(parse("1e").is_err(), "exponent needs a digit");
+        assert!(parse("1e+").is_err(), "exponent sign still needs a digit");
+        assert!(parse("1.e3").is_err(), "decimal point needs a digit before exponent");
+
+        // Valid forms still parse to the right value/type.
+        assert_eq!(parse("0").unwrap(), JsonValue::Int(0));
+        assert_eq!(parse("-0").unwrap(), JsonValue::Int(0));
+        assert_eq!(parse("10").unwrap(), JsonValue::Int(10));
+        assert_eq!(parse("-0.5").unwrap(), JsonValue::Float(-0.5));
+        assert_eq!(parse("1.5").unwrap(), JsonValue::Float(1.5));
+        assert_eq!(parse("0.0").unwrap(), JsonValue::Float(0.0));
+        assert_eq!(parse("1e3").unwrap(), JsonValue::Float(1000.0));
+        assert_eq!(parse("1E-3").unwrap(), JsonValue::Float(0.001));
+        assert_eq!(parse("0.5e2").unwrap(), JsonValue::Float(50.0));
     }
 
     #[test]
