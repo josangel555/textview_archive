@@ -59,12 +59,69 @@ fn escape_literal(pattern: &str) -> String {
     out
 }
 
+/// A pattern compiled ONCE, reusable across many texts.
+///
+/// `search()` compiles + searches in one shot (the per-document host path);
+/// cross-file callers (`serve::search`) want to compile the user pattern a
+/// single time and sweep it over thousands of files, so they build a
+/// `CompiledMatcher` up front and call [`CompiledMatcher::search_text`] per
+/// file — avoiding a per-file regex (re)compile (TSK-973).
+///
+/// An empty pattern compiles to a never-matching matcher (mirrors `search()`'s
+/// "empty pattern ⇒ no matches" contract).
+pub struct CompiledMatcher {
+    /// `None` ⇒ empty pattern ⇒ matches nothing (cheap short-circuit).
+    re: Option<regex_lite::Regex>,
+}
+
+impl CompiledMatcher {
+    /// Compile `pattern` once.
+    ///
+    /// # Errors
+    /// `Err(reason)` = the pattern does not compile (invalid syntax, or an
+    /// ICU-only construct regex-lite rejects). Reported here, ONCE, so a
+    /// cross-file caller never re-discovers a bad pattern per file.
+    pub fn compile(
+        pattern: &str,
+        kind: QueryKind,
+        case_sensitive: bool,
+        whole_word: bool,
+    ) -> Result<Self, String> {
+        if pattern.is_empty() {
+            return Ok(Self { re: None });
+        }
+        let mut pat = match kind {
+            QueryKind::Literal => escape_literal(pattern),
+            QueryKind::Regex => pattern.to_owned(),
+        };
+        if whole_word {
+            pat = format!("\\b{pat}\\b");
+        }
+        let re = regex_lite::RegexBuilder::new(&pat)
+            .case_insensitive(!case_sensitive)
+            .build()
+            .map_err(|e| e.to_string())?;
+        Ok(Self { re: Some(re) })
+    }
+
+    /// Sweep the (already-compiled) pattern over `text`, returning UTF-16
+    /// ranges + 1-based line/column. Cheap to call repeatedly: no compile.
+    #[allow(clippy::cast_possible_truncation,
+            reason = "TSK-575: the only cast is ch.len_utf16() (always 1 or 2) added to a u32 \
+                      position — never truncates")]
+    #[must_use]
+    pub fn search_text(&self, text: &str) -> Vec<EngineMatch> {
+        let Some(re) = self.re.as_ref() else { return Vec::new() };
+        single_sweep(re, text)
+    }
+}
+
 /// Search `text` for `pattern`. `Err(reason)` = the pattern does not compile
 /// (invalid syntax, or an ICU-only construct regex-lite rejects); the host
 /// maps it to `FindError.invalidRegex` / falls back to the Swift engine.
-#[allow(clippy::cast_possible_truncation,
-        reason = "TSK-575: the only cast is ch.len_utf16() (always 1 or 2) added to a u32 \
-                  position — never truncates")]
+///
+/// One-shot convenience over [`CompiledMatcher`] for the per-document host
+/// path; cross-file callers should `compile` once and reuse.
 pub fn search(
     text: &str,
     pattern: &str,
@@ -72,27 +129,21 @@ pub fn search(
     case_sensitive: bool,
     whole_word: bool,
 ) -> Result<Vec<EngineMatch>, String> {
-    if pattern.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut pat = match kind {
-        QueryKind::Literal => escape_literal(pattern),
-        QueryKind::Regex => pattern.to_owned(),
-    };
-    if whole_word {
-        pat = format!("\\b{pat}\\b");
-    }
-    let re = regex_lite::RegexBuilder::new(&pat)
-        .case_insensitive(!case_sensitive)
-        .build()
-        .map_err(|e| e.to_string())?;
+    Ok(CompiledMatcher::compile(pattern, kind, case_sensitive, whole_word)?.search_text(text))
+}
 
+/// The single monotonic O(N) sweep: byte ranges → UTF-16 + line/column
+/// (the Swift P11 single-sweep shape — O(N), not O(M·N)).
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: the only cast is ch.len_utf16() (always 1 or 2) added to a u32 \
+                  position — never truncates")]
+fn single_sweep(re: &regex_lite::Regex, text: &str) -> Vec<EngineMatch> {
     // Byte ranges first; one monotonic sweep below converts to UTF-16 +
     // line/column (the Swift P11 single-sweep shape — O(N), not O(M·N)).
     let byte_matches: Vec<(usize, usize)> =
         re.find_iter(text).map(|m| (m.start(), m.end())).collect();
     if byte_matches.is_empty() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
 
     let mut out: Vec<EngineMatch> = Vec::with_capacity(byte_matches.len());
@@ -170,7 +221,7 @@ pub fn search(
     // A match ending exactly at EOF closed in the final loop iteration above
     // (byte_pos == text.len()); a still-pending one here is a logic error in
     // the sweep, surfaced as a truncated result rather than a panic.
-    Ok(out)
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +315,40 @@ mod tests {
     fn literal_escapes_metacharacters() {
         assert_eq!(lit("a.c abc", "a.c").len(), 1, "dot must be literal");
         assert_eq!(lit("x(1) y", "(1)").len(), 1);
+    }
+
+    #[test]
+    fn compiled_matcher_reused_matches_one_shot_search() {
+        // TSK-973: compile once, sweep many — must yield byte-identical
+        // results to calling `search()` (which compiles per call) on each text.
+        let m = CompiledMatcher::compile("needle", QueryKind::Literal, false, false).unwrap();
+        let texts = [
+            "needle here\nand a needle again\n",
+            "no match\nneedle deep\n",
+            "nothing\n",
+            "NEEDLE upper", // case-insensitive default
+        ];
+        for t in texts {
+            let reused = m.search_text(t);
+            let oneshot = search(t, "needle", QueryKind::Literal, false, false).unwrap();
+            assert_eq!(reused, oneshot, "reused matcher must equal a fresh per-text compile");
+        }
+        // And it actually finds the cross-text hits.
+        assert_eq!(m.search_text(texts[0]).len(), 2);
+        assert_eq!(m.search_text(texts[3]).len(), 1, "case-insensitive ascii by default");
+    }
+
+    #[test]
+    fn compiled_matcher_empty_pattern_never_matches() {
+        let m = CompiledMatcher::compile("", QueryKind::Literal, false, false).unwrap();
+        assert!(m.search_text("anything at all").is_empty());
+    }
+
+    #[test]
+    fn compiled_matcher_invalid_pattern_fails_at_compile() {
+        // The compile error is reported ONCE (at compile), not per text.
+        let err = CompiledMatcher::compile("(unclosed", QueryKind::Regex, false, false);
+        assert!(err.is_err(), "invalid regex must fail at compile time");
     }
 
     #[test]

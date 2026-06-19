@@ -25,6 +25,36 @@ const MAX_FILES: usize = 10_000;
 /// Binary sniff window: a NUL in the first 8 KiB ⇒ skip.
 const SNIFF_BYTES: usize = 8 * 1024;
 
+/// Directory names never descended into: VCS metadata + dependency / build
+/// output trees. These hold thousands of files that are NEVER what a
+/// cross-file search wants, and walking them dominates the cost on a real
+/// repo (TSK-973). Matched on the directory's own name, case-sensitively
+/// (these are the canonical lowercase spellings the ecosystems use).
+const SKIP_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "target",       // Rust / sbt build output
+    "build",
+    "dist",
+    ".build",       // SwiftPM build output
+    ".next",        // Next.js
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".gradle",
+    ".idea",
+    ".cache",
+    ".terraform",
+    "vendor",       // Go / PHP vendored deps
+];
+
+/// True if a directory name should be skipped wholesale (not descended into).
+fn is_skipped_dir(name: &std::ffi::OsStr) -> bool {
+    name.to_str().is_some_and(|n| SKIP_DIRS.contains(&n))
+}
+
 #[derive(serde::Deserialize)]
 struct Req {
     query: String,
@@ -75,11 +105,31 @@ pub fn dispatch(fs_ctx: &FsCtx, method: &str, body: &[u8]) -> Result<Vec<u8>, Wi
         }
     };
 
+    // Compile the user pattern ONCE for the whole walk (TSK-973): the old
+    // path called find_engine::search() per file, which re-compiled the
+    // regex/literal matcher on every single file. A bad pattern is reported
+    // here, once, before walking anything.
+    let matcher = match find_engine::CompiledMatcher::compile(
+        &req.query,
+        kind,
+        req.case_sensitive,
+        req.whole_word,
+    ) {
+        Ok(m) => m,
+        Err(reason) => {
+            return encode_body(&Resp {
+                hits: Vec::new(),
+                files_with_hits: 0,
+                truncated: false,
+                error: reason, // the pattern is bad for EVERY file — answer once.
+            })
+        }
+    };
+
     let mut hits = Vec::new();
     let mut files_with_hits: u32 = 0;
     let mut files_walked = 0usize;
     let mut truncated = false;
-    let mut compile_error = String::new();
 
     let mut stack = vec![root.clone()];
     'walk: while let Some(dir) = stack.pop() {
@@ -93,6 +143,11 @@ pub fn dispatch(fs_ctx: &FsCtx, method: &str, body: &[u8]) -> Result<Vec<u8>, Wi
                 continue;
             }
             if meta.is_dir() {
+                // Prune VCS/dependency/build trees wholesale (TSK-973) — they
+                // are thousands of files a cross-file search never wants.
+                if is_skipped_dir(entry.file_name().as_os_str()) {
+                    continue;
+                }
                 stack.push(path);
                 continue;
             }
@@ -112,29 +167,16 @@ pub fn dispatch(fs_ctx: &FsCtx, method: &str, body: &[u8]) -> Result<Vec<u8>, Wi
                 continue; // binary
             }
             let Ok(text) = String::from_utf8(bytes) else { continue };
-            match find_engine::search(
-                &text,
-                &req.query,
-                kind,
-                req.case_sensitive,
-                req.whole_word,
-            ) {
-                Ok(matches) if !matches.is_empty() => {
-                    files_with_hits = files_with_hits.saturating_add(1);
-                    let rel = relative_display(&root, &path);
-                    for m in matches {
-                        if hits.len() >= MAX_MATCHES {
-                            truncated = true;
-                            break 'walk;
-                        }
-                        hits.push(Hit { path: rel.clone(), line: m.line, column: m.column });
+            let matches = matcher.search_text(&text);
+            if !matches.is_empty() {
+                files_with_hits = files_with_hits.saturating_add(1);
+                let rel = relative_display(&root, &path);
+                for m in matches {
+                    if hits.len() >= MAX_MATCHES {
+                        truncated = true;
+                        break 'walk;
                     }
-                }
-                Ok(_) => {}
-                Err(reason) => {
-                    // The pattern is bad for EVERY file — answer once.
-                    compile_error = reason;
-                    break 'walk;
+                    hits.push(Hit { path: rel.clone(), line: m.line, column: m.column });
                 }
             }
         }
@@ -142,7 +184,7 @@ pub fn dispatch(fs_ctx: &FsCtx, method: &str, body: &[u8]) -> Result<Vec<u8>, Wi
 
     // Deterministic order (the stack walk is directory-order-arbitrary).
     hits.sort_by(|a, b| a.path.cmp(&b.path).then(a.line.cmp(&b.line)).then(a.column.cmp(&b.column)));
-    encode_body(&Resp { hits, files_with_hits, truncated, error: compile_error })
+    encode_body(&Resp { hits, files_with_hits, truncated, error: String::new() })
 }
 
 fn relative_display(root: &Path, path: &Path) -> String {
@@ -289,6 +331,63 @@ mod tests {
         // Terminates (no cycle) and finds exactly the in-root hits.
         assert_eq!(resp.files_with_hits, 2);
         assert!(resp.hits.iter().all(|h| !h.path.starts_with("outside")));
+    }
+
+    #[test]
+    fn skips_vcs_and_dependency_dirs() {
+        // TSK-973: a hit inside .git / node_modules / build / target must NOT
+        // be returned, while a real source hit at the same depth still is.
+        let tree = TempTree::new();
+        #[allow(clippy::unwrap_used, reason = "test setup")]
+        {
+            for d in [".git", "node_modules", "build", "target"] {
+                std::fs::create_dir_all(tree.path.join(d)).unwrap();
+                std::fs::write(tree.path.join(d).join("hidden.txt"), "needle in junk\n").unwrap();
+            }
+            // A skipped dir NESTED under a real dir is still skipped.
+            std::fs::create_dir_all(tree.path.join("sub/node_modules")).unwrap();
+            std::fs::write(
+                tree.path.join("sub/node_modules/dep.txt"),
+                "needle deep in deps\n",
+            )
+            .unwrap();
+        }
+        let resp = run(&tree.ctx(), &body("needle", "literal"));
+        assert!(resp.error.is_empty());
+        // Baseline tree has 2 real text hits (a.txt + sub/b.txt); the junk dirs
+        // add NONE. The teeth: drop is_skipped_dir and this jumps to 6.
+        assert_eq!(
+            resp.files_with_hits, 2,
+            "VCS/dependency/build dirs must be pruned, not searched"
+        );
+        assert!(
+            resp.hits.iter().all(|h| {
+                !h.path.contains(".git")
+                    && !h.path.contains("node_modules")
+                    && !h.path.contains("build")
+                    && !h.path.contains("target")
+            }),
+            "no hit may come from a pruned directory: {:?}",
+            resp.hits.iter().map(|h| &h.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn skip_dirs_only_match_whole_name_not_prefix() {
+        // "buildkite" is NOT "build" — a real dir whose name merely starts with
+        // a skip token must still be searched.
+        let tree = TempTree::new();
+        #[allow(clippy::unwrap_used, reason = "test setup")]
+        {
+            std::fs::create_dir_all(tree.path.join("buildkite")).unwrap();
+            std::fs::write(tree.path.join("buildkite/ci.txt"), "needle in ci\n").unwrap();
+        }
+        let resp = run(&tree.ctx(), &body("needle", "literal"));
+        assert_eq!(
+            resp.files_with_hits, 3,
+            "a dir merely prefixed with a skip token (buildkite) must NOT be pruned"
+        );
+        assert!(resp.hits.iter().any(|h| h.path.starts_with("buildkite")));
     }
 
     #[test]
