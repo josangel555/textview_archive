@@ -122,6 +122,10 @@ public final class TerminalPaneStore: ObservableObject {
             model.initialWorkingDirectory = tab.cwd
             models[tab.id] = model
         }
+        // Wire the live-cwd → persist bridge for every restored model (TSK-341).
+        // `init` can't reference `self` in a closure until fully initialized,
+        // so this runs after all stored properties are set.
+        for (id, model) in models { wireCwdPersistence(id, model) }
         if loaded.isOpen { ensureTerminal() }
         syncForeground()
     }
@@ -204,8 +208,26 @@ public final class TerminalPaneStore: ObservableObject {
         let model = TerminalModel()
         model.initialWorkingDirectory = workingDirectory
         models[id] = model
+        wireCwdPersistence(id, model)
         syncForeground()
         persist()
+    }
+
+    /// Bridge a tab's live shell cwd (OSC 7, TSK-341) to the persisted tab
+    /// descriptor: when the shell reports a new directory, write it through to
+    /// `tabSet` and persist, so a restored tab re-spawns where the user LEFT
+    /// OFF, not in the original spawn directory. Guarded against the unknown-id
+    /// race (a closed tab's late callback) and no-op cwd changes.
+    private func wireCwdPersistence(_ id: UUID, _ model: TerminalModel) {
+        model.onWorkingDirectoryChange = { [weak self] cwd in
+            guard let self else { return }
+            // Tab may have been closed before this late callback; setCwd no-ops
+            // on an unknown id, and we only persist when it actually changed.
+            let before = self.tabSet.tab(id)?.cwd
+            guard before != cwd else { return }
+            self.tabSet.setCwd(id, to: cwd)
+            self.persist()
+        }
     }
 
     /// Rename a tab (TSK-771). A whitespace-only / empty name CLEARS the

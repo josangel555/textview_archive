@@ -93,7 +93,9 @@ public struct TerminalPaneLayout: Sendable, Equatable {
     public private(set) var sideWidth: CGFloat
     /// Persisted terminal tab set — names/cwds/active id (TSK-368). Live shells
     /// don't survive relaunch; only the tab descriptors do, so a restored pane
-    /// re-spawns fresh shells with these names + spawn directories.
+    /// re-spawns fresh shells with these names + working directories. The cwd
+    /// tracks the shell's LIVE directory via OSC 7 (TSK-341), so a restored tab
+    /// re-opens where the user last `cd`'d to, not the original spawn directory.
     public var tabSet: TerminalTabSet
 
     public init(

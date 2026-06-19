@@ -70,8 +70,22 @@ public struct ANSIParser: Sendable {
     private var csiBuffer: [UInt8] = []
     /// Pending UTF-8 continuation bytes spanning a chunk boundary.
     private var utf8Pending: [UInt8] = []
+    /// Raw OSC payload bytes between `ESC]` and the BEL/ST terminator. Used
+    /// to recover the live cwd from an OSC-7 report (TSK-341). Reset on every
+    /// OSC entry; parsed when the terminator arrives. Bounded by `oscMaxLen`.
+    private var oscBuffer: [UInt8] = []
+
+    /// The shell's last-reported current working directory (OSC 7), or nil if
+    /// the shell never emitted one. Updated as the user `cd`s around so the
+    /// session-persistence layer can restore a tab in the directory the user
+    /// LEFT OFF in, not the original spawn directory (TSK-341).
+    public private(set) var currentWorkingDirectory: URL?
 
     private static let csiMaxLen = 64   // defensive bound on a runaway CSI
+    /// Defensive bound on a runaway OSC payload (a hostile/garbled stream
+    /// must not let the buffer grow without limit). A real cwd URI is short;
+    /// 4 KiB is generous and still bounded.
+    private static let oscMaxLen = 4096
 
     // MARK: - Feed
 
@@ -103,8 +117,10 @@ public struct ANSIParser: Sendable {
             // ESC inside OSC: `\` (0x5C) closes (ST); anything else
             // we treat as the OSC having ended + reprocess in ground.
             if byte == 0x5C {
+                commitOSC()
                 state = .ground
             } else {
+                commitOSC()
                 state = .ground
                 feed(byte)
             }
@@ -210,6 +226,7 @@ public struct ANSIParser: Sendable {
             csiBuffer.removeAll(keepingCapacity: true)
             state = .csi
         case 0x5D:                       // ']' → OSC
+            oscBuffer.removeAll(keepingCapacity: true)
             state = .osc
         case 0x4D:                       // ESC M — reverse index (RI)
             screen.scrollDown(1)
@@ -402,13 +419,43 @@ public struct ANSIParser: Sendable {
     private mutating func oscByte(_ byte: UInt8) {
         switch byte {
         case 0x07:                       // BEL terminates OSC
+            commitOSC()
             state = .ground
         case 0x1B:                       // ESC — maybe start of ST (ESC \)
             state = .oscEscape
         default:
-            break                        // swallow OSC payload
+            // Accumulate the payload (bounded) so we can recover OSC-7 cwd.
+            // Past the bound we keep consuming bytes (so the terminator still
+            // lands us back in ground) but stop growing the buffer.
+            if oscBuffer.count < ANSIParser.oscMaxLen {
+                oscBuffer.append(byte)
+            }
         }
     }
+
+    /// Parse the accumulated OSC payload on terminator. Today only OSC 7
+    /// (cwd report, TSK-341) is acted on; every other OSC is swallowed as
+    /// before. Clears the buffer.
+    private mutating func commitOSC() {
+        defer { oscBuffer.removeAll(keepingCapacity: true) }
+        guard !oscBuffer.isEmpty else { return }
+        let payload = String(decoding: oscBuffer, as: UTF8.self)
+        if let dir = TerminalOSC7.directory(fromOSCPayload: payload,
+                                            localHost: ANSIParser.cachedLocalHost) {
+            currentWorkingDirectory = dir
+        }
+    }
+
+    /// The machine's own hostname, cached once (cheap and stable for a
+    /// process lifetime) so the OSC-7 local-host check doesn't hit the syscall
+    /// per escape. `nil` if it can't be resolved — the OSC-7 decoder then only
+    /// accepts empty/`localhost` hosts.
+    private static let cachedLocalHost: String? = {
+        let name = ProcessInfo.processInfo.hostName
+        // `hostName` returns e.g. "machine.local"; emitters usually report the
+        // bare short name, so accept both the full and the short form.
+        return name.isEmpty ? nil : name
+    }()
 
     // MARK: - Param parsing helpers
 

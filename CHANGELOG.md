@@ -25,6 +25,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **Worktree management UI** — add / remove / prune git worktrees from the Git panel (was a read-only list).
 - **"View as" lock** — pin a file's view mode by name so reopening it re-applies your choice.
 - **Open dialog shows recents**, **window size + sidebar width are remembered across launches**, and **sessions can be turned off** (single-root mode, no session strip).
+- **Terminal tabs reopen where you left off** — a terminal tab now remembers the directory you last `cd`'d into (not just where it was first opened), so after a relaunch its shell starts in that directory again.
 - **More diagram formats** + **richer web viewer** (themed colors + a server-side command palette at `/cmd`).
 - **"Format JSON" is easier to find** — the View → Pretty-Print menu item now names the file's type ("Pretty-Print JSON", "Pretty-Print XML", …), and the command palette surfaces both Pretty-Print and Minify when you search "format", "json", or "compact".
 

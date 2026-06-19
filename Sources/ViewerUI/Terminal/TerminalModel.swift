@@ -33,9 +33,20 @@ private final class TerminalParserBox: @unchecked Sendable {
         self.latestSnapshot = TerminalScreen(rows: rows, cols: cols)
     }
 
+    /// The shell's last-reported cwd (OSC 7), mirrored under the snapshot lock
+    /// so the main actor can read it without touching `queue` (TSK-341).
+    private var latestCwd: URL?
+
     var snapshot: TerminalScreen {
         snapshotLock.lock(); defer { snapshotLock.unlock() }
         return latestSnapshot
+    }
+
+    /// The live cwd reported via OSC 7, or nil if the shell hasn't reported
+    /// one. Read on the main actor; written on `queue` under the snapshot lock.
+    var currentWorkingDirectory: URL? {
+        snapshotLock.lock(); defer { snapshotLock.unlock() }
+        return latestCwd
     }
 
     var isForeground: Bool {
@@ -71,8 +82,10 @@ private final class TerminalParserBox: @unchecked Sendable {
 
     private func publishLocked() {
         let snap = parser.screen
+        let cwd = parser.currentWorkingDirectory
         snapshotLock.lock()
         latestSnapshot = snap
+        latestCwd = cwd
         snapshotLock.unlock()
     }
 }
@@ -127,6 +140,23 @@ public final class TerminalModel: ObservableObject {
     /// directory (TSK-769 "Open Terminal Here"). Set at tab creation; the
     /// mount-time `start()` reads it. `nil` → falls back to home.
     public var initialWorkingDirectory: URL?
+
+    /// The shell's last-reported live cwd (OSC 7), or `initialWorkingDirectory`
+    /// before any report. Drives terminal-session persistence (TSK-341): the
+    /// store reads this to persist the directory the user LEFT OFF in so a
+    /// restored tab re-spawns there, not in the original spawn directory.
+    public var liveWorkingDirectory: URL? {
+        box.currentWorkingDirectory ?? initialWorkingDirectory
+    }
+
+    /// Fired on the main actor when the live cwd CHANGES (the shell emitted a
+    /// new OSC-7 report). The store uses it to write the new cwd through to the
+    /// persisted tab descriptor (TSK-341). Set by the owning store.
+    public var onWorkingDirectoryChange: ((URL) -> Void)?
+
+    /// Last cwd we surfaced via `onWorkingDirectoryChange`, so a repeated OSC-7
+    /// report for the same directory doesn't re-fire (avoids needless persist).
+    private var lastNotifiedCwd: URL?
 
     public init(rows: Int = 24, cols: Int = 80) {
         let r = max(1, rows)
@@ -246,10 +276,19 @@ public final class TerminalModel: ObservableObject {
     /// one trailing bump if more output landed meanwhile. MainActor-confined.
     private func emitBump() {
         version &+= 1
+        notifyWorkingDirectoryIfChanged()
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.coalesceInterval * 1_000_000_000))
             guard let self else { return }
             if self.throttle.cooldownElapsed() { self.emitBump() }
         }
+    }
+
+    /// If the shell reported a new cwd since the last notification, surface it
+    /// to the store (TSK-341). MainActor-confined; cheap + idempotent.
+    private func notifyWorkingDirectoryIfChanged() {
+        guard let cwd = box.currentWorkingDirectory, cwd != lastNotifiedCwd else { return }
+        lastNotifiedCwd = cwd
+        onWorkingDirectoryChange?(cwd)
     }
 }

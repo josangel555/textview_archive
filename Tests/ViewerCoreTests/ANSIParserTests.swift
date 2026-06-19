@@ -303,6 +303,64 @@ final class ANSIParserTests: XCTestCase {
         XCTAssertEqual(p.screen.line(0), "done")
     }
 
+    // MARK: - OSC 7 cwd report (TSK-341 terminal-session persistence)
+
+    func test_osc7_BELterminated_updatesCwd_andDoesNotPrint() {
+        var p = parser()
+        XCTAssertNil(p.currentWorkingDirectory, "no cwd before any report")
+        feed(&p, "\u{1B}]7;file:///Users/me/proj\u{07}done")
+        XCTAssertEqual(p.currentWorkingDirectory?.path, "/Users/me/proj")
+        XCTAssertEqual(p.screen.line(0), "done", "the OSC payload must not print as glyphs")
+    }
+
+    func test_osc7_STterminated_updatesCwd() {
+        var p = parser()
+        feed(&p, "\u{1B}]7;file://localhost/var/log\u{1B}\\x")
+        XCTAssertEqual(p.currentWorkingDirectory?.path, "/var/log")
+        XCTAssertEqual(p.screen.line(0), "x")
+    }
+
+    func test_osc7_lastReportWins() {
+        var p = parser()
+        feed(&p, "\u{1B}]7;file:///first\u{07}")
+        feed(&p, "\u{1B}]7;file:///second\u{07}")
+        XCTAssertEqual(p.currentWorkingDirectory?.path, "/second",
+            "cwd tracks the most-recent report as the user cd's around")
+    }
+
+    func test_osc7_splitAcrossChunks_reassembles() {
+        var p = parser()
+        // Feed the OSC-7 escape byte-by-byte to prove the payload buffer spans
+        // chunk boundaries (PTY reads split arbitrarily).
+        for byte in Array("\u{1B}]7;file:///Users/me/a b".utf8) { p.feed([byte]) }
+        p.feed([0x07])  // BEL terminator
+        XCTAssertEqual(p.currentWorkingDirectory?.path, "/Users/me/a b",
+            "percent-less raw space tolerated; payload reassembled across chunks")
+    }
+
+    func test_osc0_titleDoesNotSetCwd() {
+        var p = parser()
+        feed(&p, "\u{1B}]0;My Window Title\u{07}")
+        XCTAssertNil(p.currentWorkingDirectory,
+            "a window-title OSC must not be misread as a cwd report")
+    }
+
+    func test_osc7_remoteHostDoesNotChangeCwd() {
+        var p = parser()
+        feed(&p, "\u{1B}]7;file:///Users/me/local\u{07}")
+        feed(&p, "\u{1B}]7;file://some-remote-box/remote/path\u{07}")
+        XCTAssertEqual(p.currentWorkingDirectory?.path, "/Users/me/local",
+            "a remote-host report leaves the prior local cwd untouched")
+    }
+
+    func test_osc7_resize_preservesCwd() {
+        // Resizing rebuilds the screen but must NOT lose the reported cwd.
+        var p = parser()
+        feed(&p, "\u{1B}]7;file:///Users/me/keep\u{07}")
+        p.resize(rows: 10, cols: 40)
+        XCTAssertEqual(p.currentWorkingDirectory?.path, "/Users/me/keep")
+    }
+
     func test_unknownCSIfinalByte_isStripped() {
         var p = parser()
         // ESC[5X (ECH erase-char, not modelled) — consumed, no garbage.

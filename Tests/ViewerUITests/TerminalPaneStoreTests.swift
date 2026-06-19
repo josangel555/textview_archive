@@ -126,6 +126,51 @@ final class TerminalPaneStoreTests: XCTestCase {
         XCTAssertNotNil(reloaded.terminal)
     }
 
+    // MARK: - Live cwd persistence (TSK-341 terminal-session persistence)
+
+    func test_liveCwdChange_persistsToTabDescriptor_andSurvivesReload() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        guard let model = store.terminal, let tabID = store.selectedTabID else {
+            return XCTFail("opening should create a tab + model")
+        }
+        // Drive the EXACT closure the store wires onto the model (the OSC-7
+        // bridge) — this is what fires when the shell reports a new cwd. We
+        // can't fork a shell on the host, so we invoke its action closure.
+        let newCwd = URL(fileURLWithPath: "/Users/me/some/deep/dir", isDirectory: true)
+        model.onWorkingDirectoryChange?(newCwd)
+
+        // The live cwd is now written through to the persisted tab descriptor.
+        XCTAssertEqual(store.tabSet.tab(tabID)?.cwd?.path, "/Users/me/some/deep/dir")
+
+        // "Relaunch": a fresh store on the same suite restores the LAST cwd, so
+        // the re-spawned shell seeds from where the user left off — not the
+        // original spawn dir.
+        let reloaded = TerminalPaneStore(defaults: defaults)
+        let restoredTab = reloaded.tabSet.tabs.first { $0.id == tabID }
+        XCTAssertEqual(restoredTab?.cwd?.path, "/Users/me/some/deep/dir")
+        // And the restored model seeds its initial cwd from the persisted value.
+        XCTAssertEqual(reloaded.terminal?.initialWorkingDirectory?.path,
+                       "/Users/me/some/deep/dir")
+    }
+
+    func test_liveCwdCallback_onClosedTab_isHarmless() {
+        // A late OSC-7 callback for an already-closed tab must not crash or
+        // resurrect state (setCwd no-ops on an unknown id).
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        store.addTab()  // now 2 tabs
+        guard let firstTab = store.tabs.first else {
+            return XCTFail("expected at least one tab with a live model")
+        }
+        let firstID = firstTab.id
+        let firstModel = firstTab.model
+        store.closeTab(firstID)
+        // Invoke the closed tab's bridge closure — must be a safe no-op.
+        firstModel.onWorkingDirectoryChange?(URL(fileURLWithPath: "/tmp/gone"))
+        XCTAssertNil(store.tabSet.tab(firstID), "closed tab stays closed")
+    }
+
     // MARK: - Narrow observation (must NOT republish DocumentModel)
 
     func test_documentModel_ownsTerminalPane_fromInjectedDefaults() {
