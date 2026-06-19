@@ -179,4 +179,25 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertTrue(status.contains("unknown scene"), "status: \(status)")
         XCTAssertFalse(model.terminalPane.isOpen, "an unknown scene changes nothing")
     }
+
+    func test_applierRecognitionIsSingleSourcedThroughTheRegistry() {
+        // TSK-492: the applier must accept EXACTLY the ids the registry
+        // enumerates and reject everything else — recognition is single-
+        // sourced. An id the registry rejects must NOT mutate the model.
+        for id in UISceneRegistry.allSceneIDs {
+            let model = makeModel()
+            // `preview*` needs MDV_PREVIEW_FILE; supply one so it is recognised.
+            let pv = tmp.appendingPathComponent("preview.md")
+            try? "# p\n".write(to: pv, atomically: true, encoding: .utf8)
+            let status = apply(id, model, previewFile: pv)
+            XCTAssertFalse(status.contains("unknown scene"),
+                           "enumerated id '\(id)' must be recognised by the applier: \(status)")
+        }
+        // A stray token in a known family is rejected by the applier (via the
+        // registry guard), leaving the model untouched.
+        let model = makeModel()
+        let status = apply("terminal-foo", model)
+        XCTAssertTrue(status.contains("unknown scene"), "stray token rejected: \(status)")
+        XCTAssertFalse(model.terminalPane.isOpen, "a rejected scene changes nothing")
+    }
 }

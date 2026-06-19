@@ -23,6 +23,13 @@ public enum UISceneApplier {
 
     /// Apply `scene` (already lowercased) to `model`. Returns the status line
     /// describing what was applied (or the error/unknown message).
+    ///
+    /// Recognition is single-sourced through `UISceneRegistry` (ViewerCore): an
+    /// id the registry doesn't enumerate is REJECTED here (loud "unknown scene"
+    /// status, no model mutation) rather than silently falling through to a
+    /// baseline — which would make the visual-eval harness capture the wrong
+    /// pixels (a false green). The registry's `SceneSpec` is the deterministic
+    /// CONTRACT; this method performs the corresponding LIVE-model mutation.
     @discardableResult
     public static func apply(
         scene: String,
@@ -30,6 +37,20 @@ public enum UISceneApplier {
         previewFile: URL?,
         tabsBaseDir: URL
     ) -> String {
+        // Reject unknown ids up front against the enumerated registry so the
+        // recognised-scene set is single-sourced (and a typo can't slip through
+        // to a baseline capture). DEBUG-only scenes (code-action picker seam)
+        // resolve only in DEBUG builds — a release build rejects them loudly.
+        guard let spec = UISceneRegistry.resolve(scene) else {
+            return "ui-scene: unknown scene '\(scene)'"
+        }
+        #if !DEBUG
+        if spec.isDebugOnly {
+            return "ui-scene: unknown scene '\(scene)'"
+        }
+        #endif
+        _ = spec  // the spec is the validated contract; mutation follows below.
+
         let parts = scene.split(separator: "-").map(String.init)
 
         // Empty-state landing (EmptyStateView): no file open. A deliberate no-op
