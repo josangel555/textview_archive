@@ -23,6 +23,20 @@ public final class MCPServer: @unchecked Sendable {
     private let output: FileHandle
     private let logger: ((String) -> Void)?
 
+    /// Upper bound on how long the reader thread will park waiting for a
+    /// single request to complete on the main actor. If the main actor
+    /// wedges (or a handler runs unboundedly), the reader recovers after
+    /// this deadline and returns a JSON-RPC internal error to the client
+    /// instead of parking forever — the liveness gap `stop()` can't close
+    /// once the thread is already past the read and blocked mid-request.
+    ///
+    /// Generous by design: long enough not to false-trip a slow-but-live
+    /// main actor (a model walk over thousands of tabs, a synchronous
+    /// snapshot), short enough that a true wedge is recoverable within a
+    /// reasonable window. Overridable via `init` so tests can inject a
+    /// short deadline without a multi-second hang.
+    private let mainActorDeadline: DispatchTimeInterval
+
     /// Invoked exactly once when the read loop ends — clean stdin EOF,
     /// a framing error, or an external `stop()` (which closes stdin and
     /// thus unblocks the read into EOF). Wired by the headless
@@ -56,13 +70,15 @@ public final class MCPServer: @unchecked Sendable {
         input: FileHandle = .standardInput,
         output: FileHandle = .standardOutput,
         logger: ((String) -> Void)? = nil,
-        onExit: (@Sendable () -> Void)? = nil
+        onExit: (@Sendable () -> Void)? = nil,
+        mainActorDeadline: DispatchTimeInterval = .seconds(20)
     ) {
         self.host = host
         self.input = input
         self.output = output
         self.logger = logger
         self.onExit = onExit
+        self.mainActorDeadline = mainActorDeadline
     }
 
     // MARK: - Public lifecycle
@@ -171,12 +187,29 @@ public final class MCPServer: @unchecked Sendable {
         // serially and expect ordered responses. We block the reader
         // thread per-request so responses still emit in request order.
         let captured: (MCP.ID, String, MCP.Value?) = (id, request.method, request.params)
-        let response = runOnMainActor { [self] in
+        let outcome = runOnMainActor { [self] in
             // `self` is captured strongly: the read-loop thread holds
             // us alive while it's parked on the semaphore, and the
             // captured reference is touched only inside the
             // main-actor Task.
             self.dispatch(id: captured.0, method: captured.1, params: captured.2)
+        }
+        let response: MCP.Response
+        switch outcome {
+        case .success(let r):
+            response = r
+        case .failure(.timedOut):
+            // The main actor did not service this request within
+            // `mainActorDeadline`. Rather than park the reader thread
+            // forever (the liveness gap), surface a JSON-RPC internal
+            // error so the client gets a definite answer and the loop
+            // moves on to the next request. The wedged Task may still
+            // complete later and signal a now-orphaned semaphore — that
+            // is harmless (the semaphore is local to that call).
+            log("main-actor timeout for \(captured.1) (id \(id)); returning -32603")
+            response = MCP.Response(id: id, error: .init(
+                code: MCP.ErrorCode.internalError,
+                message: "main-actor timeout: handler for '\(captured.1)' did not complete within deadline"))
         }
         send(response: response)
     }
@@ -213,30 +246,66 @@ public final class MCPServer: @unchecked Sendable {
     /// the main-on-main misuse loudly instead of letting it become a
     /// silent hang.
     ///
+    /// # Deadline / liveness
+    ///
+    /// The wait is **bounded** by `mainActorDeadline`. The original
+    /// `semaphore.wait()` had no deadline: if the main actor wedged
+    /// (deadlock, an unbounded handler, a non-pumping kernel wait), the
+    /// reader thread parked here indefinitely. `stop()` only closes
+    /// stdin — it can release a thread blocked in `MCPFraming.decode`,
+    /// but it cannot release one already past the read and parked
+    /// mid-request. The bounded wait closes that gap: on `.timedOut` the
+    /// caller gets a `.failure(.timedOut)` and emits a JSON-RPC internal
+    /// error to the client instead of hanging.
+    ///
     /// # Visibility
     ///
     /// `internal` (not `private`) so the wedge regression tests in
     /// `MCPServerWedgeTests` can `@testable` import and exercise the
     /// bridge directly. The implementation is otherwise an
     /// implementation detail of `handle(requestBody:)`.
-    @inline(__always)
     nonisolated internal func runOnMainActor<T: Sendable>(
         _ work: @escaping @Sendable @MainActor () -> T
-    ) -> T {
+    ) -> Result<T, MainActorBridgeError> {
         precondition(!Thread.isMainThread,
                      "MCPServer.runOnMainActor must not be called from the main thread")
         let semaphore = DispatchSemaphore(value: 0)
         // `nonisolated(unsafe)` is the canonical pattern for a
         // single-writer / single-reader cell ordered by a semaphore
         // signal/wait pair (happens-before is established by the
-        // semaphore on macOS / libdispatch).
+        // semaphore on macOS / libdispatch). Carrying the value through
+        // a typed `Result` rather than a bare `T?` removes the old
+        // `return box!` force-unwrap: a timeout is now a typed `.failure`
+        // value, never a `nil` we'd crash on.
         nonisolated(unsafe) var box: T?
         Task { @MainActor in
             box = work()
             semaphore.signal()
         }
-        semaphore.wait()
-        return box!
+        switch semaphore.wait(timeout: .now() + mainActorDeadline) {
+        case .success:
+            // `box` is guaranteed assigned: `signal()` happens-after the
+            // assignment on the same Task, and `.success` means we
+            // observed that signal — so the write is visible here. The
+            // `?? .timedOut` is a belt-and-braces fallback that can't
+            // trigger but keeps the path total (no force-unwrap).
+            if let value = box { return .success(value) }
+            return .failure(.timedOut)
+        case .timedOut:
+            // The MainActor Task is still outstanding. It may complete
+            // later and signal a semaphore no one is waiting on — that's
+            // benign: the semaphore is local to this call and is simply
+            // deallocated once the Task's `signal()` returns.
+            return .failure(.timedOut)
+        }
+    }
+
+    /// Failure modes of the synchronous main-actor bridge. Today the only
+    /// case is a deadline expiry; modelled as an enum so adding bridge
+    /// failure modes later stays source-compatible at the call site.
+    internal enum MainActorBridgeError: Error, Equatable {
+        /// The main-actor handler did not signal within `mainActorDeadline`.
+        case timedOut
     }
 
     @MainActor

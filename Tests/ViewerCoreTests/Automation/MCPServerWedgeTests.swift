@@ -337,4 +337,171 @@ final class MCPServerWedgeTests: XCTestCase {
         XCTAssertTrue(host.sawMainThread,
                       "handler must run on the OS main thread, not just at MainActor isolation")
     }
+
+    // MARK: - Deadline / timeout (TSK-977)
+
+    /// `runOnMainActor` must NOT park forever when the main-actor work
+    /// never completes within the deadline. With a short injected
+    /// deadline, a `work` closure that blocks the main actor well past
+    /// it must return `.failure(.timedOut)` — not hang. On the unfixed
+    /// (`semaphore.wait()`, no deadline) code this test hangs and the
+    /// test-runner timeout fails it red.
+    ///
+    /// The bridge is invoked from a BACKGROUND thread (it `precondition`s
+    /// `!Thread.isMainThread`), so the test's main RunLoop stays free to
+    /// pump the MainActor Task — which then blocks the main actor with a
+    /// synchronous sleep that outlasts the deadline.
+    func test_runOnMainActor_timesOutWhenMainActorWedges() {
+        let host = StubHost()
+        // 200 ms deadline; the handler holds main for ~2 s — well past it.
+        let server = MCPServer(
+            host: host,
+            input: Pipe().fileHandleForReading,
+            output: Pipe().fileHandleForWriting,
+            logger: nil,
+            mainActorDeadline: .milliseconds(200)
+        )
+
+        let done = XCTestExpectation(description: "bridge returns despite a wedged handler")
+        // Thread-safe captures recorded on the BACKGROUND thread the
+        // instant `runOnMainActor` returns — NOT marshalled back through
+        // the (deliberately wedged) main thread, which would mis-measure
+        // elapsed as ~2 s (the callback can't land until the main-thread
+        // sleep finishes).
+        let resultBox = TimedOutcomeBox()
+        let started = Date()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = server.runOnMainActor { () -> Int in
+                // Block the main actor far longer than the deadline.
+                Thread.sleep(forTimeInterval: 2.0)
+                return 42
+            }
+            resultBox.record(outcome: outcome, elapsed: Date().timeIntervalSince(started))
+            done.fulfill()
+        }
+
+        // Generous budget: 200 ms deadline + scheduling slack. If the
+        // bridge hung (unfixed code), we'd blow through this and the
+        // wait would fail — exactly the red signal we want.
+        wait(for: [done], timeout: 3.0)
+
+        guard let (outcome, elapsed) = resultBox.value else {
+            return XCTFail("bridge never returned — wedged on a no-deadline wait")
+        }
+        switch outcome {
+        case .success:
+            XCTFail("expected a timeout, got a value — deadline did not fire")
+        case .failure(let err):
+            XCTAssertEqual(err, .timedOut)
+        }
+        // It returned at/around the deadline, not after the full 2 s
+        // handler sleep — proving the wait was bounded, not that the
+        // handler merely finished fast.
+        XCTAssertLessThan(elapsed, 1.5,
+                          "bridge returned only after the 2 s handler completed; the wait was not bounded by the deadline")
+    }
+
+    /// Lock-guarded box for capturing a bridge outcome + elapsed time off
+    /// the main thread (the timeout test wedges main, so we can't route
+    /// the result through `DispatchQueue.main`).
+    private final class TimedOutcomeBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _value: (Result<Int, MCPServer.MainActorBridgeError>, TimeInterval)?
+        func record(outcome: Result<Int, MCPServer.MainActorBridgeError>, elapsed: TimeInterval) {
+            lock.lock(); _value = (outcome, elapsed); lock.unlock()
+        }
+        var value: (Result<Int, MCPServer.MainActorBridgeError>, TimeInterval)? {
+            lock.lock(); defer { lock.unlock() }; return _value
+        }
+    }
+
+    /// A normally-completing handler still returns its value through the
+    /// bridge — the deadline path must not eat fast results. Pins that
+    /// the `Result` refactor preserves the happy path.
+    func test_runOnMainActor_returnsValueWhenHandlerCompletes() {
+        let host = StubHost()
+        let server = MCPServer(
+            host: host,
+            input: Pipe().fileHandleForReading,
+            output: Pipe().fileHandleForWriting,
+            logger: nil,
+            mainActorDeadline: .seconds(5)
+        )
+
+        let done = XCTestExpectation(description: "bridge returns the handler's value")
+        let outcomeHolder = OutcomeHolder()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = server.runOnMainActor { () -> Int in 1234 }
+            DispatchQueue.main.async {
+                outcomeHolder.outcome = outcome
+                done.fulfill()
+            }
+        }
+
+        wait(for: [done], timeout: 3.0)
+
+        guard let outcome = outcomeHolder.outcome else {
+            return XCTFail("bridge never returned")
+        }
+        switch outcome {
+        case .success(let value):
+            XCTAssertEqual(value, 1234, "bridge dropped or corrupted the handler's return value")
+        case .failure(let err):
+            XCTFail("a fast handler should not time out, got \(err)")
+        }
+    }
+
+    /// End-to-end: a wedged main-actor handler surfaces a JSON-RPC
+    /// `-32603` internal error to the CLIENT (not a hang) when the
+    /// deadline fires. Drives the full request path through a live
+    /// server with a short injected deadline.
+    func test_wedgedHandler_returnsInternalErrorToClient() throws {
+        // Handler holds main for ~2 s; deadline is 200 ms.
+        let host = SleepingHost(sleepFor: 2.0)
+        let inPipe = Pipe()
+        let outPipe = Pipe()
+        let server = MCPServer(
+            host: host,
+            input: inPipe.fileHandleForReading,
+            output: outPipe.fileHandleForWriting,
+            logger: nil,
+            mainActorDeadline: .milliseconds(200)
+        )
+        server.start()
+        defer { server.stop() }
+
+        let req = Data(#"""
+        {"jsonrpc":"2.0","id":7,"method":"tools/call",
+         "params":{"name":"current_state","arguments":{}}}
+        """#.utf8)
+        try inPipe.fileHandleForWriting.write(contentsOf: MCPFraming.encode(body: req))
+
+        let arrived = XCTestExpectation(description: "error response arrives despite wedge")
+        let holder = ResponseHolder()
+        drainResponses(from: outPipe, count: 1, expectation: arrived, into: holder)
+
+        // Deadline (200 ms) + framing + scheduling. A hang would never
+        // arrive within this; the unfixed code fails here.
+        wait(for: [arrived], timeout: 3.0)
+
+        if let err = holder.error { throw err }
+        guard let bodies = holder.allBodies, let body = bodies.first else {
+            return XCTFail("no response arrived — server wedged on the long handler")
+        }
+        let response = try JSONDecoder().decode(MCP.Response.self, from: body)
+        XCTAssertEqual(response.id, .int(7))
+        XCTAssertNil(response.result, "a timed-out request must not carry a result")
+        XCTAssertEqual(response.error?.code, MCP.ErrorCode.internalError,
+                       "a main-actor timeout must surface as JSON-RPC -32603")
+        XCTAssertTrue(response.error?.message.contains("timeout") ?? false,
+                      "the error message should name the timeout, got: \(response.error?.message ?? "nil")")
+    }
+
+    @MainActor
+    private final class OutcomeHolder {
+        var outcome: Result<Int, MCPServer.MainActorBridgeError>?
+        var elapsed: TimeInterval?
+    }
 }
