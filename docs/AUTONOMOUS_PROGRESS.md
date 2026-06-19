@@ -1,5 +1,24 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 — TSK-588 perf-floor ratchet bench (TSK-538 epic slice)
+
+Shipped the hand-rolled perf-floor RATCHET bench, the host-completable half of audit child **TSK-588**
+(the cargo-mutants teeth audit half stays `remaining` — it needs the owner-gated `cargo-mutants` CLI dep).
+
+- **`mdvcore-core::bench`** — the deterministic, clock-free ratchet HEART (host-unit-tested with real teeth):
+  `Baseline` text (de)serialization + `compare(baseline, measurements, tolerance) → Vec<Report>`. 13 host tests,
+  incl. a PLANTED 2x-regression that must be flagged, boundary-exact tolerance, new/zero-baseline/clamp cases.
+  Lives in core (no clock) so it passes the sans-IO `disallowed_methods` wall and gates on the ordinary merge gate.
+- **`mdvcore-serve` bin `perf_floor`** — the clock + fixtures: times 5 hot core paths (csv parse_arena, filter
+  scan, find, hex render, diff parse), warmup(25)+median-of-15, calls `bench::compare`, exits 1 on regression.
+  Demonstrated teeth at the binary level too (artificially-fast baseline → exit 1).
+- **`scripts/rust-perf-floor.sh`** (release build + ratchet; NOT the merge gate — wall-clock is load-flaky) +
+  **`.github/workflows/nightly-perf-floor.yml`** (GH-hosted runner; the VM has no Rust). Committed seed baseline
+  `rust-core/crates/serve/benches/perf_floor_baseline.txt`.
+- Rationale follows synthesis §5 #8: criterion + absolute thresholds REJECTED; ratchet-vs-previous-run is
+  machine-load-proof. Merge gate (`scripts/rust-core-gate.sh`) stays clock-free and green; full workspace test
+  405+ core / all crates pass; workspace clippy `--all-targets` clean.
+
 ## LOG 2026-06-19 (PM) — ULTRACODE WAVE MERGED TO MAIN: +116 commits, headless gate GREEN
 
 The full backlog-drain wave landed on `main` (fast-forward `bd1f8ca` → `d4a8612c`, **116 commits**). All 4 retry lanes + the first/second waves were integrated onto `ultracode/backlog-drain` in an isolated worktree, gated, then ff-merged. Headless gate: **7329 tests, 0 failures, tier enforcement OK**. `/Applications/TextView.app` rebuilt + installed from the merged main.

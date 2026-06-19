@@ -21,6 +21,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod bench;
 pub mod cm_edit;
 pub mod csv;
 pub mod diff;

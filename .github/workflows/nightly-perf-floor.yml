@@ -1,0 +1,58 @@
+# Nightly perf-floor RATCHET (audit TSK-588): time the hot rust-core pure-logic
+# paths and ratchet each against the committed baseline
+# (rust-core/crates/serve/benches/perf_floor_baseline.txt), failing the lane on
+# a regression past tolerance (+50% default).
+#
+# Why nightly + GH-hosted, NOT the PR merge gate:
+#   - Wall-clock asserts are flaky under machine load (the host gate treats
+#     FoldBench/CrossFileSearchBench failures as flaky). The RATCHET LOGIC,
+#     though, IS host-unit-tested with teeth (mdvcore-core::bench) and so runs
+#     in the ordinary merge gate — a logic regression fails there.
+#   - The UTM VM has no Rust toolchain (synthesis §5), so the timing lane runs
+#     on a GH-hosted Linux runner.
+#
+# The committed baseline is machine-specific absolute nanoseconds; the ratchet
+# is meaningful run-over-run on the SAME runner class. A GH-hosted runner's
+# numbers differ from a dev laptop's, so the FIRST nightly may report a
+# regression — re-seed by running `--update` on a hosted runner (manual
+# workflow_dispatch with update=true) and committing the diff. After that the
+# nightly ratchets hosted-run vs hosted-baseline.
+name: nightly-perf-floor
+
+on:
+  schedule:
+    - cron: "41 6 * * *"   # 06:41 UTC nightly (off the :00 stampede)
+  workflow_dispatch:
+    inputs:
+      update:
+        description: "Regenerate the baseline instead of comparing (re-seed the floor)"
+        type: boolean
+        default: false
+
+jobs:
+  perf-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            /private/tmp/mdv-rust-target
+          key: perf-floor-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
+
+      - name: Perf-floor ratchet
+        run: |
+          if [ "${{ inputs.update }}" = "true" ]; then
+            bash scripts/rust-perf-floor.sh --update
+            echo "Baseline regenerated — commit rust-core/crates/serve/benches/perf_floor_baseline.txt"
+          else
+            bash scripts/rust-perf-floor.sh
+          fi

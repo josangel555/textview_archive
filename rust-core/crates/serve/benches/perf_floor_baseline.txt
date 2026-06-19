@@ -1,0 +1,8 @@
+# mdvcore perf-floor baseline (audit TSK-588).
+# Format: <metric-name>\t<median-nanos-per-op>. Ratchet, not absolute.
+# Regenerate with: cargo run -p mdvcore-serve --bin perf_floor -- --update
+csv.filter_scan.2000x8	127625
+csv.parse_arena.2000x8	441312
+diff.parse.400hunks	263998
+find.matches.2000lines	205153
+hex.render_all.64k	674056
