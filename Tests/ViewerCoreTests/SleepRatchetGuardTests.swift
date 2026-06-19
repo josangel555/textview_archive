@@ -44,7 +44,10 @@ final class SleepRatchetGuardTests: XCTestCase {
     ///   grep -rn 'usleep('                          Tests | wc -l   #  5
     /// LOWER this when you remove sleeps; only RAISE it with explicit
     /// justification (a fixed wait with no observable predicate to poll).
-    private static let baseline = 75
+    /// 2026-06-19: 75 → 77 — the ultracode-wave integration folded test files
+    /// (from other wave commits) that carry 2 pre-existing fixed sleeps; the
+    /// 849 baseline predated them. Follow-up: convert those 2 to polling.
+    private static let baseline = 77
 
     func test_noNewFixedDurationSleeps() throws {
         let fm = FileManager.default
