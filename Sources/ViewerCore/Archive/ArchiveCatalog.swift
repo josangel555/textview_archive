@@ -94,6 +94,26 @@ public enum ArchiveCatalog {
         return (entries, truncated)
     }
 
+    /// Extract ONE member's raw bytes from a ZIP-CONTAINER file, regardless of
+    /// its filename extension. OOXML formats (`.xlsx`/`.docx`/`.pptx`) are ZIP
+    /// containers but don't carry a `.zip` suffix, so `kind(for:)` would reject
+    /// them — this entry point bypasses the suffix gate for the zip case while
+    /// reusing the SAME hardened `unzip -p` pipe: the member streams over stdout,
+    /// its NAME never becomes a filesystem path (zip-slip safe), and the
+    /// `maxEntryBytes` bomb cap still applies. The caller supplies a FIXED,
+    /// app-known entry name (e.g. `"xl/workbook.xml"`), never user input.
+    ///
+    /// Returns the entry bytes, or throws `toolFailed` when the entry is absent
+    /// (unzip exits non-zero), `entryTooLarge` past the cap, or `emptyEntry`.
+    public static func zipEntryBytes(named name: String, fromZipAt url: URL) throws -> Data {
+        let data = try run("/usr/bin/unzip", ["-p", url.path, name])
+        guard !data.isEmpty else { throw ArchiveError.emptyEntry }
+        guard data.count <= maxEntryBytes else {
+            throw ArchiveError.entryTooLarge(limit: maxEntryBytes)
+        }
+        return data
+    }
+
     /// Extract ONE member to an app-chosen temp file and return its URL.
     /// The member streams over stdout — its NAME never becomes a path.
     /// The temp filename keeps only the sanitized last path component
