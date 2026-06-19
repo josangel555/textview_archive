@@ -96,6 +96,16 @@ public struct Tab: Sendable, Identifiable {
     /// state — comparing it would churn the SwiftUI diff on every capture.
     public var unsavedText: String?
 
+    /// TSK-1025 hot-exit clobber guard: the file's `(mtime, size)` baseline the
+    /// `unsavedText` edits were made FROM, captured at the hot-exit snapshot
+    /// boundary. On restore the buffer's saved-fingerprint is seeded from this
+    /// (NOT the fresh-from-disk read), so the external-edit conflict path fires
+    /// if the file changed while the app was closed. Persistence-only metadata
+    /// (EXCLUDED from `Tab`'s Equatable, like `unsavedText`); nil for a clean
+    /// tab or a pre-TSK-1025 snapshot.
+    public var unsavedBaseMTime: Date?
+    public var unsavedBaseSize: Int?
+
     /// True for an ephemeral "preview" tab (VSCode-style): single-click /
     /// arrow-nav in the sidebar reuses the one preview slot instead of
     /// spawning a tab per file; an explicit commit (double-click / Enter /
@@ -117,6 +127,8 @@ public struct Tab: Sendable, Identifiable {
         categoryOverride: FileCategory? = nil,
         scrollTopLine: Int? = nil,
         unsavedText: String? = nil,
+        unsavedBaseMTime: Date? = nil,
+        unsavedBaseSize: Int? = nil,
         isPreview: Bool = false
     ) {
         self.id = id
@@ -128,6 +140,8 @@ public struct Tab: Sendable, Identifiable {
         self.categoryOverride = categoryOverride
         self.scrollTopLine = scrollTopLine
         self.unsavedText = unsavedText
+        self.unsavedBaseMTime = unsavedBaseMTime
+        self.unsavedBaseSize = unsavedBaseSize
         self.isPreview = isPreview
     }
 

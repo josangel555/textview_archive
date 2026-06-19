@@ -2181,13 +2181,23 @@ public final class DocumentModel: ObservableObject {
         for index in tabs.tabs.indices {
             let tab = tabs.tabs[index]
             var captured: String? = nil
+            var baseMTime: Date? = nil
+            var baseSize: Int? = nil
             if let buf = editor.editorBuffers[tab.id], buf.isDirty,
                buf.text.utf8.count <= Self.hotExitMaxBytes {
                 captured = buf.text
+                // TSK-1025: capture the baseline the edits were made FROM so a
+                // relaunch can detect an external change to the file on disk.
+                baseMTime = buf.lastSavedMTime
+                baseSize = buf.lastSavedSize
             }
-            guard tab.unsavedText != captured else { continue }
+            guard tab.unsavedText != captured
+                || tab.unsavedBaseMTime != baseMTime
+                || tab.unsavedBaseSize != baseSize else { continue }
             var t = tab
             t.unsavedText = captured
+            t.unsavedBaseMTime = baseMTime
+            t.unsavedBaseSize = baseSize
             tabCoordinator.replace(at: index, with: t)
         }
     }
@@ -2209,6 +2219,12 @@ public final class DocumentModel: ObservableObject {
         // recomputes `isDirty` (unsaved vs disk) and mirrors it onto the Tab.
         editor.ensureEditorBuffer(for: file, tabID: tab.id)
         editor.updateEditorText(unsaved, forTabID: tab.id)
+        // TSK-1025: re-seed the buffer's saved-fingerprint to the HOT-EXIT-time
+        // baseline (not the just-read disk one), so the external-edit conflict
+        // path fires if the file changed while the app was closed. No-op when no
+        // baseline was persisted (pre-TSK-1025 snapshot / clean capture).
+        editor.seedRestoredBaseline(
+            forTabID: tab.id, mtime: tab.unsavedBaseMTime, size: tab.unsavedBaseSize)
         return true
     }
 
@@ -6484,7 +6500,9 @@ public final class DocumentModel: ObservableObject {
     public func appendLazyTab(url: URL, viewMode: ViewMode,
                               categoryOverride: FileCategory? = nil,
                               scrollTopLine: Int? = nil,
-                              unsavedText: String? = nil) {
+                              unsavedText: String? = nil,
+                              unsavedBaseMTime: Date? = nil,
+                              unsavedBaseSize: Int? = nil) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Dedup invariant (matches `TabsState.openOrReveal`): never create a
         // SECOND tab for a file that's already open. `appendLazyTab` was the
@@ -6525,7 +6543,11 @@ public final class DocumentModel: ObservableObject {
             // TSK-718 hot exit: carry the persisted unsaved buffer text so
             // `materializeIfNeeded` can overlay it into the editor buffer once
             // the file has been read from disk (giving the dirty baseline).
-            unsavedText: unsavedText))
+            unsavedText: unsavedText,
+            // TSK-1025: carry the hot-exit-time (mtime,size) baseline so restore
+            // can seed the buffer fingerprint + detect an external change.
+            unsavedBaseMTime: unsavedBaseMTime,
+            unsavedBaseSize: unsavedBaseSize))
     }
 
     /// Open many URLs at once. Files are appended as lazy tabs (state

@@ -781,4 +781,17 @@ public final class EditorCoordinator: ObservableObject {
         }
         return outcome
     }
+
+    /// TSK-1025: seed a just-restored buffer's saved-fingerprint to the
+    /// HOT-EXIT-time baseline (not the fresh-from-disk read), so the existing
+    /// external-edit conflict path fires if the file changed while the app was
+    /// closed. `refreshSavedFingerprint` leaves `originalText` untouched, so the
+    /// buffer stays DIRTY with the user's restored edits. No-op when no buffer
+    /// exists for the tab or no baseline was persisted.
+    public func seedRestoredBaseline(forTabID id: UUID, mtime: Date?, size: Int?) {
+        guard mtime != nil || size != nil,
+              var buf = tabCoordinator.editorBuffers[id] else { return }
+        buf.refreshSavedFingerprint(diskMTime: mtime, diskSize: size)
+        tabCoordinator.setEditorBuffer(buf, forTabID: id)
+    }
 }

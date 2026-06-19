@@ -44,15 +44,26 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     /// unsaved buffer can't bloat the per-session JSON.
     public let unsavedText: String?
 
+    /// TSK-1025 hot-exit clobber guard: the `(mtime, size)` baseline the
+    /// `unsavedText` edits were made FROM (see `Tab.unsavedBaseMTime`).
+    /// Additive-optional (downgrade-safe): a pre-TSK-1025 file has no key and
+    /// decodes to nil → restore falls back to the old fresh-from-disk baseline.
+    public let unsavedBaseMTime: Date?
+    public let unsavedBaseSize: Int?
+
     public init(path: String, viewMode: String,
                 categoryOverride: String? = nil,
                 scrollTopLine: Int? = nil,
-                unsavedText: String? = nil) {
+                unsavedText: String? = nil,
+                unsavedBaseMTime: Date? = nil,
+                unsavedBaseSize: Int? = nil) {
         self.path = path
         self.viewMode = viewMode
         self.categoryOverride = categoryOverride
         self.scrollTopLine = scrollTopLine
         self.unsavedText = unsavedText
+        self.unsavedBaseMTime = unsavedBaseMTime
+        self.unsavedBaseSize = unsavedBaseSize
     }
 }
 

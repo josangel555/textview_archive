@@ -241,7 +241,10 @@ public final class SessionState: ObservableObject {
                 // TSK-718 hot exit: persist unsaved buffer text. Stamped onto
                 // the live tab by `captureUnsavedTextForAllTabs` at the
                 // snapshot boundary; nil when clean → key omitted.
-                unsavedText: t.unsavedText))
+                unsavedText: t.unsavedText,
+                // TSK-1025: persist the (mtime,size) baseline alongside the text.
+                unsavedBaseMTime: t.unsavedBaseMTime,
+                unsavedBaseSize: t.unsavedBaseSize))
         }
         let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
         return (out, remapped)
@@ -378,6 +381,23 @@ public final class SessionState: ObservableObject {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // TSK-1025: path → the (mtime,size) baseline the unsaved edits were made
+        // FROM, so restore seeds the buffer fingerprint + detects an external
+        // change. Only meaningful alongside unsavedText.
+        let unsavedBaseMTimeByPath: [String: Date] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, Date)? in
+                guard let m = snap.unsavedBaseMTime else { return nil }
+                return (snap.path, m)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let unsavedBaseSizeByPath: [String: Int] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, Int)? in
+                guard let s = snap.unsavedBaseSize else { return nil }
+                return (snap.path, s)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -389,7 +409,9 @@ public final class SessionState: ObservableObject {
             model.appendLazyTab(url: url, viewMode: mode,
                                 categoryOverride: override,
                                 scrollTopLine: scrollByPath[t.path],
-                                unsavedText: unsavedByPath[t.path])
+                                unsavedText: unsavedByPath[t.path],
+                                unsavedBaseMTime: unsavedBaseMTimeByPath[t.path],
+                                unsavedBaseSize: unsavedBaseSizeByPath[t.path])
         }
         // Restore the per-session sidebar expansion AFTER `setRoot`
         // (which wipes `expanded` down to just the root). We expand the

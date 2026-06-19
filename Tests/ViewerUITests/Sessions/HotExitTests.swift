@@ -202,4 +202,56 @@ final class HotExitTests: XCTestCase {
         XCTAssertEqual(model2.editor.editorBuffer(forTabID: id2)?.text,
                        "user typed this")
     }
+
+    // MARK: - 4. hot-exit clobber guard (TSK-1025)
+
+    func test_restore_seedsHotExitBaseline_soExternalChangeIsDetected() throws {
+        let url = try writeFile("a.txt", "disk content now")
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        // The persisted hot-exit baseline names an OLDER fingerprint than the
+        // current disk (simulating: the file changed while the app was closed).
+        let oldBase = Date(timeIntervalSince1970: 1_000)
+        var t = model.tabs.tabs[0]
+        t.unsavedText = "my in-flight edit"
+        t.unsavedBaseMTime = oldBase
+        t.unsavedBaseSize = 7                    // != the current file size
+        model.tabCoordinator.replace(at: 0, with: t)
+
+        XCTAssertTrue(model.restoreUnsavedTextIfNeeded(forTabAt: 0))
+        let buf = try XCTUnwrap(model.editor.editorBuffers[id])
+        // The buffer baseline is the HOT-EXIT one, NOT the just-read disk one.
+        XCTAssertEqual(buf.lastSavedMTime, oldBase)
+        XCTAssertEqual(buf.lastSavedSize, 7)
+        // TEETH: the existing conflict path now sees the file as externally
+        // changed (pre-fix the baseline was the current disk → no conflict →
+        // the in-flight edit silently clobbered the external change).
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertTrue(buf.hasExternalEdit(
+            currentMTime: attrs[.modificationDate] as? Date,
+            currentSize: attrs[.size] as? Int),
+            "seeding the hot-exit baseline makes the external change detectable")
+    }
+
+    func test_restore_matchingBaseline_noFalseConflict() throws {
+        let url = try writeFile("a.txt", "disk content")
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        let curMTime = attrs[.modificationDate] as? Date
+        let curSize = attrs[.size] as? Int
+        // Baseline == current disk (file UNCHANGED since hot-exit).
+        var t = model.tabs.tabs[0]
+        t.unsavedText = "edit"
+        t.unsavedBaseMTime = curMTime
+        t.unsavedBaseSize = curSize
+        model.tabCoordinator.replace(at: 0, with: t)
+
+        XCTAssertTrue(model.restoreUnsavedTextIfNeeded(forTabAt: 0))
+        let buf = try XCTUnwrap(model.editor.editorBuffers[id])
+        XCTAssertFalse(buf.hasExternalEdit(currentMTime: curMTime, currentSize: curSize),
+                       "an unchanged file must not raise a false conflict on restore")
+    }
 }
