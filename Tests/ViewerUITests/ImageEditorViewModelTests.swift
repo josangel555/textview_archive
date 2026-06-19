@@ -274,5 +274,83 @@ final class ImageEditorViewModelTests: XCTestCase {
         for _ in 0..<60 { vm.undo() }
         XCTAssertFalse(vm.canUndo)
         XCTAssertTrue(vm.base.ops.isEmpty, "deep undo reaches the pristine document")
+    // MARK: - Vector annotations (TSK-287)
+
+    /// The view-model passthroughs over the host-tested `VectorOverlay` — the
+    /// exact closures the editor's annotation buttons fire. Pins the interaction
+    /// BEHAVIOUR (add / clear / move / z-order) so a wiring regression fails the
+    /// host gate even though the on-screen draw is VM-only.
+
+    func test_addShape_appendsToOverlay_andReturnsId() throws {
+        let vm = try makeVM()
+        XCTAssertTrue(vm.overlay.isEmpty)
+        let id = vm.addShape(ImageEditorView.centeredShape(.rect))
+        XCTAssertEqual(vm.overlay.count, 1)
+        XCTAssertEqual(vm.overlay.shapes.first?.id, id)
+        XCTAssertEqual(vm.overlay.shapes.first?.kind, .rect)
+        // Annotations are an overlay, NOT a raster edit: the document stays
+        // pristine and the rendered size is unchanged.
+        XCTAssertTrue(vm.document.isPristine)
+        XCTAssertEqual(vm.rendered?.width, 40)
+    }
+
+    func test_centeredShape_kindsAndDefaults() {
+        for kind in VectorShape.Kind.allCases {
+            let s = ImageEditorView.centeredShape(kind)
+            XCTAssertEqual(s.kind, kind)
+            XCTAssertEqual(s.style.stroke, .red)
+            // The frame sits inside the normalized canvas.
+            XCTAssertGreaterThanOrEqual(s.frame.minX, 0)
+            XCTAssertLessThanOrEqual(s.frame.maxX, 1)
+        }
+    }
+
+    func test_removeAndClearShapes() throws {
+        let vm = try makeVM()
+        let a = vm.addShape(ImageEditorView.centeredShape(.rect))
+        vm.addShape(ImageEditorView.centeredShape(.line))
+        XCTAssertTrue(vm.removeShape(id: a))
+        XCTAssertEqual(vm.overlay.count, 1)
+        XCTAssertFalse(vm.removeShape(id: a))   // already gone
+        vm.clearShapes()
+        XCTAssertTrue(vm.overlay.isEmpty)
+    }
+
+    func test_moveShape_translatesOrigin() throws {
+        let vm = try makeVM()
+        let id = vm.addShape(VectorShape(
+            kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)))
+        XCTAssertTrue(vm.moveShape(id: id, byX: 0.2, y: 0.1))
+        let moved = vm.overlay.shape(id: id)!
+        XCTAssertEqual(moved.frame.origin.x, 0.3, accuracy: 1e-9)
+        XCTAssertEqual(moved.frame.origin.y, 0.2, accuracy: 1e-9)
+    }
+
+    func test_zOrderPassthroughs() throws {
+        let vm = try makeVM()
+        let a = vm.addShape(ImageEditorView.centeredShape(.rect))   // back
+        let b = vm.addShape(ImageEditorView.centeredShape(.ellipse))// front
+        XCTAssertTrue(vm.bringShapeForward(id: a))   // a -> front
+        XCTAssertEqual(vm.overlay.index(of: a), 1)
+        XCTAssertEqual(vm.overlay.index(of: b), 0)
+        XCTAssertTrue(vm.sendShapeBackward(id: a))   // a -> back
+        XCTAssertEqual(vm.overlay.index(of: a), 0)
+    }
+
+    /// `ImageEditorView.aspectFitRect` maps the overlay's normalized coords into
+    /// the rect the fitted image occupies — the load-bearing geometry the draw
+    /// path relies on. Host-test the math (no rendering).
+    func test_aspectFitRect_centersFittedImage() {
+        // 100x50 image fit into a 200x200 box: scale 2 ⇒ 200x100, centered vert.
+        let r = ImageEditorView.aspectFitRect(
+            imageSize: CGSize(width: 100, height: 50),
+            in: CGRect(x: 0, y: 0, width: 200, height: 200))
+        XCTAssertEqual(r.width, 200, accuracy: 1e-9)
+        XCTAssertEqual(r.height, 100, accuracy: 1e-9)
+        XCTAssertEqual(r.minX, 0, accuracy: 1e-9)
+        XCTAssertEqual(r.minY, 50, accuracy: 1e-9)   // (200-100)/2
+        // Degenerate inputs ⇒ .zero (overlay draws nothing).
+        XCTAssertEqual(ImageEditorView.aspectFitRect(
+            imageSize: .zero, in: CGRect(x: 0, y: 0, width: 10, height: 10)), .zero)
     }
 }

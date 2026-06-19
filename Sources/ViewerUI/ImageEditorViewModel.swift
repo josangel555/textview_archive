@@ -84,6 +84,16 @@ public final class ImageEditorViewModel: ObservableObject {
     /// Once non-nil, it shadows the tonal/geometry render — `rendered` and export
     /// reflect the painted pixels (paint is destructive and cannot ride `ops`).
     @Published public private(set) var paintCanvas: RasterCanvas?
+    // MARK: Vector annotations (TSK-287)
+
+    /// Non-destructive vector annotation overlay (rect/line/arrow/ellipse),
+    /// drawn OVER the rendered raster — never baked into the pixels (so it
+    /// doesn't ride the lossless op-list, the way tonal/geometry edits do). The
+    /// model is the host-tested `ViewerCore.VectorOverlay`; the editor view
+    /// strokes it above the preview via `VectorOverlayView`. Held as STATE here
+    /// (not in `base.ops`) because annotations are an editing-session concern,
+    /// addressed by stable id, and orthogonal to the raster pipeline.
+    @Published public private(set) var overlay = VectorOverlay()
 
     // MARK: Derived outputs (republished on `render()`).
 
@@ -304,6 +314,46 @@ public final class ImageEditorViewModel: ObservableObject {
 
     /// `true` when a destructive paint session has marked the surface.
     public var hasPaint: Bool { paintCanvas != nil }
+
+    // MARK: - Vector annotations (TSK-287)
+
+    /// Add a shape on top of the overlay (front-most). Returns its id so the
+    /// caller can select the freshly-placed shape. No re-render needed — the
+    /// overlay draws above the raster preview, not through `Renderer`.
+    @discardableResult
+    public func addShape(_ shape: VectorShape) -> UUID {
+        overlay.add(shape)
+        return shape.id
+    }
+
+    /// Remove the shape with `id` (no-op for an unknown id).
+    @discardableResult
+    public func removeShape(id: UUID) -> Bool {
+        overlay.remove(id: id)
+    }
+
+    /// Translate the shape with `id` by a normalized delta (no-op for unknown).
+    @discardableResult
+    public func moveShape(id: UUID, byX dx: CGFloat, y dy: CGFloat) -> Bool {
+        overlay.move(id: id, byX: dx, y: dy)
+    }
+
+    /// Raise the shape with `id` one step in the z-order (no-op for unknown).
+    @discardableResult
+    public func bringShapeForward(id: UUID) -> Bool {
+        overlay.bringForward(id: id)
+    }
+
+    /// Lower the shape with `id` one step in the z-order (no-op for unknown).
+    @discardableResult
+    public func sendShapeBackward(id: UUID) -> Bool {
+        overlay.sendBackward(id: id)
+    }
+
+    /// Clear every vector annotation.
+    public func clearShapes() {
+        overlay.removeAll()
+    }
 
     // MARK: - Export
 

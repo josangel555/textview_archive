@@ -45,12 +45,23 @@ struct ImageEditorView: View {
 
     @ViewBuilder private var preview: some View {
         if let cg = vm.rendered {
-            Image(cg, scale: 1, label: Text("Edited image preview"))
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .padding(16)
-                .accessibilityIdentifier("mdv.imageEditor.preview")
+            GeometryReader { geo in
+                let displayed = Self.aspectFitRect(
+                    imageSize: CGSize(width: cg.width, height: cg.height),
+                    in: geo.frame(in: .local))
+                ZStack {
+                    Image(cg, scale: 1, label: Text("Edited image preview"))
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .accessibilityIdentifier("mdv.imageEditor.preview")
+                    // Vector annotations (TSK-287) draw OVER the raster, in the
+                    // exact rect the fitted image occupies — a pure SwiftUI
+                    // sibling (Canvas), so no opaque-representable occlusion.
+                    VectorOverlayView(overlay: vm.overlay, imageRect: displayed)
+                }
+            }
+            .padding(16)
         } else {
             ContentUnavailableView(
                 "Couldn't render image", systemImage: "exclamationmark.triangle",
@@ -115,6 +126,31 @@ struct ImageEditorView: View {
 
                 groupLabel("Paint")
                 paintControls
+
+                groupLabel("Annotations")
+                HStack {
+                    Button { vm.addShape(Self.centeredShape(.rect)) } label: {
+                        Image(systemName: "rectangle")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.addRect")
+                    Button { vm.addShape(Self.centeredShape(.ellipse)) } label: {
+                        Image(systemName: "circle")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.addEllipse")
+                    Button { vm.addShape(Self.centeredShape(.line)) } label: {
+                        Image(systemName: "line.diagonal")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.addLine")
+                    Button { vm.addShape(Self.centeredShape(.arrow)) } label: {
+                        Image(systemName: "arrow.up.right")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.addArrow")
+                    Button { vm.clearShapes() } label: {
+                        Image(systemName: "trash")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.clearShapes")
+                    .disabled(vm.overlay.isEmpty)
+                }
 
                 groupLabel("Document")
                 HStack {
@@ -240,6 +276,41 @@ struct ImageEditorView: View {
                 in: lo...hi)
                 .accessibilityIdentifier("mdv.imageEditor.\(id)")
         }
+    }
+
+    /// A new shape of `kind` placed in the centre of the image (normalized
+    /// `0...1` space): a 40% box for closed shapes, a diagonal across the middle
+    /// 40% for open shapes (line / arrow), styled with the default red stroke so
+    /// it reads as an annotation against most photos.
+    static func centeredShape(_ kind: VectorShape.Kind) -> VectorShape {
+        let style = ShapeStyle(stroke: .red, lineWidth: 3)
+        switch kind {
+        case .rect, .ellipse:
+            return VectorShape(
+                kind: kind, frame: CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4),
+                style: style)
+        case .line, .arrow:
+            let frame = VectorShape.openFrame(
+                from: CGPoint(x: 0.3, y: 0.3), to: CGPoint(x: 0.7, y: 0.7))
+            return VectorShape(kind: kind, frame: frame, style: style)
+        }
+    }
+
+    /// Compute the rect a `imageSize` raster occupies when aspect-fit-centered
+    /// into `bounds` — the same fit `Image(...).aspectRatio(contentMode: .fit)`
+    /// applies — so the vector overlay maps its normalized `0...1` coordinates
+    /// into the exact pixels the image covers. Returns `.zero` for a degenerate
+    /// image (so the overlay simply draws nothing).
+    static func aspectFitRect(imageSize: CGSize, in bounds: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0,
+              bounds.width > 0, bounds.height > 0 else { return .zero }
+        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let w = imageSize.width * scale
+        let h = imageSize.height * scale
+        return CGRect(
+            x: bounds.minX + (bounds.width - w) / 2,
+            y: bounds.minY + (bounds.height - h) / 2,
+            width: w, height: h)
     }
 
     /// Present an `NSSavePanel` and write the edited document via the
