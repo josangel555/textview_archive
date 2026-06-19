@@ -10,6 +10,8 @@ minimap lives — it has model.sourceFindMatchLines + displayText(for:file) + sc
 button above the minimap opens the list in a popover; clicking a row jumps via the existing `scrollSource(toLine:)`
 (reuses the minimap's jump) and dismisses. Host teeth: FindMatchListTests (4 — mapping/trim, out-of-range+same-line
 distinct ids, truncation, empty). The list view + popover render = VM/owner tail.
+VM-validate (4cdd0cb): REGRESSION-CLEAN — 5838 tests, only red is the known TSK-960 capture artifact. 374 → review.
+(Lesson: shipped 374 solo → a full VM cycle for one item; BATCH 2-3 before VM-validating going forward.)
 
 ## LOG 2026-06-18 — TSK-960 diagnosed: the last VM red is a T5-capture artifact, NOT a bug
 
