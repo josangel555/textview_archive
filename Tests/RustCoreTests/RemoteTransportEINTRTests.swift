@@ -41,4 +41,20 @@ final class RemoteTransportEINTRTests: XCTestCase {
     func test_readFull_eof_throws() {
         XCTAssertThrowsError(try RemoteTransport.readFull(4) { _ in 0 })
     }
+
+    // TSK-994: request ids must start at 1 (the old increment-then-read started
+    // at 2). read-then-increment + &+ wrap.
+    func test_nextRequestId_startsAtOne_andMonotonic() {
+        var c: UInt64 = 1   // the production initial value of `nextId`
+        XCTAssertEqual(RemoteTransport.nextRequestId(&c), 1, "first id is 1, not 2")
+        XCTAssertEqual(RemoteTransport.nextRequestId(&c), 2)
+        XCTAssertEqual(RemoteTransport.nextRequestId(&c), 3)
+        XCTAssertEqual(c, 4, "counter advanced past the last issued id")
+    }
+
+    func test_nextRequestId_wrapsAtMax() {
+        var c: UInt64 = .max
+        XCTAssertEqual(RemoteTransport.nextRequestId(&c), .max)
+        XCTAssertEqual(RemoteTransport.nextRequestId(&c), 0)   // &+ wrap
+    }
 }

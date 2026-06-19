@@ -284,14 +284,22 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
         }
     }
 
+    /// Read-then-increment request-id generator: the first id is 1, not 2
+    /// (TSK-994 — the old `nextId &+= 1; let id = nextId` skipped id 1). Wraps
+    /// at UInt64.max (&+). Caller holds `state`; `static` so it's unit-testable.
+    static func nextRequestId(_ counter: inout UInt64) -> UInt64 {
+        let id = counter
+        counter &+= 1
+        return id
+    }
+
     private func callInner(_ method: String, requestBody: [UInt8], aux: [UInt8]) throws -> [UInt8]? {
         state.lock()
         if let dead = closedError {
             state.unlock()
             throw dead
         }
-        nextId &+= 1
-        let id = nextId
+        let id = Self.nextRequestId(&nextId)   // ids start at 1 (TSK-994)
         let slot = Slot()
         pending[id] = slot
         state.unlock()
