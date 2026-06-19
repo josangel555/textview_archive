@@ -18,7 +18,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 
 **P0 — user-felt latency (fix first; most need a VM/Instruments trace):**
 - [ ] **TSK-892** — File-nav hover is slow (constant friction; find per-hover compute) `[trace]`
-- [ ] **TSK-887** — Command palette typing laggy `[trace]`
+- [~] **TSK-887** — Command palette typing laggy `[36e66ec → review; @-MODE SLICE: memoized the per-keystroke whole-file heading re-parse (ParseMemo, 2 host teeth). REMAINING: bare-mode merged() rebuild per keystroke (cache on open) + full typing-latency trace]`
 - [ ] **TSK-888** — Global search typing + result-scroll laggy `[trace]`
 - [ ] **TSK-890 / 891 / 895** — CM6 editor feel: drag-select slow / Page-Up janky / h-scrollbar flicker on type (MD≫Swift; ties TSK-791) `[trace]`
 - [ ] **TSK-889** — ~699KB JSON open laggy (warm path; distinct from TSK-842 cold/iCloud) `[trace]`
