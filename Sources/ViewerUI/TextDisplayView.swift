@@ -1005,20 +1005,19 @@ public final class SourceTextController: NSViewController {
             applyWrap(effectiveWrap)
             lastWordWrap = effectiveWrap
         }
-        // NSLayoutManager renders dots / arrows / pilcrows when this is
-        // on, in its built-in faint grey (`tertiaryLabelColor`). There is
-        // NO public API to override the marker color or substitute glyphs
-        // here — doing so requires subclassing `NSLayoutManager` and
-        // overriding `drawGlyphs(forGlyphRange:at:)`, which has
-        // historically triggered the SwiftUI compositor bug in this
-        // codebase (see LESSONS.md "Things to NOT do" + the compositor
-        // section). So the read-only source view keeps the OS default
-        // tone. The IntelliJ-style subtle-but-readable rendering (item I2)
-        // lives in the editable path instead — CodeMirror 6's
-        // show-invisibles ViewPlugin, styled via `.cm-invisible` in
-        // `Resources/codemirror/codemirror.css`, which is fully
-        // controllable and compositor-safe (WKWebView, no NSLayoutManager).
-        textView.layoutManager?.showsInvisibleCharacters = showInvisibles
+        // TSK-364: the read-only source view's invisibles are now drawn by a
+        // separate compositor-safe SwiftUI `Canvas` overlay
+        // (`SourceInvisiblesView`) in a readable secondary tone, NOT by
+        // `NSLayoutManager.showsInvisibleCharacters` (which paints them in the
+        // washed-out OS `tertiaryLabelColor` with no recolor API — the
+        // "invisibles too grey" complaint). Recoloring the OS markers would
+        // need an `NSLayoutManager` subclass, the documented compositor-bug
+        // trigger (LESSONS.md "Things to NOT do"); the overlay follows the
+        // safe `SourceGutterView` pattern (scroll-synced Canvas, no ruler, no
+        // layout-manager subclass). Keep the OS marker OFF so the two don't
+        // double-draw. The IntelliJ-style tone matches the editable CM6 path's
+        // `.cm-invisible` styling for view/edit parity.
+        textView.layoutManager?.showsInvisibleCharacters = false
 
         applyAttributedString(
             text: text, fontSize: fontSize, fontName: fontName,

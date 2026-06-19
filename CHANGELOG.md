@@ -23,6 +23,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 - **More diagram formats** + **richer web viewer** (themed colors + a server-side command palette at `/cmd`).
 
 ### Fixed
+- **Invisible characters are readable in the Source view** — turning on "Show invisible characters" now draws spaces (·) and tabs (→) in a clear secondary tone instead of the washed-out OS faint grey, matching the editor's invisibles.
 - **Editor current-line highlight no longer sticks after a drag-select** — while you drag to select text the current-line highlight now stays out of the way, and once you let go it follows your caret again instead of getting stuck on the line where you released the mouse.
 - **Fold / Unfold All now works in the Source view** — the menu items were dead in Source mode (only the CM6 editor folded); they now collapse/expand in any foldable lens.
 - **Git diff: select multiple lines** — you can now drag-select across several diff lines instead of just one.

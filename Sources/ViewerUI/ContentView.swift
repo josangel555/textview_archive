@@ -1074,6 +1074,27 @@ struct SourceModeView: View {
                         hoveredLine: hoveredSourceLine,
                         theme: model.activeTheme
                     )
+                    // TSK-364: readable "show invisibles" markers (·/→) drawn
+                    // by a scroll-synced SwiftUI Canvas overlay — NOT the
+                    // washed-out OS faint-grey (`NSLayoutManager.showsInvisible
+                    // Characters`, which has no recolor API). Drawn AFTER the
+                    // text + given its own layer above the source rows
+                    // (`.compositingGroup().zIndex(1)`) so it never gets
+                    // occluded by the NSTextView's CALayer (the sibling-blank
+                    // class, LESSONS) in any layout branch.
+                    if model.showInvisibleChars && !file.isLargeReadOnly {
+                        SourceInvisiblesView(
+                            state: sourceView.sourceScrollState,
+                            text: displayed,
+                            fontSize: model.effectiveContentFontSize,
+                            fontName: model.sourceFontName,
+                            theme: model.activeTheme
+                        )
+                        .compositingGroup()
+                        .zIndex(1)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                               alignment: .topLeading)
+                    }
                     // TSK-305: scaled document overview / minimap, top-right.
                     // Markdown only (it maps the heading structure). Drawn
                     // AFTER the text in the ZStack so its own layer sits above
