@@ -52,6 +52,12 @@ public final class RingBufferSink: ObservabilitySink, @unchecked Sendable {
     /// LSP/MCP/grammar chatter while bounding worst-case retained bytes.
     public static let defaultCapacity = 5_000
 
+    /// Cardinality cap on distinct metric series (per kind). A high-cardinality
+    /// tag (e.g. a unique id per call) would otherwise grow `counters`/`gauges`
+    /// without bound; once a kind hits this cap, NEW series are dropped (existing
+    /// series still update) and `droppedMetricSeriesCount` increments.
+    public static let maxMetricSeries = 4_096
+
     private let lock = NSLock()
     private let capacity: Int
     private let fanout: OSLogFanout?
@@ -68,6 +74,9 @@ public final class RingBufferSink: ObservabilitySink, @unchecked Sendable {
     // Metric registry. Keyed by a stable string built from name+tags.
     private var counters: [MetricKey: Double] = [:]
     private var gauges: [MetricKey: Double] = [:]
+    /// Count of metric series rejected by the cardinality cap (bounded — not
+    /// keyed by tags, so it can't itself leak).
+    private var droppedMetricSeries: UInt64 = 0
 
     /// `os.Logger` cache keyed by event subsystem category, so a Logger
     /// is built once per subsystem rather than per emit.
@@ -118,14 +127,22 @@ public final class RingBufferSink: ObservabilitySink, @unchecked Sendable {
     public func counter(_ name: String, _ delta: Int64, _ tags: [String: String]) {
         let key = MetricKey(name: name, tags: tags)
         lock.lock()
-        counters[key, default: 0] += Double(delta)
+        if counters[key] == nil && counters.count >= Self.maxMetricSeries {
+            droppedMetricSeries &+= 1          // cardinality cap: drop new series
+        } else {
+            counters[key, default: 0] += Double(delta)
+        }
         lock.unlock()
     }
 
     public func gauge(_ name: String, _ value: Double, _ tags: [String: String]) {
         let key = MetricKey(name: name, tags: tags)
         lock.lock()
-        gauges[key] = value
+        if gauges[key] == nil && gauges.count >= Self.maxMetricSeries {
+            droppedMetricSeries &+= 1          // cardinality cap: drop new series
+        } else {
+            gauges[key] = value
+        }
         lock.unlock()
     }
 
@@ -195,6 +212,14 @@ public final class RingBufferSink: ObservabilitySink, @unchecked Sendable {
         return gauges[key]
     }
 
+    /// Number of metric series rejected by the cardinality cap (test seam +
+    /// observability — a non-zero value means high-cardinality tags are leaking
+    /// at a call site).
+    public var droppedMetricSeriesCount: UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        return droppedMetricSeries
+    }
+
     /// Drop all buffered events and metrics. Test seam (and a future
     /// "clear log" UI affordance).
     public func reset() {
@@ -205,6 +230,7 @@ public final class RingBufferSink: ObservabilitySink, @unchecked Sendable {
         totalEmitted = 0
         counters.removeAll()
         gauges.removeAll()
+        droppedMetricSeries = 0
     }
 
     // MARK: - Internals

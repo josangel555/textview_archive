@@ -278,4 +278,34 @@ final class ObservabilitySinkEdgeCasesTests: XCTestCase {
         XCTAssertEqual(sink.emittedCount, 2, "emittedCount restarts after reset")
         XCTAssertEqual(sink.bufferedCount, 2)
     }
+
+    // TSK-1005: the metric registry must be bounded by tag cardinality — a
+    // high-cardinality tag (unique value per call) can't grow counters/gauges
+    // without bound. TEETH: pre-cap, distinctSeries would equal the push count.
+    func test_metricRegistry_isBoundedByCardinality() {
+        let sink = RingBufferSink(capacity: 16)
+        let over = RingBufferSink.maxMetricSeries + 500
+        for i in 0..<over {
+            sink.counter("req", 1, ["id": "\(i)"])   // unique tag per call
+            sink.gauge("lat", Double(i), ["id": "\(i)"])
+        }
+        let metrics = sink.snapshotMetrics()
+        let counters = metrics.filter { $0.kind == .counter }.count
+        let gauges = metrics.filter { $0.kind == .gauge }.count
+        XCTAssertLessThanOrEqual(counters, RingBufferSink.maxMetricSeries)
+        XCTAssertLessThanOrEqual(gauges, RingBufferSink.maxMetricSeries)
+        XCTAssertGreaterThan(sink.droppedMetricSeriesCount, 0,
+                             "high-cardinality series should be dropped past the cap")
+
+        // An EXISTING series still updates after the cap is hit.
+        sink.counter("req", 9, ["id": "0"])
+        XCTAssertEqual(sink.counterValue("req", ["id": "0"]), 10)
+    }
+
+    func test_metricRegistry_belowCap_keepsEverySeries() {
+        let sink = RingBufferSink(capacity: 16)
+        for i in 0..<100 { sink.counter("c", 1, ["id": "\(i)"]) }
+        XCTAssertEqual(sink.snapshotMetrics().filter { $0.kind == .counter }.count, 100)
+        XCTAssertEqual(sink.droppedMetricSeriesCount, 0)
+    }
 }
