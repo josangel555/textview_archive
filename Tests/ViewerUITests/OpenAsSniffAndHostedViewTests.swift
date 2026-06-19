@@ -193,14 +193,21 @@ final class OpenAsSniffAndHostedViewTests: XCTestCase {
 
     // MARK: - canShowFileHistory gating
 
-    func test_canShowFileHistory_falseOutsideRepo() throws {
+    // NOTE (TSK-972): `canShowFileHistory` is now NON-BLOCKING — its first
+    // (uncached) call returns `true` synchronously and runs the real git
+    // probe off the main thread, then caches the true answer. So these tests
+    // resolve the file by kicking the probe, awaiting the cache write, then
+    // asserting the cached value (the answer the menu ends up showing).
+
+    func test_canShowFileHistory_falseOutsideRepo() async throws {
         let url = tmp.appendingPathComponent("loose.txt")
         try "x".write(to: url, atomically: true, encoding: .utf8)
-        XCTAssertFalse(DocumentModel().canShowFileHistory(for: url),
-                       "a file not under any git repo has no history")
+        let m = DocumentModel()
+        let outside = try await resolvedHistoryAvailability(m, url)
+        XCTAssertFalse(outside, "a file not under any git repo has no history")
     }
 
-    func test_canShowFileHistory_trueForTracked_falseForUntracked() throws {
+    func test_canShowFileHistory_trueForTracked_falseForUntracked() async throws {
         let repo = try makeRepo()
         try gitWrite("tracked.txt", "x\n", in: repo)
         try git(["add", "tracked.txt"], in: repo)
@@ -209,12 +216,29 @@ final class OpenAsSniffAndHostedViewTests: XCTestCase {
         try gitWrite("untracked.txt", "y\n", in: repo)
 
         let m = DocumentModel()
-        XCTAssertTrue(m.canShowFileHistory(for: repo.appendingPathComponent("tracked.txt")),
-                      "tracked file ⇒ history available")
-        XCTAssertFalse(m.canShowFileHistory(for: repo.appendingPathComponent("untracked.txt")),
-                       "untracked file ⇒ no history")
-        XCTAssertFalse(m.canShowFileHistory(for: repo.appendingPathComponent("ghost.txt")),
-                       "nonexistent file ⇒ no history")
+        let tracked = try await resolvedHistoryAvailability(
+            m, repo.appendingPathComponent("tracked.txt"))
+        XCTAssertTrue(tracked, "tracked file ⇒ history available")
+        let untracked = try await resolvedHistoryAvailability(
+            m, repo.appendingPathComponent("untracked.txt"))
+        XCTAssertFalse(untracked, "untracked file ⇒ no history")
+        let ghost = try await resolvedHistoryAvailability(
+            m, repo.appendingPathComponent("ghost.txt"))
+        XCTAssertFalse(ghost, "nonexistent file ⇒ no history")
+    }
+
+    /// Kick the off-main availability probe for `url`, wait for the cache to
+    /// fill, then return the resolved (cached) answer.
+    private func resolvedHistoryAvailability(
+        _ m: DocumentModel, _ url: URL
+    ) async throws -> Bool {
+        _ = m.canShowFileHistory(for: url)   // schedules the off-main probe
+        let deadline = Date().addingTimeInterval(5)
+        while !m.fileHistoryAvailability.hasCachedValue(for: url) {
+            if Date() > deadline { XCTFail("history probe timed out"); break }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return m.canShowFileHistory(for: url)
     }
 
     // MARK: - git scratch helpers

@@ -2382,16 +2382,34 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: - Git File History (WAVE 2b item 2)
 
+    /// Backs the synchronous `canShowFileHistory` menu/context-menu gate
+    /// without forking git on the main thread (TSK-972). The real
+    /// `discoverRoot` + `isTracked` probe runs off-main; results are cached
+    /// and the answer is republished when it lands so SwiftUI re-evaluates
+    /// `.disabled`. See `FileHistoryAvailabilityCache`.
+    let fileHistoryAvailability = FileHistoryAvailabilityCache()
+
     /// True iff `url` lives in a git repo AND is tracked — i.e. the
     /// in-app File-History view has something to show. Drives the
     /// enable/disable state of the "File History" menu items in the
-    /// TabBar and sidebar context menus. Synchronous: `discoverRoot` is
-    /// a filesystem walk and `isTracked` is a cheap index probe.
+    /// TabBar and sidebar context menus.
+    ///
+    /// **NON-BLOCKING (TSK-972).** This used to fork `git ls-files` inline,
+    /// which ran on the MAIN THREAD because SwiftUI re-evaluates the
+    /// `.disabled(!canShowFileHistory(...))` modifier on every menu body
+    /// render (and AppKit menu validation runs main-thread too) — stalling
+    /// the run loop per render and freezing the UI on a wedged repo. Now it
+    /// answers from `fileHistoryAvailability`: a cached value if known, else
+    /// `true` (enabled) while an off-main probe runs. When the probe lands,
+    /// the cache republishes the model so the menu re-evaluates with the
+    /// true value. `openFileHistory` independently re-gates, so a click
+    /// during the brief unknown window is a safe no-op for an untracked file.
     public func canShowFileHistory(for url: URL) -> Bool {
-        guard let root = GitClient.discoverRoot(from: url) else { return false }
-        let rel = Self.repoRelativePath(of: url, root: root)
-        guard let rel, !rel.isEmpty else { return false }
-        return GitClient(repoRoot: root).isTracked(path: rel)
+        fileHistoryAvailability.availability(for: url) { [weak self] _, _ in
+            // A probe resolved to a value different from what was cached —
+            // republish so SwiftUI re-reads `.disabled` / AppKit re-validates.
+            self?.objectWillChange.send()
+        }
     }
 
     /// Open the in-app `FileHistoryView` for `url` as a view-hosting tab

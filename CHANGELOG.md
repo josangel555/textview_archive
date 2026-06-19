@@ -52,6 +52,7 @@ _A large batch landed today (the integrated backlog-drain wave). Highlights belo
 
 ### Performance
 - **Smoother typing in big files** — the bottom status bar (Lines / Chars / Size / indent / line-endings) no longer re-encodes and rescans the whole editor buffer on every keystroke; the readout now reuses its last result when the text hasn't changed and only recomputes on a real edit, so typing into large source files stays fluid.
+- **No UI stall when right-clicking files in a git repo** — the "File History" menu item used to run `git` on the main thread every time the tab/sidebar context menu drew (which could be many times per open), briefly freezing the app on a slow or locked repo; the check now runs in the background and the menu enables/disables itself once it resolves.
 - **Smoother drag-selection in the editor** — dragging to select text no longer re-scans the visible page for matching words on every mouse-move (it was doing that on each frame of the drag); the match highlight now runs once when you let go, so the selection sweep stays fluid in large/wide files.
 - **Faster editor + highlighting plumbing** — the Rust FFI no longer double-copies every response frame, syntax tokenization stops re-bridging the whole file per highlight, and `cm_apply` is moving to keystroke-sized edits instead of shipping the whole document each tick.
 - **Folder stats no longer block** other folder lookups (the git walk runs off the actor + coalesces duplicate work).
