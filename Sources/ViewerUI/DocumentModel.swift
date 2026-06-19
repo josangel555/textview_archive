@@ -6093,6 +6093,12 @@ public final class DocumentModel: ObservableObject {
         // Cancel (we abort). Routed through every close-path entry —
         // `closeTab`, `closeOtherTabs`, `closeTabsToRight`, and the
         // app delegate's "close window" handler.
+        //
+        // TSK-733: the prompt is the CLOSE-path contract ONLY. A session
+        // SWITCH must NOT prompt — it drains tabs via
+        // `closeAllTabsPreservingDirty()` (the dirty buffer is snapshotted
+        // into the session and restored on switch-back), so this prompt is
+        // exercised only when the user is genuinely DESTROYING a tab.
         switch confirmCloseIfDirty(at: index) {
         case .none:
             break
@@ -6108,6 +6114,19 @@ public final class DocumentModel: ObservableObject {
         case .cancel:
             return
         }
+        closeTabUnconditionally(at: index)
+    }
+
+    /// The prompt-free core of `closeTab(at:)`: capture scroll, hand the
+    /// tab mutation + per-tab cleanups to the coordinator, purge non-
+    /// coordinator caches, settle selection, and re-attach the watcher.
+    /// Split out (TSK-733) so a session SWITCH can drain its tabs WITHOUT
+    /// re-running the dirty-close prompt — the outgoing session's dirty
+    /// buffers are already snapshotted (`captureUnsavedTextForAllTabs`)
+    /// and restored on switch-back, so prompting on a switch is wrong.
+    /// The user-initiated close path (`closeTab` / `closeOtherTabs` /
+    /// `closeTabsToRight`) still gates on `confirmCloseIfDirty` first.
+    private func closeTabUnconditionally(at index: Int) {
         guard tabs.tabs.indices.contains(index) else { return }
         // UX-K (#231): if we're closing the currently-VISIBLE tab, sample its
         // scroll position first so a snapshot taken right after close (e.g.
@@ -6129,6 +6148,34 @@ public final class DocumentModel: ObservableObject {
         settleSelectionAfterClose()
         updateDerived()
         startWatchingCurrentFile()
+    }
+
+    /// TSK-733: drain EVERY open tab WITHOUT the dirty-close prompt. Used
+    /// by the session-switch path (`SessionsAppCoordinator
+    /// .switchSessionFaçade`) to clear the shared `DocumentModel`'s tab
+    /// list for the incoming session. A switch is NOT a destructive close:
+    /// the outgoing session's dirty editor buffers have already been
+    /// snapshotted into its `SessionSnapshot` via
+    /// `captureUnsavedTextForAllTabs()` (TSK-718 hot-exit machinery), so
+    /// switching back rehydrates the in-flight edits byte-identical and the
+    /// tab comes back dirty. Prompting Save/Don't-Save/Cancel here would be
+    /// a spurious dialog on a non-destructive operation (the TSK-733 bug).
+    ///
+    /// HEX-dirty bytes are dropped per-tab (mirroring `closeTab`'s
+    /// `.discard` branch) so a later same-tab-id reuse can't resurrect
+    /// them; HEX edits are not part of the session hot-exit snapshot.
+    public func closeAllTabsPreservingDirty() {
+        // Capture text-editor unsaved buffers onto each tab's `unsavedText`
+        // before the buffers are dropped by the coordinator's close fan-out,
+        // so a snapshot taken AFTER the drain (or already taken by the
+        // caller's detach) carries the in-flight edits. Idempotent with the
+        // detach-time capture — the equality guard inside makes a re-capture
+        // a no-op.
+        captureUnsavedTextForAllTabs()
+        while !tabs.tabs.isEmpty {
+            hexDirtyBytes.removeValue(forKey: tabs.tabs[0].id)
+            closeTabUnconditionally(at: 0)
+        }
     }
 
     /// Post-close selection settle (TSK-266): closing a tab makes the

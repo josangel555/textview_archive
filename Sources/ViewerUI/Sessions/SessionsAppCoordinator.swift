@@ -628,9 +628,17 @@ public final class SessionsAppCoordinator: ObservableObject {
         // Drop old tabs so the incoming hydrate starts from a clean
         // slate; otherwise the outgoing session's tabs would survive
         // when the incoming snapshot has fewer (or none).
-        while !model.tabs.tabs.isEmpty {
-            model.closeTab(at: 0)
-        }
+        //
+        // TSK-733: drain WITHOUT the dirty-close prompt. The outgoing
+        // session's dirty editor buffers were already snapshotted into its
+        // `SessionSnapshot` by `detach()` → `captureUnsavedTextForAllTabs()`
+        // above, so switching back rehydrates the in-flight edits and the
+        // tab returns dirty. A plain `closeTab(at:)` loop here would re-run
+        // `confirmCloseIfDirty` for every dirty tab — a spurious
+        // Save/Don't-Save/Cancel dialog on a NON-destructive switch (the
+        // exact bug TSK-733 fixes). The prompt stays for the genuine close
+        // path (`closeTab` / `closeOtherTabs` / window-close).
+        model.closeAllTabsPreservingDirty()
         let rootURL: URL = {
             if let p = snap.sidebarRootPath, !p.isEmpty {
                 return URL(fileURLWithPath: p)
