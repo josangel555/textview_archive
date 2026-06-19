@@ -31,13 +31,14 @@ public enum RemoteCoreAttach {
     /// engine use.
     @discardableResult
     public static func attachIfConfigured(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        _transportForTest: RemoteTransport? = nil
     ) -> Outcome {
         guard let path = environment["MDV_REMOTE_SOCKET"], !path.isEmpty else {
             return .notConfigured
         }
         do {
-            let remote = try RemoteTransport(socketPath: path)
+            let remote = try _transportForTest ?? RemoteTransport(socketPath: path)
             // Resilience: a lost connection reverts to local engines. The
             // handler runs on the transport's reader thread; the registry
             // setter is lock-guarded.
@@ -50,6 +51,18 @@ public enum RemoteCoreAttach {
                     fields: ["socket": path, "error": failure.map { "\($0)" } ?? "eof"])
             }
             CoreTransportRegistry.current = remote
+            // TSK-1010: if the connection died during the init→install window
+            // (onClose may not have fired — it was set just above), revert. An
+            // installed dead transport would make every adapter call throw
+            // against the closed socket instead of using the in-process engines.
+            if remote.isClosed {
+                CoreTransportRegistry.resetToInProcess()
+                Obs.shared.emit(
+                    .warn, "rust-core",
+                    "remote core closed during attach — staying in-process",
+                    fields: ["socket": path])
+                return .failed("connection closed during attach")
+            }
             Obs.shared.emit(
                 .info,
                 "rust-core",

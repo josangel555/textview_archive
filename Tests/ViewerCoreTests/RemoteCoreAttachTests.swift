@@ -107,4 +107,34 @@ final class RemoteCoreAttachTests: XCTestCase {
         let ranked = try mdvCoreFuzzyRank(query: "fz", candidates: ["fuzzy", "nope"])
         XCTAssertEqual(ranked.first?.index, 0)
     }
+
+    // TSK-1010: a transport that closed during the init→install window must not
+    // stay installed (onClose may not have fired yet). Inject a pre-closed
+    // socket-less transport — no mdv-serve needed, so this always runs.
+    func test_attach_revertsIfTransportDiedDuringWindow() {
+        CoreTransportRegistry.resetToInProcess()
+        let dead = RemoteTransport(testSocketlessCapabilities: 0)
+        dead._testSimulateReaderExit(nil)   // died during the window
+        let outcome = RemoteCoreAttach.attachIfConfigured(
+            environment: ["MDV_REMOTE_SOCKET": "/fake.sock"],
+            _transportForTest: dead)
+        guard case .failed = outcome else {
+            return XCTFail("a transport closed during attach must fail, got \(outcome)")
+        }
+        XCTAssertTrue(CoreTransportRegistry.current is InProcessTransport,
+                      "the dead transport must be reverted, not installed")
+    }
+
+    func test_attach_installsLiveInjectedTransport() {
+        CoreTransportRegistry.resetToInProcess()
+        let live = RemoteTransport(testSocketlessCapabilities: 0b101)
+        let outcome = RemoteCoreAttach.attachIfConfigured(
+            environment: ["MDV_REMOTE_SOCKET": "/fake.sock"],
+            _transportForTest: live)
+        guard case .attached(let caps) = outcome else {
+            return XCTFail("a live transport must attach, got \(outcome)")
+        }
+        XCTAssertEqual(caps, 0b101)
+        XCTAssertTrue(CoreTransportRegistry.current is RemoteTransport)
+    }
 }

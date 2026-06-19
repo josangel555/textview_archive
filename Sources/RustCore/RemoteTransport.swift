@@ -63,6 +63,14 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     /// before issuing calls/subscriptions; delivered on the reader thread.
     public var onClose: (@Sendable (RemoteError?) -> Void)?
 
+    /// True once the reader has exited (clean EOF or error). TSK-1010: lets the
+    /// attach path detect a connection that died during the init→install window
+    /// (when `onClose` may not have been assigned yet) and revert to in-process.
+    public var isClosed: Bool {
+        state.lock(); defer { state.unlock() }
+        return closedError != nil
+    }
+
     /// Per-call deadline: a server that stops answering must not wedge an
     /// adapter thread forever (the Swift fallback fires instead).
     public static let callDeadline: TimeInterval = 30
@@ -208,6 +216,13 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     init(testSocketlessCapabilities caps: UInt64 = 0) {
         self.fd = -1
         self.capabilities = caps
+    }
+
+    /// TSK-1010 test seam: drive the reader-exit teardown (sets `closedError`,
+    /// fires `onClose` if set) without a socket, to exercise the close/attach
+    /// window. Safe on a socket-less instance — `readerDidExit` never touches fd.
+    func _testSimulateReaderExit(_ failure: RemoteError? = nil) {
+        readerDidExit(failure)
     }
 
     /// Register a handler WITHOUT the server round-trip (the part of
