@@ -37,12 +37,21 @@ public struct DependencyPackage: Equatable, Sendable, Hashable {
     public var version: String?
     public var kind: Kind
     public var source: Source
+    /// A repository / git URL declared inline on the dependency itself, when the
+    /// manifest carries one — e.g. a Cargo git dependency
+    /// (`foo = { git = "https://github.com/owner/foo" }`). `nil` for ordinary
+    /// registry deps, whose repo URL must be traced via registry metadata (see
+    /// `DependencySourceResolver`). This is the *only* repo URL a manifest can
+    /// give us without a network round-trip.
+    public var repository: String?
 
-    public init(name: String, version: String?, kind: Kind, source: Source) {
+    public init(name: String, version: String?, kind: Kind, source: Source,
+                repository: String? = nil) {
         self.name = name
         self.version = version
         self.kind = kind
         self.source = source
+        self.repository = repository
     }
 }
 
@@ -177,17 +186,26 @@ public enum PackageManifestParser {
         var packages: [DependencyPackage] = []
         var seen = Set<String>()
 
-        func add(_ name: String, _ version: String?, _ kind: DependencyPackage.Kind) {
+        func add(_ name: String, _ version: String?, _ kind: DependencyPackage.Kind,
+                 _ repository: String? = nil) {
             let dedup = "\(name)\u{0}\(kind.rawValue)"
             guard seen.insert(dedup).inserted else { return }
             packages.append(DependencyPackage(name: name, version: version,
-                                              kind: kind, source: .cargo))
+                                              kind: kind, source: .cargo,
+                                              repository: repository))
         }
 
         func updateVersion(of name: String, kind: DependencyPackage.Kind, to version: String) {
             guard !version.isEmpty else { return }
             if let idx = packages.firstIndex(where: { $0.name == name && $0.kind == kind }) {
                 packages[idx].version = version
+            }
+        }
+
+        func updateRepository(of name: String, kind: DependencyPackage.Kind, to repo: String) {
+            guard !repo.isEmpty else { return }
+            if let idx = packages.firstIndex(where: { $0.name == name && $0.kind == kind }) {
+                packages[idx].repository = repo
             }
         }
 
@@ -237,12 +255,16 @@ public enum PackageManifestParser {
                 let kind: DependencyPackage.Kind = (section == .dev) ? .dev : .direct
                 let name = unquoteTOML(key)
                 guard !name.isEmpty else { continue }
-                add(name, cargoVersion(from: value), kind)
+                add(name, cargoVersion(from: value), kind, cargoRepository(from: value))
 
             case .subDep(let pkg, let kind):
-                // Only the `version` key is meaningful for the already-added
-                // sub-table package; path/git/features lines are ignored.
-                if key == "version" { updateVersion(of: pkg, kind: kind, to: unquoteTOML(value)) }
+                // `version` and `git` are the keys we care about on the
+                // already-added sub-table package; path/features lines are ignored.
+                if key == "version" {
+                    updateVersion(of: pkg, kind: kind, to: unquoteTOML(value))
+                } else if key == "git" {
+                    updateRepository(of: pkg, kind: kind, to: unquoteTOML(value))
+                }
 
             case .other:
                 continue
@@ -283,6 +305,15 @@ public enum PackageManifestParser {
         }
         let s = unquoteTOML(v)
         return s.isEmpty ? nil : s
+    }
+
+    /// Extract the `git = "…"` repository URL from a Cargo dependency value, for
+    /// the inline-table git form (`foo = { git = "https://github.com/o/foo" }`).
+    /// `nil` for a registry/path dep (no `git` key) or a bare-string value.
+    private static func cargoRepository(from value: String) -> String? {
+        let v = value.trimmingCharacters(in: .whitespaces)
+        guard v.hasPrefix("{") else { return nil }
+        return inlineTableValue(v, key: "git")
     }
 
     /// Pull `key = "value"` out of a one-line inline table `{ … }`.
