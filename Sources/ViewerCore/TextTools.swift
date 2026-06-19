@@ -102,6 +102,127 @@ public enum TextTools {
         }.joined(separator: "\n")
     }
 
+    // MARK: - Editor line power-ops (TSK-675 — duplicate / move up-down)
+
+    /// Result of an editor line transform: the rewritten document text plus the
+    /// 0-based, inclusive line range the editor should RE-SELECT afterwards (so
+    /// "duplicate" leaves the copy selected, and "move" keeps the same lines
+    /// selected as they travel). `lineRange` is in the SAME 0-based-inclusive
+    /// convention the inputs use; `lowerBound == upperBound` is a single line.
+    public struct LineOpResult: Equatable, Sendable {
+        public let text: String
+        public let lineRange: ClosedRange<Int>
+        public init(text: String, lineRange: ClosedRange<Int>) {
+            self.text = text
+            self.lineRange = lineRange
+        }
+    }
+
+    /// Split `text` into lines while remembering whether the document ended with
+    /// a trailing newline. Unlike `splitLines`, this is LOSSLESS for the
+    /// trailing-newline distinction the editor cares about: `"a\nb"` → (`["a","b"]`,
+    /// hasTrailingNewline:false) but `"a\nb\n"` → (`["a","b"]`, true). All three
+    /// newline flavours (`\n`, `\r\n`, `\r`) count as one separator and the
+    /// rejoin normalises to `\n` (matching the other line transforms). An empty
+    /// document is a single empty line with no trailing newline.
+    static func editorLines(_ text: String) -> (lines: [String], hasTrailingNewline: Bool) {
+        if text.isEmpty { return ([""], false) }
+        let parts = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+            .map(String.init)
+        // A trailing separator yields a final empty element; treat that as
+        // "document ends in a newline" and drop the phantom empty line, so the
+        // line COUNT matches what the editor shows (N lines, not N+1).
+        guard let last = parts.last else { return ([""], false) }
+        if last.isEmpty && parts.count > 1 {
+            return (Array(parts.dropLast()), true)
+        }
+        return (parts, false)
+    }
+
+    /// Rejoin editor lines with `\n`, restoring the trailing-newline marker.
+    private static func joinEditorLines(_ lines: [String], hasTrailingNewline: Bool) -> String {
+        let body = lines.joined(separator: "\n")
+        return hasTrailingNewline ? body + "\n" : body
+    }
+
+    /// Clamp a possibly out-of-bounds line range to the valid `[0, count-1]`
+    /// document bounds, returning `nil` for an empty doc. (`ClosedRange` already
+    /// guarantees `lowerBound <= upperBound`, so only the document edges need
+    /// clamping — a selection that scrolled past EOF after an external edit.)
+    static func clampLineRange(_ range: ClosedRange<Int>, lineCount: Int) -> ClosedRange<Int>? {
+        guard lineCount > 0 else { return nil }
+        let lo = max(0, min(range.lowerBound, lineCount - 1))
+        let hi = max(0, min(range.upperBound, lineCount - 1))
+        return lo...hi
+    }
+
+    /// Duplicate the lines in `lineRange` (0-based, inclusive), inserting an
+    /// EXACT copy immediately BELOW the original block, and return the new text
+    /// with the selection moved onto the freshly-inserted copy (so a repeat keeps
+    /// growing the block, matching VS Code / Sublime "Duplicate Line(s)"). The
+    /// duplicated copy carries a trailing newline into the document when the
+    /// original block was the last line and the file had no trailing newline —
+    /// i.e. duplicating the last unterminated line yields `…last\nlast` (the
+    /// original line gains a terminator, the copy does not), never `…lastlast`.
+    /// Out-of-range / reversed inputs are clamped; an empty document is a no-op
+    /// returning a single-line selection at 0.
+    public static func duplicateLines(_ text: String, lineRange: ClosedRange<Int>) -> LineOpResult {
+        var (lines, hasTrailingNewline) = editorLines(text)
+        guard let range = clampLineRange(lineRange, lineCount: lines.count) else {
+            return LineOpResult(text: text, lineRange: 0...0)
+        }
+        let block = Array(lines[range])
+        // Insert the copy directly after the original block.
+        lines.insert(contentsOf: block, at: range.upperBound + 1)
+        // If the original block was the file's last line and there was no
+        // trailing newline, the inserted copy is now the last line; the document
+        // still has no trailing newline, and the original line is separated from
+        // its copy by the join's `\n`. No special-casing needed: joinEditorLines
+        // with the SAME hasTrailingNewline reproduces exactly that.
+        let count = range.upperBound - range.lowerBound + 1
+        let newLower = range.upperBound + 1
+        let newSelection = newLower...(newLower + count - 1)
+        return LineOpResult(
+            text: joinEditorLines(lines, hasTrailingNewline: hasTrailingNewline),
+            lineRange: newSelection)
+    }
+
+    /// Move the lines in `lineRange` (0-based, inclusive) up (`by: -1`) or down
+    /// (`by: +1`) by ONE position, swapping past the adjacent line, and return
+    /// the new text with the selection following the moved block. A move that
+    /// would push the block past the top (`by < 0` at line 0) or bottom (`by > 0`
+    /// at the last line) is a NO-OP that returns the original text and the
+    /// clamped selection unchanged — matching every editor's bounds behaviour.
+    /// Only `±1` is honoured; any other `by` is treated as no movement (clamped
+    /// to its sign would over-reach for multi-step, which the editor never asks).
+    /// Trailing-newline presence is preserved across the move.
+    public static func moveLines(_ text: String, lineRange: ClosedRange<Int>, by: Int) -> LineOpResult {
+        var (lines, hasTrailingNewline) = editorLines(text)
+        guard let range = clampLineRange(lineRange, lineCount: lines.count) else {
+            return LineOpResult(text: text, lineRange: 0...0)
+        }
+        let step = by < 0 ? -1 : (by > 0 ? 1 : 0)
+        // Bounds / no-op: can't move up past 0, down past the last line, or with
+        // a zero step.
+        if step == 0
+            || (step < 0 && range.lowerBound == 0)
+            || (step > 0 && range.upperBound == lines.count - 1) {
+            return LineOpResult(
+                text: joinEditorLines(lines, hasTrailingNewline: hasTrailingNewline),
+                lineRange: range)
+        }
+        let block = Array(lines[range])
+        lines.removeSubrange(range)
+        // After removal, the block reinserts at its original lower bound shifted
+        // by the step (the adjacent line has filled the gap).
+        let insertAt = range.lowerBound + step
+        lines.insert(contentsOf: block, at: insertAt)
+        let newSelection = insertAt...(insertAt + block.count - 1)
+        return LineOpResult(
+            text: joinEditorLines(lines, hasTrailingNewline: hasTrailingNewline),
+            lineRange: newSelection)
+    }
+
     // MARK: - Encode / decode (clipboard dev tools, TSK-352)
 
     /// Percent-encode for a URL: everything except the RFC 3986 *unreserved*
