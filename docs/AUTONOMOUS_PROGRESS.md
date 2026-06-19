@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-18 — TSK-887 (slice): command-palette `@`-mode heading re-parse memoized (first host-fixable P0)
+
+The first cleanly HOST-FIXABLE P0 (the others were already-optimized or need lifecycle changes). CommandPaletteView's
+`@` symbol mode re-parsed the WHOLE active file (MarkdownOutline.headings) on EVERY keystroke, though the parse is
+query-independent (only the SymbolJump.rank below uses the query) — O(filesize) wasted per keystroke on a large file.
+Fix: a tiny reusable ViewerCore `ParseMemo<Value>` (single-slot, String-keyed) memoizes the parse by file text →
+parse once per file, rank per keystroke. Host teeth: ParseMemoTests (2 — recompute-only-on-key-change with a
+call-count spy; empty-key validity). REMAINING (noted follow-on): the bare/file mode rebuilds `merged()` (bookmarks +
+recents) per keystroke too — also query-independent; cache it on palette-open (smaller win than the heading parse).
+887's full felt-validation (typing latency) is a VM/owner check; this removes a clear O(filesize)-per-keystroke waste.
+
 ## LOG 2026-06-18 — TSK-961: vm-profile.sh `reopen` mode shipped → isolated 889's warm-path lag
 
 Built the P0-front unblock: a `reopen` trace mode in scripts/vm-profile.sh (cold-open the file, switch AWAY to

@@ -174,6 +174,11 @@ struct CommandPaletteView: View {
     /// hint count + the Return-jumps-to-best-heading action.
     @State private var symbolMatches: [MarkdownHeading] = []
 
+    /// TSK-887: memoizes the `@`-mode heading parse so a large file isn't
+    /// re-parsed on every keystroke (the parse is query-independent; only the
+    /// rank below depends on the query).
+    @State private var headingMemo = ParseMemo<[MarkdownHeading]>([])
+
     /// One navigable jump target (TSK-727 slice 5): unifies `#` in-file matches
     /// and `@` headings into a single arrow-navigable list with a jump line.
     private struct JumpRow: Identifiable {
@@ -373,9 +378,12 @@ struct CommandPaletteView: View {
             // `@` jumps to a Markdown heading; headings() on a code file would
             // mis-read `#` comments as ATX headings, so gate to Markdown.
             if model.currentCategory == .markdown {
-                symbolMatches = SymbolJump.rank(
-                    headings: MarkdownOutline.headings(in: model.activeFileText ?? ""),
-                    query: parsed.term)
+                // TSK-887: memoize the query-independent heading parse so a
+                // large file isn't re-parsed on every keystroke; only rank runs.
+                let headings = headingMemo.resolve(model.activeFileText ?? "") {
+                    MarkdownOutline.headings(in: $0)
+                }
+                symbolMatches = SymbolJump.rank(headings: headings, query: parsed.term)
             }
         } else if isLineMode {
             // Hint-only — nothing to populate.

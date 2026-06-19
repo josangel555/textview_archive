@@ -9,6 +9,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-18
 
+### Performance
+- **Command palette: faster `@`-symbol typing in large files** — the heading list is no longer re-parsed on every keystroke (computed once per file), so jumping to a heading stays responsive in big documents.
+
 ### Added
 - **Git log: more commit actions** — right-clicking a commit now offers **Copy SHA**, **Copy Short SHA**, **Copy Subject**, and **Copy Reference** (`<short-sha> <subject>`, git-oneline style), not just "Review Commit".
 - **CSV viewer: copy a whole row or column** — the cell right-click menu now has **Copy Row** (tab-separated) and **Copy Column** (one value per line) alongside Copy Cell, so you can paste a row or column straight into a spreadsheet.
