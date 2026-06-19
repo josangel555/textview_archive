@@ -378,6 +378,26 @@ public final class ImageEditorViewModel: ObservableObject {
     public func export(format: ExportSpec.Format, quality: Double = 0.9, to url: URL) throws {
         try exportData(format: format, quality: quality).write(to: url, options: .atomic)
     }
+
+    /// Save-a-Copy entry point for the view. Wraps `export` so any failure
+    /// (encoder failure, disk full, dir not writable) is CAPTURED in
+    /// `lastError` instead of being silently discarded by a `try?` — the
+    /// view drove `try? vm.export(...)` after the save panel, so a failed
+    /// write produced ZERO feedback and the user believed the copy landed
+    /// (silent data loss). Returns `true` on success so the view can decide
+    /// whether to additionally surface an alert; on failure `lastError` is
+    /// set and the method returns `false`.
+    @discardableResult
+    public func saveCopy(format: ExportSpec.Format, quality: Double = 0.9, to url: URL) -> Bool {
+        do {
+            try export(format: format, quality: quality, to: url)
+            lastError = nil
+            return true
+        } catch {
+            lastError = String(describing: error)
+            return false
+        }
+    }
 }
 
 extension EditOp {

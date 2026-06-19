@@ -80,6 +80,40 @@ final class GitClientTests: XCTestCase {
         XCTAssertEqual(log[1].subject, "first commit")
     }
 
+    // MARK: - L-eh2(b): non-UTF-8 git output decodes LOSSILY (TSK-1008)
+
+    /// A `git diff` carrying a raw non-UTF-8 byte in the FILE CONTENT (git
+    /// emits blob bytes verbatim — it does NOT transcode file content the
+    /// way it does commit metadata) must NOT collapse the ENTIRE diff
+    /// output to "" and drop every line. The old strict
+    /// `String(data:encoding:.utf8) ?? ""` in `runResult` did exactly that
+    /// — one invalid byte anywhere in the stream ⇒ empty output, silently.
+    /// With the lossy `String(decoding:as: UTF8.self)` decode, the diff
+    /// survives with a U+FFFD substitution for the bad byte and the rest
+    /// of the patch intact. FAILS on the old `?? ""` path (`diff` is "").
+    func testDiffDecodesNonUTF8ContentLossily() throws {
+        let f = tmp.appendingPathComponent("latin1.txt")
+        try "hello\n".write(to: f, atomically: true, encoding: .utf8)
+        _ = try git(["add", "latin1.txt"])
+        _ = try git(["commit", "-q", "-m", "init"])
+        // Overwrite with a line containing a lone Latin-1 0xE9 ('é'), which
+        // is an invalid standalone UTF-8 sequence. git diff emits it raw.
+        var bytes = Array("caf".utf8)
+        bytes.append(0xE9)                       // invalid UTF-8 byte
+        bytes.append(contentsOf: Array(" latin1\n".utf8))
+        try Data(bytes).write(to: f)
+
+        let diff = GitClient(repoRoot: tmp).diff(forPath: "latin1.txt")
+        XCTAssertFalse(diff.isEmpty,
+            "a non-UTF-8 byte must not blank the whole diff output")
+        // The surrounding ASCII of the changed line survives lossily; the
+        // bad byte becomes U+FFFD (the replacement char), not a wipe.
+        XCTAssertTrue(diff.contains("caf"), "the decodable prefix survives")
+        XCTAssertTrue(diff.contains(" latin1"), "the decodable suffix survives")
+        XCTAssertTrue(diff.contains("\u{FFFD}"),
+            "the invalid byte is substituted with U+FFFD, not dropped silently")
+    }
+
     func testStatusEmptyOutsideRepo() {
         let outside = FileManager.default.temporaryDirectory
             .appendingPathComponent("definitely-not-a-repo-\(UUID().uuidString)")

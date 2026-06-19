@@ -352,5 +352,39 @@ final class ImageEditorViewModelTests: XCTestCase {
         // Degenerate inputs ⇒ .zero (overlay draws nothing).
         XCTAssertEqual(ImageEditorView.aspectFitRect(
             imageSize: .zero, in: CGRect(x: 0, y: 0, width: 10, height: 10)), .zero)
+    // MARK: - L-eh1: Save-a-Copy surfaces write failures (TSK-1008)
+
+    /// A write into a directory that does NOT exist makes the atomic write
+    /// throw. The OLD view used `try? vm.export(...)` and swallowed that —
+    /// no `lastError`, no signal, silent data loss. `saveCopy` must capture
+    /// the failure in `lastError` and return `false`. FAILS on the old code
+    /// path (which had no `lastError`-capturing wrapper at all).
+    func test_saveCopy_writeFailure_setsLastError_returnsFalse() throws {
+        let vm = try makeVM()
+        let bogus = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-no-such-dir-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("out.png")
+        XCTAssertNil(vm.lastError)
+        let ok = vm.saveCopy(format: .png, to: bogus)
+        XCTAssertFalse(ok, "a failed write must report failure, not success")
+        XCTAssertNotNil(vm.lastError, "the swallowed export failure must surface in lastError")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bogus.path))
+    }
+
+    /// A successful save returns `true` and clears any prior `lastError`.
+    func test_saveCopy_success_writesFile_clearsLastError() throws {
+        let vm = try makeVM()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-editor-savecopy-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        // Seed a stale error to prove a clean save clears it.
+        _ = vm.saveCopy(format: .png, to: FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-no-such-dir-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("x.png"))
+        XCTAssertNotNil(vm.lastError)
+        let ok = vm.saveCopy(format: .png, to: url)
+        XCTAssertTrue(ok)
+        XCTAssertNil(vm.lastError, "a clean save clears the prior error")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 }

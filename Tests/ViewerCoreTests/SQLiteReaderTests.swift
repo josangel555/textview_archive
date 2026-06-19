@@ -73,6 +73,31 @@ final class SQLiteReaderTests: XCTestCase {
         XCTAssertEqual(try r.rowCount(of: "users"), 3)
     }
 
+    // MARK: - L-eh2(c): a DB that OPENS but can't enumerate must THROW (TSK-1008)
+
+    /// A file with a valid 16-byte SQLite magic header but a corrupt body
+    /// OPENS lazily (sqlite3_open_v2 reads no pages) yet FAILS the first
+    /// `sqlite_master` read. The SQLiteBrowser view-model wrapped each
+    /// schema listing in `(try? r.tableNames()) ?? []`, so this corruption
+    /// was hidden behind an EMPTY browser — indistinguishable from a
+    /// genuinely empty DB, with zero signal to the user. The fix lets the
+    /// enumeration THROW into the open-error catch; this test pins that the
+    /// enumeration does raise (so the swallow was masking a real error).
+    func testCorruptBodyOpensButEnumerationThrows() throws {
+        let corrupt = tmpDir.appendingPathComponent("corrupt.sqlite")
+        // 16-byte magic "SQLite format 3\0" + garbage page bytes.
+        var bytes = Array("SQLite format 3".utf8)
+        bytes.append(0)                              // NUL terminator of the magic
+        bytes.append(contentsOf: Array(repeating: UInt8(0xEE), count: 4096))
+        try Data(bytes).write(to: corrupt)
+
+        // Opening succeeds (header magic matches; pages are read lazily).
+        let r = try SQLiteReader(url: corrupt)
+        // ...but enumerating the schema raises rather than returning [].
+        XCTAssertThrowsError(try r.tableNames(),
+            "a header-valid but corrupt DB must surface the read error, not return []")
+    }
+
     func testQueryReturnsRowsAndColumns() throws {
         let r = try SQLiteReader(url: dbURL)
         let result = try r.query("SELECT name, age FROM users ORDER BY age;")

@@ -327,6 +327,17 @@ struct ImageEditorView: View {
         case "heic": format = .heic
         default: format = .png
         }
-        try? vm.export(format: format, to: url)
+        // Route through the view-model so a write/encoder failure (disk
+        // full, dir not writable, HEIC encode failure) is captured in
+        // `lastError` and surfaced — the old `try? vm.export(...)` discarded
+        // EVERY failure, so a failed save looked exactly like a successful
+        // one (silent data loss). Mirror AudioEditorView.saveCopy().
+        if !vm.saveCopy(format: format, to: url) {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't save a copy"
+            alert.informativeText = vm.lastError ?? "The image couldn't be saved."
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
 }

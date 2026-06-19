@@ -2452,9 +2452,30 @@ public final class DocumentModel: ObservableObject {
         }()
         let client = GitClient(repoRoot: repoRoot)
         let entries = client.log(forPath: relPath, maxEntries: 200)
-        // Build markdown body. Keep it dense — one entry per row,
-        // commit SHA monospaced, subject as plain text, author + date
-        // in a smaller subhead.
+        let md = Self.gitLogMarkdown(
+            entries: entries, url: url, repoRoot: repoRoot, scope: scope)
+        // Write under caches so Launch Services treats it as a real file,
+        // then open the FRESHLY-written file. Branch on the write result:
+        // the old `try? createDirectory` + `try? write` swallowed both
+        // failures AND still `openInNewTab(out)`'d the hashed path — so a
+        // failed write (disk full, dir not writable) re-opened a STALE
+        // prior git-log for the SAME (repo, relPath) hash, showing the
+        // user yesterday's history as if it were current with zero signal.
+        do {
+            let out = try Self.writeGitLog(
+                markdown: md, repoRoot: repoRoot, relPath: relPath)
+            openInNewTab(out)
+        } catch {
+            presentGitLogFailure(error)
+        }
+    }
+
+    /// Pure markdown body for a git-log tab — one commit per table row,
+    /// SHA monospaced, subject pipe-escaped. Extracted so it is host-
+    /// testable independent of the file write.
+    static func gitLogMarkdown(
+        entries: [GitClient.LogEntry], url: URL, repoRoot: URL, scope: GitLogScope
+    ) -> String {
         var md = ""
         let title: String
         switch scope {
@@ -2474,24 +2495,44 @@ public final class DocumentModel: ObservableObject {
                 md += "| `\(e.sha)` | \(safeSubject) | \(e.author) | \(e.date) |\n"
             }
         }
-        // Write under caches so Launch Services treats it as a real
-        // file. Hashed filename to defeat collisions and keep dir
-        // browsable.
+        return md
+    }
+
+    /// Write the git-log markdown to a hashed cache file and return the
+    /// written URL. THROWS on a create-directory or write failure so the
+    /// caller never opens a stale hashed path. Hashed filename defeats
+    /// collisions and keeps the dir browsable.
+    /// `cacheRoot` defaults to the user caches dir; tests override it to a
+    /// scratch (or deliberately-unwritable) location to exercise the
+    /// branch-on-write-result contract host-side.
+    static func writeGitLog(
+        markdown: String, repoRoot: URL, relPath: String?, cacheRoot: URL? = nil
+    ) throws -> URL {
         var hasher = Hasher()
         hasher.combine(repoRoot.path)
         hasher.combine(relPath ?? "")
         let hash = String(UInt(bitPattern: hasher.finalize()), radix: 16)
             .padding(toLength: 8, withPad: "0", startingAt: 0)
             .prefix(8)
-        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let cache = cacheRoot
+            ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = cache.appendingPathComponent("MarkdownViewer/git-log", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let baseName = (relPath ?? repoRoot.lastPathComponent)
             .split(separator: "/").last.map(String.init) ?? "history"
         let out = dir.appendingPathComponent("\(baseName)-\(hash).md")
-        try? md.write(to: out, atomically: true, encoding: .utf8)
-        openInNewTab(out)
+        try markdown.write(to: out, atomically: true, encoding: .utf8)
+        return out
+    }
+
+    private func presentGitLogFailure(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't open history"
+        alert.informativeText =
+            "The git history couldn't be written to a temporary file: \(error)"
+        alert.runModal()
     }
     // `swapSplit()` moved to `DocumentModel+Split.swift` (TSK-308).
     // MARK: Find bar (source mode) — match state forwarders
@@ -3740,9 +3781,16 @@ public final class DocumentModel: ObservableObject {
             return true
         }
         // 2. Editor-dirty text, encoded with the buffer's own encoding.
+        // Encode with the buffer's OWN encoding only — do NOT silently fall
+        // back to UTF-8 (the old `?? buf.text.data(using: .utf8)` made
+        // `SaveCopyError.encodingFailed` dead code, since UTF-8 represents
+        // any String). A silent re-encode is data corruption: a "Save a
+        // Copy" of a Shift-JIS / Latin-1 buffer that the user expects to
+        // round-trip would land as UTF-8 with a different byte stream and a
+        // mismatched declared encoding. Mirror `EditorWriter.save`: surface
+        // the failure so the caller can prompt to switch encoding.
         if let buf = editor.editorBuffer(forTabID: tab.id), buf.isDirty {
-            guard let data = buf.text.data(using: buf.encoding)
-                    ?? buf.text.data(using: .utf8) else {
+            guard let data = buf.text.data(using: buf.encoding) else {
                 throw SaveCopyError.encodingFailed
             }
             try data.write(to: target, options: .atomic)

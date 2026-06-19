@@ -157,4 +157,102 @@ final class SaveCopyTests: XCTestCase {
         XCTAssertTrue(try model.saveCopyOfCurrentTab(to: dst))
         XCTAssertEqual(try String(contentsOf: dst, encoding: .utf8), "current tab content")
     }
+
+    // MARK: - L-eh2(d): encoding the buffer can't represent THROWS (TSK-1008)
+
+    /// A dirty editor buffer whose declared encoding (`.ascii`) cannot
+    /// represent its text (a non-ASCII char) must throw
+    /// `SaveCopyError.encodingFailed` — NOT silently re-encode to UTF-8 and
+    /// write a byte stream that no longer matches the buffer's declared
+    /// encoding (data corruption). The old `?? buf.text.data(using: .utf8)`
+    /// fallback made the throw dead code; this test FAILS on that code
+    /// (it would have written a file and returned true instead of throwing).
+    func test_saveCopy_encodingCannotRepresent_throwsEncodingFailed() throws {
+        let src = try writeFile("ascii.txt", "plain ascii")
+        let dst = target("ascii-copy.txt")
+        let model = makeModel()
+        model.open(url: src)
+        let id = model.tabs.selected!.id
+        let idx = model.tabs.selectedIndex!
+        // Inject a DIRTY buffer declared `.ascii` but holding a non-ASCII
+        // char ("é" / U+00E9) that ASCII cannot encode.
+        let buf = EditorBuffer(
+            url: src, original: "plain ascii", encoding: .ascii)
+        var dirty = buf
+        dirty.setText("caf\u{00E9} crème")      // non-ASCII → ascii-uncodable
+        XCTAssertTrue(dirty.isDirty)
+        model.tabCoordinator.setEditorBuffer(dirty, forTabID: id)
+
+        XCTAssertThrowsError(try model.saveCopy(ofTabAt: idx, to: dst)) { err in
+            XCTAssertEqual(err as? DocumentModel.SaveCopyError, .encodingFailed)
+        }
+        // No corrupt UTF-8 file silently left behind on the failure path.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dst.path))
+    }
+
+    /// Control: a dirty buffer whose encoding CAN represent its text still
+    /// saves cleanly (proves the throw is conditioned on encodability, not
+    /// blanket-broken).
+    func test_saveCopy_encodingCanRepresent_savesCleanly() throws {
+        let src = try writeFile("ascii2.txt", "plain ascii")
+        let dst = target("ascii2-copy.txt")
+        let model = makeModel()
+        model.open(url: src)
+        let id = model.tabs.selected!.id
+        let idx = model.tabs.selectedIndex!
+        var dirty = EditorBuffer(url: src, original: "plain ascii", encoding: .ascii)
+        dirty.setText("all ascii here")
+        model.tabCoordinator.setEditorBuffer(dirty, forTabID: id)
+        XCTAssertTrue(try model.saveCopy(ofTabAt: idx, to: dst))
+        XCTAssertEqual(try String(contentsOf: dst, encoding: .ascii), "all ascii here")
+    }
+
+    // MARK: - L-eh2(a): git-log tab branches on the write result (TSK-1008)
+
+    /// The pure markdown body carries every commit row and pipe-escapes
+    /// subjects. (Logic anchor for the rendered tab.)
+    func test_gitLogMarkdown_buildsCommitRows_escapesPipes() {
+        let repo = URL(fileURLWithPath: "/repo")
+        let entries = [
+            GitClient.LogEntry(sha: "abc1234", author: "Jos",
+                               date: "2026-06-18", subject: "first | piped"),
+            GitClient.LogEntry(sha: "def5678", author: "Pat",
+                               date: "2026-06-17", subject: "second"),
+        ]
+        let md = DocumentModel.gitLogMarkdown(
+            entries: entries, url: URL(fileURLWithPath: "/repo/a.txt"),
+            repoRoot: repo, scope: .file)
+        XCTAssertTrue(md.contains("# History: a.txt"))
+        XCTAssertTrue(md.contains("| `abc1234` | first \\| piped | Jos | 2026-06-18 |"),
+                      "pipe in the subject is escaped so the table doesn't break")
+        XCTAssertTrue(md.contains("| `def5678` | second | Pat | 2026-06-17 |"))
+        XCTAssertFalse(md.contains("_No commits._"))
+    }
+
+    /// A successful write returns the freshly-written URL whose contents
+    /// match the markdown we asked to write.
+    func test_writeGitLog_success_returnsFreshFileWithContents() throws {
+        let repo = URL(fileURLWithPath: "/some/repo")
+        let md = "# History: repo\n\n_No commits._\n"
+        let out = try DocumentModel.writeGitLog(
+            markdown: md, repoRoot: repo, relPath: nil, cacheRoot: tmpDir)
+        XCTAssertEqual(try String(contentsOf: out, encoding: .utf8), md)
+    }
+
+    /// A write FAILURE must THROW (so `showGitLog` never opens a stale
+    /// hashed path). The old `try? md.write(...)` swallowed the failure and
+    /// still opened the hashed file — re-surfacing a STALE prior git-log
+    /// for the same (repo, relPath) hash. Forcing the cache root to a
+    /// regular FILE (not a directory) makes `createDirectory` fail.
+    func test_writeGitLog_writeFailure_throws_doesNotReturnStalePath() throws {
+        // Make the cache root a *file*, so creating a subdirectory under it
+        // is impossible → createDirectory throws.
+        let fileAsRoot = tmpDir.appendingPathComponent("not-a-dir")
+        try "i am a file".write(to: fileAsRoot, atomically: true, encoding: .utf8)
+        let repo = URL(fileURLWithPath: "/some/repo")
+        XCTAssertThrowsError(
+            try DocumentModel.writeGitLog(
+                markdown: "# x\n", repoRoot: repo, relPath: nil, cacheRoot: fileAsRoot),
+            "a write failure must propagate, not be swallowed")
+    }
 }

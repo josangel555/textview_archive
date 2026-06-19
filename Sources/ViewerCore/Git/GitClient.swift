@@ -1284,7 +1284,13 @@ public final class GitClient: Sendable {
                 "git output exceeded the \(512)MB cap and was truncated"
             )
         }
-        let out = String(data: result.stdout, encoding: .utf8) ?? ""
+        // Decode LOSSILY: a single non-UTF-8 byte (e.g. a Latin-1 author
+        // name or a commit subject with raw 8-bit bytes) must NOT collapse
+        // the ENTIRE git output to "" and silently drop every entry. The
+        // strict `String(data:encoding:) ?? ""` did exactly that — one bad
+        // byte anywhere ⇒ zero log/status results with no signal. UTF8.self
+        // substitutes U+FFFD for invalid sequences and keeps the rest.
+        let out = String(decoding: result.stdout, as: UTF8.self)
         // A timed-out git was SIGTERM'd → non-zero exit, but that's a
         // timeout, not a "not a repo" / hard error. Surface it via the
         // flag and return whatever partial output we drained; the caller
@@ -1293,7 +1299,10 @@ public final class GitClient: Sendable {
             return (out, true)
         }
         if result.terminationStatus != 0 {
-            let estr = String(data: result.stderr, encoding: .utf8) ?? ""
+            // Lossy for the same reason as stdout above — a non-UTF-8 byte
+            // in git's diagnostic must not blank the whole error message
+            // (which also drives the `not a git repository` substring check).
+            let estr = String(decoding: result.stderr, as: UTF8.self)
             if estr.lowercased().contains("not a git repository") {
                 throw Error.notARepo
             }

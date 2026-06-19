@@ -222,10 +222,17 @@ private final class SQLiteBrowserModel: ObservableObject {
             guard let self else { return }
             do {
                 let r = try SQLiteReader(url: self.url)
-                let tables   = (try? r.tableNames())   ?? []
-                let views    = (try? r.viewNames())    ?? []
-                let indexes  = (try? r.indexNames())   ?? []
-                let triggers = (try? r.triggerNames()) ?? []
+                // Let a post-open enumeration failure THROW into the catch
+                // below rather than collapsing to `[]`. The old
+                // `(try? …) ?? []` hid a DB that OPENS but can't enumerate
+                // its schema (corrupt sqlite_master, a locked/contended
+                // file, a malformed-but-openable header): the user got an
+                // empty browser with zero signal, indistinguishable from a
+                // genuinely empty DB. Surface it as an open error instead.
+                let tables   = try r.tableNames()
+                let views    = try r.viewNames()
+                let indexes  = try r.indexNames()
+                let triggers = try r.triggerNames()
                 self.reader = r
                 Task { @MainActor in
                     self.tables = tables
