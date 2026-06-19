@@ -14,6 +14,23 @@ struct CSVTableView: View {
 
     @State private var widths: [CGFloat] = []
     @State private var lastFingerprint: String = ""
+
+    // TSK-1019: in-place cell editing, wired to the host-tested
+    // `EditableCSVModel`. Ships DARK behind `CSVEditingGate` (default OFF) —
+    // when the gate is off, NONE of this state is populated and the read-only
+    // Text path below is rendered verbatim (zero behaviour change). When the
+    // gate is on, a double-click on a cell begins editing; the editing cell
+    // swaps its read-only `Text` for an inline `TextField` whose `onCommit`
+    // folds the new value into `editModel`.
+    //
+    // `editModel` is built ONLY when the gate is on (see `reparse()`), so a
+    // gate-off run pays nothing — no extra grid copy, no overlay map.
+    @State private var editModel: EditableCSVModel?
+    /// The cell currently being edited (FULL-grid coords: header is row 0,
+    /// body rows are `1...`), or nil when not editing.
+    @State private var editingCell: EditableCSVModel.Cell?
+    /// Live buffer for the inline `TextField` while a cell is being edited.
+    @State private var editingText: String = ""
     // TSK-925: click a column header to sort by it (toggles asc/desc; a third
     // click is just another toggle). nil = original file order.
     @State private var sortColumn: Int?
@@ -275,6 +292,77 @@ struct CSVTableView: View {
         }
     }
 
+    // MARK: - TSK-1019: in-place cell editing
+
+    /// Is editing offered for the CURRENTLY-DISPLAYED grid? Editing is allowed
+    /// ONLY when the file is shown in its on-disk order — `sortColumn == nil`
+    /// AND no active filter — because an edit addresses the FULL grid by row,
+    /// so the displayed row index must map 1:1 to the grid row (display index
+    /// `i` ⇒ grid row `i + 1`, with the header as row 0). A sort or filter
+    /// reorders/removes rows, breaking that mapping; rather than maintain a
+    /// reverse index (a later slice), editing simply isn't offered until the
+    /// view is back in file order. The pure decision lives in the static
+    /// `editingAvailable(...)` so the host gate can pin it without a window.
+    private var editingAvailable: Bool {
+        Self.editingAvailable(
+            gateEnabled: CSVEditingGate.isEnabled(),
+            sortColumn: sortColumn,
+            filterIsEmpty: debouncedFilter.isEmpty
+        )
+    }
+
+    /// Pure gating decision (no UI state): editing is on iff the gate is on
+    /// AND the grid is in file order (no sort, no filter). `internal static`
+    /// so `CSVEditingWiringTests` can exercise every branch host-side.
+    static func editingAvailable(gateEnabled: Bool,
+                                 sortColumn: Int?,
+                                 filterIsEmpty: Bool) -> Bool {
+        gateEnabled && sortColumn == nil && filterIsEmpty
+    }
+
+    /// Map a DISPLAYED-row index to its FULL-grid row. Row 0 of the grid is the
+    /// header, so the first displayed body row (`displayIndex == 0`) is grid
+    /// row 1. Only meaningful when `editingAvailable` holds (file order). Pure
+    /// + `internal static` for the host gate.
+    static func gridRow(forDisplayIndex displayIndex: Int) -> Int {
+        displayIndex + 1
+    }
+
+    /// Begin editing the cell at displayed `(rowIndex, column)` — seeds the
+    /// inline `TextField` with the cell's CURRENT value (overlay if already
+    /// edited, else base) and marks it as the active editing cell. No-op when
+    /// editing isn't available or the model isn't built.
+    private func beginEditing(rowIndex: Int, column: Int) {
+        guard editingAvailable, let model = editModel else { return }
+        let gridR = Self.gridRow(forDisplayIndex: rowIndex)
+        editingText = model.getCell(row: gridR, column: column) ?? ""
+        editingCell = EditableCSVModel.Cell(row: gridR, column: column)
+    }
+
+    /// Commit the in-progress edit into `editModel` and end editing. Folds the
+    /// `editingText` buffer into the model via `setCell` (a no-op write — same
+    /// value — is dropped by the model's coalescing). Clears `editingCell`
+    /// regardless so the inline field always closes on commit.
+    private func commitEditing() {
+        defer { editingCell = nil }
+        guard let cell = editingCell, editModel != nil else { return }
+        editModel?.setCell(row: cell.row, column: cell.column, to: editingText)
+    }
+
+    /// Cancel the in-progress edit WITHOUT writing — drops the buffer and
+    /// closes the inline field, leaving the model untouched.
+    private func cancelEditing() {
+        editingCell = nil
+    }
+
+    /// `true` when `(rowIndex, column)` (display coords) is the cell currently
+    /// being edited. Used by `cellRow` to swap in the inline `TextField`.
+    private func isEditingCell(rowIndex: Int, column: Int) -> Bool {
+        guard let cell = editingCell else { return false }
+        return cell.row == Self.gridRow(forDisplayIndex: rowIndex)
+            && cell.column == column
+    }
+
     /// 200 ms debounce on filter commits — typing into the global
     /// query or a per-column field stays responsive while heavy
     /// filter work (lowercased compares, regex-shaped expressions)
@@ -320,6 +408,17 @@ struct CSVTableView: View {
             lowercasedRowsCache = []
         }
         ensureWidths(result)
+        // TSK-1019: build the editable model ONLY when the edit gate is on, so
+        // a gate-off run pays nothing (no extra grid copy / overlay map). Any
+        // in-progress edit is abandoned across a re-parse (the underlying text
+        // changed out from under it). Drop the model entirely when the gate is
+        // off so we never carry stale editable state into a read-only run.
+        if CSVEditingGate.isEnabled() {
+            editModel = EditableCSVModel(result)
+        } else {
+            editModel = nil
+        }
+        editingCell = nil
         // After re-parse, drop stale per-column entries (file shape
         // may have changed) and stale scope picks.
         let cols = result.header.count
@@ -597,31 +696,8 @@ struct CSVTableView: View {
                          allRows: [[String]], rowIndex: Int) -> some View {
         HStack(spacing: 0) {
             ForEach(row.indices, id: \.self) { i in
-                let cell = row[i]
-                Text(cell)
-                    .font(.system(size: cellFontSize, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.horizontal, 8)
-                    .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
-                    // TSK-303: per-cell find highlight (display-row coords).
-                    .background(findHighlightColor(findHighlight(row: rowIndex, column: i))
-                                ?? Color.clear)
-                    .overlay(alignment: .trailing) {
-                        Rectangle().fill(Palette.separator).frame(width: 0.5)
-                    }
-                    .contextMenu {
-                        Button("Copy Cell") { Pasteboard.copy(cell) }
-                        // TSK-924: multi-cell copy — the whole row (TSV) or the
-                        // whole column (newline-joined), pasteable into a sheet.
-                        Button("Copy Row") { Pasteboard.copy(CSVCopy.rowTSV(row)) }
-                        Button("Copy Column") { Pasteboard.copy(CSVCopy.columnText(i, in: allRows)) }
-                    }
-                    // A11Y-01: per-cell VoiceOver label "<column>: <value>"
-                    // so each cell announces which column it belongs to
-                    // rather than reading a bare value out of context.
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Self.cellLabel(column: i, header: header, value: cell))
+                cell(value: row[i], row: row, allRows: allRows,
+                     header: header, rowIndex: rowIndex, column: i)
             }
         }
         .background(isAlt ? Palette.controlBackground.opacity(0.3) : Color.clear)
@@ -629,6 +705,76 @@ struct CSVTableView: View {
         // A11Y-01: group the cells under a single row container so the
         // grid reads as rows-of-cells in VoiceOver's table rotor.
         .accessibilityElement(children: .contain)
+    }
+
+    /// A single data cell. When this exact cell is being edited (gate on,
+    /// double-clicked, file order) it renders an inline `TextField`; otherwise
+    /// it renders the read-only `Text` path UNCHANGED — same find highlight
+    /// (TSK-303), Copy Cell/Row/Column context menu (TSK-924), and per-cell
+    /// VoiceOver label (A11Y-01) as before. A double-click begins editing only
+    /// when `editingAvailable`; with the gate off it's a no-op overlay (the
+    /// read-only behaviour is byte-identical to pre-TSK-1019).
+    @ViewBuilder
+    private func cell(value: String, row: [String], allRows: [[String]],
+                      header: [String], rowIndex: Int, column i: Int) -> some View {
+        if isEditingCell(rowIndex: rowIndex, column: i) {
+            // TSK-1019: inline editor for the active cell. onCommit/onSubmit
+            // folds the buffer into the model; Esc cancels without writing.
+            TextField("", text: $editingText, onCommit: { commitEditing() })
+                .textFieldStyle(.plain)
+                .font(.system(size: cellFontSize, design: .monospaced))
+                .padding(.horizontal, 8)
+                .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
+                .background(Palette.windowBackground)
+                .overlay(alignment: .trailing) {
+                    Rectangle().fill(Palette.separator).frame(width: 0.5)
+                }
+                .onExitCommand { cancelEditing() }
+                .accessibilityIdentifier("mdv.csvCell.edit.\(rowIndex).\(i)")
+        } else {
+            readOnlyCell(value: value, row: row, allRows: allRows,
+                         header: header, rowIndex: rowIndex, column: i)
+        }
+    }
+
+    /// The read-only data cell. When editing is NOT available (the gate is OFF,
+    /// or the grid is sorted/filtered) this is BYTE-IDENTICAL to the
+    /// pre-TSK-1019 render — no extra gesture is attached, so single-click
+    /// selection / Copy menu / find behave exactly as before. When editing IS
+    /// available, a double-click recognizer is layered on to begin editing.
+    @ViewBuilder
+    private func readOnlyCell(value cell: String, row: [String], allRows: [[String]],
+                              header: [String], rowIndex: Int, column i: Int) -> some View {
+        Text(cell)
+            .font(.system(size: cellFontSize, design: .monospaced))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 8)
+            .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
+            // TSK-303: per-cell find highlight (display-row coords).
+            .background(findHighlightColor(findHighlight(row: rowIndex, column: i))
+                        ?? Color.clear)
+            .overlay(alignment: .trailing) {
+                Rectangle().fill(Palette.separator).frame(width: 0.5)
+            }
+            // TSK-1019: attach double-click-to-edit ONLY when editing is
+            // available, so the gate-off path keeps the exact original gesture
+            // surface (no recognizer competing with text selection).
+            .modifier(DoubleClickToEdit(enabled: editingAvailable) {
+                beginEditing(rowIndex: rowIndex, column: i)
+            })
+            .contextMenu {
+                Button("Copy Cell") { Pasteboard.copy(cell) }
+                // TSK-924: multi-cell copy — the whole row (TSV) or the
+                // whole column (newline-joined), pasteable into a sheet.
+                Button("Copy Row") { Pasteboard.copy(CSVCopy.rowTSV(row)) }
+                Button("Copy Column") { Pasteboard.copy(CSVCopy.columnText(i, in: allRows)) }
+            }
+            // A11Y-01: per-cell VoiceOver label "<column>: <value>"
+            // so each cell announces which column it belongs to
+            // rather than reading a bare value out of context.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.cellLabel(column: i, header: header, value: cell))
     }
 
     /// Column title for VoiceOver — falls back to "Column N" for blank
@@ -688,5 +834,26 @@ struct CSVTableView: View {
         }
         // Reuse SQLite's pure math helper. The shape matches.
         widths = ResultTableView.computeWidths(columns: header, rows: rows)
+    }
+}
+
+/// TSK-1019: conditionally layer a double-click recognizer onto a cell. When
+/// `enabled` is false the view is returned untouched (no `simultaneousGesture`,
+/// no `onTapGesture`) so the gate-off read-only path keeps its EXACT original
+/// gesture surface — single-click selection and the context menu are unchanged.
+/// `simultaneousGesture` (rather than `onTapGesture`) so the double-click
+/// coexists with the cell's `textSelection`/copy affordances when editing is on.
+private struct DoubleClickToEdit: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.simultaneousGesture(
+                TapGesture(count: 2).onEnded { action() }
+            )
+        } else {
+            content
+        }
     }
 }
