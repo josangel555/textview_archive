@@ -219,7 +219,10 @@ public final class GitClient: Sendable {
     /// change across the range, so intermediate states collapse. Returns "" on
     /// error. Parse with `DiffParser` for the structured form (TSK-522 slice 2).
     public func cumulativeDiff(baseRef: String, tipRef: String) -> String {
-        (try? run(["diff", "--no-color", baseRef, tipRef])) ?? ""
+        // Option-injection guard: a ref beginning with `-` could be read as a
+        // git flag. Mirror the per-revision diff guards (defense-in-depth).
+        guard Self.isSafeRevision(baseRef), Self.isSafeRevision(tipRef) else { return "" }
+        return (try? run(["diff", "--no-color", baseRef, tipRef])) ?? ""
     }
 
     // MARK: - blame
@@ -1028,7 +1031,10 @@ public final class GitClient: Sendable {
 
     /// Full unified diff for a commit (all files).
     public func commitDiff(sha: String) -> String {
-        (try? run([
+        // Option-injection guard: a `sha` beginning with `-` could be read as a
+        // `git show` flag. Mirror the per-revision diff guards.
+        guard Self.isSafeRevision(sha) else { return "" }
+        return (try? run([
             "show", "--no-color",
             "--diff-algorithm=histogram",
             "--format=%H%n%an <%ae>%n%ad%n%n%s%n%n%b",

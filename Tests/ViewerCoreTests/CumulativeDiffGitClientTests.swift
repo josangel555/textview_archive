@@ -103,4 +103,28 @@ final class CumulativeDiffGitClientTests: XCTestCase {
         let root = changes(gc.commitDiff(sha: log[1].sha))     // c1: root, all-add
         XCTAssertEqual(root.added, ["1"]); XCTAssertTrue(root.removed.isEmpty)
     }
+
+    // TSK-1003: cumulativeDiff/commitDiff must reject option-injecting refs (a
+    // ref beginning with `-`) so a value like `--output=<file>` can't be read as
+    // a git flag. TEETH: pre-guard, `git diff --no-color --output=<sink> <tip>`
+    // WRITES the diff to <sink>; the guard returns "" and never invokes git, so
+    // the file is never created.
+    func test_diffMethods_rejectOptionInjectingRefs() throws {
+        let repo = try makeRepo()
+        try commit("1", in: repo); try commit("2", in: repo)
+        let gc = GitClient(repoRoot: repo)
+        let tip = gc.graphLog()[0].sha
+
+        let sink = repo.appendingPathComponent("INJECTED.txt")
+        let injecting = "--output=" + sink.path
+
+        XCTAssertEqual(gc.cumulativeDiff(baseRef: injecting, tipRef: tip), "")
+        XCTAssertEqual(gc.cumulativeDiff(baseRef: tip, tipRef: injecting), "")
+        XCTAssertEqual(gc.commitDiff(sha: injecting), "")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sink.path),
+                       "git --output option was injected — isSafeRevision guard failed")
+
+        // Sanity: a safe revision still yields a real patch.
+        XCTAssertFalse(gc.commitDiff(sha: tip).isEmpty)
+    }
 }
