@@ -37,7 +37,7 @@ record is at the bottom of this file** (2026-06-16 reorg).
 - [x] **TSK-901** — Auto-detect content type — "language" half `[5eaa951 → review; HighlightLanguage.detect(fromShebang:) fallback in effectiveLanguage (shared chokepoint → source+editor+badge) for extensionless/misnamed scripts; 3 host teeth. Keyword-based (no-shebang) content detection = future enhancement]`
 - [ ] **TSK-898** — Render|Editor|HEX as a segmented button GROUP (pure visual restyle — VM)
 - [⊘] **TSK-936 / 937 / 938** — Toggle-View-only · Focus Terminal/Nav/Git/File · Esc→current tab `[PARKED→owner (TSK-936 waiting:human): shortcut keys + "view-only" semantics overlap ⇧⌘R/⌘1-3 — a UX/muscle-memory call; editor⇄view-only impl ready on key-choice]`
-- [ ] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` (view-coupled selection — VM)
+- [~] **TSK-924** — CSV: multi-cell select + copy/paste `(711)` `[22662a2 → review; COPY ROW/COLUMN slice done (context menu + pure CSVCopy helpers, 3 host teeth). REMAINING: arbitrary shift-select rectangle (CSVTableView has no cursor/selection wiring — from-scratch render interaction, VM)]`
 
 **P3 — bigger / design-first / epics:**
 - [x] **TSK-947** — ⌘F dead in HTML-rendered + over editor size-cap (B5) `[BOTH halves done → review; HTML-rendered @ abaa36c + editor size-cap @ 0ee63e1; canFindInPage/findIsAvailable gates ⌘F + greys Find menu, host-tested both cases; live menu-grey = VM]`
