@@ -1099,17 +1099,9 @@ final class ViewModesUATTests: MultiScenarioTestCase {
         return url
     }
 
-    /// Minimal valid empty SQLite v3 database (header + one zeroed page).
+    /// A real, valid, enumerable SQLite v3 database (one table + a few rows),
+    /// so the SQLite browser mounts its `NSSplitView`. See `UATSQLiteFixture`.
     private func writeSQLiteFixture(_ name: String) throws -> URL {
-        let url = harness.tmpDir.appendingPathComponent(name)
-        var page = Data(count: 4096)
-        let magic = Array("SQLite format 3\u{0}".utf8)
-        page.replaceSubrange(0..<magic.count, with: magic)
-        page[16] = 0x10; page[17] = 0x00
-        page[18] = 1; page[19] = 1
-        page[21] = 64; page[22] = 32; page[23] = 32
-        page[56] = 0; page[57] = 0; page[58] = 0; page[59] = 1
-        try page.write(to: url)
-        return url
+        try UATSQLiteFixture.write(name, in: harness.tmpDir)
     }
 }

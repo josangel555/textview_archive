@@ -499,30 +499,9 @@ final class ViewModeMatrixSmokeTests: MultiScenarioTestCase {
         return url
     }
 
-    /// A minimal valid empty SQLite v3 database (header + one page). The
-    /// `SQLite format 3\0` magic + a zeroed first page is enough for the
-    /// SQLite browser to open it without error.
+    /// A real, valid, enumerable SQLite v3 database (one table + a few rows),
+    /// so the SQLite browser mounts its `NSSplitView`. See `UATSQLiteFixture`.
     private func writeSQLiteFixture(_ name: String) throws -> URL {
-        let url = harness.tmpDir.appendingPathComponent(name)
-        // Build a 4096-byte page-0 with the canonical SQLite header.
-        var page = Data(count: 4096)
-        let magic = Array("SQLite format 3\u{0}".utf8)   // 16 bytes
-        page.replaceSubrange(0..<magic.count, with: magic)
-        // page size = 4096 → bytes 16..17 big-endian. 4096 doesn't fit in
-        // u16 as 4096; SQLite encodes 65536 as 1 and 4096 as 0x1000.
-        page[16] = 0x10
-        page[17] = 0x00
-        page[18] = 1   // file format write version
-        page[19] = 1   // file format read version
-        page[21] = 64  // max embedded payload fraction (default)
-        page[22] = 32  // min embedded payload fraction (default)
-        page[23] = 32  // leaf payload fraction (default)
-        // text encoding = 1 (UTF-8) at bytes 56..59 big-endian.
-        page[56] = 0
-        page[57] = 0
-        page[58] = 0
-        page[59] = 1
-        try page.write(to: url)
-        return url
+        try UATSQLiteFixture.write(name, in: harness.tmpDir)
     }
 }
