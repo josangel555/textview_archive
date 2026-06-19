@@ -297,4 +297,14 @@ final class TerminalScreenTests: XCTestCase {
         XCTAssertEqual(view[0].count, 2, "scrollback row normalized to current cols")
         XCTAssertEqual(line(view[0]), "ww")
     }
+
+    // TSK-1002: a width-2 glyph at the right edge of a 1-column screen leaves
+    // cursor.col PAST `cols` (pending-wrap); eraseLineFromCursor must not build
+    // an inverted Range. TEETH: pre-clamp, `cursor.col..<cols` (= 2..<1) traps.
+    func test_eraseLineFromCursor_afterWideGlyphIn1Col_doesNotTrap() {
+        var s = TerminalScreen(rows: 1, cols: 1)
+        s.write("中")               // width-2 → cursor.col advances to 2 (> cols 1)
+        s.eraseLineFromCursor()     // must be a safe no-op, not a Range trap
+        XCTAssertEqual(s.cols, 1)   // reached here without crashing
+    }
 }

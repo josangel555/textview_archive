@@ -286,7 +286,9 @@ public struct TerminalScreen: Sendable, Equatable {
     /// `ESC[K` / `ESC[0K` — erase from the cursor to the end of the line.
     public mutating func eraseLineFromCursor() {
         guard cells.indices.contains(cursor.row) else { return }
-        for c in cursor.col..<cols { cells[cursor.row][c] = .blank }
+        // After a wide glyph at the right edge, `cursor.col` can sit past `cols`
+        // (pending-wrap); clamp the lower bound so the Range never inverts (trap).
+        for c in min(cursor.col, cols)..<cols { cells[cursor.row][c] = .blank }
     }
 
     /// `ESC[1K` — erase from the start of the line to the cursor.
