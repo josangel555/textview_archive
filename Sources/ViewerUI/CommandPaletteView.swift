@@ -156,6 +156,13 @@ struct CommandPaletteView: View {
             bookmarkURLSet = Set(model.bookmarks.map { $0.url })
             recomputeFiltered()
         }
+        // TSK-727: lazily fetch LSP `documentSymbol`s the first time the user
+        // enters `@` mode on a code file. Keyed on `isCodeSymbolMode` so the
+        // fetch fires on transition into the mode (and re-fires if the user
+        // leaves and re-enters); `loadCodeSymbols` is idempotent once loaded.
+        .task(id: isCodeSymbolMode) {
+            await loadCodeSymbols()
+        }
     }
 
     /// Pre-computed lookup table for `isBookmark` row state. Without
@@ -179,6 +186,26 @@ struct CommandPaletteView: View {
     /// rank below depends on the query).
     @State private var headingMemo = ParseMemo<[MarkdownHeading]>([])
 
+    /// `@`-mode CODE-symbol matches (TSK-727 code-file `@`): the ranked subset
+    /// of `codeSymbols` for the current query. Empty for non-code files (which
+    /// use `symbolMatches` headings) or before the async fetch lands.
+    @State private var codeSymbolMatches: [SymbolJump.CodeSymbol] = []
+
+    /// The active code file's flattened LSP `documentSymbol` list, fetched once
+    /// per palette presentation (query-independent — only the rank depends on
+    /// the query, like `headingMemo`). `nil` until the async fetch resolves.
+    @State private var codeSymbols: [SymbolJump.CodeSymbol]?
+
+    /// True while the code-symbol fetch is in flight — drives the loading hint.
+    @State private var codeSymbolsLoading = false
+
+    /// `true` when the `@` operator is active on a CODE file (LSP-backed
+    /// symbols) rather than a Markdown file (heading-backed). Drives which
+    /// source `recomputeFiltered` / `jumpRows` read.
+    private var isCodeSymbolMode: Bool {
+        isSymbolMode && model.activeFileHasLSPSymbols && model.currentCategory != .markdown
+    }
+
     /// One navigable jump target (TSK-727 slice 5): unifies `#` in-file matches
     /// and `@` headings into a single arrow-navigable list with a jump line.
     private struct JumpRow: Identifiable {
@@ -194,6 +221,12 @@ struct CommandPaletteView: View {
             return inFileMatches.enumerated().map {
                 JumpRow(id: $0.offset, primary: $0.element.line.isEmpty ? " " : $0.element.line,
                         secondary: "line \($0.element.lineNumber)", line: $0.element.lineNumber)
+            }
+        }
+        if isCodeSymbolMode {
+            return codeSymbolMatches.enumerated().map {
+                JumpRow(id: $0.offset, primary: $0.element.name,
+                        secondary: $0.element.detail, line: $0.element.line)
             }
         }
         if isSymbolMode {
@@ -232,6 +265,7 @@ struct CommandPaletteView: View {
     private var footerActionable: Bool {
         if isLineMode { return parsed.line != nil }
         if isInFileSearchMode { return !inFileMatches.isEmpty }
+        if isCodeSymbolMode { return !codeSymbolMatches.isEmpty }
         if isSymbolMode { return !symbolMatches.isEmpty }
         if isCommandMode { return !filteredCommands.isEmpty }
         return !filtered.isEmpty
@@ -240,6 +274,7 @@ struct CommandPaletteView: View {
     private var footerActionLabel: String {
         if isLineMode { return "↵ go to line" }
         if isInFileSearchMode { return "↵ jump to match" }
+        if isCodeSymbolMode { return "↵ jump to symbol" }
         if isSymbolMode { return "↵ jump to heading" }
         if isCommandMode { return "↵ run" }
         return "↵ open"
@@ -306,18 +341,36 @@ struct CommandPaletteView: View {
             Spacer().frame(height: 24)
             Image(systemName: "list.bullet")
                 .font(.system(size: 22)).foregroundStyle(.secondary)
-            // Shown only when there are no headings (matches render as `jumpList`).
-            if model.currentCategory != .markdown {
-                Text("Headings are available in Markdown files")
-                    .foregroundStyle(.secondary).font(.callout)
-            } else if parsed.term.trimmingCharacters(in: .whitespaces).isEmpty {
+            // Shown only when there are no rows (matches render as `jumpList`).
+            symbolHintText
+            Spacer().frame(height: 24)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The `@`-mode empty-state copy. Branches by source: a CODE file pulls
+    /// symbols from the language server (TSK-727), a Markdown file uses its
+    /// heading outline, and any other file type has no `@` source.
+    @ViewBuilder private var symbolHintText: some View {
+        let blank = parsed.term.trimmingCharacters(in: .whitespaces).isEmpty
+        if isCodeSymbolMode {
+            if codeSymbolsLoading {
+                Text("Loading symbols…").foregroundStyle(.secondary).font(.callout)
+            } else if blank {
+                Text("Jump to a symbol…").foregroundStyle(.secondary).font(.callout)
+            } else {
+                Text("No matching symbol").foregroundStyle(.secondary).font(.callout)
+            }
+        } else if model.currentCategory == .markdown {
+            if blank {
                 Text("Jump to a heading…").foregroundStyle(.secondary).font(.callout)
             } else {
                 Text("No matching heading").foregroundStyle(.secondary).font(.callout)
             }
-            Spacer().frame(height: 24)
+        } else {
+            Text("Symbols need Markdown headings or a code language")
+                .foregroundStyle(.secondary).font(.callout)
         }
-        .frame(maxWidth: .infinity)
     }
 
     /// Arrow-navigable list of `#`/`@` jump targets (TSK-727 slice 5). Mirrors
@@ -366,17 +419,26 @@ struct CommandPaletteView: View {
     private func recomputeFiltered() {
         // Reset every mode-specific result store; the active branch repopulates
         // its own. (TSK-727: modes are `>` command, `:` line [hint-only], `#`
-        // in-file, `@` heading, bare → files.)
+        // in-file, `@` heading/symbol, bare → files.)
         filtered = []
         filteredCommands = []
         inFileMatches = []
         symbolMatches = []
+        codeSymbolMatches = []
         if isInFileSearchMode {
             inFileMatches = InFileSearch.matches(
                 in: model.activeFileText ?? "", query: parsed.term)
+        } else if isCodeSymbolMode {
+            // `@` on a CODE file jumps to an LSP `documentSymbol` (TSK-727).
+            // The flattened symbol list is fetched async (see `loadCodeSymbols`);
+            // only the rank runs synchronously per keystroke, like the heading
+            // path. `nil` ⇒ fetch hasn't landed yet → empty rows + loading hint.
+            codeSymbolMatches = SymbolJump.rank(
+                symbols: codeSymbols ?? [], query: parsed.term)
         } else if isSymbolMode {
-            // `@` jumps to a Markdown heading; headings() on a code file would
-            // mis-read `#` comments as ATX headings, so gate to Markdown.
+            // `@` on a Markdown file jumps to a heading; headings() on a code
+            // file would mis-read `#` comments as ATX headings, so gate to
+            // Markdown (the code path above handles LSP-language files).
             if model.currentCategory == .markdown {
                 // TSK-887: memoize the query-independent heading parse so a
                 // large file isn't re-parsed on every keystroke; only rank runs.
@@ -398,6 +460,20 @@ struct CommandPaletteView: View {
                 $0.displayName
             }
         }
+    }
+
+    /// Fetch the active code file's LSP symbols once (query-independent), then
+    /// re-rank for the current query (TSK-727). Idempotent: skips if already
+    /// loaded or not in code-symbol mode. The model's `fetchActiveCodeSymbols`
+    /// returns `[]` on any LSP failure, so the palette degrades to the
+    /// "no symbols" hint rather than hanging on the spinner forever.
+    private func loadCodeSymbols() async {
+        guard isCodeSymbolMode, codeSymbols == nil, !codeSymbolsLoading else { return }
+        codeSymbolsLoading = true
+        let syms = await model.fetchActiveCodeSymbols()
+        codeSymbols = syms
+        codeSymbolsLoading = false
+        recomputeFiltered()
     }
 
     // MARK: - Command mode list
