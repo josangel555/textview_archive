@@ -29,6 +29,25 @@ public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
         }
     }
 
+    /// True only for the lenses that support code folding — the syntax-aware
+    /// text lenses `.source` (read-only highlighted text) and `.editor` (the
+    /// editable CM6 buffer). Both carry a `FoldRegion`/CM6 fold model, so the
+    /// Fold / Unfold / Fold All / Unfold All actions are meaningful there.
+    ///
+    /// Every other lens has no fold model and the actions must grey out:
+    /// `.rendered` (WKWebView HTML), `.preview` / `.hex` / `.table` / `.diff`
+    /// (no source tree), and `.formatted` (a pretty-printed snapshot whose
+    /// folding is not wired). Mirrors `hasTextCaret`'s shape today, but is a
+    /// distinct concept (a future read-only foldable lens, or a caret-bearing
+    /// non-foldable one, would diverge) — so it gets its own property rather
+    /// than overloading the caret gate.
+    public var supportsFolding: Bool {
+        switch self {
+        case .source, .editor: return true
+        case .rendered, .formatted, .table, .diff, .preview, .hex: return false
+        }
+    }
+
     /// Human label for menus / the mode bar (TSK-899 positional shortcuts).
     public var displayName: String {
         switch self {

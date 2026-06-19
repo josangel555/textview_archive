@@ -1103,8 +1103,17 @@ public final class CodeMirrorEditorRegistry {
     /// during the brief moment a sheet steals key.
     public func current() -> WKWebView? {
         prune()
-        let key = NSApp.keyWindow
-        if let inKey = entries.lazy.compactMap({ $0.value })
+        // `NSApp` is an implicitly-unwrapped global that is nil until an
+        // `NSApplication` is created — i.e. in a headless unit-test process.
+        // Treat it as an Optional and skip the key-window match when absent
+        // (rather than `NSApp.keyWindow`, which traps on the nil unwrap) so a
+        // model-layer fold/menu dispatch exercised by a host test is inert here
+        // instead of crashing. Deliberately does NOT touch `NSApplication.shared`
+        // (which would instantiate the app + open a WindowServer connection in
+        // the headless gate).
+        let app: NSApplication? = NSApp
+        if let key = app?.keyWindow,
+           let inKey = entries.lazy.compactMap({ $0.value })
             .first(where: { $0.window === key }) {
             return inKey
         }

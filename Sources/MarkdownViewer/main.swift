@@ -1537,8 +1537,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         overviewItem.target = self
         viewMenu.addItem(overviewItem)
 
-        // Editor (CM6) — code folding + go to line. Validated to
-        // only enable when an editor tab is on screen.
+        // Code folding (Fold All / Unfold All) — enabled in any FOLDABLE lens:
+        // the CM6 editor AND the read-only Source view (TSK-948). Greyed in
+        // render / preview / hex (`canFoldActiveDocument`). Go to Line is
+        // editor-only and validated separately below.
         let foldAllItem = NSMenuItem(
             title: "Fold All",
             action: #selector(cmFoldAll(_:)),
@@ -2854,8 +2856,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(toggleMarkdownOverview(_:)):
             item.state = model.showMarkdownOverview ? .on : .off
             return true   // a global view preference — settable anytime
-        case #selector(cmFoldAll(_:)), #selector(cmUnfoldAll(_:)),
-             #selector(cmGotoLine(_:)),
+        case #selector(cmFoldAll(_:)), #selector(cmUnfoldAll(_:)):
+            // TSK-948: Fold All / Unfold All work in any FOLDABLE lens — the
+            // editable CM6 editor AND the read-only Source view (both carry a
+            // fold model). Enabled iff the active lens supports folding; greyed
+            // in render / preview / hex / table / diff / formatted. (Previously
+            // grouped with the editor-only LSP items, so it was dead in Source.)
+            return model.canFoldActiveDocument
+        case #selector(cmGotoLine(_:)),
              #selector(lspGotoDefinition(_:)), #selector(lspGotoDeclaration(_:)),
              #selector(lspGotoTypeDefinition(_:)), #selector(lspGotoImplementation(_:)),
              #selector(lspFindReferences(_:)),
@@ -3241,16 +3249,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.toggleMarkdownOverview()
     }
 
+    /// View → Fold All. Routes through the model so the command reaches the
+    /// active foldable lens — CM6 in `.editor`, the read-only Source view in
+    /// `.source` (previously editor-only, so it did nothing in Source). The
+    /// model gates on `canFoldActiveDocument` (same as the menu validation).
     @objc func cmFoldAll(_ sender: Any?) {
-        guard let wv = CodeMirrorEditorRegistry.shared.current() else { return }
-        let json = CMBridgeCodec.encodeOutboundJSON(.foldAll)
-        wv.evaluateJavaScript("window.cmDispatch(\(json));", completionHandler: nil)
+        model.foldAllActiveDocument()
     }
 
     @objc func cmUnfoldAll(_ sender: Any?) {
-        guard let wv = CodeMirrorEditorRegistry.shared.current() else { return }
-        let json = CMBridgeCodec.encodeOutboundJSON(.unfoldAll)
-        wv.evaluateJavaScript("window.cmDispatch(\(json));", completionHandler: nil)
+        model.unfoldAllActiveDocument()
     }
 
     /// Go to Line… prompt — uses a tiny inline NSAlert. Lighter than a
