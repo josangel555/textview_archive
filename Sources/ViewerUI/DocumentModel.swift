@@ -6352,6 +6352,27 @@ public final class DocumentModel: ObservableObject {
     /// and restored on switch-back, so prompting on a switch is wrong.
     /// The user-initiated close path (`closeTab` / `closeOtherTabs` /
     /// `closeTabsToRight`) still gates on `confirmCloseIfDirty` first.
+    /// Perf P2/P3 (TSK-1043/1044): set for the duration of a BULK tab drain
+    /// (`closeAllTabsPreservingDirty`, the session-switch path). While set,
+    /// `closeTabUnconditionally` skips its per-tab `settleSelectionAfterClose`
+    /// (→ no transient mid-drain `materializeIfNeeded` of a survivor that's
+    /// itself about to close — P3) and the per-tab `updateDerived()` /
+    /// `startWatchingCurrentFile()` (→ run ONCE at the end of the drain instead
+    /// of N+1 times — the `refreshDiffMarks`/`warmLSP`/`repoFocus` storm — P2).
+    /// The incoming session's `selectTab` materializes the real focused tab.
+    private var isBulkDraining = false
+
+    #if DEBUG
+    /// Perf P2/P3 (TSK-1043/1044) test probe — DEBUG-only invocation counters so
+    /// a HOST test can prove the bulk-drain batching: a full session drain must
+    /// fire `updateDerived()` ONCE (not N+1 per outgoing tab) and trigger NO
+    /// transient mid-drain `materializeIfNeeded` of a survivor about to close.
+    /// Mirrors the `MountProbe` pattern; reset by the test before the action.
+    public internal(set) var updateDerivedCalls = 0
+    public internal(set) var materializeCalls = 0
+    public func resetDrainProbes() { updateDerivedCalls = 0; materializeCalls = 0 }
+    #endif
+
     func closeTabUnconditionally(at index: Int) {   // internal: HotExitTests exercises the spill cleanup
         guard tabs.tabs.indices.contains(index) else { return }
         // UX-K (#231): if we're closing the currently-VISIBLE tab, sample its
@@ -6379,6 +6400,11 @@ public final class DocumentModel: ObservableObject {
         if let id = tabCoordinator.closeTab(at: index) {
             purgeCaches(forURL: closedURL, tabID: id)
         }
+        // P2/P3: during a bulk drain the per-tab settle/derive/watch is pure
+        // wasted work — every survivor is about to be closed too, and the
+        // incoming hydrate re-selects the real focused tab. Run them ONCE at
+        // the end of the drain (`closeAllTabsPreservingDirty`).
+        guard !isBulkDraining else { return }
         settleSelectionAfterClose()
         updateDerived()
         startWatchingCurrentFile()
@@ -6406,10 +6432,25 @@ public final class DocumentModel: ObservableObject {
         // detach-time capture — the equality guard inside makes a re-capture
         // a no-op.
         captureUnsavedTextForAllTabs()
+        // P2/P3 (TSK-1043/1044): suppress the per-tab settle/materialize/
+        // updateDerived/watch storm for the duration of the drain — each
+        // outgoing tab triggering `refreshDiffMarks`/`warmLSP`/`repoFocus` +
+        // a transient survivor materialize is wasted work when the whole list
+        // is being cleared. Reconcile ONCE after the loop. `defer` guarantees
+        // the flag is cleared even if a close path throws.
+        isBulkDraining = true
+        defer { isBulkDraining = false }
         while !tabs.tabs.isEmpty {
             hexDirtyBytes.removeValue(forKey: tabs.tabs[0].id)
             closeTabUnconditionally(at: 0)
         }
+        // Single post-drain reconcile: `updateDerived()` runs
+        // `noteActiveTabForRetention` (now `retainOnly({})` drops every pane in
+        // one pass) + window title; `startWatchingCurrentFile()` settles the
+        // (now-empty) watch state. No `settleSelectionAfterClose` — there is no
+        // survivor to materialize; the incoming session's `selectTab` does that.
+        updateDerived()
+        startWatchingCurrentFile()
     }
 
     /// Post-close selection settle (TSK-266): closing a tab makes the
@@ -6754,6 +6795,9 @@ public final class DocumentModel: ObservableObject {
         guard tabs.tabs.indices.contains(index) else { return }
         let t = tabs.tabs[index]
         guard let url = t.url, case .empty = t.state else { return }
+        #if DEBUG
+        materializeCalls += 1   // P3 probe: a bulk drain must NOT bump this
+        #endif
         let tabID = t.id
         // Cancel any in-flight read for this tab id (rapid re-select
         // would otherwise pile up). Cooperative cancellation: we can't
@@ -7118,6 +7162,9 @@ public final class DocumentModel: ObservableObject {
     // MARK: Internal
 
     private func updateDerived() {
+        #if DEBUG
+        updateDerivedCalls += 1   // P2 probe: a bulk drain must fire this ONCE
+        #endif
         windowTitle = tabs.selected?.title ?? "TextView"
         // `openTabURLs` maintenance now lives on `TabCoordinator`
         // — every coordinator-side mutation refreshes it. We don't
