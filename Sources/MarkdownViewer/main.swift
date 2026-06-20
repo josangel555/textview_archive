@@ -116,6 +116,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // times. Must run before any LSP client spawns so the callback
         // is in place when the first server reports diagnostics.
         model.bootstrapLSP()
+
+        // No-clobber save guard (TSK-768): when ⌘S detects the file changed on
+        // disk under a dirty buffer, the conflict prompt offers "Save as Copy".
+        // Wire that to the same NSSavePanel the File ▸ Save a Copy menu uses, so
+        // the user can keep BOTH the external change and their edits. Presenting
+        // a panel is AppKit / window work, so it lives in the AppDelegate (not
+        // DocumentModel). Returns true when a copy was written.
+        model.editor.onSaveAsCopy = { [weak self] tabID in
+            guard let self,
+                  let index = self.model.tabs.tabs.firstIndex(where: { $0.id == tabID })
+            else { return false }
+            let panel = NSSavePanel()
+            panel.title = "Save a Copy"
+            panel.nameFieldStringValue =
+                self.model.tabs.tabs[index].url?.lastPathComponent ?? "Untitled.txt"
+            panel.canCreateDirectories = true
+            guard panel.runModal() == .OK, let url = panel.url else { return false }
+            do {
+                return try self.model.saveCopy(ofTabAt: index, to: url)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Couldn’t Save a Copy"
+                alert.informativeText = String(describing: error)
+                alert.runModal()
+                return false
+            }
+        }
+
         // CONC-001/CR-01/RC-2: start the pool's idle-reaper. Without this
         // spawned LSP servers were never reaped on idle, leaking server
         // subprocesses for the lifetime of the app. `start()` is an actor

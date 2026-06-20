@@ -74,6 +74,27 @@ public final class EditorCoordinator: ObservableObject {
         case discardAndReload
     }
 
+    /// Result of the WRITE-TIME save-conflict prompt — the user's choice when a
+    /// ⌘S would clobber a change another process made to the file after the
+    /// buffer was loaded/last-synced (the no-clobber guard). Distinct from
+    /// `ExternalEditPrompt` (the watcher-time path) because a save offers more
+    /// options: keep mine, take disk, save a copy, or view the diff first.
+    public enum SaveConflictPrompt: Sendable, Equatable {
+        /// Overwrite the on-disk change with the buffer ("keep mine"). The save
+        /// then proceeds.
+        case overwrite
+        /// Discard the buffer's edits and reload the file from disk. No write.
+        case reload
+        /// Write the buffer to a NEW file (the caller drives the Save panel),
+        /// leaving the original untouched. No write to the original.
+        case saveAsCopy
+        /// Show the diff between the buffer and disk before deciding. No write;
+        /// the prompt is re-offered after the diff surface closes.
+        case viewDiff
+        /// Abort the save entirely (e.g. the user dismissed the prompt). No write.
+        case cancel
+    }
+
     // MARK: - Published editor surface
 
     /// Bumped each time the host wants the CM6 editor to scroll +
@@ -258,6 +279,15 @@ public final class EditorCoordinator: ObservableObject {
     /// Same shape as `dirtyClosePromptOverride`.
     public var externalEditPromptOverride: ((_ url: URL) -> ExternalEditPrompt)?
 
+    /// Override the WRITE-TIME save-conflict NSAlert with a test-driven
+    /// response. When non-nil, `saveEditor`'s no-clobber guard returns this
+    /// override's choice instead of running the modal — so unit tests can drive
+    /// every conflict branch (overwrite / reload / save-copy / view-diff /
+    /// cancel) without bringing up NSApplication. The `actions` argument is the
+    /// offered set so a test can assert the menu it would have shown.
+    public var saveConflictPromptOverride:
+        ((_ url: URL, _ actions: [SaveConflictAction]) -> SaveConflictPrompt)?
+
     // MARK: - Dependencies / injected effects
 
     /// TabCoordinator holds `editorBuffers` (the dict we don't own)
@@ -296,6 +326,28 @@ public final class EditorCoordinator: ObservableObject {
     /// TabCoordinator.replace which fires `tabCoordinator.objectWillChange`
     /// (the dirty-dot republish path) without touching DocumentModel.
     public var onReplaceTab: ((Int, ViewerCore.Tab) -> Void)?
+
+    /// On-disk local file-history store. Snapshots the just-saved text after a
+    /// SUCCESSFUL write so an overwrite (including a no-clobber "keep mine") is
+    /// recoverable (TSK-1103). Best-effort — a snapshot failure never fails the
+    /// save. Defaults to the shared store; tests inject a temp-dir store and
+    /// read it back via `versions(for:)`. The store's snapshot/diff INTERNALS
+    /// are owned by a sibling effort behind the SAME `snapshot(path:content:at:)`
+    /// signature — we call only that signature and never reach inside.
+    public var localHistoryStore: LocalHistoryStore = LocalHistoryStore()
+
+    /// Save the buffer for `id` to a NEW file (the "Save as copy" conflict
+    /// resolution). DocumentModel owns this because it drives the `NSSavePanel`
+    /// and routes through `saveCopy(ofTabAt:to:)`. Nil during tests / when the
+    /// host can't present a panel. Returns true when a copy was written.
+    public var onSaveAsCopy: ((_ tabID: UUID) -> Bool)?
+
+    /// Present the buffer-vs-disk diff for `id` so the user can decide before
+    /// resolving a save conflict (the "View diff" resolution). DocumentModel
+    /// wires this to the diff/compare surface once it's reachable; until then
+    /// it's a no-op seam (the conflict prompt is simply re-offered). This is the
+    /// integration seam the viewer agent's diff surface plugs into.
+    public var onViewSaveConflictDiff: ((_ tabID: UUID, _ url: URL) -> Void)?
 
     public init(tabCoordinator: TabCoordinator) {
         self.tabCoordinator = tabCoordinator
@@ -577,6 +629,23 @@ public final class EditorCoordinator: ObservableObject {
     public func saveEditor(forTabID id: UUID) -> Bool {
         guard var buf = tabCoordinator.editorBuffers[id] else { return false }
         AuditLog.shared.record(.fileSave, action: "save", target: buf.url.path)
+
+        // --- No-clobber guard (TSK-768 / 2026-06-20 data-loss incident) ---
+        // Before writing, re-stat the file and refuse to blind-overwrite a
+        // change another process made under a DIRTY buffer. The watcher-based
+        // detection only catches edits the app actually observed; a write the
+        // watcher never reported (FSEvents debounce/coalescing, a different
+        // watched URL, the watcher paused/off) would otherwise sail straight
+        // through ⌘S. `decide` is the pure contract; the action is the side
+        // effect. Returns nil to abort the save (conflict deferred / cancelled
+        // / diverted to reload-or-copy); non-nil ⇒ proceed with the write.
+        switch resolveSaveConflict(forTabID: id, buffer: buf) {
+        case .abort:
+            return false
+        case .proceed:
+            break
+        }
+
         // File-watcher reload during save would race the write — pause
         // it for the moment the write is in flight + the immediate
         // post-write watcher event we'd otherwise re-enter on. Caller
@@ -659,6 +728,17 @@ public final class EditorCoordinator: ObservableObject {
                 }
             }
             onDidSaveToDisk?(savedURL, buf.text)
+            // Snapshot-on-save (TSK-1103): record a recoverable Local History
+            // version of the just-saved text so an overwrite — including a
+            // no-clobber "keep mine" — can be restored later. Best-effort by
+            // contract (the store swallows write/size/dedup failures and returns
+            // nil); a snapshot failure must NEVER fail a save that already
+            // landed on disk. Text-only: the editor save path only ever holds a
+            // text `EditorBuffer` (binary/hex saves route through
+            // `saveHexEdits`, which does NOT call here), so this is inherently
+            // scoped to text and never snapshots raw binary.
+            localHistoryStore.snapshot(
+                path: savedURL.path, content: buf.text, at: Date())
             return true
         } catch {
             // Surface failure to the user. Stay dirty so the next ⌘S
@@ -669,6 +749,145 @@ public final class EditorCoordinator: ObservableObject {
             alert.informativeText = "\(error)"
             alert.runModal()
             return false
+        }
+    }
+
+    // MARK: - No-clobber save guard
+
+    /// Outcome of the pre-write conflict resolution: write or don't.
+    private enum SaveGuardOutcome { case proceed, abort }
+
+    /// Pre-write no-clobber guard. Re-stats the file underneath `buffer` and,
+    /// using the pure `SaveConflictDecision`, decides whether the save may write
+    /// straight through, must reload a clean buffer instead, or must stop and
+    /// ask the user to resolve a dirty-buffer-vs-changed-disk conflict.
+    ///
+    /// Returns `.proceed` to let the caller write, `.abort` to suppress the
+    /// write (conflict resolved by reload / save-copy / cancel, or deferred to a
+    /// diff view). Pure decision is delegated to `SaveConflictDecision.decide`;
+    /// this method only does the stat + the chosen side effect.
+    private func resolveSaveConflict(
+        forTabID id: UUID, buffer: EditorBuffer
+    ) -> SaveGuardOutcome {
+        let url = buffer.url
+        // Fresh stat of the CURRENT on-disk state (not the watcher's cached
+        // view) — this is the whole point of a write-time guard.
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let curMTime = attrs?[.modificationDate] as? Date
+        let curSize = attrs?[.size] as? Int
+
+        switch SaveConflictDecision.decide(
+            buffer: buffer, currentMTime: curMTime, currentSize: curSize
+        ) {
+        case .proceed:
+            return .proceed
+
+        case .reloadSilently:
+            // Clean buffer but disk moved: nothing to lose. Take the disk bytes
+            // (the normal external-update path) and DON'T write — there are no
+            // edits to persist. This preserves the "clean buffer reloads, no
+            // prompt" contract the spec calls out as not-to-regress.
+            let tabs = tabsSnapshot()
+            if let idx = tabs.firstIndex(where: { $0.id == id }) {
+                onReloadFromDisk?(url, idx)
+            }
+            return .abort
+
+        case .conflict(let actions):
+            return resolveSaveConflictPrompt(
+                forTabID: id, url: url, actions: actions)
+        }
+    }
+
+    /// Present (or test-drive) the write-time save-conflict prompt and apply the
+    /// chosen resolution. Returns `.proceed` only for `overwrite` (the user
+    /// explicitly chose to keep their edits over the disk change); every other
+    /// branch resolves the conflict WITHOUT writing the original.
+    private func resolveSaveConflictPrompt(
+        forTabID id: UUID, url: URL, actions: [SaveConflictAction]
+    ) -> SaveGuardOutcome {
+        let choice: SaveConflictPrompt
+        if let override = saveConflictPromptOverride {
+            choice = override(url, actions)
+        } else {
+            choice = runSaveConflictAlert(url: url, actions: actions)
+        }
+
+        switch choice {
+        case .overwrite:
+            // Keep mine: fall through to the write. The post-write `markSaved`
+            // re-baselines the buffer's fingerprint against the bytes we write,
+            // so the now-overwritten external change won't re-trigger the guard.
+            return .proceed
+
+        case .reload:
+            // Take disk: drop the edits and reload. Mirrors the external-edit
+            // "Discard & Reload" branch.
+            discardEditorBuffer(forTabID: id)
+            let tabs = tabsSnapshot()
+            if let idx = tabs.firstIndex(where: { $0.id == id }) {
+                onReloadFromDisk?(url, idx)
+            }
+            return .abort
+
+        case .saveAsCopy:
+            // Write to a new file; leave the original (and its external change)
+            // untouched. The copy keeps the buffer dirty against the original.
+            _ = onSaveAsCopy?(id)
+            return .abort
+
+        case .viewDiff:
+            // Surface the diff, then leave the buffer untouched. The viewer
+            // agent's diff surface plugs in here; until wired this is a no-op
+            // and the user can ⌘S again to re-decide.
+            onViewSaveConflictDiff?(id, url)
+            return .abort
+
+        case .cancel:
+            return .abort
+        }
+    }
+
+    /// The AppKit modal for the write-time save conflict. Built from the offered
+    /// `actions` so the decision layer owns the option set. Overridable via
+    /// `saveConflictPromptOverride` for host tests (this method never runs under
+    /// the headless gate). "Save as Copy" is the default button (the safest
+    /// non-destructive choice that still preserves the user's edits); the
+    /// destructive "Overwrite" is last so it's never the accidental return.
+    private func runSaveConflictAlert(
+        url: URL, actions: [SaveConflictAction]
+    ) -> SaveConflictPrompt {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "\(url.lastPathComponent) changed on disk since you opened it"
+        alert.informativeText =
+            "Saving now would overwrite the change made by another program. "
+            + "Choose how to resolve it."
+        // Map actions → buttons in offered order, then read back by title so
+        // the button index never has to be kept in sync with the action order.
+        var titlesByAction: [String: SaveConflictAction] = [:]
+        for action in actions {
+            let title: String
+            switch action {
+            case .viewDiff:   title = "View Diff…"
+            case .saveAsCopy: title = "Save as Copy…"
+            case .reload:     title = "Reload from Disk"
+            case .overwrite:  title = "Overwrite"
+            }
+            alert.addButton(withTitle: title)
+            titlesByAction[title] = action
+        }
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        // Buttons are indexed from .alertFirstButtonReturn in add order.
+        let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        guard index >= 0, index < actions.count else { return .cancel }
+        switch actions[index] {
+        case .viewDiff:   return .viewDiff
+        case .saveAsCopy: return .saveAsCopy
+        case .reload:     return .reload
+        case .overwrite:  return .overwrite
         }
     }
 
