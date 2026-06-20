@@ -41,6 +41,20 @@ final class RasterSelectionTests: XCTestCase {
                                                 RasterPoint(x: 1, y: 1)]).contains(x: 0, y: 0))
     }
 
+    func test_polygon_concave_Lshape() {
+        // A lasso is usually CONCAVE — the case where even-odd ray-casting bugs
+        // hide. L-shape: bottom band [x 0–4, y 0–2] + left column [x 0–2, y 2–4],
+        // with a notch in the top-right that must read as OUTSIDE.
+        let l = RasterSelection.polygon([
+            RasterPoint(x: 0, y: 0), RasterPoint(x: 4, y: 0), RasterPoint(x: 4, y: 2),
+            RasterPoint(x: 2, y: 2), RasterPoint(x: 2, y: 4), RasterPoint(x: 0, y: 4),
+        ])
+        XCTAssertTrue(l.contains(x: 3, y: 1), "bottom band interior")
+        XCTAssertTrue(l.contains(x: 1, y: 3), "left column interior")
+        XCTAssertTrue(l.contains(x: 1, y: 1), "shared corner interior")
+        XCTAssertFalse(l.contains(x: 3, y: 3), "top-right notch is OUTSIDE the L")
+    }
+
     // MARK: fill(_:in:) — selection-constrained paint
 
     func test_fill_rect_paintsOnlyInside() {
