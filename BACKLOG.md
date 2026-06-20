@@ -1,5 +1,13 @@
 # Backlog
 
+## 2026-06-19 — deferred follow-ups from the marathon drain session
+- **Owner review-close queue (12 items)** — `fixed→review` features whose MODEL is host-tested but pixels need the owner's on-screen done-close: TSK-280, 311, 333, 305, 300, 283, 285, 302, 284, 334, 259, 275. A single VM/visual pass closes the batch (review→validated→done).
+- **TSK-1032 (HEX byte-grid mount)** — VM finding: switching to HEX mode → "no Hex* view in tree" (PV_02 + ViewModeMatrixSmokeTests, same root cause). Host-side: `HexNSTextView` class exists + the test traverses subviews → it's mount-timing or a real `.hex`-branch regression. VM-only: re-run `ViewModeMatrixSmokeTests` in isolation on the VM. `live-validation`.
+- **TSK-326 (palette omni-invoke "every command")** — DESIGN task, not a quick verb-add. 13 `scriptVerb: nil` commands are all UI-context (responder-chain undo/redo, NSWindow minimize/zoom, dialog/prompt @State) — none model-dispatchable. Fix = give the `>` palette a SECOND invocation path: `NSApp.sendAction(_:to:from:)` down the responder chain (the palette runs in-app, so the responder chain + key window are live at invoke). Recommend that for the action+dialog commands, document `debug.*` as deliberately menu-only.
+- **TSK-986 (hex-search debounce)** — HexView does a full-buffer scan synchronously on main per keystroke. Fix = a host-testable `HexSearchController` (debounce + off-main) consumed by HexView. **DEFER until TSK-1032 (HexView mount) is resolved** — don't refactor HexView state while its mount is suspect.
+- **TSK-1026 multi-session `pruneOrphans` sweep** — the `HotExitSpill.pruneOrphans` helper + its test exist; capture-side + destructive-close cleanup are wired. Only the closed-across-sessions orphan sweep is unwired (needs safe multi-session timing — pruning per-session would delete other sessions' valid spills). Low-priority disk-hygiene.
+- **Render-path `fixed` items still needing a model-test locate before → review:** 262 (session-tab icons — pure-UI, may have no model test), 329 (new-file action — likely folded into DocumentControllerTests), the `[PARTIAL]` epics (264/308/316/318/319/336/338/341/345/346/351/353/356 — multi-facet, per-facet judgment).
+
 ## 2026-06-16 — VM harness completion (deferred; board-tracked)
 - **TSK-954** (`fixed`) — MCP-driven UAT (`PluginsAndMcpAutomationUATTests`) still red on the VM GUI lane. Root cause
   found: its `MCPClient` spawns `--mcp-stdio` DIRECTLY as ROOT, so the MCP server's `NSHomeDirectory()` is `/var/root`
