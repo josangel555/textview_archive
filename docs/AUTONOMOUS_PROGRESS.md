@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-20 (PM, 5-min cron) — trust-local-HTML feature + sidebar cache fix + integrations
+
+Inline autonomous cron run (no workflows). All on main, host-gate-green per item.
+- **TSK-1189 trust-local-HTML (4 slices, at `review` — on-screen UNVERIFIED):** slice 1
+  fail-closed gate `HTMLTrustPolicy` (2d6eeb24); slice 2 bounded relaxation — sanitizer
+  keeps the doc's own script/style, CSP relaxes script-src but KEEPS `connect-src 'none'`
+  anti-exfil fence (6e4c871a); slice 2b render wiring + `FileQuarantine` probe +
+  `DocumentModel.htmlTrusted` (6bfe1633); slice 3 Trust&Run banner trigger (ca6d64b3).
+  Security design `docs/research/html-trust-mode-2026-06-20/`; ~37 host tests + teeth.
+  Banner-appears + Weather-Console-renders = owner/T6 review ceiling. Slice 3b
+  (failure-surfacing + consent-network) = TSK-1203.
+- **TSK-854** Swift-treesitter highlight-twin kill — integrated + re-gated on main
+  (71d3e0ff), **VALIDATED**; ~12.7 MB reclaim. Scope-corrected (engine kept for folds/
+  structural-search); follow-ups TSK-1201/1202.
+- **TSK-1103 LocalHistory cluster** — storage Myers-linear-space diff + unified version
+  viewer reconciled onto main (8d4726a5); duplicate snapshot-hook + duplicate
+  secret-exclusion unified at the store (one instance, one chokepoint hook); at `review`
+  (viewer UI render ceiling).
+- **TSK-991** sidebar children-cache cap — pinned-aware eviction via pure
+  `childrenCacheEvictions`, **VALIDATED** (eba0330d).
+- Docs/skills committed (affb7a19): the T6 on-screen-confirm rule, the agent-UAT (T6)
+  framework, the agent-productivity feedback, highlighting/image research outputs.
+
 ## LOG 2026-06-20 — unified version-history + diff viewer (TSK-301/1103)
 
 Owner-directed RETHINK: ONE well-designed version-history + diff viewer serving BOTH Local History and Git (not the git-diff UI reused as-is). Built on an isolated worktree; host-gate-green.
