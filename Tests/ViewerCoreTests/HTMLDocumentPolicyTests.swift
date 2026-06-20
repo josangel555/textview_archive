@@ -359,4 +359,34 @@ final class HTMLDocumentPolicyTests: XCTestCase {
             URL(fileURLWithPath: "/tmp/site/x.png"), documentURL: nil
         ))
     }
+
+    // MARK: - dependsOnSuppressedScript (TSK-1189 diagnostic seam)
+
+    func test_dependsOnSuppressedScript_trueForInlineScript() {
+        // A JS-driven bundled app (the Weather Console case): its <script>
+        // gets stripped + script-src 'none', so it never paints. The detector
+        // must flag it so the UI can explain instead of silently breaking.
+        let bundled = """
+        <!DOCTYPE html><html><head><script>window.__boot()</script></head>
+        <body><div id="__bundler_loading">Loading…</div></body></html>
+        """
+        XCTAssertTrue(HTMLDocumentPolicy.dependsOnSuppressedScript(bundled))
+    }
+
+    func test_dependsOnSuppressedScript_trueForExternalScriptSrc() {
+        XCTAssertTrue(HTMLDocumentPolicy.dependsOnSuppressedScript(
+            "<html><body><script src=\"app.bundle.js\"></script></body></html>"))
+    }
+
+    func test_dependsOnSuppressedScript_caseInsensitive() {
+        XCTAssertTrue(HTMLDocumentPolicy.dependsOnSuppressedScript(
+            "<HTML><SCRIPT>x()</SCRIPT></HTML>"))
+    }
+
+    func test_dependsOnSuppressedScript_falseForPlainDocument() {
+        // A plain static document renders fine under the locked-down policy —
+        // no script, so no explanation to over-offer.
+        XCTAssertFalse(HTMLDocumentPolicy.dependsOnSuppressedScript(
+            "<!DOCTYPE html><html><body><h1>Hello</h1><p>world</p></body></html>"))
+    }
 }

@@ -85,7 +85,47 @@ public struct HTMLRenderedView: NSViewRepresentable {
     /// avoid spawning a fresh WebContent process per view instance.
     private static let sharedProcessPool = WKProcessPool()
 
+    /// Perf (TSK-1190): the warm-WebView cache key for this pane, or nil to
+    /// opt out. Keyed on the resolved file path (same key shape as
+    /// `MarkdownRenderedView.cacheKey`) so it's stable across a session switch
+    /// AND across an Editor↔Render toggle (which dismantles + re-makes this
+    /// representable). Parked in the SEPARATE `WarmHTMLWebViewCache` so a
+    /// raw-HTML WebView can never be served to the markdown pane (different
+    /// security posture). nil only for a non-file URL — documentURL is always
+    /// a file URL today, but keep the optional shape symmetric.
+    var cacheKey: String? {
+        guard documentURL.isFileURL else { return nil }
+        return documentURL.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
     public func makeNSView(context: Context) -> WKWebView {
+        // Record the cache key + doc URL on the (fresh) coordinator so
+        // `dismantleNSView` — which only receives the coordinator, not the
+        // view — knows where to park this pane's WebView. Set on BOTH the
+        // cache-HIT and cache-MISS paths.
+        context.coordinator.cacheKey = cacheKey
+        context.coordinator.documentURL = documentURL
+
+        // Perf (TSK-1190): re-attach a parked WebView for this file instead of
+        // building a fresh one + re-running `loadHTMLString` on the full
+        // sanitized document. We copy the parked coordinator's in-flight
+        // navigation state onto THIS (SwiftUI-owned) coordinator and re-point
+        // the WebView's delegate at it, so `updateNSView`'s
+        // `lastDocument == document` reload gate is a no-op — no
+        // re-sanitize/re-parse/re-DOM-materialize on switch-back. If the JS
+        // opt-in changed while parked, `updateNSView`'s `lastJSEnabled` arm
+        // still forces the (correct) reload.
+        if let key = cacheKey,
+           let parked = WarmHTMLWebViewCache.shared.retrieve(forKey: key) {
+            let webView = parked.webView
+            context.coordinator.adoptNavigationState(from: parked.coordinator)
+            webView.navigationDelegate = context.coordinator
+            #if DEBUG
+            MountProbe.webViewMakes += 1   // a make happened (even on a cache hit)
+            #endif
+            return webView
+        }
+
         let config = WKWebViewConfiguration()
         config.processPool = Self.sharedProcessPool
 
@@ -105,15 +145,21 @@ public struct HTMLRenderedView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
-        context.coordinator.documentURL = documentURL
         // Release file-URL drags so the parent SwiftUI .onDrop receives them.
         webView.unregisterDraggedTypes()
+        #if DEBUG
+        MountProbe.webViewMakes += 1
+        #endif
         return webView
     }
 
     public func updateNSView(_ webView: WKWebView, context: Context) {
         let coord = context.coordinator
         coord.documentURL = documentURL
+        // Keep the parking key current — the pane's file can change within one
+        // representable lifecycle; `dismantleNSView` parks under whatever this
+        // resolves to.
+        coord.cacheKey = cacheKey
 
         // L2: re-apply the JS opt-in on every update so a per-tab toggle
         // takes effect on the next load. WKWebpagePreferences is consumed
@@ -181,19 +227,45 @@ public struct HTMLRenderedView: NSViewRepresentable {
         Coordinator()
     }
 
-    /// Deterministic teardown (mirrors `MarkdownRenderedView.dismantleNSView`):
-    /// stop in-flight loads, sever the delegate, drop any user scripts
-    /// (there are none today, but keep the hygiene invariant).
+    /// Teardown. Perf (TSK-1190): instead of tearing the WebView down, PARK it
+    /// in the app-level `WarmHTMLWebViewCache` keyed by file path so a returning
+    /// pane (after an Editor↔Render toggle, or a session switch that minted a
+    /// fresh `Tab.id`) re-attaches it with NO reload — keeping the loaded DOM
+    /// and the coordinator's nav state intact (the coordinator is parked
+    /// alongside; the make path re-points the delegate + copies the state).
+    /// Only opt-out panes (nil key) take the real teardown below.
+    ///
+    /// SECURITY: parking does NOT relax any layer — the WebView keeps its
+    /// `allowsContentJavaScript`, its CSP-enveloped DOM, and its
+    /// `decideSubresource`/`decideLink` policy. The cache is path-keyed and
+    /// SEPARATE from the markdown cache, so a markdown WebView (JS-on for the
+    /// find runtime) can never be handed to this pane.
     public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        if let key = coordinator.cacheKey {
+            // Detach the live delegate link so no stray callback lands on this
+            // coordinator while parked; the make path installs the new delegate.
+            webView.navigationDelegate = nil
+            WarmHTMLWebViewCache.shared.stash(webView, coordinator: coordinator, forKey: key)
+            return
+        }
+
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.configuration.userContentController.removeAllUserScripts()
+        #if DEBUG
+        MountProbe.webViewDismantles += 1
+        #endif
     }
 
     @MainActor
     public final class Coordinator: NSObject, WKNavigationDelegate {
         var lastPrintNonce: Int = 0
         var lastPDFExportNonce: Int = 0
+        /// Perf (TSK-1190): the warm-WebView cache key (file path) this pane's
+        /// WebView is parked under on `dismantleNSView`. Set from
+        /// `HTMLRenderedView.cacheKey` in make/update. nil ⇒ this pane opts out
+        /// of the cache (real teardown on dismantle).
+        var cacheKey: String?
         /// Last document string handed to `loadHTMLString`. Gate against
         /// redundant reloads on @Published churn.
         var lastDocument: String?
@@ -208,6 +280,25 @@ public struct HTMLRenderedView: NSViewRepresentable {
         /// `loadHTMLString` is permitted while a post-load `.other`
         /// file:/data: navigation (an in-page escape) is cancelled.
         var didFinishFirstLoad: Bool = false
+
+        /// Perf (TSK-1190): copy the navigation/render state that determines
+        /// whether `updateNSView` reloads the page from a PARKED coordinator
+        /// onto this (fresh, SwiftUI-owned) one when a warm WebView is
+        /// re-attached. After this, `lastDocument == document` for the same
+        /// document so the reload gate is a no-op — the whole point of the cache.
+        ///
+        /// We copy the document-identity + already-applied-load fields, NOT the
+        /// per-tick print/PDF nonces (those resync from the model on the next
+        /// `updateNSView`). `didFinishFirstLoad` is preserved so the nav-policy
+        /// window stays correct without waiting for a (non-occurring) reload.
+        /// `lastJSEnabled` is preserved so a JS-opt-in change while parked is
+        /// still detected by `updateNSView`'s reload gate.
+        func adoptNavigationState(from parked: Coordinator) {
+            lastDocument = parked.lastDocument
+            lastJSEnabled = parked.lastJSEnabled
+            documentURL = parked.documentURL
+            didFinishFirstLoad = parked.didFinishFirstLoad
+        }
 
         public func webView(
             _ webView: WKWebView,

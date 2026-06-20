@@ -69,6 +69,32 @@ public enum HTMLDocumentPolicy {
         HTMLSanitizer.sanitize(rawHTML)
     }
 
+    /// Diagnostic (TSK-1189, host-testable seam): does this raw `.html`
+    /// document depend on script execution that the render path SUPPRESSES?
+    ///
+    /// The raw-HTML render path strips `<script>` (L1 sanitizer) and serves
+    /// `script-src 'none'` with JS default-deny (L2/L3). For a plain
+    /// document that's invisible. For a JS-DRIVEN bundled app (e.g. a
+    /// self-contained single-file web app whose body is just a mount point a
+    /// runtime fills in), the result is a partial / blank render — the page
+    /// never paints because its own code never runs.
+    ///
+    /// This pure predicate lets the UI tell the two apart so it can surface an
+    /// honest explanation ("this page's scripts were removed for safety")
+    /// instead of a silently-broken render, and — once the owner approves the
+    /// trust boundary — offer a per-document "run this page" opt-in. It does
+    /// NOT change any rendering behavior on its own; it is a detector only.
+    ///
+    /// Heuristic (conservative — false POSITIVES are cheap, they just over-
+    /// offer the explanation; false negatives leave the status quo): a `<script>`
+    /// tag present in the RAW source whose contents the sanitizer drops. We sniff
+    /// the raw bytes case-insensitively for an opening `<script` token; we do not
+    /// parse, so an inert `<script type="application/json">` data island also
+    /// trips it — acceptable for a "this page may need JS" hint.
+    public static func dependsOnSuppressedScript(_ rawHTML: String) -> Bool {
+        rawHTML.range(of: "<script", options: [.caseInsensitive]) != nil
+    }
+
     // MARK: - L2: JavaScript default-deny
 
     /// The JS-enabled state for a given per-tab opt-in flag. There is

@@ -19,6 +19,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image-editor adjustment sliders feel smoother** — dragging Brightness/Contrast/etc. no longer re-runs the full image pipeline on every tiny movement; the render now waits for a brief pause and runs once, so the sliders stay responsive.
 - **Typing in the Hex view's search box is smoother** — searching a large binary file no longer scans the whole file on every keystroke; the scan now waits for a brief pause in typing, so the field stays responsive.
 - **Switching sessions is faster** — a rendered-Markdown file you return to no longer rebuilds its preview from scratch on every session switch; its already-rendered view is kept warm and re-shown instead of re-paying the slow web-view load each time. Tearing down the outgoing session's tabs on a switch was also doing redundant per-tab work (git-diff / outline / language-server refresh) once per tab — now done once.
+- **Switching an HTML file between Render and Editor is faster** — toggling a `.html` tab's lens (or leaving and coming back) no longer rebuilds its rendered preview and re-loads the whole document each time; the rendered web view is kept warm and re-shown, so big self-contained HTML files don't re-pay the slow render on every switch.
 
 ### Changed
 - **New sessions open clean — just the file tree** — a fresh session now starts with only the Files tool window open; every other panel (git, search, outline, timeline, …) starts closed. Open whatever you need and it's remembered for that session.
