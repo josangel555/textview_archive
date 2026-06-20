@@ -22,6 +22,8 @@ public final class PreferencesStore: @unchecked Sendable {
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
         static let vimModeEnabled = "MarkdownViewer.vimModeEnabled"
         static let showMarkdownOverview = "MarkdownViewer.showMarkdownOverview"
+        /// Local History capture toggle (TSK-1103). Default ON.
+        static let localHistoryEnabled = "MarkdownViewer.localHistoryEnabled"
         static let editorIndentGuides = "MarkdownViewer.editorIndentGuides"
         static let themeOverride = "MarkdownViewer.themeOverride"
         /// Legacy chrome-scale preference, retired when `uiScale` and
@@ -202,6 +204,18 @@ public final class PreferencesStore: @unchecked Sendable {
     public var showMarkdownOverview: Bool {
         get { defaults.object(forKey: Key.showMarkdownOverview) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.showMarkdownOverview) }
+    }
+
+    /// Whether Local History captures a content version on each save
+    /// (TSK-1103). On by default — it's a passive safety net (view/diff/restore
+    /// earlier revisions of a file). When off, `LocalHistoryStore.snapshot` is a
+    /// no-op, so existing history is retained but no NEW versions are taken until
+    /// re-enabled. The store reads this live (gated per-snapshot), so toggling
+    /// takes effect immediately. Capture is additionally text-only and
+    /// secret-excluding regardless of this flag.
+    public var localHistoryEnabled: Bool {
+        get { defaults.object(forKey: Key.localHistoryEnabled) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.localHistoryEnabled) }
     }
 
     /// Render vertical indentation guide lines in the CM6 editor (the
@@ -433,6 +447,7 @@ public final class PreferencesStore: @unchecked Sendable {
         s.showInvisibleChars = showInvisibleChars
         s.vimModeEnabled = vimModeEnabled
         s.showMarkdownOverview = showMarkdownOverview
+        s.localHistoryEnabled = localHistoryEnabled
         s.editorIndentGuides = editorIndentGuides
         s.themeOverride = themeOverrideRaw
         s.hexBytesPerRow = hexBytesPerRow
@@ -459,6 +474,7 @@ public final class PreferencesStore: @unchecked Sendable {
         if let v = s.showInvisibleChars { showInvisibleChars = v }
         if let v = s.vimModeEnabled { vimModeEnabled = v }
         if let v = s.showMarkdownOverview { showMarkdownOverview = v }
+        if let v = s.localHistoryEnabled { localHistoryEnabled = v }
         if let v = s.editorIndentGuides { editorIndentGuides = v }
         if let v = s.themeOverride { themeOverrideRaw = v }
         if let v = s.hexBytesPerRow { hexBytesPerRow = v }
@@ -488,6 +504,7 @@ public struct SettingsSnapshot: Codable, Equatable {
     public var showInvisibleChars: Bool?
     public var vimModeEnabled: Bool?
     public var showMarkdownOverview: Bool?
+    public var localHistoryEnabled: Bool?
     public var editorIndentGuides: Bool?
     public var themeOverride: String?
     public var hexBytesPerRow: Int?
