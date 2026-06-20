@@ -4706,6 +4706,17 @@ public final class DocumentModel: ObservableObject {
         objectWillChange.send()
     }
 
+    /// Should the renderer offer a "Trust & Run" affordance for this tab? True
+    /// when the doc is trust-ELIGIBLE (local + not quarantined), its scripts were
+    /// SUPPRESSED (so it likely renders partially), and it isn't already trusted.
+    /// Pure decision over the tab's content + trust state (host-testable); the
+    /// banner that consumes it is render-path.
+    public func shouldOfferHTMLTrust(forTabID tabID: UUID, contents: String) -> Bool {
+        guard htmlTrustEligible(forTabID: tabID), !htmlTrusted(forTabID: tabID)
+        else { return false }
+        return HTMLDocumentPolicy.dependsOnSuppressedScript(contents)
+    }
+
     /// True when the current tab is an `.html` file being shown in
     /// rendered mode — i.e. when the "Enable JavaScript" toggle is
     /// meaningful. Honors the per-tab "Open As…" override.

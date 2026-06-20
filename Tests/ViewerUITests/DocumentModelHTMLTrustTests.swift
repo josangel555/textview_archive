@@ -66,4 +66,28 @@ final class DocumentModelHTMLTrustTests: XCTestCase {
         XCTAssertFalse(m.htmlTrusted(forTabID: UUID()))
         XCTAssertFalse(m.htmlTrustEligible(forTabID: UUID()))
     }
+
+    // MARK: shouldOfferHTMLTrust — the banner-visibility predicate
+
+    func test_shouldOfferTrust_forScriptDependentEligibleUntrustedDoc() {
+        let m = makeModel()
+        let id = openHTML(m)  // content includes <script>
+        XCTAssertTrue(m.shouldOfferHTMLTrust(forTabID: id, contents: "<script>x()</script><div></div>"),
+                      "offer trust for a local, script-dependent, untrusted doc")
+    }
+
+    func test_shouldOfferTrust_falseOnceTrusted() {
+        let m = makeModel()
+        let id = openHTML(m)
+        m.setHTMLTrusted(true, forTabID: id)
+        XCTAssertFalse(m.shouldOfferHTMLTrust(forTabID: id, contents: "<script>x()</script>"),
+                       "no banner once the doc is already trusted")
+    }
+
+    func test_shouldOfferTrust_falseForNonScriptDoc() {
+        let m = makeModel()
+        let id = openHTML(m)
+        XCTAssertFalse(m.shouldOfferHTMLTrust(forTabID: id, contents: "<p>just text, no scripts</p>"),
+                       "no banner when nothing was suppressed")
+    }
 }

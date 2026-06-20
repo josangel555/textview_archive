@@ -855,7 +855,16 @@ public struct ContentView: View {
             if file.byteCount > HTMLDocumentPolicy.renderMaxBytes {
                 LargeHTMLPlaceholderView(file: file, model: model)
             } else {
-                HTMLRenderedView(
+                VStack(spacing: 0) {
+                    // TSK-1189: offer "Trust & Run" when a local, script-dependent
+                    // doc rendered partially because its scripts were stripped.
+                    if model.shouldOfferHTMLTrust(forTabID: tab.id, contents: file.contents) {
+                        HTMLTrustBanner(
+                            fileName: file.url.lastPathComponent,
+                            onTrust: { model.setHTMLTrusted(true, forTabID: tab.id) }
+                        )
+                    }
+                    HTMLRenderedView(
                     rawHTML: file.contents,
                     documentURL: file.url,
                     zoom: model.zoom,
@@ -875,6 +884,7 @@ public struct ContentView: View {
                     }
                 )
                 .accessibilityIdentifier("mdv.htmlRendered")
+                }
             }
         } else {
             // PERF #5: source view subtree extracted into
