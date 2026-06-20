@@ -167,4 +167,34 @@ final class Audit_Sources_ViewerUI_Terminal_PTYProcess_swift_LifecycleTests: Hea
         pty.terminate()
         XCTAssertFalse(pty.isRunning)
     }
+
+    // MARK: - TSK-992 concurrency hardening
+
+    func test_claimStartSlot_secondClaim_isRefused_noDoubleFork() {
+        // The double-fork window: the old guard checked childPID<=0 then UNLOCKED
+        // before the fork set childPID, so two concurrent start()s could both
+        // fork. claimStartSlot now atomically marks `starting`.
+        let pty = PTYProcess()
+        XCTAssertTrue(pty.claimStartSlot(), "first start claims the slot")
+        XCTAssertFalse(pty.claimStartSlot(),
+                       "a second concurrent start is refused (no double-fork)")
+    }
+
+    func test_onOutput_onExit_synchronizedAccessors_roundTrip() {
+        // TSK-992: the callbacks are now lock-synchronized computed vars; the
+        // setter/getter must still round-trip + invoke without deadlock.
+        final class Box: @unchecked Sendable { var out = 0; var exit: Int32 = -99 }
+        let box = Box()
+        let pty = PTYProcess()
+        XCTAssertNil(pty.onOutput)
+        XCTAssertNil(pty.onExit)
+        pty.onOutput = { box.out += $0.count }
+        pty.onExit = { box.exit = $0 }
+        XCTAssertNotNil(pty.onOutput)
+        XCTAssertNotNil(pty.onExit)
+        pty.onOutput?(Data([1, 2, 3]))   // the invoke path the readQueue uses
+        pty.onExit?(0)
+        XCTAssertEqual(box.out, 3)
+        XCTAssertEqual(box.exit, 0)
+    }
 }

@@ -27,11 +27,23 @@ import Darwin
 /// (`resolveShell`, `CStringArray.make`).
 public final class PTYProcess: @unchecked Sendable {
     /// Called with each raw output chunk from the shell, on `readQueue`
-    /// (a background queue — NOT the main actor). Set before `start`.
-    public var onOutput: (@Sendable (Data) -> Void)?
-    /// Called once when the child exits / the PTY reaches EOF, on
-    /// `readQueue`. Carries the exit status if known.
-    public var onExit: (@Sendable (Int32) -> Void)?
+    /// (a background queue — NOT the main actor). Set before `start`. TSK-992:
+    /// lock-synchronized so a wiring write can't race the readQueue's invoke
+    /// read. Safe from deadlock — the invokes (`onOutput?(…)`/`onExit?(…)`)
+    /// happen OUTSIDE the lock, so the getter's snapshot-under-lock won't
+    /// re-enter.
+    public var onOutput: (@Sendable (Data) -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return _onOutput }
+        set { lock.lock(); defer { lock.unlock() }; _onOutput = newValue }
+    }
+    /// Called once when the child exits / the PTY reaches EOF, on `readQueue`.
+    /// Carries the exit status if known. Lock-synchronized (TSK-992).
+    public var onExit: (@Sendable (Int32) -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return _onExit }
+        set { lock.lock(); defer { lock.unlock() }; _onExit = newValue }
+    }
+    private var _onOutput: (@Sendable (Data) -> Void)?
+    private var _onExit: (@Sendable (Int32) -> Void)?
 
     private let lock = NSLock()
     private var masterFD: Int32 = -1
@@ -41,6 +53,10 @@ public final class PTYProcess: @unchecked Sendable {
     private(set) var childPID: pid_t = -1
     private var readSource: DispatchSourceRead?
     private var didExit = false
+    /// TSK-992: set under `lock` between claiming the start slot and the fork
+    /// completing, so two concurrent `start()` calls can't both fork (the old
+    /// guard released the lock BEFORE the fork set `childPID` = a double-fork).
+    private var starting = false
     private let readQueue = DispatchQueue(label: "com.markdownviewer.pty.read")
     /// Serial queue for the BLOCKING input drain (TSK-741). The master fd is
     /// blocking, so a large paste into a slow reader (vim) fills the kernel PTY
@@ -57,6 +73,18 @@ public final class PTYProcess: @unchecked Sendable {
         return childPID > 0 && !didExit
     }
 
+    /// Atomically claim the single-start slot (TSK-992): returns true + marks
+    /// `starting` when no child is up and no start is in flight; false
+    /// otherwise. Closes the double-fork window (the old guard released the lock
+    /// BEFORE the fork completed). Internal so a host test can exercise the
+    /// guard without the non-host-testable real fork.
+    func claimStartSlot() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard childPID <= 0 && !starting else { return false }
+        starting = true
+        return true
+    }
+
     // MARK: - Spawn
 
     /// Fork the login shell on a fresh PTY sized `rows × cols` and start
@@ -68,9 +96,7 @@ public final class PTYProcess: @unchecked Sendable {
         workingDirectory: URL? = nil,
         environment: [String: String]? = nil
     ) -> Bool {
-        lock.lock()
-        guard childPID <= 0 else { lock.unlock(); return true }   // already running
-        lock.unlock()
+        guard claimStartSlot() else { return true }   // already running / a start is in flight
 
         var master: Int32 = 0
         var ws = winsize(
@@ -101,6 +127,7 @@ public final class PTYProcess: @unchecked Sendable {
         }
 
         if pid < 0 {
+            lock.lock(); starting = false; lock.unlock()   // release the claimed slot
             return false                                   // fork failed
         }
 
@@ -124,6 +151,7 @@ public final class PTYProcess: @unchecked Sendable {
         masterFD = master
         childPID = pid
         didExit = false
+        starting = false
         lock.unlock()
 
         startReadLoop()
