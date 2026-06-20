@@ -65,8 +65,8 @@ public enum HTMLDocumentPolicy {
     /// wrapper over `HTMLSanitizer.sanitize` so the HTML-file render
     /// path has a single named entry point (and so the policy's
     /// "always sanitize" contract is pinned by one test target).
-    public static func sanitize(_ rawHTML: String) -> String {
-        HTMLSanitizer.sanitize(rawHTML)
+    public static func sanitize(_ rawHTML: String, trusted: Bool = false) -> String {
+        HTMLSanitizer.sanitize(rawHTML, trusted: trusted)
     }
 
     /// Diagnostic (TSK-1189, host-testable seam): does this raw `.html`
@@ -142,6 +142,26 @@ public enum HTMLDocumentPolicy {
     /// The `<meta>` tag carrying the CSP, ready to splice into `<head>`.
     public static var cspMetaTag: String {
         "<meta http-equiv=\"Content-Security-Policy\" content=\"\(csp)\">"
+    }
+
+    /// TSK-1189 — CSP for a TRUSTED local document. Relaxes `script-src` to run
+    /// the page's OWN scripts (`'self' 'unsafe-inline' 'unsafe-eval'` — bundled
+    /// apps use all three) but KEEPS the anti-exfiltration fence UNCHANGED:
+    /// `connect-src 'none'` (no beacon/fetch — the page renders but cannot phone
+    /// home), plus `object/frame/base/form-action 'none'` and local+inline
+    /// img/style/font. `trusted == false` returns the strict `csp` constant
+    /// byte-for-byte. A trusted page is a local web page, NOT an exfiltrator.
+    public static func cspString(trusted: Bool) -> String {
+        guard trusted else { return csp }
+        return "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            + "img-src file: data:; style-src 'unsafe-inline'; font-src data:; "
+            + "connect-src 'none'; frame-src 'none'; object-src 'none'; "
+            + "base-uri 'none'; form-action 'none';"
+    }
+
+    /// The `<meta>` CSP tag for the given trust level.
+    public static func cspMeta(trusted: Bool) -> String {
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"\(cspString(trusted: trusted))\">"
     }
 
     /// Outcome of a sub-resource / navigation policy decision for the
@@ -289,13 +309,13 @@ public enum HTMLDocumentPolicy {
     /// any `<head>` the (sanitized) document also carries, and the CSP
     /// `<meta>` is honored as long as it appears before the content it
     /// governs. We prepend it.
-    public static func envelope(sanitizedBody: String) -> String {
+    public static func envelope(sanitizedBody: String, trusted: Bool = false) -> String {
         """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
-        \(cspMetaTag)
+        \(cspMeta(trusted: trusted))
         <meta name="viewport" content="width=device-width, initial-scale=1">
         </head>
         <body>

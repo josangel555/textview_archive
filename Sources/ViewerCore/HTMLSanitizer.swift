@@ -50,20 +50,34 @@ public enum HTMLSanitizer {
         "link", "meta", "base",
     ]
 
-    /// Returns a sanitized copy of `raw`. Pure function — safe to call
-    /// from any actor.
-    public static func sanitize(_ raw: String) -> String {
+    /// TSK-1189 trusted mode: a LOCAL, user-opted-in document keeps its own
+    /// `<script>` and `<style>` so a JS-render bundle can paint — but every
+    /// other drop stays (iframe/object/embed/form/.../base/meta), and event
+    /// handlers + `javascript:` URLs are STILL neutralized below. Modern
+    /// bundles wire up via `addEventListener`, not inline `on*=`, so this is the
+    /// minimal relaxation that fixes the JS-bundle case without widening the
+    /// inline-JS surface. The anti-exfiltration fence lives at L3
+    /// (`HTMLDocumentPolicy.csp(trusted:)` keeps `connect-src 'none'`), not here.
+    private static let trustedDroppedElements: Set<String> =
+        droppedElements.subtracting(["script", "style"])
+
+    /// Returns a sanitized copy of `raw`. Pure function — safe to call from any
+    /// actor. `trusted` (default `false`, so any caller that forgets gets the
+    /// hardened path) keeps the document's own `<script>`/`<style>`; it must be
+    /// fed SOLELY by `HTMLTrustPolicy.isTrusted` (local + opted-in).
+    public static func sanitize(_ raw: String, trusted: Bool = false) -> String {
         var out = raw
+        let drop = trusted ? trustedDroppedElements : droppedElements
         // Order matters: drop full elements first so we don't waste
         // work scrubbing event handlers on tags that are about to
         // disappear anyway.
-        for tag in droppedElements {
+        for tag in drop {
             out = stripElement(named: tag, in: out)
         }
         // Strip orphaned close tags (the matched close was already
         // consumed by stripElement; this catches malformed input
         // where there's a close-only).
-        for tag in droppedElements {
+        for tag in drop {
             out = stripStandaloneClose(named: tag, in: out)
         }
         out = stripEventHandlers(in: out)
