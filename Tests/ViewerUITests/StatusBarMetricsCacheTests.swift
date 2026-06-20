@@ -154,4 +154,30 @@ final class StatusBarMetricsCacheTests: XCTestCase {
         _ = StatusBar.metrics(forText: text, url: url("b.txt"), encoding: .utf8)
         XCTAssertEqual(StatusBar.metricsScanCount, 2)
     }
+
+    // MARK: TSK-1120 — the transient placeholder never blanks the footer
+
+    /// The `.loading`/`.empty` placeholder must carry a real Size + a
+    /// "loading…" label and suppress the text-metric chips — so switching
+    /// between two already-loaded tabs never flashes a blank footer for the
+    /// frame a tab momentarily reports `.empty` before re-materializing.
+    /// (Both states route through `loadingPlaceholder` — the `.empty` arm is
+    /// the TSK-1120 fix; reverting it to `return nil` blanks the bar and this
+    /// contract test still guards the placeholder shape.)
+    func test_loadingPlaceholder_carriesSizeAndHidesTextMetrics() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsk1120-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let u = dir.appendingPathComponent("doc.txt")
+        let bytes = Data("hello world\nsecond line\n".utf8)   // known on-disk size
+        try bytes.write(to: u)
+
+        let m = StatusBar.loadingPlaceholder(for: u)
+        XCTAssertEqual(m.byteCount, bytes.count, "placeholder shows the real on-disk Size")
+        XCTAssertEqual(m.encodingShort, "loading…")
+        XCTAssertFalse(m.hasTextMetrics, "Lines/Chars chips hide until real metrics arrive")
+        XCTAssertEqual(m.lineCount, 0)
+        XCTAssertEqual(m.charCount, 0)
+    }
 }

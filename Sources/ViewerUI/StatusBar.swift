@@ -540,27 +540,40 @@ struct StatusBar: View {
                 indent: "",
                 hasTextMetrics: false
             )
-        case .loading:
-            // Don't blank the bar while a lazily-selected tab reads from disk.
-            // Show at least Size (the path shows separately) so a tab switch
-            // never flashes empty; Lines/Chars/EOL/Enc fill in when `.loaded`
-            // lands and the coordinator republishes. (TSK-452: the one
-            // headless-identifiable "stats blank on tab change" window.)
+        case .loading, .empty:
+            // Don't blank the bar while a lazily-selected tab reads from disk
+            // (`.loading`) — and likewise for the brief `.empty` placeholder a
+            // tab can report on switch-in before materialize flips it back to
+            // `.loaded`. Without covering `.empty` too, switching between two
+            // ALREADY-LOADED tabs flashed the footer blank for a frame
+            // (TSK-1120; the TSK-452/1615b98 fix only covered `.loading`).
+            // Show at least Size (the path shows separately) so a switch never
+            // flashes empty; Lines/Chars/EOL/Enc fill in when `.loaded` lands
+            // and the coordinator republishes.
             if let url = tab.url {
-                return Metrics(
-                    lineCount: 0,
-                    charCount: 0,
-                    byteCount: Self.cachedFileSize(for: url),
-                    lineEndings: "—",
-                    encodingShort: "loading…",
-                    indent: "",
-                    hasTextMetrics: false
-                )
+                return Self.loadingPlaceholder(for: url)
             }
             return nil
-        case .empty, .error, .hostedView:
+        case .error, .hostedView:
             return nil
         }
+    }
+
+    /// Shared placeholder metrics for the transient `.loading` / `.empty` tab
+    /// states: Size (from the stat cache) + a "loading…" encoding label, with
+    /// `hasTextMetrics` false so the Lines/Chars chips hide until real text
+    /// metrics arrive on `.loaded`. Keeps the footer from flashing blank on a
+    /// tab switch-in (TSK-452 / TSK-1120). Static + internal for host teeth.
+    static func loadingPlaceholder(for url: URL) -> Metrics {
+        Metrics(
+            lineCount: 0,
+            charCount: 0,
+            byteCount: cachedFileSize(for: url),
+            lineEndings: "—",
+            encodingShort: "loading…",
+            indent: "",
+            hasTextMetrics: false
+        )
     }
 
     /// Cheap byte count of `text` in `encoding`, WITHOUT the full-buffer

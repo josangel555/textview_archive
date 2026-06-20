@@ -14,6 +14,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Switching sessions is faster** — a rendered-Markdown file you return to no longer rebuilds its preview from scratch on every session switch; its already-rendered view is kept warm and re-shown instead of re-paying the slow web-view load each time. Tearing down the outgoing session's tabs on a switch was also doing redundant per-tab work (git-diff / outline / language-server refresh) once per tab — now done once.
 
 ### Fixed
+- **The footer file stats no longer flash blank when switching tabs** — switching between two already-open files could briefly blank the Size/Lines/encoding readout for a frame; the footer now shows the file size with a "loading…" label during that instant instead of going empty.
 - **Rendered Markdown scroll position now survives a session switch** — switching to another session and back used to snap a Markdown file's rendered preview back to the top; your place in the rendered view is now remembered per file and restored across session switches (it already survived tab switches within a session).
 - **Editor scroll position now survives a session switch** — switching to another session and back used to drop a file open in the editor back to the top; the editor's scroll position is now remembered per file and restored, the same way the read-only Source and Rendered views already were.
 
