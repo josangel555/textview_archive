@@ -4,6 +4,8 @@
 
 5-min inline cron resumed (job d1fcac5b; SOP rules: inline-only, never-idle). Landed this firing-chain, each commit per-item, host-gate-green (`main` linear):
 
+- **TSK-1113** (`07696606`) — Edit ▸ Transformations menu + `edit-uppercase`/`lowercase`/`capitalize` palette verbs, surfacing the host-tested TextTransform engine (TSK-351) across 4 surfaces (DocumentModel methods, AppKit submenu + validate-enable, ScriptVerbDispatch, ScriptVerbCatalog sync). Teeth: 3 end-to-end verb→file tests + catalog-sync + engine green. → `fixed` (menu render = review ceiling).
+
 - **TSK-986** (`50521d04`) — Hex search no longer scans the full buffer per keystroke: added a 180ms cancel-and-reschedule debounce (`scheduleRecompute`, the `searchTask` idiom). Search logic already covered by HexSearchEngine/MatchCap tests; → `fixed` (review ceiling = UI-timing).
 - **docs/SOP** (`bcfa3c01`) — Codified the two cron hard-rules (work INLINE / never-idle) into CLAUDE.md + TASK_WORKFLOW §0/§5; added `docs/CURATED_TASKS_2026-06-20.md` as the active selector; recorded the render-path-VM-verify + partial-epic-lost-work lessons.
 - **TSK-1120** (`41017b83`) — Footer file-stats no longer flash blank on tab switch: `.empty` tab state now routes through the same Size+"loading…" placeholder as `.loading` (extracted `StatusBar.loadingPlaceholder`). Observation layer verified already-correct (StatusBar observes tabCoordinator). Host teeth on the placeholder contract; → `fixed` (review ceiling; owner-repro flagged for the residual intermittent-chip case).
