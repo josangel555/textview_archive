@@ -242,6 +242,13 @@ public final class SidebarModel: ObservableObject {
         invalidateDescendantsCache()   // new root = new global-find set (TSK-666)
         folderWatcher?.stop()
         folderWatcher = nil
+        // Perf P1/P2 (TSK-1040): bound the per-root FS work so the VM trace can
+        // size it — `discoverRoot` is a ≤32-level `fileExists` walk and
+        // `hasTranscripts` a shallow existence check, both on the main thread on
+        // the session-switch critical path (root-change only). The signpost
+        // tells us whether moving them off-main (which would break the
+        // synchronous `gitRepoRoot` test/UI contract) is worth the trade.
+        let setRootToken = PerfSignpost.begin(.interact, "switch.setRoot")
         // Refresh the Claude-transcript flag on every root change. Cheap
         // shallow FS existence check; runs on the main actor (this whole
         // method is @MainActor) — same place it ran before via the
@@ -250,6 +257,7 @@ public final class SidebarModel: ObservableObject {
         // Memoize the git-root discovery once per root change (see
         // `gitRepoRoot`). Same place / cadence as the transcript flag.
         gitRepoRoot = rootURL.flatMap { GitClient.discoverRoot(from: $0) }
+        PerfSignpost.end(setRootToken)
         if let url = rootURL {
             expanded.insert(url)
             ensureLoaded(url: url)

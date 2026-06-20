@@ -435,6 +435,10 @@ public final class SessionState: ObservableObject {
         // children, matching the user clicking the disclosure triangle.
         // Skip any persisted path that no longer exists on disk.
         if let expandedPaths = snapshot.sidebarExpandedPaths {
+            // Perf P1 (TSK-1040): bound the per-dir readdir storm so the VM
+            // trace can size it (each `toggleExpansion` lazily reads a dir on
+            // the main thread; scales with how many dirs the user had open).
+            let expandToken = PerfSignpost.begin(.interact, "switch.hydrate.expand")
             for p in expandedPaths {
                 let url = URL(fileURLWithPath: p)
                 guard FileManager.default.fileExists(atPath: url.path) else { continue }
@@ -442,6 +446,7 @@ public final class SessionState: ObservableObject {
                     model.sidebar.toggleExpansion(url)
                 }
             }
+            PerfSignpost.end(expandToken)
         }
         // Restore the split pane (per-session). Only if the file still
         // exists — a dangling split URL would render an error pane.
@@ -471,7 +476,12 @@ public final class SessionState: ObservableObject {
         if let targetPath,
            let liveIndex = model.tabs.tabs.firstIndex(
                where: { $0.url?.path == targetPath }) {
+            // Perf P1 (TSK-1040): bound the focused-tab select path — this is
+            // where the incoming tab materializes + (pre-P1) rebuilt its
+            // WebView. After the warm-cache fix this re-attaches with no reload.
+            let selectToken = PerfSignpost.begin(.interact, "switch.select")
             model.selectTab(at: liveIndex)
+            PerfSignpost.end(selectToken)
         }
     }
 

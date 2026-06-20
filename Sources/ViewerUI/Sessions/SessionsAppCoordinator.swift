@@ -637,6 +637,14 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// "one-slot" Phase-1 acceptance criterion. Phase 2 will replace
     /// the singleton DocumentModel with a per-session one.
     private func switchSessionFaçade(to snap: SessionSnapshot) {
+        // Perf P1 (TSK-1040/1042): umbrella interval bounding the whole
+        // synchronous session switch so the VM signpost trace shows directly
+        // what fraction is the rebuilt WebView (`render | WKWebView.loadToFinish`).
+        // After the P1 warm-cache fix, the switch-back case should show NO
+        // `loadToFinish` interval at all (the WebView re-attaches, no reload).
+        let switchToken = PerfSignpost.begin(.interact, "session.switch")
+        defer { PerfSignpost.end(switchToken) }
+
         active?.detach()
         // Drop old tabs so the incoming hydrate starts from a clean
         // slate; otherwise the outgoing session's tabs would survive
@@ -651,7 +659,9 @@ public final class SessionsAppCoordinator: ObservableObject {
         // Save/Don't-Save/Cancel dialog on a NON-destructive switch (the
         // exact bug TSK-733 fixes). The prompt stays for the genuine close
         // path (`closeTab` / `closeOtherTabs` / window-close).
+        let drainToken = PerfSignpost.begin(.interact, "switch.drain")
         model.closeAllTabsPreservingDirty()
+        PerfSignpost.end(drainToken)
         let rootURL: URL = {
             if let p = snap.sidebarRootPath, !p.isEmpty {
                 return URL(fileURLWithPath: p)
@@ -674,12 +684,16 @@ public final class SessionsAppCoordinator: ObservableObject {
         // selected index, sidebar expansion / include-hidden, the split
         // pane, and the per-session panel layout — all the per-session
         // surface the user can change. (zoom/wrap/theme are GLOBAL, #184.)
+        let hydrateToken = PerfSignpost.begin(.interact, "switch.hydrate")
         state.hydrate(from: snap)
+        PerfSignpost.end(hydrateToken)
         seedSessionType(state, from: snap)
         state.mount()
         active = state
         bindActiveToPrimaryWindow()
+        let armToken = PerfSignpost.begin(.interact, "switch.armAutosave")
         armAutosave(for: state)
+        PerfSignpost.end(armToken)
     }
 
     // MARK: Lifecycle bridge -----------------------------------------
