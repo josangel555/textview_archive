@@ -272,7 +272,9 @@ struct ImageEditorView: View {
             Slider(
                 value: Binding(
                     get: { vm[keyPath: keyPath] },
-                    set: { vm[keyPath: keyPath] = $0; vm.render() }),
+                    // TSK-1050: debounce — a drag fires many deltas/sec; coalesce
+                    // them into one render instead of running CoreImage per tick.
+                    set: { vm[keyPath: keyPath] = $0; vm.scheduleRender() }),
                 in: lo...hi)
                 .accessibilityIdentifier("mdv.imageEditor.\(id)")
         }

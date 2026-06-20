@@ -55,6 +55,36 @@ final class ImageEditorViewModelTests: XCTestCase {
         return ImageEditorViewModel(ImageDocument(data: data))
     }
 
+    // MARK: - TSK-1050: slider render is debounced (no per-delta CoreImage run)
+
+    /// `scheduleRender()` must NOT render synchronously — that's the per-drag
+    /// stall the audit flagged (the slider used to call `render()` on every
+    /// value delta). Reverting the slider to call `render()` directly would make
+    /// this bump synchronously and fail.
+    func test_scheduleRender_doesNotRenderSynchronously() throws {
+        let vm = try makeVM()
+        let before = vm.renderCount
+        vm.brightness = 0.5
+        vm.scheduleRender()
+        XCTAssertEqual(vm.renderCount, before,
+                       "scheduleRender must defer — no synchronous per-delta render")
+    }
+
+    /// A burst of slider changes (a drag) must collapse into exactly ONE render
+    /// once the debounce window elapses, not one render per delta.
+    func test_scheduleRender_coalescesBurstIntoOneRender() async throws {
+        let vm = try makeVM()
+        let before = vm.renderCount
+        for v in stride(from: 0.0, through: 1.0, by: 0.05) {
+            vm.brightness = v
+            vm.scheduleRender()
+        }
+        // Wait comfortably past the debounce window for the single flush.
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(vm.renderCount, before + 1,
+                       "a drag's burst of changes must coalesce to ONE render")
+    }
+
     // MARK: - tests
 
     func test_init_rendersPristineSource() throws {

@@ -143,11 +143,45 @@ public final class ImageEditorViewModel: ObservableObject {
     /// preview differs from the source.
     public var isEdited: Bool { !document.isPristine || paintCanvas != nil }
 
-    /// Re-render the preview + histogram from the current `document`. Call after
-    /// any slider change (the view debounces) or geometry commit. Failures are
-    /// captured in `lastError` rather than thrown, so the editor can surface
-    /// them without the binding layer having to handle errors.
+    /// Cancel-and-reschedule handle for the debounced slider render (TSK-1050).
+    private var renderTask: Task<Void, Never>?
+
+    /// Debounce window for `scheduleRender`. A slider drag fires many value
+    /// changes per second; coalescing to one render ~after the user pauses keeps
+    /// the editor responsive instead of running a full CoreImage pipeline per
+    /// delta (the audit found the "view debounces" claim was never implemented).
+    static let renderDebounce: Duration = .milliseconds(120)
+
+    #if DEBUG
+    /// Test gauge (TSK-1050): how many times `render()` actually ran. A burst of
+    /// `scheduleRender()` calls must collapse to ONE bump after the debounce
+    /// window; `scheduleRender()` must NOT bump it synchronously.
+    public private(set) var renderCount = 0
+    #endif
+
+    /// Coalesce rapid adjustment changes (slider drags) into a SINGLE render
+    /// after a short pause (TSK-1050). Replaces the per-delta synchronous
+    /// `render()` the sliders used to call, which ran the whole CoreImage
+    /// pipeline on every drag tick and made the editor feel clunky. A render
+    /// already in the debounce window is cancelled and rescheduled.
+    public func scheduleRender() {
+        renderTask?.cancel()
+        renderTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.renderDebounce)
+            if Task.isCancelled { return }
+            self?.render()
+        }
+    }
+
+    /// Re-render the preview + histogram from the current `document`. Sliders go
+    /// through `scheduleRender()` (debounced); call this directly only for a
+    /// discrete commit (geometry op, reset) that should render immediately.
+    /// Failures are captured in `lastError` rather than thrown, so the editor
+    /// can surface them without the binding layer having to handle errors.
     public func render() {
+        #if DEBUG
+        renderCount += 1
+        #endif
         // Once a paint session is active the painted buffer IS the document — paint
         // is destructive and cannot be re-derived from `source + ops`, so it
         // shadows the tonal/geometry render. The buffer was itself baked from a
