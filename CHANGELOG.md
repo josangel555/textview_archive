@@ -20,6 +20,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Switching sessions is faster** — a rendered-Markdown file you return to no longer rebuilds its preview from scratch on every session switch; its already-rendered view is kept warm and re-shown instead of re-paying the slow web-view load each time. Tearing down the outgoing session's tabs on a switch was also doing redundant per-tab work (git-diff / outline / language-server refresh) once per tab — now done once.
 
 ### Changed
+- **New sessions open clean — just the file tree** — a fresh session now starts with only the Files tool window open; every other panel (git, search, outline, timeline, …) starts closed. Open whatever you need and it's remembered for that session.
 - **Editor invisible characters are subtler** — showing whitespace in the editor now uses a lighter, thinner mark, and the line-break symbol is a return arrow (↵) instead of the heavier pilcrow (¶), so spaces/tabs/newlines read as a quiet hint rather than competing with your code.
 
 ### Fixed

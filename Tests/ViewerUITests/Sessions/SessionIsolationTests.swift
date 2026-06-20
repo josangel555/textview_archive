@@ -155,17 +155,20 @@ final class SessionIsolationTests: XCTestCase {
         let aSnapshot = coord.model.panelLayout.snapshot()
 
         coord.openFolder(folderB, forceNew: true)
-        // Leak guard: B (a plain new project) starts at the default layout.
-        XCTAssertTrue(coord.model.panelLayout.snapshot().isDefault,
-            "B must start at the default panel layout; A's must not leak")
-        // Give B a DIFFERENT override.
-        coord.model.panelLayout.setOverride(.lspProblems, .hidden)
+        // Leak guard: B (a fresh project) starts files-only (owner default
+        // 2026-06-20) — A's git=.shown must NOT leak in.
+        XCTAssertEqual(coord.model.panelLayout.override(for: .git), .hidden,
+            "B starts files-only; A's git=.shown must not leak")
+        XCTAssertEqual(coord.model.panelLayout.override(for: .files), .shown)
+        // Give B a DISTINGUISHING override — a `.shown` (files-only already
+        // hides everything, so `.shown` is the discriminator now).
+        coord.model.panelLayout.setOverride(.lspProblems, .shown)
 
         coord.activate(id: aID)
         XCTAssertEqual(coord.model.panelLayout.snapshot(), aSnapshot,
             "switching back to A must restore A's full panel layout")
-        XCTAssertEqual(coord.model.panelLayout.override(for: .lspProblems), .auto,
-            "B's lspProblems override must not bleed into A")
+        XCTAssertEqual(coord.model.panelLayout.override(for: .lspProblems), .hidden,
+            "B's lspProblems=.shown must not bleed into A (A keeps its files-only hidden)")
     }
 
     // MARK: zoom / wrap / theme are SHARED (GLOBAL) --------------------
@@ -224,7 +227,9 @@ final class SessionIsolationTests: XCTestCase {
         XCTAssertNil(coord.model.splitURL)
         XCTAssertTrue(coord.model.sidebar.includeHidden)
         XCTAssertFalse(coord.model.sidebar.isExpanded(folderA.appendingPathComponent("src")))
-        XCTAssertTrue(coord.model.panelLayout.snapshot().isDefault)
+        // B's panel layout is a clean files-only slate — A's git=.shown didn't leak.
+        XCTAssertEqual(coord.model.panelLayout.override(for: .git), .hidden)
+        XCTAssertEqual(coord.model.panelLayout.override(for: .files), .shown)
         XCTAssertEqual(coord.model.tabs.tabs.compactMap { $0.url?.lastPathComponent }, ["b1.md"])
 
         // Back to A: everything restored.

@@ -89,9 +89,11 @@ public enum SessionKind: String, CaseIterable, Sendable, Codable, Identifiable {
         }
         switch self {
         case .project:
-            // Plain default: no explicit overrides — pure data-presence
-            // heuristic, identical to today's fresh-install behavior.
-            return PanelLayoutSnapshot(edges: "", overrides: "")
+            // Plain default (owner request 2026-06-20): open a fresh session
+            // with ONLY the Files tool window; every other panel starts closed
+            // (was: empty overrides → data-presence heuristic that auto-opened
+            // git/etc.). The user opens what they want and it persists.
+            return .filesOnly
         case .codeReview:
             // Reviewing a change: git + problems forward, search handy.
             return PanelLayoutSnapshot(
@@ -164,5 +166,20 @@ public struct PanelLayoutSnapshot: Codable, Equatable, Sendable {
     /// meaningless empty blob.
     public var isDefault: Bool {
         edges.isEmpty && overrides.isEmpty
+    }
+
+    /// A layout that shows ONLY the Files tool window — every other panel is
+    /// forced `.hidden`. The default a plain new (`.project`) session opens
+    /// with (owner request 2026-06-20): a fresh session starts clean with just
+    /// the file tree, all other tool windows closed, instead of the
+    /// data-presence heuristic that auto-opens git / timeline / problems / etc.
+    /// The user opens whatever else they want; their choices then persist with
+    /// the session.
+    public static var filesOnly: PanelLayoutSnapshot {
+        var ov = PanelVisibilityOverrides()
+        for k in SidebarPanelRegistry.defaultOrder {
+            ov.set(k, k == .files ? .shown : .hidden)
+        }
+        return PanelLayoutSnapshot(edges: "", overrides: ov.encoded())
     }
 }

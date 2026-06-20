@@ -51,9 +51,23 @@ final class SessionTypeSeedTests: XCTestCase {
 
     // MARK: Pure-kind layout (no UI) -----------------------------------
 
-    func test_projectKind_defaultLayoutIsIdentity() {
-        XCTAssertTrue(SessionKind.project.defaultPanelLayout.isDefault,
-            ".project seeds nothing — its default layout is the identity")
+    /// Asserts the given store is in the files-only state (owner request
+    /// 2026-06-20): Files shown, every other panel forced hidden.
+    private func assertFilesOnly(_ store: PanelLayoutStore,
+                                 file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(store.override(for: .files), .shown,
+                       "Files must be shown", file: file, line: line)
+        for k in SidebarPanelRegistry.defaultOrder where k != .files {
+            XCTAssertEqual(store.override(for: k), .hidden,
+                           "\(k) must start hidden in a fresh session", file: file, line: line)
+        }
+    }
+
+    func test_projectKind_defaultLayoutIsFilesOnly() {
+        // Owner request 2026-06-20: a plain new session opens with ONLY Files.
+        XCTAssertEqual(SessionKind.project.defaultPanelLayout, .filesOnly,
+            ".project default opens files-only (was: identity / data-presence heuristic)")
+        XCTAssertFalse(SessionKind.project.defaultPanelLayout.isDefault)
     }
 
     func test_nonProjectKinds_haveNonDefaultLayouts() {
@@ -110,27 +124,26 @@ final class SessionTypeSeedTests: XCTestCase {
         XCTAssertEqual(coord.model.panelLayout.override(for: .lspProblems), .shown)
     }
 
-    func test_openNewSessionProject_isPlainDefault() {
+    func test_openNewSessionProject_opensFilesOnly() {
         let coord = makeCoordinator()
         coord.openNewSession(kind: .project, root: makeWorkspace(named: "plainmenu"))
-        XCTAssertTrue(coord.model.panelLayout.snapshot().isDefault,
-            "the Project menu row must create a plain default session")
-        XCTAssertNil(coord.core.active?.sessionType)
+        assertFilesOnly(coord.model.panelLayout)   // owner: fresh session = Files only
+        XCTAssertNil(coord.core.active?.sessionType,
+            "the Project menu row stays the implicit default — sessionType nil")
     }
 
-    func test_openFolderProjectKind_doesNotSeedOrStampType() {
+    func test_openFolderProjectKind_opensFilesOnly_andDoesNotStampType() {
         let coord = makeCoordinator()
         coord.openFolder(makeWorkspace(named: "plain"), forceNew: true, kind: .project)
-        XCTAssertTrue(coord.model.panelLayout.snapshot().isDefault,
-            ".project must not seed any override")
+        assertFilesOnly(coord.model.panelLayout)
         XCTAssertNil(coord.core.active?.sessionType,
             ".project is the implicit default — sessionType stays nil (minimal snapshot)")
     }
 
-    func test_openFolderNoKind_isPlainDefault() {
+    func test_openFolderNoKind_opensFilesOnly() {
         let coord = makeCoordinator()
         coord.openFolder(makeWorkspace(named: "plain"), forceNew: true)
-        XCTAssertTrue(coord.model.panelLayout.snapshot().isDefault)
+        assertFilesOnly(coord.model.panelLayout)
         XCTAssertNil(coord.core.active?.sessionType)
     }
 

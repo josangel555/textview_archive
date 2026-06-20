@@ -321,7 +321,11 @@ public final class SessionState: ObservableObject {
         } else if let kind = sessionType, kind != .project {
             model.panelLayout.apply(kind.defaultPanelLayout)
         } else {
-            model.panelLayout.apply(PanelLayoutSnapshot(edges: "", overrides: ""))
+            // Plain `.project` / legacy session with no persisted layout: open
+            // Files-only (owner request 2026-06-20) — a fresh session starts
+            // clean, all other tool windows closed. Once the user opens panels,
+            // the snapshot persists and takes the branch above on next activation.
+            model.panelLayout.apply(.filesOnly)
         }
         // PERSIST-01: `selectedTabIndex` indexes into the *persisted*
         // `openTabs` array, but we skip tabs whose file no longer exists
