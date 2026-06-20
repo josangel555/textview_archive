@@ -4,10 +4,12 @@ import SwiftTreeSitter
 // (and therefore the executable). Rationale per docs/TREESITTER_LAZY_LOAD.md:
 //   - JSON: jq integration, settings, workspaces — hot on launch.
 //   - Swift: the app's own source — opened often during development.
-//   - Markdown: every .md open does code-fence highlighting; first-tap
+//   - Markdown: every .md open does code-fence folding; first-tap
 //     dylib latency would be visible.
-// Everything else (XML, Python, JS, TS, Bash, plus Phase 5 grammars)
-// loads through GrammarLoader at first-use.
+// TSK-854: this engine no longer highlights (rust-only via
+// RustHighlightAdapter) — it survives only for code-FOLDS + structural
+// search, so its grammar set is now exactly those features' languages.
+// The lazy remainder (XML, JS, TS) loads through GrammarLoader at first-use.
 import TreeSitterJSON
 import TreeSitterMarkdown
 import TreeSitterSwift
@@ -352,11 +354,15 @@ public final class TreeSitterEngine: @unchecked Sendable {
     /// dispatching to either the statically-linked keeplist symbol or
     /// to the runtime `GrammarLoader` dlopen path.
     ///
-    /// Adding a new language: add a case to the appropriate branch
-    /// here and add a `Queries/<x>-highlights.scm` file. Keeplist
-    /// changes also need a static dep in Package.swift; lazy
-    /// languages need a new `GrammarLoader.Grammar` case + dynamic
-    /// library product.
+    /// TSK-854: this engine no longer drives HIGHLIGHTING (that is rust-only
+    /// via `RustHighlightAdapter`). It survives ONLY for code-FOLDS +
+    /// structural search, so the bundled Swift grammar set is now exactly the
+    /// languages those features need — json/swift/markdown (eager) +
+    /// xml/javascript/typescript/tsx (lazy). The 8 grammars that existed only
+    /// as the deleted highlight fallback (python, bash, java, c, cpp, csharp,
+    /// rust, lua) were dropped along with their dylibs to reclaim the ~16 MB
+    /// double-carry; the Rust core still highlights all of them. A future Rust
+    /// fold-region port (no FFI today) lets the rest of this engine retire.
     internal func languageHandle(for lang: HighlightLanguage) -> Language? {
         switch lang {
         // Keeplist — static link.
@@ -364,27 +370,16 @@ public final class TreeSitterEngine: @unchecked Sendable {
         case .json:       return Language(language: tree_sitter_json())
         case .markdown:   return Language(language: tree_sitter_markdown())
 
-        // Lazy — dlopen via GrammarLoader. The `.shell` case maps to
-        // the bash grammar (the upstream `.sh`/`.zsh`/`.bash` files
-        // all parse as bash for our purposes).
+        // Lazy — dlopen via GrammarLoader. These are the languages with
+        // bundled FOLD queries (see `foldQueryURL`); structural search can
+        // also use them.
         case .xml:        return GrammarLoader.load(.xml)
-        case .python:     return GrammarLoader.load(.python)
         case .javascript: return GrammarLoader.load(.javascript)
         case .typescript: return GrammarLoader.load(.typescript)
         case .tsx:        return GrammarLoader.load(.tsx)
-        case .shell:      return GrammarLoader.load(.bash)
 
-        // Phase 5 grammars — all loaded via dlopen out of
-        // Contents/Frameworks/. Returning nil here means "highlighting
-        // unavailable for this language"; the engine memoizes that
-        // failure so we don't retry on every call.
-        case .java:       return GrammarLoader.load(.java)
-        case .c:          return GrammarLoader.load(.c)
-        case .cpp:        return GrammarLoader.load(.cpp)
-        case .csharp:     return GrammarLoader.load(.cSharp)
-        case .rust:       return GrammarLoader.load(.rust)
-        case .lua:        return GrammarLoader.load(.lua)
-
+        // Highlight-only languages: the Rust core covers them; the Swift
+        // engine no longer bundles their grammars (no folds, no fallback).
         default:          return nil
         }
     }
@@ -393,31 +388,24 @@ public final class TreeSitterEngine: @unchecked Sendable {
     /// `Bundle.module` so it works in both the app bundle and the
     /// xctest harness.
     private func queryURL(for lang: HighlightLanguage) -> URL? {
+        // TSK-854: only the languages with a bundled Swift grammar (see
+        // `languageHandle`) have a reachable highlight query. The Swift
+        // highlighter is gone — these queries serve nothing user-facing now
+        // (highlighting is rust-only); they remain reachable only via the
+        // diagnostic `HighlightParityHarness`/test path that still tokenizes
+        // through this engine for the kept fold grammars.
         let stem: String
         switch lang {
         case .swift:      stem = "swift-highlights"
         case .json:       stem = "json-highlights"
         case .xml:        stem = "xml-highlights"
-        case .python:     stem = "python-highlights"
         case .javascript: stem = "javascript-highlights"
         case .typescript: stem = "typescript-highlights"
         // TSX reuses the TypeScript highlights query: every node type it
         // references exists in the (superset) TSX grammar, so it compiles
-        // and colors the TS portions correctly. JSX-tag/attribute-specific
-        // coloring needs query *predicate* evaluation, which the engine
-        // does not yet do (see board task on predicate eval) — so a
-        // dedicated JSX query would not currently win over the generic
-        // identifier captures. The grammar swap alone is the real fix:
-        // `.tsx` now parses JSX instead of producing ERROR nodes.
+        // and colors the TS portions correctly.
         case .tsx:        stem = "typescript-highlights"
         case .markdown:   stem = "markdown-highlights"
-        case .shell:      stem = "bash-highlights"
-        case .java:       stem = "java-highlights"
-        case .c:          stem = "c-highlights"
-        case .cpp:        stem = "cpp-highlights"
-        case .csharp:     stem = "csharp-highlights"
-        case .rust:       stem = "rust-highlights"
-        case .lua:        stem = "lua-highlights"
         default:          return nil
         }
         return Bundle.module.url(

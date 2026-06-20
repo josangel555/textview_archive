@@ -37,23 +37,18 @@ final class ThirdPartyNoticesTests: XCTestCase {
     /// SWIFTPM_PKGS in that script if it's a new SwiftPM dependency).
     func test_notices_cover_every_shipped_component() throws {
         let text = try noticesText()
+        // TSK-854: the Swift package ships only the fold-grammar set now
+        // (highlighting is rust-only). The 8 highlight-only grammars were
+        // removed from Package.swift, so they're no longer attributed here.
         let required = [
             // SwiftPM
             "swift-markdown",
             "cmark",
             "SwiftTreeSitter",
             "tree-sitter",
-            "tree-sitter-bash",
-            "tree-sitter-c",
-            "tree-sitter-c-sharp",
-            "tree-sitter-cpp",
-            "tree-sitter-java",
             "tree-sitter-javascript",
             "tree-sitter-json",
-            "tree-sitter-lua",
             "tree-sitter-markdown",
-            "tree-sitter-python",
-            "tree-sitter-rust",
             "tree-sitter-swift",
             "tree-sitter-typescript",
             "tree-sitter-xml",

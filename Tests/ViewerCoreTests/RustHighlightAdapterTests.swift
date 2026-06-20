@@ -3,11 +3,13 @@ import XCTest
 import RustCore
 import ViewerKit
 
-/// RustHighlightAdapter routing (engine port TSK-660): shipped default OFF
-/// → Swift; env ON → Rust with app-contract runs (UTF-16 NSRanges, app
-/// TokenKind vocabulary); a language the core build lacks → Swift fallback
-/// (full coverage preserved during the migration). Gate state is injected
-/// via `environment` so nothing process-global is touched.
+/// RustHighlightAdapter routing (engine port TSK-660; twin deletion TSK-854):
+/// the shipped default is RUST with app-contract runs (UTF-16 NSRanges, app
+/// TokenKind vocabulary). TSK-854 deleted the Swift highlight twin, so the
+/// adapter is now rust-only: the `.highlight` gate's only remaining role is an
+/// off-switch — gate OFF (or a bridge fault) yields EMPTY runs (plain text),
+/// NOT Swift-engine tokens. Gate state is injected via `environment` so
+/// nothing process-global is touched.
 final class RustHighlightAdapterTests: XCTestCase {
 
     private let gateOn = ["MDV_RUST_HIGHLIGHT": "1"]
@@ -21,16 +23,17 @@ final class RustHighlightAdapterTests: XCTestCase {
         XCTAssertFalse(out.value.isEmpty)
     }
 
-    func test_envZero_pinsTheSwiftPath() {
-        // The off-switch contract survives the flip (the flip-round
-        // test-migration pattern: gate-off behavior is env-pinned).
+    func test_envZero_disablesHighlighting() {
+        // TSK-854: the off-switch now yields NO highlighting (empty runs),
+        // not Swift-engine tokens — the Swift highlight twin is gone. The
+        // provenance tag stays `.swiftBecauseGateOff` (the gate did short the
+        // rust path), but the value is empty (plain text).
         let out = RustHighlightAdapter.outcome(
             "let x = 1", language: .swift,
             environment: ["MDV_RUST_HIGHLIGHT": "0"])
         XCTAssertEqual(out.source, .swiftBecauseGateOff)
-        XCTAssertEqual(
-            out.value,
-            TreeSitterEngine.shared.tokenize("let x = 1", language: .swift))
+        XCTAssertTrue(out.value.isEmpty,
+            "gate-off must render plain (no highlighting), not fall back to the deleted Swift engine")
     }
 
     func test_gateOn_routesRust_withAppContractRuns() {
@@ -71,16 +74,15 @@ final class RustHighlightAdapterTests: XCTestCase {
         }
     }
 
-    func test_gateOn_uncoveredLanguage_fallsBackToSwift() {
-        // Stage 3 closed the language gap, so the forever-uncovered case is
-        // .plainText — the in-band supported:false signal must land on the
-        // Swift engine path, not on an empty rust result.
+    func test_gateOn_uncoveredLanguage_rendersPlain() {
+        // The forever-uncovered case is .plainText — the rust in-band
+        // supported:false signal makes the rust closure throw, and TSK-854's
+        // rust-only fallback degrades to EMPTY runs (plain text), tagged
+        // `.swiftFallback` (a bridge "fault" was caught). No Swift engine.
         let src = "just words\n"
         let out = RustHighlightAdapter.outcome(src, language: .plainText, environment: gateOn)
         XCTAssertEqual(out.source, .swiftFallback)
-        XCTAssertEqual(
-            out.value, TreeSitterEngine.shared.tokenize(src, language: .plainText),
-            "fallback must surface the full Swift result")
+        XCTAssertTrue(out.value.isEmpty, "an uncovered language renders plain (no runs)")
     }
 
     func test_gateOn_stage3Languages_routeRust() {
@@ -134,17 +136,18 @@ final class RustHighlightAdapterTests: XCTestCase {
         }
     }
 
-    func test_warm_gateOff_warmsSwiftFallbackEngine() {
-        // Under the off-switch the warm routes to the Swift fallback and
-        // compiles its Query (bundle). (Partial teeth: TreeSitterEngine.shared
-        // is process-global, so a peer test may have pre-warmed these — the
-        // assertion pins the contract that the warm reaches the Swift path.)
+    func test_warm_gateOff_isNoOp_andDoesNotCrash() {
+        // TSK-854: the warm routes through the rust-only adapter, so under the
+        // off-switch it does NOT touch the (deleted-for-highlighting) Swift
+        // engine — it's a safe no-op (the gate-off closure produces no runs).
+        // The teeth: it must not crash, and it must not leave a highlightable
+        // result on the off path.
         RustHighlightAdapter.warm(
             [.json], prioritizing: [.swift], environment: ["MDV_RUST_HIGHLIGHT": "0"])
-        XCTAssertTrue(TreeSitterEngine.shared.isWarm(.swift),
-            "gate-off warm must compile the Swift config (priority phase)")
-        XCTAssertTrue(TreeSitterEngine.shared.isWarm(.json),
-            "gate-off warm must compile the Swift config (concurrent phase)")
+        let out = RustHighlightAdapter.outcome(
+            "let x = 1", language: .swift, environment: ["MDV_RUST_HIGHLIGHT": "0"])
+        XCTAssertEqual(out.source, .swiftBecauseGateOff)
+        XCTAssertTrue(out.value.isEmpty, "gate-off highlighting stays empty after a warm")
     }
 
     func test_explicitToggleOff_beatsEnvAbsence_andDoesNotLeak() {

@@ -205,17 +205,21 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         }
     }
 
-    /// Whether the read-only **View** mode (the TreeSitter engine) can actually
-    /// color this language — i.e. a grammar is bundled for it. TSK-897: the enum
-    /// declares several cases (`.go`, `.html`, `.css`, `.sql`, `.ruby`, `.kotlin`)
-    /// that have file-extension detection and a display name but NO bundled
-    /// TreeSitter grammar, so they render PLAIN despite being advertised as
-    /// "supported". This flag is the single source of truth so the menu / Settings
-    /// stop offering modes that do nothing. It is pinned to the real engine by
-    /// `HighlightLanguageGrammarParityTests` (ViewerCoreTests), which calls
-    /// `TreeSitterEngine.languageHandle(for:)` for every case and fails if the
-    /// engine's grammar coverage drifts from this declaration. Adding a grammar
-    /// ⇒ flip the case here; the parity test forces the two to stay in lock-step.
+    /// Whether the read-only **View** mode can actually color this language —
+    /// i.e. the Rust core has a grammar for it. TSK-897: the enum declares
+    /// several cases (`.go`, `.html`, `.css`, `.sql`, `.ruby`, `.kotlin`,
+    /// `.yaml`) that have file-extension detection and a display name; this
+    /// flag is the single source of truth so the menu / Settings stop offering
+    /// modes that do nothing.
+    ///
+    /// TSK-854: the Swift TreeSitter highlighter was deleted; highlighting now
+    /// runs EXCLUSIVELY through the Rust core (`RustHighlightAdapter`). So the
+    /// truth this flag tracks is the RUST core's grammar coverage, pinned by
+    /// `HighlightLanguageGrammarParityTests` (ViewerCoreTests), which tokenizes
+    /// every case through `RustHighlightAdapter` and fails if the core's
+    /// coverage drifts from this declaration. (The Rust core actually covers a
+    /// superset — `.go/.html/.css/.sql/.ruby/.kotlin/.yaml` parse there too —
+    /// but they stay `false` here pending the UI-advertise decision in TSK-897.)
     public var isHighlightable: Bool {
         switch self {
         case .swift, .json, .markdown, .xml, .python,

@@ -1,5 +1,5 @@
 {
-  "originHash" : "6b0dafcebdffe3d933ec0aed0a2f89e25bf554abe32e0fe0865919f788e904eb",
+  "originHash" : "4367846e92f217cd150777ec4fae6551a99858f957bdae7a3b3718fdbb327451",
   "pins" : [
     {
       "identity" : "swift-cmark",
@@ -38,51 +38,6 @@
       }
     },
     {
-      "identity" : "tree-sitter-bash",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter/tree-sitter-bash",
-      "state" : {
-        "revision" : "a06c2e4415e9bc0346c6b86d401879ffb44058f7",
-        "version" : "0.25.1"
-      }
-    },
-    {
-      "identity" : "tree-sitter-c",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter/tree-sitter-c",
-      "state" : {
-        "revision" : "b780e47fc780ddc8da13afa35a3f4ed5c157823d",
-        "version" : "0.24.2"
-      }
-    },
-    {
-      "identity" : "tree-sitter-c-sharp",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter/tree-sitter-c-sharp",
-      "state" : {
-        "revision" : "cac6d5fb595f5811a076336682d5d595ac1c9e85",
-        "version" : "0.23.5"
-      }
-    },
-    {
-      "identity" : "tree-sitter-cpp",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter/tree-sitter-cpp",
-      "state" : {
-        "revision" : "f41e1a044c8a84ea9fa8577fdd2eab92ec96de02",
-        "version" : "0.23.4"
-      }
-    },
-    {
-      "identity" : "tree-sitter-java",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter/tree-sitter-java",
-      "state" : {
-        "revision" : "94703d5a6bed02b98e438d7cad1136c01a60ba2c",
-        "version" : "0.23.5"
-      }
-    },
-    {
       "identity" : "tree-sitter-javascript",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tree-sitter/tree-sitter-javascript",
@@ -101,39 +56,12 @@
       }
     },
     {
-      "identity" : "tree-sitter-lua",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter-grammars/tree-sitter-lua",
-      "state" : {
-        "revision" : "10fe0054734eec83049514ea2e718b2a56acd0c9",
-        "version" : "0.5.0"
-      }
-    },
-    {
       "identity" : "tree-sitter-markdown",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tree-sitter-grammars/tree-sitter-markdown",
       "state" : {
         "revision" : "f969cd3ae3f9fbd4e43205431d0ae286014c05b5",
         "version" : "0.5.3"
-      }
-    },
-    {
-      "identity" : "tree-sitter-python",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter/tree-sitter-python",
-      "state" : {
-        "revision" : "293fdc02038ee2bf0e2e206711b69c90ac0d413f",
-        "version" : "0.25.0"
-      }
-    },
-    {
-      "identity" : "tree-sitter-rust",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tree-sitter/tree-sitter-rust",
-      "state" : {
-        "revision" : "77a3747266f4d621d0757825e6b11edcbf991ca5",
-        "version" : "0.24.2"
       }
     },
     {

@@ -45,22 +45,21 @@ fi
 # link or ship. The lazy-grammar dylibs ship in Contents/Frameworks/,
 # so their grammars count even though ViewerCore doesn't statically
 # link them.
+# TSK-854: highlighting is rust-only now (the Swift TreeSitter twin was
+# deleted), so the Swift package only links the grammars code-FOLDS +
+# structural search need — json/swift/markdown/xml/javascript/typescript.
+# The 8 highlight-only grammars (bash, c, c-sharp, cpp, java, lua, python,
+# rust) were removed from Package.swift; their notices are dropped here too.
+# (The rust core carries its own copy of the full grammar set — those are
+# attributed via the rust-core notices, not this Swift-package list.)
 SWIFTPM_PKGS=(
   "swift-cmark|cmark (swift-cmark, CommonMark C reference parser)"
   "swift-markdown|swift-markdown (Apple)"
   "SwiftTreeSitter|SwiftTreeSitter (ChimeHQ)"
   "tree-sitter|tree-sitter (runtime)"
-  "tree-sitter-bash|tree-sitter-bash"
-  "tree-sitter-c|tree-sitter-c"
-  "tree-sitter-c-sharp|tree-sitter-c-sharp"
-  "tree-sitter-cpp|tree-sitter-cpp"
-  "tree-sitter-java|tree-sitter-java"
   "tree-sitter-javascript|tree-sitter-javascript"
   "tree-sitter-json|tree-sitter-json"
-  "tree-sitter-lua|tree-sitter-lua"
   "tree-sitter-markdown|tree-sitter-markdown"
-  "tree-sitter-python|tree-sitter-python"
-  "tree-sitter-rust|tree-sitter-rust"
   "tree-sitter-swift|tree-sitter-swift (alex-pinkus)"
   "tree-sitter-typescript|tree-sitter-typescript"
   "tree-sitter-xml|tree-sitter-xml"

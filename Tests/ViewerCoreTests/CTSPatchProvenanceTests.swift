@@ -3,18 +3,21 @@ import CryptoKit
 
 /// Drift guard for the vendored TreeSitter external scanners.
 ///
-/// `Sources/CTSPatch{Python,JavaScript,Lua}/scanner.c` are exact copies
-/// of upstream `src/scanner.c` (the upstream Package.swift gates them
-/// behind a broken `FileManager.fileExists` check — see each file's
-/// PROVENANCE banner). Because they're hand-vendored rather than pulled
-/// through SwiftPM, nothing else stops a stray local edit (or a silent
-/// re-vendor against the wrong upstream revision) from changing parser
-/// behavior with no review trail.
+/// `Sources/CTSPatchJavaScript/scanner.c` is an exact copy of upstream
+/// `src/scanner.c` (the upstream Package.swift gates it behind a broken
+/// `FileManager.fileExists` check — see the file's PROVENANCE banner).
+/// Because it's hand-vendored rather than pulled through SwiftPM, nothing
+/// else stops a stray local edit (or a silent re-vendor against the wrong
+/// upstream revision) from changing parser behavior with no review trail.
 ///
-/// This test pins a SHA-256 of each file's full contents (PROVENANCE
-/// banner + scanner body). Any change to a scanner.c must be a
-/// deliberate re-vendor that also updates the pinned hash here in the
-/// SAME commit — which is exactly the review checkpoint we want.
+/// TSK-854: the Python + Lua patch twins were removed with their grammars
+/// (highlighting is rust-only; only the fold grammar set ships now), so only
+/// the JavaScript scanner remains vendored.
+///
+/// This test pins a SHA-256 of the file's full contents (PROVENANCE banner +
+/// scanner body). Any change to scanner.c must be a deliberate re-vendor that
+/// also updates the pinned hash here in the SAME commit — exactly the review
+/// checkpoint we want.
 ///
 /// To re-pin after an intentional re-vendor:
 ///   shasum -a 256 Sources/CTSPatch*/scanner.c
@@ -23,12 +26,8 @@ final class CTSPatchProvenanceTests: XCTestCase {
 
     /// Vendored scanner → expected lowercase-hex SHA-256 of the file.
     private static let pinnedHashes: [(relativePath: String, sha256: String)] = [
-        ("Sources/CTSPatchPython/scanner.c",
-         "992edb330ddddce136dd95ac03b6b70552489bb15ab0dfc9f78bf582702ef778"),
         ("Sources/CTSPatchJavaScript/scanner.c",
          "cd3b5693248f9795ef3a14387454e92d04bbcfef1d931f54f3320bf175adbf36"),
-        ("Sources/CTSPatchLua/scanner.c",
-         "666d2c44632340d6be369ed7693dd01b78d243bb484bd0872a9f0cc6fb843e0d"),
     ]
 
     /// Package root, resolved at runtime from this file's location so it

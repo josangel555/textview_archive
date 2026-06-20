@@ -162,10 +162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // TSK-840: warm markdown FIRST (the rendered-MD fence path
         // tokenizes it synchronously on the main actor), then the rest
         // CONCURRENTLY across cores instead of serially on one thread.
-        // TSK-853: warm via the ADAPTER so we heat the engine the gate
-        // actually routes to (Rust by default — its config_cache), not
-        // just the Swift fallback. Per-language fallback still warms the
-        // Swift Query for any grammar the core build doesn't cover.
+        // TSK-853/TSK-854: warm via the ADAPTER, which heats the Rust
+        // core's per-language config_cache — the only highlighter now (the
+        // Swift twin was deleted in TSK-854).
         Task.detached(priority: .utility) {
             RustHighlightAdapter.warm(HighlightLanguage.allCases,
                                       prioritizing: [.markdown])

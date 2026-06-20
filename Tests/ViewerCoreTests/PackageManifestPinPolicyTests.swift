@@ -67,11 +67,14 @@ final class PackageManifestPinPolicyTests: XCTestCase {
         let decls = packageDeclarationLines(manifest)
         XCTAssertFalse(decls.isEmpty,
                        "Expected at least one `.package(url:)` declaration in Package.swift")
-        // Sanity: the TreeSitter grammars we care about are present.
-        XCTAssertTrue(decls.contains { $0.contains("tree-sitter-python") },
-                      "tree-sitter-python dependency vanished from the manifest")
-        XCTAssertTrue(decls.contains { $0.contains("tree-sitter-rust") },
-                      "tree-sitter-rust dependency vanished from the manifest")
+        // Sanity: the TreeSitter grammars we still ship are present. TSK-854
+        // removed the 8 highlight-only grammars (python, bash, java, c, cpp,
+        // c#, rust, lua) — highlighting is rust-only now; the Swift engine
+        // keeps only the fold grammar set (json/swift/markdown/xml/js/ts).
+        XCTAssertTrue(decls.contains { $0.contains("tree-sitter-xml") },
+                      "tree-sitter-xml dependency vanished from the manifest")
+        XCTAssertTrue(decls.contains { $0.contains("tree-sitter-typescript") },
+                      "tree-sitter-typescript dependency vanished from the manifest")
     }
 
     func test_no_source_control_dependency_uses_a_caret_range() throws {

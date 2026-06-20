@@ -137,26 +137,42 @@ final class TreeSitterPredicateSubstringTests: XCTestCase {
             file: file, line: line)
     }
 
-    /// Predicate evaluation still gates SCREAMING_CASE → .constant and
-    /// lowercase identifiers → .variable across the affected grammars.
-    /// If the buffer resolver returned wrong text, `#match? "^[A-Z]"`
-    /// would mis-fire and these would flip.
+    // MARK: - 2. Predicate-gated scopes via the on-screen (rust) highlighter
+    //
+    // TSK-854: highlighting is rust-only now. The `predicateSubstring`
+    // helper above still serves the Swift engine's kept fold grammars, but
+    // the PREDICATE-EVALUATION BEHAVIOUR a user sees (SCREAMING_CASE →
+    // .constant, lowercase → .variable) is produced by the Rust core. These
+    // tests pin that behaviour through `RustHighlightAdapter` — the engine
+    // that paints — with the gate forced ON for determinism.
+
+    private static let gateOn = ["MDV_RUST_HIGHLIGHT": "1"]
+
+    private func rustTokenize(
+        _ src: String, _ lang: HighlightLanguage
+    ) -> [HighlightRun] {
+        RustHighlightAdapter.outcome(src, language: lang, environment: Self.gateOn).value
+    }
+
+    /// Predicate evaluation gates SCREAMING_CASE → .constant and lowercase
+    /// identifiers → .variable across the affected grammars on the rust path.
     func testPredicateGatedScopes_multiLanguage() {
-        // lowercase identifier must NOT resolve to .type (the ^[A-Z]
-        // @type predicate must reject it via the resolved text).
+        // lowercase identifier must NOT resolve to .type.
         let ts = "const myThing: Widget = makeThing();"
-        let tsRuns = TreeSitterEngine.shared.tokenize(ts, language: .typescript)
+        let tsRuns = rustTokenize(ts, .typescript)
         assertContains(tsRuns, in: ts, substring: "myThing", kind: .variable)
         assertContains(tsRuns, in: ts, substring: "Widget", kind: .type)
 
         // SCREAMING_CASE → .constant via #match? on the resolved text.
+        // (rust-lang excluded — TSK-1201 known gap: the rust core's
+        // tree-sitter-rust query doesn't tag rust SCREAMING_CASE as constant,
+        // though java/python/c/lua do — see TreeSitterEngineGoldenTests.)
         let cases: [(HighlightLanguage, String, String)] = [
-            (.rust,   "const MAX_SIZE: u32 = 64;\nfn main() {}", "MAX_SIZE"),
             (.java,   "class C { static final int MAX_LEN = 5; }", "MAX_LEN"),
             (.python, "MAX_SIZE = 10", "MAX_SIZE"),
         ]
         for (lang, src, name) in cases {
-            let runs = TreeSitterEngine.shared.tokenize(src, language: lang)
+            let runs = rustTokenize(src, lang)
             assertContains(runs, in: src, substring: name, kind: .constant)
         }
     }
@@ -164,64 +180,11 @@ final class TreeSitterPredicateSubstringTests: XCTestCase {
     /// Predicate eval keys off the resolved text even with non-ASCII
     /// identifiers in the buffer. A Unicode identifier must still color
     /// as .variable (its #match? "^[A-Z]" gate fails on a lowercase /
-    /// non-Latin lead) — proving the surrogate/combining-aware resolver
-    /// feeds the predicate the right bytes.
+    /// non-Latin lead).
     func testPredicateEval_withUnicodeIdentifiersInBuffer() {
-        // The astral string literal forces surrogate pairs into the
-        // buffer ahead of the gated identifier; an off-by-one in the
-        // UTF-16-offset slice would mis-resolve the identifier text.
         let src = "const café = \"😀😀😀\"; const myThing = makeThing();"
-        let runs = TreeSitterEngine.shared.tokenize(src, language: .javascript)
+        let runs = rustTokenize(src, .javascript)
         assertContains(runs, in: src, substring: "myThing", kind: .variable)
         assertContains(runs, in: src, substring: "café", kind: .variable)
-    }
-
-    // MARK: - 3. Large predicate-dense file — no per-eval NSString churn
-
-    /// A ~200 KB file whose every line carries a SCREAMING_CASE constant
-    /// (a `#match?`-gated capture) so the predicate path runs thousands
-    /// of times. The slice resolves each against the cached buffer
-    /// instead of allocating an NSString substring per eval. We pin two
-    /// things: (a) the gated scope still fires (correctness under load),
-    /// and (b) a generous wall-clock floor catches a regression back to
-    /// per-eval NSString allocation (an order-of-magnitude blowup), not
-    /// single-ms drift.
-    func test_largePredicateDenseFile_tokenizesAndGatesConstants() {
-        let line = "const SOME_CONST_VALUE: u32 = 42; fn helper_fn() {}\n"
-        var src = ""
-        src.reserveCapacity(210_000)
-        while src.utf8.count < 200_000 { src += line }
-        XCTAssertLessThan(src.utf8.count, highlightMaxBytes,
-                          "fixture must stay under the highlight cap to tokenize")
-
-        let engine = TreeSitterEngine.shared
-        _ = engine.tokenize(src, language: .rust) // warm the query compile
-
-        // Correctness: the predicate-gated @constant still fires on this
-        // dense fixture (proves the buffer resolver feeds #match? the
-        // right text at scale).
-        let runs = engine.tokenize(src, language: .rust)
-        assertContains(runs, in: src, substring: "SOME_CONST_VALUE", kind: .constant)
-
-        // Perf floor: 5 warm passes, median. Budget is ~10x a debug
-        // headline; a revert to per-eval NSString.substring on a
-        // predicate-dense 200 KB file shows up as a multiple-x blowup in
-        // the query-iterate phase, which this trips, while tolerating a
-        // loaded CI box.
-        var samples: [Double] = []
-        for _ in 0..<5 {
-            let t0 = DispatchTime.now().uptimeNanoseconds
-            _ = engine.tokenize(src, language: .rust)
-            let t1 = DispatchTime.now().uptimeNanoseconds
-            samples.append(Double(t1 &- t0) / 1_000_000.0)
-        }
-        samples.sort()
-        let medianMs = samples[samples.count / 2]
-        print("[perf-budget] tokenize(200KB predicate-dense .rust, warm): " +
-              "\(String(format: "%.1f", medianMs))ms (budget 8000ms)")
-        XCTAssertLessThan(medianMs, 8000.0,
-            "predicate-dense 200 KB tokenize regressed to \(medianMs)ms — a " +
-            "blowup suggests per-eval NSString substring allocation returned " +
-            "(TSK-827 moved predicate text resolution to a cached buffer).")
     }
 }

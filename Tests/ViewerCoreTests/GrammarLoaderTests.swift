@@ -17,10 +17,9 @@ final class GrammarLoaderTests: XCTestCase {
     }
 
     /// Reset between cases too — `testMissingDylibReturnsNil` and
-    /// `testFailureIsMemoized` install a negative-cache entry for
-    /// `.rust` that would otherwise leak into the smoke tests below
-    /// (which run after this suite in alphabetical order) and trip
-    /// `testEachLanguageProducesRuns`.
+    /// `testFailureIsMemoized` install a negative-cache entry for a
+    /// grammar that would otherwise leak into the smoke tests below
+    /// (which run after this suite in alphabetical order).
     override func tearDown() {
         unsetenv("GRAMMAR_DYLIB_DIR")
         GrammarLoader._resetForTesting()
@@ -28,16 +27,14 @@ final class GrammarLoaderTests: XCTestCase {
     }
 
     func testCSymbolNamesMatchUpstreamConvention() {
-        // Canonical names from the upstream grammars' headers.
-        // tree-sitter-cpp exports `tree_sitter_cpp` (not `tree_sitter_c++`),
-        // tree-sitter-c-sharp exports `tree_sitter_c_sharp` (underscore,
-        // not hyphen). Verifying these here means a typo can't ship.
-        XCTAssertEqual(GrammarLoader.Grammar.cpp.cSymbol, "tree_sitter_cpp")
-        XCTAssertEqual(GrammarLoader.Grammar.cSharp.cSymbol, "tree_sitter_c_sharp")
+        // Canonical names from the upstream grammars' headers. tsx and
+        // typescript share a dylib but expose distinct symbols. Verifying
+        // these here means a typo can't ship. (TSK-854: the engine now ships
+        // only the fold grammars — xml/javascript/typescript/tsx.)
+        XCTAssertEqual(GrammarLoader.Grammar.xml.cSymbol, "tree_sitter_xml")
         XCTAssertEqual(GrammarLoader.Grammar.javascript.cSymbol, "tree_sitter_javascript")
         XCTAssertEqual(GrammarLoader.Grammar.typescript.cSymbol, "tree_sitter_typescript")
-        XCTAssertEqual(GrammarLoader.Grammar.rust.cSymbol, "tree_sitter_rust")
-        XCTAssertEqual(GrammarLoader.Grammar.lua.cSymbol, "tree_sitter_lua")
+        XCTAssertEqual(GrammarLoader.Grammar.tsx.cSymbol, "tree_sitter_tsx")
     }
 
     func testDylibBasenamesHaveLibPrefix() {
@@ -66,8 +63,8 @@ final class GrammarLoaderTests: XCTestCase {
         setenv("GRAMMAR_DYLIB_DIR", isolated, 1)
         defer { unsetenv("GRAMMAR_DYLIB_DIR") }
         GrammarLoader._resetForTesting()
-        let result = GrammarLoader.load(.rust)
-        XCTAssertNil(result, "rust dylib should not be present in empty isolated dir")
+        let result = GrammarLoader.load(.typescript)
+        XCTAssertNil(result, "typescript dylib should not be present in empty isolated dir")
     }
 
     func testFailureIsMemoized() {
@@ -79,8 +76,8 @@ final class GrammarLoaderTests: XCTestCase {
         setenv("GRAMMAR_DYLIB_DIR", isolated, 1)
         defer { unsetenv("GRAMMAR_DYLIB_DIR") }
         GrammarLoader._resetForTesting()
-        _ = GrammarLoader.load(.rust)
-        let second = GrammarLoader.load(.rust)
+        _ = GrammarLoader.load(.typescript)
+        let second = GrammarLoader.load(.typescript)
         XCTAssertNil(second)
     }
 
@@ -131,8 +128,8 @@ final class GrammarLoaderTests: XCTestCase {
         // asserting "this is a valid Rust grammar" — it's asserting
         // "the cache returns whatever I put in it".
         let placeholder = makeJSONLanguage()
-        GrammarLoader._injectForTesting(.rust, language: placeholder)
-        let result = GrammarLoader.load(.rust)
+        GrammarLoader._injectForTesting(.typescript, language: placeholder)
+        let result = GrammarLoader.load(.typescript)
         XCTAssertNotNil(result, "injected language should come back via load()")
     }
 

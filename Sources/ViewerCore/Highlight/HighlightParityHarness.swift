@@ -10,7 +10,9 @@ import ViewerKit
 /// engines:
 ///
 /// - The Source path's token sequence is the actual `[HighlightRun]` the
-///   TreeSitter engine emits (`scopeSequence(for:language:)`).
+///   on-screen highlighter emits. TSK-854: that is the Rust core via
+///   `RustHighlightAdapter` (the Swift TreeSitter twin was deleted), so
+///   `sourceScopeSequence` tokenizes through it with the gate forced ON.
 /// - The CM6 path tokenizes in JS (Lezer) — not host-runnable — so we can't
 ///   produce its sequence here. What we CAN pin host-side is REACHABILITY: any
 ///   `TokenKind` the Source path emits must have a Lezer-tag mapping on the CM6
@@ -35,13 +37,19 @@ public enum HighlightParityHarness {
     }
 
     /// The Source path's ordered token-scope sequence for `text` in
-    /// `language`: exactly the runs `TreeSitterEngine` produces (post
-    /// paint-over), surfaced as `ScopeToken`s sorted by start offset. This is
-    /// the canonical "what the View tab WOULD apply" sequence.
+    /// `language`: exactly the runs the on-screen highlighter produces,
+    /// surfaced as `ScopeToken`s sorted by start offset. TSK-854: the Source
+    /// highlighter is the Rust core (`RustHighlightAdapter`), with the
+    /// `.highlight` gate forced ON so the sequence is deterministic regardless
+    /// of any persisted Settings toggle. This is the canonical "what the View
+    /// tab WOULD apply" sequence.
     public static func sourceScopeSequence(
         for text: String, language: HighlightLanguage
     ) -> [ScopeToken] {
-        TreeSitterEngine.shared.tokenize(text, language: language)
+        RustHighlightAdapter
+            .outcome(text, language: language,
+                     environment: ["MDV_RUST_HIGHLIGHT": "1"])
+            .value
             .map { ScopeToken(range: $0.range, kind: $0.kind) }
             .sorted { $0.range.location < $1.range.location }
     }

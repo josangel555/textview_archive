@@ -33,9 +33,13 @@ public enum GrammarLoader {
     /// — it knows nothing about file extensions, code-fence detection,
     /// or the eager-vs-lazy split. The `HighlightLanguage` ↔ `Grammar`
     /// mapping lives in `TreeSitterEngine`.
+    ///
+    /// TSK-854: the grammar set is now exactly what code-FOLDS + structural
+    /// search need (highlighting is rust-only — no Swift grammar fallback).
+    /// The 8 highlight-only grammars (python, bash, java, c, cpp, c#, rust,
+    /// lua) and their dylibs were removed to reclaim the ~16 MB double-carry.
     public enum Grammar: String, Sendable, CaseIterable {
         case xml
-        case python
         case javascript
         case typescript
         /// JSX-aware TypeScript. Ships in the SAME dylib as `.typescript`
@@ -46,33 +50,14 @@ public enum GrammarLoader {
         /// `-dead_strip` can't prune the symbol — see the lazy wrapper's
         /// `wrapper.c`.
         case tsx
-        case bash
-        case java
-        case c
-        case cpp
-        case cSharp
-        case rust
-        case lua
 
-        /// The `tree_sitter_<name>` C symbol exposed by the upstream
-        /// grammar. Most are the obvious lowercased identifier; two
-        /// canonical exceptions (`cpp`, `c_sharp`) come from the
-        /// grammar authors' naming conventions and are not aliases we
-        /// invent.
+        /// The `tree_sitter_<name>` C symbol exposed by the upstream grammar.
         var cSymbol: String {
             switch self {
             case .xml:        return "tree_sitter_xml"
-            case .python:     return "tree_sitter_python"
             case .javascript: return "tree_sitter_javascript"
             case .typescript: return "tree_sitter_typescript"
             case .tsx:        return "tree_sitter_tsx"
-            case .bash:       return "tree_sitter_bash"
-            case .java:       return "tree_sitter_java"
-            case .c:          return "tree_sitter_c"
-            case .cpp:        return "tree_sitter_cpp"
-            case .cSharp:     return "tree_sitter_c_sharp"
-            case .rust:       return "tree_sitter_rust"
-            case .lua:        return "tree_sitter_lua"
             }
         }
 
@@ -84,18 +69,10 @@ public enum GrammarLoader {
         var dylibBasename: String {
             switch self {
             case .xml:        return "libTreeSitterXMLLazy"
-            case .python:     return "libTreeSitterPythonLazy"
             case .javascript: return "libTreeSitterJavaScriptLazy"
             case .typescript: return "libTreeSitterTypeScriptLazy"
             // tsx ships in the typescript dylib — same file, both symbols.
             case .tsx:        return "libTreeSitterTypeScriptLazy"
-            case .bash:       return "libTreeSitterBashLazy"
-            case .java:       return "libTreeSitterJavaLazy"
-            case .c:          return "libTreeSitterCLazy"
-            case .cpp:        return "libTreeSitterCPPLazy"
-            case .cSharp:     return "libTreeSitterCSharpLazy"
-            case .rust:       return "libTreeSitterRustLazy"
-            case .lua:        return "libTreeSitterLuaLazy"
             }
         }
     }

@@ -39,18 +39,15 @@ let package = Package(
         // `Sources/TreeSitterLazyWrappers/<name>/wrapper.c` for why
         // each wrapper file does a keepalive reference to the upstream
         // `tree_sitter_<x>` symbol.
+        //
+        // TSK-854: only the grammars code-FOLDS + structural search need
+        // ship now — XML, JavaScript, TypeScript (tsx shares the TS dylib).
+        // Highlighting is rust-only (`RustHighlightAdapter`), so the 8
+        // highlight-only grammar dylibs (python, bash, java, c, cpp, c#,
+        // rust, lua) were removed — the ~16 MB double-carry reclaim.
         .library(name: "TreeSitterXMLLazy",        type: .dynamic, targets: ["TreeSitterXMLLazy"]),
-        .library(name: "TreeSitterPythonLazy",     type: .dynamic, targets: ["TreeSitterPythonLazy"]),
         .library(name: "TreeSitterJavaScriptLazy", type: .dynamic, targets: ["TreeSitterJavaScriptLazy"]),
         .library(name: "TreeSitterTypeScriptLazy", type: .dynamic, targets: ["TreeSitterTypeScriptLazy"]),
-        .library(name: "TreeSitterBashLazy",       type: .dynamic, targets: ["TreeSitterBashLazy"]),
-        // Phase 5 grammars.
-        .library(name: "TreeSitterJavaLazy",       type: .dynamic, targets: ["TreeSitterJavaLazy"]),
-        .library(name: "TreeSitterCLazy",          type: .dynamic, targets: ["TreeSitterCLazy"]),
-        .library(name: "TreeSitterCPPLazy",        type: .dynamic, targets: ["TreeSitterCPPLazy"]),
-        .library(name: "TreeSitterCSharpLazy",     type: .dynamic, targets: ["TreeSitterCSharpLazy"]),
-        .library(name: "TreeSitterRustLazy",       type: .dynamic, targets: ["TreeSitterRustLazy"]),
-        .library(name: "TreeSitterLuaLazy",        type: .dynamic, targets: ["TreeSitterLuaLazy"]),
     ],
     dependencies: [
         // Pinned to the 0.8.x minor (the currently-resolved version).
@@ -75,6 +72,11 @@ let package = Package(
         // `.upToNextMinor` and tree-sitter-swift exact-revision intent).
         // The pinned versions are exactly what Package.resolved already
         // locked; bumping is a manual edit here + a re-resolve.
+        // TSK-854: only the grammars code-FOLDS + structural search need
+        // remain — json/swift/markdown (eager) + xml/javascript/typescript
+        // (lazy; tsx ships in the TS grammar). Highlighting is rust-only, so
+        // the 8 highlight-only grammar packages (python, bash, java, c, cpp,
+        // c#, rust, lua) were dropped with their dylibs (~16 MB reclaim).
         .package(url: "https://github.com/ChimeHQ/SwiftTreeSitter",               exact: "0.25.0"),
         .package(url: "https://github.com/tree-sitter/tree-sitter-json",          exact: "0.24.8"),
         // alex-pinkus' main branch ships only grammar.json — parser.c
@@ -89,55 +91,23 @@ let package = Package(
         .package(url: "https://github.com/alex-pinkus/tree-sitter-swift",         revision: "7b7909f2f6b9414be0958275f4c8e5d69c3bca43"),
         // exact: pins (TSK-974) — see the PIN POLICY note above.
         .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-xml",  exact: "0.7.0"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-python",        exact: "0.25.0"),
         .package(url: "https://github.com/tree-sitter/tree-sitter-javascript",    exact: "0.25.0"),
         .package(url: "https://github.com/tree-sitter/tree-sitter-typescript",    exact: "0.23.2"),
         .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-markdown", exact: "0.5.3"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-bash",          exact: "0.25.1"),
-        // Phase 5 lazy grammars. Each lives in its own
-        // `.library(.dynamic)` product so ViewerCore never pays for
-        // them in the executable; the runtime loader dlopens by path.
-        // Canonical upstream URLs only — picked for "tree-sitter org
-        // or grammars org owns it" stability, not popularity.
-        // exact: pins (TSK-974) — see the PIN POLICY note above.
-        .package(url: "https://github.com/tree-sitter/tree-sitter-java",          exact: "0.23.5"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-c",             exact: "0.24.2"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-cpp",           exact: "0.23.4"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-c-sharp",       exact: "0.23.5"),
-        .package(url: "https://github.com/tree-sitter/tree-sitter-rust",          exact: "0.24.2"),
-        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-lua",  exact: "0.5.0"),
     ],
     targets: [
-        // Patch targets — the upstream tree-sitter-python and
-        // tree-sitter-javascript Package.swifts include `scanner.c`
-        // via a `FileManager.fileExists` check evaluated against
-        // SwiftPM's working directory, not the package root, so the
-        // file is never added on real builds. The grammars' parser.c
-        // references symbols defined in scanner.c, breaking link.
-        // We vendor a copy of scanner.c + its private headers and
-        // compile them ourselves so the linker resolves cleanly.
-        // Delete these targets if upstream ever fixes the bug.
-        .target(
-            name: "CTSPatchPython",
-            path: "Sources/CTSPatchPython",
-            publicHeadersPath: "include",
-            cSettings: [.headerSearchPath(".")]
-        ),
+        // Patch target — the upstream tree-sitter-javascript Package.swift
+        // includes `scanner.c` via a `FileManager.fileExists` check
+        // evaluated against SwiftPM's working directory, not the package
+        // root, so the file is never added on real builds. The grammar's
+        // parser.c references symbols defined in scanner.c, breaking link.
+        // We vendor a copy of scanner.c + its private headers and compile
+        // them ourselves so the linker resolves cleanly. Delete this target
+        // if upstream ever fixes the bug. (TSK-854: the Python + Lua patch
+        // twins went away with their grammars.)
         .target(
             name: "CTSPatchJavaScript",
             path: "Sources/CTSPatchJavaScript",
-            publicHeadersPath: "include",
-            cSettings: [.headerSearchPath(".")]
-        ),
-        // Same upstream Package.swift bug — tree-sitter-grammars/tree-sitter-lua
-        // gates `src/scanner.c` on a `FileManager.fileExists` check
-        // evaluated against SwiftPM's working dir, not the package
-        // root, so the file is skipped and link fails with
-        // `tree_sitter_lua_external_scanner_*` undefined. Drop this
-        // target if upstream fixes the gating.
-        .target(
-            name: "CTSPatchLua",
-            path: "Sources/CTSPatchLua",
             publicHeadersPath: "include",
             cSettings: [.headerSearchPath(".")]
         ),
@@ -236,14 +206,6 @@ let package = Package(
             path: "Sources/TreeSitterLazyWrappers/TreeSitterXMLLazy"
         ),
         .target(
-            name: "TreeSitterPythonLazy",
-            dependencies: [
-                .product(name: "TreeSitterPython", package: "tree-sitter-python"),
-                "CTSPatchPython",
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterPythonLazy"
-        ),
-        .target(
             name: "TreeSitterJavaScriptLazy",
             dependencies: [
                 .product(name: "TreeSitterJavaScript", package: "tree-sitter-javascript"),
@@ -257,56 +219,6 @@ let package = Package(
                 .product(name: "TreeSitterTypeScript", package: "tree-sitter-typescript"),
             ],
             path: "Sources/TreeSitterLazyWrappers/TreeSitterTypeScriptLazy"
-        ),
-        .target(
-            name: "TreeSitterBashLazy",
-            dependencies: [
-                .product(name: "TreeSitterBash", package: "tree-sitter-bash"),
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterBashLazy"
-        ),
-        .target(
-            name: "TreeSitterJavaLazy",
-            dependencies: [
-                .product(name: "TreeSitterJava", package: "tree-sitter-java"),
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterJavaLazy"
-        ),
-        .target(
-            name: "TreeSitterCLazy",
-            dependencies: [
-                .product(name: "TreeSitterC", package: "tree-sitter-c"),
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterCLazy"
-        ),
-        .target(
-            name: "TreeSitterCPPLazy",
-            dependencies: [
-                .product(name: "TreeSitterCPP", package: "tree-sitter-cpp"),
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterCPPLazy"
-        ),
-        .target(
-            name: "TreeSitterCSharpLazy",
-            dependencies: [
-                .product(name: "TreeSitterCSharp", package: "tree-sitter-c-sharp"),
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterCSharpLazy"
-        ),
-        .target(
-            name: "TreeSitterRustLazy",
-            dependencies: [
-                .product(name: "TreeSitterRust", package: "tree-sitter-rust"),
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterRustLazy"
-        ),
-        .target(
-            name: "TreeSitterLuaLazy",
-            dependencies: [
-                .product(name: "TreeSitterLua", package: "tree-sitter-lua"),
-                "CTSPatchLua",
-            ],
-            path: "Sources/TreeSitterLazyWrappers/TreeSitterLuaLazy"
         ),
 
         .testTarget(name: "ViewerKitTests", dependencies: ["ViewerKit"]),

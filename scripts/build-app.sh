@@ -94,18 +94,13 @@ echo "==> swift build -c $CONFIG"
 # in `Package.swift`. We don't iterate via package introspection
 # because the cost (`swift package describe` ~3 s) isn't worth it for
 # a ~ten-item allowlist that changes with reviewed commits.
+# TSK-854: only the grammars code-FOLDS + structural search need ship
+# (highlighting is rust-only). The 8 highlight-only grammar dylibs were
+# removed — ~16 MB reclaim out of Contents/Frameworks/.
 LAZY_PRODUCTS=(
   TreeSitterXMLLazy
-  TreeSitterPythonLazy
   TreeSitterJavaScriptLazy
   TreeSitterTypeScriptLazy
-  TreeSitterBashLazy
-  TreeSitterJavaLazy
-  TreeSitterCLazy
-  TreeSitterCPPLazy
-  TreeSitterCSharpLazy
-  TreeSitterRustLazy
-  TreeSitterLuaLazy
 )
 for prod in "${LAZY_PRODUCTS[@]}"; do
   echo "==> swift build --product $prod -c $CONFIG"
