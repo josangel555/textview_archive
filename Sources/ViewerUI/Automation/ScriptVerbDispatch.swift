@@ -118,6 +118,7 @@ public enum ScriptVerb {
         // model toggles, headless-safe.
         case "toggle-word-wrap": model.toggleSourceWordWrap()
         case "toggle-invisibles": model.toggleShowInvisibleChars()
+        case "toggle-view-only": model.toggleViewOnly()   // TSK-936
         // TSK-951: menu-only active-file Edit text-transforms surfaced to the
         // palette. Each wires to an existing host-tested model method (no-op,
         // returns false, when there's no active text file / editor caret).

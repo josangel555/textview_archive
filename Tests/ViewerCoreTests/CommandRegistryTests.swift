@@ -84,6 +84,10 @@ final class CommandRegistryTests: XCTestCase {
             "show-git-panel", "toggle-line-bookmark", "git-file-history",
             // palette parity for view toggles + menu-only edit transforms (TSK-951)
             "toggle-word-wrap", "toggle-invisibles",
+            // view-only (read-only) lock toggle (TSK-936)
+            "toggle-view-only",
+            // case transforms surfaced to the palette (TSK-1113)
+            "edit-uppercase", "edit-lowercase", "edit-capitalize",
             "edit-remove-empty-lines", "edit-collapse-blank-lines",
             "edit-trim-trailing", "edit-ensure-final-newline",
             "edit-minify-json", "edit-insert-toc", "edit-insert-date",

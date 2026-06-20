@@ -75,6 +75,12 @@ extension CommandRegistry {
             defaultShortcut: Shortcut(key: "r", modifiers: [.command, .shift]),
             scriptVerb: "toggle-view"),
         CommandDescriptor(
+            id: "view.toggleViewOnly", title: "Toggle View Only", category: .view,
+            // TSK-936: owner reserved ⌘1-9 for tool windows + ⇧⌘R is taken by
+            // Rendered/Source; ⇧⌘L ("Lock") is free (plain ⌘L = Go to Line).
+            defaultShortcut: Shortcut(key: "l", modifiers: [.command, .shift]),
+            scriptVerb: "toggle-view-only"),
+        CommandDescriptor(
             id: "view.toggleSidebar", title: "Toggle Sidebar", category: .view,
             defaultShortcut: Shortcut(key: "s", modifiers: [.command, .control]),
             scriptVerb: "toggle-sidebar"),

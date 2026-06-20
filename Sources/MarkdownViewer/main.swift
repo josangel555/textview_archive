@@ -838,6 +838,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.toggleViewMode()
     }
 
+    /// TSK-936 — View ▸ Toggle View Only (⇧⌘L): flip the read-only lock on the
+    /// active tab's editable lens.
+    @objc func toggleViewOnlyMode(_ sender: Any?) {
+        model.toggleViewOnly()
+    }
+
     @objc func newTab(_ sender: Any?) {
         model.newTab()
     }
@@ -1497,6 +1503,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         toggleItem.target = self
         applyShortcut("view.toggleRenderedSource", to: toggleItem)
         viewMenu.addItem(toggleItem)
+
+        // TSK-936 — Toggle View Only (read-only lock). ⇧⌘L fallback; the
+        // CommandRegistry descriptor carries the same default + a checkmark
+        // reflects the live lock state (validateMenuItem).
+        let viewOnlyItem = NSMenuItem(
+            title: "View Only",
+            action: #selector(toggleViewOnlyMode(_:)),
+            keyEquivalent: "l"
+        )
+        viewOnlyItem.keyEquivalentModifierMask = [.command, .shift]
+        viewOnlyItem.target = self
+        applyShortcut("view.toggleViewOnly", to: viewOnlyItem)
+        viewMenu.addItem(viewOnlyItem)
 
         // TSK-899: ⌘1/⌘2/⌘3 select the 1st/2nd/3rd view mode in the current
         // file's mode bar (positional — Rendered/Source/HEX for markdown,
@@ -2913,6 +2932,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // Rendered/Source toggle only meaningful for markdown.
             item.title = (model.currentViewMode == .source) ? "Show Rendered" : "Show Source"
             return model.supportsViewModeToggle
+        case #selector(toggleViewOnlyMode(_:)):
+            // TSK-936: checkmark reflects the live read-only lock; enabled
+            // whenever a tab is selected (no-op on always-read-only Render).
+            item.state = model.viewModePresentation.viewOnly ? .on : .off
+            return model.tabs.selected != nil
         case #selector(toggleFormat(_:)):
             // Format only when the current file has a registered formatter.
             // TSK-904: name the concrete format ("Pretty-Print JSON") so it's

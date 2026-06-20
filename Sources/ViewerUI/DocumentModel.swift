@@ -5127,6 +5127,15 @@ public final class DocumentModel: ObservableObject {
         selectViewPrimary(primary, viewOnly: viewOnly)
     }
 
+    /// TSK-936 — flip the ViewOnly (read-only) lock on the active tab, keeping
+    /// the current primary lens (Editor↔Source for text, arm/disarm for HEX,
+    /// no-op for the always-read-only Render lens). Drives the same path as the
+    /// toolbar "View Only" toggle; exposed for the View-menu command + the
+    /// `toggle-view-only` script verb.
+    public func toggleViewOnly() {
+        setViewOnly(!viewModePresentation.viewOnly)
+    }
+
     /// True when the Format button should be shown for the current file
     /// (pretty-printable types only — JSON / XML / plist / SVG / HTML / …).
     public var showsFormatButton: Bool {

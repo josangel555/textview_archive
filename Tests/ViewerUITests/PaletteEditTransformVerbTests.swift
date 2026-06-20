@@ -92,9 +92,23 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "edit-trim-trailing", "edit-ensure-final-newline",
             "edit-minify-json", "edit-insert-toc", "edit-insert-date",
             "edit-uppercase", "edit-lowercase", "edit-capitalize",
+            "toggle-view-only",
         ] {
             XCTAssertTrue(apply(verb, on: model), "\(verb) must be a recognized script verb")
         }
+    }
+
+    /// TSK-936 — the verb flips the active tab's View-only (read-only) lock.
+    /// Open an editable text file in the Editor lens (viewOnly == false), then
+    /// the verb must flip it on, and again off.
+    func test_toggleViewOnly_verb_flipsLockState() throws {
+        let (model, _) = try openText("lock.txt", "let x = 1\n")
+        model.selectViewPrimary(.editor, viewOnly: false)
+        XCTAssertFalse(model.viewModePresentation.viewOnly, "precondition: editing")
+        XCTAssertTrue(apply("toggle-view-only", on: model))
+        XCTAssertTrue(model.viewModePresentation.viewOnly, "verb must turn the lock ON")
+        XCTAssertTrue(apply("toggle-view-only", on: model))
+        XCTAssertFalse(model.viewModePresentation.viewOnly, "verb must turn the lock OFF again")
     }
 
     func test_toggleWordWrap_verb_flipsModelState() throws {
