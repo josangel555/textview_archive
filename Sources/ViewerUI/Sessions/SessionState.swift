@@ -470,24 +470,50 @@ public final class SessionState: ObservableObject {
         // Distinguish nil (deliberate "no selection persisted") from 0
         // (first tab). Previously nil collapsed to 0 and restoring a
         // session with an explicit empty selection refocused tab 0
-        // anyway.
-        //
-        // Select by matching the resolved path against the surviving
-        // (compacted) tab list — never by the stale persisted index.
-        // If the target tab's own file was the one that went missing,
-        // there's nothing to re-focus; `appendLazyTab` already left the
-        // first surviving tab selected, which is the sensible fallback.
-        if let targetPath,
-           let liveIndex = model.tabs.tabs.firstIndex(
-               where: { $0.url?.path == targetPath }) {
-            // Perf P1 (TSK-1040): bound the focused-tab select path — this is
-            // where the incoming tab materializes + (pre-P1) rebuilt its
-            // WebView. After the warm-cache fix this re-attaches with no reload.
-            let selectToken = PerfSignpost.begin(.interact, "switch.select")
-            model.selectTab(at: liveIndex)
-            PerfSignpost.end(selectToken)
+        // anyway. The actual focused-tab select (matching by resolved path,
+        // never the stale persisted index) is `selectFocusedTabOnSessionSwitch`.
+        if let targetPath {
+            selectFocusedTabOnSessionSwitch(targetPath: targetPath)
         }
     }
+
+    /// Focus the surviving tab matching `targetPath` as the FINAL step of a
+    /// session activation, marking the switch in-flight around the select.
+    ///
+    /// Select by matching the resolved path against the surviving (compacted) tab
+    /// list — never by the stale persisted index. No-op when the target's own
+    /// file went missing (`appendLazyTab` already left the first survivor
+    /// selected, the sensible fallback).
+    ///
+    /// TSK-1047: `model.isSessionSwitchInFlight` is set around the `selectTab` so
+    /// the scroll-restore it triggers SKIPS the live-CM6 push — on this path the
+    /// editor pane is REBUILT (dismantle→make), so the warm-editor reattach /
+    /// once-per-mount seed already restore scroll; a live push would double-apply.
+    /// A plain TAB switch never sets this flag (the pane stays mounted, so the
+    /// live push is the ONLY thing that re-applies the restored scroll). The flag
+    /// is cleared in a `defer` so an early-return / throw can't leave it stuck.
+    func selectFocusedTabOnSessionSwitch(targetPath: String) {
+        guard let liveIndex = model.tabs.tabs.firstIndex(
+            where: { $0.url?.path == targetPath }) else { return }
+        // Perf P1 (TSK-1040): bound the focused-tab select path — this is where
+        // the incoming tab materializes + (pre-P1) rebuilt its WebView. After the
+        // warm-cache fix this re-attaches with no reload.
+        let selectToken = PerfSignpost.begin(.interact, "switch.select")
+        model.isSessionSwitchInFlight = true
+        defer { model.isSessionSwitchInFlight = false }
+        model.selectTab(at: liveIndex)
+        PerfSignpost.end(selectToken)
+    }
+
+    #if DEBUG
+    /// Test seam (TSK-1047): drive the exact session-switch focused-tab select
+    /// (with its `isSessionSwitchInFlight` lifecycle) so a host test can prove the
+    /// gate is set around the select and cleared after — without running the full
+    /// `hydrate`.
+    func _test_selectFocusedTab(targetPath: String) {
+        selectFocusedTabOnSessionSwitch(targetPath: targetPath)
+    }
+    #endif
 
     /// SEED-ONCE (#184 scope item 3): if this session was created with a
     /// non-`.project` kind and has NOT yet had its panel layout seeded,

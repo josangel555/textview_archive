@@ -2265,9 +2265,84 @@ public final class DocumentModel: ObservableObject {
     private func applyRestoredScroll(_ line: Int, to tab: ViewerCore.Tab, at index: Int) {
         if tab.viewMode == .editor {
             seedEditorScroll(fromTopLine: line, forTabID: tab.id)
+            // TSK-1047 (tab-SELECT restore): the warm-editor reattach + the
+            // once-per-mount `editorMountSelectionSeed` only fire on a
+            // dismantle→make (an UNMOUNT/REMOUNT = a SESSION switch, or an LRU
+            // evict/rebuild). A plain TAB switch keeps the editor pane MOUNTED in
+            // `MountedPanesLRU` — so make/dismantle never fire and the
+            // once-per-mount seed (already consumed) won't re-apply. The live CM6
+            // would stay where the user last left THIS tab's pane, ignoring the
+            // restored `editorScrollByTab[id]`. So for a tab switch we imperatively
+            // push the restored line to the live, already-mounted CM6 (the same
+            // `scrollToLine` path the `editor-scroll-to-line` harness verb uses).
+            // GATED to NOT double-apply on the session-switch (reattach) path:
+            // `isSessionSwitchInFlight` is set by `SessionState` around its
+            // `selectTab`, where the editor pane is being rebuilt (warm-cache
+            // reattach keeps scroll, or the fresh-build seed restores it) — there
+            // a live push would either no-op (no/unlaid-out WebView) or redundantly
+            // re-assert the already-correct line. Best-effort: nil registry (no
+            // editor mounted yet) just falls through to the mount-time belt.
+            if !isSessionSwitchInFlight {
+                pushLiveEditorScroll(toLine: line, forTabID: tab.id)
+            }
         }
         scrollSource(toLine: line)
     }
+
+    /// TSK-1047: imperatively scroll the LIVE, already-mounted CM6 editor WebView
+    /// so `line` is at the viewport top — WITHOUT moving the caret (the same
+    /// `scrollToLine` bridge command `applyScrollToLine` in `codemirror.html`
+    /// honors, and the `editor-scroll-to-line` harness verb drives). Used by the
+    /// tab-SELECT restore path, where the pane stays mounted so the mount-time
+    /// scroll belt never re-fires. No-op when no editor WebView is registered
+    /// (nothing to push to) or the target tab isn't the active one (a background
+    /// restore must not yank the focused viewport). The registry returns the
+    /// editor attached to the key window, which on a tab switch IS the newly
+    /// selected tab's pane.
+    private func pushLiveEditorScroll(toLine line: Int, forTabID id: UUID) {
+        guard tabs.selected?.id == id else { return }
+        #if DEBUG
+        // Test seam (TSK-1047): record the live-push ATTEMPT so a host test can
+        // prove the tab-select restore reaches the live-CM6 push AND that the
+        // session-switch gate suppresses it — without a real WebView (the actual
+        // on-screen scroll is VM-only). Recorded BEFORE the registry guard so the
+        // attempt is visible even in a headless process with no editor mounted
+        // (the gate decision is what we're pinning, not the JS round-trip).
+        _test_liveEditorScrollPushes += 1
+        _test_lastLiveEditorScrollLine = line
+        #endif
+        guard let webView = CodeMirrorEditorRegistry.shared.current() else { return }
+        // `scrollToLine` is a pure scroll (puts `line` at the viewport top) and,
+        // unlike `gotoLine`, does NOT move the caret — restoring scroll must never
+        // disturb the user's cursor. Same command the `editor-scroll-to-line`
+        // harness verb dispatches.
+        webView.evaluateJavaScript(
+            "window.cmDispatch && window.cmDispatch({type:'scrollToLine', line: \(line)})",
+            completionHandler: nil)
+    }
+
+    #if DEBUG
+    /// Test seam (TSK-1047): count of live-CM6 scroll-push ATTEMPTS made by the
+    /// tab-select restore path, and the last line pushed. A host test reads these
+    /// to prove (a) a TAB switch attempts the live push (the mounted-pane gap fix)
+    /// and (b) a SESSION switch (flag set) does NOT (no double-apply over the
+    /// reattach/seed belt). The true on-screen scroll is VM-only.
+    public private(set) var _test_liveEditorScrollPushes = 0
+    public private(set) var _test_lastLiveEditorScrollLine = 0
+    public func _test_resetLiveEditorScrollProbe() {
+        _test_liveEditorScrollPushes = 0
+        _test_lastLiveEditorScrollLine = 0
+    }
+    #endif
+
+    /// TSK-1047: set true by `SessionState` around the `selectTab` it drives
+    /// during a session activation — the path where the editor pane is REBUILT
+    /// (dismantle→make), so the warm-editor reattach / once-per-mount seed already
+    /// restore scroll. Gates `applyRestoredScroll`'s live CM6 push so a session
+    /// switch doesn't double-apply (a TAB switch leaves it false → the live push
+    /// runs, since a mounted pane has no rebuild to carry the scroll). Plain Bool,
+    /// main-actor — set/cleared synchronously around the one `selectTab` call.
+    public var isSessionSwitchInFlight: Bool = false
 
     /// TSK-718 hot exit: cap on persisted unsaved text per tab. Beyond this the
     /// unsaved content is NOT captured (the file reloads from disk on relaunch)

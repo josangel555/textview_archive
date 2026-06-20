@@ -630,6 +630,18 @@ public enum ScriptVerb {
             // for "did the rendered scroll actually restore on switch-IN" — the
             // model dump can't see the WebView's real scroll. No-op headless.
             LiveScrollProbe.captureRenderedScroll()
+        case "capture-editor-scroll":
+            // TSK-1047: probe the LIVE on-screen CM6 scroll of the active editor
+            // (`__mdvView.scrollDOM.scrollTop` + viewport top line) into
+            // `LiveScrollProbe.editorScrollTop` / `.editorTopLine`, which the NEXT
+            // per-step dump surfaces as `liveEditorScrollTop` / `liveEditorTopLine`.
+            // Same capture→settle→read-next-dump pattern as
+            // `capture-rendered-scroll`. This is the RENDER AUTHORITY for the
+            // editor scroll-restore: the dump's model-only `editorScrollTopLine`
+            // is keyed by the CURRENT `Tab.id` and goes stale/empty after a switch
+            // mints a fresh id, even when the WebView is correctly scrolled. No-op
+            // headless (no WebView).
+            LiveScrollProbe.captureEditorScroll()
         case "snapshot":
             // Handled by caller after this returns.
             _ = arg
@@ -764,6 +776,18 @@ public enum ScriptVerb {
             // surface's scroll-restore — the dump can't read a live WebView, so the
             // verb stashes it in `LiveScrollProbe` for the following dump to surface.
             "renderedScrollY": LiveScrollProbe.renderedScrollY,
+            // TSK-1047: the LIVE CM6 scroll the active editor WebView ACTUALLY
+            // holds on screen, read straight off `__mdvView` by the
+            // `capture-editor-scroll` / `wait-editor-line` verbs (−1 until one
+            // runs / no editor). The RENDER AUTHORITY for "did the editor scroll
+            // actually restore on switch-IN" — unlike `editorScrollTopLine` (a
+            // MODEL field keyed by the current `Tab.id`, which a switch leaves
+            // stale), this reflects the WebView's true viewport. The bug
+            // (TSK-1046/1047) was precisely that this returned to the top while
+            // the model field looked correct; pinning the LIVE value makes the
+            // on-screen regression observable.
+            "liveEditorScrollTop": LiveScrollProbe.editorScrollTop,
+            "liveEditorTopLine": LiveScrollProbe.editorTopLine,
             "sessions": sessionSummaries,
             "activeSessionID": sessions.core.activeID?.uuidString ?? "",
             // TSK-522/523: Git Log selection projection (via the live

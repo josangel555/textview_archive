@@ -659,4 +659,113 @@ final class ScrollPositionPersistenceTests: XCTestCase {
                        "the stale entry is dropped so a fresh pane is built against the model's text")
         WarmEditorWebViewCache.shared.removeAll()
     }
+
+    // MARK: - TSK-1047: tab-SELECT restore must push to the LIVE mounted CM6
+    //
+    // The warm-editor reattach + the once-per-mount `editorMountSelectionSeed`
+    // only fire on a dismantle→make (UNMOUNT/REMOUNT = a SESSION switch or LRU
+    // rebuild). A plain TAB switch keeps the editor pane MOUNTED, so neither fires
+    // and the restored `editorScrollByTab[id]` was never pushed to the live CM6 —
+    // the editor stayed where it was, ignoring the restore. The fix: on a tab
+    // switch, `applyRestoredScroll` imperatively pushes the restored line to the
+    // live, already-mounted CM6 (the `scrollToLine` bridge). It must be GATED off
+    // on the session-switch path (the reattach/seed belt already restores there).
+    // The true on-screen scroll is VM-only (ScrollRestoreUAT SCROLL03); here we
+    // pin the GATE + the push-attempt wiring host-side, with teeth.
+
+    func test_isSessionSwitchInFlight_defaultsFalse() {
+        let model = DocumentModel()
+        XCTAssertFalse(model.isSessionSwitchInFlight,
+                       "the session-switch gate is off by default (plain tab switches push live)")
+    }
+
+    func test_tabSelectRestore_attemptsLiveEditorPush_whenNotSessionSwitch() {
+        // A genuine TAB switch (gate OFF) restoring an editor tab carrying a
+        // persisted scroll MUST attempt the live-CM6 push at the restored line —
+        // this is the mounted-pane gap the fix closes. TEETH: gate the push behind
+        // `!isSessionSwitchInFlight` and this records an attempt at line 158.
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        // A lazy editor tab carrying a persisted scroll, made the SELECTED tab so
+        // the live-push's "is this the active tab" guard passes.
+        model.appendLazyTab(url: a, viewMode: .editor, scrollTopLine: 158)
+        model.selectTab(at: 0)
+        let tid = model.tabs.tabs[0].id
+        XCTAssertEqual(model.tabs.selected?.id, tid, "precondition: tab is selected")
+        model._test_resetLiveEditorScrollProbe()
+
+        XCTAssertFalse(model.isSessionSwitchInFlight,
+                       "precondition: a plain tab switch is NOT a session switch")
+        model.restoreScroll(forTabAt: 0)
+
+        XCTAssertEqual(model._test_liveEditorScrollPushes, 1,
+                       "TSK-1047: a tab-select restore of an editor tab must push to the live CM6")
+        XCTAssertEqual(model._test_lastLiveEditorScrollLine, 158,
+                       "the live push must target the RESTORED top line")
+    }
+
+    func test_sessionSwitchRestore_skipsLiveEditorPush_noDoubleApply() {
+        // TEETH (the gate): with the session-switch flag SET — the path where the
+        // editor pane is REBUILT (warm-cache reattach keeps scroll / fresh-build
+        // seed restores it) — the live push must be SUPPRESSED so a session switch
+        // doesn't double-apply over the reattach/seed belt. If the gate regressed
+        // (push fired unconditionally), this would see a push and fail.
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        model.appendLazyTab(url: a, viewMode: .editor, scrollTopLine: 158)
+        model.selectTab(at: 0)
+        model._test_resetLiveEditorScrollProbe()
+
+        model.isSessionSwitchInFlight = true
+        defer { model.isSessionSwitchInFlight = false }
+        model.restoreScroll(forTabAt: 0)
+
+        XCTAssertEqual(model._test_liveEditorScrollPushes, 0,
+                       "TSK-1047: a SESSION switch must NOT live-push (the reattach/seed belt restores)")
+        // The model channel is still seeded either way (the seed belt is the
+        // cache-miss/fresh-build path) — the gate only suppresses the LIVE push.
+        let tid = model.tabs.tabs[0].id
+        XCTAssertEqual(model.editorScrollByTab[tid]?.viewportFromLine, 158,
+                       "the editor channel is still seeded on a session-switch restore")
+    }
+
+    func test_tabSelectRestore_noLivePush_forRenderedTab() {
+        // The live-CM6 push is editor-only — a rendered markdown tab restore must
+        // never attempt it (it has no CM6; its restore rides renderedScrollByURL).
+        let model = DocumentModel()
+        let a = makeMarkdownFile("doc.md")
+        model.appendLazyTab(url: a, viewMode: .rendered, renderedScrollY: 1390)
+        model.selectTab(at: 0)
+        model._test_resetLiveEditorScrollProbe()
+
+        model.restoreScroll(forTabAt: 0)
+        XCTAssertEqual(model._test_liveEditorScrollPushes, 0,
+                       "a rendered-tab restore must not attempt a live CM6 push")
+    }
+
+    func test_sessionSwitch_setsAndClearsInFlightFlag_aroundSelect() {
+        // The SessionState session-activate path must SET the gate around its
+        // `selectTab` and CLEAR it after (via defer), so the gate can't leak into
+        // a later plain tab switch (which would wrongly suppress its live push).
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        let b = makeFile("other.swift")
+        model.appendLazyTab(url: a, viewMode: .editor, scrollTopLine: 100)
+        model.appendLazyTab(url: b, viewMode: .editor, scrollTopLine: 50)
+        model.selectTab(at: 0)
+        XCTAssertFalse(model.isSessionSwitchInFlight, "precondition: gate off")
+
+        // Drive the real session-switch select through SessionState (the producer
+        // of the flag's lifecycle), targeting file b's path.
+        let session = SessionState(rootURL: tmpRoot, model: model)
+        session._test_selectFocusedTab(targetPath:
+            b.standardizedFileURL.resolvingSymlinksInPath().path)
+
+        XCTAssertFalse(model.isSessionSwitchInFlight,
+                       "TSK-1047: the session-switch gate must be CLEARED after select (defer), "
+                       + "so it can't leak into a later plain tab switch")
+        XCTAssertEqual(model.tabs.selected?.url?.path,
+                       b.standardizedFileURL.resolvingSymlinksInPath().path,
+                       "the session-switch select must have focused file b")
+    }
 }

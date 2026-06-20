@@ -72,8 +72,14 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
     private func renderedScrollY(_ dump: [String: Any]) -> Double {
         (model(dump)["renderedScrollY"] as? Double) ?? -999
     }
-    private func editorTopLine(_ dump: [String: Any]) -> Int {
-        (model(dump)["editorScrollTopLine"] as? Int) ?? -1
+    /// The LIVE CM6 viewport top line read straight off the editor WebView
+    /// (`__mdvView`), surfaced by the `capture-editor-scroll` / `wait-editor-line`
+    /// verbs as `liveEditorTopLine`. This is the RENDER AUTHORITY — NOT the
+    /// model-only `editorScrollTopLine`, which is keyed by the current `Tab.id`
+    /// and goes stale/empty after a switch mints a fresh id (the very gap that
+    /// made the old harness a false red). `-1` until a probe verb resolves.
+    private func liveEditorTopLine(_ dump: [String: Any]) -> Int {
+        (model(dump)["liveEditorTopLine"] as? Int) ?? -1
     }
     private func currentURL(_ dump: [String: Any]) -> String {
         (model(dump)["currentURL"] as? String) ?? ""
@@ -91,19 +97,21 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
         let a = try harness.writeFile("doc-a.md", longMarkdown("Doc A"))
         let b = try harness.writeFile("doc-b.md", longMarkdown("Doc B"))
         let target = 1500.0
+        // SETUP is now PROVEN, not gambled: `wait-rendered-scroll` blocks until the
+        // live `window.scrollY` actually reaches ~N (polling the real WebView with
+        // a timeout) and stashes the settled value, so the precondition can't be a
+        // false red from reading before the async scroll settled. Each `wait-…`
+        // both establishes/re-reads the live scroll AND surfaces it on its own dump.
         let script = """
         open \(a.path)
         delay 1.2
         rendered-scroll-to \(Int(target))
-        delay 0.6
-        capture-rendered-scroll
-        delay 0.5
+        wait-rendered-scroll \(Int(target))
         open \(b.path)
         delay 1.0
         select-tab 1
         delay 1.2
-        capture-rendered-scroll
-        delay 0.6
+        wait-rendered-scroll \(Int(target))
         """
         try runScenarios([
             Scenario(
@@ -114,23 +122,21 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
                     // ONE dump per non-comment/non-blank script LINE (delays
                     // INCLUDED — ScriptRunner filters only `#`/empty), so lines
                     // map to CONSECUTIVE 0-based dump indices:
-                    //   0 open A · 1 delay · 2 scroll · 3 delay · 4 capture#1 ·
-                    //   5 delay · 6 open B · 7 delay · 8 select-tab 1 (back to A) ·
-                    //   9 delay · 10 capture#2 · 11 delay
-                    // `capture-rendered-scroll` stashes window.scrollY ASYNC into
-                    // LiveScrollProbe, surfacing on the NEXT dump — so read the
-                    // probe off the trailing `delay` AFTER each capture: capture#1
-                    // (line 4) → dumps[5]; capture#2 (line 10) → dumps[11]. (The
-                    // SYNCHRONOUS model fields like currentURL are correct on the
-                    // same dump either way.)
-                    guard dumps.count >= 12 else {
-                        XCTFail("expected >=12 dumps, got \(dumps.count) "
+                    //   0 open A · 1 delay · 2 scroll · 3 wait#1 (settled) ·
+                    //   4 open B · 5 delay · 6 select-tab 1 (back to A) ·
+                    //   7 delay · 8 wait#2 (settled)
+                    // `wait-rendered-scroll` BLOCKS until the live scroll settles
+                    // and stashes it, so the SAME dump (the wait verb's own dump)
+                    // carries the settled `renderedScrollY` — no off-by-one
+                    // async-lag index math.
+                    guard dumps.count >= 9 else {
+                        XCTFail("expected >=9 dumps, got \(dumps.count) "
                             + "(app may not have launched / produced step JSON)",
                             file: file, line: line)
                         return
                     }
-                    let afterScroll = dumps[5]
-                    let afterReturn = dumps[11]
+                    let afterScroll = dumps[3]   // wait#1
+                    let afterReturn = dumps[8]   // wait#2
                     XCTAssertGreaterThan(renderedScrollY(afterScroll), 800,
                         "setup: the live preview should have scrolled down "
                         + "(got \(renderedScrollY(afterScroll)))", file: file, line: line)
@@ -167,15 +173,12 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
         open \(a.path)
         delay 1.2
         rendered-scroll-to \(Int(target))
-        delay 0.6
-        capture-rendered-scroll
-        delay 0.5
+        wait-rendered-scroll \(Int(target))
         session-open-folder \(projB.path)
         delay 1.0
         session-activate 1
         delay 1.4
-        capture-rendered-scroll
-        delay 0.6
+        wait-rendered-scroll \(Int(target))
         """
         try runScenarios([
             Scenario(
@@ -185,19 +188,19 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
                 assert: { [self] dumps, file, line in
                     // ONE dump per script LINE (delays INCLUDED), 0-based:
                     //   0 open-folder A · 1 delay · 2 open long.md · 3 delay ·
-                    //   4 scroll · 5 delay · 6 capture#1 · 7 delay ·
-                    //   8 open-folder B (switch session) · 9 delay ·
-                    //   10 activate 1 (back to A) · 11 delay · 12 capture#2 · 13 delay
-                    // capture-rendered-scroll lands on the NEXT dump (async probe):
-                    // capture#1 (line 6) → dumps[7]; capture#2 (line 12) → dumps[13].
-                    guard dumps.count >= 14 else {
-                        XCTFail("expected >=14 dumps, got \(dumps.count) "
+                    //   4 scroll · 5 wait#1 (settled) ·
+                    //   6 open-folder B (switch session) · 7 delay ·
+                    //   8 activate 1 (back to A) · 9 delay · 10 wait#2 (settled)
+                    // `wait-rendered-scroll` BLOCKS until settled + stashes on its
+                    // OWN dump → no async-lag off-by-one.
+                    guard dumps.count >= 11 else {
+                        XCTFail("expected >=11 dumps, got \(dumps.count) "
                             + "(app may not have launched / produced step JSON)",
                             file: file, line: line)
                         return
                     }
-                    let afterScroll = dumps[7]
-                    let afterReturn = dumps[13]
+                    let afterScroll = dumps[5]    // wait#1
+                    let afterReturn = dumps[10]   // wait#2
                     XCTAssertGreaterThan(renderedScrollY(afterScroll), 800,
                         "setup: live preview scrolled down "
                         + "(got \(renderedScrollY(afterScroll)))", file: file, line: line)
@@ -223,19 +226,29 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
         let a = try harness.writeFile("a.txt", longText(600))
         let b = try harness.writeFile("b.txt", longText(50))
         let targetLine = 220
+        // THE SETUP FIX: the old script issued `editor-scroll-to-line` then read a
+        // dump at a fixed index that often landed BEFORE CM6's async DOM scroll +
+        // `scrollChanged` settled → `got top line 1`, a false red that never
+        // established the scrolled precondition. `wait-editor-line` BLOCKS the step
+        // (polling the LIVE WebView with a timeout) until the editor's TRUE
+        // on-screen viewport top reaches ~N, then stashes it — so the precondition
+        // is PROVABLE and the read comes from the live WebView, not the stale
+        // tab-id-keyed model field.
         let script = """
         open \(a.path)
         delay 0.8
         editor-set-mode editor
         delay 1.2
         editor-scroll-to-line \(targetLine)
-        delay 1.0
+        wait-editor-line \(targetLine)
         open \(b.path)
         delay 0.6
         editor-set-mode editor
         delay 1.0
         select-tab 1
         delay 1.4
+        capture-editor-scroll
+        delay 0.6
         """
         try runScenarios([
             Scenario(
@@ -245,38 +258,39 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
                 assert: { [self] dumps, file, line in
                     // ONE dump per script LINE (delays INCLUDED), 0-based:
                     //   0 open A · 1 delay · 2 set editor · 3 delay ·
-                    //   4 scroll-to-line · 5 delay · 6 open B · 7 delay ·
-                    //   8 set editor (B) · 9 delay · 10 select-tab 1 (back to A) ·
-                    //   11 delay
-                    // `editorScrollTopLine` is a model field, but it only updates
-                    // when CM6 posts `scrollChanged` back (async): after the
-                    // scroll-to-line verb (line 4) the new top line lands on the
-                    // trailing delay's dump → dumps[5]; after select-tab (line 10)
-                    // the re-attached editor re-settles + re-emits its top line on
-                    // the trailing delay → dumps[11]. Reading the verb's own dump
-                    // would race the async emit (the prior-fix index bug).
-                    guard dumps.count >= 12 else {
-                        XCTFail("expected >=12 dumps, got \(dumps.count) "
+                    //   4 scroll-to-line · 5 wait-editor-line (SETTLED) ·
+                    //   6 open B · 7 delay · 8 set editor (B) · 9 delay ·
+                    //   10 select-tab 1 (back to A) · 11 delay ·
+                    //   12 capture-editor-scroll · 13 delay
+                    // wait#1 (line 5) BLOCKS until the live scroll settles and
+                    // stashes it on its OWN dump → dumps[5]. After the switch-back
+                    // the re-attached editor re-settles; `capture-editor-scroll`
+                    // (line 12) reads the LIVE WebView async, surfacing on the
+                    // trailing delay → dumps[13]. Both reads are the LIVE
+                    // `liveEditorTopLine` (render authority), never the stale model
+                    // field.
+                    guard dumps.count >= 14 else {
+                        XCTFail("expected >=14 dumps, got \(dumps.count) "
                             + "(app may not have launched / produced step JSON)",
                             file: file, line: line)
                         return
                     }
-                    let afterScroll = dumps[5]
-                    let afterReturn = dumps[11]
+                    let afterScroll = dumps[5]    // wait-editor-line (settled)
+                    let afterReturn = dumps[13]   // capture-editor-scroll → next dump
                     XCTAssertEqual(viewMode(afterScroll), "editor",
                         "setup: tab A should be in editor mode", file: file, line: line)
-                    XCTAssertGreaterThan(editorTopLine(afterScroll), 100,
+                    XCTAssertGreaterThan(liveEditorTopLine(afterScroll), 100,
                         "setup: CM6 should have scrolled down to ~\(targetLine) "
-                        + "(got top line \(editorTopLine(afterScroll)))",
+                        + "(got LIVE top line \(liveEditorTopLine(afterScroll)))",
                         file: file, line: line)
                     XCTAssertTrue(currentURL(afterReturn).hasSuffix("a.txt"),
                         "back on a.txt after select-tab 1 "
                         + "(got \(currentURL(afterReturn)))", file: file, line: line)
                     // Headline: the editor's on-screen scroll is restored, not
                     // reset to line 1. Generous slack for viewport-block rounding.
-                    XCTAssertGreaterThan(editorTopLine(afterReturn), 100,
+                    XCTAssertGreaterThan(liveEditorTopLine(afterReturn), 100,
                         "TSK-1047: editor scroll RESET to top on tab switch-back "
-                        + "(restored top line=\(editorTopLine(afterReturn)), "
+                        + "(restored LIVE top line=\(liveEditorTopLine(afterReturn)), "
                         + "expected ~\(targetLine))", file: file, line: line)
                 })
         ])
@@ -305,6 +319,10 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
         _ = try harness.writeFile("projB/other.txt", longText(40))
         let arg = try harness.writeFile("arg.txt", "scratch\n")
         let targetLine = 240
+        // Same SETUP fix as SCROLL03: `wait-editor-line` BLOCKS until the LIVE CM6
+        // scroll provably reaches ~N before the session switch, and the read after
+        // the switch-back comes from the LIVE WebView (`liveEditorTopLine`), not
+        // the model field that the freshly-minted `Tab.id` leaves stale.
         let script = """
         session-open-folder \(projA.path)
         delay 0.6
@@ -315,11 +333,13 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
         editor-focus
         delay 0.6
         editor-scroll-to-line \(targetLine)
-        delay 1.5
+        wait-editor-line \(targetLine)
         session-open-folder \(projB.path)
         delay 1.2
         session-activate 1
         delay 2.0
+        capture-editor-scroll
+        delay 0.6
         """
         try runScenarios([
             Scenario(
@@ -330,27 +350,28 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
                     // ONE dump per script LINE (delays INCLUDED), 0-based:
                     //   0 open-folder A · 1 delay · 2 open code.txt · 3 delay ·
                     //   4 set editor · 5 delay · 6 editor-focus · 7 delay ·
-                    //   8 scroll-to-line · 9 delay ·
+                    //   8 scroll-to-line · 9 wait-editor-line (SETTLED) ·
                     //   10 open-folder B (switch session) · 11 delay ·
-                    //   12 session-activate 1 (back to A) · 13 delay
-                    // `editorScrollTopLine` lands on the dump AFTER the verb that
-                    // triggers CM6's async `scrollChanged`: after scroll-to-line
-                    // (line 8) → dumps[9]; after session-activate (line 12), the
-                    // re-attached editor re-settles + re-emits on the trailing
-                    // delay → dumps[13].
-                    guard dumps.count >= 14 else {
-                        XCTFail("expected >=14 dumps, got \(dumps.count) "
+                    //   12 session-activate 1 (back to A) · 13 delay ·
+                    //   14 capture-editor-scroll · 15 delay
+                    // wait#1 (line 9) BLOCKS until the live scroll settles and
+                    // stashes it on its OWN dump → dumps[9]. After the switch-back
+                    // the re-attached editor re-settles; `capture-editor-scroll`
+                    // (line 14) reads the LIVE WebView async → surfaces on the
+                    // trailing delay → dumps[15]. Both are LIVE `liveEditorTopLine`.
+                    guard dumps.count >= 16 else {
+                        XCTFail("expected >=16 dumps, got \(dumps.count) "
                             + "(app may not have launched / produced step JSON)",
                             file: file, line: line)
                         return
                     }
-                    let afterScroll = dumps[9]
-                    let afterReturn = dumps[13]
+                    let afterScroll = dumps[9]    // wait-editor-line (settled)
+                    let afterReturn = dumps[15]   // capture-editor-scroll → next dump
                     XCTAssertEqual(viewMode(afterScroll), "editor",
                         "setup: tab A should be in editor mode", file: file, line: line)
-                    XCTAssertGreaterThan(editorTopLine(afterScroll), 100,
+                    XCTAssertGreaterThan(liveEditorTopLine(afterScroll), 100,
                         "setup: CM6 should have scrolled down to ~\(targetLine) "
-                        + "(got top line \(editorTopLine(afterScroll)))",
+                        + "(got LIVE top line \(liveEditorTopLine(afterScroll)))",
                         file: file, line: line)
                     XCTAssertTrue(currentURL(afterReturn).hasSuffix("code.txt"),
                         "back on code.txt after session-activate 1 "
@@ -358,9 +379,9 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
                     // Headline: the editor's on-screen scroll survives the session
                     // switch (the warm-editor cache re-attach / the seed belt) —
                     // NOT reset to line 1.
-                    XCTAssertGreaterThan(editorTopLine(afterReturn), 100,
+                    XCTAssertGreaterThan(liveEditorTopLine(afterReturn), 100,
                         "TSK-1047: editor scroll RESET to top on SESSION switch-back "
-                        + "(restored top line=\(editorTopLine(afterReturn)), "
+                        + "(restored LIVE top line=\(liveEditorTopLine(afterReturn)), "
                         + "expected ~\(targetLine))", file: file, line: line)
                 })
         ])

@@ -3,6 +3,7 @@ import Foundation
 import ViewerCore
 import ViewerKit
 import ViewerUI
+import WebKit
 
 /// `--script PATH` interpreter for the L4/L5 VM-driven UI tests.
 ///
@@ -121,6 +122,29 @@ extension AppDelegate {
                     }
                 }
             }
+        case "wait-editor-line":
+            // TSK-1047 (VM scroll-restore test SETUP): block this step until the
+            // LIVE CM6 viewport top line reaches ~N, polling the real WebView —
+            // NOT a fixed `delay` gamble. The prior harness issued
+            // `editor-scroll-to-line` then read a dump at a FIXED index that often
+            // landed BEFORE CM6's async DOM scroll + `scrollChanged` settled, so
+            // the precondition ("CM6 scrolled to N") was never PROVEN and every
+            // run was a false red (`got top line 1`). This wait-for-settle makes
+            // the precondition observable: it returns only once the editor's true
+            // on-screen viewport top reaches the target (within tolerance) or a
+            // bounded timeout elapses — and stashes the settled live value into
+            // `LiveScrollProbe` so the following dump surfaces `liveEditorTopLine`.
+            if let n = Int(arg), n >= 1 {
+                waitForEditorTopLine(atLeast: n)
+            }
+        case "wait-rendered-scroll":
+            // TSK-1047 (VM scroll-restore test SETUP): the rendered-preview twin
+            // of `wait-editor-line` — block until the LIVE `window.scrollY`
+            // reaches ~N (the genuine on-screen offset), stashing the settled
+            // value into `LiveScrollProbe.renderedScrollY` for the next dump.
+            if let y = Double(arg), y >= 0 {
+                waitForRenderedScroll(atLeast: y)
+            }
         case "diagnostic-window":
             // WAVE 2b item 4: open the diagnostic tool window (gated).
             showDiagnosticWindow(nil)
@@ -196,6 +220,104 @@ extension AppDelegate {
             FileHandle.standardError.write(
                 Data("script: unknown command '\(cmd)'\n".utf8))
         }
+    }
+
+    /// TSK-1047 — poll the LIVE CM6 editor viewport top line until it reaches
+    /// `target` (within `tolerance` lines) or `timeout` elapses, then stash the
+    /// final settled value in `LiveScrollProbe` so the next dump surfaces it.
+    ///
+    /// Why a poll, not a fixed delay: `editor-scroll-to-line` dispatches a CM6
+    /// `scrollToLine`, but the DOM scroll + CM6's `scrollChanged` re-emit settle
+    /// ASYNCHRONOUSLY on a microtask AFTER the WebView lays out — a fixed `delay`
+    /// can read before that, leaving the precondition (and thus the whole
+    /// scenario) a false red. This pumps the main run loop between samples so the
+    /// async JS read + CM6's own settle make progress, and only returns once the
+    /// editor's TRUE on-screen top line has arrived (the provable precondition).
+    private func waitForEditorTopLine(
+        atLeast target: Int,
+        tolerance: Int = 8,
+        timeout: TimeInterval = 6.0
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let line = sampleLiveEditorTopLine(), line >= target - tolerance {
+                // Settled within tolerance — record the live value for the dump.
+                LiveScrollProbe.editorScrollTop = Double(max(0, line))
+                LiveScrollProbe.editorTopLine = line
+                return
+            }
+            // Pump the run loop so the async JS read + CM6's own scroll settle
+            // can advance before the next sample.
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        // Timed out — leave the LAST observed value in the probe (a final read so
+        // the dump shows where it actually got, surfacing a genuine failure
+        // instead of a stale -1).
+        if let line = sampleLiveEditorTopLine() {
+            LiveScrollProbe.editorScrollTop = Double(max(0, line))
+            LiveScrollProbe.editorTopLine = line
+        }
+    }
+
+    /// TSK-1047 — rendered-preview twin of `waitForEditorTopLine`: poll the LIVE
+    /// `window.scrollY` until it reaches `target` (within `tolerance` px) or
+    /// `timeout` elapses, stashing the final value in `LiveScrollProbe`.
+    private func waitForRenderedScroll(
+        atLeast target: Double,
+        tolerance: Double = 40,
+        timeout: TimeInterval = 6.0
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let y = sampleLiveRenderedScroll(), y >= target - tolerance {
+                LiveScrollProbe.renderedScrollY = y
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        if let y = sampleLiveRenderedScroll() {
+            LiveScrollProbe.renderedScrollY = y
+        }
+    }
+
+    /// Synchronously sample the live CM6 viewport top line by evaluating the
+    /// shared read JS and pumping the run loop until the async result lands (or a
+    /// short per-sample budget elapses). Returns nil when no editor is mounted /
+    /// CM6 isn't up yet / the read times out.
+    private func sampleLiveEditorTopLine() -> Int? {
+        guard let webView = CodeMirrorEditorRegistry.shared.current() else { return nil }
+        var result: Int?
+        var done = false
+        webView.evaluateJavaScript(LiveScrollProbe.editorScrollReadJS) { value, _ in
+            if let dict = value as? [String: Any],
+               (dict["ok"] as? Bool) == true,
+               let line = (dict["line"] as? NSNumber)?.intValue {
+                result = line
+            }
+            done = true
+        }
+        let budget = Date().addingTimeInterval(0.5)
+        while !done && Date() < budget {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        return result
+    }
+
+    /// Synchronously sample the live rendered `window.scrollY`, pumping the run
+    /// loop until the async read lands. nil when no preview is mounted / times out.
+    private func sampleLiveRenderedScroll() -> Double? {
+        guard let webView = MarkdownRenderedRegistry.shared.current() else { return nil }
+        var result: Double?
+        var done = false
+        webView.evaluateJavaScript("window.scrollY") { value, _ in
+            if let y = (value as? NSNumber)?.doubleValue { result = y }
+            done = true
+        }
+        let budget = Date().addingTimeInterval(0.5)
+        while !done && Date() < budget {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        return result
     }
 
     func captureStepArtifacts(step: Int, label: String) {

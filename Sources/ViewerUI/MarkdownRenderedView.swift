@@ -1123,7 +1123,23 @@ public enum LiveScrollProbe {
     /// reset between scenarios by the harness via `reset()`.
     public static var renderedScrollY: Double = -1
 
-    public static func reset() { renderedScrollY = -1 }
+    /// TSK-1047 — the most recently probed LIVE CM6 editor scroll, read straight
+    /// off the active editor WebView's `__mdvView.scrollDOM.scrollTop`. This is
+    /// the RENDER AUTHORITY for the editor scroll-restore: unlike the model field
+    /// `editorScrollTopLine` (which only updates when CM6 re-posts `scrollChanged`
+    /// for the CURRENT `Tab.id` — stale/empty after a switch mints a fresh id),
+    /// these read the pixel/line the WebView ACTUALLY holds on screen. `-1` until
+    /// the first `capture-editor-scroll` verb resolves.
+    public static var editorScrollTop: Double = -1
+    /// 1-based viewport top line CM6 computes from its own viewport, captured by
+    /// `captureEditorScroll()`. `-1` until first probe / no editor mounted.
+    public static var editorTopLine: Int = -1
+
+    public static func reset() {
+        renderedScrollY = -1
+        editorScrollTop = -1
+        editorTopLine = -1
+    }
 
     /// Read the active rendered preview's live `window.scrollY` and stash it in
     /// `renderedScrollY`. Async (WKWebView JS); the result lands before the
@@ -1137,6 +1153,49 @@ public enum LiveScrollProbe {
         webView.evaluateJavaScript("window.scrollY") { value, _ in
             if let y = (value as? NSNumber)?.doubleValue {
                 LiveScrollProbe.renderedScrollY = y
+            }
+        }
+    }
+
+    /// JS that reads the live CM6 scroll off `__mdvView` (the diagnostic handle
+    /// the host HTML exposes): `{ok, top, line}` where `top` is the px scrollTop
+    /// and `line` is the 1-based viewport top line. Shared by the capture verb
+    /// (stash for the next dump) and the wait-for-settle poll (read synchronously
+    /// into the completion handler). Returns `{ok:false}` before CM6 is up.
+    /// `public` so the `MarkdownViewer` module's `--script` wait-for-settle verbs
+    /// reuse the exact same read.
+    public static let editorScrollReadJS = """
+    (function () {
+      try {
+        var v = window.__mdvView;
+        if (!v) return {ok:false};
+        var top = Math.round(v.scrollDOM.scrollTop);
+        var vp = v.viewport;
+        var line = v.state.doc.lineAt(vp.from).number;
+        return {ok:true, top: top, line: line};
+      } catch (e) { return {ok:false, err: String(e)}; }
+    })()
+    """
+
+    /// Read the active CM6 editor's LIVE scroll (`__mdvView.scrollDOM.scrollTop`
+    /// + viewport top line) and stash it in `editorScrollTop` / `editorTopLine`,
+    /// which the NEXT per-step dump surfaces as `liveEditorScrollTop` /
+    /// `liveEditorTopLine`. Async (WKWebView JS); resolves within the post-verb
+    /// settle delay. No-op (clears to −1) when no editor is mounted.
+    public static func captureEditorScroll() {
+        guard let webView = CodeMirrorEditorRegistry.shared.current() else {
+            editorScrollTop = -1
+            editorTopLine = -1
+            return
+        }
+        webView.evaluateJavaScript(editorScrollReadJS) { value, _ in
+            let dict = value as? [String: Any]
+            let ok = (dict?["ok"] as? Bool) ?? false
+            if ok {
+                LiveScrollProbe.editorScrollTop =
+                    (dict?["top"] as? NSNumber)?.doubleValue ?? -1
+                LiveScrollProbe.editorTopLine =
+                    (dict?["line"] as? NSNumber)?.intValue ?? -1
             }
         }
     }
