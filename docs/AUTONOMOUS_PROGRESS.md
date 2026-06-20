@@ -1,5 +1,13 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 PM (latest) — epic-foundation reconciliation + new built foundations
+
+Two modes, both yielding (board reconciled; `/Applications` rebuilt @ 21:57):
+
+- **Reconciled ~20 wave-built epic foundations `fixed→review`** (model host-tested-green; the consuming UI is the owner's visual close). The ultracode wave built far more model-tested foundations than the board tracked: 712 (3-way merge), 717 (notebooks), 318 (CR-Q&A), 319 (dep-explorer), 345 (work-items), 346 (ForgeRemote), 351 (TextTransform), 264 (sessions-seam), 338 (extensions), 341 (terminal OSC7 cwd), 353 (InstanceRegistry), 316 (walkthrough-catalog), 280/311/333/305/300/283/285/302/284/334/259/275 (render-path). **"Check-before-building" repeatedly avoided duplicate work** (712/717/403/404/405 were all already built).
+- **Built 4 genuinely-un-built foundations** (verify-absent-first, host-tested with teeth, gate-green): **406** raster selection (RasterSelection rect+polygon + fill-in-selection, `07d91d40`), **680** RTF export (`19046c24`), **764** external-edit reconciliation (composes 712, `2805ecf6`), **1033** ODS .ods grid parser (repeat-aware + OOM guard, `cba50ed7`). NOTE: the ODS work was first mis-attached to 674 — which is `wontdo` (Excel dup of 673); re-homed to new TSK-1033. Lesson: `task_get` the TITLE before building, not a guessed topic.
+- **Validated** (pure-logic/infra, regression-guarded): 992 (PTY double-fork + callback-sync), 849 (test-sleep ratchet), + earlier 309/997/999/1014.
+
 ## LOG 2026-06-19 PM (late) — fixed-lane drain + concurrency/paint landings
 
 Post-handoff continuation of the fallback fixed-lane drain (pattern: pure-logic→validate,
