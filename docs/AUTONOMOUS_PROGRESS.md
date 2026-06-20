@@ -1,5 +1,27 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-19 PM (late) — fixed-lane drain + concurrency/paint landings
+
+Post-handoff continuation of the fallback fixed-lane drain (pattern: pure-logic→validate,
+render-path model-tested→review, design/epic→scope; #NNN-trap check first — now in LESSONS +
+memory `feedback_render_path_review_ceiling`).
+
+- **TSK-992 (validated, `12c7f07c`)** — PTYProcess concurrency: closed the `start()` double-fork
+  window (atomic `claimStartSlot()` marks `starting` under the lock; released on fork-fail + after
+  childPID is set) and lock-synchronized `onOutput`/`onExit` (computed vars; invoked OUTSIDE the
+  lock = no deadlock). Host tests: claimStartSlot second-claim refused + accessor round-trip. The
+  fork-timing lifecycle tests are heavy-tier-gated (flake under host load; pre-existing on clean main).
+- **TSK-1026 follow-up (`1fcc30ee`)** — destructive tab close now drops the file's >1 MiB hot-exit
+  spill (closed-while-dirty orphan; NOT the session-switch preserve path). Test: `test_closeTab_removesOrphanSpill`.
+- **TSK-406 (fixed, `07d91d40`)** — raster selection foundation: `RasterSelection` (rect half-open +
+  freeform-polygon even-odd ray-cast `contains`) + `RasterCanvas.fill(_:in:)` selection-constrained +
+  bounds-clamped. Host-tested (RasterSelectionTests 7/7). Render tail (marquee/lasso UI + VM wiring) = VM/owner.
+- **Paint reconciliation** — 403/404/405 were already implemented by TSK-285's raster paint
+  (RasterCanvas + brush/colorPicker/floodFill, model-tested) → moved to `review` (no duplicate
+  re-implementation); 406 was the genuine remaining gap (above).
+- **12 render-path features `fixed→review`** (model host-tested-green; owner does the visual close):
+  280, 311, 333, 305, 300, 283, 285, 302, 284, 334, 259, 275. Pure-logic validated earlier: 309/997/999/1014.
+
 ## LOG 2026-06-19 PM — FULL VM SUITE (owner ask) — T4/T5/WebView lane UNBLOCKED
 
 Owner enabled Accessibility for TextView in the UTM VM + asked for a full VM run. Ran
