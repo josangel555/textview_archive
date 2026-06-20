@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-20
 
 ### Fixed
+- **Rendered Markdown scroll position now survives a session switch** — switching to another session and back used to snap a Markdown file's rendered preview back to the top; your place in the rendered view is now remembered per file and restored across session switches (it already survived tab switches within a session).
 - **Editor scroll position now survives a session switch** — switching to another session and back used to drop a file open in the editor back to the top; the editor's scroll position is now remembered per file and restored, the same way the read-only Source and Rendered views already were.
 
 ## 2026-06-19

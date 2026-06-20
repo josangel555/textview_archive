@@ -209,7 +209,10 @@ public struct TabsState: Equatable, Sendable {
                 // reveal so e.g. clicking a restored lazy tab in the sidebar
                 // (which routes through here) doesn't drop the scroll line
                 // before `restoreScroll` can re-apply it.
-                scrollTopLine: tabs[existing].scrollTopLine
+                scrollTopLine: tabs[existing].scrollTopLine,
+                // TSK-1041: likewise preserve the rendered-markdown scroll
+                // offset on a reveal-rebuild so it survives until restore.
+                renderedScrollY: tabs[existing].renderedScrollY
             )
             selectedIndex = existing
             return existing

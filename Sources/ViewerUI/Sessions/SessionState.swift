@@ -238,6 +238,10 @@ public final class SessionState: ObservableObject {
                 // onto the live tab by `DocumentModel.captureScroll` at
                 // focus-loss / close boundaries. nil → key omitted.
                 scrollTopLine: t.scrollTopLine,
+                // TSK-1041: persist the rendered-markdown WebView scroll offset
+                // (the third scroll channel). Stamped onto the live tab by the
+                // same `captureScroll`; nil → key omitted (additive-optional).
+                renderedScrollY: t.renderedScrollY,
                 // TSK-718 hot exit: persist unsaved buffer text. Stamped onto
                 // the live tab by `captureUnsavedTextForAllTabs` at the
                 // snapshot boundary; nil when clean → key omitted.
@@ -372,6 +376,16 @@ public final class SessionState: ObservableObject {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // TSK-1041: path → persisted RENDERED-markdown scroll offset. Same shape
+        // as the source-scroll map above. A non-positive / absent value is
+        // dropped here (→ nil on append = "render at top").
+        let renderedScrollByPath: [String: Double] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, Double)? in
+                guard let y = snap.renderedScrollY, y > 0 else { return nil }
+                return (snap.path, y)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         // TSK-718 hot exit: path → persisted unsaved buffer text. Same shape as
         // the maps above. An empty string is dropped (no edits to restore).
         let unsavedByPath: [String: String] = Dictionary(
@@ -409,6 +423,7 @@ public final class SessionState: ObservableObject {
             model.appendLazyTab(url: url, viewMode: mode,
                                 categoryOverride: override,
                                 scrollTopLine: scrollByPath[t.path],
+                                renderedScrollY: renderedScrollByPath[t.path],
                                 unsavedText: unsavedByPath[t.path],
                                 unsavedBaseMTime: unsavedBaseMTimeByPath[t.path],
                                 unsavedBaseSize: unsavedBaseSizeByPath[t.path])

@@ -347,4 +347,118 @@ final class ScrollPositionPersistenceTests: XCTestCase {
         XCTAssertEqual(model.editorScrollByTab[tid]?.viewportFromLine, 12,
                        "seed must not clobber a live editor scroll position")
     }
+
+    // MARK: - TSK-1041: rendered-Markdown (WKWebView) scroll capture + restore
+    //
+    // The rendered preview is a THIRD scroll channel (`renderedScrollByURL`,
+    // URL-keyed window.scrollY) that lives only IN MEMORY — never serialized —
+    // so a SESSION switch (which drains the tab list, dropping that dict) lost
+    // the rendered scroll entirely. It's the PRIMARY surface for markdown, so
+    // this must round-trip the snapshot like the source/editor `scrollTopLine`.
+    // The fix stamps the offset into a new `Tab.renderedScrollY` /
+    // `TabSnapshot.renderedScrollY` field (a pixel offset — a rendered HTML
+    // page has no source-line mapping), serializes it, and re-seeds
+    // `renderedScrollByURL` on restore so `MarkdownRenderedView` re-applies it.
+
+    /// Make a `.md` file so `open` defaults the tab to `.rendered` mode.
+    private func makeMarkdownFile(_ name: String, lines: Int = 500) -> URL {
+        let url = tmpRoot.appendingPathComponent(name)
+        let body = (1...lines).map { "# Heading \($0)\n\nbody \($0)" }
+            .joined(separator: "\n\n")
+        try? Data(body.utf8).write(to: url)
+        return url
+    }
+
+    func test_renderedMode_capture_readsRenderedChannel_stampsTab() {
+        // TEETH: before the fix, captureScroll never read renderedScrollByURL,
+        // so an active markdown tab's rendered scroll was never stamped onto the
+        // tab (renderedScrollY stayed nil) and was lost on the session drain.
+        let model = DocumentModel()
+        let a = makeMarkdownFile("doc.md")
+        model.open(url: a)
+        XCTAssertEqual(model.tabs.selected?.viewMode, .rendered,
+                       "precondition: a .md tab opens in rendered mode")
+
+        // The rendered WebView reports its offset on its own URL-keyed channel.
+        model.rememberRenderedScroll(1840, for: a)
+
+        model.captureScrollForActiveTab()
+        XCTAssertEqual(model.tabs.selected?.renderedScrollY, 1840,
+                       "rendered-mode capture must read renderedScrollByURL and stamp the tab")
+    }
+
+    func test_renderedScroll_capture_thenSnapshot_carriesOffset() {
+        let model = DocumentModel()
+        let a = makeMarkdownFile("doc.md")
+        model.open(url: a)
+        model.rememberRenderedScroll(960, for: a)
+        model.captureScrollForActiveTab()
+
+        let snap = SessionState(rootURL: tmpRoot, model: model).makeSnapshot()
+        let resolved = a.standardizedFileURL.resolvingSymlinksInPath().path
+        let tab = snap.openTabs.first { $0.path == resolved }
+        XCTAssertNotNil(tab, "snapshot must contain the markdown file")
+        XCTAssertEqual(tab?.renderedScrollY, 960,
+                       "rendered scroll must serialize via TabSnapshot.renderedScrollY")
+    }
+
+    func test_sessionSwitchRoundTrip_preservesRenderedScroll() {
+        // The end-to-end TSK-1041 regression: capture a markdown tab's rendered
+        // scroll, snapshot (the detach-time write), then hydrate a FRESH model
+        // (the switch-back), and assert the rendered offset comes back — both on
+        // the restored Tab AND seeded onto the live renderedScrollByURL channel
+        // that MarkdownRenderedView re-applies on didFinish.
+        let srcModel = DocumentModel()
+        let a = makeMarkdownFile("doc.md")
+        srcModel.open(url: a)
+        srcModel.rememberRenderedScroll(2520, for: a)
+        srcModel.captureScrollForActiveTab()
+        let snap = SessionState(rootURL: tmpRoot, model: srcModel).makeSnapshot()
+
+        // Switch-back: hydrate into a fresh model (mirrors switchSessionFaçade's
+        // closeAllTabsPreservingDirty → rebuild from snapshot).
+        let freshModel = DocumentModel()
+        SessionState(rootURL: tmpRoot, model: freshModel).hydrate(from: snap)
+        let resolved = a.standardizedFileURL.resolvingSymlinksInPath().path
+        guard let idx = freshModel.tabs.tabs.firstIndex(where: {
+            $0.url?.path == resolved
+        }) else {
+            return XCTFail("hydrate must restore the markdown tab")
+        }
+        XCTAssertEqual(freshModel.tabs.tabs[idx].renderedScrollY, 2520,
+                       "rendered scroll must hydrate onto the restored tab")
+
+        // restoreScroll (run on tab-become-active) must seed the rendered
+        // channel so the WebView re-applies the offset on its next load.
+        let restoredURL = freshModel.tabs.tabs[idx].url!
+        freshModel.restoreScroll(forTabAt: idx)
+        XCTAssertEqual(freshModel.renderedScrollOffset(for: restoredURL), 2520,
+                       "restoreScroll must seed renderedScrollByURL for a markdown tab")
+    }
+
+    func test_restoreScroll_renderedTab_seedsRenderedChannel() {
+        // Direct unit on the restore half: a lazy markdown tab carrying a
+        // persisted rendered offset must seed renderedScrollByURL on restore,
+        // even when it has NO scrollTopLine (rendered tabs usually don't).
+        let model = DocumentModel()
+        let a = makeMarkdownFile("doc.md")
+        model.appendLazyTab(url: a, viewMode: .rendered, renderedScrollY: 1390)
+        let resolved = a.standardizedFileURL.resolvingSymlinksInPath()
+        XCTAssertNil(model.renderedScrollOffset(for: resolved),
+                     "precondition: no live rendered scroll yet")
+        model.restoreScroll(forTabAt: 0)
+        XCTAssertEqual(model.renderedScrollOffset(for: resolved), 1390,
+                       "rendered-tab restore must seed the rendered channel")
+    }
+
+    func test_seedRenderedScroll_doesNotClobberLivePosition() {
+        // Seeding is for the restore boundary only — it must never stomp a
+        // position the user has since scrolled to.
+        let model = DocumentModel()
+        let a = makeMarkdownFile("doc.md")
+        model.rememberRenderedScroll(120, for: a)   // a live position
+        model.seedRenderedScroll(9999, for: a)
+        XCTAssertEqual(model.renderedScrollOffset(for: a), 120,
+                       "seed must not clobber a live rendered scroll position")
+    }
 }

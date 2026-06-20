@@ -2110,10 +2110,37 @@ public final class DocumentModel: ObservableObject {
             }
             return sourceView.sourceScrollState.topVisibleLine
         }()
-        guard let line, line > 0 else { return }
+        // TSK-1041: also fold the RENDERED-markdown scroll (the WKWebView's
+        // `window.scrollY`, a third channel that lives only in the in-memory,
+        // URL-keyed `renderedScrollByURL`) into the tab so it round-trips
+        // through the snapshot. Like the editor case above, this dict is
+        // dropped by `closeAllTabsPreservingDirty` on a session switch — so
+        // without stamping it onto `Tab.renderedScrollY` it's lost. It's a
+        // SEPARATE field from `scrollTopLine` because a rendered offset is a
+        // raw pixel value, not a source line.
+        let renderedY: Double? = tabs.tabs[index].url.flatMap { renderedScrollByURL[$0] }
+        guard let line, line > 0 else {
+            // The text channel had nothing usable, but the rendered channel may
+            // still carry a position (a markdown tab in `.rendered` mode never
+            // ticks the source line). Stamp the rendered offset alone.
+            if let renderedY, renderedY > 0, tabs.tabs[index].renderedScrollY != renderedY {
+                var t = tabs.tabs[index]
+                t.renderedScrollY = renderedY
+                tabCoordinator.replace(at: index, with: t)
+            }
+            return
+        }
         var t = tabs.tabs[index]
+        var changed = false
         if t.scrollTopLine != line {
             t.scrollTopLine = line
+            changed = true
+        }
+        if let renderedY, renderedY > 0, t.renderedScrollY != renderedY {
+            t.renderedScrollY = renderedY
+            changed = true
+        }
+        if changed {
             tabCoordinator.replace(at: index, with: t)
         }
         persistScrollMemory(forTabAt: index, topLine: line)
@@ -2156,6 +2183,17 @@ public final class DocumentModel: ObservableObject {
     func restoreScroll(forTabAt index: Int) {
         guard tabs.tabs.indices.contains(index) else { return }
         let tab = tabs.tabs[index]
+        // TSK-1041: seed the RENDERED-markdown channel FIRST, independent of the
+        // text-line restore below. A `.rendered` markdown tab carries its scroll
+        // on `renderedScrollY` (a pixel offset, separate channel) and usually
+        // has NO `scrollTopLine`, so it must not be gated behind the text-line
+        // branch (which `return`s early). `renderedScrollOffset(for:)` is what
+        // `MarkdownRenderedView` re-applies on `didFinish`; this re-injects the
+        // persisted offset into the in-memory `renderedScrollByURL` the WebView
+        // reads from. Non-clobbering: never stomps a live position already there.
+        if let url = tab.url, let y = tab.renderedScrollY, y > 0 {
+            seedRenderedScroll(y, for: url)
+        }
         // Prefer the in-session position (it's the freshest — set by this
         // session's capture-on-switch). Fall back to the DURABLE per-file
         // store (TSK-1017) when the tab carries no in-session memory, e.g. a
@@ -2341,6 +2379,20 @@ public final class DocumentModel: ObservableObject {
     func renderedScrollOffset(for url: URL?) -> Double? {
         guard let url else { return nil }
         return renderedScrollByURL[url]
+    }
+
+    /// TSK-1041: seed `url`'s rendered scroll offset from a persisted value
+    /// (a session-snapshot `TabSnapshot.renderedScrollY`), so a markdown tab
+    /// that was scrolled before a session switch comes back to the same place
+    /// rather than the top. `renderedScrollByURL` is otherwise in-memory only
+    /// (dropped by the close fan-out on a session-switch drain), so the durable
+    /// position has to be re-injected on restore. No-op for a non-positive
+    /// offset. Does NOT overwrite a live position already present (a tab the
+    /// user has since scrolled), mirroring `seedEditorScroll`.
+    func seedRenderedScroll(_ y: Double, for url: URL) {
+        guard y > 0, renderedScrollByURL[url] == nil else { return }
+        // Reuse the bounded recorder so the eviction cap is honored.
+        rememberRenderedScroll(y, for: url)
     }
 
     // MARK: - Split view
@@ -6580,6 +6632,7 @@ public final class DocumentModel: ObservableObject {
     public func appendLazyTab(url: URL, viewMode: ViewMode,
                               categoryOverride: FileCategory? = nil,
                               scrollTopLine: Int? = nil,
+                              renderedScrollY: Double? = nil,
                               unsavedText: String? = nil,
                               unsavedBaseMTime: Date? = nil,
                               unsavedBaseSize: Int? = nil) {
@@ -6620,6 +6673,9 @@ public final class DocumentModel: ObservableObject {
             // the lazy tab so `restoreScroll` can re-apply it once the tab
             // materializes into focus.
             scrollTopLine: scrollTopLine,
+            // TSK-1041: carry the persisted rendered-markdown scroll offset so
+            // `restoreScroll` can seed `renderedScrollByURL` for the WebView.
+            renderedScrollY: renderedScrollY,
             // TSK-718 hot exit: carry the persisted unsaved buffer text so
             // `materializeIfNeeded` can overlay it into the editor buffer once
             // the file has been read from disk (giving the dirty baseline).

@@ -33,6 +33,31 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     /// key likewise decodes to `nil`. `nil` / `<= 0` ⇒ "don't restore".
     public let scrollTopLine: Int?
 
+    /// TSK-1041: per-file RENDERED-markdown scroll position — the WKWebView's
+    /// vertical pixel offset (`window.scrollY`) when this tab last lost focus /
+    /// was snapshotted. The rendered preview is a THIRD scroll channel
+    /// (`DocumentModel.renderedScrollByURL`), separate from the source/editor
+    /// `scrollTopLine`: it lives in-memory only, so a SESSION switch — which
+    /// drains the tab list and drops that dict — lost the rendered scroll
+    /// entirely (it survived a tab switch only because the in-memory dict is
+    /// URL-keyed). Folding it into the snapshot makes rendered scroll
+    /// round-trip the same way `scrollTopLine` does for the text views.
+    ///
+    /// **Why a raw PIXEL offset, not a line** (unlike `scrollTopLine`). The
+    /// rendered HTML has no 1:1 source-line mapping — it's reflowed Markdown —
+    /// so the only stable handle the WebView exposes is `window.scrollY`. The
+    /// trade-off vs `scrollTopLine`: a zoom / content-scale change between
+    /// sessions lands at a slightly different spot. Acceptable — it mirrors the
+    /// existing in-session `renderedScrollByURL` semantics exactly (same value,
+    /// just now durable across the switch).
+    ///
+    /// **Additive-optional** (downgrade-safe): an older reader without the key
+    /// decodes to `nil` (no restore — top); a newer file with no key likewise
+    /// decodes to `nil`. `nil` / `<= 0` ⇒ "don't restore". Written as `nil`
+    /// (key omitted by the encoder) for a never-rendered-scrolled tab so a
+    /// fresh snapshot stays byte-compatible with pre-TSK-1041 files.
+    public let renderedScrollY: Double?
+
     /// Hot exit (TSK-718): the unsaved editor-buffer text for this tab at the
     /// last snapshot boundary, so a relaunch restores in-flight edits the user
     /// never saved (VS Code-style hot exit). `nil` = the buffer was clean (no
@@ -54,6 +79,7 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     public init(path: String, viewMode: String,
                 categoryOverride: String? = nil,
                 scrollTopLine: Int? = nil,
+                renderedScrollY: Double? = nil,
                 unsavedText: String? = nil,
                 unsavedBaseMTime: Date? = nil,
                 unsavedBaseSize: Int? = nil) {
@@ -61,6 +87,7 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
         self.viewMode = viewMode
         self.categoryOverride = categoryOverride
         self.scrollTopLine = scrollTopLine
+        self.renderedScrollY = renderedScrollY
         self.unsavedText = unsavedText
         self.unsavedBaseMTime = unsavedBaseMTime
         self.unsavedBaseSize = unsavedBaseSize

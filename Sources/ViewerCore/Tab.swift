@@ -84,6 +84,19 @@ public struct Tab: Sendable, Identifiable {
     /// metadata, not display state.
     public var scrollTopLine: Int?
 
+    /// TSK-1041: last-known RENDERED-markdown WKWebView scroll offset
+    /// (`window.scrollY`) for this tab. The rendered preview is a separate
+    /// scroll channel from the source/editor `scrollTopLine` (no source-line
+    /// mapping exists for reflowed HTML), so it's persisted per-file as
+    /// `TabSnapshot.renderedScrollY` and restored by seeding
+    /// `DocumentModel.renderedScrollByURL`.
+    ///
+    /// HOT-PATH NOTE: same discipline as `scrollTopLine` — captured LAZILY at
+    /// focus-loss / close / snapshot boundaries (`DocumentModel.captureScroll`),
+    /// NEVER per scroll tick. EXCLUDED from `Tab`'s Equatable: persistence-only
+    /// metadata, not tab-strip display state.
+    public var renderedScrollY: Double?
+
     /// Hot-exit (TSK-718): the unsaved editor-buffer text for this tab, captured
     /// so a relaunch can restore in-flight edits the user never saved (like
     /// VS Code's hot exit). Persisted per-file as `TabSnapshot.unsavedText`;
@@ -126,6 +139,7 @@ public struct Tab: Sendable, Identifiable {
         diskState: DiskState = .fresh,
         categoryOverride: FileCategory? = nil,
         scrollTopLine: Int? = nil,
+        renderedScrollY: Double? = nil,
         unsavedText: String? = nil,
         unsavedBaseMTime: Date? = nil,
         unsavedBaseSize: Int? = nil,
@@ -139,6 +153,7 @@ public struct Tab: Sendable, Identifiable {
         self.diskState = diskState
         self.categoryOverride = categoryOverride
         self.scrollTopLine = scrollTopLine
+        self.renderedScrollY = renderedScrollY
         self.unsavedText = unsavedText
         self.unsavedBaseMTime = unsavedBaseMTime
         self.unsavedBaseSize = unsavedBaseSize
@@ -202,8 +217,9 @@ extension Tab: Equatable {
         // persistence-only scroll metadata captured at focus-loss/close
         // boundaries. Comparing it would make a scroll capture re-trigger
         // tab-strip diffs — the exact hot-path republish we avoid. The same
-        // applies to `unsavedText` (TSK-718 hot exit) — captured at the
-        // snapshot boundary, persistence-only, not display state.
+        // applies to `renderedScrollY` (TSK-1041 rendered-scroll persistence)
+        // and `unsavedText` (TSK-718 hot exit) — captured at the snapshot
+        // boundary, persistence-only, not display state.
         // Compare state by case-only, not by payload. Payload changes
         // are reflected by other model state (e.g. loadState, watcher
         // reload nonce); state-payload-equality isn't a property
