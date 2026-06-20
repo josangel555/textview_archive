@@ -1134,6 +1134,23 @@ public final class GitClient: Sendable {
         return sha.isEmpty ? nil : sha
     }
 
+    /// Full file CONTENT at a revision: `git show <rev>:<path>` — the "view this
+    /// version" half of the unified version viewer (TSK-1103). `GitClient`
+    /// otherwise only ever produces *diffs*; this returns the file's whole text
+    /// as it existed at `rev`.
+    ///
+    /// `path` is repo-relative, forward-slash. The `<rev>:<path>` gitrevision
+    /// form is a single positional token, so once `rev` is validated not to
+    /// begin with `-` it can't be an option-injection vector. Returns `nil` on
+    /// failure (path absent at that rev, binary/unreadable as UTF-8, unsafe
+    /// revision, git error) — the viewer then falls back to a "couldn't load"
+    /// state rather than crashing. An empty file legitimately returns "".
+    public func fileContent(rev: String, path: String) -> String? {
+        guard Self.isSafeRevision(rev), !path.isEmpty else { return nil }
+        // `--textconv` is intentionally omitted: we want the raw stored bytes.
+        return try? run(["show", "\(rev):\(path)"])
+    }
+
     /// Content hash of `path`'s CURRENT bytes in the working tree:
     /// `git hash-object -- <path>` (§3.1). Used for the working-tree side,
     /// which has no commit to resolve a blob against. Returns `nil` on
