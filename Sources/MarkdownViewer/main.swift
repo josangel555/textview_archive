@@ -844,6 +844,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.toggleViewOnly()
     }
 
+    /// TSK-1116 — View ▸ Focus Mode ▸ <mode>. `tag` indexes
+    /// `FocusWorkMode.allCases` (the menu is built from the same array).
+    @objc func applyFocusModeMenu(_ sender: Any?) {
+        let tag = (sender as? NSMenuItem)?.tag ?? 0
+        let modes = FocusWorkMode.allCases
+        guard modes.indices.contains(tag) else { return }
+        model.applyFocusMode(modes[tag])
+    }
+
     @objc func newTab(_ sender: Any?) {
         model.newTab()
     }
@@ -1516,6 +1525,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         viewOnlyItem.target = self
         applyShortcut("view.toggleViewOnly", to: viewOnlyItem)
         viewMenu.addItem(viewOnlyItem)
+
+        // TSK-1116 — View ▸ Focus Mode: one-click workspace presets that pin the
+        // sidebar to an activity's panel set + preferred lens (FocusWorkMode).
+        let focusItem = NSMenuItem(title: "Focus Mode", action: nil, keyEquivalent: "")
+        let focusMenu = NSMenu(title: "Focus Mode")
+        for (i, mode) in FocusWorkMode.allCases.enumerated() {
+            let mi = NSMenuItem(title: mode.displayName,
+                                action: #selector(applyFocusModeMenu(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.tag = i
+            mi.image = NSImage(systemSymbolName: mode.systemImage, accessibilityDescription: nil)
+            focusMenu.addItem(mi)
+        }
+        focusItem.submenu = focusMenu
+        viewMenu.addItem(focusItem)
 
         // TSK-899: ⌘1/⌘2/⌘3 select the 1st/2nd/3rd view mode in the current
         // file's mode bar (positional — Rendered/Source/HEX for markdown,

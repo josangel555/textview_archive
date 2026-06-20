@@ -5136,6 +5136,19 @@ public final class DocumentModel: ObservableObject {
         setViewOnly(!viewModePresentation.viewOnly)
     }
 
+    /// TSK-1116 / TSK-381 — apply a `FocusWorkMode` preset: pin the sidebar to
+    /// the mode's relevant panels (every other panel forced hidden) and switch
+    /// the active tab to the mode's preferred lens WHEN the open file supports
+    /// it (else leave the file on its own lens — never force an unrenderable
+    /// lens). The panel/lens logic is the pure, host-tested `FocusWorkMode`
+    /// engine; this just routes it to the live stores.
+    public func applyFocusMode(_ mode: FocusWorkMode) {
+        panelLayout.applyOverrides(mode.panelOverrides())
+        if let lens = mode.appliedMode(available: availableViewModes) {
+            setCurrentViewMode(lens)
+        }
+    }
+
     /// True when the Format button should be shown for the current file
     /// (pretty-printable types only — JSON / XML / plist / SVG / HTML / …).
     public var showsFormatButton: Bool {

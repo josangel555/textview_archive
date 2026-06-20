@@ -117,6 +117,16 @@ public final class PanelLayoutStore: ObservableObject {
         overrides.save(to: defaults)
     }
 
+    /// TSK-1116 — replace the WHOLE visibility snapshot at once (a focus mode's
+    /// `FocusWorkMode.panelOverrides()`), persisting synchronously. Used by
+    /// View ▸ Focus Mode to pin the sidebar to an activity's panel set.
+    /// Equality-guarded so re-applying the same mode doesn't republish.
+    public func applyOverrides(_ next: PanelVisibilityOverrides) {
+        guard next != overrides else { return }
+        overrides = next
+        overrides.save(to: defaults)
+    }
+
     /// Reassign a panel to a different rail. Rejects illegal placements
     /// (a non-dockable panel — e.g. FILES — on a non-`.left` edge) via
     /// the pure `PanelPlacement` validator, so a programmatic caller can't
