@@ -38,6 +38,7 @@ public enum ODSContentParser {
 
         // Cell state
         private var inCell = false
+        private var inParagraph = false
         private var cellText = ""
         private var cellRepeat = 1
         private var rowRepeat = 1
@@ -60,20 +61,24 @@ public enum ODSContentParser {
                 guard inTable else { break }
                 inCell = true; cellText = ""; cellHadContent = false
                 cellRepeat = intAttr(attrs["table:number-columns-repeated"]) ?? 1
-            case "text:p", "text:span", "text:a":
-                break  // text accumulates via foundCharacters
+            case "text:p":
+                inParagraph = true   // capture text only INSIDE a paragraph (skip structural whitespace)
+            case "text:span", "text:a":
+                break  // inline children of text:p — inParagraph is already true
             default:
                 break
             }
         }
 
         func parser(_ parser: XMLParser, foundCharacters string: String) {
-            if inCell { cellText += string; if !string.isEmpty { cellHadContent = true } }
+            if inCell && inParagraph { cellText += string; if !string.isEmpty { cellHadContent = true } }
         }
 
         func parser(_ parser: XMLParser, didEndElement element: String,
                     namespaceURI: String?, qualifiedName qName: String?) {
             switch element {
+            case "text:p":
+                inParagraph = false
             case "table:table-cell", "table:covered-table-cell":
                 guard inCell else { break }
                 inCell = false

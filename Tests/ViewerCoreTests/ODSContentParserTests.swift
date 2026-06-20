@@ -26,6 +26,20 @@ final class ODSContentParserTests: XCTestCase {
                        [["A", "B"], ["C", "D"]])
     }
 
+    func test_structuralWhitespace_aroundTextP_isNotCaptured() {
+        // Real .ods is often pretty-printed; whitespace between/around <text:p>
+        // must NOT leak into cell values (capture only inside the paragraph).
+        let xml = ods("""
+        <table:table-row>
+          <table:table-cell>
+            <text:p>A</text:p>
+          </table:table-cell>
+          <table:table-cell><text:p>B</text:p></table:table-cell>
+        </table:table-row>
+        """)
+        XCTAssertEqual(ODSContentParser.parseFirstTableGrid(contentXML: xml), [["A", "B"]])
+    }
+
     func test_columnRepeat_expands() {
         let xml = ods(row(#"<table:table-cell table:number-columns-repeated="3"><text:p>X</text:p></table:table-cell>"# + cell("Y")))
         XCTAssertEqual(ODSContentParser.parseFirstTableGrid(contentXML: xml),
