@@ -102,6 +102,43 @@ Owner-directed RETHINK: ONE well-designed version-history + diff viewer serving 
 
 NOTE (API outage): the click→selection-bug subagent (aaacbb3f) DIED on an API ConnectionRefused with no commit — that bug is NOT fixed, needs re-dispatch on an interactive turn. Scroll (TSK-1046/1047) + CM6-Lezer-22 (TSK-1135) remain on worktrees awaiting owner-gated integration (scroll: VM trace shows the warm cache works; the UAT harness is the broken part).
 
+## LOG 2026-06-20 — editor scroll survives session/tab switch (warm-editor cache, TSK-1047)
+
+Fixed the owner-reported **editor scroll resets on session AND tab switch** (the
+rendered + read-only Source views already survived; only the CM6 editor lost it,
+incl. the switch-tab → switch-session → return combo). Root cause confirmed: the
+editor `WKWebView` was rebuilt on every switch (`makeNSView` builds /
+`dismantleNSView` tears down), so CM6 reloaded at the top; the scroll-restore belt
+(`seedEditorScroll` → `editorMountSelectionSeed` → `initialSelection`) lands on a
+not-yet-laid-out fresh CM6 and effectively no-ops.
+
+- **Cherry-picked TSK-1046** (`539eb8f0`, predecessor): the render-apply belt
+  (`editorMountSelectionSeed` cursor-first-else-scroll-line; rendered no-reload
+  re-apply) + the `ScrollRestoreUATTests` VM harness (verbs
+  `editor-scroll-to-line`/`rendered-scroll-to`/`capture-rendered-scroll`,
+  `editorScrollTopLine`/`renderedScrollY` dump fields, CM6 `scrollToLine`).
+- **TSK-1047** — `WarmEditorWebViewCache` (sibling of `WarmWebViewCache`):
+  path-keyed park-on-dismantle / re-attach-on-make so the editor WebView SURVIVES
+  the switch (scroll preserved naturally, no reload). **Live/dirty-state guard
+  (the crux):** an entry records the parked CM6's text; a re-attach is granted
+  ONLY when the model's about-to-be-fed text matches byte-for-byte — else the
+  parked editor is DROPPED and a fresh pane built against the model's text. So a
+  re-attach can never resurrect stale text or mask unsaved edits (in-flight edits
+  live in BOTH the parked JS and `editorBuffers`, so a genuine edit always
+  matches; anything that would differ falls to the model-wins fresh build). Coord
+  `adoptState` copies the `lastSent*` mirrors so `applyPendingState` no-ops the
+  already-loaded doc (no `setText`/caret/scroll reset). Preview slot opts out (nil
+  key) to keep its TSK-743/744 scroll-reset isolation.
+- **Tests (teeth shown):** `WarmEditorWebViewCacheTests` (13) — round-trip,
+  take-once, text-divergence rejection, parented-rejection, LRU, adoptState;
+  `ScrollPositionPersistenceTests` +2 (model/cache seam: re-attach-with-dirty-buffer
+  vs drop-on-divergence). Reverting the text guard turned 6 tests RED (incl. the
+  data-loss-class guards), restored. UAT `ScrollRestoreUATTests`: fixed the
+  one-dump-per-line index math (delays ARE dumps; capture lands on the NEXT dump)
+  across SCROLL01-03 and **added SCROLL04** (editor session switch). VM-only.
+- Host headless gate green. VM verification (SCROLL01-04 on the GUI lane) left to
+  the main loop.
+
 ## LOG 2026-06-19 PM (latest) — epic-foundation reconciliation + new built foundations
 
 Two modes, both yielding (board reconciled; `/Applications` rebuilt @ 21:57):

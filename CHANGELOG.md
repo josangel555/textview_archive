@@ -95,7 +95,7 @@ _147 commits today; ~3 user-facing (above). The rest, by area:_
 - **The footer file stats no longer flash blank when switching tabs** — switching between two already-open files could briefly blank the Size/Lines/encoding readout for a frame; the footer now shows the file size with a "loading…" label during that instant instead of going empty.
 - **Split view now opens and closes instantly** — "Open in Split" (and closing the split with the ✕) used to appear stuck: the pane wouldn't show up, or wouldn't go away, until you clicked a different tab to force a refresh. The split pane now appears and disappears immediately, no tab switch needed.
 - **Rendered Markdown scroll position now survives a session switch** — switching to another session and back used to snap a Markdown file's rendered preview back to the top; your place in the rendered view is now remembered per file and restored across session switches (it already survived tab switches within a session).
-- **Editor scroll position now survives a session switch** — switching to another session and back used to drop a file open in the editor back to the top; the editor's scroll position is now remembered per file and restored, the same way the read-only Source and Rendered views already were.
+- **Editor scroll position now survives session AND tab switches** — switching sessions/tabs (or away and back, including the switch-tab → switch-session → return combo) used to drop a file open in the editor back to the top; the editor now keeps its loaded view warm and restored — with your in-progress unsaved edits intact — the same way the read-only Source and Rendered views already were.
 
 ## 2026-06-19
 

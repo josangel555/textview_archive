@@ -1,4 +1,6 @@
 import XCTest
+import AppKit
+import WebKit
 import ViewerCore
 import ViewerKit
 @testable import ViewerUI
@@ -569,5 +571,92 @@ final class ScrollPositionPersistenceTests: XCTestCase {
         model.seedRenderedScroll(9999, for: a)
         XCTAssertEqual(model.renderedScrollOffset(for: a), 120,
                        "seed must not clobber a live rendered scroll position")
+    }
+
+    // MARK: - TSK-1047: warm-EDITOR-cache re-attach + the live/dirty-state guard
+    //
+    // The editor (CM6) WebView used to be rebuilt on every session/tab switch
+    // (makeNSView builds, dismantleNSView tears down), so it reloaded at the TOP
+    // of the file — the owner-reported editor-scroll-resets bug — even though the
+    // model captured/serialized/hydrated the scroll correctly (TSK-1037). The fix
+    // is a path-keyed warm cache (`WarmEditorWebViewCache`) that PARKS the editor
+    // WebView (keeping the loaded doc + scroll) on dismantle and RE-ATTACHES it on
+    // make, so no reload happens at all. Because the editor holds LIVE, possibly-
+    // DIRTY text (unlike the read-only rendered preview), the re-attach is gated
+    // on the parked CM6's text matching the text the model is about to feed the
+    // fresh pane — so a re-attach can NEVER resurrect stale text or mask an edit
+    // (a hot-exit data-loss class). These pin that seam at the model layer.
+    //
+    // The full no-reload + on-screen-scroll proof is VM-only (ScrollRestoreUAT
+    // SCROLL03/04); the cache mechanism itself is host-pinned in
+    // WarmEditorWebViewCacheTests. Here we tie the cache's text key to a real
+    // DocumentModel editor buffer (the model's source of truth for editor text).
+
+    func test_warmEditorCache_reAttachesParkedEditor_whenModelTextMatchesDirtyBuffer() {
+        // The data-loss-class teeth: an editor with IN-PROGRESS edits is parked;
+        // on switch-back the model feeds the DIRTY buffer's text. The parked CM6
+        // holds that same dirty text (CM6 posts every change into the buffer), so
+        // the re-attach is granted — bringing the edits (and scroll) back, NOT a
+        // stale disk reload. If the guard regressed to ignore text, this would
+        // still pass; the divergence test below is the complementary tooth.
+        WarmEditorWebViewCache.shared.removeAll()
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        openInEditorMode(model, a)
+        let tid = model.tabs.selected!.id
+        // The user types — the buffer (model's source of truth) goes dirty.
+        let dirtyText = "EDITED IN PROGRESS — unsaved\n" + (model.editorBuffer(forTabID: tid)?.text ?? "")
+        model.updateEditorText(dirtyText, forTabID: tid)
+        XCTAssertTrue(model.tabs.selected?.isDirty == true, "precondition: buffer is dirty")
+
+        // Park a warm editor under the file path holding exactly the dirty text
+        // (what CM6 has — it's the source the model mirrors).
+        _ = NSApplication.shared
+        let wv = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let key = a.resolvingSymlinksInPath().standardizedFileURL.path
+        WarmEditorWebViewCache.shared.stash(
+            wv, coordinator: CodeMirrorEditorView.Coordinator(),
+            text: dirtyText, forKey: key)
+
+        // The make path's expected text is exactly the dirty buffer the model
+        // feeds (`buf?.text`). Re-attach is granted → edits + scroll preserved.
+        let modelText = model.editorBuffer(forTabID: tid)?.text ?? ""
+        XCTAssertEqual(modelText, dirtyText, "the model feeds the dirty buffer text on re-mount")
+        let got = WarmEditorWebViewCache.shared.retrieve(forKey: key, expectedText: modelText)
+        XCTAssertNotNil(got, "a parked editor whose text matches the dirty buffer must re-attach (edits preserved)")
+        XCTAssertTrue(got?.webView === wv)
+        WarmEditorWebViewCache.shared.removeAll()
+    }
+
+    func test_warmEditorCache_dropsParkedEditor_whenModelTextDiverged_noStaleResurrection() {
+        // TEETH (data-loss class): if the model's text has diverged from the
+        // parked CM6's text (e.g. the file changed on disk / the buffer was
+        // re-hydrated differently on a session drain), the parked editor must be
+        // DROPPED and a fresh pane built against the model's text — never the
+        // parked stale text. A regression that re-attached regardless of text
+        // would resurrect the parked (stale) document on screen; this asserts the
+        // guard refuses.
+        WarmEditorWebViewCache.shared.removeAll()
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        openInEditorMode(model, a)
+        let tid = model.tabs.selected!.id
+
+        _ = NSApplication.shared
+        let wv = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let key = a.resolvingSymlinksInPath().standardizedFileURL.path
+        // Park a warm editor holding OLD text.
+        WarmEditorWebViewCache.shared.stash(
+            wv, coordinator: CodeMirrorEditorView.Coordinator(),
+            text: "OLD PARKED CONTENT — must not be resurrected\n", forKey: key)
+
+        // The model now holds different text (a divergence).
+        let modelText = model.editorBuffer(forTabID: tid)?.text ?? ""
+        XCTAssertNotEqual(modelText, "OLD PARKED CONTENT — must not be resurrected\n")
+        let got = WarmEditorWebViewCache.shared.retrieve(forKey: key, expectedText: modelText)
+        XCTAssertNil(got, "a parked editor with diverged text must NOT re-attach (no stale resurrection)")
+        XCTAssertFalse(WarmEditorWebViewCache.shared.contains(key),
+                       "the stale entry is dropped so a fresh pane is built against the model's text")
+        WarmEditorWebViewCache.shared.removeAll()
     }
 }

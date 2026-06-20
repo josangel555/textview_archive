@@ -736,6 +736,16 @@ public struct ContentView: View {
             // collapsed selection at the restored line's start so the editor
             // comes back to the same viewport instead of jumping to the top.
             let seed = model.editorMountSelectionSeed(forTabID: tid)
+            // TSK-1047: warm-editor-cache key — the resolved file path (stable
+            // across the `Tab.id` churn a session switch causes, like the
+            // rendered view's key). The EPHEMERAL preview slot opts OUT (nil): it
+            // deliberately resets scroll/cursor on file swap (TSK-743/744
+            // isolation), so it must not park/re-attach a warm editor that would
+            // resurrect a prior position. The seed belt (above) still restores
+            // scroll for cache-miss / opted-out panes.
+            let editorCacheKey: String? = tab.isPreview
+                ? nil
+                : file.url.resolvingSymlinksInPath().standardizedFileURL.path
             VStack(spacing: 0) {
                 if isActive && model.isEditorFindBarPresented {
                     EditorFindBar(find: model.find, uiSize: model.uiSize)
@@ -775,6 +785,7 @@ public struct ContentView: View {
                     replaceNextRequest: model.editorReplaceNextRequest,
                     replaceAllRequest: model.editorReplaceAllRequest,
                     initialSelection: seed,
+                    cacheKey: editorCacheKey,
                     onTextChange: { newText in
                         model.updateEditorText(newText, forTabID: tid)
                     },

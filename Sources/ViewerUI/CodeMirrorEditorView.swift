@@ -94,6 +94,19 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// switch). nil = leave at start. Bumped via `setSelection` so
     /// gotoLine and selection-restore use the same path.
     public let initialSelection: CMSelectionSeed?
+    /// Perf P1-followup (TSK-1047): stable key for the app-level warm-editor
+    /// cache (`WarmEditorWebViewCache`). When non-nil, `dismantleNSView` PARKS
+    /// this pane's CM6 WebView under the key (keeping the loaded document, undo
+    /// history, caret, and scroll alive) and `makeNSView` RE-ATTACHES a parked
+    /// WebView for the same key INSTEAD of rebuilding — so a session/tab switch
+    /// (which mints fresh `Tab.id`s and evicts from the `MountedPanesLRU`) doesn't
+    /// reload CM6 at the top of the file (the editor-scroll-resets bug). Derived
+    /// from the file path (stable across the switch — what the snapshot persists).
+    /// nil ⇒ this pane opts OUT of the cache (the split pane / preview slot pass
+    /// nil so they never share or resurrect a cached editor). A re-attach is
+    /// gated on the parked CM6's text matching this pane's `text` (the live-state
+    /// safety invariant — see `WarmEditorWebViewCache`).
+    public let cacheKey: String?
     public let onTextChange: (String) -> Void
     public let onSaveRequested: () -> Void
     public let onCursorChange: ((CMCursorPosition) -> Void)?
@@ -155,6 +168,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         replaceNextRequest: Int = 0,
         replaceAllRequest: Int = 0,
         initialSelection: CMSelectionSeed? = nil,
+        cacheKey: String? = nil,
         onTextChange: @escaping (String) -> Void,
         onSaveRequested: @escaping () -> Void = {},
         onCursorChange: ((CMCursorPosition) -> Void)? = nil,
@@ -197,6 +211,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.replaceNextRequest = replaceNextRequest
         self.replaceAllRequest = replaceAllRequest
         self.initialSelection = initialSelection
+        self.cacheKey = cacheKey
         self.onTextChange = onTextChange
         self.onSaveRequested = onSaveRequested
         self.onCursorChange = onCursorChange
@@ -213,6 +228,40 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     public func makeCoordinator() -> Coordinator { Coordinator() }
 
     public func makeNSView(context: Context) -> WKWebView {
+        // Record the cache key on the (fresh) coordinator so `dismantleNSView`
+        // — which only receives the coordinator, not the view — knows where to
+        // park this pane's WebView. Set even on the cache-MISS path below.
+        context.coordinator.cacheKey = cacheKey
+        // Perf P1-followup (TSK-1047): re-attach a parked CM6 WebView for this
+        // file instead of building a fresh one — keeping its loaded document,
+        // undo history, caret, and SCROLL position intact, so a session/tab
+        // switch-back doesn't reload CM6 at the top of the file. The re-attach is
+        // GATED on the parked CM6's text matching THIS pane's `text` (the
+        // live-state safety invariant — never resurrect stale text / mask edits;
+        // see `WarmEditorWebViewCache`). On a hit we re-point the message handler
+        // + delegate at the fresh coordinator and adopt the parked CM6 state, so
+        // `applyPendingState` re-syncs cheaply (its `lastSent*` mirrors are
+        // adopted, so identical state is a no-op — no `setText`, no reload).
+        if let key = cacheKey,
+           let parked = WarmEditorWebViewCache.shared.retrieve(
+                forKey: key, expectedText: text) {
+            let webView = parked.webView
+            // Re-point the script message handler from the parked coordinator to
+            // the fresh one. The handler name is per-WebView; add the new one,
+            // having removed the old in `dismantleNSView` (parking path).
+            webView.configuration.userContentController.add(
+                context.coordinator, name: "mdvEditor")
+            context.coordinator.adoptState(from: parked.coordinator)
+            context.coordinator.webView = webView
+            webView.navigationDelegate = context.coordinator
+            context.coordinator.bind(view: self)
+            CodeMirrorEditorRegistry.shared.register(webView)
+            // Flush any state that changed while parked (theme/font/wrap/etc.) —
+            // adopted `lastSent*` mirrors make unchanged state a no-op.
+            context.coordinator.applyPendingState()
+            return webView
+        }
+
         let config = WKWebViewConfiguration()
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
@@ -243,17 +292,46 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     }
 
     public func updateNSView(_ webView: WKWebView, context: Context) {
+        // Keep the parking key current — the pane's file can change within one
+        // representable lifecycle, and `dismantleNSView` parks under whatever
+        // this resolves to.
+        context.coordinator.cacheKey = cacheKey
         context.coordinator.bind(view: self)
         context.coordinator.applyPendingState()
     }
 
     public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
-        // Detach the message handler so the coordinator (and its
-        // owned WKWebView) can deinit. Without this, WKUserContentController
-        // keeps a strong reference and we leak the editor for the
-        // process lifetime.
+        // Detach the message handler so the coordinator no longer receives JS
+        // callbacks. WKUserContentController holds a STRONG reference to the
+        // handler, so this must happen on BOTH paths (park + teardown) — on the
+        // park path the make path re-adds a handler for the fresh coordinator.
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "mdvEditor")
         CodeMirrorEditorRegistry.shared.unregister(webView)
+
+        // Perf P1-followup (TSK-1047): instead of tearing the WebView down, PARK
+        // it in the warm-editor cache keyed by file path so a returning editor
+        // tab (after a session switch that minted a fresh `Tab.id`, or an LRU
+        // eviction) re-attaches it with NO reload — keeping the loaded document,
+        // undo history, caret, and scroll. We record the CM6's current text
+        // (`coordinator.currentText`, kept in lock-step with the live doc via the
+        // change/echo path) so the make path can REJECT a re-attach if the
+        // model's text has since diverged (the live-state safety invariant — no
+        // stale text, no masked edits). Only opt-out panes (nil key, e.g. the
+        // split pane / preview slot) take the real teardown below.
+        if let key = coordinator.cacheKey {
+            // Sever the live delegate link so no stray nav callback lands on this
+            // (about-to-be-released) coordinator while parked; the make path
+            // installs a fresh delegate on re-attach.
+            webView.navigationDelegate = nil
+            let parkedCoordinator = coordinator
+            let parkedText = coordinator.currentText
+            coordinator.webView = nil
+            WarmEditorWebViewCache.shared.stash(
+                webView, coordinator: parkedCoordinator,
+                text: parkedText, forKey: key)
+            return
+        }
+
         coordinator.webView = nil
         #if DEBUG
         MountProbe.webViewDismantles += 1   // Fix#1 mount-count probe (TSK-108)
@@ -273,6 +351,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     @MainActor
     public final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var webView: WKWebView?
+        /// Perf P1-followup (TSK-1047): the warm-editor cache key (file path)
+        /// this pane's WebView is parked under on `dismantleNSView`. Set from
+        /// `CodeMirrorEditorView.cacheKey` in make/update. nil ⇒ this pane opts
+        /// out of the cache (real teardown on dismantle).
+        var cacheKey: String?
         /// Becomes `true` the first time the bundled host HTML finishes
         /// loading. Gates the navigation policy: the lone legitimate
         /// `file:` load is the one-shot `loadFileURL(codemirror.html)` (and
@@ -417,6 +500,69 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingReplaceAllRequest = view.replaceAllRequest
             self.pendingInitialSelection = view.initialSelection
         }
+
+        /// Perf P1-followup (TSK-1047): the text the live CM6 currently holds, as
+        /// mirrored by `lastSentText`. CM6 is the source of truth for the doc;
+        /// `lastSentText` is updated on every JS `change`/`incrementalChange`
+        /// (echo-suppression) AND on every Swift→JS `setText`, so it tracks the
+        /// live document. Used by `dismantleNSView` to record the parked text so a
+        /// later re-attach can verify the model's text still matches (the
+        /// live-state safety guard). nil before the first text settles ⇒ treated
+        /// as empty, so a never-loaded editor can still be parked/retrieved.
+        var currentText: String { lastSentText ?? "" }
+
+        /// Perf P1-followup (TSK-1047): adopt the navigation/CM6-sync state from a
+        /// PARKED coordinator onto this (fresh, SwiftUI-owned) one when a warm
+        /// editor WebView is re-attached. Copies the `lastSent*` mirrors so
+        /// `applyPendingState` sees the already-loaded CM6 as fully in-sync — no
+        /// redundant `setText` (which would reset the caret/scroll we're trying to
+        /// preserve), no theme/font/wrap re-dispatch for unchanged values. Also
+        /// carries the readiness + one-shot-applied flags so post-load state pushes
+        /// resume immediately and the once-per-mount selection seed doesn't re-fire
+        /// against the live document.
+        ///
+        /// Deliberately NOT copied: the SwiftUI callback closures (`onTextChange`
+        /// etc. — the new representable supplies its own via `bind`) and the
+        /// per-tick request nonces (gotoLine/insert/select/find/focus — those
+        /// resync from the model on the next `applyPendingState`, and resetting
+        /// them to the parked values would wrongly suppress a request that arrives
+        /// on re-attach).
+        func adoptState(from parked: Coordinator) {
+            isReady = parked.isReady
+            didFinishFirstLoad = parked.didFinishFirstLoad
+            didApplyInitialSelection = parked.didApplyInitialSelection
+            lastSentText = parked.lastSentText
+            lastSentFontSize = parked.lastSentFontSize
+            lastSentLanguage = parked.lastSentLanguage
+            lastSentDark = parked.lastSentDark
+            lastSentPalette = parked.lastSentPalette
+            lastSentFontFamily = parked.lastSentFontFamily
+            lastSentWrap = parked.lastSentWrap
+            lastSentVim = parked.lastSentVim
+            lastSentReadOnly = parked.lastSentReadOnly
+            lastSentLineNumbers = parked.lastSentLineNumbers
+            lastSentIndentation = parked.lastSentIndentation
+            lastSentSnippetActive = parked.lastSentSnippetActive
+            lastSentShowInvisibles = parked.lastSentShowInvisibles
+            lastSentIndentGuides = parked.lastSentIndentGuides
+            lastSentFoldingRanges = parked.lastSentFoldingRanges
+            lastSentGutterMarkers = parked.lastSentGutterMarkers
+            lastSentDiagnostics = parked.lastSentDiagnostics
+        }
+
+        #if DEBUG
+        /// Test seam (TSK-1047): set/read the live-text mirror + readiness so a
+        /// host test can verify `currentText` and `adoptState` without driving a
+        /// real CM6 JS round-trip. DEBUG-only — production sets these via the
+        /// change/echo path and `applyPendingState`.
+        func _test_setLastSentText(_ text: String?) { lastSentText = text }
+        func _test_setReady(_ ready: Bool) { isReady = ready }
+        var _test_isReady: Bool { isReady }
+        var _test_didApplyInitialSelection: Bool {
+            get { didApplyInitialSelection }
+            set { didApplyInitialSelection = newValue }
+        }
+        #endif
 
         func loadHostHTML() {
             guard let webView = webView else { return }
