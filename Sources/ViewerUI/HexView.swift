@@ -48,6 +48,9 @@ struct HexView: View {
     /// hits and we kept only the first `matchCap`. Drives the "N+ matches"
     /// label and the capped highlight paint.
     @State private var matchesCapped: Bool = false
+    /// TSK-986: cancel-and-reschedule handle so the full-buffer hex scan is
+    /// debounced instead of running synchronously on every keystroke.
+    @State private var searchTask: Task<Void, Never>?
 
     /// Hard cap on the number of search / click match offsets we retain
     /// and paint. A pathological query (e.g. searching `00` across a 4 MB
@@ -107,9 +110,10 @@ struct HexView: View {
             )
         }
         .accessibilityIdentifier("mdv.hexView")
-        .onChange(of: searchQuery) { _, _ in recomputeMatches() }
-        .onChange(of: searchMode)  { _, _ in recomputeMatches() }
+        .onChange(of: searchQuery) { _, _ in scheduleRecompute() }
+        .onChange(of: searchMode)  { _, _ in scheduleRecompute() }
         .onChange(of: file)        { _, _ in
+            searchTask?.cancel()
             searchQuery = ""
             searchPattern = []
             matches = []
@@ -204,6 +208,19 @@ struct HexView: View {
     }
 
     // MARK: Match plumbing
+
+    /// TSK-986: debounce the full-buffer scan (180 ms, cancel-and-reschedule —
+    /// the codebase's `searchTask` idiom) so typing in the search field no longer
+    /// fires a synchronous whole-buffer scan on every keystroke; only the final
+    /// pause triggers one scan.
+    private func scheduleRecompute() {
+        searchTask?.cancel()
+        searchTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            if Task.isCancelled { return }
+            recomputeMatches()
+        }
+    }
 
     private func recomputeMatches() {
         guard !searchQuery.isEmpty else {
