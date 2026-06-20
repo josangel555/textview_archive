@@ -7,6 +7,11 @@ This file is the at-a-glance "what's new" view of the app's progress.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-20
+
+### Fixed
+- **Editor scroll position now survives a session switch** — switching to another session and back used to drop a file open in the editor back to the top; the editor's scroll position is now remembered per file and restored, the same way the read-only Source and Rendered views already were.
+
 ## 2026-06-19
 
 _A large batch landed today (the integrated backlog-drain wave). Highlights below; some bigger features shipped their core + wiring with on-screen polish still being validated._

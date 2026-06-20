@@ -449,6 +449,23 @@ public final class EditorCoordinator: ObservableObject {
         editorScrollByTab[id] = pos
     }
 
+    /// TSK-1037: seed `id`'s editor scroll position from a persisted top LINE
+    /// (e.g. a session-snapshot `Tab.scrollTopLine`), so an editor-mode tab
+    /// that was scrolled before a session switch comes back to the same
+    /// viewport rather than the top. `editorScrollByTab` is otherwise in-memory
+    /// only (dropped by the close fan-out on a session-switch drain), so the
+    /// durable position has to be re-injected on restore. No-op for a
+    /// non-positive line. Only `viewportFromLine` is meaningful to the restore
+    /// (pixel `top`/`left` are font/zoom-dependent and not persisted); the
+    /// other fields are seeded to coherent placeholders so the value reads back
+    /// as the same top line. Does NOT overwrite a live position already present
+    /// (a tab the user has since interacted with).
+    public func seedEditorScroll(fromTopLine line: Int, forTabID id: UUID) {
+        guard line > 0, editorScrollByTab[id] == nil else { return }
+        editorScrollByTab[id] = CMScrollPosition(
+            top: 0, left: 0, viewportFromLine: line, viewportToLine: line)
+    }
+
     // MARK: - Diagnostics fan-out
 
     /// Called by `CodeMirrorEditorView.Coordinator` once it's pushed

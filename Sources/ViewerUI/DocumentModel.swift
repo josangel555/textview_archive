@@ -2080,13 +2080,37 @@ public final class DocumentModel: ObservableObject {
     /// an untouched open/glance/close — so we don't write-amplify the store.
     private var scrollMemoryBaseline: [String: ScrollMemoryStore.Entry] = [:]
 
-    /// Sample the live source-view scroll offset and stamp the resulting
-    /// 1-based top line into the tab at `index`. No-op when the geometry isn't
-    /// usable (zero-line doc / pre-first-paint) or the value is unchanged.
-    /// Call at focus-loss / close boundaries — NEVER per scroll tick.
+    /// Sample the live scroll offset for the tab at `index` and stamp the
+    /// resulting 1-based top line into `Tab.scrollTopLine`. No-op when the
+    /// geometry isn't usable (zero-line doc / pre-first-paint) or the value is
+    /// unchanged. Call at focus-loss / close boundaries — NEVER per scroll tick.
+    ///
+    /// TSK-1037: which channel we read depends on the tab's lens. In `.editor`
+    /// mode the live caret-bearing surface is the CM6 WebView, whose scroll is
+    /// reported on the SEPARATE `editorScrollByTab` channel (the source
+    /// NSTextView's `sourceScrollState` doesn't tick) — so an editor-mode
+    /// capture must read the editor channel's `viewportFromLine`, else the
+    /// editor scroll is silently dropped at every session/tab-switch boundary
+    /// (it survived a tab-switch only because `editorScrollByTab` is tab-id
+    /// keyed; a SESSION switch drains those dicts, so the position was lost
+    /// entirely). Folding it into the same `scrollTopLine` field makes editor
+    /// scroll round-trip through the snapshot exactly like the source view.
     func captureScroll(forTabAt index: Int) {
         guard tabs.tabs.indices.contains(index) else { return }
-        guard let line = sourceView.sourceScrollState.topVisibleLine else { return }
+        let isEditor = tabs.tabs[index].viewMode == .editor
+        let line: Int? = {
+            if isEditor {
+                // Prefer the editor channel; fall back to the source channel for
+                // a never-scrolled editor tab whose source view still carries a
+                // usable seed (defensive — usually nil in editor mode).
+                if let l = editor.editorScrollByTab[tabs.tabs[index].id]?.viewportFromLine,
+                   l > 0 {
+                    return l
+                }
+            }
+            return sourceView.sourceScrollState.topVisibleLine
+        }()
+        guard let line, line > 0 else { return }
         var t = tabs.tabs[index]
         if t.scrollTopLine != line {
             t.scrollTopLine = line
@@ -2137,7 +2161,7 @@ public final class DocumentModel: ObservableObject {
         // store (TSK-1017) when the tab carries no in-session memory, e.g. a
         // file opened fresh in a NEW session or after a relaunch.
         if let line = tab.scrollTopLine, line > 0 {
-            scrollSource(toLine: line)
+            applyRestoredScroll(line, to: tab, at: index)
             // Seed the no-write baseline so a re-capture at the same position
             // doesn't churn the durable store.
             if let url = tab.url {
@@ -2156,6 +2180,21 @@ public final class DocumentModel: ObservableObject {
         var t = tab
         t.scrollTopLine = line
         tabCoordinator.replace(at: index, with: t)
+        applyRestoredScroll(line, to: t, at: index)
+    }
+
+    /// TSK-1037: route a restored top `line` to the channel that actually drives
+    /// the tab's current lens. `.editor` tabs render through the CM6 WebView,
+    /// whose viewport is driven off the `editorScrollByTab` channel (NOT the
+    /// source NSTextView `scrollSource` request), so we seed that channel; every
+    /// other text lens rides the existing `scrollSource(toLine:)` request. We
+    /// seed the editor channel for editor tabs and ALSO issue the source request
+    /// (harmless when the source view isn't on screen) so a tab that toggles
+    /// .editor↔.source after restore lands correctly either way.
+    private func applyRestoredScroll(_ line: Int, to tab: ViewerCore.Tab, at index: Int) {
+        if tab.viewMode == .editor {
+            seedEditorScroll(fromTopLine: line, forTabID: tab.id)
+        }
         scrollSource(toLine: line)
     }
 
@@ -2930,6 +2969,11 @@ public final class DocumentModel: ObservableObject {
         // TSK-719: the pinned sticky-scroll headers depend on the top-visible
         // line — refresh them when the selected tab scrolls.
         if tabs.selected?.id == id { recomputeStickyScrollHeaders() }
+    }
+
+    /// Forwarder. See `EditorCoordinator.seedEditorScroll`.
+    public func seedEditorScroll(fromTopLine line: Int, forTabID id: UUID) {
+        editor.seedEditorScroll(fromTopLine: line, forTabID: id)
     }
 
     /// Forwarder. See `EditorCoordinator.setEditorDiagnostics`.

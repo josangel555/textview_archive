@@ -221,4 +221,130 @@ final class ScrollPositionPersistenceTests: XCTestCase {
         XCTAssertEqual(model.sourceScrollLineNonce, nonceBefore,
                        "a tab with no persisted scroll must not fire a request")
     }
+
+    // MARK: - TSK-1037: editor (CM6) scroll capture + restore
+    //
+    // The editor lens reports scroll on the SEPARATE `editorScrollByTab`
+    // channel (the source NSTextView's `sourceScrollState` doesn't tick in
+    // editor mode), and that dict is tab-id keyed + in-memory only — so a
+    // SESSION switch (which drains the tab list, dropping those dicts) lost an
+    // editor tab's scroll entirely. The fix folds the editor channel's
+    // `viewportFromLine` into the same persisted `Tab.scrollTopLine` field that
+    // the source view uses, so editor scroll round-trips through the snapshot.
+
+    /// Open `a` and flip the SELECTED tab to editor mode.
+    private func openInEditorMode(_ model: DocumentModel, _ url: URL) {
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        XCTAssertEqual(model.tabs.selected?.viewMode, .editor,
+                       "precondition: the tab must be in editor mode")
+    }
+
+    func test_editorMode_capture_readsEditorChannel_notSourceChannel() {
+        // TEETH: before the fix, captureScroll read ONLY the source channel; an
+        // editor tab's scroll (on editorScrollByTab) was never stamped onto
+        // Tab.scrollTopLine, so this assertion failed (nil).
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        openInEditorMode(model, a)
+        let tid = model.tabs.selected!.id
+
+        // Editor reports its viewport top line on its own channel.
+        model.recordEditorScroll(
+            CMScrollPosition(top: 4096, left: 0,
+                             viewportFromLine: 312, viewportToLine: 360),
+            forTabID: tid)
+        // The source channel is empty/unusable in editor mode — leave it.
+
+        model.captureScrollForActiveTab()
+        XCTAssertEqual(model.tabs.selected?.scrollTopLine, 312,
+                       "editor-mode capture must read editorScrollByTab.viewportFromLine")
+    }
+
+    func test_editorMode_capture_thenSnapshot_carriesEditorScroll() {
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        openInEditorMode(model, a)
+        let tid = model.tabs.selected!.id
+        model.recordEditorScroll(
+            CMScrollPosition(top: 1, left: 0,
+                             viewportFromLine: 207, viewportToLine: 250),
+            forTabID: tid)
+        model.captureScrollForActiveTab()
+
+        let snap = SessionState(rootURL: tmpRoot, model: model).makeSnapshot()
+        let resolved = a.standardizedFileURL.resolvingSymlinksInPath().path
+        let tab = snap.openTabs.first { $0.path == resolved }
+        XCTAssertNotNil(tab, "snapshot must contain the editor-mode file")
+        XCTAssertEqual(tab?.scrollTopLine, 207,
+                       "editor scroll must serialize via Tab.scrollTopLine")
+    }
+
+    func test_sessionSwitchRoundTrip_preservesEditorScroll() {
+        // The end-to-end TSK-1037 regression: capture an editor tab's scroll,
+        // snapshot (the detach-time write), then hydrate a FRESH model (the
+        // switch-back), and assert the editor scroll comes back — both on the
+        // restored Tab AND seeded onto the live editor channel that drives CM6.
+        let srcModel = DocumentModel()
+        let a = makeFile("code.swift")
+        openInEditorMode(srcModel, a)
+        let srcTid = srcModel.tabs.selected!.id
+        srcModel.recordEditorScroll(
+            CMScrollPosition(top: 9000, left: 0,
+                             viewportFromLine: 433, viewportToLine: 470),
+            forTabID: srcTid)
+        srcModel.captureScrollForActiveTab()
+        let snap = SessionState(rootURL: tmpRoot, model: srcModel).makeSnapshot()
+
+        // Switch-back: hydrate into a fresh model (mirrors switchSessionFaçade's
+        // closeAllTabsPreservingDirty → rebuild from snapshot).
+        let freshModel = DocumentModel()
+        SessionState(rootURL: tmpRoot, model: freshModel).hydrate(from: snap)
+        let resolved = a.standardizedFileURL.resolvingSymlinksInPath().path
+        guard let idx = freshModel.tabs.tabs.firstIndex(where: {
+            $0.url?.path == resolved
+        }) else {
+            return XCTFail("hydrate must restore the editor-mode tab")
+        }
+        XCTAssertEqual(freshModel.tabs.tabs[idx].scrollTopLine, 433,
+                       "editor scroll must hydrate onto the restored tab")
+
+        // restoreScroll (run on tab-become-active) must seed the editor channel
+        // so CM6 re-applies the viewport — not just fire a source request.
+        let restoredTid = freshModel.tabs.tabs[idx].id
+        freshModel.restoreScroll(forTabAt: idx)
+        XCTAssertEqual(
+            freshModel.editorScrollByTab[restoredTid]?.viewportFromLine, 433,
+            "restoreScroll must seed editorScrollByTab for an editor tab")
+    }
+
+    func test_restoreScroll_editorTab_seedsEditorChannel() {
+        // Direct unit on the restore half: a lazy editor tab carrying a
+        // persisted scroll must seed editorScrollByTab on restore.
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        model.appendLazyTab(url: a, viewMode: .editor, scrollTopLine: 158)
+        let tid = model.tabs.tabs[0].id
+        XCTAssertNil(model.editorScrollByTab[tid],
+                     "precondition: no live editor scroll yet")
+        model.restoreScroll(forTabAt: 0)
+        XCTAssertEqual(model.editorScrollByTab[tid]?.viewportFromLine, 158,
+                       "editor-tab restore must seed the editor channel")
+    }
+
+    func test_seedEditorScroll_doesNotClobberLivePosition() {
+        // Seeding is for the restore boundary only — it must never stomp a
+        // position the user has since scrolled to.
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        model.appendLazyTab(url: a, viewMode: .editor)
+        let tid = model.tabs.tabs[0].id
+        model.recordEditorScroll(
+            CMScrollPosition(top: 0, left: 0,
+                             viewportFromLine: 12, viewportToLine: 40),
+            forTabID: tid)
+        model.seedEditorScroll(fromTopLine: 999, forTabID: tid)
+        XCTAssertEqual(model.editorScrollByTab[tid]?.viewportFromLine, 12,
+                       "seed must not clobber a live editor scroll position")
+    }
 }
