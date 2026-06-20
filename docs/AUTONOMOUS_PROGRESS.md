@@ -1,5 +1,15 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-20 — inline cron drain (post-API-outage)
+
+5-min inline cron resumed (job d1fcac5b; SOP rules: inline-only, never-idle). Landed this firing-chain, each commit per-item, host-gate-green (`main` linear):
+
+- **TSK-986** (`50521d04`) — Hex search no longer scans the full buffer per keystroke: added a 180ms cancel-and-reschedule debounce (`scheduleRecompute`, the `searchTask` idiom). Search logic already covered by HexSearchEngine/MatchCap tests; → `fixed` (review ceiling = UI-timing).
+- **docs/SOP** (`bcfa3c01`) — Codified the two cron hard-rules (work INLINE / never-idle) into CLAUDE.md + TASK_WORKFLOW §0/§5; added `docs/CURATED_TASKS_2026-06-20.md` as the active selector; recorded the render-path-VM-verify + partial-epic-lost-work lessons.
+- **TSK-1120** (`41017b83`) — Footer file-stats no longer flash blank on tab switch: `.empty` tab state now routes through the same Size+"loading…" placeholder as `.loading` (extracted `StatusBar.loadingPlaceholder`). Observation layer verified already-correct (StatusBar observes tabCoordinator). Host teeth on the placeholder contract; → `fixed` (review ceiling; owner-repro flagged for the residual intermittent-chip case).
+
+NOTE (API outage): the click→selection-bug subagent (aaacbb3f) DIED on an API ConnectionRefused with no commit — that bug is NOT fixed, needs re-dispatch on an interactive turn. Scroll (TSK-1046/1047) + CM6-Lezer-22 (TSK-1135) remain on worktrees awaiting owner-gated integration (scroll: VM trace shows the warm cache works; the UAT harness is the broken part).
+
 ## LOG 2026-06-19 PM (latest) — epic-foundation reconciliation + new built foundations
 
 Two modes, both yielding (board reconciled; `/Applications` rebuilt @ 21:57):
