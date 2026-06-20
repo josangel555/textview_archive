@@ -698,25 +698,48 @@ public final class SidebarModel: ObservableObject {
     /// so a working set dominated by expanded dirs under-evicted and the
     /// cache could sit permanently over cap.
     private static let childrenCacheMax = 256
-    private func pruneChildrenCacheIfNeeded() {
-        let target = Self.childrenCacheMax * 2 / 3
-        guard childrenCache.count > Self.childrenCacheMax else { return }
-        var idx = 0
-        // Walk oldest → newest. `childrenCacheOrder` head is coldest.
-        while childrenCache.count > target, idx < childrenCacheOrder.count {
-            let key = childrenCacheOrder[idx]
-            // Keep dirs we still actively need on screen.
-            if key == rootURL || expanded.contains(key) {
-                idx += 1
-                continue
-            }
-            childrenCache.removeValue(forKey: key)
-            childrenCacheOrder.remove(at: idx)
-            // Don't advance idx: remove(at:) shifted the next element
-            // into this slot.
+
+    /// Pure eviction decision (TSK-991). Given the LRU `order` (coldest first),
+    /// the PINNED set (root + expanded dirs — evicting those would collapse the
+    /// visible tree), the current `count`, and the cap `max`, return the keys to
+    /// evict, coldest-first, skipping pinned.
+    ///
+    /// Both the trigger and the target FLOOR at `pinned.count`: pinned entries
+    /// can't be evicted, so when the pinned working set alone exceeds the cap the
+    /// cache legitimately sits above it. We still evict every cold non-pinned
+    /// entry, but we don't thrash trying to reach an impossible sub-pinned target
+    /// on every store (the old code re-walked the whole LRU list each store when
+    /// expanded dirs exceeded the cap, evicting nothing new). For the normal case
+    /// (pinned < cap) this is byte-identical to the old behavior: trigger at
+    /// `max`, evict down to `max*2/3`. Returns `[]` when nothing should be
+    /// evicted, so the caller skips the walk entirely.
+    nonisolated static func childrenCacheEvictions(
+        order: [URL], pinned: Set<URL>, count: Int, max: Int
+    ) -> [URL] {
+        let highWater = Swift.max(max, pinned.count)
+        guard count > highWater else { return [] }
+        let target = Swift.max(max * 2 / 3, pinned.count)
+        var evict: [URL] = []
+        var remaining = count
+        for key in order {
+            if remaining <= target { break }
+            if pinned.contains(key) { continue }   // never evict visible/pinned
+            evict.append(key)
+            remaining -= 1
         }
-        // Order list can accumulate stale keys only via the paths above,
-        // which keep it in sync; nothing else to reconcile here.
+        return evict
+    }
+
+    private func pruneChildrenCacheIfNeeded() {
+        var pinned = expanded
+        if let root = rootURL { pinned.insert(root) }
+        let evictions = Self.childrenCacheEvictions(
+            order: childrenCacheOrder, pinned: pinned,
+            count: childrenCache.count, max: Self.childrenCacheMax)
+        guard !evictions.isEmpty else { return }
+        let evictSet = Set(evictions)
+        for key in evictions { childrenCache.removeValue(forKey: key) }
+        childrenCacheOrder.removeAll { evictSet.contains($0) }
     }
 
     private func normalize(_ url: URL) -> URL {
