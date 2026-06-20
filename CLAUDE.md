@@ -2,6 +2,32 @@
 
 ## Testing rules
 
+### ⛔ NEVER report a render/on-screen bug "fixed" without confirming on the REAL UI (OWNER DIRECTIVE 2026-06-20)
+
+The owner has been burned repeatedly: an agent reports a bug fixed, but on screen
+it behaves the same broken way. **A host-green / model-green result is NOT a fix
+for on-screen behavior — it is "model fixed, on-screen UNVERIFIED" at most.**
+
+This is **T6** — agent-driven journey UAT, the tier above T5 (T1/T1m/T2' headless ·
+T4 LiveApp · T5 Pixel · **T6 agent-driven journey UAT**, run via the `run-uat`
+skill, NOT `swift test`). Two modes (do NOT conflate them):
+- **PARTIAL T6 — mandatory for EVERY render-path change.** Before claiming any
+  on-screen behavior is fixed (to the owner OR via `task_validate`), CONFIRM YOUR
+  OWN CHANGE WITH YOUR OWN EYES on the real UI — the SCOPED slice that exercises
+  exactly what you changed (not the whole suite). Mechanism: drive the relevant
+  steps via the agent UI-automation path (`mac-computer-use` MCP when it ships;
+  until then the VM GUI lane + `screencapture` and Read the PNG — see
+  `.claude/skills/run-uat` / `vm-ui-testing`). You looked at it and it actually
+  behaves correctly = the bar.
+- **FULL T6 — the whole journey suite; OWNER-REQUESTED, major releases only.**
+  A comprehensive regression + completeness sweep across the app
+  (`docs/research/agent-uat-framework-2026-06-20/`). NOT run per-change — too
+  expensive; the owner triggers it for releases.
+- If you cannot do even the partial on-screen confirmation, report
+  **"model-fixed, on-screen UNVERIFIED — needs UAT/owner"** and leave at `review`.
+  NEVER say "fixed" / move to `done` on model evidence alone. The acceptance
+  criterion for a UI bug is the pixels/behavior the user sees.
+
 ### Change → tests + tracker mandate (OWNER DIRECTIVE 2026-06-07)
 
 Non-negotiable for **every** change. This codifies the terminal-tab-strip
