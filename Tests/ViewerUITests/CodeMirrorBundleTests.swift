@@ -430,8 +430,8 @@ final class CodeMirrorBundleTests: XCTestCase {
                       "show-invisibles plugin no longer uses middle-dot (·) for space")
         XCTAssertTrue(html.contains("InvWidget(\"→\")"),
                       "show-invisibles plugin no longer uses arrow (→) for tab")
-        XCTAssertTrue(html.contains("InvWidget(\"¶\")"),
-                      "show-invisibles plugin no longer uses pilcrow (¶) for line break")
+        XCTAssertTrue(html.contains("InvWidget(\"↵\")"),
+                      "show-invisibles plugin no longer uses return-arrow (↵) for line break")
     }
 
     func testInvisiblesColorIsReadableSecondaryNotFlatGrey() throws {
