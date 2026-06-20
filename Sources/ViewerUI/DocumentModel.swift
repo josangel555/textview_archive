@@ -4671,6 +4671,41 @@ public final class DocumentModel: ObservableObject {
         setHTMLJavaScriptEnabled(!htmlJavaScriptEnabled(forTabID: id), forTabID: id)
     }
 
+    /// PER-DOCUMENT "trust this local HTML" store (TSK-1189). Path-keyed +
+    /// persisted; `var` so tests can inject a throwaway suite. The trust
+    /// decision is fail-closed (`HTMLTrustPolicy.isTrusted`).
+    public var htmlTrustStore = HTMLTrustStore()
+
+    /// Effective trust for a tab's raw-HTML doc: a LOCAL, non-quarantined file
+    /// the user explicitly opted in. The single read path the renderer consumes
+    /// to relax sanitize/CSP/JS; default OFF, fail-closed.
+    public func htmlTrusted(forTabID tabID: UUID) -> Bool {
+        guard let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return false }
+        return HTMLTrustPolicy.isTrusted(
+            url: url,
+            isQuarantined: FileQuarantine.isQuarantined(path: url.path),
+            userOptedIn: htmlTrustStore.isOptedIn(url: url))
+    }
+
+    /// Is the tab's HTML doc ELIGIBLE for trust (local + not quarantined)?
+    /// Drives whether the "Trust & Run" affordance is offered (slice 3).
+    public func htmlTrustEligible(forTabID tabID: UUID) -> Bool {
+        guard let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return false }
+        return HTMLTrustPolicy.isTrustEligible(
+            url: url, isQuarantined: FileQuarantine.isQuarantined(path: url.path))
+    }
+
+    /// Set the per-document HTML trust opt-in (a deliberate user action). An
+    /// opt-IN only takes effect for a trust-eligible doc; revocation always
+    /// applies. Fires `objectWillChange` so the renderer re-renders trusted.
+    public func setHTMLTrusted(_ trusted: Bool, forTabID tabID: UUID) {
+        guard let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return }
+        if trusted && !HTMLTrustPolicy.isTrustEligible(
+            url: url, isQuarantined: FileQuarantine.isQuarantined(path: url.path)) { return }
+        htmlTrustStore.setOptedIn(trusted, url: url)
+        objectWillChange.send()
+    }
+
     /// True when the current tab is an `.html` file being shown in
     /// rendered mode — i.e. when the "Enable JavaScript" toggle is
     /// meaningful. Honors the per-tab "Open As…" override.

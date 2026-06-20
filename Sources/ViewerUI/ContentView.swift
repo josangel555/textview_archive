@@ -862,6 +862,9 @@ public struct ContentView: View {
                     // L2: per-tab JS opt-in. Default-OFF lives in the
                     // model (absence of the tab id ⇒ false).
                     javaScriptEnabled: model.htmlJavaScriptEnabled(forTabID: tab.id),
+                    // TSK-1189: trust-local-HTML — runs the page's own scripts
+                    // only for a local, user-opted-in, non-quarantined doc.
+                    trusted: model.htmlTrusted(forTabID: tab.id),
                     printNonce: isActive ? model.renderedPrintRequest : 0,
                     pdfExportNonce: isActive ? (model.renderedPDFExportRequest?.nonce ?? 0) : 0,
                     pdfExportURL: model.renderedPDFExportRequest?.url,

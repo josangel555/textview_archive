@@ -53,6 +53,11 @@ public struct HTMLRenderedView: NSViewRepresentable {
     /// returns `false` when the user hasn't opted the tab in). When this
     /// is `false` (the default) the WebView's JS engine is disabled.
     public let javaScriptEnabled: Bool
+    /// TSK-1189 — trust-local-HTML. When `true` (a LOCAL, opted-in doc; default
+    /// false), the renderer keeps the page's own `<script>`/`<style>` and relaxes
+    /// `script-src` while KEEPING the anti-exfil fence (`connect-src 'none'`).
+    /// Fed SOLELY by `DocumentModel.htmlTrusted(forTabID:)`.
+    public let trusted: Bool
     /// Print/Export-as-PDF (TSK-638): same nonce contract as
     /// `MarkdownRenderedView` — print/createPDF run on the live WebView,
     /// AFTER sanitization (they render what the page shows, nothing more).
@@ -66,6 +71,7 @@ public struct HTMLRenderedView: NSViewRepresentable {
         documentURL: URL,
         zoom: Double = 1.0,
         javaScriptEnabled: Bool = false,
+        trusted: Bool = false,
         printNonce: Int = 0,
         pdfExportNonce: Int = 0,
         pdfExportURL: URL? = nil,
@@ -75,6 +81,7 @@ public struct HTMLRenderedView: NSViewRepresentable {
         self.documentURL = documentURL
         self.zoom = zoom
         self.javaScriptEnabled = javaScriptEnabled
+        self.trusted = trusted
         self.printNonce = printNonce
         self.pdfExportNonce = pdfExportNonce
         self.pdfExportURL = pdfExportURL
@@ -134,7 +141,7 @@ public struct HTMLRenderedView: NSViewRepresentable {
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = HTMLDocumentPolicy.javaScriptEnabled(
             tabOptedIn: javaScriptEnabled
-        )
+        ) || trusted
         config.defaultWebpagePreferences = prefs
         // Belt-and-suspenders: the legacy process-wide switch is also
         // pinned to the same value. `allowsContentJavaScript` is the
@@ -168,13 +175,13 @@ public struct HTMLRenderedView: NSViewRepresentable {
         // the desired value to force a reload when it changes.
         let jsEnabled = HTMLDocumentPolicy.javaScriptEnabled(
             tabOptedIn: javaScriptEnabled
-        )
+        ) || trusted
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = jsEnabled
 
         // L1: sanitize THEN wrap in the policy envelope (CSP + charset).
         // The raw bytes never reach the WebView un-sanitized.
-        let sanitized = HTMLDocumentPolicy.sanitize(rawHTML)
-        let document = HTMLDocumentPolicy.envelope(sanitizedBody: sanitized)
+        let sanitized = HTMLDocumentPolicy.sanitize(rawHTML, trusted: trusted)
+        let document = HTMLDocumentPolicy.envelope(sanitizedBody: sanitized, trusted: trusted)
 
         // Reload only when the rendered document OR the JS opt-in changed
         // (the opt-in only takes effect on a fresh load). Avoids a render

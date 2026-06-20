@@ -76,3 +76,15 @@ public final class HTMLTrustStore: @unchecked Sendable {
         defaults.set(Array(set).sorted(), forKey: Self.storageKey)
     }
 }
+
+/// Side-effecting quarantine probe (TSK-1189). The pure gate
+/// (`HTMLTrustPolicy.isTrustEligible`) takes the result as a `Bool` so it stays
+/// testable; this reads the actual xattr. A file carrying `com.apple.quarantine`
+/// was downloaded/received from outside and is NOT trust-eligible.
+public enum FileQuarantine {
+    public static func isQuarantined(path: String) -> Bool {
+        // getxattr with a zero-size buffer returns the attr length if present,
+        // -1 (errno ENOATTR) if absent.
+        getxattr(path, "com.apple.quarantine", nil, 0, 0, 0) >= 0
+    }
+}
