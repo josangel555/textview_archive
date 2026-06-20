@@ -59,10 +59,22 @@ public enum RtfTextExtractor {
                         var cp = param
                         if cp < 0 { cp += 0x10000 }   // signed 16-bit → code point
                         if let scalar = Unicode.Scalar(cp) { emit(String(scalar)) }
-                        // skip the \uc fallback scalars that follow
+                        // skip the \uc fallback tokens that follow \uN. A
+                        // fallback is a plain char (TextEdit's "?") OR a \'XX hex
+                        // byte (Word's codepage equivalent — e.g. the euro sign
+                        // emits \uNNNN then \'80) — each counts as ONE skipped token.
                         var toSkip = stack[stack.count - 1].uc
                         while toSkip > 0 && i < n {
-                            if s[i] == "\\" || s[i] == "{" || s[i] == "}" { break }
+                            if s[i] == "\\" {
+                                if i + 1 < n && s[i + 1] == "'" {
+                                    i += 2                       // past \'
+                                    if i + 1 < n { i += 2 }      // past the two hex digits
+                                    toSkip -= 1
+                                    continue
+                                }
+                                break                            // other control fallback — stop
+                            }
+                            if s[i] == "{" || s[i] == "}" { break }
                             i += 1; toSkip -= 1
                         }
                     default:

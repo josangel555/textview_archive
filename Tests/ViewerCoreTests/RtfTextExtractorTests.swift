@@ -26,6 +26,13 @@ final class RtfTextExtractorTests: XCTestCase {
         XCTAssertEqual(RtfTextExtractor.plainText(#"{\rtf1 caf\u233?}"#), "café")
     }
 
+    func test_unicodeControl_withHexByteFallback_word() {
+        // Word emits \uNNNN then a \'XX codepage byte as the fallback (not "?").
+        // The euro sign (code point 8364) emits \uNNNN then \'80 (Win-1252) —
+        // the \'80 must be consumed as the fallback, NOT emitted as a stray byte.
+        XCTAssertEqual(RtfTextExtractor.plainText("{\\rtf1 \\u8364\\'80}"), "€")
+    }
+
     func test_hexEscape() {
         // \'41 = 'A', \'42 = 'B'
         XCTAssertEqual(RtfTextExtractor.plainText(#"{\rtf1 \'41\'42}"#), "AB")
