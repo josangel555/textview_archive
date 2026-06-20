@@ -25,7 +25,13 @@ final class LocalHistorySaveWiringTests: XCTestCase {
         try FileManager.default.createDirectory(at: histDir, withIntermediateDirectories: true)
         suiteName = "LHSaveWiring-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
-        store = LocalHistoryStore(directory: histDir)
+        // Toggle-wired (TSK-1103 merge): gating now lives in the store, so the
+        // injected store reads the same suite the toggle test flips.
+        store = LocalHistoryStore(
+            directory: histDir,
+            isEnabled: { [name = suiteName!] in
+                LocalHistoryPolicy.isEnabled(defaults: UserDefaults(suiteName: name) ?? .standard)
+            })
     }
 
     override func tearDown() async throws {

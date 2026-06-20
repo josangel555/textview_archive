@@ -149,6 +149,11 @@ public final class LocalHistoryStore: Sendable {
         guard content.utf8.count <= Self.maxSnapshotBytes else { return nil }
         guard !HistoryContentFilter.isProbablyBinary(content) else { return nil }
         guard !HistoryContentFilter.looksLikeSecret(content) else { return nil }
+        // Filename-based secret exclusion (TSK-1103 merge): the viewer's
+        // LocalHistoryPolicy excludes by NAME (.env / *.pem / credentials…),
+        // which catches secret files whose CONTENT alone wouldn't trip the
+        // content filter. Unified here so EVERY save path is gated at the store.
+        guard !LocalHistoryPolicy.isSecretLike(path: path) else { return nil }
 
         let dir = fileDirectory(for: path)
         let fm = FileManager.default

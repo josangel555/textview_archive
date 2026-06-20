@@ -436,7 +436,11 @@ public final class DocumentModel: ObservableObject {
         preferences: PreferencesStore = PreferencesStore(),
         // On-disk Local History store (TSK-301/1103). Injectable so tests can
         // point it at a temp dir; production uses the default App Support path.
-        localHistory: LocalHistoryStore = LocalHistoryStore(),
+        // Production wires the toggle (TSK-1103 merge): the store reads
+        // LocalHistoryPolicy.isEnabled live so a "Local History off" pref takes
+        // effect. Tests inject their own (toggle-wired) store.
+        localHistory: LocalHistoryStore = LocalHistoryStore(
+            isEnabled: { LocalHistoryPolicy.isEnabled(defaults: .standard) }),
         // Injectable for tests (TSK-627: fake-server registry e2e). The
         // default is the production pool over LSPLanguageRegistry.default.
         lspPool: LSPPool = LSPPool()
@@ -491,6 +495,11 @@ public final class DocumentModel: ObservableObject {
         // EditorCoordinator registers a close-hook on TabCoordinator
         // in its init — must happen before any tab can close.
         self.editor = EditorCoordinator(tabCoordinator: tabCoordinator)
+        // Single Local-History store (TSK-1103 merge): the editor save-path
+        // snapshot hook (EditorCoordinator.saveEditor) and the unified version
+        // viewer must read/write the SAME instance, so the viewer sees exactly
+        // what a save records.
+        self.editor.localHistoryStore = localHistory
         // Multi-repo git registry. A sibling coordinator that subscribes
         // to tabCoordinator/sidebar @Published streams (the views already
         // observe those) and drives the off-main store + channel. Its
@@ -4009,36 +4018,11 @@ public final class DocumentModel: ObservableObject {
                 repoFocus.refreshRepo(enclosing: url)
                 notifyLSPDidSave(url)
             }
-            // Local History (TSK-301/1103): record this saved revision so the
-            // unified version viewer can list/view/diff/restore it. Best-effort
-            // + policy-gated; never affects the save result.
-            snapshotLocalHistoryAfterSave(forTabID: id)
+            // Local History snapshot-on-save is recorded ONCE at the chokepoint
+            // in EditorCoordinator.saveEditor (single hook; the store self-gates
+            // toggle + secret/binary). The forwarder no longer double-snapshots.
         }
         return ok
-    }
-
-    /// Snapshot the just-saved editor content into Local History, subject to the
-    /// owner policy (`LocalHistoryPolicy`): default-on, text-only, secret-like
-    /// files (`.env`, `*.pem`, …) excluded, 20MB cap. Reads the post-save buffer
-    /// (its `text` == the bytes just written). A self-contained best-effort call
-    /// off the save result — a snapshot failure must never fail the save.
-    private func snapshotLocalHistoryAfterSave(forTabID id: UUID) {
-        guard let buf = editor.editorBuffer(forTabID: id) else { return }
-        let path = buf.url.standardizedFileURL.path
-        let content = buf.text
-        // Use the SAME UserDefaults the app's preferences are backed by so a
-        // persisted "Local History off" toggle (and tests' injected suite) is
-        // honored, not just `.standard`.
-        let decision = LocalHistoryPolicy.decideSnapshot(
-            path: path, content: content, defaults: preferences.defaults)
-        guard decision.isAllowed else { return }
-        let store = localHistoryStore
-        let now = Date()
-        // Off-main: snapshot does disk IO (write + prune). Capture only Sendable
-        // values; the store is Sendable.
-        Task.detached(priority: .utility) {
-            store.snapshot(path: path, content: content, at: now)
-        }
     }
 
     /// Fire a `textDocument/didSave` to the LSP server after a successful
