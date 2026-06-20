@@ -6256,7 +6256,7 @@ public final class DocumentModel: ObservableObject {
     /// and restored on switch-back, so prompting on a switch is wrong.
     /// The user-initiated close path (`closeTab` / `closeOtherTabs` /
     /// `closeTabsToRight`) still gates on `confirmCloseIfDirty` first.
-    private func closeTabUnconditionally(at index: Int) {
+    func closeTabUnconditionally(at index: Int) {   // internal: HotExitTests exercises the spill cleanup
         guard tabs.tabs.indices.contains(index) else { return }
         // UX-K (#231): if we're closing the currently-VISIBLE tab, sample its
         // scroll position first so a snapshot taken right after close (e.g.
@@ -6267,6 +6267,14 @@ public final class DocumentModel: ObservableObject {
             captureScroll(forTabAt: index)
         }
         let closedURL = tabs.tabs[index].url
+        // TSK-1026: a DESTRUCTIVE close orphans any >1 MiB hot-exit spill for
+        // this file (no tab will re-capture it) — drop it so it can't leak on
+        // disk. NOT done on the session-SWITCH close
+        // (`closeAllTabsPreservingDirty`), which intentionally keeps the dirty
+        // buffer for switch-back.
+        if let p = closedURL?.path {
+            HotExitSpill.remove(forPath: p, in: hotExitSpillDirectory)
+        }
         // Coordinator handles the tabs mutation + all six per-tab dict
         // cleanups in lock-step (folded into `cleanupAfterClose`).
         // Returns the closed tab's id so we can also purge non-

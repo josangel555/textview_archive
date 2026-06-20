@@ -283,4 +283,21 @@ final class HotExitTests: XCTestCase {
         XCTAssertEqual(model2.editor.editorBuffer(forTabID: id2)?.text, huge,
                        "the >1 MiB unsaved buffer is restored from the spill")
     }
+
+    func test_closeTab_removesOrphanSpill() throws {
+        // TSK-1026: destructively closing a tab drops its >1 MiB spill (no tab
+        // will re-capture it → would otherwise leak on disk). TEETH: without the
+        // close-time cleanup the spill survives the close.
+        let url = try writeFile("big.txt", "disk")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        let huge = String(repeating: "z", count: DocumentModel.hotExitMaxBytes + 4096)
+        model.editor.updateEditorText(huge, forTabID: id)
+        model.captureUnsavedTextForAllTabs()
+        XCTAssertNotNil(HotExitSpill.read(forPath: url.path, in: model.hotExitSpillDirectory),
+                        "sanity: the large buffer is spilled")
+        model.closeTabUnconditionally(at: 0)
+        XCTAssertNil(HotExitSpill.read(forPath: url.path, in: model.hotExitSpillDirectory),
+                     "closing the tab removes its orphaned spill")
+    }
 }
