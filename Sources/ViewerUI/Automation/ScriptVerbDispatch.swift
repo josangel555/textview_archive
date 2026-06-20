@@ -592,6 +592,44 @@ public enum ScriptVerb {
             // `AppDelegate.settleNanos(for:)`); the in-process headless
             // harness has no wall clock to wait on, so it just no-ops.
             _ = arg
+        case "editor-scroll-to-line":
+            // TSK-1046 (VM scroll-restore test setup): scroll the LIVE CM6 editor
+            // so line N is at the viewport top, WITHOUT moving the caret — the
+            // faithful analogue of a wheel/trackpad scroll (the bug's scenario).
+            // Drives `window.cmDispatch({type:'scrollToLine', line:N})` on the
+            // live editor WebView; CM6's DOM scroll event then posts `scrollChanged`
+            // back, updating `editorScrollByTab` exactly like a hardware scroll.
+            // Needed because synthesized CGEvent keys can't reach the CM6 WebView
+            // (KeySynthUATTests / TSK-1020), so a key-driven scroll is impossible.
+            if let n = Int(arg), n >= 1,
+               let webView = CodeMirrorEditorRegistry.shared.current() {
+                webView.evaluateJavaScript(
+                    "window.cmDispatch && window.cmDispatch({type:'scrollToLine', line: \(n)})",
+                    completionHandler: nil)
+            }
+        case "rendered-scroll-to":
+            // TSK-1046 (VM scroll-restore test setup): scroll the LIVE rendered
+            // Markdown preview to pixel offset N (`window.scrollTo`) — a genuine
+            // on-screen scroll on the real WKWebView, so the switch-away capture
+            // records it and the switch-back restore (the path under test) must
+            // bring it back. Same WKWebView-can't-take-CGEvent-keys constraint as
+            // the editor verb above.
+            if let y = Double(arg), y >= 0,
+               let webView = MarkdownRenderedRegistry.shared.current() {
+                webView.evaluateJavaScript(
+                    "window.scrollTo({top: \(y), behavior: 'instant'})",
+                    completionHandler: nil)
+            }
+        case "capture-rendered-scroll":
+            // TSK-1046: probe the LIVE on-screen `window.scrollY` of the active
+            // rendered-Markdown preview into `LiveScrollProbe.renderedScrollY`,
+            // which the NEXT per-step dump surfaces as `renderedScrollY`. The JS
+            // read is async but resolves well within the post-verb settle delay,
+            // so a scenario does `capture-rendered-scroll` → `delay 0.3` and then
+            // reads the offset off the following dump. This is the only authority
+            // for "did the rendered scroll actually restore on switch-IN" — the
+            // model dump can't see the WebView's real scroll. No-op headless.
+            LiveScrollProbe.captureRenderedScroll()
         case "snapshot":
             // Handled by caller after this returns.
             _ = arg
@@ -708,6 +746,24 @@ public enum ScriptVerb {
             // read-only tab).
             "loadedTextPrefix": model.selectedLoadedTextPrefix,
             "lastGoToError": model.lastGoToError,
+            // TSK-1046: the active editor tab's LIVE top-visible line, as
+            // reported by CM6 itself (the JS `scrollChanged` → `recordEditorScroll`
+            // channel — NOT a model-only value). After a session/tab switch-IN
+            // this reflects where the editor ACTUALLY scrolled on screen, so a VM
+            // UI test can assert the editor scroll was restored (0 / absent ⇒ top
+            // / not an editor tab). The render-path bug (TSK-1046) was precisely
+            // that this came back to the top even though the persisted top line
+            // was correct; pinning it here makes the regression observable.
+            "editorScrollTopLine":
+                model.tabs.selected.flatMap {
+                    model.editorScrollByTab[$0.id]?.viewportFromLine
+                } ?? 0,
+            // TSK-1046: the active rendered-Markdown preview's LIVE on-screen
+            // `window.scrollY`, captured by the most recent `capture-rendered-scroll`
+            // verb (−1 until one runs). The render authority for the rendered
+            // surface's scroll-restore — the dump can't read a live WebView, so the
+            // verb stashes it in `LiveScrollProbe` for the following dump to surface.
+            "renderedScrollY": LiveScrollProbe.renderedScrollY,
             "sessions": sessionSummaries,
             "activeSessionID": sessions.core.activeID?.uuidString ?? "",
             // TSK-522/523: Git Log selection projection (via the live

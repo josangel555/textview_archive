@@ -729,9 +729,13 @@ public struct ContentView: View {
             let lang = model.effectiveLanguage(forTabID: tid, url: file.url)
             let diags = model.pendingEditorDiagnostics[tid] ?? []
             let gutter = model.pendingEditorGutterMarkers[tid] ?? []
-            let seed = model.editorCursorByTab[tid].map {
-                CMSelectionSeed(anchor: $0.head, head: $0.head, scroll: true)
-            }
+            // TSK-1046: the once-per-mount CM6 seed now honors a RESTORED SCROLL
+            // position, not just a restored caret. A session/tab switch-IN may
+            // re-inject only `editorScrollByTab` (a scroll top line, no caret);
+            // `editorMountSelectionSeed` resolves cursor-first, else seeds a
+            // collapsed selection at the restored line's start so the editor
+            // comes back to the same viewport instead of jumping to the top.
+            let seed = model.editorMountSelectionSeed(forTabID: tid)
             VStack(spacing: 0) {
                 if isActive && model.isEditorFindBarPresented {
                     EditorFindBar(find: model.find, uiSize: model.uiSize)

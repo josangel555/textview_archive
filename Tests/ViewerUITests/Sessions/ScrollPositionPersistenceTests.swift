@@ -348,6 +348,104 @@ final class ScrollPositionPersistenceTests: XCTestCase {
                        "seed must not clobber a live editor scroll position")
     }
 
+    // MARK: - TSK-1046: editor render-gap — the mount-time selection seed
+    //
+    // The model fix (TSK-1037) re-seeds editorScrollByTab on restore, but the
+    // ONLY mount-time CM6 scroll path is the `initialSelection` seed, which was
+    // built solely from the CARET. A scroll-only restore (no caret) therefore
+    // left the editor at the top on screen. `editorMountSelectionSeed` is the
+    // render-path fix's model kernel: resolve cursor-first, else seed at the
+    // restored scroll LINE so CM6 scrolls there on mount. These pin that logic
+    // host-side so a regression fails the gate even though the live CM6 scroll
+    // is VM-only (ScrollRestoreUATTests).
+
+    func test_mountSeed_nil_whenNoCursorNoScroll() {
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        model.appendLazyTab(url: a, viewMode: .editor)
+        let tid = model.tabs.tabs[0].id
+        XCTAssertNil(model.editorMountSelectionSeed(forTabID: tid),
+                     "no caret + no restored scroll → no seed (leave at start)")
+    }
+
+    func test_mountSeed_cursorWins_overScrollLine() {
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        model.appendLazyTab(url: a, viewMode: .editor)
+        let tid = model.tabs.tabs[0].id
+        // Both a caret AND a restored scroll line present — the caret wins (it
+        // already scrolls itself into view on apply).
+        model.recordEditorCursor(
+            CMCursorPosition(line: 5, column: 2, head: 42, rangeCount: 1),
+            forTabID: tid)
+        model.seedEditorScroll(fromTopLine: 200, forTabID: tid)
+        let seed = model.editorMountSelectionSeed(forTabID: tid)
+        XCTAssertEqual(seed?.head, 42,
+                       "a restored caret must drive the mount seed")
+        XCTAssertEqual(seed?.anchor, 42, "collapsed selection at the caret")
+        XCTAssertEqual(seed?.scroll, true, "the seed must scroll on apply")
+    }
+
+    func test_mountSeed_fromScrollLine_whenNoCursor() {
+        let model = DocumentModel()
+        // A file whose line offsets are deterministic: each line is "L<n>\n".
+        let url = tmpRoot.appendingPathComponent("seedlines.txt")
+        let body = (1...50).map { "L\($0)" }.joined(separator: "\n") + "\n"
+        try? Data(body.utf8).write(to: url)
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        let tid = model.tabs.selected!.id
+        // Seed a restored scroll top line of 10 with NO caret. The mount seed
+        // must point at the UTF-16 offset of line 10's start.
+        model.seedEditorScroll(fromTopLine: 10, forTabID: tid)
+        let seed = model.editorMountSelectionSeed(forTabID: tid)
+        // Offset of line 10 start: sum of UTF-16 lengths of lines 1..9 incl. \n.
+        // Lines 1..9: "L1".."L9" = 2 chars each + 1 newline = 3 each ⇒ 27.
+        XCTAssertEqual(seed?.head, 27,
+                       "scroll-only seed must land at the restored line's start")
+        XCTAssertEqual(seed?.anchor, seed?.head, "collapsed selection")
+        XCTAssertEqual(seed?.scroll, true, "scroll-only seed must scroll on apply")
+    }
+
+    func test_mountSeed_scrollLineOne_isNoSeed() {
+        let model = DocumentModel()
+        let a = makeFile("code.swift")
+        model.open(url: a)
+        model.setCurrentViewMode(.editor)
+        let tid = model.tabs.selected!.id
+        // A restored top line of 1 is the document start — no seed needed.
+        model.seedEditorScroll(fromTopLine: 1, forTabID: tid)
+        XCTAssertNil(model.editorMountSelectionSeed(forTabID: tid),
+                     "a restored top line of 1 needs no scroll seed")
+    }
+
+    func test_mountSeed_endToEnd_restoreThenSeedScrollsEditor() {
+        // The full editor render-path contract: an editor tab carrying a
+        // persisted scrollTopLine (no caret) → restoreScroll seeds the editor
+        // channel → editorMountSelectionSeed yields a scroll-bearing seed at
+        // that line. Pre-fix this returned nil (cursor-only) so CM6 stayed top.
+        let model = DocumentModel()
+        let url = tmpRoot.appendingPathComponent("e2e.txt")
+        let body = (1...100).map { "row\($0)" }.joined(separator: "\n") + "\n"
+        try? Data(body.utf8).write(to: url)
+        model.open(url: url)                 // synchronous load → tab is .loaded
+        model.setCurrentViewMode(.editor)
+        let tid = model.tabs.selected!.id
+        // Simulate the switch-IN restore's effect on the editor channel (the
+        // restore→seed half is pinned by test_restoreScroll_editorTab_seedsEditorChannel;
+        // here we drive the seed→mount-seed half, the render-path gap TSK-1046 fixed).
+        model.seedEditorScroll(fromTopLine: 40, forTabID: tid)
+        XCTAssertEqual(model.editorScrollByTab[tid]?.viewportFromLine, 40,
+                       "seed must populate the editor channel at line 40")
+        let seed = model.editorMountSelectionSeed(forTabID: tid)
+        XCTAssertNotNil(seed,
+                        "TSK-1046: a scroll-only restore MUST produce a mount seed "
+                        + "(pre-fix this was nil → CM6 stayed at the top)")
+        XCTAssertEqual(seed?.scroll, true)
+        XCTAssertGreaterThan(seed?.head ?? 0, 0,
+                             "the seed must point past the document start")
+    }
+
     // MARK: - TSK-1041: rendered-Markdown (WKWebView) scroll capture + restore
     //
     // The rendered preview is a THIRD scroll channel (`renderedScrollByURL`,

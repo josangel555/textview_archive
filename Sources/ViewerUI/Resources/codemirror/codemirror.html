@@ -1147,6 +1147,7 @@
         case "setLineNumbers":     applySetLineNumbers(msg); break;
         case "setIndentation":     applySetIndentation(msg); break;
         case "gotoLine":           applyGotoLine(msg); break;
+        case "scrollToLine":       applyScrollToLine(msg); break;
         case "insertAtCursor":     applyInsertAtCursor(msg); break;
         case "setSelection":       applySetSelection(msg); break;
         case "openSearch":         openSearchPanel(view); break;
@@ -1412,6 +1413,24 @@
       effects: EditorView.scrollIntoView(pos, { y: "center" }),
     });
     view.focus();
+  }
+
+  // TSK-1046 (VM scroll-restore test setup): scroll line N to the TOP of the
+  // editor viewport WITHOUT moving the caret — the faithful analogue of a user
+  // wheel/trackpad scroll (the bug's actual scenario: scroll, no caret move).
+  // Setting `scrollDOM.scrollTop` fires the DOM scroll event → `scheduleScrollEmit`
+  // → posts `scrollChanged` back to Swift, exactly like a hardware scroll, so the
+  // live `editorScrollByTab` channel updates and the VM test can drive a genuine
+  // on-screen scroll (synthesized CGEvent keys can't reach the CM6 WebView — see
+  // KeySynthUATTests / TSK-1020). Pure test-automation hook; no caret/selection
+  // change, no transaction.
+  function applyScrollToLine(msg) {
+    const lineNum = Math.max(1, Math.min(view.state.doc.lines, Number(msg.line) || 1));
+    const line = view.state.doc.line(lineNum);
+    const block = view.lineBlockAt(line.from);
+    // Top of the target line's block, relative to the document — that's the
+    // scrollTop that puts the line at the viewport top.
+    view.scrollDOM.scrollTop = Math.max(0, Math.round(block.top));
   }
 
   // Insert text at the current selection (Insert Date & Time, TSK-299).

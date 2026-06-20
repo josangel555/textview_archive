@@ -143,10 +143,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
            let parked = WarmWebViewCache.shared.retrieve(forKey: key) {
             let webView = parked.webView
             context.coordinator.adoptNavigationState(from: parked.coordinator)
-            // TSK-1046: a warm re-attach skips the reload (lastHTML == html) so
-            // didFinish won't fire — stash the offset to re-apply once in updateNSView.
-            context.coordinator.pendingReattachScrollY = restoreScrollY
             webView.navigationDelegate = context.coordinator
+            // TSK-1046: keep the live-preview registry current on a warm
+            // re-attach too (idempotent — `register` dedups), so the
+            // `capture-rendered-scroll` probe resolves the re-attached pane.
+            MarkdownRenderedRegistry.shared.register(webView)
             return webView
         }
 
@@ -174,6 +175,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         // WKWebView eats file-URL drags by default; releasing those so the
         // SwiftUI .onDrop on the parent receives them instead.
         webView.unregisterDraggedTypes()
+        // TSK-1046: track the live rendered-preview WebViews so the VM UI test's
+        // `capture-rendered-scroll` probe can read the on-screen `window.scrollY`
+        // (the only authority for "did the rendered scroll actually restore").
+        // Mirrors `CodeMirrorEditorRegistry`; weak refs, pruned on dismantle.
+        MarkdownRenderedRegistry.shared.register(webView)
         #if DEBUG
         MountProbe.webViewMakes += 1   // Fix#1 mount-count probe (TSK-108)
         #endif
@@ -308,16 +314,38 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                 .render, "WKWebView.loadToFinish")
             webView.loadHTMLString(html, baseURL: baseURL)
             coord.lastHTML = html
-        } else if let y = coord.pendingReattachScrollY {
-            // TSK-1046: warm re-attach (no reload → no didFinish). Apply the restored
-            // rendered offset directly, exactly ONCE. The content is already loaded in
-            // the parked WebView, so window.scrollTo takes effect immediately.
-            coord.pendingReattachScrollY = nil
-            if y > 0 {
-                webView.evaluateJavaScript(
-                    "window.scrollTo({top: \(y), behavior: 'instant'});",
-                    completionHandler: nil)
-            }
+            // TSK-1046: this fresh reload will apply `pendingRestoreY` in
+            // `didFinish`. Mark that as the value we'll have applied so the
+            // no-reload re-apply block below doesn't double-fire it.
+            coord.lastAppliedRestoreY = restoreScrollY
+        } else if coord.currentURL == fileURL,
+                  coord.documentReady,
+                  let y = restoreScrollY, y > 0,
+                  coord.lastAppliedRestoreY != y {
+            // TSK-1046 (render-path scroll restore, no-reload path): a restored
+            // scroll offset can arrive for an ALREADY-LOADED page with no HTML
+            // change — so `didFinish` never re-fires to apply it. Three ways this
+            // happens on a session/tab switch-IN: (a) a WARM-CACHE re-attach
+            // (TSK-1042) — `adoptNavigationState` copies `lastHTML` so the reload
+            // gate is a deliberate no-op, and the parked WebView's scroll is
+            // wherever it was parked, NOT the persisted offset; (b) a
+            // `MountedPanesLRU`-RETAINED pane re-shown (no rebuild, no reload);
+            // (c) a REBUILT pane whose SwiftUI body captured `restoreScrollY` as
+            // nil because it rendered BEFORE `DocumentModel.restoreScroll` seeded
+            // `renderedScrollByURL`, then a later `updateNSView` carries the
+            // now-non-nil offset but the reload gate (lastHTML == html) is closed.
+            // Apply it directly here. (`adoptNavigationState` intentionally does
+            // NOT copy `lastAppliedRestoreY`, so a warm re-attach re-applies the
+            // persisted offset exactly once.)
+            // `documentReady` guards against scrolling before the DOM has height;
+            // `lastAppliedRestoreY` makes it idempotent (one apply per distinct
+            // restored value), so this never fights a live scroll the user makes
+            // afterward (that doesn't change `restoreScrollY`).
+            coord.lastAppliedRestoreY = y
+            coord.pendingRestoreY = nil
+            webView.evaluateJavaScript(
+                "window.scrollTo({top: \(y), behavior: 'instant'});",
+                completionHandler: nil)
         }
         if abs(webView.pageZoom - CGFloat(zoom)) > 0.001 {
             webView.pageZoom = CGFloat(zoom)
@@ -453,6 +481,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         webView.configuration.userContentController.removeAllUserScripts()
         coordinator.mermaidInjected = false
         coordinator.pendingFindWebView = nil
+        // TSK-1046: drop the weak registry ref (it self-prunes too, but this is
+        // deterministic).
+        MarkdownRenderedRegistry.shared.unregister(webView)
         #if DEBUG
         MountProbe.webViewDismantles += 1   // Fix#1 mount-count probe (TSK-108)
         #endif
@@ -540,13 +571,13 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// finishes (consumed in `didFinish`; nil ⇒ leave at top).
         var currentURL: URL?
         var pendingRestoreY: Double?
-        /// TSK-1046: a ONE-SHOT scroll offset to apply when a PARKED WebView is
-        /// warm-re-attached (WarmWebViewCache). On re-attach `lastHTML == html`, so
-        /// `updateNSView`'s reload gate is skipped and `didFinish` never fires — the
-        /// normal `pendingRestoreY`/didFinish restore therefore cannot run, which is
-        /// why the rendered scroll reset on a session switch. Set on adopt; consumed
-        /// once in `updateNSView`'s no-reload branch.
-        var pendingReattachScrollY: Double?
+        /// TSK-1046: the last restored scroll offset we actually applied to THIS
+        /// WebView (via `didFinish` after a reload, or the no-reload re-apply
+        /// block in `updateNSView`). Makes the no-reload restore idempotent —
+        /// one apply per distinct restored value — so a retained / rebuilt pane
+        /// that re-receives the same `restoreScrollY` doesn't re-scroll on every
+        /// `updateNSView` tick (which would fight a live scroll the user made).
+        var lastAppliedRestoreY: Double?
         /// TSK-358: the live content-scale (mirrors zoom tracking). Stored so
         /// `didFinish` can re-apply the `--mdv-content-scale` CSS var after a
         /// reload resets the DOM; `lastAppliedScale` debounces the live push.
@@ -1032,5 +1063,81 @@ public enum MarkdownStylesheet {
             return ""
         }
         return s
+    }
+}
+
+/// TSK-1046 — tracks the currently-mounted rendered-Markdown `WKWebView`s so the
+/// VM UI test's `capture-rendered-scroll` script verb can read the LIVE on-screen
+/// `window.scrollY` (the only authority for "did the rendered preview actually
+/// restore its scroll on a session/tab switch-IN"). The model dump is pure model
+/// state and cannot see the WebView's real scroll — which is exactly why this
+/// render-path bug was invisible to headless tests.
+///
+/// Mirrors `CodeMirrorEditorRegistry`: weak refs (the WebViews are owned by
+/// SwiftUI/AppKit), pruned on dismantle and lazily; `current()` returns the
+/// preview in the key window, falling back to the most-recently-registered one.
+@MainActor
+public final class MarkdownRenderedRegistry {
+    public static let shared = MarkdownRenderedRegistry()
+    private final class Weak { weak var value: WKWebView?; init(_ v: WKWebView) { value = v } }
+    private var entries: [Weak] = []
+
+    public func register(_ webView: WKWebView) {
+        prune()
+        if entries.contains(where: { $0.value === webView }) { return }
+        entries.append(Weak(webView))
+    }
+
+    public func unregister(_ webView: WKWebView) {
+        entries.removeAll { $0.value === webView || $0.value == nil }
+    }
+
+    /// The rendered preview WebView whose window is currently key, else the
+    /// most-recently-registered one. Returns nil in a headless process (no
+    /// `NSApp` / no preview mounted).
+    public func current() -> WKWebView? {
+        prune()
+        let app: NSApplication? = NSApp
+        if let key = app?.keyWindow,
+           let inKey = entries.lazy.compactMap({ $0.value })
+            .first(where: { $0.window === key }) {
+            return inKey
+        }
+        return entries.last?.value
+    }
+
+    private func prune() {
+        entries.removeAll { $0.value == nil }
+    }
+}
+
+/// TSK-1046 — a side-channel the `capture-rendered-scroll` script verb writes the
+/// live rendered `window.scrollY` into, so the very next per-step diagnostic dump
+/// can surface it (`renderedScrollY`). The verb evaluates JS asynchronously, so
+/// it stashes the result here for the dump that follows the verb's settle delay —
+/// the same self-describing-side-channel pattern as `UIEventSynth.lastTrace`.
+@MainActor
+public enum LiveScrollProbe {
+    /// The most recently probed live `window.scrollY` of the active rendered
+    /// preview. `-1` until the first `capture-rendered-scroll` verb resolves;
+    /// reset between scenarios by the harness via `reset()`.
+    public static var renderedScrollY: Double = -1
+
+    public static func reset() { renderedScrollY = -1 }
+
+    /// Read the active rendered preview's live `window.scrollY` and stash it in
+    /// `renderedScrollY`. Async (WKWebView JS); the result lands before the
+    /// post-verb settle delay elapses, so the next dump reflects it. No-op (and
+    /// leaves the prior value) when no preview is mounted.
+    public static func captureRenderedScroll() {
+        guard let webView = MarkdownRenderedRegistry.shared.current() else {
+            renderedScrollY = -1
+            return
+        }
+        webView.evaluateJavaScript("window.scrollY") { value, _ in
+            if let y = (value as? NSNumber)?.doubleValue {
+                LiveScrollProbe.renderedScrollY = y
+            }
+        }
     }
 }

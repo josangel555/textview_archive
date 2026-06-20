@@ -276,6 +276,9 @@ public enum ScriptVerbCatalog {
         ScriptVerb("snapshot", .harness, .none, "Capture a per-step PNG+JSON dump (handled by the caller)"),
         ScriptVerb("nav-sweep", .harness, .int, "Run a navigation-interaction sweep for N cycles (profiling)"),
         ScriptVerb("emit-test-log", .harness, .none, "Emit smoke observability events for the Logs view"),
+        ScriptVerb("capture-rendered-scroll", .harness, .none, "Probe the live rendered preview's window.scrollY into the next dump (TSK-1046)"),
+        ScriptVerb("editor-scroll-to-line", .harness, .int, "Scroll the live CM6 editor so line N is at the viewport top, no caret move (TSK-1046)"),
+        ScriptVerb("rendered-scroll-to", .harness, .int, "Scroll the live rendered preview to pixel offset N (TSK-1046)"),
     ]
 
     /// Lookup by verb token. O(1) via the precomputed index.

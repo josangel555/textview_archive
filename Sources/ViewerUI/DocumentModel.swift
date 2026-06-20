@@ -3134,6 +3134,58 @@ public final class DocumentModel: ObservableObject {
         editor.seedEditorScroll(fromTopLine: line, forTabID: id)
     }
 
+    /// TSK-1046 (render-path scroll restore): the once-per-mount CM6 seed for
+    /// the editor tab `id`, used by `ContentView` to drive `initialSelection`.
+    ///
+    /// This closes the render gap behind the TSK-1037 model fix: `restoreScroll`
+    /// → `seedEditorScroll` re-injects the persisted top line into
+    /// `editorScrollByTab`, but the ONLY mount-time CM6 scroll path is the
+    /// `initialSelection` seed — and that was built solely from
+    /// `editorCursorByTab` (the caret). A session/tab switch-IN that restores a
+    /// SCROLL position but no caret therefore left CM6 at the top: the seeded
+    /// dict was read by `captureScroll`/sticky-headers but never applied to the
+    /// live editor. So the on-screen scroll reset even though the model had it.
+    ///
+    /// Resolution order (cursor wins — a restored caret already scrolls itself
+    /// into view via `setSelection(scroll: true)`):
+    ///   1. a restored caret (`editorCursorByTab`) → collapsed selection there;
+    ///   2. else a restored scroll top line (`editorScrollByTab`) → collapsed
+    ///      selection at that LINE START (UTF-16 offset), `scroll: true`, so CM6
+    ///      brings that line to the top of the viewport on mount;
+    ///   3. else nil (leave at the document start).
+    ///
+    /// The line→offset conversion uses the tab's live editor buffer text (or its
+    /// loaded-from-disk text for a not-yet-materialized buffer) and clamps into
+    /// range, so a stale/over-long line can't seed past the document end.
+    public func editorMountSelectionSeed(forTabID id: UUID) -> CMSelectionSeed? {
+        // 1. A restored caret takes precedence and already scrolls to itself.
+        if let cursor = editor.editorCursorByTab[id] {
+            return CMSelectionSeed(anchor: cursor.head, head: cursor.head, scroll: true)
+        }
+        // 2. No caret, but a restored scroll top line — seed a collapsed
+        //    selection at that line's start so CM6 scrolls it into view.
+        guard let line = editor.editorScrollByTab[id]?.viewportFromLine, line > 1 else {
+            return nil
+        }
+        guard let text = editorTextForSeed(tabID: id), !text.isEmpty else { return nil }
+        let converter = LSPPositionConverter(text: text, encoding: .utf16)
+        // LSPPosition is 0-based; line-start = character 0.
+        let rawOffset = converter.utf16Offset(
+            for: LSPPosition(line: line - 1, character: 0))
+        let offset = max(0, min(text.utf16.count, rawOffset))
+        return CMSelectionSeed(anchor: offset, head: offset, scroll: true)
+    }
+
+    /// The text used by `editorMountSelectionSeed` to convert a 1-based top line
+    /// into a UTF-16 offset: the live editor buffer if materialized, else the
+    /// tab's loaded-from-disk contents. nil when neither is available (a tab not
+    /// yet loaded — the seed then falls back to "no scroll seed").
+    private func editorTextForSeed(tabID id: UUID) -> String? {
+        if let buf = editor.editorBuffer(forTabID: id)?.text { return buf }
+        guard let tab = tabs.tabs.first(where: { $0.id == id }) else { return nil }
+        return Self.loadedText(of: tab)
+    }
+
     /// Forwarder. See `EditorCoordinator.setEditorDiagnostics`.
     public func setEditorDiagnostics(_ diags: [LSPDiagnostic], forURL url: URL) {
         editor.setEditorDiagnostics(diags, forURL: url)
