@@ -204,6 +204,54 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
         }
     }
 
+    // MARK: - Split open/close MUST re-body ContentView (TSK-921/922 root cause)
+
+    /// THE BUG (owner: "works when you switch tabs, but if you stay in the tab
+    /// nothing happens"): `splitURL` is `@Published` on `tabCoordinator`, so
+    /// `openInSplit` fires ONLY `tabCoordinator.objectWillChange` — NOT
+    /// `DocumentModel.objectWillChange` (PERF #1; pinned by
+    /// `TabRepublishInvariantTests`). `ContentView` GATES the split pane on
+    /// `splitURL`, so it MUST observe `tabCoordinator` directly or its body
+    /// never re-evaluates on open → the pane doesn't appear until an unrelated
+    /// `model`-republishing event (a tab switch) forces a re-body.
+    ///
+    /// TEETH: this is the direct host pin for the fix. Revert the
+    /// `@ObservedObject var tabCoordinator` on `ContentView` (so the split gate
+    /// is driven only by `model`) and `openInSplit` produces ZERO ContentView
+    /// re-bodies → this fails with `ContentView=0`. With the fix, the
+    /// coordinator observation re-bodies ContentView so the pane is created
+    /// synchronously.
+    func test_openInSplit_reBodiesContentView() throws {
+        let model = makeModel()
+        makeHost(model)
+        let file = folderRoot.appendingPathComponent("file_3.txt")
+        let counts = evals(after: { model.openInSplit(file) })
+        dump("openInSplit", counts)
+        XCTAssertNotNil(model.splitURL, "openInSplit pinned the split file")
+        XCTAssertGreaterThanOrEqual(counts["ContentView"] ?? 0, 1,
+            "ContentView must re-body on openInSplit so the split pane appears "
+            + "WITHOUT a tab switch (it observes tabCoordinator directly); "
+            + "counts: \(describeCounts(counts))")
+    }
+
+    /// CLOSE re-body — the owner's "even worse" half. `closeSplit` sets
+    /// `splitURL = nil` (again coordinator-only), so ContentView must re-body
+    /// to TEAR DOWN the pane. Verified separately from open (distinct path).
+    func test_closeSplit_reBodiesContentView() throws {
+        let model = makeModel()
+        makeHost(model)
+        let file = folderRoot.appendingPathComponent("file_3.txt")
+        model.openInSplit(file)
+        pump()
+        XCTAssertNotNil(model.splitURL)
+        let counts = evals(after: { model.closeSplit() })
+        dump("closeSplit", counts)
+        XCTAssertNil(model.splitURL, "closeSplit cleared the split file")
+        XCTAssertGreaterThanOrEqual(counts["ContentView"] ?? 0, 1,
+            "ContentView must re-body on closeSplit so the split pane disappears "
+            + "WITHOUT a tab switch; counts: \(describeCounts(counts))")
+    }
+
     /// Panel-layout-only republish (tool-window toggle): panelLayout is
     /// its own observable; the bottom/status chrome must not re-body when
     /// a shoulder panel toggles.

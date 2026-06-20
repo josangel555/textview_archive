@@ -31,6 +31,22 @@ public struct ContentView: View {
     /// SEPARATE `ObservableObject` (`terminalPane.terminal`) observed only
     /// inside the terminal view.
     @ObservedObject var terminalPane: TerminalPaneStore
+    /// Tab + split state lives on `tabCoordinator` (see PERF #1 note in
+    /// `DocumentModel.init`: its `objectWillChange` is deliberately NOT
+    /// forwarded into `DocumentModel.objectWillChange`, to avoid a
+    /// republish storm). ContentView's body GATES the split pane on
+    /// `splitURL` (the `if let splitURL = model.splitURL` branch below) —
+    /// so it MUST observe the coordinator directly, or that branch never
+    /// re-evaluates when `splitURL` changes. Without this, `openInSplit` /
+    /// `closeSplit` mutate `tabCoordinator.splitURL` (firing only
+    /// `tabCoordinator.objectWillChange`) yet ContentView never re-bodies,
+    /// so the split pane doesn't appear/disappear until an UNRELATED
+    /// mutation that DOES fire `DocumentModel.objectWillChange` (e.g. a tab
+    /// switch) forces a recompute — the "works only when I switch tabs"
+    /// race (TSK-921/922). Same narrow-observation pattern as `sidebar` /
+    /// `find` / `panelLayout` / `terminalPane`. Pinned by
+    /// `SplitObservationTests`.
+    @ObservedObject var tabCoordinator: TabCoordinator
     @StateObject var walkthrough: WalkthroughPlayerController
     /// App-level sessions coordinator. Optional so SwiftUI previews
     /// and host-side unit tests that construct a bare `ContentView`
@@ -54,6 +70,7 @@ public struct ContentView: View {
         self.find = model.find
         self.panelLayout = model.panelLayout
         self.terminalPane = model.terminalPane
+        self.tabCoordinator = model.tabCoordinator
         self.sessionsApp = sessionsApp
         self.sessionsUIEnabled = sessionsUIEnabled
         self.stylesheet = MarkdownStylesheet.load()
@@ -481,7 +498,15 @@ public struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if let splitURL = model.splitURL {
+            // Read `splitURL` off the DIRECTLY-observed coordinator (not via
+            // the `model.splitURL` forwarder): this branch is what creates /
+            // destroys the split pane, and `tabCoordinator.splitURL` is the
+            // `@Published` it must track. `model.splitURL` returns the same
+            // value, but reading it off `model` does NOT register a dependency
+            // on the coordinator (its `objectWillChange` isn't forwarded into
+            // `DocumentModel` — PERF #1), so this branch would only re-evaluate
+            // on an unrelated `DocumentModel` republish. See the property doc.
+            if let splitURL = tabCoordinator.splitURL {
                 Divider()
                 SplitPaneView(
                     url: splitURL,
@@ -489,7 +514,7 @@ public struct ContentView: View {
                     theme: model.activeTheme,
                     onClose: { model.closeSplit() },
                     model: model,
-                    tabs: model.tabCoordinator
+                    tabs: tabCoordinator
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("mdv.split")
