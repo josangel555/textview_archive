@@ -4,6 +4,8 @@
 
 5-min inline cron resumed (job d1fcac5b; SOP rules: inline-only, never-idle). Landed this firing-chain, each commit per-item, host-gate-green (`main` linear):
 
+- **TSK-1116** (`899b976e`) — View ▸ Focus Mode menu (6 presets) surfacing the host-tested FocusWorkMode engine: PanelLayoutStore.applyOverrides bulk setter + DocumentModel.applyFocusMode (pin sidebar panels + preferred lens-if-supported) + the submenu. Reconcile-filed "built-but-unwired" item. Teeth: apply-pins-panels + lens-when-supported (2) + engine (16). → `fixed` (menu/panel render = review ceiling).
+
 - **TSK-936** (`00e49732`) — Toggle View Only command: ⇧⌘L + View-menu item (checkmark reflects state) + `toggle-view-only` palette verb, flipping the existing ViewModeControl read-only lock. Owner unblocked the key gate (⌘1-9 reserved). 7 surfaces wired (model/descriptor/verb/catalog/menu/validate/test-vocab); teeth = verb flip-state test + CommandRegistry uniqueness/vocab sync. → `fixed` (keypress/menu render = review ceiling).
 
 - **TSK-1113** (`07696606`) — Edit ▸ Transformations menu + `edit-uppercase`/`lowercase`/`capitalize` palette verbs, surfacing the host-tested TextTransform engine (TSK-351) across 4 surfaces (DocumentModel methods, AppKit submenu + validate-enable, ScriptVerbDispatch, ScriptVerbCatalog sync). Teeth: 3 end-to-end verb→file tests + catalog-sync + engine green. → `fixed` (menu render = review ceiling).
