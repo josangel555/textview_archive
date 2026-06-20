@@ -34,6 +34,13 @@
     indentUnit, EditorStateTabSize,
     linter, lintGutter, setDiagnostics, forEachDiagnostic,
     markdown, javascript, python, json, oneDark,
+    // TSK-1135: full-22-language editor highlighting.
+    // Official Lezer packs:
+    rust, java, cpp, sql, html, css, xml, go,
+    // StreamLanguage + legacy-mode stream parsers (wrapped below in
+    // languageFor). *Mode suffix avoids colliding with Lezer pack names.
+    StreamLanguage,
+    swiftMode, luaMode, shellMode, yamlMode, rubyMode, kotlinMode, csharpMode,
     // Phase 4 (v2):
     StateField, StateEffect, foldService, gutter, GutterMarker,
     Decoration, ViewPlugin, WidgetType,
@@ -223,17 +230,66 @@
   }
 
   // ---- language picker -------------------------------------------------
-  // Map a short string from Swift to a CM language extension. Anything
-  // unknown falls through to "no language" (plain text + basic editing).
+  // Map a short string from Swift (the canonical `jsLanguageName` token) OR a
+  // common file-extension alias to a CM language extension. Anything unknown
+  // falls through to "no language" (plain text + basic editing). TSK-1135
+  // expanded this from ~6 languages to the full 22 the native engine covers:
+  //   - Official Lezer packs (rich CM6 LanguageSupport: folding, indent,
+  //     bracket-matching where the pack provides it): json, javascript,
+  //     typescript, jsx, tsx, python, markdown, rust, java, c, cpp, sql,
+  //     html, css, xml, go.
+  //   - @codemirror/legacy-modes stream parsers wrapped via StreamLanguage
+  //     (coarser stream tokenizers, no official Lezer pack): swift, kotlin,
+  //     c#, lua, shell/bash, yaml, ruby.
+  // Legacy modes are wrapped once and memoized — StreamLanguage.define on a
+  // stable parser yields a stable Language, no need to rebuild per call.
+  const _streamLang = (mode) => StreamLanguage.define(mode);
+  const _memoSwift  = _streamLang(swiftMode);
+  const _memoKotlin = _streamLang(kotlinMode);
+  const _memoCSharp = _streamLang(csharpMode);
+  const _memoLua    = _streamLang(luaMode);
+  const _memoShell  = _streamLang(shellMode);
+  const _memoYaml   = _streamLang(yamlMode);
+  const _memoRuby   = _streamLang(rubyMode);
   function languageFor(lang) {
     switch ((lang || "").toLowerCase()) {
+      // --- official Lezer packs ---
       case "markdown": case "md":     return markdown();
-      case "javascript": case "js":   return javascript();
-      case "typescript": case "ts":   return javascript({ typescript: true });
+      case "javascript": case "js":
+      case "mjs": case "cjs":         return javascript();
+      case "typescript": case "ts":
+      case "mts": case "cts":         return javascript({ typescript: true });
       case "jsx":                     return javascript({ jsx: true });
       case "tsx":                     return javascript({ jsx: true, typescript: true });
       case "python": case "py":       return python();
-      case "json":                    return json();
+      case "json": case "jsonc":
+      case "json5":                   return json();
+      case "rust": case "rs":         return rust();
+      case "java":                    return java();
+      // lang-cpp's Lezer grammar parses C as well as C++; route both to it.
+      case "c": case "h":             return cpp();
+      case "cpp": case "c++": case "cc":
+      case "cxx": case "hpp": case "hh":
+      case "hxx":                     return cpp();
+      case "sql":                     return sql();
+      case "html": case "htm":
+      case "xhtml":                   return html();
+      case "css": case "scss":
+      case "sass":                    return css();
+      case "xml": case "plist": case "svg":
+      case "xsl": case "xslt":        return xml();
+      case "go": case "golang":       return go();
+      // --- @codemirror/legacy-modes stream parsers ---
+      case "swift":                   return _memoSwift;
+      case "kotlin": case "kt":
+      case "kts":                     return _memoKotlin;
+      case "csharp": case "c#":
+      case "cs":                      return _memoCSharp;
+      case "lua":                     return _memoLua;
+      case "shell": case "bash":
+      case "sh": case "zsh":          return _memoShell;
+      case "yaml": case "yml":        return _memoYaml;
+      case "ruby": case "rb":         return _memoRuby;
       default:                        return [];
     }
   }

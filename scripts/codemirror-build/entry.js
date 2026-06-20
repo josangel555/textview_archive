@@ -39,6 +39,11 @@ import {
   indentUnit, foldAll, unfoldAll,
   foldService,
   HighlightStyle,
+  // StreamLanguage wraps the legacy CodeMirror-5-style stream parsers
+  // from @codemirror/legacy-modes (swift, kotlin, c#, lua, shell, yaml,
+  // ruby) into CM6 LanguageSupport. Already in the bundle (it ships with
+  // @codemirror/language) — re-exporting just surfaces it on window.CM.
+  StreamLanguage,
 } from "@codemirror/language";
 // TSK-602 ViewOnly↔Editor color parity: the HTML host builds a
 // HighlightStyle from the Swift SyntaxTheme palette, which needs the
@@ -53,6 +58,28 @@ import { markdown } from "@codemirror/lang-markdown";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
+// TSK-1135: full-22-language editor highlighting via official Lezer packs.
+// Each is a real Lezer grammar (tree-sitter-quality CM6 LanguageSupport,
+// with folding / indent / bracket-matching where the pack provides it).
+// lang-cpp's grammar also parses C; lang-html embeds lang-css + lang-js.
+import { rust } from "@codemirror/lang-rust";
+import { java } from "@codemirror/lang-java";
+import { cpp } from "@codemirror/lang-cpp";
+import { sql } from "@codemirror/lang-sql";
+import { html } from "@codemirror/lang-html";
+import { css } from "@codemirror/lang-css";
+import { xml } from "@codemirror/lang-xml";
+import { go } from "@codemirror/lang-go";
+// TSK-1135: languages without an official Lezer pack use the CM5-style
+// stream parsers from @codemirror/legacy-modes, wrapped via StreamLanguage
+// in the HTML host. Regex/stream tokenizers (coarser than Lezer trees, but
+// they highlight correctly). kotlin + csharp are clike variants.
+import { swift as swiftMode } from "@codemirror/legacy-modes/mode/swift";
+import { lua as luaMode } from "@codemirror/legacy-modes/mode/lua";
+import { shell as shellMode } from "@codemirror/legacy-modes/mode/shell";
+import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
+import { ruby as rubyMode } from "@codemirror/legacy-modes/mode/ruby";
+import { kotlin as kotlinMode, csharp as csharpMode } from "@codemirror/legacy-modes/mode/clike";
 import { oneDark } from "@codemirror/theme-one-dark";
 // Vim mode (opt-in; owner-approved 2026-06-15). @replit/codemirror-vim 6.3.0,
 // MIT, maintained by Replit. Bundles into codemirror.js — no runtime npm dep,
@@ -86,7 +113,14 @@ export {
   foldKeymap, foldGutter, indentOnInput,
   indentUnit, foldAll, unfoldAll, EditorStateTabSize,
   foldService,
+  StreamLanguage,
   linter, lintGutter, setDiagnostics, forEachDiagnostic,
   markdown, javascript, python, json, oneDark,
+  // TSK-1135: official Lezer language packs.
+  rust, java, cpp, sql, html, css, xml, go,
+  // TSK-1135: legacy-mode stream parsers (wrapped via StreamLanguage in
+  // the HTML host). Exported under their *Mode names to avoid colliding
+  // with the Lezer pack names above.
+  swiftMode, luaMode, shellMode, yamlMode, rubyMode, kotlinMode, csharpMode,
   vim, Vim, getCM,
 };

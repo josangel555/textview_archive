@@ -150,21 +150,26 @@ final class HighlightLanguageTests: XCTestCase {
     }
 
     /// CM6 Editor coverage honesty: `editorHighlightable` is the source of truth
-    /// for which languages the Edit-mode pixels actually color. Pinned to the
-    /// known CM6 pack set (markdown/js/ts/tsx/python/json). A file can be
-    /// View-highlightable yet Editor-plain (e.g. Rust, C) — that's the second
-    /// half of TSK-897, gated on bundling more @codemirror/lang-* packs.
+    /// for which languages the Edit-mode pixels actually color. TSK-1135 bundled
+    /// CM6 language packs (official Lezer + @codemirror/legacy-modes) for the
+    /// full set the native engine covers, so every language EXCEPT `.plainText`
+    /// is editor-highlightable now. (Pre-TSK-1135 this was just
+    /// markdown/js/ts/tsx/python/json — the old TSK-897 gap.)
     func test_editorHighlightable_matchesBundledCM6Packs() {
-        let cm6 = Set<HighlightLanguage>([.markdown, .javascript, .typescript, .tsx, .python, .json])
+        // Exactly the 22-language set the feature targets — everything except
+        // the no-highlight fallback. (`jsx` rides on the `.javascript` case.)
+        let cm6 = Set<HighlightLanguage>(HighlightLanguage.allCases.filter { $0 != .plainText })
+        XCTAssertEqual(cm6.count, 22, "expected 22 CM6-highlightable languages")
         for lang in HighlightLanguage.allCases {
             XCTAssertEqual(lang.editorHighlightable, cm6.contains(lang),
                            "\(lang.displayName).editorHighlightable drifted from the bundled CM6 pack set")
         }
-        // Every editor-highlightable language must also be View-highlightable
-        // (the editor never colors something the engine can't).
-        for lang in HighlightLanguage.allCases where lang.editorHighlightable {
-            XCTAssertTrue(lang.isHighlightable,
-                          "\(lang.displayName) colors in the editor but not in View mode — inconsistent")
-        }
+        // `.plainText` is the explicit no-highlight fallback.
+        XCTAssertFalse(HighlightLanguage.plainText.editorHighlightable)
+        // NOTE: the CM6 editor path is INDEPENDENT of the View-mode TreeSitter
+        // grammar set, so editor-highlightable is NOT a subset of
+        // `isHighlightable` — the CM6 bundle colors go/html/css/sql/ruby/kotlin/
+        // yaml in Edit mode even though View mode has no bundled grammar for
+        // them yet (TSK-897 / TSK-1135 are two independent code paths).
     }
 }

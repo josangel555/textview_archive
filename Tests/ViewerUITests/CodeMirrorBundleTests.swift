@@ -212,9 +212,62 @@ final class CodeMirrorBundleTests: XCTestCase {
     }
 
     func testLanguageMappingFallsBackToPlain() {
-        XCTAssertEqual(jsLanguageName(for: .ruby),     "plain")
-        XCTAssertEqual(jsLanguageName(for: .go),       "plain")
-        XCTAssertEqual(jsLanguageName(for: .plainText),"plain")
+        // TSK-1135 expanded the CM6 bundle to all 22 languages, so only the
+        // explicit no-highlight fallback (`.plainText`) maps to "plain" now.
+        XCTAssertEqual(jsLanguageName(for: .plainText), "plain")
+    }
+
+    /// TSK-1135: the CM6 editor now ships language packs (official Lezer +
+    /// @codemirror/legacy-modes) for the full set the native tree-sitter engine
+    /// covers. Every detectable language EXCEPT `.plainText` MUST resolve to a
+    /// non-"plain" token AND have a matching `case "<token>":` in the bundled
+    /// `codemirror.html` `languageFor` switch — otherwise it silently renders
+    /// plain in the editor. This is the host guard for the 22-language coverage;
+    /// on-screen per-language highlighting is WebView/VM-validated separately.
+    func testAllTwentyTwoLanguagesMapToANonPlainEditorToken() throws {
+        let html = try String(contentsOf: try XCTUnwrap(CodeMirrorResources.hostHTMLURL), encoding: .utf8)
+        // The 22-language set the feature targets (jsx is folded into the
+        // `.javascript` enum case for file detection; it's exercised via the
+        // host `languageFor` switch directly below).
+        let targets: [HighlightLanguage] = [
+            .json, .rust, .javascript, .typescript, .tsx, .java, .c, .cpp,
+            .csharp, .swift, .kotlin, .lua, .python, .shell, .yaml, .html,
+            .css, .go, .ruby, .markdown, .xml, .sql,
+        ]
+        XCTAssertEqual(targets.count, 22, "expected exactly 22 target languages")
+        for lang in targets {
+            let token = jsLanguageName(for: lang)
+            XCTAssertNotEqual(token, "plain",
+                "\(lang.displayName) must resolve to a non-plain CM6 editor token (TSK-1135 22-language coverage)")
+            XCTAssertTrue(html.contains("case \"\(token)\":"),
+                "codemirror.html `languageFor` has no `case \"\(token)\":` for \(lang.displayName) — editor would render plain")
+        }
+        // `jsx` has no dedicated enum case but the host must still route it
+        // (file extension `.jsx` maps to `.javascript`, but a fenced ```jsx or
+        // an explicit mode pick can send "jsx" directly).
+        XCTAssertTrue(html.contains("case \"jsx\":"),
+            "codemirror.html `languageFor` dropped the `jsx` case — JSX files would lose highlighting")
+    }
+
+    /// TSK-1135: the JS bundle must actually export each new language-pack
+    /// factory (Lezer packs) + the legacy-mode stream parsers + StreamLanguage.
+    /// A rebuild from a stale entry.js (missing an import) trips here instead of
+    /// silently rendering plain at runtime. The IIFE bundle emits `Name:()=>…`
+    /// per re-export, so `Name:` survives minification.
+    func testJSBundleExportsAllLanguagePacks() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
+        let js = String(data: try Data(contentsOf: url), encoding: .utf8) ?? ""
+        for sym in [
+            // Official Lezer packs.
+            "rust:", "java:", "cpp:", "sql:", "html:", "css:", "xml:", "go:",
+            // StreamLanguage wrapper + legacy-mode parsers.
+            "StreamLanguage:",
+            "swiftMode:", "luaMode:", "shellMode:", "yamlMode:",
+            "rubyMode:", "kotlinMode:", "csharpMode:",
+        ] {
+            XCTAssertTrue(js.contains(sym),
+                "codemirror.js missing export \(sym) — re-run scripts/codemirror-build npm run build (TSK-1135)")
+        }
     }
 
     /// TSK-897: `jsLanguageName` (the CM6 Editor's lang token) MUST agree with

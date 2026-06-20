@@ -6,10 +6,30 @@ those tools only run when re-bundling.
 
 ## What's in the bundle
 
-A single IIFE bundle exposing CodeMirror 6 as `window.CM`. Languages:
-markdown, javascript (+ typescript / jsx / tsx), python, json. Theme:
+A single IIFE bundle exposing CodeMirror 6 as `window.CM`. Theme:
 one-dark (toggled via Compartment at runtime). See
 `scripts/codemirror-build/entry.js` for the exact re-exports.
+
+**Languages (TSK-1135 — all 22 the native tree-sitter set covers):**
+- **Official Lezer packs** (`@codemirror/lang-*`, rich CM6 LanguageSupport
+  with folding/indent/bracket-matching where the pack provides it):
+  `markdown`, `javascript` (covers js / ts / jsx / tsx), `python`, `json`,
+  `rust`, `java`, `cpp` (covers C and C++), `sql`, `html` (embeds css + js),
+  `css`, `xml`, `go`.
+- **`@codemirror/legacy-modes` StreamLanguage modes** (CM5-style stream
+  tokenizers, coarser than Lezer but correct — no official Lezer pack exists):
+  `swift`, `kotlin` + `csharp` (both from `mode/clike`), `lua`, `shell`,
+  `yaml`, `ruby`.
+
+The HTML host's `languageFor(lang)` routes the Swift `jsLanguageName` token
+(plus common file-extension aliases — mjs/cjs→js, etc.) to the right pack;
+legacy modes are wrapped once via `StreamLanguage.define` and memoized. The
+22-language coverage is pinned host-side by
+`CodeMirrorBundleTests.testAllTwentyTwoLanguagesMapToANonPlainEditorToken`
++ `testJSBundleExportsAllLanguagePacks`; on-screen per-language highlighting
+is WebView/VM-validated. (This is the parallel/additive CM6-Lezer path; the
+native-tree-sitter-decoration alternative is TSK-1038 — owner picks between
+them.)
 
 Phase 1 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §13):
 the bundle now also re-exports `EditorSelection`, `Transaction`,

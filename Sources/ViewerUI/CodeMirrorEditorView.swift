@@ -1126,22 +1126,48 @@ public final class CodeMirrorEditorRegistry {
 }
 
 /// Map a `HighlightLanguage` to the short token CM6's `setLanguage`
-/// recognizes (defined in `codemirror.html`). Languages CM6 doesn't
-/// have an extension for fall through to plain text — still get
+/// recognizes (defined in `codemirror.html`'s `languageFor`). Languages
+/// CM6 doesn't have an extension for fall through to plain text — still get
 /// editing, undo, search, etc., just no syntax highlighting.
+///
+/// TSK-1135: expanded from ~6 languages to the full 22 the native engine
+/// covers, via the CM6 Lezer + legacy-mode packs bundled into
+/// `Resources/codemirror/codemirror.js`. Every non-"plain" token here MUST
+/// have a matching `case "<token>":` in `codemirror.html`'s `languageFor`
+/// switch — pinned by `CodeMirrorBundleTests.testEveryEmittedLanguageTokenIsHandledByHostHTML`.
+/// This must stay in lock-step with `HighlightLanguage.editorHighlightable`
+/// (pinned by `testJSLanguageNameAgreesWithEditorHighlightable`).
 public func jsLanguageName(for lang: HighlightLanguage) -> String {
     switch lang {
+    // Official Lezer packs.
     case .markdown:    return "markdown"
     case .javascript:  return "javascript"
     case .typescript:  return "typescript"
-    // TSK-897: `.tsx` reuses the bundled JS pack's JSX+TS mode (the host's
+    // `.tsx` reuses the bundled JS pack's JSX+TS mode (the host's
     // `languageFor` handles `case "tsx"` → `javascript({ jsx, typescript })`).
-    // Was missing here, so .tsx files rendered PLAIN in the editor despite the
-    // bundle being able to color them.
     case .tsx:         return "tsx"
     case .python:      return "python"
     case .json:        return "json"
-    default:           return "plain"
+    case .rust:        return "rust"
+    case .java:        return "java"
+    // lang-cpp's Lezer grammar parses C as well as C++.
+    case .c:           return "c"
+    case .cpp:         return "cpp"
+    case .sql:         return "sql"
+    case .html:        return "html"
+    case .css:         return "css"
+    case .xml:         return "xml"
+    case .go:          return "go"
+    // @codemirror/legacy-modes stream parsers (no official Lezer pack).
+    case .swift:       return "swift"
+    case .kotlin:      return "kotlin"
+    case .csharp:      return "csharp"
+    case .lua:         return "lua"
+    case .shell:       return "shell"
+    case .yaml:        return "yaml"
+    case .ruby:        return "ruby"
+    // No CM6 pack bundled for plain text — basic editing only.
+    case .plainText:   return "plain"
     }
 }
 

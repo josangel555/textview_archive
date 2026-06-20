@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **View ▸ Focus Mode** — one-click workspace presets (Coding, Code Reading, Doc Reading, Git History, Git Diff, Code Review) that pin the sidebar to the panels relevant to that activity and switch to the lens it reads best in.
 - **Toggle View Only with ⇧⌘L** — a keyboard shortcut + View-menu item (and command-palette verb) to flip the active tab's read-only lock on/off, instead of only the toolbar checkbox.
 - **Edit ▸ Transformations — Make Upper Case / Make Lower Case / Capitalize** — TextEdit-style case transforms for the active text file, in the Edit menu (and invokable from the command palette). With no selection they transform the whole file.
+- **Syntax highlighting in the editor for 22 languages** — editing a file now colors code for the full set the viewer already highlights: JSON, Rust, JavaScript, TypeScript, JSX, TSX, Java, C, C++, C#, Swift, Kotlin, Lua, Python, Shell/Bash, YAML, HTML, CSS, Go, Ruby, Markdown, XML, and SQL. Previously the editor only colored Markdown, JS/TS/TSX, Python, and JSON — everything else showed as plain text the moment you switched to Edit.
 
 ### Performance
 - **Image-editor adjustment sliders feel smoother** — dragging Brightness/Contrast/etc. no longer re-runs the full image pipeline on every tiny movement; the render now waits for a brief pause and runs once, so the sliders stay responsive.

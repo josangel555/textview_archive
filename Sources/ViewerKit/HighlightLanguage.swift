@@ -234,18 +234,24 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
 
     /// Whether the **CM6 Editor** (Edit mode) can color this language. The
     /// editor is a separate code path from View mode: it ships a prebuilt CM6
-    /// bundle with only a handful of language packs (`codemirror.html`'s
-    /// `languageFor`), NOT the TreeSitter grammar set. TSK-897: this is why a
-    /// file can highlight in View mode yet render plain the moment you switch to
-    /// Edit. Pinned to `jsLanguageName(for:)` by a host test so the two can't
-    /// drift; expanding it needs new `@codemirror/lang-*` packs in the bundle
-    /// (owner-gated dependency add — see the TSK-897 follow-up ticket).
+    /// bundle of language packs (`codemirror.html`'s `languageFor`), NOT the
+    /// TreeSitter grammar set. Pinned to `jsLanguageName(for:)` by a host test
+    /// (`CodeMirrorBundleTests.testJSLanguageNameAgreesWithEditorHighlightable`)
+    /// so the two can't drift.
+    ///
+    /// TSK-1135: the CM6 bundle now ships packs for the full set the native
+    /// engine supports — every official `@codemirror/lang-*` pack plus
+    /// `@codemirror/legacy-modes` StreamLanguage modes for the rest (swift,
+    /// kotlin, c#, lua, shell, yaml, ruby). So every detectable language EXCEPT
+    /// `.plainText` colors in the editor. (This is the parallel/additive CM6
+    /// path; TSK-1038 builds the alternative native-tree-sitter-decoration path
+    /// — the owner picks between them.)
     public var editorHighlightable: Bool {
         switch self {
-        case .markdown, .javascript, .typescript, .tsx, .python, .json:
-            return true
-        default:
+        case .plainText:
             return false
+        default:
+            return true
         }
     }
 
