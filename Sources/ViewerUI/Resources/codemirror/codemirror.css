@@ -38,17 +38,17 @@ body.light { background: #ffffff; color: #1f2328; }
  * stay legible without competing with the code. Theme-scoped via the
  * `body.dark` / `body.light` class set in `applySetTheme`.
  *
- * `font-weight: 600` thickens the hairline `·` / `→` strokes so they
- * register at small font sizes without raising the alpha (which would
- * make them shout). The pilcrow keeps the same tone for a quiet
- * line-ending cue. */
+ * Tuned lighter + thinner per owner request (2026-06-20): a low-alpha
+ * secondary tone + `font-weight: 400` keeps the `·` / `→` / `↵` markers a
+ * quiet hint rather than competing with the code; `↵` (return arrow) is a
+ * lighter line-ending cue than the old pilcrow. */
 .cm-invisible {
-  color: rgba(60, 60, 67, 0.55);
-  font-weight: 600;
+  color: rgba(60, 60, 67, 0.38);
+  font-weight: 400;
   pointer-events: none;
 }
 body.dark .cm-invisible {
-  color: rgba(235, 235, 245, 0.50);
+  color: rgba(235, 235, 245, 0.32);
 }
 /* LSP hover popover. Anchored by CM6's hoverTooltip; we just style the
  * inner content node we ourselves create. Padding + scroll cap so big
