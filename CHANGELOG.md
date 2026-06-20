@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-20
 
 ### Added
+- **Local History** — right-click a file (in the sidebar or its tab) ▸ **Local History** to see a list of saved versions, click one to view it or diff it against the current file, select a range to see the cumulative change across it, and **Restore** a version back into the editor as an undoable edit. Versions are recorded automatically when you save edits (text files only; `.env` and other secret-like files are never kept; 20 MB cap; on by default and configurable).
 - **View ▸ Focus Mode** — one-click workspace presets (Coding, Code Reading, Doc Reading, Git History, Git Diff, Code Review) that pin the sidebar to the panels relevant to that activity and switch to the lens it reads best in.
 - **Toggle View Only with ⇧⌘L** — a keyboard shortcut + View-menu item (and command-palette verb) to flip the active tab's read-only lock on/off, instead of only the toolbar checkbox.
 - **Edit ▸ Transformations — Make Upper Case / Make Lower Case / Capitalize** — TextEdit-style case transforms for the active text file, in the Edit menu (and invokable from the command palette). With no selection they transform the whole file.

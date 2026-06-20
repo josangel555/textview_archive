@@ -315,6 +315,11 @@ private struct TabContextMenu: View {
             // tracked gate.
             Button("File History") { model.openFileHistory(for: url) }
                 .disabled(!model.canShowFileHistory(for: url))
+            // TSK-1103: the unified Local History viewer (works on any file,
+            // not just tracked ones). View saved versions → diff vs current /
+            // range cumulative diff / restore.
+            Button("Local History") { model.openLocalHistory(for: url) }
+                .disabled(!model.canShowLocalHistory(for: url))
             // OPEN-AS FOLD (2026-06-01): the tab-context "Open As…" submenu
             // was fully redundant with the ModeBar "Open As" chip — both act
             // on the CURRENT tab via setCurrentCategoryOverride (this one even

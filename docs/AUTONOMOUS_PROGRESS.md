@@ -1,5 +1,15 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-20 — unified version-history + diff viewer (TSK-301/1103)
+
+Owner-directed RETHINK: ONE well-designed version-history + diff viewer serving BOTH Local History and Git (not the git-diff UI reused as-is). Built on an isolated worktree; host-gate-green.
+
+- **Spike + design** (`docs/research/unified-version-diff-viewer-2026-06-20/README.md`) — full audit of GitClient/FileHistoryView/FileHistoryModel/DiffView/RustDiffAdapter/CumulativeDiffSelection/LocalHistoryStore; proposed a `VersionSource` protocol both back-ends conform to + ONE viewer; reused-vs-replaced ledger; identified the two capability gaps.
+- **Core (ViewerCore):** `VersionSource`/`VersionRef` protocol; `UnifiedDiffGenerator` (string→unified-diff TEXT — line LCS, emits the exact dialect rust-core parses, since the renderer needs unified text and rust-core only PARSES, no new deps); `GitClient.fileContent(rev:path:)` (git show — the missing "view file at a revision"); `LocalHistoryVersionSource` + `GitVersionSource` conformances; `LocalHistoryPolicy` (owner policy: default-on/configurable cap/20MB/text-only/.env+secret exclusion).
+- **UI (ViewerUI):** `UnifiedHistoryViewModel` (generalizes FileHistoryModel over a VersionSource: none/single/range selection + view/diff-vs-current/own-change modes + last-write-wins); `UnifiedHistoryView` (master-detail list → view-version | DiffView | range cumulative-diff + Restore); shared `CommandClickModifier` (extracted from FileHistoryView). Local History wired end-to-end: snapshot-on-save hook in `DocumentModel.saveEditor` (policy-gated, off-main best-effort); `openLocalHistory(for:)`/`(forTabID:)`; sidebar + tab-bar "Local History" menu entries; Restore = `updateEditorText` (undoable buffer edit, NOT a disk write).
+- **Teeth (host, 67 tests):** generator round-trip via the REAL parser (17), policy rules (20), LocalHistoryVersionSource list/content/diff/range (11), view-model state machine (11), save-wiring integration incl. secret-exclusion + disabled-pref (5), GitVersionSource pure pieces (3). Teeth demonstrated: disabling the snapshot call turns the wiring test RED.
+- **Deferred (TSK-1191 filed):** migrating the existing git FileHistoryView/GitLogTab UI onto UnifiedHistoryView (GitVersionSource already built + adoptable; not half-migrating a working git surface). The SwiftUI render of the viewer + Restore-into-editor is the review/VM ceiling (model behavior is host-pinned).
+
 ## LOG 2026-06-20 — inline cron drain (post-API-outage)
 
 5-min inline cron resumed (job d1fcac5b; SOP rules: inline-only, never-idle). Landed this firing-chain, each commit per-item, host-gate-green (`main` linear):

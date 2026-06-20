@@ -37,6 +37,13 @@ public final class DocumentModel: ObservableObject {
     /// to TabCoordinator for buffer access.
     public let editor: EditorCoordinator
 
+    /// On-disk Local History store (TSK-301/1103). Snapshots saved editor
+    /// content per the owner policy (`LocalHistoryPolicy`) so the unified
+    /// version viewer can list/view/diff/restore earlier revisions. One store
+    /// for the app; keyed by absolute file path. Default location:
+    /// `~/Library/Application Support/MarkdownViewer/LocalHistory/`.
+    public let localHistoryStore: LocalHistoryStore
+
     /// Multi-repo git registry: demand resolution + per-root watchers +
     /// focus tracking. A sibling coordinator (like `editor`) that drives
     /// `trackedRepos` (the channel) and the off-main store. Views NEVER
@@ -427,11 +434,15 @@ public final class DocumentModel: ObservableObject {
         ),
         sidebar: SidebarModel = SidebarModel(),
         preferences: PreferencesStore = PreferencesStore(),
+        // On-disk Local History store (TSK-301/1103). Injectable so tests can
+        // point it at a temp dir; production uses the default App Support path.
+        localHistory: LocalHistoryStore = LocalHistoryStore(),
         // Injectable for tests (TSK-627: fake-server registry e2e). The
         // default is the production pool over LSPLanguageRegistry.default.
         lspPool: LSPPool = LSPPool()
     ) {
         self.lspPool = lspPool
+        self.localHistoryStore = localHistory
         self.controller = controller
         self.history = history
         self.goToPathHistory = goToPathHistory
@@ -2569,6 +2580,105 @@ public final class DocumentModel: ObservableObject {
         openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
     }
 
+    /// Open the UNIFIED version viewer for the tab's file backed by **Local
+    /// History** (TSK-1103). Lists the file's saved versions; the user can view
+    /// a version, diff it vs the current (live) editor content, select a range
+    /// for a cumulative diff, and **Restore** a version into the editor as an
+    /// undoable edit (NOT a disk write). No-op when the tab has no file URL.
+    ///
+    /// `currentContent` reads the LIVE editor buffer (falling back to disk) so
+    /// "diff vs current" reflects unsaved edits. `onRestore` pushes the chosen
+    /// version's text through `updateEditorText` — a normal buffer edit the user
+    /// can Cmd-Z and must explicitly save (which then snapshots it as a new
+    /// version). This is the integration seam with the save path.
+    public func openLocalHistory(forTabID id: UUID) {
+        guard let url = tabs.tabs.first(where: { $0.id == id })?.url else { return }
+        let path = url.standardizedFileURL.path
+        let store = localHistoryStore
+        let tabID = id
+        // Live current content for "diff vs current". The diff loads run on a
+        // detached (off-main) task, so this closure must be main-actor-safe.
+        // We hold a thread-safe latest-snapshot box updated on the main actor,
+        // and refresh it from the live editor buffer (falling back to disk) each
+        // time the closure is read via a synchronous main-actor hop.
+        let currentContent: @Sendable () -> String? = { [weak self] in
+            // `DispatchQueue.main.sync` is safe here: the caller is a detached
+            // background task, never the main thread (which would deadlock).
+            if Thread.isMainThread {
+                return MainActor.assumeIsolated {
+                    self?.editorBuffer(forTabID: tabID)?.text
+                        ?? (try? String(contentsOf: url, encoding: .utf8))
+                }
+            }
+            return DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    self?.editorBuffer(forTabID: tabID)?.text
+                        ?? (try? String(contentsOf: url, encoding: .utf8))
+                }
+            }
+        }
+        let source = LocalHistoryVersionSource(
+            store: store,
+            path: path,
+            displayName: url.lastPathComponent,
+            currentContent: currentContent)
+        let view = UnifiedHistoryView(
+            doc: self,
+            source: source,
+            kind: .localHistory,
+            onRestore: { [weak self] text in
+                self?.updateEditorText(text, forTabID: tabID)
+            })
+        openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
+    }
+
+    /// Whether the active-or-given tab can show Local History — it has a file
+    /// URL (Local History is keyed by path; an untitled buffer has none).
+    public func canShowLocalHistory(forTabID id: UUID) -> Bool {
+        tabs.tabs.first(where: { $0.id == id })?.url != nil
+    }
+
+    /// Open the unified Local-History viewer for a file URL (used by the sidebar
+    /// file context menu, which has a URL not a tab id). If a tab is already open
+    /// for `url`, Restore targets it (an undoable buffer edit); otherwise Restore
+    /// is unavailable (no editor to push into) but viewing/diffing still works.
+    public func openLocalHistory(for url: URL) {
+        let path = url.standardizedFileURL.path
+        let store = localHistoryStore
+        // Find an open editable tab for this url so Restore can target it.
+        let openTabID = tabs.tabs.first {
+            $0.url?.standardizedFileURL.path == path
+        }?.id
+        let currentContent: @Sendable () -> String? = { [weak self] in
+            let read: @MainActor () -> String? = {
+                if let tabID = openTabID,
+                   let text = self?.editorBuffer(forTabID: tabID)?.text {
+                    return text
+                }
+                return try? String(contentsOf: url, encoding: .utf8)
+            }
+            if Thread.isMainThread { return MainActor.assumeIsolated { read() } }
+            return DispatchQueue.main.sync { MainActor.assumeIsolated { read() } }
+        }
+        let source = LocalHistoryVersionSource(
+            store: store, path: path,
+            displayName: url.lastPathComponent,
+            currentContent: currentContent)
+        let onRestore: ((String) -> Void)? = openTabID.map { tabID in
+            { [weak self] text in self?.updateEditorText(text, forTabID: tabID) }
+        }
+        let view = UnifiedHistoryView(
+            doc: self, source: source, kind: .localHistory, onRestore: onRestore)
+        openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
+    }
+
+    /// Whether Local History can be shown for `url` — it has saved versions.
+    /// (Always offer the menu; the viewer shows a friendly "no versions yet"
+    /// empty state when there are none, so this returns true for any file URL.)
+    public func canShowLocalHistory(for url: URL) -> Bool {
+        url.isFileURL
+    }
+
     /// Path of `url` relative to `root` (slash-joined, no leading slash),
     /// or `nil` when `url` isn't under `root`. Standardizes + resolves
     /// symlinks on both sides so a repo under `/var` (symlink to
@@ -3899,8 +4009,36 @@ public final class DocumentModel: ObservableObject {
                 repoFocus.refreshRepo(enclosing: url)
                 notifyLSPDidSave(url)
             }
+            // Local History (TSK-301/1103): record this saved revision so the
+            // unified version viewer can list/view/diff/restore it. Best-effort
+            // + policy-gated; never affects the save result.
+            snapshotLocalHistoryAfterSave(forTabID: id)
         }
         return ok
+    }
+
+    /// Snapshot the just-saved editor content into Local History, subject to the
+    /// owner policy (`LocalHistoryPolicy`): default-on, text-only, secret-like
+    /// files (`.env`, `*.pem`, …) excluded, 20MB cap. Reads the post-save buffer
+    /// (its `text` == the bytes just written). A self-contained best-effort call
+    /// off the save result — a snapshot failure must never fail the save.
+    private func snapshotLocalHistoryAfterSave(forTabID id: UUID) {
+        guard let buf = editor.editorBuffer(forTabID: id) else { return }
+        let path = buf.url.standardizedFileURL.path
+        let content = buf.text
+        // Use the SAME UserDefaults the app's preferences are backed by so a
+        // persisted "Local History off" toggle (and tests' injected suite) is
+        // honored, not just `.standard`.
+        let decision = LocalHistoryPolicy.decideSnapshot(
+            path: path, content: content, defaults: preferences.defaults)
+        guard decision.isAllowed else { return }
+        let store = localHistoryStore
+        let now = Date()
+        // Off-main: snapshot does disk IO (write + prune). Capture only Sendable
+        // values; the store is Sendable.
+        Task.detached(priority: .utility) {
+            store.snapshot(path: path, content: content, at: now)
+        }
     }
 
     /// Fire a `textDocument/didSave` to the LSP server after a successful

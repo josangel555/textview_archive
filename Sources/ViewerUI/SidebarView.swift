@@ -1143,6 +1143,17 @@ private struct FileRowContextMenu: View {
                 model.showCrossSearch(scope: .pickedFolder(node.url))
             }
         }
+        if !node.isDirectory {
+            // Unified Local History viewer (TSK-1103): list saved versions →
+            // view / diff-vs-current / range cumulative diff / restore. Works on
+            // any file (not just tracked ones); the viewer shows a friendly empty
+            // state when there are no saved versions yet.
+            Divider()
+            Button("Local History") {
+                model.openLocalHistory(for: node.url)
+            }
+            .disabled(!model.canShowLocalHistory(for: node.url))
+        }
         if trackedRepos.trackedRoots.isEmpty == false {
             Divider()
             if !node.isDirectory {
