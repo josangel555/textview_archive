@@ -251,6 +251,18 @@ Standing operating procedure for autonomous/heartbeat runs (the screen is the
 agent's until the owner says stop; work in waves, don't stop to ask "should I
 continue", document blockers and move on):
 
+> **TWO HARD RULES FOR EVERY CRON / AUTOMATED FIRING (owner directive
+> 2026-06-20) — these override anything below that conflicts:**
+> 1. **Work INLINE — do NOT use the Workflow tool or any multi-agent fan-out.**
+>    The main loop does the work DIRECTLY, ONE item at a time (spike → implement
+>    → test → gate → commit). Workflows spin dozens of agents and burn tokens (a
+>    120-agent reconcile cost ~6M); the cron run is deliberately lean + inline.
+>    Fan-out / `Workflow` is ONLY for owner-triggered "ultracode" sessions.
+> 2. **NEVER stop with "there is no more work."** There is ALWAYS plenty. If the
+>    actionable queue looks empty, PULL FROM THE BOARD: validate `fixed` items
+>    (with teeth), push `review`, triage `reported`, fix bugs, re-verify — drain
+>    toward `done`. A "no work" stop is a PROCESS FAILURE, not a valid state.
+
 - **Each firing: read `docs/TASK_WORKFLOW.md` IN FULL and follow it** — it is
   the single operating procedure (lane goals, prioritization, lifecycle,
   validation policy) and the authoritative copy where this summary drifts.
@@ -263,8 +275,11 @@ continue", document blockers and move on):
   RETIRED — never recreate or spoof them. The board is **shared across
   projects** — grep this repo before acting on a task; skip foreign
   `agent:forge`/`sess-forge-*` tasks.
-- **PRIORITY (owner directive 2026-06-14): DRAIN `WORK_QUEUE.md` top-down.**
-  `WORK_QUEUE.md` (repo root) is the owner-curated next-~50 features/bugs,
+- **PRIORITY: DRAIN the latest `docs/CURATED_TASKS_<date>.md` top-down** (e.g.
+  `docs/CURATED_TASKS_2026-06-20.md` + its `Next 50` worklist — the current
+  curated selector). `WORK_QUEUE.md` was SUPERSEDED (reconciled 2026-06-19 into
+  the dated curated lists); same drain discipline. The curated list is the
+  owner-curated next-~50 features/bugs,
   already ordered by priority (Section 0 Perf → A Quick wins → B `[PARTIAL]`
   slices → C Medium → D Epics; E = owner-input-needed, skip). Each firing: pick
   the next UNCHECKED item, drive its `TSK-###` on the board to at least

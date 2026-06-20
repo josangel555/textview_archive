@@ -17,6 +17,14 @@ real backlog sat untouched. That is the failure mode this doc exists to prevent.
 is a *last resort*, never the default. If the only thing left is paper cuts, you are probably
 ignoring the board or mis-prioritizing — re-query and re-read §3.
 
+**CRON / AUTOMATED RUNS — two hard rules (owner directive 2026-06-20):**
+**(1) Work INLINE — never use the `Workflow` tool or any multi-agent fan-out.** The main loop does
+the work directly, ONE item at a time (spike → implement → test → gate → commit). Fan-out is ONLY for
+owner-triggered "ultracode" sessions (a 120-agent reconcile cost ~6M tokens — the cron run is lean/inline).
+**(2) NEVER stop with "no more work."** There is ALWAYS work; if the feature pool looks empty, DRAIN the
+board (validate `fixed` with teeth, push `review`, triage `reported`, fix bugs). A "no work" stop is a
+process failure — see §5.
+
 ---
 
 ## 0.5 Spike + design autonomy + chipping order (OWNER DIRECTIVE 2026-06-13)
@@ -242,12 +250,15 @@ cheaper can prove the behavior (compositor/occlusion class). Disturb the human o
 
 ---
 
-## 5. When the actionable pool is genuinely empty
+## 5. The actionable pool is almost NEVER genuinely empty (owner directive 2026-06-20)
 
-Then — and only then — a **documented HOLD** is the honest move (a no-op that keeps `main`
-gate-green), with the live-gated / owner-gated blockers crisply listed in `DECISIONS NEEDED`.
-Do NOT fill the gap with marginal paper cuts. The owner would rather see "blocked on X, here's
-the one decision I need" than ten throwaway tests.
+**Do NOT stop with "there is no more work."** Before any HOLD, DRAIN THE BOARD — this is real work,
+not paper cuts: validate `fixed` items (with teeth that would catch a regression), push `review`,
+triage `reported` into actionable lanes, re-verify landed work, fix the next bug. Only when EVERY lane
+is genuinely exhausted AND the remainder is truly owner-gated is a **documented HOLD** the honest move
+— a no-op that keeps `main` gate-green, with the owner-gated blockers crisply listed in `DECISIONS
+NEEDED`. Even then, prefer board-draining (validate / review / triage) over marginal paper-cut backfill.
+A "no work" stop while `reported`/`fixed`/`review` still have items is a PROCESS FAILURE, not a HOLD.
 
 ---
 
