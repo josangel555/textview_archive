@@ -60,7 +60,28 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
         XCTAssertEqual(after, "{\"a\":1,\"b\":2}", "JSON must be minified")
     }
 
-    /// All nine new verbs must be RECOGNIZED by the dispatcher (a no-op on a
+    func test_uppercase_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("up.txt", "Hello World\n")
+        XCTAssertTrue(apply("edit-uppercase", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "HELLO WORLD\n", "TSK-1113: text must be uppercased")
+    }
+
+    func test_lowercase_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("low.txt", "Hello WORLD\n")
+        XCTAssertTrue(apply("edit-lowercase", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "hello world\n", "TSK-1113: text must be lowercased")
+    }
+
+    func test_capitalize_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("cap.txt", "hello world\n")
+        XCTAssertTrue(apply("edit-capitalize", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "Hello World\n", "TSK-1113: each word must be title-cased")
+    }
+
+    /// Every new verb must be RECOGNIZED by the dispatcher (a no-op on a
     /// non-applicable file still returns true — the verb is known). Guards the
     /// registry↔dispatcher vocabulary wiring for every command in the slice.
     func test_allNewVerbs_areRecognized() throws {
@@ -70,6 +91,7 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "edit-remove-empty-lines", "edit-collapse-blank-lines",
             "edit-trim-trailing", "edit-ensure-final-newline",
             "edit-minify-json", "edit-insert-toc", "edit-insert-date",
+            "edit-uppercase", "edit-lowercase", "edit-capitalize",
         ] {
             XCTAssertTrue(apply(verb, on: model), "\(verb) must be a recognized script verb")
         }

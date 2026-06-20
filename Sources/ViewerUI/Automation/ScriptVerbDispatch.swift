@@ -128,6 +128,10 @@ public enum ScriptVerb {
         case "edit-minify-json":           _ = model.minifyActiveJSON()
         case "edit-insert-toc":            _ = model.insertTableOfContents()
         case "edit-insert-date":           model.insertDateAndTime()
+        // TSK-1113: TextEdit-parity case transforms (engine TSK-351).
+        case "edit-uppercase":             _ = model.makeActiveFileUpperCase()
+        case "edit-lowercase":             _ = model.makeActiveFileLowerCase()
+        case "edit-capitalize":            _ = model.capitalizeActiveFile()
         // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.

@@ -5706,6 +5706,23 @@ public final class DocumentModel: ObservableObject {
         applyTextTransformToActiveFile(LineOps.collapseBlankLines)
     }
 
+    /// Edit ▸ Transformations (TSK-1113, surfacing the TSK-351 TextTransform
+    /// engine) — TextEdit-parity case transforms over the whole active text
+    /// file (encoding preserved). No-op (false) when there's no active text
+    /// file or the text is already in the target form.
+    @discardableResult
+    public func makeActiveFileUpperCase() -> Bool {
+        applyTextTransformToActiveFile { TextTransform.apply(.uppercase, to: $0) }
+    }
+    @discardableResult
+    public func makeActiveFileLowerCase() -> Bool {
+        applyTextTransformToActiveFile { TextTransform.apply(.lowercase, to: $0) }
+    }
+    @discardableResult
+    public func capitalizeActiveFile() -> Bool {
+        applyTextTransformToActiveFile { TextTransform.apply(.capitalize, to: $0) }
+    }
+
     /// TSK-675 — strip trailing spaces/tabs from every line (line endings + all
     /// other content preserved).
     @discardableResult

@@ -2095,6 +2095,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         linesItem.submenu = linesMenu
         editMenu.addItem(linesItem)
+        // Edit ▸ Transformations (TSK-1113) — TextEdit-parity case transforms.
+        let transformItem = NSMenuItem(title: "Transformations", action: nil, keyEquivalent: "")
+        let transformMenu = NSMenu(title: "Transformations")
+        let transformActions: [(String, Selector)] = [
+            ("Make Upper Case", #selector(makeUpperCase(_:))),
+            ("Make Lower Case", #selector(makeLowerCase(_:))),
+            ("Capitalize", #selector(capitalizeText(_:))),
+        ]
+        for (title, action) in transformActions {
+            let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            mi.target = self
+            transformMenu.addItem(mi)
+        }
+        transformItem.submenu = transformMenu
+        editMenu.addItem(transformItem)
         // Minify the active JSON file (compact; key order + values preserved).
         let minifyJSONItem = NSMenuItem(title: "Minify JSON",
                                         action: #selector(minifyJSON(_:)), keyEquivalent: "")
@@ -2664,6 +2679,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func promoteHeadings(_ sender: Any?) { _ = model.shiftActiveMarkdownHeadings(by: -1) }
     @objc func demoteHeadings(_ sender: Any?) { _ = model.shiftActiveMarkdownHeadings(by: 1) }
 
+    /// Edit ▸ Transformations (TSK-1113) — TextEdit-parity case transforms over the active file.
+    @objc func makeUpperCase(_ sender: Any?) { _ = model.makeActiveFileUpperCase() }
+    @objc func makeLowerCase(_ sender: Any?) { _ = model.makeActiveFileLowerCase() }
+    @objc func capitalizeText(_ sender: Any?) { _ = model.capitalizeActiveFile() }
+
     /// Edit ▸ Lines — whole-file line operations on the active text file.
     @objc func sortLinesAsc(_ sender: Any?) { _ = model.sortActiveFileLines(ascending: true) }
     @objc func sortLinesDesc(_ sender: Any?) { _ = model.sortActiveFileLines(ascending: false) }
@@ -2942,8 +2962,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
              #selector(convertIndentToSpaces(_:)), #selector(convertIndentToTabs(_:)),
              #selector(sortLinesAsc(_:)), #selector(sortLinesDesc(_:)),
              #selector(reverseLines(_:)), #selector(removeDuplicateLines(_:)),
-             #selector(removeEmptyLines(_:)), #selector(collapseBlankLines(_:)):
-            // TSK-675: any active text file.
+             #selector(removeEmptyLines(_:)), #selector(collapseBlankLines(_:)),
+             #selector(makeUpperCase(_:)), #selector(makeLowerCase(_:)),
+             #selector(capitalizeText(_:)):
+            // TSK-675 / TSK-1113: any active text file.
             return model.canCleanUpActiveFile
         case #selector(showDocumentStatistics(_:)):
             // TSK-675: any active text file.
