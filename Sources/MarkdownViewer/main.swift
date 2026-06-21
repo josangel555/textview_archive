@@ -1405,6 +1405,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             item.tag = i
             newFileSubmenu.addItem(item)
         }
+        // TSK-1167: Image is binary (not a text NewFileType), so add it
+        // explicitly — it routes to the New Image size/color dialog.
+        let newImageSubItem = NSMenuItem(
+            title: "Image…", action: #selector(newImage(_:)), keyEquivalent: "")
+        newImageSubItem.target = self
+        newFileSubmenu.addItem(newImageSubItem)
         newFileItem.submenu = newFileSubmenu
         fileMenu.addItem(newFileItem)
 

@@ -1125,6 +1125,12 @@ private struct FileRowContextMenu: View {
                 ForEach(NewFileType.allCases, id: \.self) { type in
                     Button(type.title) { model.createNewFile(in: node.url, type: type) }
                 }
+                // TSK-1167: Image (binary) — create a blank image in this folder + open.
+                Button("Image") {
+                    if let url = model.createNewBlankImage(in: node.url) {
+                        model.openPath(url)
+                    }
+                }
             }
             Divider()
             Button("Open in Terminal") {
