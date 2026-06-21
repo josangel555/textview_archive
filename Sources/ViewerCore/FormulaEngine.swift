@@ -487,9 +487,100 @@ public enum FormulaEngine {
             if case .error = v { return evaluate(args[1], &ctx) }
             return v
 
+        case "MEDIAN":
+            var err: FormulaError?
+            let nums = numericValues(of: args, &ctx, errorOut: &err)
+            if let err { return .error(err) }
+            guard !nums.isEmpty else { return .error(.num) }
+            let s = nums.sorted()
+            let mid = s.count / 2
+            return .number(s.count % 2 == 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2)
+
+        case "SIGN":
+            guard args.count == 1 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            guard let x = v.asNumber else { return .error(.value) }
+            return .number(x > 0 ? 1 : (x < 0 ? -1 : 0))
+
+        case "EXP", "LN", "LOG10":
+            guard args.count == 1 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            guard let x = v.asNumber else { return .error(.value) }
+            switch name {
+            case "EXP":   return .number(Foundation.exp(x))
+            case "LN":    return x > 0 ? .number(Foundation.log(x)) : .error(.num)
+            case "LOG10": return x > 0 ? .number(Foundation.log10(x)) : .error(.num)
+            default:      return .error(.name)
+            }
+
+        case "TRUNC":
+            guard args.count == 1 || args.count == 2 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            guard let x = v.asNumber else { return .error(.value) }
+            var digits = 0
+            if args.count == 2 {
+                let dv = evaluate(args[1], &ctx); if case .error = dv { return dv }
+                guard let d = dv.asNumber else { return .error(.value) }
+                digits = Int(d)
+            }
+            let factor = Foundation.pow(10.0, Double(digits))
+            return .number((x * factor).rounded(.towardZero) / factor)
+
+        case "PROPER":
+            guard args.count == 1 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            return .text(v.asText.capitalized)     // first letter of each word up, rest down
+
+        case "EXACT":
+            guard args.count == 2 else { return .error(.value) }
+            let a = evaluate(args[0], &ctx); if case .error = a { return a }
+            let b = evaluate(args[1], &ctx); if case .error = b { return b }
+            return .boolean(a.asText == b.asText)   // case-sensitive, unlike =
+
+        case "REPT":
+            guard args.count == 2 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            let nv = evaluate(args[1], &ctx); if case .error = nv { return nv }
+            guard let d = nv.asNumber, d >= 0 else { return .error(.value) }
+            let n = Int(d)
+            let s = v.asText
+            guard s.count * n <= 32767 else { return .error(.value) }   // Excel REPT cap; guards memory
+            return .text(String(repeating: s, count: n))
+
+        case "SUBSTITUTE":
+            guard args.count == 3 || args.count == 4 else { return .error(.value) }
+            let tv = evaluate(args[0], &ctx); if case .error = tv { return tv }
+            let ov = evaluate(args[1], &ctx); if case .error = ov { return ov }
+            let rv = evaluate(args[2], &ctx); if case .error = rv { return rv }
+            let text = tv.asText, oldS = ov.asText, newS = rv.asText
+            guard !oldS.isEmpty else { return .text(text) }
+            if args.count == 4 {
+                let iv = evaluate(args[3], &ctx); if case .error = iv { return iv }
+                guard let iD = iv.asNumber, iD >= 1 else { return .error(.value) }
+                return .text(substituteNth(text, oldS, newS, Int(iD)))
+            }
+            return .text(text.replacingOccurrences(of: oldS, with: newS))
+
         default:
             return .error(.name)
         }
+    }
+
+    /// SUBSTITUTE's 4-arg form: replace only the `n`-th (1-based) occurrence of
+    /// `old` with `new`; if there are fewer than `n` occurrences, return unchanged.
+    private static func substituteNth(_ text: String, _ old: String, _ new: String, _ n: Int) -> String {
+        var result = ""
+        var rest = Substring(text)
+        var seen = 0
+        while let r = rest.range(of: old) {
+            seen += 1
+            if seen == n {
+                return result + rest[..<r.lowerBound] + new + rest[r.upperBound...]
+            }
+            result += rest[..<r.upperBound]
+            rest = rest[r.upperBound...]
+        }
+        return result + rest
     }
 }
 
