@@ -23,7 +23,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image editor — full selection toolkit** — select a region with the rectangular marquee or the free-form lasso (dashed outline); drag inside it to move it, or Copy/Cut it to the clipboard, Paste an image in, Crop to it, Delete it (erase to transparent), Select All, or Invert the selection.
 - **Image editor — flip & rotate** — Flip Horizontal/Vertical and Rotate Left / Right / 180° (all undoable).
 - **Image editor — invert colors** — turn the image into a photo-negative (undoable).
-- **Image editor — clear** — fill the whole canvas with the current paint color.
+- **Image editor — foreground & background colors** — a second (background) color with a Swap button; Clear fills the whole canvas with the background color.
 - **Image editor — resize** — a Resize dialog to scale the image by percent or to exact pixel dimensions, with an optional aspect-ratio lock.
 - **Image editor — more save formats** — Save a Copy now writes BMP, GIF, and TIFF in addition to PNG, JPEG, and HEIC.
 - **Image editor — canvas size** — the Resize dialog has a "Canvas size" mode that pads or crops the canvas to new dimensions without scaling the image.
