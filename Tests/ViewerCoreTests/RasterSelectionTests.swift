@@ -82,4 +82,26 @@ final class RasterSelectionTests: XCTestCase {
         XCTAssertEqual(canvas.pixel(x: 1, y: 1), .green, "polygon interior filled")
         XCTAssertEqual(canvas.pixel(x: 8, y: 8), .white, "outside the polygon untouched")
     }
+
+    // MARK: - bounds (TSK-1064/1066)
+
+    func test_bounds_rect() {
+        let b = RasterSelection.rect(x: 2, y: 3, width: 4, height: 5).bounds
+        XCTAssertEqual(b?.x, 2); XCTAssertEqual(b?.y, 3)
+        XCTAssertEqual(b?.width, 4); XCTAssertEqual(b?.height, 5)
+    }
+
+    func test_bounds_polygon_isVertexBBox() {
+        let b = RasterSelection.polygon([
+            RasterPoint(x: 1, y: 1), RasterPoint(x: 5, y: 1), RasterPoint(x: 3, y: 4),
+        ]).bounds
+        XCTAssertEqual(b?.x, 1); XCTAssertEqual(b?.y, 1)
+        XCTAssertEqual(b?.width, 5, "maxX-minX+1 = 5")
+        XCTAssertEqual(b?.height, 4, "maxY-minY+1 = 4")
+    }
+
+    func test_bounds_degenerate_isNil() {
+        XCTAssertNil(RasterSelection.rect(x: 0, y: 0, width: 0, height: 5).bounds)
+        XCTAssertNil(RasterSelection.polygon([RasterPoint(x: 0, y: 0)]).bounds)
+    }
 }

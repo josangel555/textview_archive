@@ -12,6 +12,24 @@ public enum RasterSelection: Sendable, Equatable {
     /// Freeform polygon (lasso) — ordered vertices; implicitly closed.
     case polygon([RasterPoint])
 
+    /// Integer bounding box (top-left origin), or nil if degenerate/empty. For a
+    /// polygon it's the min/max of the vertices (inclusive). TSK-1064/1066 — lets
+    /// the selection ops scan a tight box and mask per-pixel via `contains`.
+    public var bounds: (x: Int, y: Int, width: Int, height: Int)? {
+        switch self {
+        case let .rect(x, y, w, h):
+            guard w > 0, h > 0 else { return nil }
+            return (x, y, w, h)
+        case let .polygon(points):
+            guard points.count >= 3 else { return nil }
+            let xs = points.map(\.x), ys = points.map(\.y)
+            let minX = xs.min()!, maxX = xs.max()!, minY = ys.min()!, maxY = ys.max()!
+            let w = maxX - minX + 1, h = maxY - minY + 1
+            guard w > 0, h > 0 else { return nil }
+            return (minX, minY, w, h)
+        }
+    }
+
     /// Whether pixel `(x, y)` is inside the selection.
     public func contains(x: Int, y: Int) -> Bool {
         switch self {

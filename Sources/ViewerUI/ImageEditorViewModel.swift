@@ -511,17 +511,17 @@ public final class ImageEditorViewModel: ObservableObject {
         return true
     }
 
-    /// TSK-1066 — clear the selected region to transparency (delete). No-op
-    /// without a rect selection. Bakes a destructive paint session, like the
-    /// brush/eraser.
+    /// TSK-1066/1064 — clear the selected region to transparency (delete). Works
+    /// for ANY selection (rect OR lasso polygon) via the mask-aware fill. No-op
+    /// without a selection. Bakes a destructive paint session, like the eraser.
     @discardableResult
     public func deleteSelection() -> Bool {
-        guard case let .rect(x, y, w, h) = selection,
+        guard let sel = selection, sel.bounds != nil,
               beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
-        let n = canvas.fillRect(x: x, y: y, width: w, height: h, to: .clear)
+        canvas.fill(.clear, in: sel)
         paintCanvas = canvas
         render()
-        return n > 0
+        return true
     }
 
     /// TSK-1066 — select the entire image.
@@ -530,11 +530,22 @@ public final class ImageEditorViewModel: ObservableObject {
         selection = .rect(x: 0, y: 0, width: img.width, height: img.height)
     }
 
-    /// TSK-1066 — the current selection as a standalone image: the rendered pixels
-    /// cropped to the selection rect, or nil without a rect selection.
+    /// TSK-1066/1064 — the current selection as a standalone image: the rendered
+    /// pixels in the selection's bounding box, with pixels OUTSIDE a lasso polygon
+    /// cleared to transparency. Nil without a selection. Works for rect + polygon.
     public func selectionImage() -> CGImage? {
-        guard case let .rect(x, y, w, h) = selection, let img = rendered else { return nil }
-        return img.cropping(to: CGRect(x: x, y: y, width: w, height: h))
+        guard let sel = selection, let b = sel.bounds, let img = rendered,
+              let cropped = img.cropping(
+                to: CGRect(x: b.x, y: b.y, width: b.width, height: b.height)) else { return nil }
+        if case .rect = sel { return cropped }   // a rect's bbox IS the selection
+        // Polygon: mask out pixels outside the lasso.
+        guard var patch = RasterCanvas.from(cropped) else { return nil }
+        for py in 0..<patch.height {
+            for px in 0..<patch.width where !sel.contains(x: b.x + px, y: b.y + py) {
+                patch.setPixel(x: px, y: py, to: .clear)
+            }
+        }
+        return patch.cgImage()
     }
 
     /// TSK-1066 — copy the selected region to the pasteboard as an image.

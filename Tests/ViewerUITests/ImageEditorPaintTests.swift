@@ -517,4 +517,31 @@ final class ImageEditorPaintTests: XCTestCase {
         vm.setSelection(.rect(x: 0, y: 0, width: 4, height: 4))
         XCTAssertFalse(vm.moveSelection(byX: 0, y: 0), "zero move → no-op")
     }
+
+    // MARK: - mask-aware ops for a polygon selection (TSK-1064 foundation)
+
+    func test_deleteSelection_polygon_clearsOnlyInsideMask() throws {
+        let vm = try makeVM(w: 10, h: 10, r: 1, g: 1, b: 1)   // opaque white
+        vm.setSelection(.polygon([
+            RasterPoint(x: 0, y: 0), RasterPoint(x: 8, y: 0), RasterPoint(x: 0, y: 8),
+        ]))   // top-left triangle
+        XCTAssertTrue(vm.deleteSelection())
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 1, y: 1).a, 4,
+                                 "inside the triangle → cleared")
+        XCTAssertEqual(sample(vm.rendered!, x: 7, y: 7).a, 255,
+                       "outside the triangle → opaque")
+    }
+
+    func test_selectionImage_polygon_masksOutsideToTransparent() throws {
+        let vm = try makeVM(w: 10, h: 10, r: 1, g: 1, b: 1)
+        vm.setSelection(.polygon([
+            RasterPoint(x: 0, y: 0), RasterPoint(x: 8, y: 0), RasterPoint(x: 0, y: 8),
+        ]))
+        let img = try XCTUnwrap(vm.selectionImage())
+        XCTAssertEqual(img.width, 9, "bbox width = maxX-minX+1")
+        XCTAssertEqual(img.height, 9)
+        XCTAssertLessThanOrEqual(sample(img, x: 8, y: 8).a, 4,
+                                 "outside the polygon → transparent in the extract")
+        XCTAssertEqual(sample(img, x: 1, y: 1).a, 255, "inside the polygon → opaque")
+    }
 }
