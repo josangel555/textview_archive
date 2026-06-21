@@ -263,6 +263,7 @@ public enum ScriptVerbCatalog {
 
         // ---- Command Palette ----
         ScriptVerb("show-palette", .palette, .none, "Show the command palette"),
+        ScriptVerb("show-dependency-graph", .view, .none, "Open the project's import dependency graph"),
         ScriptVerb("dismiss-palette", .palette, .none, "Dismiss the command palette"),
         ScriptVerb("show-goto", .palette, .none, "Show the GoTo path prompt"),
         ScriptVerb("dismiss-goto", .palette, .none, "Dismiss the GoTo path prompt"),
