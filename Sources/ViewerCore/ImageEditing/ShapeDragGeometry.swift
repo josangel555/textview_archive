@@ -20,6 +20,19 @@ public enum ShapeDragGeometry {
         return CGRect(x: na.x, y: na.y, width: nb.x - na.x, height: nb.y - na.y).standardized
     }
 
+    /// Like `normalizedRect` but PRESERVES drag direction (NOT standardized) — for
+    /// open shapes (line / arrow) whose endpoint order is meaningful. Origin = `a`,
+    /// size = `b - a` (width/height may be negative). Endpoints clamped to `0...1`.
+    /// Returns `.null` when `displayed` is degenerate.
+    public static func normalizedSignedRect(
+        from a: CGPoint, to b: CGPoint, in displayed: CGRect
+    ) -> CGRect {
+        guard displayed.width > 0, displayed.height > 0 else { return .null }
+        let na = normalizedPoint(a, in: displayed)
+        let nb = normalizedPoint(b, in: displayed)
+        return CGRect(x: na.x, y: na.y, width: nb.x - na.x, height: nb.y - na.y)
+    }
+
     /// A view point as a fraction (`0...1`, clamped) of `displayed`.
     static func normalizedPoint(_ p: CGPoint, in displayed: CGRect) -> CGPoint {
         let fx = (p.x - displayed.minX) / displayed.width

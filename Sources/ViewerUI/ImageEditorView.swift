@@ -64,20 +64,26 @@ struct ImageEditorView: View {
                     // exact rect the fitted image occupies — a pure SwiftUI
                     // sibling (Canvas), so no opaque-representable occlusion.
                     VectorOverlayView(overlay: vm.overlay, imageRect: displayed)
-                    // TSK-1059: live rubber-band while dragging a shape tool.
+                    // TSK-1059/1058: live rubber-band while dragging a shape tool.
                     if vm.tool.isShape, let s = shapeDragStart, let c = shapeDragCurrent {
-                        let r = CGRect(x: min(s.x, c.x), y: min(s.y, c.y),
-                                       width: abs(c.x - s.x), height: abs(c.y - s.y))
-                        Group {
-                            if vm.tool.shapeKind == .ellipse {
-                                Ellipse().stroke(Color.accentColor, lineWidth: 1)
-                            } else {
-                                Rectangle().stroke(Color.accentColor, lineWidth: 1)
+                        if vm.tool.isOpenShape {
+                            Path { p in p.move(to: s); p.addLine(to: c) }
+                                .stroke(Color.accentColor, lineWidth: 1)
+                                .allowsHitTesting(false)
+                        } else {
+                            let r = CGRect(x: min(s.x, c.x), y: min(s.y, c.y),
+                                           width: abs(c.x - s.x), height: abs(c.y - s.y))
+                            Group {
+                                if vm.tool.shapeKind == .ellipse {
+                                    Ellipse().stroke(Color.accentColor, lineWidth: 1)
+                                } else {
+                                    Rectangle().stroke(Color.accentColor, lineWidth: 1)
+                                }
                             }
+                            .frame(width: r.width, height: r.height)
+                            .position(x: r.midX, y: r.midY)
+                            .allowsHitTesting(false)
                         }
-                        .frame(width: r.width, height: r.height)
-                        .position(x: r.midX, y: r.midY)
-                        .allowsHitTesting(false)
                     }
                 }
                 .contentShape(Rectangle())
@@ -105,12 +111,19 @@ struct ImageEditorView: View {
                             lastPaintPixel = px
                         }
                         .onEnded { value in
-                            if vm.tool.isShape {
+                            if let kind = vm.tool.shapeKind {
                                 defer { shapeDragStart = nil; shapeDragCurrent = nil }
-                                let rect = ShapeDragGeometry.normalizedRect(
-                                    from: value.startLocation, to: value.location, in: displayed)
-                                if rect.width > 0.001, rect.height > 0.001 {
-                                    vm.drawShape(vm.tool.shapeKind ?? .rect, normalizedFrame: rect)
+                                let open = vm.tool.isOpenShape
+                                let rect = open
+                                    ? ShapeDragGeometry.normalizedSignedRect(
+                                        from: value.startLocation, to: value.location, in: displayed)
+                                    : ShapeDragGeometry.normalizedRect(
+                                        from: value.startLocation, to: value.location, in: displayed)
+                                let big = open
+                                    ? (abs(rect.width) > 0.001 || abs(rect.height) > 0.001)
+                                    : (rect.width > 0.001 && rect.height > 0.001)
+                                if big {
+                                    vm.drawShape(kind, normalizedFrame: rect)
                                 }
                                 return
                             }
@@ -277,6 +290,8 @@ struct ImageEditorView: View {
             Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
             Image(systemName: "rectangle").tag(ImageEditorViewModel.RasterTool.drawRect)
             Image(systemName: "circle").tag(ImageEditorViewModel.RasterTool.drawEllipse)
+            Image(systemName: "line.diagonal").tag(ImageEditorViewModel.RasterTool.drawLine)
+            Image(systemName: "arrow.up.right").tag(ImageEditorViewModel.RasterTool.drawArrow)
         }
         .pickerStyle(.segmented)
         .labelsHidden()

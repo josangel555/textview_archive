@@ -42,4 +42,15 @@ final class ShapeDragGeometryTests: XCTestCase {
         XCTAssertTrue(ShapeDragGeometry.normalizedRect(
             from: .zero, to: CGPoint(x: 1, y: 1), in: .zero).isNull)
     }
+
+    func test_normalizedSignedRect_preservesDirection() {
+        // Drag from bottom-left (35,170) → top-right (85,70): rightward + upward.
+        let r = ShapeDragGeometry.normalizedSignedRect(
+            from: CGPoint(x: 35, y: 170), to: CGPoint(x: 85, y: 70), in: displayed)
+        XCTAssertEqual(r.origin.x, 0.25, accuracy: 0.001, "origin = the start point")
+        XCTAssertEqual(r.origin.y, 0.75, accuracy: 0.001)
+        // `size` is the RAW signed size (`.width`/`.height` would be absolute).
+        XCTAssertGreaterThan(r.size.width, 0, "rightward → positive width")
+        XCTAssertLessThan(r.size.height, 0, "upward → negative height (direction kept, not standardized)")
+    }
 }

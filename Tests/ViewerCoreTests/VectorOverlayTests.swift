@@ -14,6 +14,30 @@ final class VectorOverlayTests: XCTestCase {
                     frame: CGRect(x: x, y: y, width: w, height: h))
     }
 
+    // MARK: - Open-shape endpoints preserve direction (TSK-1058)
+
+    func test_openShape_startEnd_preserveSignedFrameDirection() {
+        // A line stored with a SIGNED frame (negative height = upward) reports
+        // start=origin, end=origin+size — preserving the drag direction so an
+        // up-right drag renders up-right, not as the box's ↘ diagonal.
+        let line = VectorShape(kind: .line,
+                               frame: CGRect(x: 0.2, y: 0.8, width: 0.6, height: -0.6))
+        XCTAssertEqual(line.start.x, 0.2, accuracy: 0.001)
+        XCTAssertEqual(line.start.y, 0.8, accuracy: 0.001)
+        XCTAssertEqual(line.end.x, 0.8, accuracy: 0.001)
+        XCTAssertEqual(line.end.y, 0.2, accuracy: 0.001, "an upward line ends ABOVE its start")
+    }
+
+    func test_closedShape_startEnd_areBoxCorners() {
+        // A standardized (positive) frame still reports top-left / bottom-right,
+        // so existing shapes are unchanged by the origin-based accessors.
+        let r = VectorShape(kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.4))
+        XCTAssertEqual(r.start.x, 0.1, accuracy: 0.001)
+        XCTAssertEqual(r.start.y, 0.1, accuracy: 0.001)
+        XCTAssertEqual(r.end.x, 0.6, accuracy: 0.001)
+        XCTAssertEqual(r.end.y, 0.5, accuracy: 0.001)
+    }
+
     // MARK: - Add / count / read
 
     func testAddAppendsFrontMostAndReturnsId() {

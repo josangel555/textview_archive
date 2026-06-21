@@ -74,6 +74,10 @@ public final class ImageEditorViewModel: ObservableObject {
         case drawRect
         /// Ellipse: click-drag to draw a vector ellipse outline. TSK-1060.
         case drawEllipse
+        /// Line: click-drag to draw a vector line (direction-preserving). TSK-1058.
+        case drawLine
+        /// Arrow: a line with a head at the end point. TSK-1058.
+        case drawArrow
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool { self == .brush || self == .eraser || self == .pencil }
@@ -86,9 +90,15 @@ public final class ImageEditorViewModel: ObservableObject {
             switch self {
             case .drawRect: return .rect
             case .drawEllipse: return .ellipse
+            case .drawLine: return .line
+            case .drawArrow: return .arrow
             default: return nil
             }
         }
+
+        /// Open shapes (line / arrow) keep drag direction; closed shapes (rect /
+        /// ellipse) are stored as a standardized box.
+        var isOpenShape: Bool { self == .drawLine || self == .drawArrow }
 
         /// The color this tool paints with, given the user's selected `base`.
         /// The eraser paints transparency; every other tool uses `base`.
@@ -378,8 +388,8 @@ public final class ImageEditorViewModel: ObservableObject {
         case .pencil:      return brushDab(atX: x, y: y)   // resolvedRadius → 0 (1px)
         case .eraser:      return brushDab(atX: x, y: y)   // resolvedColor → .clear
         case .floodFill:   return floodFill(atX: x, y: y)
-        case .drawRect:    return 0   // drag-committed via drawShape, not a click
-        case .drawEllipse: return 0
+        // Shape tools are drag-committed via drawShape, not a click.
+        case .drawRect, .drawEllipse, .drawLine, .drawArrow: return 0
         }
     }
 

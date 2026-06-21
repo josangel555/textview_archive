@@ -276,14 +276,34 @@ final class ImageEditorPaintTests: XCTestCase {
     func test_rasterTool_shapeKind() {
         XCTAssertEqual(ImageEditorViewModel.RasterTool.drawRect.shapeKind, .rect)
         XCTAssertEqual(ImageEditorViewModel.RasterTool.drawEllipse.shapeKind, .ellipse)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.drawLine.shapeKind, .line)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.drawArrow.shapeKind, .arrow)
         XCTAssertNil(ImageEditorViewModel.RasterTool.brush.shapeKind)
         XCTAssertNil(ImageEditorViewModel.RasterTool.floodFill.shapeKind)
+    }
+
+    func test_rasterTool_isOpenShape() {
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.drawLine.isOpenShape)
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.drawArrow.isOpenShape)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.drawRect.isOpenShape)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.brush.isOpenShape)
     }
 
     func test_drawShape_addsEllipse() throws {
         let vm = try makeVM(w: 10, h: 10)
         _ = vm.drawShape(.ellipse, normalizedFrame: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.6))
         XCTAssertEqual(vm.overlay.shapes.last?.kind, .ellipse)
+    }
+
+    func test_drawShape_lineKeepsSignedFrameDirection() throws {
+        let vm = try makeVM(w: 10, h: 10)
+        // An upward line: signed frame (negative height) → end above start.
+        let frame = CGRect(x: 0.2, y: 0.8, width: 0.6, height: -0.6)
+        _ = vm.drawShape(.line, normalizedFrame: frame)
+        let shape = try XCTUnwrap(vm.overlay.shapes.last)
+        XCTAssertEqual(shape.kind, .line)
+        XCTAssertEqual(shape.start.y, 0.8, accuracy: 0.001)
+        XCTAssertEqual(shape.end.y, 0.2, accuracy: 0.001, "drawn line keeps its upward direction")
     }
 
     func test_drawShape_addsRectWithPaintColorAndSliderWidth() throws {

@@ -128,11 +128,17 @@ public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
         self.style = style
     }
 
-    /// Endpoint accessors for the open shapes — `start` is the frame's top-left
-    /// corner, `end` its bottom-right. Closed shapes can read them too (they map
-    /// to the box corners) but it's only meaningful for line / arrow.
-    public var start: CGPoint { CGPoint(x: frame.minX, y: frame.minY) }
-    public var end: CGPoint { CGPoint(x: frame.maxX, y: frame.maxY) }
+    /// Endpoint accessors for the open shapes — `start` is the frame ORIGIN, `end`
+    /// is origin+size. A SIGNED frame (negative width/height, as a drag-drawn line
+    /// stores) therefore PRESERVES its direction (TSK-1058); for a standardized
+    /// frame (closed shapes, the centered-line button) these still equal the
+    /// top-left / bottom-right corners, so existing shapes are unchanged.
+    public var start: CGPoint { frame.origin }
+    public var end: CGPoint {
+        // `frame.size` is the RAW (signed) size; `frame.width/height` would return
+        // absolute values and drop the line's direction.
+        CGPoint(x: frame.origin.x + frame.size.width, y: frame.origin.y + frame.size.height)
+    }
 
     /// Translate the shape by a normalized delta, clamped so the frame's ORIGIN
     /// stays within `0...1` (the shape can extend past the right/bottom edge,
@@ -143,7 +149,7 @@ public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
         var copy = self
         let nx = Self.clampUnit(frame.origin.x + dx)
         let ny = Self.clampUnit(frame.origin.y + dy)
-        copy.frame = CGRect(x: nx, y: ny, width: frame.width, height: frame.height)
+        copy.frame = CGRect(x: nx, y: ny, width: frame.size.width, height: frame.size.height)
         return copy
     }
 
