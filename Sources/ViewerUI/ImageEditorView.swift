@@ -425,6 +425,8 @@ struct ImageEditorView: View {
                         .accessibilityIdentifier("mdv.imageEditor.cropToSelection")
                     Button("Delete") { vm.deleteSelection() }
                         .accessibilityIdentifier("mdv.imageEditor.deleteSelection")
+                    Button("Invert") { vm.invertSelection() }
+                        .accessibilityIdentifier("mdv.imageEditor.invertSelection")
                     Button("Deselect") { vm.clearSelection() }
                 }
             }

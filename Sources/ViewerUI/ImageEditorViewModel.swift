@@ -533,6 +533,20 @@ public final class ImageEditorViewModel: ObservableObject {
         selection = .rect(x: 0, y: 0, width: img.width, height: img.height)
     }
 
+    /// TSK-1066 — invert the selection: select everything OUTSIDE the current
+    /// selection (its complement within the image). No-op without a selection.
+    @discardableResult
+    public func invertSelection() -> Bool {
+        guard let sel = selection, let img = rendered else { return false }
+        // Inverting an existing complement just unwraps back to the base.
+        if case let .everythingExcept(base, _, _) = sel {
+            selection = base
+        } else {
+            selection = .everythingExcept(sel, imageWidth: img.width, imageHeight: img.height)
+        }
+        return true
+    }
+
     /// TSK-1066/1064 — the current selection as a standalone image: the rendered
     /// pixels in the selection's bounding box, with pixels OUTSIDE a lasso polygon
     /// cleared to transparency. Nil without a selection. Works for rect + polygon.

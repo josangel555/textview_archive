@@ -104,4 +104,22 @@ final class RasterSelectionTests: XCTestCase {
         XCTAssertNil(RasterSelection.rect(x: 0, y: 0, width: 0, height: 5).bounds)
         XCTAssertNil(RasterSelection.polygon([RasterPoint(x: 0, y: 0)]).bounds)
     }
+
+    // MARK: - everythingExcept / invert (TSK-1066)
+
+    func test_everythingExcept_containsComplement() {
+        let inv = RasterSelection.everythingExcept(
+            .rect(x: 0, y: 0, width: 4, height: 4), imageWidth: 10, imageHeight: 10)
+        XCTAssertFalse(inv.contains(x: 1, y: 1), "inside the base → NOT in the complement")
+        XCTAssertTrue(inv.contains(x: 8, y: 8), "outside the base + in-image → in the complement")
+        XCTAssertFalse(inv.contains(x: 20, y: 20), "out of image → not in the complement")
+    }
+
+    func test_everythingExcept_boundsIsWholeImage() {
+        let inv = RasterSelection.everythingExcept(
+            .rect(x: 2, y: 2, width: 3, height: 3), imageWidth: 12, imageHeight: 9)
+        let b = inv.bounds
+        XCTAssertEqual(b?.x, 0); XCTAssertEqual(b?.y, 0)
+        XCTAssertEqual(b?.width, 12); XCTAssertEqual(b?.height, 9)
+    }
 }

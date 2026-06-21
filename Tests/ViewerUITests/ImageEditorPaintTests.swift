@@ -544,4 +544,26 @@ final class ImageEditorPaintTests: XCTestCase {
                                  "outside the polygon → transparent in the extract")
         XCTAssertEqual(sample(img, x: 1, y: 1).a, 255, "inside the polygon → opaque")
     }
+
+    // MARK: - invert selection (TSK-1066)
+
+    func test_invertSelection_togglesComplement() throws {
+        let vm = try makeVM(w: 10, h: 10)
+        vm.setSelection(.rect(x: 0, y: 0, width: 4, height: 4))
+        XCTAssertTrue(vm.invertSelection())
+        guard case .everythingExcept = vm.selection else { return XCTFail("expected a complement") }
+        XCTAssertTrue(vm.invertSelection(), "inverting again unwraps to the base")
+        XCTAssertEqual(vm.selection, .rect(x: 0, y: 0, width: 4, height: 4))
+    }
+
+    func test_deleteSelection_inverted_clearsOutsideTheBase() throws {
+        let vm = try makeVM(w: 10, h: 10, r: 1, g: 1, b: 1)   // white
+        vm.setSelection(.rect(x: 0, y: 0, width: 4, height: 4))
+        vm.invertSelection()                                  // everything EXCEPT the 4x4
+        XCTAssertTrue(vm.deleteSelection())
+        XCTAssertEqual(sample(vm.rendered!, x: 1, y: 1).a, 255,
+                       "inside the excluded base → kept opaque")
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 8, y: 8).a, 4,
+                                 "the complement is cleared to transparent")
+    }
 }

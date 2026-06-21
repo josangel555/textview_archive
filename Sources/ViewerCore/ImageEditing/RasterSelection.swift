@@ -11,6 +11,10 @@ public enum RasterSelection: Sendable, Equatable {
     case rect(x: Int, y: Int, width: Int, height: Int)
     /// Freeform polygon (lasso) — ordered vertices; implicitly closed.
     case polygon([RasterPoint])
+    /// The COMPLEMENT of `base` within an image of the given size — every pixel
+    /// NOT in `base`. The Invert Selection action (TSK-1066). Recursive so it can
+    /// wrap a rect or a lasso polygon.
+    indirect case everythingExcept(RasterSelection, imageWidth: Int, imageHeight: Int)
 
     /// Integer bounding box (top-left origin), or nil if degenerate/empty. For a
     /// polygon it's the min/max of the vertices (inclusive). TSK-1064/1066 — lets
@@ -27,6 +31,9 @@ public enum RasterSelection: Sendable, Equatable {
             let w = maxX - minX + 1, h = maxY - minY + 1
             guard w > 0, h > 0 else { return nil }
             return (minX, minY, w, h)
+        case let .everythingExcept(_, w, h):
+            guard w > 0, h > 0 else { return nil }
+            return (0, 0, w, h)   // the complement spans the whole image
         }
     }
 
@@ -38,6 +45,8 @@ public enum RasterSelection: Sendable, Equatable {
             return x >= rx && x < rx + w && y >= ry && y < ry + h
         case let .polygon(points):
             return Self.pointInPolygon(x: x, y: y, points: points)
+        case let .everythingExcept(base, w, h):
+            return x >= 0 && x < w && y >= 0 && y < h && !base.contains(x: x, y: y)
         }
     }
 
@@ -82,7 +91,7 @@ public extension RasterCanvas {
         case let .rect(rx, ry, w, h):
             minX = max(0, rx); minY = max(0, ry)
             maxX = min(width, rx + w); maxY = min(height, ry + h)
-        case .polygon:
+        case .polygon, .everythingExcept:
             minX = 0; minY = 0; maxX = width; maxY = height
         }
         guard minX < maxX, minY < maxY else { return }
