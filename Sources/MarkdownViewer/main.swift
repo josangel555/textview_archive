@@ -930,6 +930,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showWalkthroughsBrowser()
     }
 
+    /// TSK-1121 — File ▸ Annotations: a jump-list of the active file's TODO/FIXME/… markers.
+    @objc func showAnnotations(_ sender: Any?) {
+        model.showAnnotations()
+    }
+
     /// TSK-1054 / TSK-1208 — File ▸ New Image: prompt for size + background
     /// color, then create + open a blank image. Defaults are pre-filled so a
     /// quick Return makes an 800×600 white canvas.
@@ -1485,6 +1490,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showWalkthroughsBrowser(_:)), keyEquivalent: "")
         walkthroughsItem.target = self
         fileMenu.addItem(walkthroughsItem)
+
+        // TSK-1121: File → Annotations — a jump-list of the active file's
+        // TODO/FIXME/HACK/XXX/NOTE/BUG markers (SourceAnnotationScanner).
+        let annotationsItem = NSMenuItem(
+            title: "Annotations",
+            action: #selector(showAnnotations(_:)), keyEquivalent: "")
+        annotationsItem.target = self
+        fileMenu.addItem(annotationsItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
