@@ -799,6 +799,59 @@ public func mdvCoreParseDiff(text: String) throws -> [DiffFile] {
     }
 }
 
+/// A formula evaluation result in RustCore's own vocabulary. ViewerCore's
+/// `RustFormulaAdapter` maps it to the app's `FormulaValue` (RustCore cannot
+/// depend on ViewerCore). `error` carries the Excel-style code Rust emits
+/// ("dividebyzero", "value", "na", …).
+public enum CoreFormulaValue: Sendable, Equatable {
+    case number(Double)
+    case text(String)
+    case boolean(Bool)
+    case blank
+    case error(String)
+}
+
+/// Evaluate `formulas` in the Rust core (TSK-1213, STATELESS): a
+/// `{formulas, cells}` request frame in, a `{values:[…]}` response out. `cells`
+/// is the A1→raw-text snapshot the formulas resolve against (a missing key is a
+/// blank cell). Throws `CoreError` on a bridge fault so the adapter can fall
+/// back to the Swift engine.
+public func mdvCoreEvaluateFormulas(
+    _ formulas: [String], cells: [String: String]
+) throws -> [CoreFormulaValue] {
+    let cellPairs: [(MsgPackValue, MsgPackValue)] = cells.map { (.string($0.key), .string($0.value)) }
+    let request = MsgPackValue.map([
+        (.string("formulas"), .array(formulas.map { .string($0) })),
+        (.string("cells"), .map(cellPairs)),
+    ])
+    guard let body = try CoreTransportRegistry.current.call("formula_evaluate", request: request) else {
+        throw CoreError.decode("empty formula_evaluate response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let valuesVal = map["values"] else { throw CoreError.decode("missing 'values'") }
+        return try valuesVal.arrayValue().map(decodeFormulaValue)
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
+private func decodeFormulaValue(_ v: MsgPackValue) throws -> CoreFormulaValue {
+    let map = try v.mapValue()
+    guard let kind = try map["kind"]?.stringValue() else {
+        throw CoreError.decode("formula value missing 'kind'")
+    }
+    switch kind {
+    case "number": return .number(try (map["value"] ?? .nilValue).doubleValue())
+    case "text": return .text(try (map["value"] ?? .string("")).stringValue())
+    case "bool": return .boolean(try (map["value"] ?? .bool(false)).boolValue())
+    case "blank": return .blank
+    case "error": return .error(try (map["value"] ?? .string("error")).stringValue())
+    default: throw CoreError.decode("unknown formula value kind '\(kind)'")
+    }
+}
+
 // TSK-563 (wire v2): diff per-element records are POSITIONAL MessagePack
 // arrays — the per-line field keys were ~41 bytes/line of pure key text.
 // Element order is the wire contract, mirrored by the Rust `FileView`/
