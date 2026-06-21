@@ -1,64 +1,64 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run: full MS-Paint-class image editor shipped (~46 features)  (2026-06-21)
+# Handoff — autonomous drain run (~66 user-facing features + foundations)  (2026-06-21)
 
-**Session:** claude-mdv (AUTONOMOUS).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` (verify `git log -1`).
+**Session:** claude-mdv (AUTONOMOUS, cron ~5min).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `9970bed3` (verify `git log -1`).
 
-## Mode — AUTONOMOUS DRAIN (cron ARMED, every ~5 min)
+## Mode — AUTONOMOUS DRAIN (cron ARMED)
 Each tick: read `docs/TASK_WORKFLOW.md` + the CLAUDE.md SOP + the latest
-`docs/CURATED_TASKS_*.md`, then drain. Working discipline (keep it):
-**front-load ONE focused grep/read (what already exists) → build → host-test the
-model → host-gate → commit per item; render/pixels left at review.** Confirm the
-gate verdict in a SEPARATE step before committing (never in the gate's shell
-compound). Land rebase+ff. Commit trailer
-``.
-Batch where ONE mechanism covers several tickets (e.g. the 3 write-formats).
+`docs/CURATED_TASKS_*.md`, then drain toward done. **Working discipline that
+works (keep it):**
+- **Converge-fast:** ONE pick → ONE focused probe → build OR reconcile-and-move.
+  Do NOT chain probes. Many board/curated items turn out already-done on a fresh
+  read (the curated 06-20 list is significantly STALE) — reconcile those (`task_advance`/comment) and move.
+- **Build → host-test the model → host-gate → commit per item.** Confirm the gate
+  verdict (`==> headless gate PASSED`, 0 failed) in a SEPARATE step before committing.
+  Run the gate in the background; the completion notification drives the commit.
+- **Render-path = review ceiling.** Build render features too, host-test the model/seam,
+  leave the on-screen behavior at `review` (owner/VM closes). Pure-logic + a teeth-test → self-`task_validate` to `validated`.
+- Land rebase+ff. Commit trailer ``.
+- Keep `CHANGELOG.md` current for USER-FACING changes only (skip foundations/infra).
 
-## Shipped this run (~46 user-facing features, all gate-green on main)
-EARLY cluster: reachable views (Dependency Graph 1100, Folder Treemap 506), Settings
-toggles (Sessions 1105, Extensions 1112), find-bar 1207, tooltip 1209, New Image
-1054, CSV cursor 1102, awaitUser UI 1115, Walkthroughs browser 1107/1211, gated
-notebook viewer 717, sidebar cache eviction (591 cand.3), rust eviction registry (589
-sl.1+2). Reconciled-as-already-done: 986/991/1113/1143.
-**IMAGE-EDITOR EPIC (the bulk — an MS-Paint-class editor):**
-- Paint: tap/drag gesture (1101), brush/pencil/eraser incl. round+square (1056/1057/1062), eyedropper + flood-fill.
-- Shapes: rectangle/rounded-rect/ellipse/line/arrow + fill toggle (1058/1059/1060/1061), direction-preserving lines.
-- Selection (FULL): marquee 1063 + lasso 1064 (polygon, mask-aware ops) + crop 1068 + move 1065 + delete/select-all/copy/cut/paste/invert 1066.
-- Image menu: flip/rotate 1072, invert-colors 1075, clear 1077, resize dialog 1073.
-- Formats: BMP/GIF/TIFF write 1078/1079/1080 (now png/jpeg/heic/bmp/gif/tiff).
-- Perf: decode-once cache 1051, off-main non-blocking save 1053.
+## Proven patterns this run
+- **View-wire:** built-but-unreachable engine → reachable hosted tab via
+  `model.showX()` + `openHostedView` + a File-menu item; host-test = "opens a tab
+  + returns count / no-op". Shipped: Dependency Graph, Folder Treemap (+from stats card),
+  Annotations, Log Patterns, Package Dependencies, Local History.
+- **Model-foundation:** extract/build a pure host-tested model; UI/integration deferred.
+- **Re-verify-and-pin:** trace a "re-verify" bug end-to-end; if correct, pin the
+  untested link with a teeth-test (e.g. Open-in-PWD → `effectiveSpawnDirectory`).
 
-Key foundations to reuse: `RasterCanvas` (setPixel/fillRect/brushDab/brushStroke/
-floodFill/blit/over/fill(_:in:)/from(cgImage)), `RasterSelection` (rect/polygon/
-everythingExcept + contains + bounds), `SelectionGeometry`, `ShapeDragGeometry`,
-`ImageResizeMath`, `EditOp` (+ Renderer.apply, commitGeometry, isGeometry/
-isCommittable), `vm.selection`/`selectionImage`. Tests: `ImageEditorPaintTests`
-(50, @MainActor, host pixel-sample via solidPNG+sample), `RasterCanvasTests`,
-`RasterSelectionTests`, `SelectionGeometryTests`, `ImageResizeMathTests`.
+## Shipped this run (all gate-green on main; render at review)
+- **Image-editor epic TSK-1048 — DELIVERED** (MS-Paint-class): paint/shapes/full
+  selection/Image-menu transforms incl. **skew/canvas-size/invert/clear/resize**,
+  **6 save formats + copy/paste-via-file + in-place Save**, **fg/bg + swap + palette + recent-swatches**,
+  **airbrush**, decode-once + off-main-save perf. (Rollup on TSK-1048.) Remaining: 1049/1052/1055 (VM/architecture, filed).
+- **Exports TSK-1144 (review):** Markdown → `.docx` (dep-free `DocxExporter`: CRC32 +
+  store-ZIP + WordprocessingML), `.rtf`, `.rtfd` + **Copy as RTF**; File menu wired; legacy `.doc` = recommend WONT-DO.
+- **Terminal:** command-history model (1176, progress), ANSI themes + pure `AnsiColorResolver` (1175, progress, color-preserving), Open-in-PWD re-verified+pinned (1178).
+- **CSV:** rectangular select/copy/paste (1187, review) — `CSVRectSelection`/`CSVClipboard` + `EditableCSVModel.paste`.
+- **FormulaEngine (1141):** +LEFT/RIGHT/MID, ROUNDUP/DOWN, CEILING/FLOOR, IFERROR (user-facing in CSV `=` cells).
+- **Editor:** View ▸ Toggle Read-Only (936). **Local History** reachable (1103, review). Feeds: parser+`FeedFetcher`+OPML (1148✓validated/1150✓validated).
+- **Test-infra (TSK-788 audit, host-level done):** coverage script `scripts/coverage.sh` (1131),
+  Swift Testing pilot + CLAUDE.md convention (1130), G3 doc truth-fix (1133), G4 teeth-codify `MDVNegativeControl` (1134). **991** prune-cap validated.
 
-## Filed / deferred (NOT clean host ticks — do NOT blind-build)
-- **TSK-1049** off-main RENDER pipeline — breaks the synchronous `rendered` contract
-  (~many tests) + crosses non-Sendable CGImage + timing cancellation → VM-warranted
-  (full design on the ticket).
-- **TSK-1055** undoable paint — paint is a separate destructive buffer; unify as a
-  `.paintStroke` op or snapshot-undo (design on the ticket). Architecture slice.
-- **TSK-1052** dirty-rect paint compositing — render-path perf.
-- The owner-gated perf cluster **TSK-590** (591 hover-lag/592 jank/598 MD-open/601
-  Swift-open) needs the owner's live re-feel / counter read.
+## Deferred / blocked (do NOT blind-build)
+- **TSK-1132** WebViewTestCase heavy-tier base — turnkey spec on the ticket; touches
+  the gate observer the merge gate depends on → focused session + gate-verify, not a heartbeat tick.
+- **Big-levers** TSK-1049 (off-main render), 1055 (undoable paint), 1052 (dirty-rect),
+  the **TSK-590** perf cluster — VM/owner-gated (design notes on tickets).
+- **TSK-1098** bundle-cap doc drift — ambiguous (needs real bundle size or owner intent on the cap).
 
-## Remaining ACTIONABLE clean work (image-editor parity tail; non-image pool is drained/owner-gated)
-Next curated/board image items, all clean: skew (1074, new affine EditOp+dialog),
-canvas-attributes (1076, canvas pad/crop dialog), palette strip (1070), two-color
-fg/bg model (1069 — also lets Clear use a real bg color), Edit-Colors dialog (1071),
-in-place Save/Save-As (1081), airbrush (1082), paste-from-file/copy-to-file (1067).
-The non-image clean pool has repeatedly turned up drained or already-done-on-reconcile
-(986/991/1113), so the image-editor parity tail is the actionable vein.
+## Current state of the vein
+The clean **host-buildable USER-FACING** pool is essentially EXHAUSTED — probes now
+consistently hit already-done / render / VM / owner-gated / rust-FFI-heavy. Remaining
+clean autonomous work: validation-drain (move done-but-misparked pure-logic → validated),
+reconcile (confirm stale-curated done), test-speed (1181 needs TSK-836 slow-class data;
+847 worker-bump in progress). **The single biggest "→ done" lever is an owner / VM-UAT
+pass** to close the large `review` backlog (~66 features + this run's view-wires) — that
+is the agent's `review` ceiling for render-path and is owner/VM-only.
 
 ## How to resume
-1. `git -C <cwd> log -1`; confirm cron armed (`CronList`).
-2. Pick the next clean image-parity item (skew 1074 or canvas-attributes 1076 next),
-   front-load the existing op/helper, build, host-test the model, gate, commit.
-3. The big-lever items (1049/1055/1052 + the 590 perf cluster) want a VM-validated /
-   owner session — don't blind-build them.
-4. ~20-item-plus review backlog (this run's render-path features at fixed/review)
-   reaches validated/done via the owner on-screen OR a VM GUI/UAT pass
-   (`scripts/test-in-vm.sh all` + run-uat) — the biggest "every task → done" lever.
+1. `git -C <cwd> log -1`; `bash scripts/test-headless-gate.sh` should be green.
+2. Converge-fast: pick next curated/board item, ONE probe; if already-done → reconcile+move; if a clean host-testable seam → build+test+gate+commit; if render → build+leave at review.
+3. Don't blind-build the Deferred items. Don't run T4/T5/WebView/dist on the host.
+4. If genuinely no clean build: validation-drain (pure-logic+teeth → `task_validate`) or accurate reconcile. NEVER "no work" — but be honest the user-facing clean vein is thin; surface the owner/VM-UAT lever.
