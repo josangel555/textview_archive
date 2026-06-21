@@ -166,6 +166,25 @@ public final class FeedSubscriptionStore {
         return sub
     }
 
+    /// TSK-1150 — import an OPML subscription list: subscribe to each feed it
+    /// lists (existing subscriptions are refreshed, not duplicated). Returns the
+    /// number of NEW subscriptions added.
+    @discardableResult
+    public func importOPML(_ xml: String) -> Int {
+        var added = 0
+        for feed in OPML.parse(xml) {
+            if !isSubscribed(to: feed.xmlURL) { added += 1 }
+            _ = subscribe(url: feed.xmlURL, title: feed.title)
+        }
+        return added
+    }
+
+    /// TSK-1150 — export the current subscriptions as an OPML 2.0 document.
+    public func exportOPML(title: String = "Subscriptions") -> String {
+        OPML.export(title: title,
+                    feeds: allSubscriptions().map { OPMLFeed(title: $0.title, xmlURL: $0.url) })
+    }
+
     /// Unsubscribe from `url`. Also drops the feed's read-state so an
     /// unsubscribe is a clean wipe (a later re-subscribe starts fresh).
     /// No-op if not subscribed.
