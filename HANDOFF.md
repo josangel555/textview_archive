@@ -1,58 +1,64 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous run: ~20 features shipped, build-pool drained  (2026-06-21)
+# Handoff — autonomous run: full MS-Paint-class image editor shipped (~46 features)  (2026-06-21)
 
 **Session:** claude-mdv (AUTONOMOUS).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` (verify `git log -1`).
 
-## Mode — AUTONOMOUS DRAIN (cron ARMED: `994c7c56`, every 5 min)
-Each tick forces reading `docs/TASK_WORKFLOW.md` + the CLAUDE.md SOP + the latest
-`docs/CURATED_TASKS_*.md`, then drains. Discipline that's working: **front-load ONE
-focused spike (what already exists) → build → host-gate → commit per item**; never
-commit in the gate's shell compound (read the verdict first); land rebase+ff.
-Commit trailer ``.
+## Mode — AUTONOMOUS DRAIN (cron ARMED, every ~5 min)
+Each tick: read `docs/TASK_WORKFLOW.md` + the CLAUDE.md SOP + the latest
+`docs/CURATED_TASKS_*.md`, then drain. Working discipline (keep it):
+**front-load ONE focused grep/read (what already exists) → build → host-test the
+model → host-gate → commit per item; render/pixels left at review.** Confirm the
+gate verdict in a SEPARATE step before committing (never in the gate's shell
+compound). Land rebase+ff. Commit trailer
+``.
+Batch where ONE mechanism covers several tickets (e.g. the 3 write-formats).
 
-## Shipped this run (all gate-green on main, ~20 items)
-Reachable views/Settings: **Dependency Graph** (TSK-1100), **Folder Treemap** (506),
-**Sessions toggle** (1105), **Extensions list** (1112). Bugs/perf: sidebar cache
-**bounded-eviction** (591 cand.3 — `InsertionOrderedCache`), **find-bar keep-text**
-(1207), **tooltip delay** (1209). Features: **New Image** + size/color dialog +
-new-file type (1054/1208/1167), **CSV cell cursor** (1102), **awaitUser reply UI**
-(1115), **Walkthroughs browser** — browse/run/resume/rename/delete (1107 + 1211),
-**gated notebook viewer** (717, off by default). Rust: **eviction-policy core +
-CoreRuntime registry** (589 slices 1+2, host-validated). Filed: **TSK-1210**
-(VM 6.1.2 forward-compat broken by RustCore remote-core cycle — owner decides
-toolchain-bump vs source-fix vs drop). Reconciled already-built: 1143 (search
-palette = CommandPaletteView), 1115-handler.
+## Shipped this run (~46 user-facing features, all gate-green on main)
+EARLY cluster: reachable views (Dependency Graph 1100, Folder Treemap 506), Settings
+toggles (Sessions 1105, Extensions 1112), find-bar 1207, tooltip 1209, New Image
+1054, CSV cursor 1102, awaitUser UI 1115, Walkthroughs browser 1107/1211, gated
+notebook viewer 717, sidebar cache eviction (591 cand.3), rust eviction registry (589
+sl.1+2). Reconciled-as-already-done: 986/991/1113/1143.
+**IMAGE-EDITOR EPIC (the bulk — an MS-Paint-class editor):**
+- Paint: tap/drag gesture (1101), brush/pencil/eraser incl. round+square (1056/1057/1062), eyedropper + flood-fill.
+- Shapes: rectangle/rounded-rect/ellipse/line/arrow + fill toggle (1058/1059/1060/1061), direction-preserving lines.
+- Selection (FULL): marquee 1063 + lasso 1064 (polygon, mask-aware ops) + crop 1068 + move 1065 + delete/select-all/copy/cut/paste/invert 1066.
+- Image menu: flip/rotate 1072, invert-colors 1075, clear 1077, resize dialog 1073.
+- Formats: BMP/GIF/TIFF write 1078/1079/1080 (now png/jpeg/heic/bmp/gif/tiff).
+- Perf: decode-once cache 1051, off-main non-blocking save 1053.
 
-## ⚠️ The build pool is DRAINED — what's left + WHY it's blocked
-Verified: no clean "built-but-unreachable view" wires remain (the deps-graph
-pattern is exhausted). Remaining work is one of:
-- **OWNER-GATED (the real bottleneck):** `task_next` head = **TSK-590** perf cluster
-  (review-lane epic). Children **591** (hover-lag cand.1 tracking-area density),
-  **592** (resize jank), **598** (MD-open — measured 94% WebKit), **601** (Swift-open)
-  need a LIVE counter read / on-screen re-feel / approval — agent can't progress.
-- **RISKY-BLIND RENDER refactors:** image off-main render (1049), single-surface
-  sidebar hover (591 cand.1), paint gesture (1101) — central/hot views, felt-perf is
-  VM-only; "don't ship risky blind" ⇒ these need a VM-validated pass, not a host tick.
-- **OWNER-INPUT:** 709 (Cmd+K/G unify scheme), 751 (menu org — subjective).
-- **BACKEND builds:** ActionHistory (703 — needs invasive recording hooks),
-  notebook editing/kernels (717 epic tail).
-- **Flag-WIP:** RichText (off-by-default).
+Key foundations to reuse: `RasterCanvas` (setPixel/fillRect/brushDab/brushStroke/
+floodFill/blit/over/fill(_:in:)/from(cgImage)), `RasterSelection` (rect/polygon/
+everythingExcept + contains + bounds), `SelectionGeometry`, `ShapeDragGeometry`,
+`ImageResizeMath`, `EditOp` (+ Renderer.apply, commitGeometry, isGeometry/
+isCommittable), `vm.selection`/`selectionImage`. Tests: `ImageEditorPaintTests`
+(50, @MainActor, host pixel-sample via solidPNG+sample), `RasterCanvasTests`,
+`RasterSelectionTests`, `SelectionGeometryTests`, `ImageResizeMathTests`.
 
-## ⚠️ Review backlog needs the owner / a VM-UAT pass to reach DONE
-The ~20 shipped items are at **fixed/review** — their MODELS are host-tested but the
-RENDER (menus/dialogs/views/pixels) is unconfirmed (review ceiling). They reach
-`validated`/`done` only via the owner on-screen OR a VM GUI/UAT pass
-(`scripts/test-in-vm.sh all` + the run-uat skill). This is the biggest lever for
-"every task to done".
+## Filed / deferred (NOT clean host ticks — do NOT blind-build)
+- **TSK-1049** off-main RENDER pipeline — breaks the synchronous `rendered` contract
+  (~many tests) + crosses non-Sendable CGImage + timing cancellation → VM-warranted
+  (full design on the ticket).
+- **TSK-1055** undoable paint — paint is a separate destructive buffer; unify as a
+  `.paintStroke` op or snapshot-undo (design on the ticket). Architecture slice.
+- **TSK-1052** dirty-rect paint compositing — render-path perf.
+- The owner-gated perf cluster **TSK-590** (591 hover-lag/592 jank/598 MD-open/601
+  Swift-open) needs the owner's live re-feel / counter read.
+
+## Remaining ACTIONABLE clean work (image-editor parity tail; non-image pool is drained/owner-gated)
+Next curated/board image items, all clean: skew (1074, new affine EditOp+dialog),
+canvas-attributes (1076, canvas pad/crop dialog), palette strip (1070), two-color
+fg/bg model (1069 — also lets Clear use a real bg color), Edit-Colors dialog (1071),
+in-place Save/Save-As (1081), airbrush (1082), paste-from-file/copy-to-file (1067).
+The non-image clean pool has repeatedly turned up drained or already-done-on-reconcile
+(986/991/1113), so the image-editor parity tail is the actionable vein.
 
 ## How to resume
-1. `git -C <cwd> log -1`; `CronList` (confirm `994c7c56`).
-2. Pick a SAFE item: another gated/foundation slice, OR a board reconcile/triage
-   (front-load-spike reported items → reclassify already-built). AVOID blind-building
-   the risky render refactors; they want VM validation.
-3. Process note for future me: I over-deliberated several late ticks (scanning for
-   "the perfect clean pick" when the pool is drained). Decide FAST: if no clean
-   host-completable build in one spike, do a reconcile/triage drain — don't burn a
-   tick scanning.
-4. When the owner returns: the highest-value asks are (a) re-feel/counter-read the
-   TSK-590 perf cluster, (b) confirm/VM-UAT the review backlog → validated.
+1. `git -C <cwd> log -1`; confirm cron armed (`CronList`).
+2. Pick the next clean image-parity item (skew 1074 or canvas-attributes 1076 next),
+   front-load the existing op/helper, build, host-test the model, gate, commit.
+3. The big-lever items (1049/1055/1052 + the 590 perf cluster) want a VM-validated /
+   owner session — don't blind-build them.
+4. ~20-item-plus review backlog (this run's render-path features at fixed/review)
+   reaches validated/done via the owner on-screen OR a VM GUI/UAT pass
+   (`scripts/test-in-vm.sh all` + run-uat) — the biggest "every task → done" lever.
