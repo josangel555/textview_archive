@@ -5,6 +5,25 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Test-coverage tooling — scope `coverage.sh`, never full-suite it (2026-06-21)
+- **`scripts/coverage.sh` (TSK-1131): SCOPE it.** `FILTER=ViewerCoreTests bash
+  scripts/coverage.sh` reports reliably; the bare full-suite run is cursed three
+  ways and burned ~4 autonomous ticks: (1) macOS **bash 3.2 + `set -u` crashed on
+  `"${empty_array[@]}"`** when FILTER was unset (fixed 87ab82e6 → if/else, no array
+  expansion); (2) the unscoped `swift test --parallel --enable-code-coverage`
+  spawns **thousands of per-test `.profraw`** and, under load / a flaky perf-bench
+  failure, SwiftPM **skips the profdata merge** and leaves CORRUPT partials
+  (`llvm-profdata merge` → "no profile can be merged"); (3) the script does
+  `tail -45` on the report (alphabetical → silently cuts the A–S files, incl. ALL
+  of ViewerCore — so "no ViewerCore rows" was truncation, not 0%).
+- **The harness Bash tool runs zsh, not bash.** A `*.profraw` glob with no matches
+  is a zsh **`nomatch` hard error** that aborts the whole command (unlike bash,
+  which passes the literal). Quote globs / `setopt nullglob` / guard existence when
+  scripting coverage merges through the Bash tool.
+- **Net:** for coverage, scope to one target + run `xcrun llvm-cov report` yourself
+  (no tail). Don't chase a whole-suite coverage number on the host — the friction
+  isn't worth it; the per-target signal is.
+
 ## Memory metrics, runaway tests, parallel-agent integration (2026-06-20 PM)
 - **VSZ ≠ RAM; the number that matters is `phys_footprint` (incl. compressed).** A test showed "77 GB" — I called it RAM (wrong), then "benign VSZ" (also wrong). Truth: VSZ was 415 GB (meaningless — address space), RSS 200 MB (undercounts; cold pages compressed/swapped), and Activity Monitor's "Memory" = `phys_footprint` = real anon memory incl. the compressor pool. A high phys_footprint is REAL and dangerous even when compressed (incompressible data would OOM). Read it via `top -l1 -o mem -stats pid,mem,cmprs` / `footprint -p <pid>`; system pressure via `vm_stat` (compressor pool/stored) + `sysctl vm.swapusage`. NEVER report `ps rss`/`vsz` as "memory used." (Skill: `.claude/skills/diagnose-resources`.)
 - **O(n×m) LCS diff = a 77 GB machine-killer.** An agent's naive `LineDiff.lcs` allocated an `(n+1)×(m+1)` Int matrix; a storage test diffed large content → ~77 GB phys_footprint → 25 GB swap → whole-Mac thrash. FIX (the optimal line-diff, now in `LineDiff.swift`): common prefix/suffix trim → line-interning to Int ids → **Myers O(N·D) with linear-space middle-snake** (O(N) space, diffutils/git standard) → **size-guard** (≥1 MiB either side ⇒ store a snapshot, never invoke the differ). Not Hirschberg-LCS (fixes space, keeps O(n×m) TIME). Tests have NO memory ceiling — a runaway takes the host, not just the test (→ TSK-1194 resource-bounded test exec).
