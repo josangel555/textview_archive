@@ -462,6 +462,10 @@ public struct SettingsView: View {
 
     private var advancedSection: some View {
         section("Advanced") {
+            // TSK-1105: surface the existing sessions-enabled pref (TSK-264).
+            row("Multi-session workspace") {
+                Toggle("", isOn: $model.sessionsEnabled).labelsHidden()
+            }
             row("Clear bookmarks") {
                 Button("Clear All") { confirmingClearBookmarks = true }
                     .confirmationDialog(

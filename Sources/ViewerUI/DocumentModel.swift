@@ -183,6 +183,13 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleSourceWordWrap() { sourceWordWrap.toggle() }
 
+    /// TSK-1105: surface the sessions-enabled pref (TSK-264 — drives
+    /// RootContextFactory: multi-session vs single-root) as a published model
+    /// knob so the Settings toggle binds like the others. Default ON.
+    @Published public var sessionsEnabled: Bool {
+        didSet { preferences.sessionsEnabled = sessionsEnabled }
+    }
+
     /// Preview mode's metadata side panel (file info, image dimensions,
     /// SQLite table/row counts). It used to render unconditionally with
     /// no dismiss affordance (TSK-608); the BottomAttributesBar "Info"
@@ -473,6 +480,7 @@ public final class DocumentModel: ObservableObject {
         self.zoom = preferences.zoom
         self.contentFontSize = preferences.contentFontSize
         self.sourceWordWrap = preferences.sourceWordWrap
+        self.sessionsEnabled = preferences.sessionsEnabled
         self.showPreviewMetadataPanel = preferences.previewMetadataVisible
         self.showInvisibleChars = preferences.showInvisibleChars
         self.vimModeEnabled = preferences.vimModeEnabled
