@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Settings ▸ Extensions** — an at-a-glance list of your installed plugins.
 - **File ▸ New Image** — create a new blank image (choose width, height, and background color) and start editing it right away. Also offered in the New File submenu and the sidebar folder's right-click ▸ New File menu.
 - **CSV/TSV view** — navigate cells with the arrow keys (the focused cell is ringed) and copy the focused cell with ⌘C.
+- **Interactive walkthroughs** — when a walkthrough pauses to ask you something, the player now shows the prompt with quick-reply buttons and a free-form field; your answer continues the tour.
 
 ### Fixed
 - **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
