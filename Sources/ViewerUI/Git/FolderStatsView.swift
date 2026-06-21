@@ -86,6 +86,15 @@ struct FolderStatsView: View {
                 extensionRow(ext, maxFiles: max(maxFiles, 1))
             }
         }
+
+        // TSK-1122: launch the size treemap for this folder from the stats card.
+        Button { doc.showFolderTreemap(folder: model.treemapFolder) } label: {
+            Label("Show Treemap", systemImage: "square.grid.2x2.fill")
+                .font(.system(size: doc.uiSize(10)))
+        }
+        .buttonStyle(.link)
+        .padding(.top, 4)
+        .accessibilityIdentifier("mdv.folderStats.showTreemap")
     }
 
     // MARK: - Header (commit count + date span + file count)
@@ -223,6 +232,15 @@ final class FolderStatsModel: ObservableObject {
             self.scopeKey = repoRoot.path + "|repo"
         case .folder(let rel):
             self.scopeKey = repoRoot.path + "|" + rel
+        }
+    }
+
+    /// TSK-1122 — the folder this card's stats describe, for launching the
+    /// treemap: the repo root for a whole-repo scope, else the subfolder.
+    var treemapFolder: URL {
+        switch scope {
+        case .repo: return repoRoot
+        case .folder(let rel): return repoRoot.appendingPathComponent(rel)
         }
     }
 
