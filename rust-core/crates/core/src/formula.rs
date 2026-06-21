@@ -95,6 +95,8 @@ enum Token {
     Le,
     Gt,
     Ge,
+    /// A string literal `"..."` (a doubled `""` is an embedded quote).
+    Str(String),
 }
 
 fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
@@ -130,6 +132,25 @@ fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
                     Some(&'>') => { chars.next(); toks.push(Token::Ne); }
                     _ => toks.push(Token::Lt),
                 }
+            }
+            '"' => {
+                chars.next(); // opening quote
+                let mut lit = String::new();
+                loop {
+                    match chars.next() {
+                        Some('"') => {
+                            if matches!(chars.peek(), Some(&'"')) {
+                                chars.next();
+                                lit.push('"'); // doubled "" → embedded quote
+                            } else {
+                                break;
+                            }
+                        }
+                        Some(ch) => lit.push(ch),
+                        None => return Err(FormulaError::Parse), // unterminated string
+                    }
+                }
+                toks.push(Token::Str(lit));
             }
             _ if c.is_ascii_digit() || c == '.' => {
                 let mut lit = String::new();
@@ -184,6 +205,8 @@ fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
 #[derive(Debug, Clone, PartialEq)]
 enum Expr {
     Number(f64),
+    /// A string literal.
+    Str(String),
     /// A cell reference (the raw A1-style identifier; parsed at eval time).
     Ref(String),
     /// A cell range `A1:B2` (raw idents; valid only as a function argument).
@@ -338,6 +361,10 @@ impl Parser {
                 self.pos += 1;
                 Ok(Expr::Number(n))
             }
+            Some(Token::Str(s)) => {
+                self.pos += 1;
+                Ok(Expr::Str(s))
+            }
             Some(Token::Ident(name)) => {
                 self.pos += 1;
                 match self.toks.get(self.pos) {
@@ -386,6 +413,7 @@ impl Parser {
 fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
     match e {
         Expr::Number(n) => Value::Number(*n),
+        Expr::Str(s) => Value::Text(s.clone()),
         Expr::Ref(name) => match CellRef::parse(name) {
             Some(cr) => coerce_cell(resolver(cr)),
             None => Value::Error(FormulaError::Name), // not a valid cell ref
@@ -495,7 +523,129 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
                 None => Value::Error(FormulaError::Value),
             }
         }
+        "UPPER" | "LOWER" | "TRIM" | "LEN" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            match upper.as_str() {
+                "UPPER" => Value::Text(s.to_uppercase()),
+                "LOWER" => Value::Text(s.to_lowercase()),
+                "TRIM" => Value::Text(s.trim().to_string()),
+                "LEN" => Value::Number(s.chars().count() as f64),
+                _ => Value::Error(FormulaError::Name),
+            }
+        }
+        "LEFT" | "RIGHT" => {
+            if args.is_empty() || args.len() > 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let n = if args.len() == 2 {
+                match arg_count(args.get(1), resolver) {
+                    Ok(n) => n,
+                    Err(e) => return e,
+                }
+            } else {
+                1
+            };
+            let chars: Vec<char> = s.chars().collect();
+            let take = n.min(chars.len());
+            let out: String = if upper == "LEFT" {
+                chars.iter().take(take).collect()
+            } else {
+                chars.iter().skip(chars.len() - take).collect()
+            };
+            Value::Text(out)
+        }
+        "MID" => {
+            if args.len() != 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let start = match arg_count(args.get(1), resolver) {
+                Ok(n) if n >= 1 => n,
+                Ok(_) => return Value::Error(FormulaError::Value),
+                Err(e) => return e,
+            };
+            let len = match arg_count(args.get(2), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            let chars: Vec<char> = s.chars().collect();
+            let out: String = chars.iter().skip(start - 1).take(len).collect();
+            Value::Text(out)
+        }
+        "CONCAT" | "CONCATENATE" => {
+            let mut out = String::new();
+            for arg in args {
+                if let Expr::Range(a, b) = arg {
+                    let cells = match expand_range(a, b) {
+                        Some(c) => c,
+                        None => return Value::Error(FormulaError::Ref),
+                    };
+                    for cr in cells {
+                        out.push_str(&value_text(&coerce_cell(resolver(cr))));
+                    }
+                } else {
+                    let v = eval(arg, resolver);
+                    if let Value::Error(_) = v {
+                        return v;
+                    }
+                    out.push_str(&value_text(&v));
+                }
+            }
+            Value::Text(out)
+        }
         _ => Value::Error(FormulaError::Name),
+    }
+}
+
+/// Evaluate an optional arg to a number for a scalar function (missing → #VALUE).
+fn arg_num(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<f64, Value> {
+    match arg {
+        Some(e) => as_number(eval(e, resolver)),
+        None => Err(Value::Error(FormulaError::Value)),
+    }
+}
+
+/// Evaluate an arg to a non-negative integer count (LEFT/RIGHT/MID lengths).
+/// Non-finite or negative → #VALUE.
+// Bounds-checked f64→usize: non-finite rejected above; `trunc() as i64` takes the
+// integer part toward zero, and `usize::try_from` rejects negatives/overflow → #VALUE.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn arg_count(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<usize, Value> {
+    let x = arg_num(arg, resolver)?;
+    if !x.is_finite() {
+        return Err(Value::Error(FormulaError::Value));
+    }
+    usize::try_from(x.trunc() as i64).map_err(|_| Value::Error(FormulaError::Value))
+}
+
+/// Evaluate an optional arg to its text form for a scalar function (missing → #VALUE).
+fn arg_text(
+    arg: Option<&Expr>,
+    resolver: &dyn Fn(CellRef) -> Option<String>,
+) -> Result<String, Value> {
+    match arg {
+        Some(e) => {
+            let v = eval(e, resolver);
+            if let Value::Error(_) = v {
+                Err(v)
+            } else {
+                Ok(value_text(&v))
+            }
+        }
+        None => Err(Value::Error(FormulaError::Value)),
     }
 }
 
@@ -911,5 +1061,33 @@ mod tests {
         assert_eq!(evaluate_with("AND(A1>5, A1<10)", &r), Value::Bool(true));
         assert_eq!(evaluate_with("Z9=0", &r), Value::Bool(true)); // blank coerces to 0
         assert_eq!(evaluate_with("B1=C1", &r), Value::Bool(true)); // text compare is case-insensitive
+    }
+
+    #[test]
+    fn string_literals_and_text_functions() {
+        assert_eq!(evaluate("UPPER(\"abc\")"), Value::Text("ABC".to_string()));
+        assert_eq!(evaluate("LOWER(\"ABC\")"), Value::Text("abc".to_string()));
+        assert_eq!(evaluate("TRIM(\"  hi  \")"), Value::Text("hi".to_string()));
+        assert_eq!(evaluate("LEN(\"hello\")"), Value::Number(5.0));
+        assert_eq!(evaluate("LEFT(\"hello\", 2)"), Value::Text("he".to_string()));
+        assert_eq!(evaluate("RIGHT(\"hello\", 3)"), Value::Text("llo".to_string()));
+        assert_eq!(evaluate("LEFT(\"hello\")"), Value::Text("h".to_string())); // default 1
+        assert_eq!(evaluate("MID(\"hello\", 2, 3)"), Value::Text("ell".to_string()));
+        assert_eq!(evaluate("CONCAT(\"a\", \"b\", \"c\")"), Value::Text("abc".to_string()));
+        // a doubled "" is an embedded quote
+        assert_eq!(evaluate("\"a\"\"b\""), Value::Text("a\"b".to_string()));
+    }
+
+    #[test]
+    fn concat_with_numbers_and_refs() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> =
+            [(CellRef { col: 0, row: 0 }, "world".to_string())].into_iter().collect(); // A1
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("CONCAT(\"x\", 5)", &r), Value::Text("x5".to_string())); // number → text
+        assert_eq!(
+            evaluate_with("CONCAT(\"hello \", A1)", &r),
+            Value::Text("hello world".to_string())
+        );
     }
 }
