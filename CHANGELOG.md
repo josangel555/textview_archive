@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **File ▸ Annotations** — a jump-list of the current file's TODO / FIXME / HACK / XXX / NOTE / BUG markers; click one to jump straight to that line.
 - **File ▸ Log Patterns** — a frequency-ranked summary of the current log's repeated line patterns (masked templates + counts + an example), for fast log triage.
 - **Folder stats → treemap** — a "Show Treemap" button on the folder/repo statistics card opens that folder's size treemap.
+- **File ▸ Package Dependencies** — for an open package.json / Cargo.toml, a list of its declared dependencies with versions and runtime/dev badges.
 - **File ▸ Dependency Graph** — visualize your project's import dependency graph (file→file imports) in a tab; click a node to open that file. Also from the command palette.
 - **File ▸ Folder Sizes (Treemap)** — a size-proportional treemap of the open folder, so you can see what's eating disk at a glance. Also from the command palette.
 - **Settings ▸ Advanced ▸ Multi-session workspace** — a toggle for the sessions feature (on by default), now adjustable instead of buried as a hidden preference.
