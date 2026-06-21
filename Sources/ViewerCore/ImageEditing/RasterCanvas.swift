@@ -199,7 +199,7 @@ public struct RasterCanvas: Sendable, Equatable {
     /// can be asserted to have actually marked the surface.
     @discardableResult
     public mutating func brushDab(
-        cx: Int, cy: Int, radius: Int, color: RGBAColor
+        cx: Int, cy: Int, radius: Int, color: RGBAColor, square: Bool = false
     ) -> Int {
         let r = max(0, radius)
         if r == 0 {
@@ -218,8 +218,7 @@ public struct RasterCanvas: Sendable, Equatable {
             for dx in -r...r {
                 let px = cx + dx
                 guard px >= 0, px < width else { continue }
-                let dist = Double(dx * dx + dy * dy)
-                if dist <= limit {
+                if square || Double(dx * dx + dy * dy) <= limit {
                     setPixel(x: px, y: py, to: color)
                     written += 1
                 }
@@ -239,7 +238,7 @@ public struct RasterCanvas: Sendable, Equatable {
     @discardableResult
     public mutating func brushStroke(
         from start: (x: Int, y: Int), to end: (x: Int, y: Int),
-        radius: Int, color: RGBAColor
+        radius: Int, color: RGBAColor, square: Bool = false
     ) -> Int {
         let steps = max(abs(end.x - start.x), abs(end.y - start.y))
         var visited = Set<Int>()
@@ -260,7 +259,7 @@ public struct RasterCanvas: Sendable, Equatable {
                 for dx in -r...r {
                     let px = cx + dx
                     guard px >= 0, px < width else { continue }
-                    if Double(dx * dx + dy * dy) <= limit, let i = index(x: px, y: py) {
+                    if (square || Double(dx * dx + dy * dy) <= limit), let i = index(x: px, y: py) {
                         setPixel(x: px, y: py, to: color)
                         visited.insert(i)
                     }

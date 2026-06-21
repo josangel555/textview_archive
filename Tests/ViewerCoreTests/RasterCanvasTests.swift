@@ -154,6 +154,18 @@ final class RasterCanvasTests: XCTestCase {
         XCTAssertEqual(c.pixel(x: 0, y: 2), .white, "two pixels away is outside the disc")
     }
 
+    func test_brushDab_square_fillsFullBlockIncludingCorners() {
+        var round = RasterCanvas(width: 9, height: 9, fill: .white)
+        let roundN = round.brushDab(cx: 4, cy: 4, radius: 2, color: .red, square: false)
+        var square = RasterCanvas(width: 9, height: 9, fill: .white)
+        let squareN = square.brushDab(cx: 4, cy: 4, radius: 2, color: .red, square: true)
+        XCTAssertEqual(squareN, 25, "square paints the full (2r+1)² block")
+        XCTAssertLessThan(roundN, squareN, "the round disc omits the corners")
+        // The far corner (dist² = 8 > (2.5)² = 6.25): square paints it, round leaves it.
+        XCTAssertEqual(square.pixel(x: 6, y: 6), .red, "square brush paints the corner")
+        XCTAssertEqual(round.pixel(x: 6, y: 6), .white, "round brush leaves the corner")
+    }
+
     func test_brushDab_clampsAtCanvasEdge() {
         var c = RasterCanvas(width: 3, height: 3, fill: .white)
         // Centre at the corner: only the in-bounds part of the disc is painted.

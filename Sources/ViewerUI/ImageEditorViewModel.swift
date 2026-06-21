@@ -125,6 +125,9 @@ public final class ImageEditorViewModel: ObservableObject {
     /// TSK-1059/1060 — when a shape tool draws, fill the shape (in addition to its
     /// outline) with the paint color. Off = outline only.
     @Published public var shapeFilled: Bool = false
+    /// TSK-1062 — brush/eraser stamp shape: a square stamp when true, the default
+    /// round disc otherwise. (No effect at radius 0 — that's always a single pixel.)
+    @Published public var squareBrush: Bool = false
 
     /// The destructive paint buffer for the current session, or `nil` when no
     /// paint has happened yet. Lazily baked from the rendered preview on the first
@@ -362,7 +365,7 @@ public final class ImageEditorViewModel: ObservableObject {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
         let n = canvas.brushDab(
             cx: x, cy: y, radius: tool.resolvedRadius(base: brushRadius),
-            color: tool.resolvedColor(base: paintColor))
+            color: tool.resolvedColor(base: paintColor), square: squareBrush)
         paintCanvas = canvas
         render()
         return n
@@ -376,7 +379,7 @@ public final class ImageEditorViewModel: ObservableObject {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
         let n = canvas.brushStroke(
             from: (x0, y0), to: (x1, y1), radius: tool.resolvedRadius(base: brushRadius),
-            color: tool.resolvedColor(base: paintColor))
+            color: tool.resolvedColor(base: paintColor), square: squareBrush)
         paintCanvas = canvas
         render()
         return n

@@ -371,4 +371,18 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertFalse(ok)
         XCTAssertNotNil(vm.lastError, "a failed save is captured, not silently dropped")
     }
+
+    // MARK: - square brush (TSK-1062)
+
+    func test_squareBrush_paintsCornerThroughVM() throws {
+        let vm = try makeVM(w: 11, h: 11, r: 1, g: 1, b: 1)   // white
+        vm.tool = .brush
+        vm.paintColor = .black
+        vm.brushRadius = 2
+        vm.squareBrush = true
+        vm.applyTool(atX: 5, y: 5)
+        // The block corner (7,7) — square paints it black; a round disc would leave white.
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 7, y: 7).r, 4,
+                                 "the square brush paints the block corner")
+    }
 }
