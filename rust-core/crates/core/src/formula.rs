@@ -53,6 +53,7 @@ pub enum FormulaError {
 
 impl FormulaError {
     /// The cell-display text Excel/Sheets show for this error.
+    #[must_use]
     pub fn display(self) -> &'static str {
         match self {
             FormulaError::DivideByZero => "#DIV/0!",
@@ -80,6 +81,9 @@ enum Token {
     Percent,
     LParen,
     RParen,
+    /// An identifier run (letters then alphanumerics) — a cell reference like `A1`
+    /// (functions/booleans are later slices).
+    Ident(String),
 }
 
 fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
@@ -126,6 +130,18 @@ fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
                 let n: f64 = lit.parse().map_err(|_| FormulaError::Parse)?;
                 toks.push(Token::Number(n));
             }
+            _ if c.is_ascii_alphabetic() => {
+                let mut id = String::new();
+                while let Some(&d) = chars.peek() {
+                    if d.is_ascii_alphanumeric() {
+                        id.push(d);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                toks.push(Token::Ident(id));
+            }
             _ => return Err(FormulaError::Parse),
         }
     }
@@ -137,6 +153,8 @@ fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
 #[derive(Debug, Clone, PartialEq)]
 enum Expr {
     Number(f64),
+    /// A cell reference (the raw A1-style identifier; parsed at eval time).
+    Ref(String),
     Neg(Box<Expr>),
     Percent(Box<Expr>),
     Bin(BinOp, Box<Expr>, Box<Expr>),
@@ -239,6 +257,10 @@ impl Parser {
                 self.pos += 1;
                 Ok(Expr::Number(n))
             }
+            Some(Token::Ident(name)) => {
+                self.pos += 1;
+                Ok(Expr::Ref(name))
+            }
             Some(Token::LParen) => {
                 self.pos += 1;
                 let e = self.add()?;
@@ -257,25 +279,29 @@ impl Parser {
 
 // MARK: - Evaluator
 
-fn eval(e: &Expr) -> Value {
+fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
     match e {
         Expr::Number(n) => Value::Number(*n),
-        Expr::Neg(inner) => match eval(inner) {
-            Value::Number(n) => Value::Number(-n),
-            other => other, // propagate non-number (error) unchanged
+        Expr::Ref(name) => match CellRef::parse(name) {
+            Some(cr) => coerce_cell(resolver(cr)),
+            None => Value::Error(FormulaError::Name), // not a valid ref (fns/bools: later slices)
         },
-        Expr::Percent(inner) => match eval(inner) {
-            Value::Number(n) => Value::Number(n / 100.0),
-            other => other,
+        Expr::Neg(inner) => match as_number(eval(inner, resolver)) {
+            Ok(n) => Value::Number(-n),
+            Err(v) => v,
+        },
+        Expr::Percent(inner) => match as_number(eval(inner, resolver)) {
+            Ok(n) => Value::Number(n / 100.0),
+            Err(v) => v,
         },
         Expr::Bin(op, l, r) => {
-            let lv = match eval(l) {
-                Value::Number(n) => n,
-                other => return other,
+            let lv = match as_number(eval(l, resolver)) {
+                Ok(n) => n,
+                Err(v) => return v,
             };
-            let rv = match eval(r) {
-                Value::Number(n) => n,
-                other => return other,
+            let rv = match as_number(eval(r, resolver)) {
+                Ok(n) => n,
+                Err(v) => return v,
             };
             match op {
                 BinOp::Add => Value::Number(lv + rv),
@@ -294,9 +320,101 @@ fn eval(e: &Expr) -> Value {
     }
 }
 
-/// Evaluate a formula string (an optional leading `=` is stripped). An empty
-/// formula is `Blank`; a lexer/parser failure is `Error(Parse)`.
+/// Coerce a value to a number for arithmetic (Excel-style): numbers as-is,
+/// bool→1/0, blank→0, numeric text parsed; non-numeric text→#VALUE; an error
+/// propagates. `Ok(n)` or `Err(the Value to return)`.
+fn as_number(v: Value) -> Result<f64, Value> {
+    match v {
+        Value::Number(n) => Ok(n),
+        Value::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
+        Value::Blank => Ok(0.0),
+        Value::Text(s) => s
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| Value::Error(FormulaError::Value)),
+        Value::Error(e) => Err(Value::Error(e)),
+    }
+}
+
+/// Interpret a raw cell string as a value: empty/missing → Blank, numeric →
+/// Number, otherwise Text. (Booleans arrive with the function/literal slice.)
+fn coerce_cell(raw: Option<String>) -> Value {
+    match raw {
+        None => Value::Blank,
+        Some(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Value::Blank
+            } else if let Ok(n) = t.parse::<f64>() {
+                Value::Number(n)
+            } else {
+                Value::Text(s)
+            }
+        }
+    }
+}
+
+/// A 0-based cell coordinate. Mirrors the Swift `CellReference`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CellRef {
+    /// 0-based column (A=0, B=1, …, Z=25, AA=26, …).
+    pub col: u32,
+    /// 0-based row (A1 → 0).
+    pub row: u32,
+}
+
+impl CellRef {
+    /// Parse an A1-style reference ("A1", "B12", "AA3") — bijective base-26 column,
+    /// 1-based text row → 0-based. `None` if malformed.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        let mut chars = s.chars().peekable();
+        let mut col: u32 = 0;
+        let mut letters = 0u32;
+        while let Some(&c) = chars.peek() {
+            if c.is_ascii_alphabetic() {
+                col = col
+                    .checked_mul(26)?
+                    .checked_add(c.to_ascii_uppercase() as u32 - 'A' as u32 + 1)?;
+                chars.next();
+                letters += 1;
+            } else {
+                break;
+            }
+        }
+        if letters == 0 {
+            return None;
+        }
+        let mut row: u32 = 0;
+        let mut digits = 0u32;
+        while let Some(&c) = chars.peek() {
+            if c.is_ascii_digit() {
+                row = row.checked_mul(10)?.checked_add(c as u32 - '0' as u32)?;
+                chars.next();
+                digits += 1;
+            } else {
+                break;
+            }
+        }
+        if digits == 0 || row == 0 || chars.next().is_some() {
+            return None;
+        }
+        Some(Self { col: col - 1, row: row - 1 })
+    }
+}
+
+/// Evaluate with no cell grid — references resolve to blank. Convenience for
+/// pure-arithmetic callers/tests.
+#[must_use]
 pub fn evaluate(formula: &str) -> Value {
+    evaluate_with(formula, &|_| None)
+}
+
+/// Evaluate a formula against a cell resolver (`CellRef` → raw cell text, `None`
+/// for a blank/out-of-range cell). An optional leading `=` is stripped; an empty
+/// formula is `Blank`; a lexer/parser failure is `Error(Parse)`.
+#[must_use]
+pub fn evaluate_with(formula: &str, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
     let trimmed = formula.trim();
     let body = trimmed.strip_prefix('=').unwrap_or(trimmed);
     let toks = match tokenize(body) {
@@ -308,7 +426,7 @@ pub fn evaluate(formula: &str) -> Value {
     }
     let mut p = Parser { toks, pos: 0 };
     match p.parse() {
-        Ok(expr) => eval(&expr),
+        Ok(expr) => eval(&expr, resolver),
         Err(e) => Value::Error(e),
     }
 }
@@ -376,5 +494,37 @@ mod tests {
         assert_eq!(FormulaError::Na.display(), "#N/A");
         assert_eq!(FormulaError::DivideByZero.display(), "#DIV/0!");
         assert_eq!(FormulaError::Value.display(), "#VALUE!");
+    }
+
+    #[test]
+    fn cellref_parse_a1() {
+        assert_eq!(CellRef::parse("A1"), Some(CellRef { col: 0, row: 0 }));
+        assert_eq!(CellRef::parse("B12"), Some(CellRef { col: 1, row: 11 }));
+        assert_eq!(CellRef::parse("AA3"), Some(CellRef { col: 26, row: 2 })); // bijective base-26
+        assert_eq!(CellRef::parse("A0"), None); // rows are 1-based
+        assert_eq!(CellRef::parse("1A"), None);
+        assert_eq!(CellRef::parse("A"), None);
+        assert_eq!(CellRef::parse(""), None);
+        assert_eq!(CellRef::parse("A1B"), None); // trailing junk
+    }
+
+    #[test]
+    fn cell_refs_resolve_and_coerce() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "5".to_string()),   // A1
+            (CellRef { col: 1, row: 0 }, "10".to_string()),  // B1
+            (CellRef { col: 0, row: 1 }, "abc".to_string()), // A2 (text)
+        ]
+        .into_iter()
+        .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("A1+B1", &r), Value::Number(15.0));
+        assert_eq!(evaluate_with("A1*2", &r), Value::Number(10.0));
+        assert_eq!(evaluate_with("A1", &r), Value::Number(5.0));
+        assert_eq!(evaluate_with("Z9", &r), Value::Blank); // missing cell → blank
+        assert_eq!(evaluate_with("A2", &r), Value::Text("abc".to_string()));
+        // text in arithmetic → #VALUE
+        assert_eq!(evaluate_with("A2+1", &r), Value::Error(FormulaError::Value));
     }
 }
