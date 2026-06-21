@@ -158,4 +158,27 @@ final class FormulaEngineMoreFunctionsTests: XCTestCase {
         let g = ["A1": "a", "B1": "b", "C1": "c", "A2": "1", "B2": "2", "C2": "3"]
         XCTAssertEqual(num(eval("HLOOKUP(\"b\",A1:C2,2,0)", g)), 2)        // find "b" in row 1 → row 2 = B2
     }
+
+    // MARK: - IFS / SWITCH / ISNA / ISERR
+
+    func test_ifs() {
+        XCTAssertEqual(num(eval("IFS(1>2,10,3>2,20,5>1,30)")), 20)         // first true cond (3>2) → 20
+        XCTAssertTrue(isError(eval("IFS(1>2,10,2>3,20)")))                 // none true → #N/A
+        XCTAssertTrue(isError(eval("IFS(1>2,10,3>2)")))                    // odd arg count → #VALUE
+    }
+
+    func test_switch_matchAndDefault() {
+        XCTAssertEqual(text(eval("SWITCH(2,1,\"one\",2,\"two\",3,\"three\")")), "two")
+        XCTAssertEqual(text(eval("SWITCH(9,1,\"one\",2,\"two\",\"other\")")), "other")   // trailing default
+        XCTAssertTrue(isError(eval("SWITCH(9,1,\"one\",2,\"two\")")))                     // no match, no default → #N/A
+    }
+
+    func test_isna_iserr_distinguishNaFromOtherErrors() {
+        let g = ["A1": "10"]
+        XCTAssertTrue(bool(eval("ISNA(MATCH(5,A1:A1,0))", g)))    // a lookup miss is #N/A
+        XCTAssertFalse(bool(eval("ISERR(MATCH(5,A1:A1,0))", g)))  // ISERR excludes #N/A
+        XCTAssertTrue(bool(eval("ISERR(1/0)")))                   // #DIV/0 is an error but not #N/A
+        XCTAssertFalse(bool(eval("ISNA(1/0)")))
+        XCTAssertFalse(bool(eval("ISNA(5)")))                     // not an error at all
+    }
 }

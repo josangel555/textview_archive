@@ -704,6 +704,40 @@ public enum FormulaEngine {
             if !exact, let k = bestK { return resolveCell(resultRef(k), &ctx) }
             return .error(.na)
 
+        case "IFS":
+            // IFS(cond1, val1, cond2, val2, …) → val for the first true cond; none → #N/A.
+            guard args.count >= 2, args.count % 2 == 0 else { return .error(.value) }
+            var i = 0
+            while i < args.count {
+                let cond = evaluate(args[i], &ctx); if case .error = cond { return cond }
+                if cond.asBool { return evaluate(args[i + 1], &ctx) }
+                i += 2
+            }
+            return .error(.na)
+
+        case "SWITCH":
+            // SWITCH(expr, case1, val1, …, [default]) → val for the first matching
+            // case; a trailing odd arg is the default; no match + no default → #N/A.
+            guard args.count >= 3 else { return .error(.value) }
+            let subject = evaluate(args[0], &ctx); if case .error = subject { return subject }
+            var i = 1
+            while i + 1 < args.count {
+                let c = evaluate(args[i], &ctx); if case .error = c { return c }
+                if lookupCompare(subject, c) == .orderedSame { return evaluate(args[i + 1], &ctx) }
+                i += 2
+            }
+            if i < args.count { return evaluate(args[i], &ctx) }   // trailing default
+            return .error(.na)
+
+        case "ISNA", "ISERR":
+            // ISNA → #N/A only; ISERR → any error EXCEPT #N/A. Do not propagate.
+            guard args.count == 1 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx)
+            if case .error(let e) = v {
+                return .boolean(name == "ISNA" ? (e == .na) : (e != .na))
+            }
+            return .boolean(false)
+
         default:
             return .error(.name)
         }
