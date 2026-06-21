@@ -22,6 +22,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image editor — shape tools** — pick the rectangle, rounded-rectangle, ellipse, line, or arrow tool and click-drag to draw it, with a live preview as you size it. Toggle "Fill shape" to draw the closed shapes filled instead of outlined.
 - **Image editor — full selection toolkit** — select a region with the rectangular marquee or the free-form lasso (dashed outline); drag inside it to move it, or Copy/Cut it to the clipboard, Paste an image in, Crop to it, Delete it (erase to transparent), Select All, or Invert the selection.
 - **Image editor — flip & rotate** — Flip Horizontal/Vertical and Rotate Left / Right / 180° (all undoable).
+- **Image editor — invert colors** — turn the image into a photo-negative (undoable).
 
 ### Performance
 - **Image editor** — adjusting sliders and edits is snappier on large images: the source is now decoded once and reused, instead of being re-decoded on every change.
