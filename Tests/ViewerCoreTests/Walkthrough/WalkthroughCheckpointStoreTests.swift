@@ -94,6 +94,42 @@ final class WalkthroughCheckpointStoreTests: XCTestCase {
         XCTAssertEqual(read.writtenAt, Date(timeIntervalSince1970: 42))
     }
 
+    // MARK: - Resume (TSK-1211)
+
+    private func loadScript(id: String, stepIDs: [String], dir: URL) throws -> WalkthroughScript {
+        let steps = stepIDs
+            .map { "{ \"id\": \"\($0)\", \"actions\": [{ \"kind\": \"narrateOnly\" }] }" }
+            .joined(separator: ",")
+        let json = """
+        { "schema": "textview.walkthrough/v1", "id": "\(id)", "title": "T", "steps": [\(steps)] }
+        """
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("script.json")
+        try Data(json.utf8).write(to: url)
+        switch WalkthroughLoader.load(fileAt: url) {
+        case .success(let s): return s
+        case .failure(let e): throw e
+        }
+    }
+
+    func test_resumeStepID_pointsToStepAfterLastReply() throws {
+        let dir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let script = try loadScript(id: "tour", stepIDs: ["a", "b", "c"], dir: dir)
+        let store = WalkthroughCheckpointStore(directory: dir)
+
+        XCTAssertNil(store.resumeStepID(for: script), "no replies → start fresh (nil)")
+
+        _ = try store.writeReply(walkthroughId: "tour", stepId: "a", answer: .option("x"), at: Date())
+        _ = try store.writeReply(walkthroughId: "tour", stepId: "b", answer: .freeForm("y"), at: Date())
+        XCTAssertEqual(store.resumeStepID(for: script), "c",
+                       "resume at the step after the last replied step")
+
+        _ = try store.writeReply(walkthroughId: "tour", stepId: "c", answer: .option("z"), at: Date())
+        XCTAssertEqual(store.resumeStepID(for: script), "c",
+                       "a reply on the last step clamps — no overrun past the end")
+    }
+
     func test_writeReply_freeForm_roundTrips() throws {
         let dir = makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

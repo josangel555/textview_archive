@@ -144,6 +144,21 @@ public struct WalkthroughCheckpointStore: Sendable {
         return try? Self.decoder().decode(ReplyRecord.self, from: data)
     }
 
+    /// TSK-1211 — the step at which to RESUME `script`: the step immediately
+    /// after the last one that has a recorded reply (history-resume). Returns nil
+    /// when no progress is recorded, so the caller starts from the top. Pure over
+    /// the on-disk reply records — no engine state.
+    public func resumeStepID(for script: WalkthroughScript) -> String? {
+        var lastReplied = -1
+        for (i, step) in script.steps.enumerated()
+        where readReply(walkthroughId: script.id, stepId: step.id) != nil {
+            lastReplied = i
+        }
+        guard lastReplied >= 0 else { return nil }
+        let next = Swift.min(lastReplied + 1, script.steps.count - 1)
+        return script.steps[next].id
+    }
+
     /// Read back a previously-written checkpoint prompt, if present.
     public func readCheckpoint(
         walkthroughId: String,

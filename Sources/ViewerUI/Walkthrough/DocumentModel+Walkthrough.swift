@@ -251,6 +251,20 @@ public extension DocumentModel {
         }
     }
 
+    /// TSK-1211 — resume a walkthrough from its last recorded checkpoint: start
+    /// playback, then jump to the step after the last one the user replied to
+    /// (`WalkthroughCheckpointStore.resumeStepID`). Starts from the top when no
+    /// progress is recorded or the checkpoint transport isn't configured.
+    public func resumeWalkthrough(at url: URL) {
+        guard case .success(let script) = WalkthroughLoader.load(fileAt: url) else { return }
+        let controller = walkthroughController
+        controller.start(script)
+        if let store = controller.checkpointStore,
+           let stepID = store.resumeStepID(for: script) {
+            try? controller.engine.jumpTo(stepID: stepID)
+        }
+    }
+
     /// TSK-1107 — File ▸ Walkthroughs: open a browser of saved walkthroughs
     /// (WalkthroughCatalog) as a hosted tab; each can be Run. Delete / rename /
     /// resume are tracked follow-ons.

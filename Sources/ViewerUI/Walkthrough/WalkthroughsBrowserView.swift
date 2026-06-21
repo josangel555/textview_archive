@@ -42,8 +42,9 @@ struct WalkthroughsBrowserView: View {
                             .accessibilityIdentifier("mdv.walkthroughs.run")
                     }
                     .padding(.vertical, 2)
-                    // TSK-1211: right-click ▸ Delete removes the walkthrough file.
+                    // TSK-1211: right-click ▸ Resume / Rename / Delete.
                     .contextMenu {
+                        Button("Resume") { doc.resumeWalkthrough(at: entry.url) }
                         Button("Rename…") {
                             renaming = entry
                             renameText = entry.url.deletingPathExtension().lastPathComponent
