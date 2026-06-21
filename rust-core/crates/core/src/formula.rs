@@ -668,6 +668,93 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
                 Value::Number(a.powf(b))
             }
         }
+        "COUNTIF" => {
+            if args.len() != 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let cells = match arg_cells(args.first()) {
+                Some(c) => c,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let crit = match args.get(1) {
+                Some(e) => eval(e, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(_) = crit {
+                return crit;
+            }
+            let mut count: usize = 0;
+            for cr in cells {
+                if matches_criterion(&coerce_cell(resolver(cr)), &crit) {
+                    count += 1;
+                }
+            }
+            Value::Number(count as f64)
+        }
+        "SUMIF" | "AVERAGEIF" => {
+            if args.len() != 2 && args.len() != 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let crit_cells = match arg_cells(args.first()) {
+                Some(c) => c,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let crit = match args.get(1) {
+                Some(e) => eval(e, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(_) = crit {
+                return crit;
+            }
+            let sum_cells = if args.len() == 3 {
+                match arg_cells(args.get(2)) {
+                    Some(c) => c,
+                    None => return Value::Error(FormulaError::Value),
+                }
+            } else {
+                crit_cells.clone()
+            };
+            let mut total = 0.0;
+            let mut matched: usize = 0;
+            for (i, cr) in crit_cells.iter().enumerate() {
+                if matches_criterion(&coerce_cell(resolver(*cr)), &crit) {
+                    let target = sum_cells.get(i).copied().unwrap_or(*cr);
+                    if let Some(n) = numeric_contribution(&coerce_cell(resolver(target))) {
+                        total += n;
+                        matched += 1;
+                    }
+                }
+            }
+            if upper == "AVERAGEIF" {
+                if matched == 0 {
+                    Value::Error(FormulaError::DivideByZero)
+                } else {
+                    Value::Number(total / matched as f64)
+                }
+            } else {
+                Value::Number(total)
+            }
+        }
+        "ISBLANK" | "ISNUMBER" | "ISTEXT" | "ISNONTEXT" | "ISLOGICAL" | "ISERROR" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            // NB: do NOT propagate errors here — detecting one is the point (ISERROR).
+            let v = match args.first() {
+                Some(e) => eval(e, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            let b = match upper.as_str() {
+                "ISBLANK" => matches!(v, Value::Blank),
+                "ISNUMBER" => matches!(v, Value::Number(_)),
+                "ISTEXT" => matches!(v, Value::Text(_)),
+                "ISNONTEXT" => !matches!(v, Value::Text(_)),
+                "ISLOGICAL" => matches!(v, Value::Bool(_)),
+                "ISERROR" => matches!(v, Value::Error(_)),
+                _ => false,
+            };
+            Value::Bool(b)
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -810,8 +897,12 @@ fn as_bool(v: &Value) -> bool {
 
 /// Apply a comparison operator to two already-evaluated, non-error values.
 fn compare_values(op: CmpOp, a: &Value, b: &Value) -> bool {
+    cmp_apply(op, value_cmp(a, b))
+}
+
+/// Resolve a comparison operator against an ordering result.
+fn cmp_apply(op: CmpOp, ord: std::cmp::Ordering) -> bool {
     use std::cmp::Ordering;
-    let ord = value_cmp(a, b);
     match op {
         CmpOp::Eq => ord == Ordering::Equal,
         CmpOp::Ne => ord != Ordering::Equal,
@@ -819,6 +910,49 @@ fn compare_values(op: CmpOp, a: &Value, b: &Value) -> bool {
         CmpOp::Le => ord != Ordering::Greater,
         CmpOp::Gt => ord == Ordering::Greater,
         CmpOp::Ge => ord != Ordering::Less,
+    }
+}
+
+/// Parse a COUNTIF/SUMIF criterion's leading comparison operator (default `=`).
+fn parse_criterion_op(s: &str) -> (CmpOp, &str) {
+    for (prefix, op) in [
+        (">=", CmpOp::Ge),
+        ("<=", CmpOp::Le),
+        ("<>", CmpOp::Ne),
+        (">", CmpOp::Gt),
+        ("<", CmpOp::Lt),
+        ("=", CmpOp::Eq),
+    ] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            return (op, rest);
+        }
+    }
+    (CmpOp::Eq, s)
+}
+
+/// Does a cell value match a COUNTIF-style criterion? Numeric compare when the
+/// needle parses as a number and the cell coerces to one; else case-insensitive
+/// text (with operator ordering). A blank cell matches only an empty `=` test.
+fn matches_criterion(cell: &Value, crit: &Value) -> bool {
+    let cs = value_text(crit);
+    let (op, rest) = parse_criterion_op(&cs);
+    let needle = rest.trim();
+    if matches!(cell, Value::Blank) {
+        return op == CmpOp::Eq && needle.is_empty();
+    }
+    if let (Ok(rn), Ok(cn)) = (needle.parse::<f64>(), as_number(cell.clone())) {
+        return cmp_apply(op, cn.partial_cmp(&rn).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let ord = value_text(cell).to_lowercase().cmp(&needle.to_lowercase());
+    cmp_apply(op, ord)
+}
+
+/// The cells a COUNTIF/SUMIF range/ref argument denotes (`None` if not a range/ref).
+fn arg_cells(arg: Option<&Expr>) -> Option<Vec<CellRef>> {
+    match arg {
+        Some(Expr::Range(a, b)) => expand_range(a, b),
+        Some(Expr::Ref(name)) => CellRef::parse(name).map(|cr| vec![cr]),
+        _ => None,
     }
 }
 
@@ -1166,5 +1300,44 @@ mod tests {
         assert_eq!(evaluate("MOD(-1, 3)"), Value::Number(2.0)); // result takes divisor's sign
         assert!(matches!(evaluate("MOD(1, 0)"), Value::Error(FormulaError::DivideByZero)));
         assert_eq!(evaluate("POWER(2, 10)"), Value::Number(1024.0));
+    }
+
+    #[test]
+    fn conditional_aggregates() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "5".to_string()),  // A1
+            (CellRef { col: 0, row: 1 }, "10".to_string()), // A2
+            (CellRef { col: 0, row: 2 }, "15".to_string()), // A3
+            (CellRef { col: 1, row: 0 }, "1".to_string()),  // B1
+            (CellRef { col: 1, row: 1 }, "2".to_string()),  // B2
+            (CellRef { col: 1, row: 2 }, "3".to_string()),  // B3
+        ]
+        .into_iter()
+        .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("COUNTIF(A1:A3, \">5\")", &r), Value::Number(2.0)); // 10, 15
+        assert_eq!(evaluate_with("COUNTIF(A1:A3, 5)", &r), Value::Number(1.0)); // numeric criterion
+        assert_eq!(evaluate_with("COUNTIF(A1:A3, \">=5\")", &r), Value::Number(3.0));
+        assert_eq!(evaluate_with("SUMIF(A1:A3, \">5\")", &r), Value::Number(25.0)); // 10 + 15
+        assert_eq!(evaluate_with("SUMIF(A1:A3, \">5\", B1:B3)", &r), Value::Number(5.0)); // B2 + B3
+        assert_eq!(evaluate_with("AVERAGEIF(A1:A3, \">5\")", &r), Value::Number(12.5));
+        assert!(matches!(
+            evaluate_with("AVERAGEIF(A1:A3, \">100\")", &r),
+            Value::Error(FormulaError::DivideByZero)
+        ));
+    }
+
+    #[test]
+    fn is_predicates() {
+        let nr = |_: CellRef| None;
+        assert_eq!(evaluate("ISNUMBER(5)"), Value::Bool(true));
+        assert_eq!(evaluate("ISNUMBER(\"x\")"), Value::Bool(false));
+        assert_eq!(evaluate("ISTEXT(\"x\")"), Value::Bool(true));
+        assert_eq!(evaluate("ISNONTEXT(5)"), Value::Bool(true));
+        assert_eq!(evaluate("ISLOGICAL(1>0)"), Value::Bool(true));
+        assert_eq!(evaluate("ISERROR(1/0)"), Value::Bool(true)); // detects, does not propagate
+        assert_eq!(evaluate("ISERROR(5)"), Value::Bool(false));
+        assert_eq!(evaluate_with("ISBLANK(Z9)", &nr), Value::Bool(true)); // missing cell → blank
     }
 }
