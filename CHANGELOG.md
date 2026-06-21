@@ -14,6 +14,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **File ▸ Folder Sizes (Treemap)** — a size-proportional treemap of the open folder, so you can see what's eating disk at a glance. Also from the command palette.
 - **Settings ▸ Advanced ▸ Multi-session workspace** — a toggle for the sessions feature (on by default), now adjustable instead of buried as a hidden preference.
 - **Settings ▸ Extensions** — an at-a-glance list of your installed plugins.
+- **File ▸ New Image** — create a new blank image and start editing it right away (custom size/color picker coming next).
 
 ### Fixed
 - **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
