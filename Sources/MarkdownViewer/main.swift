@@ -945,6 +945,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showPackageExplorer()
     }
 
+    /// TSK-1144 — File ▸ Export as Word: write the active document (as Markdown) to .docx.
+    @objc func exportActiveAsDocx(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "export.docx"
+        if let docx = UTType(filenameExtension: "docx") { panel.allowedContentTypes = [docx] }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if !model.exportActiveAsDocx(to: url) {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't export"
+            alert.informativeText = "There's no active text document to export, or the file couldn't be written."
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
     /// TSK-1054 / TSK-1208 — File ▸ New Image: prompt for size + background
     /// color, then create + open a blank image. Defaults are pre-filled so a
     /// quick Return makes an 800×600 white canvas.
@@ -1524,6 +1539,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showPackageExplorer(_:)), keyEquivalent: "")
         pkgDepsItem.target = self
         fileMenu.addItem(pkgDepsItem)
+
+        // TSK-1144: File → Export as Word — the active doc (as Markdown) → .docx.
+        let exportDocxItem = NSMenuItem(
+            title: "Export as Word…",
+            action: #selector(exportActiveAsDocx(_:)), keyEquivalent: "")
+        exportDocxItem.target = self
+        fileMenu.addItem(exportDocxItem)
 
         let openItem = NSMenuItem(
             title: "Open…",

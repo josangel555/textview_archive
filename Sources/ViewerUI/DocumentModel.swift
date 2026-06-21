@@ -2794,6 +2794,16 @@ public final class DocumentModel: ObservableObject {
         return manifest.packages.count
     }
 
+    /// TSK-1144 — export the ACTIVE text document (parsed as Markdown) to a Word
+    /// `.docx` at `url`. Returns false when there's no active text file or the
+    /// write fails. The parse (RichTextParser) + emit (DocxExporter) are host-tested.
+    @discardableResult
+    public func exportActiveAsDocx(to url: URL) -> Bool {
+        guard let (text, _) = activeTextFile() else { return false }
+        let data = DocxExporter.export(RichTextParser.parse(text))
+        return (try? data.write(to: url, options: .atomic)) != nil
+    }
+
     public func showDependencyGraph() {
         guard let root = sidebar.rootURL else { return }
         Task { [weak self] in
