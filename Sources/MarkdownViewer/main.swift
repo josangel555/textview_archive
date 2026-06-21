@@ -935,6 +935,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showAnnotations()
     }
 
+    /// TSK-1153 — File ▸ Log Patterns: a frequency summary of the active log's repeated lines.
+    @objc func showLogPatterns(_ sender: Any?) {
+        model.showLogPatterns()
+    }
+
     /// TSK-1054 / TSK-1208 — File ▸ New Image: prompt for size + background
     /// color, then create + open a blank image. Defaults are pre-filled so a
     /// quick Return makes an 800×600 white canvas.
@@ -1498,6 +1503,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showAnnotations(_:)), keyEquivalent: "")
         annotationsItem.target = self
         fileMenu.addItem(annotationsItem)
+
+        // TSK-1153: File → Log Patterns — frequency-ranked repeated-line patterns
+        // of the active log/text file (LogPatternClusterer).
+        let logPatternsItem = NSMenuItem(
+            title: "Log Patterns",
+            action: #selector(showLogPatterns(_:)), keyEquivalent: "")
+        logPatternsItem.target = self
+        fileMenu.addItem(logPatternsItem)
 
         let openItem = NSMenuItem(
             title: "Open…",

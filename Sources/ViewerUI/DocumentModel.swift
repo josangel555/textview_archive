@@ -2739,23 +2739,41 @@ public final class DocumentModel: ObservableObject {
     /// paints the laid-out result (model + layout are host-tested; the Canvas
     /// render is the VM/review residue). Clicking a node opens that file.
     /// No-op when no folder/project root is open.
+    /// The active tab's text + URL (live editor buffer if present, else the
+    /// loaded-from-disk contents), or nil for a non-text tab. Shared by the
+    /// Annotations / Log Patterns panels (TSK-1121/1153).
+    private func activeTextFile() -> (text: String, url: URL)? {
+        guard let tab = tabs.selected, let url = tab.url else { return nil }
+        if let buf = editor.editorBuffers[tab.id] { return (buf.text, url) }
+        if case .loaded(let f) = tab.state { return (f.contents, url) }
+        return nil
+    }
+
     /// TSK-1121 — open a navigable "Annotations" list for the ACTIVE text file
     /// (TODO/FIXME/HACK/XXX/NOTE/BUG via SourceAnnotationScanner) as a hosted tab;
     /// tapping a row jumps to the line. Returns the annotation count (0 = no-op:
     /// no active text file). The scan + jump (openPath atLine) are host-tested.
     @discardableResult
     public func showAnnotations() -> Int {
-        guard let tab = tabs.selected, let url = tab.url else { return 0 }
-        let text: String
-        if let buf = editor.editorBuffers[tab.id] { text = buf.text }
-        else if case .loaded(let f) = tab.state { text = f.contents }
-        else { return 0 }
+        guard let (text, url) = activeTextFile() else { return 0 }
         let annotations = SourceAnnotationScanner.scan(text)
         let view = AnnotationsView(
             annotations: annotations,
             onJump: { [weak self] line in self?.openPath(url, atLine: line) })
         _ = openHostedView(title: "Annotations — \(url.lastPathComponent)", rootView: view)
         return annotations.count
+    }
+
+    /// TSK-1153 — open a "Patterns" summary of the ACTIVE log/text file's repeated
+    /// lines (LogPatternClusterer) as a hosted tab. Returns the distinct-pattern
+    /// count (0 = no-op: no active text file). The clustering is host-tested.
+    @discardableResult
+    public func showLogPatterns() -> Int {
+        guard let (text, url) = activeTextFile() else { return 0 }
+        let result = LogPatternClusterer.cluster(text)
+        _ = openHostedView(title: "Patterns — \(url.lastPathComponent)",
+                           rootView: LogPatternsView(result: result))
+        return result.distinctPatterns
     }
 
     public func showDependencyGraph() {
