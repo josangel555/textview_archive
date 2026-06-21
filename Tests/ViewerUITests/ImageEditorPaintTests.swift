@@ -263,4 +263,28 @@ final class ImageEditorPaintTests: XCTestCase {
                                  "the erased pixel is transparent, not the black paintColor")
         XCTAssertEqual(sample(vm.rendered!, x: 0, y: 0).a, 255, "an un-erased pixel stays opaque")
     }
+
+    // MARK: - shape tools (TSK-1059)
+
+    func test_rasterTool_isShape() {
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.drawRect.isShape)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.brush.isShape)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.none.isShape)
+    }
+
+    func test_drawShape_addsRectWithPaintColorAndSliderWidth() throws {
+        let vm = try makeVM(w: 10, h: 10)
+        vm.paintColor = RGBAColor(r: 255, g: 0, b: 0, a: 255)   // red
+        vm.brushRadius = 4
+        let before = vm.overlay.count
+        let frame = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        _ = vm.drawShape(.rect, normalizedFrame: frame)
+        XCTAssertEqual(vm.overlay.count, before + 1)
+        let shape = try XCTUnwrap(vm.overlay.shapes.last)
+        XCTAssertEqual(shape.kind, .rect)
+        XCTAssertEqual(shape.frame, frame)
+        XCTAssertEqual(shape.style.stroke.r, 1, accuracy: 0.01, "stroke uses the red paint color")
+        XCTAssertLessThanOrEqual(shape.style.stroke.g, 0.01)
+        XCTAssertEqual(shape.style.lineWidth, 4, accuracy: 0.01, "line width from the brush slider")
+    }
 }

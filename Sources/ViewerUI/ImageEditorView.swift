@@ -16,6 +16,9 @@ struct ImageEditorView: View {
     @StateObject private var vm: ImageEditorViewModel
     /// TSK-1101 — last canvas pixel painted this drag, for continuous brush strokes.
     @State private var lastPaintPixel: (x: Int, y: Int)?
+    /// TSK-1059 — in-progress shape drag (view points), for the live rubber-band.
+    @State private var shapeDragStart: CGPoint?
+    @State private var shapeDragCurrent: CGPoint?
     /// Called when the user dismisses the editor (returns to the plain viewer).
     let onClose: () -> Void
 
@@ -61,6 +64,16 @@ struct ImageEditorView: View {
                     // exact rect the fitted image occupies — a pure SwiftUI
                     // sibling (Canvas), so no opaque-representable occlusion.
                     VectorOverlayView(overlay: vm.overlay, imageRect: displayed)
+                    // TSK-1059: live rubber-band while dragging a shape tool.
+                    if vm.tool.isShape, let s = shapeDragStart, let c = shapeDragCurrent {
+                        let r = CGRect(x: min(s.x, c.x), y: min(s.y, c.y),
+                                       width: abs(c.x - s.x), height: abs(c.y - s.y))
+                        Rectangle()
+                            .stroke(Color.accentColor, lineWidth: 1)
+                            .frame(width: r.width, height: r.height)
+                            .position(x: r.midX, y: r.midY)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .contentShape(Rectangle())
                 // TSK-1101: map drag/tap → canvas pixel → apply the current paint
@@ -69,6 +82,11 @@ struct ImageEditorView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
+                            if vm.tool.isShape {
+                                shapeDragStart = value.startLocation
+                                shapeDragCurrent = value.location
+                                return
+                            }
                             guard vm.tool.isContinuous,
                                   let px = PaintCoordinateMapping.canvasPixel(
                                       value.location, in: displayed,
@@ -82,6 +100,15 @@ struct ImageEditorView: View {
                             lastPaintPixel = px
                         }
                         .onEnded { value in
+                            if vm.tool.isShape {
+                                defer { shapeDragStart = nil; shapeDragCurrent = nil }
+                                let rect = ShapeDragGeometry.normalizedRect(
+                                    from: value.startLocation, to: value.location, in: displayed)
+                                if rect.width > 0.001, rect.height > 0.001 {
+                                    vm.drawShape(.rect, normalizedFrame: rect)
+                                }
+                                return
+                            }
                             defer { lastPaintPixel = nil }
                             guard vm.tool != .none,
                                   let px = PaintCoordinateMapping.canvasPixel(
@@ -243,6 +270,7 @@ struct ImageEditorView: View {
             Image(systemName: "pencil").tag(ImageEditorViewModel.RasterTool.pencil)
             Image(systemName: "eraser").tag(ImageEditorViewModel.RasterTool.eraser)
             Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
+            Image(systemName: "rectangle").tag(ImageEditorViewModel.RasterTool.drawRect)
         }
         .pickerStyle(.segmented)
         .labelsHidden()

@@ -70,9 +70,14 @@ public final class ImageEditorViewModel: ObservableObject {
         case eraser
         /// Paint bucket: a click flood-fills the contiguous region under it.
         case floodFill
+        /// Rectangle: click-drag to draw a vector rectangle outline. TSK-1059.
+        case drawRect
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool { self == .brush || self == .eraser || self == .pencil }
+
+        /// Tools that draw a vector shape by dragging out a bounding box.
+        var isShape: Bool { self == .drawRect }
 
         /// The color this tool paints with, given the user's selected `base`.
         /// The eraser paints transparency; every other tool uses `base`.
@@ -359,6 +364,7 @@ public final class ImageEditorViewModel: ObservableObject {
         case .pencil:      return brushDab(atX: x, y: y)   // resolvedRadius → 0 (1px)
         case .eraser:      return brushDab(atX: x, y: y)   // resolvedColor → .clear
         case .floodFill:   return floodFill(atX: x, y: y)
+        case .drawRect:    return 0   // drag-committed via drawShape, not a click
         }
     }
 
@@ -382,6 +388,18 @@ public final class ImageEditorViewModel: ObservableObject {
     public func addShape(_ shape: VectorShape) -> UUID {
         overlay.add(shape)
         return shape.id
+    }
+
+    /// TSK-1059 — commit a drag-drawn vector shape of `kind` with a NORMALIZED
+    /// (`0...1`) bounding box, styled with the current `paintColor` and a line
+    /// width from the brush slider. Returns the new shape's id.
+    @discardableResult
+    public func drawShape(_ kind: VectorShape.Kind, normalizedFrame: CGRect) -> UUID {
+        let stroke = OverlayColor(
+            r: Double(paintColor.r) / 255, g: Double(paintColor.g) / 255,
+            b: Double(paintColor.b) / 255, a: Double(paintColor.a) / 255)
+        let style = ShapeStyle(stroke: stroke, lineWidth: max(2, Double(brushRadius)))
+        return addShape(VectorShape(kind: kind, frame: normalizedFrame, style: style))
     }
 
     /// Remove the shape with `id` (no-op for an unknown id).
