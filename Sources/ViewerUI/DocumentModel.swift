@@ -2720,6 +2720,11 @@ public final class DocumentModel: ObservableObject {
             title: "Folder Sizes: \(target.lastPathComponent)", rootView: view)
     }
 
+    /// TSK-1112: merged extensions inventory for the Settings ▸ Extensions list.
+    /// Plugins now (from the shared registry); walkthroughs (need an off-main
+    /// catalog scan → snapshots) are a tracked follow-on.
+    public var extensionsInventory: ExtensionsInventory { ExtensionsInventory.live() }
+
     /// Whether Local History can be shown for `url` — it has saved versions.
     /// (Always offer the menu; the viewer shows a friendly "no versions yet"
     /// empty state when there are none, so this returns true for any file URL.)

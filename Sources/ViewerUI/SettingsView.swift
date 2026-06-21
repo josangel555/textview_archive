@@ -49,6 +49,8 @@ public struct SettingsView: View {
                     Divider()
                     pluginsSection
                     Divider()
+                    extensionsSection
+                    Divider()
                     lspSection
                     Divider()
                     advancedSection
@@ -154,6 +156,27 @@ public struct SettingsView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
+        }
+    }
+
+    /// TSK-1112: at-a-glance list of installed plugins (the merged extensions
+    /// inventory; walkthroughs are a tracked follow-on). Distinct from the
+    /// Plugins config sub-page — this is the read-only "what's installed" view.
+    private var extensionsSection: some View {
+        section("Extensions") {
+            let plugins = model.extensionsInventory.items(of: .plugin)
+            if plugins.isEmpty {
+                row("Installed plugins") {
+                    Text("None").font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(plugins) { item in
+                    row(item.name) {
+                        Text(item.version.map { "v\($0)" } ?? "")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 
