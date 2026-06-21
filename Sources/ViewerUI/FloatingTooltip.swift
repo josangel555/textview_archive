@@ -6,7 +6,7 @@ import ViewerKit
 // The native macOS `.help(...)` tooltip is slow (~1.5–2s system delay),
 // tiny, and unstyled. UX-H replaces it with a custom FLOATING overlay
 // that:
-//   * appears FAST on hover (`TooltipTiming.appearDelay` ≈ 0.3s),
+//   * appears on hover after a short delay (`TooltipTiming.appearDelay` ≈ 0.6s),
 //   * is bigger + cleanly styled (title + optional description, rounded,
 //     theme-aware via `Palette` / `.thinMaterial`),
 //   * is anchored to the hovered element and clamped inside the window,
@@ -27,11 +27,13 @@ import ViewerKit
 /// tooltip. Pulled out of the view layer so the "fast appear, slow-ish
 /// move, instant dismiss" policy is asserted without a live window.
 public enum TooltipTiming {
-    /// Delay from hover-enter to the bubble appearing. Deliberately far
-    /// below the macOS system default (~1.5s) so the tooltip feels
-    /// responsive, but long enough that a pointer merely passing OVER a
-    /// control on its way elsewhere doesn't flash a bubble.
-    public static let appearDelay: TimeInterval = 0.3
+    /// Delay from hover-enter to the bubble appearing. Below the macOS system
+    /// default (~1.5s) so the tooltip still feels responsive, but deliberately
+    /// not TOO eager: the owner found 0.3s fired too soon — a pointer merely
+    /// passing OVER a control on its way elsewhere flashed a bubble. 0.6s lets a
+    /// transient pass-through hover go by without a flash while still beating the
+    /// system default (TSK-1209).
+    public static let appearDelay: TimeInterval = 0.6
 
     /// When the pointer slides directly from one helped element to
     /// another while a bubble is already showing, re-target with this

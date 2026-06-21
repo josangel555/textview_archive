@@ -127,9 +127,18 @@ final class FloatingTooltipTests: XCTestCase {
     /// default (~1.5s). Pin it well under that so a regression that
     /// restores a sluggish delay fails here.
     func test_timing_appearIsFasterThanSystemDefault() {
-        XCTAssertLessThanOrEqual(TooltipTiming.appearDelay, 0.4)
+        XCTAssertLessThanOrEqual(TooltipTiming.appearDelay, 0.8,
+                                 "still well under the macOS ~1.5s default")
         XCTAssertGreaterThan(TooltipTiming.appearDelay, 0,
                              "must be >0 so a pass-through hover doesn't flash")
+    }
+
+    /// TSK-1209 — the owner found 0.3s fired too soon (transient pass-through
+    /// hovers flashed a bubble); the open delay was roughly doubled to 0.6s.
+    /// Pins the value so a revert to the eager 0.3s fails here.
+    func test_timing_appearDelay_isDeliberatelyRelaxed() {
+        XCTAssertEqual(TooltipTiming.appearDelay, 0.6, accuracy: 0.0001)
+        XCTAssertGreaterThan(TooltipTiming.appearDelay, TooltipTiming.rechainDelay)
     }
 
     // MARK: - Placement geometry (clamp inside the window)
