@@ -110,6 +110,7 @@ public enum ScriptVerb {
         case "show-palette":    model.showPalette()
         case "show-dependency-graph": model.showDependencyGraph()
         case "show-folder-treemap": model.showFolderTreemap()
+        case "new-image":       model.newBlankImageForLanding()
         case "dismiss-palette": model.dismissPalette()
         case "show-goto":       model.showGoToPath()
         case "dismiss-goto":    model.dismissGoToPath()

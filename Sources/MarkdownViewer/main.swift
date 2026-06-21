@@ -925,6 +925,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showFolderTreemap()
     }
 
+    /// TSK-1054 — File ▸ New Image: create + open a blank image.
+    @objc func newImage(_ sender: Any?) {
+        model.newBlankImageForLanding()
+    }
+
     @objc func closeCurrentTab(_ sender: Any?) {
         guard model.tabs.selectedIndex != nil else {
             window?.performClose(nil)
@@ -1422,6 +1427,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showFolderTreemap(_:)), keyEquivalent: "")
         treemapItem.target = self
         fileMenu.addItem(treemapItem)
+
+        // TSK-1054: File → New Image — create + open a blank PNG canvas.
+        let newImageItem = NSMenuItem(
+            title: "New Image", action: #selector(newImage(_:)), keyEquivalent: "")
+        newImageItem.target = self
+        fileMenu.addItem(newImageItem)
 
         let openItem = NSMenuItem(
             title: "Open…",

@@ -786,6 +786,39 @@ public final class DocumentModel: ObservableObject {
         return createNewFile(in: dir, type: type)
     }
 
+    /// TSK-1054 — create a new blank PNG image (default 800×600 white), uniquely
+    /// named, in `directory`, and return its URL. Binary write (not the text
+    /// `NewFileCreator` path). Host-testable; a follow-on dialog supplies a
+    /// custom size/color.
+    @discardableResult
+    public func createNewBlankImage(in directory: URL) -> URL? {
+        guard let data = BlankImageCreator.pngData() else { return nil }
+        var url = directory.appendingPathComponent("Untitled.png")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = directory.appendingPathComponent("Untitled \(n).png")
+            n += 1
+        }
+        do {
+            try data.write(to: url)
+            sidebar.reloadChildren(of: directory)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    /// TSK-1054 — File ▸ New Image: create a blank image (in the open folder, or
+    /// the per-user temp scratch dir when none is open — same always-works
+    /// fallback as the other New actions) and open it in the editor.
+    @discardableResult
+    public func newBlankImageForLanding() -> URL? {
+        let dir = newFileTargetDirectory ?? FileManager.default.temporaryDirectory
+        guard let url = createNewBlankImage(in: dir) else { return nil }
+        openPath(url)
+        return url
+    }
+
     /// True when there's clipboard text to paste into a new scratch tab (TSK-935).
     public var canNewTabFromClipboard: Bool {
         !(NSPasteboard.general.string(forType: .string) ?? "").isEmpty
