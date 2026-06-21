@@ -130,4 +130,51 @@ final class RtfViewerRoutingTests: XCTestCase {
         XCTAssertEqual(p.terminationStatus, 0, "zip the .ods fixture")
         return zipURL
     }
+
+    func test_xlsx_categorizedAsPlainText() {
+        XCTAssertEqual(
+            FileTypeDetector.category(for: tmp.appendingPathComponent("book.xlsx")),
+            .plainText, "an .xlsx routes to the source/plainText view")
+    }
+
+    func test_xlsx_load_extractsSheetAsTSV_andIsReadOnly() throws {
+        let url = try makeXlsx()
+        let tf = try TextFileLoader(maxBytes: 10_000_000).load(url: url)
+
+        XCTAssertTrue(tf.isExtractedReadOnly,
+                      "an .xlsx loads as a READ-ONLY extracted view")
+        XCTAssertTrue(tf.contents.contains("Name"), "shared-string cell text shows")
+        XCTAssertTrue(tf.contents.contains("Ann"))
+        XCTAssertTrue(tf.contents.contains("\t"), "cells are TAB-separated")
+    }
+
+    /// Build a minimal real `.xlsx` (multi-part OOXML ZIP) — mirrors
+    /// `XLSXDocumentTests.test_load_realXLSXFixture`.
+    private func makeXlsx() throws -> URL {
+        let stage = tmp.appendingPathComponent("xlsx-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: stage.appendingPathComponent("xl/worksheets"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: stage.appendingPathComponent("xl/_rels"), withIntermediateDirectories: true)
+        func w(_ rel: String, _ s: String) throws {
+            try s.data(using: .utf8)!.write(to: stage.appendingPathComponent(rel))
+        }
+        try w("xl/sharedStrings.xml",
+              #"<?xml version="1.0"?><sst><si><t>Name</t></si><si><t>City</t></si><si><t>Ann</t></si></sst>"#)
+        try w("xl/workbook.xml",
+              #"<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="People" sheetId="1" r:id="rId1"/></sheets></workbook>"#)
+        try w("xl/_rels/workbook.xml.rels",
+              #"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>"#)
+        try w("xl/worksheets/sheet1.xml",
+              #"<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2"><v>100</v></c></row></sheetData></worksheet>"#)
+        let zipURL = tmp.appendingPathComponent("book.xlsx")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        p.currentDirectoryURL = stage
+        p.arguments = ["-q", "-r", zipURL.path, "xl"]
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        try p.run(); p.waitUntilExit()
+        XCTAssertEqual(p.terminationStatus, 0, "zip the .xlsx fixture")
+        return zipURL
+    }
 }

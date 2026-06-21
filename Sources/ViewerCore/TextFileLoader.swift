@@ -256,6 +256,17 @@ public struct TextFileLoader: Sendable {
                 isExtractedReadOnly: true
             )
         }
+        // TSK-1036: .xlsx OOXML workbook — first sheet as TAB-separated text
+        // (read-only, TSK-1204). Grid view is the follow-on. `try?` → binary
+        // fallback for a malformed/non-xlsx.
+        if url.pathExtension.lowercased() == "xlsx",
+           let workbook = try? XLSXDocument.load(url) {
+            return TextFile(
+                url: url, contents: Self.tabSeparated(workbook.firstSheet?.rows ?? []),
+                encoding: .utf8, byteCount: data.count, modifiedTime: mtime,
+                isExtractedReadOnly: true
+            )
+        }
 
         switch TextDecoder.decode(data) {
         case .text(let s, let enc):

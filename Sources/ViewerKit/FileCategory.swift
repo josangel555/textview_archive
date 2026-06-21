@@ -32,12 +32,12 @@ public enum FileTypeDetector {
     private static let mermaidExtensions: Set<String> = ["mmd", "mermaid"]
     private static let plainTextExtensions: Set<String> = [
         "txt", "text", "log", "csv", "tsv",
-        // TSK-1036: .rtf/.docx/.ods route to the source view; the loader
+        // TSK-1036: .rtf/.docx/.ods/.xlsx route to the source view; the loader
         // substitutes the EXTRACTED content (RtfTextExtractor / DocxTextExtractor
-        // / ODSContentParser → TSV) as a READ-ONLY view (TSK-1204), so the raw
-        // `{\rtf1...}` / OOXML/ODF ZIP never shows and a save can't overwrite the
-        // source. (.xlsx follows.)
-        "rtf", "docx", "ods",
+        // / ODSContentParser / XLSXDocument → TSV) as a READ-ONLY view (TSK-1204),
+        // so the raw `{\rtf1...}` / OOXML/ODF ZIP never shows and a save can't
+        // overwrite the source.
+        "rtf", "docx", "ods", "xlsx",
     ]
     private static let htmlExtensions: Set<String> = ["html", "htm", "xhtml"]
     private static let codeExtensions: Set<String> = [
