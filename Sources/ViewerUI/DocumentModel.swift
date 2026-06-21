@@ -2813,6 +2813,22 @@ public final class DocumentModel: ObservableObject {
         return (try? rtf.write(to: url, atomically: true, encoding: .utf8)) != nil
     }
 
+    /// TSK-1144 — export the ACTIVE document to an `.rtfd` package (a directory
+    /// bundle whose `TXT.rtf` holds the RTF — the AppKit convention). False when
+    /// there's no active text file or the write fails.
+    @discardableResult
+    public func exportActiveAsRTFD(to url: URL) -> Bool {
+        guard let (text, _) = activeTextFile() else { return false }
+        let rtf = RtfExporter.export(RichTextParser.parse(text))
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try rtf.write(to: url.appendingPathComponent("TXT.rtf"), atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     public func showDependencyGraph() {
         guard let root = sidebar.rootURL else { return }
         Task { [weak self] in

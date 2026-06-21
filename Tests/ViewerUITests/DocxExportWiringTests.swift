@@ -68,4 +68,20 @@ final class DocxExportWiringTests: XCTestCase {
         let model = makeModel()
         XCTAssertFalse(model.exportActiveAsRTF(to: tmp.appendingPathComponent("x.rtf")))
     }
+
+    func test_exportActiveAsRTFD_writesPackageWithTXTrtf() throws {
+        let md = tmp.appendingPathComponent("doc.md")
+        try "# Title\n\nHello".write(to: md, atomically: true, encoding: .utf8)
+        let model = makeModel()
+        model.open(url: md)
+
+        let pkg = tmp.appendingPathComponent("out.rtfd")
+        XCTAssertTrue(model.exportActiveAsRTFD(to: pkg))
+        var isDir: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pkg.path, isDirectory: &isDir))
+        XCTAssertTrue(isDir.boolValue, ".rtfd is a package directory")
+        let rtf = try String(contentsOf: pkg.appendingPathComponent("TXT.rtf"), encoding: .utf8)
+        XCTAssertTrue(rtf.hasPrefix("{\\rtf1"))
+        XCTAssertTrue(rtf.contains("Title"))
+    }
 }
