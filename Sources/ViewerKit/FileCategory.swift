@@ -31,7 +31,12 @@ public enum FileTypeDetector {
     /// in `markdownExtensions`, but list-order discipline is cheap).
     private static let mermaidExtensions: Set<String> = ["mmd", "mermaid"]
     private static let plainTextExtensions: Set<String> = [
-        "txt", "text", "log", "csv", "tsv"
+        "txt", "text", "log", "csv", "tsv",
+        // TSK-1036: .rtf routes to the source view; the loader substitutes the
+        // EXTRACTED plain text (RtfTextExtractor) as a READ-ONLY view (TSK-1204),
+        // so the raw `{\rtf1...}` control words never show and a save can't
+        // overwrite the source.
+        "rtf",
     ]
     private static let htmlExtensions: Set<String> = ["html", "htm", "xhtml"]
     private static let codeExtensions: Set<String> = [

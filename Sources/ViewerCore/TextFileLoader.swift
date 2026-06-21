@@ -220,6 +220,21 @@ public struct TextFileLoader: Sendable {
             throw FileLoadError.notReadable
         }
 
+        // TSK-1036: .rtf renders its EXTRACTED plain text (RtfTextExtractor)
+        // rather than the raw `{\rtf1...}` control words. Flagged
+        // `isExtractedReadOnly` (TSK-1204) so saveEditor refuses to write the
+        // extracted text back over the .rtf source. RTF is itself text, so
+        // decode then strip; isoLatin1 is a never-failing 1:1 fallback.
+        if url.pathExtension.lowercased() == "rtf",
+           let rtf = String(data: data, encoding: .utf8)
+               ?? String(data: data, encoding: .isoLatin1) {
+            return TextFile(
+                url: url, contents: RtfTextExtractor.plainText(rtf),
+                encoding: .utf8, byteCount: data.count, modifiedTime: mtime,
+                isExtractedReadOnly: true
+            )
+        }
+
         switch TextDecoder.decode(data) {
         case .text(let s, let enc):
             return TextFile(
