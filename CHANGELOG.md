@@ -21,6 +21,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image editor — paint on the image** — with a paint tool selected (brush / pencil / eraser / eyedropper / fill), draw directly on the image; drag for a continuous stroke. The pencil is a hard 1px draw.
 - **Image editor — shape tools** — pick the rectangle, ellipse, line, or arrow tool and click-drag to draw it, with a live preview as you size it. Toggle "Fill shape" to draw rectangles/ellipses filled instead of outlined.
 
+### Performance
+- **Image editor** — adjusting sliders and edits is snappier on large images: the source is now decoded once and reused, instead of being re-decoded on every change.
+
 ### Fixed
 - **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
 - **Tooltips** — open a touch slower so a pointer just passing over a control no longer flashes a tooltip.
