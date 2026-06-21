@@ -158,6 +158,20 @@ public struct EditableCSVModel: Equatable, Sendable {
         return true
     }
 
+    /// TSK-1187 — paste a cell grid with its top-left at `(row, column)`. Cells
+    /// falling outside the current bounds are skipped (no auto-grow, matching
+    /// `setCell`). Returns the number of cells actually changed.
+    @discardableResult
+    public mutating func paste(_ grid: [[String]], atRow row: Int, column: Int) -> Int {
+        var changed = 0
+        for (dr, cells) in grid.enumerated() {
+            for (dc, value) in cells.enumerated() where setCell(row: row + dr, column: column + dc, to: value) {
+                changed += 1
+            }
+        }
+        return changed
+    }
+
     // MARK: Dirty
 
     /// `true` when there is at least one pending edit differing from the base

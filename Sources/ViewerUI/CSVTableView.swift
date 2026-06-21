@@ -233,6 +233,17 @@ struct CSVTableView: View {
                             }
                             return .handled
                         }
+                        // TSK-1187: ⌘V pastes a TSV grid at the cursor (editing only).
+                        if press.key == KeyEquivalent("v"),
+                           press.modifiers.contains(.command),
+                           var m = editModel,
+                           let s = NSPasteboard.general.string(forType: .string) {
+                            if m.paste(CSVClipboard.parseTSV(s),
+                                       atRow: cursorRow, column: cursorCol) > 0 {
+                                editModel = m
+                            }
+                            return .handled
+                        }
                         return .ignored
                     }
                     cursorRow = cur.row
