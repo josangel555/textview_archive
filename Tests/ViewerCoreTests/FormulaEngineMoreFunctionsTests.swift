@@ -70,4 +70,38 @@ final class FormulaEngineMoreFunctionsTests: XCTestCase {
         XCTAssertEqual(text(eval("SUBSTITUTE(\"a-b-c\",\"-\",\"+\",2)")), "a-b+c")     // only the 2nd
         XCTAssertEqual(text(eval("SUBSTITUTE(\"a-b-c\",\"-\",\"+\",9)")), "a-b-c")     // fewer than N → unchanged
     }
+
+    // MARK: - Conditional aggregates (range + criterion)
+
+    private func eval(_ body: String, _ grid: [String: String]) -> FormulaValue {
+        var visiting = Set<CellReference>()
+        let resolve: CellResolver = { ref in grid[ref.a1] }
+        return FormulaEngine.evaluateFormula(body, resolve: resolve, visiting: &visiting)
+    }
+
+    func test_countif_numericAndComparison() {
+        let g = ["A1": "5", "A2": "10", "A3": "15", "A4": "3"]
+        XCTAssertEqual(num(eval("COUNTIF(A1:A4,\">5\")", g)), 2)    // 10, 15
+        XCTAssertEqual(num(eval("COUNTIF(A1:A4,5)", g)), 1)
+        XCTAssertEqual(num(eval("COUNTIF(A1:A4,\">=5\")", g)), 3)   // 5, 10, 15
+        XCTAssertEqual(num(eval("COUNTIF(A1:A4,\"<>5\")", g)), 3)
+    }
+
+    func test_countif_textIsCaseInsensitive() {
+        let g = ["A1": "apple", "A2": "Apple", "A3": "pear"]
+        XCTAssertEqual(num(eval("COUNTIF(A1:A3,\"apple\")", g)), 2)
+        XCTAssertEqual(num(eval("COUNTIF(A1:A3,\"<>apple\")", g)), 1)
+    }
+
+    func test_sumif_sameRangeAndSeparateSumRange() {
+        let g = ["A1": "5", "A2": "10", "A3": "15", "B1": "1", "B2": "2", "B3": "3"]
+        XCTAssertEqual(num(eval("SUMIF(A1:A3,\">5\")", g)), 25)         // 10 + 15
+        XCTAssertEqual(num(eval("SUMIF(A1:A3,\">5\",B1:B3)", g)), 5)    // B2 + B3 = 2 + 3
+    }
+
+    func test_averageif_andEmptyMatchIsError() {
+        let g = ["A1": "5", "A2": "10", "A3": "15"]
+        XCTAssertEqual(num(eval("AVERAGEIF(A1:A3,\">5\")", g)), 12.5, accuracy: 1e-9)   // (10+15)/2
+        XCTAssertTrue(isError(eval("AVERAGEIF(A1:A3,\">100\")", g)))                     // none → #DIV/0
+    }
 }

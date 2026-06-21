@@ -561,9 +561,80 @@ public enum FormulaEngine {
             }
             return .text(text.replacingOccurrences(of: oldS, with: newS))
 
+        case "COUNTIF":
+            guard args.count == 2, let cells = rangeCells(args[0]) else { return .error(.value) }
+            let crit = evaluate(args[1], &ctx); if case .error = crit { return crit }
+            var n = 0
+            for ref in cells {
+                let cv = resolveCell(ref, &ctx); if case .error = cv { return cv }
+                if matchesCriterion(cv, crit) { n += 1 }
+            }
+            return .number(Double(n))
+
+        case "SUMIF", "AVERAGEIF":
+            guard args.count == 2 || args.count == 3,
+                  let critCells = rangeCells(args[0]) else { return .error(.value) }
+            let crit = evaluate(args[1], &ctx); if case .error = crit { return crit }
+            let sumCells: [CellReference]
+            if args.count == 3 {
+                guard let sc = rangeCells(args[2]) else { return .error(.value) }
+                sumCells = sc
+            } else {
+                sumCells = critCells
+            }
+            var total = 0.0, numericMatched = 0
+            for (i, ref) in critCells.enumerated() {
+                let cv = resolveCell(ref, &ctx); if case .error = cv { return cv }
+                guard matchesCriterion(cv, crit) else { continue }
+                let target = i < sumCells.count ? sumCells[i] : ref
+                let sv = resolveCell(target, &ctx); if case .error = sv { return sv }
+                if let nval = numericContribution(sv) { total += nval; numericMatched += 1 }
+            }
+            if name == "AVERAGEIF" {
+                return numericMatched == 0 ? .error(.divideByZero) : .number(total / Double(numericMatched))
+            }
+            return .number(total)
+
         default:
             return .error(.name)
         }
+    }
+
+    /// The cells an argument denotes when it must be a range: a `A1:B2` range
+    /// expands to its cells; a single `A1` reference is a 1-cell range; anything
+    /// else (a literal / expression) is not a range → nil (caller → #VALUE).
+    private static func rangeCells(_ arg: FormulaExpr) -> [CellReference]? {
+        if case .range(let a, let b) = arg { return CellRange(a, b).cells }
+        if case .ref(let r) = arg { return [r] }
+        return nil
+    }
+
+    /// Excel-style criterion match for COUNTIF/SUMIF/AVERAGEIF. The criterion may
+    /// carry a leading comparison operator (`>=`, `<=`, `<>`, `>`, `<`, `=`);
+    /// otherwise it is an equality test — numeric if both sides parse as numbers,
+    /// else case-insensitive text. A blank cell matches only an empty `""` test.
+    /// Wildcards (`*`/`?`) are not yet supported.
+    private static func matchesCriterion(_ cell: FormulaValue, _ criterion: FormulaValue) -> Bool {
+        let cs = criterion.asText
+        var op = "="
+        var rest = cs
+        for cand in [">=", "<=", "<>", ">", "<", "="] where cs.hasPrefix(cand) {
+            op = cand; rest = String(cs.dropFirst(cand.count)); break
+        }
+        let needle = rest.trimmingCharacters(in: .whitespaces)
+        if case .blank = cell { return op == "=" && needle.isEmpty }
+        if let rn = parseNumber(needle), let cn = cell.asNumber {
+            switch op {
+            case ">":  return cn > rn
+            case "<":  return cn < rn
+            case ">=": return cn >= rn
+            case "<=": return cn <= rn
+            case "<>": return cn != rn
+            default:   return cn == rn
+            }
+        }
+        let same = cell.asText.caseInsensitiveCompare(needle) == .orderedSame
+        return op == "<>" ? !same : same
     }
 
     /// SUBSTITUTE's 4-arg form: replace only the `n`-th (1-based) occurrence of
