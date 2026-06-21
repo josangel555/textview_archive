@@ -35,4 +35,16 @@ public enum NotebookGate {
         }
         return defaults.bool(forKey: defaultsKey)
     }
+
+    /// TSK-717 — should `url` render through the notebook cell-list view? True
+    /// only for a `.ipynb` file AND when the experimental gate is enabled.
+    /// Routing seam for the content view (off by default ⇒ no default-path impact).
+    public static func handles(
+        _ url: URL,
+        defaults: UserDefaults = .standard,
+        environment: [String: String]? = nil
+    ) -> Bool {
+        url.pathExtension.lowercased() == "ipynb"
+            && isEnabled(defaults: defaults, environment: environment)
+    }
 }

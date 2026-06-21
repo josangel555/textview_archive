@@ -694,7 +694,13 @@ public struct ContentView: View {
         // renders through the markdown pipeline.
         let category = tab.categoryOverride
             ?? FileTypeDetector.category(for: file.url)
-        if tab.viewMode == .table {
+        if NotebookGate.handles(file.url),
+           let notebook = try? NotebookDocument(jsonText: file.contents) {
+            // TSK-717 (experimental — NotebookGate off by default): render a
+            // Jupyter .ipynb as typed cells. Gated ⇒ no default-path impact; a
+            // parse failure falls through to the normal JSON / source view.
+            NotebookCellListView(document: notebook)
+        } else if tab.viewMode == .table {
             // Per-tab CSV filter state lives on DocumentModel keyed by tab id;
             // pass THIS pane's id so each retained pane keeps its own filter.
             CSVTableView(text: file.contents, model: model, tabID: tab.id)

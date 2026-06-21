@@ -121,4 +121,26 @@ final class NotebookGateTests: XCTestCase {
         // env "0" wins over a persisted true.
         XCTAssertFalse(NotebookGate.isEnabled(defaults: defaults, environment: ["MDV_NOTEBOOKS": "0"]))
     }
+
+    // MARK: - handles (TSK-717 routing seam)
+
+    func test_handles_ipynbAndGateOn() {
+        let d = ephemeralDefaults()
+        XCTAssertTrue(NotebookGate.handles(
+            URL(fileURLWithPath: "/x.ipynb"), defaults: d, environment: ["MDV_NOTEBOOKS": "1"]))
+    }
+
+    func test_handles_gateOff_false() {
+        let d = ephemeralDefaults()
+        XCTAssertFalse(NotebookGate.handles(
+            URL(fileURLWithPath: "/x.ipynb"), defaults: d, environment: [:]),
+            "off by default → an .ipynb is NOT routed to the notebook view")
+    }
+
+    func test_handles_nonIpynb_falseEvenWhenGateOn() {
+        let d = ephemeralDefaults()
+        XCTAssertFalse(NotebookGate.handles(
+            URL(fileURLWithPath: "/x.json"), defaults: d, environment: ["MDV_NOTEBOOKS": "1"]),
+            "only .ipynb routes to the notebook view, even with the gate on")
+    }
 }
