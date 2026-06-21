@@ -82,8 +82,12 @@ enum Token {
     LParen,
     RParen,
     /// An identifier run (letters then alphanumerics) — a cell reference like `A1`
-    /// (functions/booleans are later slices).
+    /// or a function name like `SUM`.
     Ident(String),
+    /// `:` — range separator (`A1:B2`).
+    Colon,
+    /// `,` — function-argument separator.
+    Comma,
 }
 
 fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
@@ -100,6 +104,8 @@ fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
             '%' => { chars.next(); toks.push(Token::Percent); }
             '(' => { chars.next(); toks.push(Token::LParen); }
             ')' => { chars.next(); toks.push(Token::RParen); }
+            ':' => { chars.next(); toks.push(Token::Colon); }
+            ',' => { chars.next(); toks.push(Token::Comma); }
             _ if c.is_ascii_digit() || c == '.' => {
                 let mut lit = String::new();
                 while let Some(&d) = chars.peek() {
@@ -155,6 +161,10 @@ enum Expr {
     Number(f64),
     /// A cell reference (the raw A1-style identifier; parsed at eval time).
     Ref(String),
+    /// A cell range `A1:B2` (raw idents; valid only as a function argument).
+    Range(String, String),
+    /// A function call `NAME(arg, …)`.
+    Call(String, Vec<Expr>),
     Neg(Box<Expr>),
     Percent(Box<Expr>),
     Bin(BinOp, Box<Expr>, Box<Expr>),
@@ -251,6 +261,23 @@ impl Parser {
         Ok(e)
     }
 
+    // Comma-separated argument list, up to (not consuming) the closing `)`.
+    fn arg_list(&mut self) -> Result<Vec<Expr>, FormulaError> {
+        let mut args = Vec::new();
+        if let Some(Token::RParen) = self.toks.get(self.pos) {
+            return Ok(args); // empty: NAME()
+        }
+        loop {
+            args.push(self.add()?);
+            if let Some(Token::Comma) = self.toks.get(self.pos) {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        Ok(args)
+    }
+
     fn primary(&mut self) -> Result<Expr, FormulaError> {
         match self.toks.get(self.pos).cloned() {
             Some(Token::Number(n)) => {
@@ -259,7 +286,30 @@ impl Parser {
             }
             Some(Token::Ident(name)) => {
                 self.pos += 1;
-                Ok(Expr::Ref(name))
+                match self.toks.get(self.pos) {
+                    Some(Token::LParen) => {
+                        self.pos += 1;
+                        let args = self.arg_list()?;
+                        match self.toks.get(self.pos) {
+                            Some(Token::RParen) => {
+                                self.pos += 1;
+                                Ok(Expr::Call(name, args))
+                            }
+                            _ => Err(FormulaError::Parse),
+                        }
+                    }
+                    Some(Token::Colon) => {
+                        self.pos += 1;
+                        match self.toks.get(self.pos).cloned() {
+                            Some(Token::Ident(end)) => {
+                                self.pos += 1;
+                                Ok(Expr::Range(name, end))
+                            }
+                            _ => Err(FormulaError::Parse),
+                        }
+                    }
+                    _ => Ok(Expr::Ref(name)),
+                }
             }
             Some(Token::LParen) => {
                 self.pos += 1;
@@ -284,8 +334,10 @@ fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
         Expr::Number(n) => Value::Number(*n),
         Expr::Ref(name) => match CellRef::parse(name) {
             Some(cr) => coerce_cell(resolver(cr)),
-            None => Value::Error(FormulaError::Name), // not a valid ref (fns/bools: later slices)
+            None => Value::Error(FormulaError::Name), // not a valid cell ref
         },
+        Expr::Range(_, _) => Value::Error(FormulaError::Value), // bare range invalid in scalar context
+        Expr::Call(name, args) => call_fn(name, args, resolver),
         Expr::Neg(inner) => match as_number(eval(inner, resolver)) {
             Ok(n) => Value::Number(-n),
             Err(v) => v,
@@ -316,6 +368,165 @@ fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
                 }
                 BinOp::Pow => Value::Number(lv.powf(rv)),
             }
+        }
+    }
+}
+
+/// Evaluate a function call. Unknown name → #NAME?. (Slice 3a: aggregates +
+/// logical; text/math/lookup arrive in following slices, ported against the
+/// Swift FormulaEngine corpus.)
+fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
+    let upper = name.to_ascii_uppercase();
+    match upper.as_str() {
+        "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT" | "PRODUCT" => {
+            match numeric_values(args, resolver) {
+                Ok(nums) => aggregate(&upper, &nums),
+                Err(e) => e,
+            }
+        }
+        "IF" => {
+            let cond = match args.first() {
+                Some(c) => eval(c, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(_) = cond {
+                return cond;
+            }
+            if as_bool(&cond) {
+                args.get(1).map_or(Value::Error(FormulaError::Value), |t| eval(t, resolver))
+            } else {
+                args.get(2).map_or(Value::Bool(false), |f| eval(f, resolver))
+            }
+        }
+        "AND" | "OR" => {
+            if args.is_empty() {
+                return Value::Error(FormulaError::Value);
+            }
+            let is_and = upper == "AND";
+            let mut acc = is_and;
+            for arg in args {
+                let v = eval(arg, resolver);
+                if let Value::Error(_) = v {
+                    return v;
+                }
+                let b = as_bool(&v);
+                acc = if is_and { acc && b } else { acc || b };
+            }
+            Value::Bool(acc)
+        }
+        "NOT" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            match args.first() {
+                Some(a) => {
+                    let v = eval(a, resolver);
+                    if let Value::Error(_) = v {
+                        v
+                    } else {
+                        Value::Bool(!as_bool(&v))
+                    }
+                }
+                None => Value::Error(FormulaError::Value),
+            }
+        }
+        _ => Value::Error(FormulaError::Name),
+    }
+}
+
+/// Numeric aggregate over the flattened values. MIN/MAX of an empty set → 0,
+/// AVERAGE of empty → #DIV/0! (Excel semantics).
+fn aggregate(name: &str, nums: &[f64]) -> Value {
+    match name {
+        "SUM" => Value::Number(nums.iter().sum()),
+        "PRODUCT" => Value::Number(nums.iter().product()),
+        "COUNT" => Value::Number(nums.len() as f64),
+        "AVERAGE" => {
+            if nums.is_empty() {
+                Value::Error(FormulaError::DivideByZero)
+            } else {
+                Value::Number(nums.iter().sum::<f64>() / nums.len() as f64)
+            }
+        }
+        "MIN" => Value::Number(if nums.is_empty() {
+            0.0
+        } else {
+            nums.iter().copied().fold(f64::INFINITY, f64::min)
+        }),
+        "MAX" => Value::Number(if nums.is_empty() {
+            0.0
+        } else {
+            nums.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        }),
+        _ => Value::Error(FormulaError::Name),
+    }
+}
+
+/// Flatten function args to numbers: ranges expand to their cells (blank/text
+/// skipped), scalars evaluate (numbers/booleans contribute). An error in any
+/// scalar arg propagates as `Err`.
+fn numeric_values(
+    args: &[Expr],
+    resolver: &dyn Fn(CellRef) -> Option<String>,
+) -> Result<Vec<f64>, Value> {
+    let mut nums = Vec::new();
+    for arg in args {
+        if let Expr::Range(a, b) = arg {
+            let cells = expand_range(a, b).ok_or(Value::Error(FormulaError::Ref))?;
+            for cr in cells {
+                if let Some(n) = numeric_contribution(&coerce_cell(resolver(cr))) {
+                    nums.push(n);
+                }
+            }
+        } else {
+            let v = eval(arg, resolver);
+            if let Value::Error(_) = v {
+                return Err(v);
+            }
+            if let Some(n) = numeric_contribution(&v) {
+                nums.push(n);
+            }
+        }
+    }
+    Ok(nums)
+}
+
+/// A value's numeric contribution to an aggregate: numbers + booleans count;
+/// blank and text do NOT (spreadsheet range-aggregate semantics).
+fn numeric_contribution(v: &Value) -> Option<f64> {
+    match v {
+        Value::Number(n) => Some(*n),
+        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        Value::Blank | Value::Text(_) | Value::Error(_) => None,
+    }
+}
+
+/// Expand a range `a:b` (raw idents) to its cells in row-major order. `None` if
+/// either endpoint is malformed.
+fn expand_range(a: &str, b: &str) -> Option<Vec<CellRef>> {
+    let start = CellRef::parse(a)?;
+    let end = CellRef::parse(b)?;
+    let (c0, c1) = (start.col.min(end.col), start.col.max(end.col));
+    let (r0, r1) = (start.row.min(end.row), start.row.max(end.row));
+    let mut cells = Vec::new();
+    for r in r0..=r1 {
+        for c in c0..=c1 {
+            cells.push(CellRef { col: c, row: r });
+        }
+    }
+    Some(cells)
+}
+
+/// Coerce a value to a boolean for IF/AND/OR/NOT: bool as-is, non-zero number →
+/// true, blank → false, "true"/numeric text → true, other text/error → false.
+fn as_bool(v: &Value) -> bool {
+    match v {
+        Value::Bool(b) => *b,
+        Value::Number(n) => *n != 0.0,
+        Value::Blank | Value::Error(_) => false,
+        Value::Text(s) => {
+            s.eq_ignore_ascii_case("true")
+                || s.trim().parse::<f64>().is_ok_and(|n| n != 0.0)
         }
     }
 }
@@ -526,5 +737,46 @@ mod tests {
         assert_eq!(evaluate_with("A2", &r), Value::Text("abc".to_string()));
         // text in arithmetic → #VALUE
         assert_eq!(evaluate_with("A2+1", &r), Value::Error(FormulaError::Value));
+    }
+
+    #[test]
+    fn aggregate_functions_over_ranges() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "1".to_string()), // A1
+            (CellRef { col: 0, row: 1 }, "2".to_string()), // A2
+            (CellRef { col: 0, row: 2 }, "3".to_string()), // A3
+            (CellRef { col: 0, row: 3 }, "x".to_string()), // A4 (text — skipped)
+        ]
+        .into_iter()
+        .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("SUM(A1:A4)", &r), Value::Number(6.0)); // text skipped
+        assert_eq!(evaluate_with("COUNT(A1:A4)", &r), Value::Number(3.0)); // text not counted
+        assert_eq!(evaluate_with("AVERAGE(A1:A3)", &r), Value::Number(2.0));
+        assert_eq!(evaluate_with("MIN(A1:A3)", &r), Value::Number(1.0));
+        assert_eq!(evaluate_with("MAX(A1:A3)", &r), Value::Number(3.0));
+        assert_eq!(evaluate_with("PRODUCT(A1:A3)", &r), Value::Number(6.0));
+        assert_eq!(evaluate_with("SUM(A1,A2,10)", &r), Value::Number(13.0)); // mixed scalar args
+    }
+
+    #[test]
+    fn logical_functions_numeric_truthiness() {
+        // (comparison operators arrive in slice 3b; here cond is numeric truthiness)
+        assert_eq!(evaluate("IF(1, 10, 20)"), Value::Number(10.0));
+        assert_eq!(evaluate("IF(0, 10, 20)"), Value::Number(20.0));
+        assert_eq!(evaluate("IF(0, 1)"), Value::Bool(false)); // no else → FALSE
+        assert_eq!(evaluate("AND(1, 1)"), Value::Bool(true));
+        assert_eq!(evaluate("AND(1, 0)"), Value::Bool(false));
+        assert_eq!(evaluate("OR(0, 1)"), Value::Bool(true));
+        assert_eq!(evaluate("NOT(0)"), Value::Bool(true));
+    }
+
+    #[test]
+    fn nested_calls_unknown_and_empty() {
+        assert_eq!(evaluate("SUM(1, 2, IF(1, 3, 0))"), Value::Number(6.0)); // nested call
+        assert!(matches!(evaluate("BOGUS(1)"), Value::Error(FormulaError::Name))); // unknown fn
+        assert_eq!(evaluate("SUM()"), Value::Number(0.0)); // empty args
+        assert_eq!(evaluate("MIN()"), Value::Number(0.0)); // empty → 0
     }
 }
