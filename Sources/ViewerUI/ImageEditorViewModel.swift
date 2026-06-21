@@ -438,6 +438,17 @@ public final class ImageEditorViewModel: ObservableObject {
         render()
     }
 
+    /// TSK-1077 — clear the whole canvas to the current paint color (Image ▸ Clear).
+    /// No-op if the canvas can't be baked.
+    @discardableResult
+    public func clearImage() -> Bool {
+        guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
+        canvas.fillRect(x: 0, y: 0, width: canvas.width, height: canvas.height, to: paintColor)
+        paintCanvas = canvas
+        render()
+        return true
+    }
+
     /// `true` when a destructive paint session has marked the surface.
     public var hasPaint: Bool { paintCanvas != nil }
 

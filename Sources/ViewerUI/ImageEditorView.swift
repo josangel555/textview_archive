@@ -282,6 +282,11 @@ struct ImageEditorView: View {
                         Label("Invert Colors", systemImage: "circle.lefthalf.filled")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.invertColors")
+                    // TSK-1077: fill the whole canvas with the current paint color.
+                    Button { vm.clearImage() } label: {
+                        Label("Clear", systemImage: "square.slash")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.clearImage")
                     Button { vm.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
