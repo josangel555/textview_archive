@@ -81,6 +81,16 @@ public final class TerminalFavoritesStore {
         save()
     }
 
+    /// TSK-1176 — favorites matching `query` (case-insensitive over command + title);
+    /// the full list for a blank query. Order preserved (most-recently-favorited first).
+    public func search(_ query: String) -> [Favorite] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return items }
+        return items.filter {
+            $0.command.lowercased().contains(q) || $0.title.lowercased().contains(q)
+        }
+    }
+
     /// Re-read from disk — used after the user hand-edits the JSON file.
     public func reload() { load() }
 
