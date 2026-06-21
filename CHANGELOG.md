@@ -18,6 +18,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ### Fixed
 - **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
+- **Tooltips** — open a touch slower so a pointer just passing over a control no longer flashes a tooltip.
 
 ## 2026-06-20
 
