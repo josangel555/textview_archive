@@ -81,4 +81,53 @@ final class RtfViewerRoutingTests: XCTestCase {
         XCTAssertEqual(p.terminationStatus, 0, "zip the .docx fixture")
         return zipURL
     }
+
+    func test_tabSeparated_joinsRowsAndCells() {
+        XCTAssertEqual(TextFileLoader.tabSeparated([["a", "b"], ["c", "d"]]), "a\tb\nc\td")
+    }
+
+    func test_ods_categorizedAsPlainText() {
+        XCTAssertEqual(
+            FileTypeDetector.category(for: tmp.appendingPathComponent("book.ods")),
+            .plainText, "an .ods routes to the source/plainText view")
+    }
+
+    func test_ods_load_extractsGridAsTSV_andIsReadOnly() throws {
+        let content = """
+        <?xml version="1.0"?>
+        <office:document-content \
+        xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" \
+        xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" \
+        xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+        <office:body><office:spreadsheet><table:table>
+        <table:table-row><table:table-cell><text:p>Name</text:p></table:table-cell>
+        <table:table-cell><text:p>Age</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell><text:p>Jos</text:p></table:table-cell>
+        <table:table-cell><text:p>42</text:p></table:table-cell></table:table-row>
+        </table:table></office:spreadsheet></office:body></office:document-content>
+        """
+        let url = try makeOds(content)
+        let tf = try TextFileLoader(maxBytes: 10_000_000).load(url: url)
+
+        XCTAssertTrue(tf.isExtractedReadOnly,
+                      "an .ods loads as a READ-ONLY extracted view")
+        XCTAssertTrue(tf.contents.contains("Name"), "cell text shows")
+        XCTAssertTrue(tf.contents.contains("Jos"))
+        XCTAssertTrue(tf.contents.contains("\t"), "cells are TAB-separated")
+    }
+
+    private func makeOds(_ contentXML: String) throws -> URL {
+        let stage = tmp.appendingPathComponent("ods-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
+        try contentXML.data(using: .utf8)!.write(to: stage.appendingPathComponent("content.xml"))
+        let zipURL = tmp.appendingPathComponent("book.ods")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        p.currentDirectoryURL = stage
+        p.arguments = ["-r", zipURL.path, "content.xml"]
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        try p.run(); p.waitUntilExit()
+        XCTAssertEqual(p.terminationStatus, 0, "zip the .ods fixture")
+        return zipURL
+    }
 }

@@ -245,6 +245,17 @@ public struct TextFileLoader: Sendable {
                 isExtractedReadOnly: true
             )
         }
+        // TSK-1036: .ods is an ODF ZIP — show its first table as TAB-separated
+        // text (read-only, TSK-1204). A grid view is the follow-on; this makes
+        // the sheet readable instead of raw ZIP bytes. `try?` → binary fallback.
+        if url.pathExtension.lowercased() == "ods",
+           let grid = try? ODSContentParser.load(url) {
+            return TextFile(
+                url: url, contents: Self.tabSeparated(grid),
+                encoding: .utf8, byteCount: data.count, modifiedTime: mtime,
+                isExtractedReadOnly: true
+            )
+        }
 
         switch TextDecoder.decode(data) {
         case .text(let s, let enc):
@@ -295,6 +306,13 @@ public struct TextFileLoader: Sendable {
         TextDecoder.decodeViaBOM(data)
     }
     static func looksBinary(_ data: Data) -> Bool { TextDecoder.looksBinary(data) }
+
+    /// TSK-1036: join a parsed spreadsheet grid (rows of cells) into
+    /// tab-separated text for the read-only extracted view (a grid view is the
+    /// follow-on; this makes .ods/.xlsx readable instead of raw ZIP bytes).
+    static func tabSeparated(_ rows: [[String]]) -> String {
+        rows.map { $0.joined(separator: "\t") }.joined(separator: "\n")
+    }
     static func decodeUTF16WithoutBOM(_ data: Data) -> (string: String, encoding: String.Encoding)? {
         TextDecoder.decodeUTF16WithoutBOM(data)
     }
