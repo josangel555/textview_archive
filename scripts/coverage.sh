@@ -6,16 +6,23 @@
 # summary over Sources/ (excluding Tests/ and .build/). It is INFORMATIONAL —
 # always exits 0 — so it never gates a merge; wire it into a nightly/manual run.
 #
-# Usage:  bash scripts/coverage.sh            # full suite (slow)
-#         FILTER=ViewerCoreTests bash scripts/coverage.sh   # scope a target
+# Usage:  FILTER=ViewerCoreTests bash scripts/coverage.sh   # scope a target (RECOMMENDED)
+#         bash scripts/coverage.sh                          # full suite — resource-heavy
+#
+# NOTE: prefer scoping with FILTER. The unscoped `--parallel` run over the whole
+# suite spawns thousands of per-test `.profraw` and, under load / a flaky perf-bench
+# failure, SwiftPM skips the profdata merge and leaves corrupt partials (the report
+# then can't be produced). A scoped run completes cleanly and reports reliably.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 0
 
-filter_args=()
-[ -n "${FILTER:-}" ] && filter_args=(--filter "$FILTER")
-
 echo "==> swift test --enable-code-coverage ${FILTER:+(filter: $FILTER)} — runs the suite…"
-swift test --parallel --enable-code-coverage "${filter_args[@]}" >/tmp/mdv-coverage-test.log 2>&1
+# NB: expand no array under `set -u` — macOS bash 3.2 errors on "${empty[@]}".
+if [ -n "${FILTER:-}" ]; then
+    swift test --parallel --enable-code-coverage --filter "$FILTER" >/tmp/mdv-coverage-test.log 2>&1
+else
+    swift test --parallel --enable-code-coverage >/tmp/mdv-coverage-test.log 2>&1
+fi
 test_status=$?
 tail -3 /tmp/mdv-coverage-test.log
 [ "$test_status" -ne 0 ] && echo "   (tests reported failures — coverage below is still computed from what ran)"
