@@ -72,12 +72,23 @@ public final class ImageEditorViewModel: ObservableObject {
         case floodFill
         /// Rectangle: click-drag to draw a vector rectangle outline. TSK-1059.
         case drawRect
+        /// Ellipse: click-drag to draw a vector ellipse outline. TSK-1060.
+        case drawEllipse
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool { self == .brush || self == .eraser || self == .pencil }
 
         /// Tools that draw a vector shape by dragging out a bounding box.
-        var isShape: Bool { self == .drawRect }
+        var isShape: Bool { shapeKind != nil }
+
+        /// The vector-shape kind this tool draws, or nil for the non-shape tools.
+        var shapeKind: VectorShape.Kind? {
+            switch self {
+            case .drawRect: return .rect
+            case .drawEllipse: return .ellipse
+            default: return nil
+            }
+        }
 
         /// The color this tool paints with, given the user's selected `base`.
         /// The eraser paints transparency; every other tool uses `base`.
@@ -365,6 +376,7 @@ public final class ImageEditorViewModel: ObservableObject {
         case .eraser:      return brushDab(atX: x, y: y)   // resolvedColor → .clear
         case .floodFill:   return floodFill(atX: x, y: y)
         case .drawRect:    return 0   // drag-committed via drawShape, not a click
+        case .drawEllipse: return 0
         }
     }
 

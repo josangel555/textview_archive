@@ -268,8 +268,22 @@ final class ImageEditorPaintTests: XCTestCase {
 
     func test_rasterTool_isShape() {
         XCTAssertTrue(ImageEditorViewModel.RasterTool.drawRect.isShape)
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.drawEllipse.isShape)
         XCTAssertFalse(ImageEditorViewModel.RasterTool.brush.isShape)
         XCTAssertFalse(ImageEditorViewModel.RasterTool.none.isShape)
+    }
+
+    func test_rasterTool_shapeKind() {
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.drawRect.shapeKind, .rect)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.drawEllipse.shapeKind, .ellipse)
+        XCTAssertNil(ImageEditorViewModel.RasterTool.brush.shapeKind)
+        XCTAssertNil(ImageEditorViewModel.RasterTool.floodFill.shapeKind)
+    }
+
+    func test_drawShape_addsEllipse() throws {
+        let vm = try makeVM(w: 10, h: 10)
+        _ = vm.drawShape(.ellipse, normalizedFrame: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.6))
+        XCTAssertEqual(vm.overlay.shapes.last?.kind, .ellipse)
     }
 
     func test_drawShape_addsRectWithPaintColorAndSliderWidth() throws {

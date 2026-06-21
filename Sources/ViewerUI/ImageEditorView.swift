@@ -68,11 +68,16 @@ struct ImageEditorView: View {
                     if vm.tool.isShape, let s = shapeDragStart, let c = shapeDragCurrent {
                         let r = CGRect(x: min(s.x, c.x), y: min(s.y, c.y),
                                        width: abs(c.x - s.x), height: abs(c.y - s.y))
-                        Rectangle()
-                            .stroke(Color.accentColor, lineWidth: 1)
-                            .frame(width: r.width, height: r.height)
-                            .position(x: r.midX, y: r.midY)
-                            .allowsHitTesting(false)
+                        Group {
+                            if vm.tool.shapeKind == .ellipse {
+                                Ellipse().stroke(Color.accentColor, lineWidth: 1)
+                            } else {
+                                Rectangle().stroke(Color.accentColor, lineWidth: 1)
+                            }
+                        }
+                        .frame(width: r.width, height: r.height)
+                        .position(x: r.midX, y: r.midY)
+                        .allowsHitTesting(false)
                     }
                 }
                 .contentShape(Rectangle())
@@ -105,7 +110,7 @@ struct ImageEditorView: View {
                                 let rect = ShapeDragGeometry.normalizedRect(
                                     from: value.startLocation, to: value.location, in: displayed)
                                 if rect.width > 0.001, rect.height > 0.001 {
-                                    vm.drawShape(.rect, normalizedFrame: rect)
+                                    vm.drawShape(vm.tool.shapeKind ?? .rect, normalizedFrame: rect)
                                 }
                                 return
                             }
@@ -271,6 +276,7 @@ struct ImageEditorView: View {
             Image(systemName: "eraser").tag(ImageEditorViewModel.RasterTool.eraser)
             Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
             Image(systemName: "rectangle").tag(ImageEditorViewModel.RasterTool.drawRect)
+            Image(systemName: "circle").tag(ImageEditorViewModel.RasterTool.drawEllipse)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
