@@ -46,6 +46,16 @@ struct ImageEditorView: View {
         .accessibilityIdentifier("mdv.imageEditor")
     }
 
+    /// TSK-1065 — true when a drag from `p` should MOVE the current selection
+    /// (the marquee tool is active and `p` falls inside the existing selection).
+    private func isMovingSelection(_ p: CGPoint, in displayed: CGRect, cg: CGImage) -> Bool {
+        guard vm.tool.isSelection, let sel = vm.selection,
+              let px = PaintCoordinateMapping.canvasPixel(
+                  p, in: displayed, imageWidth: cg.width, imageHeight: cg.height)
+        else { return false }
+        return sel.contains(x: px.x, y: px.y)
+    }
+
     // MARK: - preview
 
     @ViewBuilder private var preview: some View {
@@ -116,9 +126,18 @@ struct ImageEditorView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            if vm.tool.isShape || vm.tool.isSelection {
+                            if vm.tool.isShape {
                                 shapeDragStart = value.startLocation
                                 shapeDragCurrent = value.location
+                                return
+                            }
+                            if vm.tool.isSelection {
+                                // A drag starting INSIDE the current selection moves it
+                                // (on release); otherwise rubber-band a new marquee.
+                                if !isMovingSelection(value.startLocation, in: displayed, cg: cg) {
+                                    shapeDragStart = value.startLocation
+                                    shapeDragCurrent = value.location
+                                }
                                 return
                             }
                             guard vm.tool.isContinuous,
@@ -136,9 +155,15 @@ struct ImageEditorView: View {
                         .onEnded { value in
                             if vm.tool.isSelection {
                                 defer { shapeDragStart = nil; shapeDragCurrent = nil }
-                                vm.setSelection(SelectionGeometry.selectionRect(
-                                    from: value.startLocation, to: value.location,
-                                    in: displayed, imageWidth: cg.width, imageHeight: cg.height))
+                                if isMovingSelection(value.startLocation, in: displayed, cg: cg) {
+                                    let dx = Int(value.translation.width / displayed.width * CGFloat(cg.width))
+                                    let dy = Int(value.translation.height / displayed.height * CGFloat(cg.height))
+                                    vm.moveSelection(byX: dx, y: dy)
+                                } else {
+                                    vm.setSelection(SelectionGeometry.selectionRect(
+                                        from: value.startLocation, to: value.location,
+                                        in: displayed, imageWidth: cg.width, imageHeight: cg.height))
+                                }
                                 return
                             }
                             if let kind = vm.tool.shapeKind {

@@ -491,4 +491,30 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertFalse(vm.canPaste(from: pb))
         XCTAssertFalse(vm.pasteImage(from: pb), "no image on the pasteboard → no-op")
     }
+
+    // MARK: - move selection (TSK-1065)
+
+    func test_moveSelection_movesPixelsAndClearsOriginal() throws {
+        let vm = try makeVM(w: 12, h: 12, r: 1, g: 1, b: 1)   // white
+        vm.tool = .brush
+        vm.paintColor = .red
+        vm.brushRadius = 0
+        vm.applyTool(atX: 1, y: 1)                            // a red pixel at (1,1)
+        vm.setSelection(.rect(x: 0, y: 0, width: 4, height: 4))
+        XCTAssertTrue(vm.moveSelection(byX: 6, y: 0))
+        XCTAssertEqual(vm.selection, .rect(x: 6, y: 0, width: 4, height: 4),
+                       "the selection follows the move")
+        let moved = sample(vm.rendered!, x: 7, y: 1)
+        XCTAssertGreaterThanOrEqual(moved.r, 200)
+        XCTAssertLessThanOrEqual(moved.g, 60, "the red pixel moved to (7,1)")
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 1, y: 1).a, 4,
+                                 "the original region is cleared to transparent")
+    }
+
+    func test_moveSelection_noSelectionOrZero_isNoOp() throws {
+        let vm = try makeVM(w: 8, h: 8)
+        XCTAssertFalse(vm.moveSelection(byX: 2, y: 2), "no selection → no-op")
+        vm.setSelection(.rect(x: 0, y: 0, width: 4, height: 4))
+        XCTAssertFalse(vm.moveSelection(byX: 0, y: 0), "zero move → no-op")
+    }
 }

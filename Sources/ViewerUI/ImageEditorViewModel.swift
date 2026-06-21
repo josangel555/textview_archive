@@ -575,6 +575,23 @@ public final class ImageEditorViewModel: ObservableObject {
         return n > 0
     }
 
+    /// TSK-1065 — move the selected region by `(dx, dy)` canvas pixels: lift the
+    /// selection's pixels, clear the original area to transparency, and composite
+    /// them at the new offset. The selection follows. No-op without a rect
+    /// selection or for a zero move.
+    @discardableResult
+    public func moveSelection(byX dx: Int, y dy: Int) -> Bool {
+        guard case let .rect(x, y, w, h) = selection, dx != 0 || dy != 0 else { return false }
+        guard let cg = selectionImage(), let patch = RasterCanvas.from(cg),
+              beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
+        canvas.fillRect(x: x, y: y, width: w, height: h, to: .clear)
+        canvas.blit(patch, atX: x + dx, atY: y + dy)
+        paintCanvas = canvas
+        selection = .rect(x: x + dx, y: y + dy, width: w, height: h)
+        render()
+        return true
+    }
+
     // MARK: - Export
 
     /// Encode the current edited `document` (geometry history + live tonal
