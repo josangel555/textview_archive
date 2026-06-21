@@ -925,9 +925,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showFolderTreemap()
     }
 
-    /// TSK-1054 — File ▸ New Image: create + open a blank image.
+    /// TSK-1054 / TSK-1208 — File ▸ New Image: prompt for size + background
+    /// color, then create + open a blank image. Defaults are pre-filled so a
+    /// quick Return makes an 800×600 white canvas.
     @objc func newImage(_ sender: Any?) {
-        model.newBlankImageForLanding()
+        let alert = NSAlert()
+        alert.messageText = "New Image"
+        alert.informativeText = "Size (pixels) and background color."
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 84))
+        func label(_ s: String, _ y: CGFloat) -> NSTextField {
+            let l = NSTextField(labelWithString: s)
+            l.frame = NSRect(x: 0, y: y, width: 60, height: 18)
+            return l
+        }
+        let widthField = NSTextField(string: String(BlankImageCreator.defaultWidth))
+        widthField.frame = NSRect(x: 64, y: 58, width: 90, height: 22)
+        let heightField = NSTextField(string: String(BlankImageCreator.defaultHeight))
+        heightField.frame = NSRect(x: 64, y: 30, width: 90, height: 22)
+        let colorWell = NSColorWell(frame: NSRect(x: 64, y: 0, width: 44, height: 24))
+        colorWell.color = .white
+        accessory.addSubview(label("Width:", 60));  accessory.addSubview(widthField)
+        accessory.addSubview(label("Height:", 32)); accessory.addSubview(heightField)
+        accessory.addSubview(label("Color:", 4));   accessory.addSubview(colorWell)
+        alert.accessoryView = accessory
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let w = max(1, widthField.integerValue)
+        let h = max(1, heightField.integerValue)
+        let c = colorWell.color.usingColorSpace(.sRGB) ?? .white
+        let color = RGBAColor(
+            r: UInt8(max(0, min(255, c.redComponent * 255))),
+            g: UInt8(max(0, min(255, c.greenComponent * 255))),
+            b: UInt8(max(0, min(255, c.blueComponent * 255))),
+            a: UInt8(max(0, min(255, c.alphaComponent * 255))))
+        model.newBlankImageForLanding(width: w, height: h, color: color)
     }
 
     @objc func closeCurrentTab(_ sender: Any?) {

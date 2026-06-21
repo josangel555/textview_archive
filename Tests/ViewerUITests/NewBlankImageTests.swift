@@ -1,4 +1,5 @@
 import XCTest
+import ImageIO
 @testable import ViewerUI
 @testable import ViewerCore
 
@@ -36,6 +37,16 @@ final class NewBlankImageTests: XCTestCase {
         XCTAssertEqual(url.pathExtension, "png")
         let data = try Data(contentsOf: url)
         XCTAssertEqual(Array(data.prefix(4)), [0x89, 0x50, 0x4E, 0x47], "valid PNG bytes")
+    }
+
+    func test_createNewBlankImage_honorsCustomDimensions() throws {
+        // TSK-1208: the size dialog's values plumb through to the written PNG.
+        let url = try XCTUnwrap(makeModel().createNewBlankImage(in: tmp, width: 120, height: 80))
+        let data = try Data(contentsOf: url)
+        let src = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let cg = try XCTUnwrap(CGImageSourceCreateImageAtIndex(src, 0, nil))
+        XCTAssertEqual(cg.width, 120)
+        XCTAssertEqual(cg.height, 80)
     }
 
     func test_createNewBlankImage_uniquesRepeats() throws {

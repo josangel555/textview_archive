@@ -791,8 +791,14 @@ public final class DocumentModel: ObservableObject {
     /// `NewFileCreator` path). Host-testable; a follow-on dialog supplies a
     /// custom size/color.
     @discardableResult
-    public func createNewBlankImage(in directory: URL) -> URL? {
-        guard let data = BlankImageCreator.pngData() else { return nil }
+    public func createNewBlankImage(
+        in directory: URL,
+        width: Int = BlankImageCreator.defaultWidth,
+        height: Int = BlankImageCreator.defaultHeight,
+        color: RGBAColor = BlankImageCreator.defaultColor
+    ) -> URL? {
+        guard let data = BlankImageCreator.pngData(
+            width: width, height: height, color: color) else { return nil }
         var url = directory.appendingPathComponent("Untitled.png")
         var n = 2
         while FileManager.default.fileExists(atPath: url.path) {
@@ -812,9 +818,14 @@ public final class DocumentModel: ObservableObject {
     /// the per-user temp scratch dir when none is open — same always-works
     /// fallback as the other New actions) and open it in the editor.
     @discardableResult
-    public func newBlankImageForLanding() -> URL? {
+    public func newBlankImageForLanding(
+        width: Int = BlankImageCreator.defaultWidth,
+        height: Int = BlankImageCreator.defaultHeight,
+        color: RGBAColor = BlankImageCreator.defaultColor
+    ) -> URL? {
         let dir = newFileTargetDirectory ?? FileManager.default.temporaryDirectory
-        guard let url = createNewBlankImage(in: dir) else { return nil }
+        guard let url = createNewBlankImage(
+            in: dir, width: width, height: height, color: color) else { return nil }
         openPath(url)
         return url
     }
