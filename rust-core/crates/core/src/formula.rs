@@ -908,6 +908,76 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
                 None => Value::Error(FormulaError::Na),
             }
         }
+        "DATE" => {
+            if args.len() != 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let y = match arg_int(args.first(), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            let m = match arg_int(args.get(1), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            let d = match arg_int(args.get(2), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            let total_months = y * 12 + (m - 1); // normalize month overflow
+            let ny = total_months.div_euclid(12);
+            let nm = total_months.rem_euclid(12) + 1;
+            let (fy, fm, fd) = civil_from_days(days_from_civil(ny, nm, 1) + (d - 1));
+            Value::Text(format_iso(fy, fm, fd))
+        }
+        "YEAR" | "MONTH" | "DAY" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let (y, m, d) = match parse_iso(&s) {
+                Some(t) => t,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let n = match upper.as_str() {
+                "YEAR" => y,
+                "MONTH" => m,
+                "DAY" => d,
+                _ => 0,
+            };
+            Value::Number(n as f64)
+        }
+        "WEEKDAY" => {
+            if args.is_empty() || args.len() > 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let (y, m, d) = match parse_iso(&s) {
+                Some(t) => t,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let dow_sun0 = (days_from_civil(y, m, d) + 4).rem_euclid(7); // 0=Sun … 6=Sat
+            let typ = if args.len() == 2 {
+                match arg_int(args.get(1), resolver) {
+                    Ok(n) => n,
+                    Err(e) => return e,
+                }
+            } else {
+                1
+            };
+            let wd = if typ == 2 {
+                (dow_sun0 + 6).rem_euclid(7) + 1 // Mon=1 … Sun=7
+            } else {
+                dow_sun0 + 1 // Sun=1 … Sat=7
+            };
+            Value::Number(wd as f64)
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -1133,6 +1203,68 @@ fn arg_index1(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) 
         return Err(Value::Error(FormulaError::Ref));
     }
     u32::try_from(n).map_err(|_| Value::Error(FormulaError::Ref))
+}
+
+/// Evaluate an arg to a (possibly negative) integer (date components, month shifts).
+// Bounds-checked f64→i64: non-finite rejected; `trunc()` takes the integer part.
+#[allow(clippy::cast_possible_truncation)]
+fn arg_int(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<i64, Value> {
+    let x = arg_num(arg, resolver)?;
+    if !x.is_finite() {
+        return Err(Value::Error(FormulaError::Value));
+    }
+    Ok(x.trunc() as i64)
+}
+
+// MARK: - Civil-date math (proleptic Gregorian; Howard Hinnant's algorithms, all
+// i64 so no narrowing casts). Dates are ISO "YYYY-MM-DD" text, matching the Swift
+// engine's model. Days are counted from 1970-01-01.
+
+/// Days since 1970-01-01 for a civil date. `m` must be in 1..=12 (callers
+/// normalize month overflow first); day arithmetic is done in day-offsets.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let mp = if m > 2 { m - 3 } else { m + 9 }; // [0, 11]
+    let doy = (153 * mp + 2) / 5 + d - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146097 + doe - 719_468
+}
+
+/// Inverse of `days_from_civil`: a day count → (year, month, day). Normalizes.
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719_468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = z - era * 146097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Parse a strict ISO "YYYY-MM-DD" (round-trip validated, so 2024-02-30 → None).
+fn parse_iso(s: &str) -> Option<(i64, i64, i64)> {
+    let mut parts = s.trim().split('-');
+    let y: i64 = parts.next()?.parse().ok()?;
+    let m: i64 = parts.next()?.parse().ok()?;
+    let d: i64 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&m) || d < 1 {
+        return None;
+    }
+    let round = civil_from_days(days_from_civil(y, m, d));
+    if round == (y, m, d) {
+        Some((y, m, d))
+    } else {
+        None
+    }
+}
+
+fn format_iso(y: i64, m: i64, d: i64) -> String {
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 /// Order two values: numerically when BOTH coerce to numbers (number/bool/blank/
@@ -1592,5 +1724,20 @@ mod tests {
         .collect();
         let hr = |c: CellRef| h.get(&c).cloned();
         assert_eq!(evaluate_with("HLOOKUP(2, A1:C2, 2, 0)", &hr), Value::Text("b".to_string()));
+    }
+
+    #[test]
+    fn date_functions() {
+        assert_eq!(evaluate("DATE(2024, 3, 15)"), Value::Text("2024-03-15".to_string()));
+        assert_eq!(evaluate("DATE(2024, 13, 1)"), Value::Text("2025-01-01".to_string())); // month overflow
+        assert_eq!(evaluate("DATE(2024, 1, 32)"), Value::Text("2024-02-01".to_string())); // day overflow
+        assert_eq!(evaluate("YEAR(\"2024-03-15\")"), Value::Number(2024.0));
+        assert_eq!(evaluate("MONTH(\"2024-03-15\")"), Value::Number(3.0));
+        assert_eq!(evaluate("DAY(\"2024-03-15\")"), Value::Number(15.0));
+        assert!(matches!(evaluate("YEAR(\"2024-02-30\")"), Value::Error(FormulaError::Value))); // impossible date
+        // 2024-03-15 is a Friday: type 1 (Sun=1) → 6; type 2 (Mon=1) → 5
+        assert_eq!(evaluate("WEEKDAY(\"2024-03-15\")"), Value::Number(6.0));
+        assert_eq!(evaluate("WEEKDAY(\"2024-03-15\", 2)"), Value::Number(5.0));
+        assert_eq!(evaluate("YEAR(DATE(1999, 12, 31))"), Value::Number(1999.0)); // round-trip
     }
 }
