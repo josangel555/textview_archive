@@ -125,6 +125,7 @@ public enum Renderer {
         case .crop(let rect):       return try crop(image, to: rect)
         case .resize(let w, let h): return try resize(image, width: w, height: h)
         case .canvasSize(let w, let h): return try canvasSize(image, width: w, height: h)
+        case .skew(let hd, let vd): return try skew(image, horizontalDegrees: hd, verticalDegrees: vd)
         case .orient(let o):        return try orient(image, orientation: o)
         case .colorControls(let b, let c, let s):
             return try colorControls(image, brightness: b, contrast: c, saturation: s)
@@ -268,6 +269,35 @@ public enum Renderer {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let out = ctx.makeImage() else { throw ImageEditError.contextCreationFailed }
         return out
+    }
+
+    /// TSK-1074 — shear the image by `horizontalDegrees` / `verticalDegrees`. The
+    /// destination canvas is sized to the sheared parallelogram's bounding box and
+    /// translated so no content clips (the bounds-from-corners + translate approach
+    /// avoids the off-canvas trap). A 0/0 skew is a no-op copy.
+    static func skew(
+        _ image: CGImage, horizontalDegrees: Double, verticalDegrees: Double
+    ) throws -> CGImage {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0 else { throw ImageEditError.degenerateGeometry }
+        let shearH = CGFloat(tan(horizontalDegrees * .pi / 180))
+        let shearV = CGFloat(tan(verticalDegrees * .pi / 180))
+        let shear = CGAffineTransform(a: 1, b: shearV, c: shearH, d: 1, tx: 0, ty: 0)
+        let corners = [
+            CGPoint(x: 0, y: 0), CGPoint(x: CGFloat(w), y: 0),
+            CGPoint(x: 0, y: CGFloat(h)), CGPoint(x: CGFloat(w), y: CGFloat(h)),
+        ].map { $0.applying(shear) }
+        let minX = corners.map(\.x).min()!, maxX = corners.map(\.x).max()!
+        let minY = corners.map(\.y).min()!, maxY = corners.map(\.y).max()!
+        let dstW = Swift.max(1, Int((maxX - minX).rounded(.up)))
+        let dstH = Swift.max(1, Int((maxY - minY).rounded(.up)))
+        let ctx = try makeContext(width: dstW, height: dstH)
+        ctx.interpolationQuality = .high
+        ctx.translateBy(x: -minX, y: -minY)
+        ctx.concatenate(shear)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let out = ctx.makeImage() else { throw ImageEditError.contextCreationFailed }
+        return try normalized(out)
     }
 
     /// Change the CANVAS size without scaling: draw the image at its ORIGINAL size,

@@ -734,4 +734,30 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(p.g, 200)
         XCTAssertLessThanOrEqual(p.b, 60, "the re-read file shows the saved (inverted) edit")
     }
+
+    // MARK: - skew (TSK-1074)
+
+    func test_skew_horizontalGrowsWidthKeepsContent() throws {
+        let vm = try makeVM(w: 20, h: 20, r: 1, g: 0, b: 0)   // red
+        vm.commitGeometry(.skew(horizontalDegrees: 30, verticalDegrees: 0))
+        let img = vm.rendered!
+        XCTAssertGreaterThan(img.width, 20, "horizontal skew grows the width")
+        XCTAssertEqual(img.height, 20, "vertical extent unchanged")
+        let c = sample(img, x: img.width / 2, y: img.height / 2)
+        XCTAssertGreaterThanOrEqual(c.r, 150, "image content survives at the center (not off-canvas)")
+    }
+
+    func test_skew_verticalGrowsHeight() throws {
+        let vm = try makeVM(w: 20, h: 20)
+        vm.commitGeometry(.skew(horizontalDegrees: 0, verticalDegrees: 30))
+        XCTAssertGreaterThan(vm.rendered!.height, 20)
+        XCTAssertEqual(vm.rendered!.width, 20)
+    }
+
+    func test_skew_zero_isNoOp() throws {
+        let vm = try makeVM(w: 20, h: 12)
+        vm.commitGeometry(.skew(horizontalDegrees: 0, verticalDegrees: 0))
+        XCTAssertEqual(vm.rendered?.width, 20)
+        XCTAssertEqual(vm.rendered?.height, 12)
+    }
 }

@@ -29,6 +29,10 @@ struct ImageEditorView: View {
     @State private var resizeUsePercent = false
     @State private var resizeMaintainAspect = true
     @State private var resizeCanvasMode = false   // TSK-1076: scale vs canvas-size
+    /// TSK-1074 — skew dialog state.
+    @State private var skewSheetShown = false
+    @State private var skewH = "0"
+    @State private var skewV = "0"
     /// Called when the user dismisses the editor (returns to the plain viewer).
     let onClose: () -> Void
 
@@ -118,6 +122,29 @@ struct ImageEditorView: View {
                 maintainAspect: resizeMaintainAspect)
         }
         vm.commitGeometry(.resize(width: target.width, height: target.height))
+    }
+
+    /// TSK-1074 — the Skew dialog (horizontal / vertical degrees).
+    @ViewBuilder private var skewSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Skew Image").font(.headline)
+            HStack { Text("Horizontal °:"); TextField("0", text: $skewH) }
+            HStack { Text("Vertical °:"); TextField("0", text: $skewV) }
+            HStack {
+                Spacer()
+                Button("Cancel") { skewSheetShown = false }
+                Button("Apply") { applySkew() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding()
+        .frame(width: 280)
+        .accessibilityIdentifier("mdv.imageEditor.skewSheet")
+    }
+
+    private func applySkew() {
+        defer { skewSheetShown = false }
+        vm.commitGeometry(.skew(horizontalDegrees: Double(skewH) ?? 0,
+                                verticalDegrees: Double(skewV) ?? 0))
     }
 
     /// TSK-1065 — true when a drag from `p` should MOVE the current selection
@@ -370,6 +397,11 @@ struct ImageEditorView: View {
                         Label("Resize", systemImage: "arrow.up.left.and.arrow.down.right")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.resize")
+                    // TSK-1074: skew dialog.
+                    Button { skewH = "0"; skewV = "0"; skewSheetShown = true } label: {
+                        Label("Skew", systemImage: "skew")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.skew")
                     Button { vm.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
@@ -382,6 +414,7 @@ struct ImageEditorView: View {
                     .accessibilityIdentifier("mdv.imageEditor.redo")
                 }
                 .sheet(isPresented: $resizeSheetShown) { resizeSheet }
+                .sheet(isPresented: $skewSheetShown) { skewSheet }
 
                 // Minimal draw-tool affordance (TSK-749): commits a shape / text
                 // op to the undo history. Each draw is undoable via the buttons

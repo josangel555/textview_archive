@@ -84,6 +84,9 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// its pixels at the top-left; a larger canvas pads with transparency, a
     /// smaller one crops. TSK-1076 (Image Attributes / canvas size).
     case canvasSize(width: Int, height: Int)
+    /// Shear the image by the given horizontal/vertical angles (degrees); the
+    /// canvas grows to fit the parallelogram. TSK-1074 (skew).
+    case skew(horizontalDegrees: Double, verticalDegrees: Double)
     /// Bake the given EXIF orientation into the raster.
     case orient(EXIFOrientation)
     /// Tonal adjustment via Core Image's `CIColorControls` (TSK-344). Identity
