@@ -978,6 +978,67 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             };
             Value::Number(wd as f64)
         }
+        "DATEDIF" => {
+            if args.len() != 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s1 = match arg_text(args.first(), resolver) { Ok(s) => s, Err(e) => return e };
+            let s2 = match arg_text(args.get(1), resolver) { Ok(s) => s, Err(e) => return e };
+            let unit = match arg_text(args.get(2), resolver) { Ok(s) => s, Err(e) => return e };
+            let (y1, m1, d1) = match parse_iso(&s1) {
+                Some(t) => t,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let (y2, m2, d2) = match parse_iso(&s2) {
+                Some(t) => t,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let days1 = days_from_civil(y1, m1, d1);
+            let days2 = days_from_civil(y2, m2, d2);
+            if days2 < days1 {
+                return Value::Error(FormulaError::Num); // end before start
+            }
+            let n = match unit.to_ascii_uppercase().as_str() {
+                "D" => days2 - days1,
+                "M" => {
+                    let mut mo = (y2 - y1) * 12 + (m2 - m1);
+                    if d2 < d1 {
+                        mo -= 1;
+                    }
+                    mo
+                }
+                "Y" => {
+                    let mut yr = y2 - y1;
+                    if (m2, d2) < (m1, d1) {
+                        yr -= 1;
+                    }
+                    yr
+                }
+                _ => return Value::Error(FormulaError::Num),
+            };
+            Value::Number(n as f64)
+        }
+        "EDATE" | "EOMONTH" => {
+            if args.len() != 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s = match arg_text(args.first(), resolver) { Ok(s) => s, Err(e) => return e };
+            let months = match arg_int(args.get(1), resolver) { Ok(n) => n, Err(e) => return e };
+            let (y, m, d) = match parse_iso(&s) {
+                Some(t) => t,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let total = y * 12 + (m - 1) + months;
+            let ny = total.div_euclid(12);
+            let nm = total.rem_euclid(12) + 1;
+            let day = if upper == "EOMONTH" {
+                days_in_month(ny, nm) // last day of the shifted month
+            } else {
+                d.min(days_in_month(ny, nm)) // EDATE: same day, clamped to month length
+            };
+            let (fy, fm, fd) = civil_from_days(days_from_civil(ny, nm, day));
+            Value::Text(format_iso(fy, fm, fd))
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -1265,6 +1326,12 @@ fn parse_iso(s: &str) -> Option<(i64, i64, i64)> {
 
 fn format_iso(y: i64, m: i64, d: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Number of days in month `m` of year `y` (`m` 1..=12).
+fn days_in_month(y: i64, m: i64) -> i64 {
+    let next = y * 12 + (m - 1) + 1;
+    days_from_civil(next.div_euclid(12), next.rem_euclid(12) + 1, 1) - days_from_civil(y, m, 1)
 }
 
 /// Order two values: numerically when BOTH coerce to numbers (number/bool/blank/
@@ -1739,5 +1806,21 @@ mod tests {
         assert_eq!(evaluate("WEEKDAY(\"2024-03-15\")"), Value::Number(6.0));
         assert_eq!(evaluate("WEEKDAY(\"2024-03-15\", 2)"), Value::Number(5.0));
         assert_eq!(evaluate("YEAR(DATE(1999, 12, 31))"), Value::Number(1999.0)); // round-trip
+    }
+
+    #[test]
+    fn date_arithmetic() {
+        assert_eq!(evaluate("DATEDIF(\"2024-01-01\", \"2024-01-31\", \"D\")"), Value::Number(30.0));
+        assert_eq!(evaluate("DATEDIF(\"2024-01-15\", \"2024-03-20\", \"M\")"), Value::Number(2.0)); // complete months
+        assert_eq!(evaluate("DATEDIF(\"2020-06-01\", \"2024-05-31\", \"Y\")"), Value::Number(3.0)); // not yet 4 full years
+        assert!(matches!(
+            evaluate("DATEDIF(\"2024-05-01\", \"2024-01-01\", \"D\")"),
+            Value::Error(FormulaError::Num)
+        )); // end before start
+        assert_eq!(evaluate("EDATE(\"2024-01-31\", 1)"), Value::Text("2024-02-29".to_string())); // clamp to leap Feb
+        assert_eq!(evaluate("EDATE(\"2024-03-15\", -2)"), Value::Text("2024-01-15".to_string())); // negative shift
+        assert_eq!(evaluate("EOMONTH(\"2024-01-15\", 0)"), Value::Text("2024-01-31".to_string()));
+        assert_eq!(evaluate("EOMONTH(\"2024-01-15\", 1)"), Value::Text("2024-02-29".to_string()));
+        assert_eq!(evaluate("EOMONTH(\"2024-12-10\", 1)"), Value::Text("2025-01-31".to_string())); // year roll
     }
 }
