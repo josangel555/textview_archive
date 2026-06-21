@@ -11,6 +11,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ### Added
 - **File ▸ Export as Word / RTF / RTFD** — export the current Markdown document to a `.docx` Word file, an `.rtf` file, or an `.rtfd` package (headings, lists, bold/italic/strike).
+- **Copy as RTF** — copy the current Markdown document to the clipboard as rich text, so it pastes formatted into Mail, Pages, etc.
 - **CSV — rectangular select, copy & paste** — shift+arrow extends a cell rectangle in the table view; ⌘C copies it (tab/newline-delimited, paste-ready into a spreadsheet) and ⌘V pastes a TSV grid into cells while editing.
 - **File ▸ Annotations** — a jump-list of the current file's TODO / FIXME / HACK / XXX / NOTE / BUG markers; click one to jump straight to that line.
 - **File ▸ Log Patterns** — a frequency-ranked summary of the current log's repeated line patterns (masked templates + counts + an example), for fast log triage.
