@@ -12,6 +12,8 @@ import ViewerCore
 struct WalkthroughsBrowserView: View {
     @ObservedObject var doc: DocumentModel
     @State private var entries: [WalkthroughCatalog.Entry] = []
+    @State private var renaming: WalkthroughCatalog.Entry?
+    @State private var renameText = ""
 
     var body: some View {
         Group {
@@ -30,6 +32,9 @@ struct WalkthroughsBrowserView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            Text(entry.url.lastPathComponent)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
                         Spacer()
                         Button("Run") { doc.runWalkthrough(at: entry.url) }
@@ -39,6 +44,10 @@ struct WalkthroughsBrowserView: View {
                     .padding(.vertical, 2)
                     // TSK-1211: right-click ▸ Delete removes the walkthrough file.
                     .contextMenu {
+                        Button("Rename…") {
+                            renaming = entry
+                            renameText = entry.url.deletingPathExtension().lastPathComponent
+                        }
                         Button("Delete Walkthrough", role: .destructive) {
                             WalkthroughCatalog.delete(entry)
                             reload()
@@ -49,6 +58,24 @@ struct WalkthroughsBrowserView: View {
         }
         .accessibilityIdentifier("mdv.walkthroughs.browser")
         .onAppear { reload() }
+        .alert("Rename Walkthrough", isPresented: Binding(
+            get: { renaming != nil },
+            set: { if !$0 { renaming = nil } }
+        )) {
+            TextField("Name", text: $renameText)
+            Button("Rename") { performRename() }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        } message: {
+            Text("Rename the walkthrough file (the .json extension is kept).")
+        }
+    }
+
+    private func performRename() {
+        if let entry = renaming {
+            _ = WalkthroughCatalog.rename(entry, toBaseName: renameText)
+        }
+        renaming = nil
+        reload()
     }
 
     private func reload() {

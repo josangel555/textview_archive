@@ -86,6 +86,41 @@ final class WalkthroughCatalogTests: XCTestCase {
                        "deleting an already-removed file returns false, no throw")
     }
 
+    // MARK: - Rename (TSK-1211)
+
+    func test_rename_movesFileAndUpdatesCatalog() throws {
+        _ = try write("old.json", script(id: "r", title: "Keep Title"))
+        let entry = try XCTUnwrap(WalkthroughCatalog.entries(in: tmp).first)
+        let newURL = try XCTUnwrap(WalkthroughCatalog.rename(entry, toBaseName: "new"))
+        XCTAssertEqual(newURL.lastPathComponent, "new.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: entry.url.path),
+                       "the old file is gone after rename")
+        let after = WalkthroughCatalog.entries(in: tmp)
+        XCTAssertEqual(after.count, 1)
+        XCTAssertEqual(after.first?.url.lastPathComponent, "new.json")
+        XCTAssertEqual(after.first?.title, "Keep Title", "in-script title is unchanged")
+    }
+
+    func test_rename_refusesCollision() throws {
+        _ = try write("a.json", script(id: "a", title: "A"))
+        _ = try write("b.json", script(id: "b", title: "B"))
+        let a = try XCTUnwrap(WalkthroughCatalog.entries(in: tmp)
+            .first { $0.url.lastPathComponent == "a.json" })
+        XCTAssertNil(WalkthroughCatalog.rename(a, toBaseName: "b"),
+                     "refuses to overwrite an existing b.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.url.path),
+                      "a.json is left intact when the rename is refused")
+    }
+
+    func test_rename_rejectsEmptyAndTraversal() throws {
+        _ = try write("x.json", script(id: "x", title: "X"))
+        let entry = try XCTUnwrap(WalkthroughCatalog.entries(in: tmp).first)
+        XCTAssertNil(WalkthroughCatalog.rename(entry, toBaseName: "   "))
+        XCTAssertNil(WalkthroughCatalog.rename(entry, toBaseName: "../evil"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: entry.url.path))
+    }
+
     func test_entries_idIsURL_not_scriptID() throws {
         // Two files with the SAME script id (a repo-bound copy of a
         // user-global tour) must remain distinct rows — list identity is

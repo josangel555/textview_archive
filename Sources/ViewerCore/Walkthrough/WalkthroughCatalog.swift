@@ -168,6 +168,34 @@ public enum WalkthroughCatalog {
         }
     }
 
+    /// TSK-1211 — rename a catalog walkthrough's FILE to `newBaseName` (.json is
+    /// enforced; the on-disk file is the user's library identity). Sanitizes to a
+    /// single path component (no slashes / traversal), refuses to overwrite an
+    /// existing sibling, and returns the new URL on success — nil on empty name,
+    /// collision, or failure. Renames the file only; the in-script `title` (the
+    /// row's primary text) is unchanged.
+    public static func rename(
+        _ entry: Entry,
+        toBaseName newBaseName: String,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        let trimmed = newBaseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("/"),
+              trimmed != ".", trimmed != ".." else { return nil }
+        let base = trimmed.hasSuffix(".json") ? String(trimmed.dropLast(5)) : trimmed
+        guard !base.isEmpty else { return nil }
+        let dest = entry.url.deletingLastPathComponent()
+            .appendingPathComponent(base + ".json")
+        if dest == entry.url { return entry.url }                 // no-op
+        guard !fileManager.fileExists(atPath: dest.path) else { return nil }  // refuse collision
+        do {
+            try fileManager.moveItem(at: entry.url, to: dest)
+            return dest
+        } catch {
+            return nil
+        }
+    }
+
     /// Build one `Entry` from a single file, or nil if it can't be
     /// summarized. Exposed (not private) so a caller that already has a
     /// file URL — e.g. "Open Walkthrough File…" — can produce a row
