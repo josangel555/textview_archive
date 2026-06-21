@@ -228,4 +228,15 @@ final class RasterCanvasTests: XCTestCase {
         let c = RasterCanvas(width: 0, height: 0)
         XCTAssertNil(c.cgImage(), "empty canvas yields no image")
     }
+
+    func test_fillRect_fillsClampedRegion() {
+        var c = RasterCanvas(width: 6, height: 6, fill: .white)
+        let n = c.fillRect(x: 1, y: 1, width: 3, height: 2, to: .red)
+        XCTAssertEqual(n, 6, "3x2 region")
+        XCTAssertEqual(c.pixel(x: 1, y: 1), .red)
+        XCTAssertEqual(c.pixel(x: 3, y: 2), .red)
+        XCTAssertEqual(c.pixel(x: 0, y: 0), .white, "outside the rect is untouched")
+        let m = c.fillRect(x: 4, y: 4, width: 10, height: 10, to: .blue)
+        XCTAssertEqual(m, 4, "off-edge rect clamps to the 2x2 corner")
+    }
 }

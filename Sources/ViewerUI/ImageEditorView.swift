@@ -352,11 +352,17 @@ struct ImageEditorView: View {
                 .accessibilityIdentifier("mdv.imageEditor.squareBrush")
         }
 
-        if vm.selection != nil {
+        if vm.tool.isSelection || vm.selection != nil {
             HStack {
-                Button("Crop to Selection") { vm.cropToSelection() }
-                    .accessibilityIdentifier("mdv.imageEditor.cropToSelection")
-                Button("Deselect") { vm.clearSelection() }
+                Button("Select All") { vm.selectAll() }
+                    .accessibilityIdentifier("mdv.imageEditor.selectAll")
+                if vm.selection != nil {
+                    Button("Crop") { vm.cropToSelection() }
+                        .accessibilityIdentifier("mdv.imageEditor.cropToSelection")
+                    Button("Delete") { vm.deleteSelection() }
+                        .accessibilityIdentifier("mdv.imageEditor.deleteSelection")
+                    Button("Deselect") { vm.clearSelection() }
+                }
             }
         }
 

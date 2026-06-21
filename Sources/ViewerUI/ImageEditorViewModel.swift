@@ -510,6 +510,25 @@ public final class ImageEditorViewModel: ObservableObject {
         return true
     }
 
+    /// TSK-1066 — clear the selected region to transparency (delete). No-op
+    /// without a rect selection. Bakes a destructive paint session, like the
+    /// brush/eraser.
+    @discardableResult
+    public func deleteSelection() -> Bool {
+        guard case let .rect(x, y, w, h) = selection,
+              beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
+        let n = canvas.fillRect(x: x, y: y, width: w, height: h, to: .clear)
+        paintCanvas = canvas
+        render()
+        return n > 0
+    }
+
+    /// TSK-1066 — select the entire image.
+    public func selectAll() {
+        guard let img = rendered else { return }
+        selection = .rect(x: 0, y: 0, width: img.width, height: img.height)
+    }
+
     // MARK: - Export
 
     /// Encode the current edited `document` (geometry history + live tonal

@@ -115,6 +115,25 @@ public struct RasterCanvas: Sendable, Equatable {
         pixels[i + 3] = color.a
     }
 
+    /// TSK-1066 — fill an axis-aligned rect (clamped to the canvas) with `color`.
+    /// Returns the pixel count written. Delete-selection = fill with `.clear`.
+    @discardableResult
+    public mutating func fillRect(
+        x: Int, y: Int, width: Int, height: Int, to color: RGBAColor
+    ) -> Int {
+        let x0 = Swift.max(0, x), y0 = Swift.max(0, y)
+        let x1 = Swift.min(self.width, x + width), y1 = Swift.min(self.height, y + height)
+        guard x1 > x0, y1 > y0 else { return 0 }
+        var written = 0
+        for py in y0..<y1 {
+            for px in x0..<x1 {
+                setPixel(x: px, y: py, to: color)
+                written += 1
+            }
+        }
+        return written
+    }
+
     // MARK: - Color pick (the eyedropper)
 
     /// Sample the color under `(x, y)` — the eyedropper / color-picker tool.

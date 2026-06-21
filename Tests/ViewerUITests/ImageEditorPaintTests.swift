@@ -416,4 +416,20 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertFalse(vm.cropToSelection())
         XCTAssertEqual(vm.rendered?.width, 20, "no selection → no crop")
     }
+
+    func test_deleteSelection_clearsRegionToTransparent() throws {
+        let vm = try makeVM(w: 10, h: 10, r: 1, g: 1, b: 1)   // opaque white
+        vm.setSelection(.rect(x: 2, y: 2, width: 4, height: 4))
+        XCTAssertTrue(vm.deleteSelection())
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 3, y: 3).a, 4,
+                                 "the deleted region is transparent")
+        XCTAssertEqual(sample(vm.rendered!, x: 0, y: 0).a, 255,
+                       "outside the selection stays opaque")
+    }
+
+    func test_selectAll_selectsWholeImage() throws {
+        let vm = try makeVM(w: 12, h: 9)
+        vm.selectAll()
+        XCTAssertEqual(vm.selection, .rect(x: 0, y: 0, width: 12, height: 9))
+    }
 }
