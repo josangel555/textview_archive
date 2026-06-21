@@ -78,3 +78,22 @@ Hand-writing means later building a dependency-graph recalc engine (dependents m
 - **Build vs adopt** — confirm hand-write (recommended), or do you want `formualizer-eval` evaluated as a dep (Excel-grade recalc sooner, but Arrow + v0.7)?
 - **Recalc priority** — is live dependency-graph recalc a near-term need, or is per-edit snapshot eval fine for now?
 - **Scope of the Swift twin** — once ported, the Swift `FormulaEngine` becomes bugfix-only then deleted (per migration policy) — confirm.
+
+---
+
+## Update (2026-06-21) — decision, progress, recalc/FFI research
+
+**Owner decision: Option A — build it ourselves, no dependencies** (not `formualizer-eval`).
+
+**Port progress** (hand-written, `rust-core/crates/core/src/formula.rs`):
+- ✅ Slice 1 — arithmetic core (`03105441`)
+- ✅ Slice 2 — cell refs + resolver + value coercion (`4b414d90`)
+- ✅ Slice 3a — function calls + ranges + core fns: SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT, IF/AND/OR/NOT (`bc6590b7`)
+- Next: **3b** comparison operators (`>`/`<`/`=`/`>=`/`<=`/`<>`) + the text/math/lookup library vs the Swift 29-test corpus; then **4** `FormulaSession` FFI handle; **5** Swift consumer; **6** (later) recalc.
+
+**Recalc + FFI deep-research (agent 3) — VALIDATES the plan:**
+- *Recalc* (slice 6, when added): **support graph** (forward dependents) + interned **range vertices** + overlapping-range sharing + tile spatial index; **dynamic precedent capture** (record cells actually read — mandatory for INDIRECT/OFFSET/conditional branches, which static AST analysis over-approximates); dirty-mark via bitset + reusable worklist **seeding volatiles every pass**; **Kahn over the dirty SUBSET**, levelized for Rayon, serial lane for impure fns; cycles via `Computing`-state DFS + opt-in per-SCC iterative (max-iter + ε). Mirrors where IronCalc + Formualizer converge and Sestoft's formal model (*Spreadsheet Implementation Technology*).
+- *FFI boundary* (slices 4–5): **stateful Rust handle with a message-shaped (RPC-style) API** — coarse, batched, **delta-returning** (the dirty-mark→topo output *is* the boundary payload). Rust owns the grid + graph; Swift mirrors the viewport only. Mechanics: opaque `Box` handle + `Arc<Mutex>` for the `!Send/!Sync` trap; **`catch_unwind` at every FFI seam** (needs `panic="unwind"` — the `dist` profile already uses it); **binary codec, not JSON** (the xi-editor lesson); **do NOT go out-of-process prematurely** (xi's mistake — the win is the message-shaped API *in-process*). Generator: swift-bridge or hand `cbindgen`; UniFFI only if Kotlin/Web. The existing `mdvcore_call` MessagePack envelope already *is* this shape.
+- *Anti-patterns* (each cost a named project real pain): per-cell set/get chatter; rebuilding the dep graph per call; letting a Rust panic unwind into Swift; a fine-grained pointer API with no message envelope (dies at the first sandbox/remote boundary — Mullvad).
+
+Prior art + sources are captured in the TSK-1213 board comments (Quadratic viewport-delta-push, 1Password command/event core, Sestoft/CoreCalc, HyperFormula, IronCalc, Pearce–Kelly DTO, the xi-editor retrospective, the UniFFI-vs-swift-bridge Matrix decision, the Flipt FFI→WASM measurement).
