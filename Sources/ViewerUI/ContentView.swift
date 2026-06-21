@@ -748,6 +748,7 @@ public struct ContentView: View {
                     // View and Edit diverge onto different fonts.
                     fontFamily: FontPreference.cssFamily(for: model.sourceFontName),
                     wordWrap: model.sourceWordWrap,
+                    readOnly: model.isEditorReadOnly,   // TSK-936
                     lineNumbers: true,
                     indentation: model.editorIndentation,
                     gotoLineRequest: model.editorGotoLine,

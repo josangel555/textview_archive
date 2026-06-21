@@ -213,6 +213,13 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleVimMode() { vimModeEnabled.toggle() }
 
+    /// TSK-936 — read-only editing toggle (View → Toggle Read-Only). When on, the
+    /// CM6 editor rejects edits via its `readOnly` facet. Session-level (NOT
+    /// persisted — a deliberate "lock this session" guard, not a sticky default).
+    /// Drives `CodeMirrorEditorView(readOnly:)`.
+    @Published public var isEditorReadOnly: Bool = false
+    public func toggleEditorReadOnly() { isEditorReadOnly.toggle() }
+
     /// Show the scaled document overview / minimap (top-right) for markdown
     /// source views (TSK-305). On by default; toggled via View → Markdown
     /// Overview. Persisted.

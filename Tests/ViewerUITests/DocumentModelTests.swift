@@ -298,6 +298,18 @@ final class DocumentModelTests: XCTestCase {
 
     // MARK: Vim mode (TSK-679 — View → Vim Mode preference)
 
+    func test_toggleEditorReadOnly_flips_sessionLevel() {
+        let model = makeModel()
+        XCTAssertFalse(model.isEditorReadOnly, "defaults to editable")
+        model.toggleEditorReadOnly()
+        XCTAssertTrue(model.isEditorReadOnly)
+        model.toggleEditorReadOnly()
+        XCTAssertFalse(model.isEditorReadOnly)
+        // Session-level (not persisted): a fresh model over the same defaults is editable.
+        model.toggleEditorReadOnly()
+        XCTAssertFalse(makeModel().isEditorReadOnly, "read-only is not a sticky default")
+    }
+
     func test_vimModeEnabled_proxiesPreferences_andSeedsOnInit() {
         let model = makeModel()
         XCTAssertFalse(model.vimModeEnabled, "defaults to off (opt-in)")

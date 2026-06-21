@@ -1853,6 +1853,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         vimItem.target = self
         viewMenu.addItem(vimItem)
 
+        // TSK-936 — Toggle Read-Only: lock the CM6 editor against edits
+        // (readOnly facet). Checkable; session-level, not persisted.
+        let readOnlyItem = NSMenuItem(
+            title: "Toggle Read-Only",
+            action: #selector(toggleEditorReadOnly(_:)),
+            keyEquivalent: ""
+        )
+        readOnlyItem.target = self
+        viewMenu.addItem(readOnlyItem)
+
         // Markdown Overview — the scaled document minimap drawn top-right in
         // the source view for markdown files (TSK-305). Checkable, persisted,
         // on by default. No default key equivalent.
@@ -3208,6 +3218,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(toggleVimMode(_:)):
             item.state = model.vimModeEnabled ? .on : .off
             return true   // a global editor preference — settable anytime
+        case #selector(toggleEditorReadOnly(_:)):
+            item.state = model.isEditorReadOnly ? .on : .off
+            return hasFile   // TSK-936: only meaningful with an open editable file
         case #selector(toggleMarkdownOverview(_:)):
             item.state = model.showMarkdownOverview ? .on : .off
             return true   // a global view preference — settable anytime
@@ -3596,6 +3609,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleShowInvisibleChars(_ sender: Any?) {
         model.toggleShowInvisibleChars()
+    }
+
+    @objc func toggleEditorReadOnly(_ sender: Any?) {
+        model.toggleEditorReadOnly()
     }
 
     @objc func toggleVimMode(_ sender: Any?) {
