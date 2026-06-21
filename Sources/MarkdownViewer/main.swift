@@ -975,6 +975,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    /// TSK-1144 — Copy as RTF: put the active document (as Markdown → RTF) on the clipboard.
+    @objc func copyActiveAsRTF(_ sender: Any?) {
+        _ = model.copyActiveAsRTF()
+    }
+
     /// TSK-1144 — File ▸ Export as RTFD: write the active document to an .rtfd package.
     @objc func exportActiveAsRTFD(_ sender: Any?) {
         let panel = NSSavePanel()
@@ -1588,6 +1593,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(exportActiveAsRTFD(_:)), keyEquivalent: "")
         exportRtfdItem.target = self
         fileMenu.addItem(exportRtfdItem)
+
+        let copyRtfItem = NSMenuItem(
+            title: "Copy as RTF",
+            action: #selector(copyActiveAsRTF(_:)), keyEquivalent: "")
+        copyRtfItem.target = self
+        fileMenu.addItem(copyRtfItem)
 
         let openItem = NSMenuItem(
             title: "Open…",

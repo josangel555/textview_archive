@@ -2813,6 +2813,19 @@ public final class DocumentModel: ObservableObject {
         return (try? rtf.write(to: url, atomically: true, encoding: .utf8)) != nil
     }
 
+    /// TSK-1144 — copy the ACTIVE document (Markdown → RTF) to the pasteboard as
+    /// rich text, so it pastes formatted into Mail/Pages/etc. False when there's
+    /// no active text file. Mirrors "Copy as HTML"; the RTF emit is host-tested.
+    @discardableResult
+    public func copyActiveAsRTF(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard let (text, _) = activeTextFile(),
+              let data = RtfExporter.export(RichTextParser.parse(text)).data(using: .utf8)
+        else { return false }
+        pasteboard.clearContents()
+        pasteboard.setData(data, forType: .rtf)
+        return true
+    }
+
     /// TSK-1144 — export the ACTIVE document to an `.rtfd` package (a directory
     /// bundle whose `TXT.rtf` holds the RTF — the AppKit convention). False when
     /// there's no active text file or the write fails.

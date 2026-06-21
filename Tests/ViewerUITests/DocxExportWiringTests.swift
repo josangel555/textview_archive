@@ -69,6 +69,28 @@ final class DocxExportWiringTests: XCTestCase {
         XCTAssertFalse(model.exportActiveAsRTF(to: tmp.appendingPathComponent("x.rtf")))
     }
 
+    func test_copyActiveAsRTF_putsRTFOnPasteboard() throws {
+        let md = tmp.appendingPathComponent("doc.md")
+        try "# Title\n\nHello **bold**".write(to: md, atomically: true, encoding: .utf8)
+        let model = makeModel()
+        model.open(url: md)
+
+        let pb = NSPasteboard(name: .init("mdv.test.copyrtf-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        XCTAssertTrue(model.copyActiveAsRTF(to: pb))
+        let data = try XCTUnwrap(pb.data(forType: .rtf))
+        let rtf = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(rtf.hasPrefix("{\\rtf1"))
+        XCTAssertTrue(rtf.contains("Title"))
+    }
+
+    func test_copyActiveAsRTF_noActiveFile_isFalse() {
+        let model = makeModel()
+        let pb = NSPasteboard(name: .init("mdv.test.copyrtf-none-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        XCTAssertFalse(model.copyActiveAsRTF(to: pb))
+    }
+
     func test_exportActiveAsRTFD_writesPackageWithTXTrtf() throws {
         let md = tmp.appendingPathComponent("doc.md")
         try "# Title\n\nHello".write(to: md, atomically: true, encoding: .utf8)
