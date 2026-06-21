@@ -2701,6 +2701,17 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// TSK-506: open a size-proportional treemap of a folder (FolderTreemapView)
+    /// as a hosted tab — surfaces the built-but-unreachable view. The view's
+    /// FolderTreemapModel scans the folder OFF-MAIN itself, so this just opens
+    /// it. Defaults to the project root; no-op when no folder is open.
+    public func showFolderTreemap(folder: URL? = nil) {
+        guard let target = folder ?? sidebar.rootURL else { return }
+        let view = FolderTreemapView(doc: self, folder: target)
+        _ = openHostedView(
+            title: "Folder Sizes: \(target.lastPathComponent)", rootView: view)
+    }
+
     /// Whether Local History can be shown for `url` — it has saved versions.
     /// (Always offer the menu; the viewer shows a friendly "no versions yet"
     /// empty state when there are none, so this returns true for any file URL.)

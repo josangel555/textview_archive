@@ -920,6 +920,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showDependencyGraph()
     }
 
+    /// TSK-506 — open the project folder's size treemap in a hosted tab.
+    @objc func showFolderTreemap(_ sender: Any?) {
+        model.showFolderTreemap()
+    }
+
     @objc func closeCurrentTab(_ sender: Any?) {
         guard model.tabs.selectedIndex != nil else {
             window?.performClose(nil)
@@ -1408,6 +1413,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showDependencyGraph(_:)), keyEquivalent: "")
         depGraphItem.target = self
         fileMenu.addItem(depGraphItem)
+
+        // TSK-506: File → Folder Sizes — a size-proportional treemap of the
+        // project folder in a hosted tab (surfaces the built-but-unreachable
+        // FolderTreemapView).
+        let treemapItem = NSMenuItem(
+            title: "Folder Sizes (Treemap)",
+            action: #selector(showFolderTreemap(_:)), keyEquivalent: "")
+        treemapItem.target = self
+        fileMenu.addItem(treemapItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
