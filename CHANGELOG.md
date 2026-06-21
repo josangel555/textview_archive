@@ -27,6 +27,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image editor — invert colors** — turn the image into a photo-negative (undoable).
 - **Image editor — foreground & background colors** — a second (background) color with a Swap button; Clear fills the whole canvas with the background color.
 - **Image editor — color palette** — a strip of preset color swatches; click one to set the paint color.
+- **Image editor — recent colors** — a "Recent" swatch strip remembers the colors you've picked (eyedropper or palette) for quick reuse.
 - **Image editor — resize** — a Resize dialog to scale the image by percent or to exact pixel dimensions, with an optional aspect-ratio lock.
 - **Image editor — Save** — save edits back to the original file (or Save a Copy for an unsaved new image).
 - **Image editor — more save formats** — Save a Copy now writes BMP, GIF, and TIFF in addition to PNG, JPEG, and HEIC.
