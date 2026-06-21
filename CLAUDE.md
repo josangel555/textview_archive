@@ -117,6 +117,14 @@ even with a bundle present. Still: prefer the gate (below) or
 NEVER a bare/broad `--filter ViewerUITests` if you're unsure (it's safe now, but
 ViewerCoreTests is the unambiguous host-safe target).
 
+- **Test framework — Swift Testing (hybrid) for NEW pure-logic; XCTest for the
+  rest (TSK-787/1130).** New PURE-LOGIC suites MAY use Swift Testing
+  (`import Testing`, `@Test`/`#expect`, `@Test(arguments:)` for parameterized
+  cases — prefer it there over XCTest's repetition). KEEP XCTest for: anything
+  tier-based (the `TierBaseCases` hierarchy + `TierGateObserver` are XCTest), the
+  VM/live tiers, and existing suites (don't churn-convert). Both frameworks run
+  together under one `swift test` (pilot: `Tests/ViewerCoreTests/SwiftTestingPilotTests.swift`).
+
 - **The merge/PR gate runs the HEADLESS tiers on the host.** Use the gate
   script — it is what CI runs (`.github/workflows/pr.yml`):
   - `bash scripts/test-headless-gate.sh` — `MDV_HEADLESS_GATE=1 swift test
