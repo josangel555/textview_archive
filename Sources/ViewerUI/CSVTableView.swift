@@ -53,6 +53,15 @@ struct CSVTableView: View {
     @State private var findDebounceTask: Task<Void, Never>?
     @FocusState private var findFieldFocused: Bool
 
+    // TSK-1102: keyboard cell cursor for the default browse state. Stored as
+    // plain row/col Ints and rebuilt into a clamped `CSVCellCursor` per keypress
+    // so it tracks the dynamically filtered/sorted `displayRows`. Active only
+    // when not editing and not finding (those own the keyboard); the focus ring
+    // shows only while the grid is focused. ⌘C copies the focused cell.
+    @State private var cursorRow = 0
+    @State private var cursorCol = 0
+    @FocusState private var gridFocused: Bool
+
     // Filter state lives on DocumentModel keyed by tab id so it
     // survives tab switches. These computed properties bridge the
     // SwiftUI Binding API to the model's `csvFilterState(forTabID:)`
@@ -185,6 +194,40 @@ struct CSVTableView: View {
                 }
                 .onChange(of: findCurrent) { _, _ in
                     scrollToCurrentMatch(proxy)
+                }
+                // TSK-1102: keyboard cell cursor — arrows move the focused cell,
+                // ⌘C copies it. Active only in the default browse state (not while
+                // editing a cell or in find), so it never steals those keys.
+                .focusable()
+                .focused($gridFocused)
+                .onKeyPress { press in
+                    guard editingCell == nil, !findVisible else { return .ignored }
+                    let rowCount = displayRows.count
+                    let colCount = result.header.count
+                    guard rowCount > 0, colCount > 0 else { return .ignored }
+                    var cur = CSVCellCursor(
+                        rowCount: rowCount, columnCount: colCount,
+                        row: cursorRow, column: cursorCol)
+                    switch press.key {
+                    case .upArrow:    cur.moveUp()
+                    case .downArrow:  cur.moveDown()
+                    case .leftArrow:  cur.moveLeft()
+                    case .rightArrow: cur.moveRight()
+                    default:
+                        if press.key == KeyEquivalent("c"),
+                           press.modifiers.contains(.command) {
+                            if let text = cur.copyText(from: displayRows) {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(text, forType: .string)
+                            }
+                            return .handled
+                        }
+                        return .ignored
+                    }
+                    cursorRow = cur.row
+                    cursorCol = cur.column
+                    proxy.scrollTo(cur.row)
+                    return .handled
                 }
             }
         }
@@ -756,6 +799,13 @@ struct CSVTableView: View {
                         ?? Color.clear)
             .overlay(alignment: .trailing) {
                 Rectangle().fill(Palette.separator).frame(width: 0.5)
+            }
+            // TSK-1102: focus ring on the keyboard-cursor cell, shown only while
+            // the grid is focused (the browse-state cell cursor).
+            .overlay {
+                if gridFocused, rowIndex == cursorRow, i == cursorCol {
+                    Rectangle().strokeBorder(Color.accentColor, lineWidth: 2)
+                }
             }
             // TSK-1019: attach double-click-to-edit ONLY when editing is
             // available, so the gate-off path keeps the exact original gesture
