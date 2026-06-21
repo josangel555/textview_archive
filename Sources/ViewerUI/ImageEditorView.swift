@@ -69,7 +69,7 @@ struct ImageEditorView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            guard vm.tool == .brush,
+                            guard vm.tool.isContinuous,
                                   let px = PaintCoordinateMapping.canvasPixel(
                                       value.location, in: displayed,
                                       imageWidth: cg.width, imageHeight: cg.height)
@@ -88,7 +88,7 @@ struct ImageEditorView: View {
                                       value.location, in: displayed,
                                       imageWidth: cg.width, imageHeight: cg.height)
                             else { return }
-                            if vm.tool != .brush {
+                            if !vm.tool.isContinuous {
                                 vm.applyTool(atX: px.x, y: px.y)
                             }
                         }
@@ -240,6 +240,7 @@ struct ImageEditorView: View {
             Text("Off").tag(ImageEditorViewModel.RasterTool.none)
             Image(systemName: "eyedropper").tag(ImageEditorViewModel.RasterTool.colorPicker)
             Image(systemName: "paintbrush.pointed").tag(ImageEditorViewModel.RasterTool.brush)
+            Image(systemName: "eraser").tag(ImageEditorViewModel.RasterTool.eraser)
             Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
         }
         .pickerStyle(.segmented)

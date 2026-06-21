@@ -212,4 +212,34 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertEqual(vm.applyTool(atX: 5, y: 5), 1)
         XCTAssertEqual(vm.paintColor.g, 255, "picker read the green we just filled")
     }
+
+    // MARK: - eraser (TSK-1057)
+
+    func test_rasterTool_resolvedColor_eraserIsClear() {
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.eraser.resolvedColor(base: .black), .clear)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.brush.resolvedColor(base: .black), .black)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.floodFill.resolvedColor(base: .red), .red)
+    }
+
+    func test_rasterTool_isContinuous() {
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.brush.isContinuous)
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.eraser.isContinuous)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.none.isContinuous)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.colorPicker.isContinuous)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.floodFill.isContinuous)
+    }
+
+    func test_eraser_paintsTransparency() throws {
+        let vm = try makeVM(w: 10, h: 10, r: 1, g: 1, b: 1)   // opaque white
+        XCTAssertEqual(sample(vm.rendered!, x: 5, y: 5).a, 255, "source is opaque")
+        vm.tool = .eraser
+        vm.paintColor = .black            // ignored by the eraser (it paints .clear)
+        vm.brushRadius = 0
+        let n = vm.applyTool(atX: 5, y: 5)
+        XCTAssertEqual(n, 1)
+        XCTAssertTrue(vm.hasPaint)
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 5, y: 5).a, 4,
+                                 "the erased pixel is transparent, not the black paintColor")
+        XCTAssertEqual(sample(vm.rendered!, x: 0, y: 0).a, 255, "an un-erased pixel stays opaque")
+    }
 }
