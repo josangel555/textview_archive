@@ -30,6 +30,7 @@ pub mod filter;
 pub mod find;
 pub mod find_engine;
 pub mod format;
+pub mod formula;
 pub mod fuzzy;
 pub mod git;
 pub mod hex;
