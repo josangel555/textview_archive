@@ -15,6 +15,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Settings ▸ Advanced ▸ Multi-session workspace** — a toggle for the sessions feature (on by default), now adjustable instead of buried as a hidden preference.
 - **Settings ▸ Extensions** — an at-a-glance list of your installed plugins.
 
+### Fixed
+- **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
+
 ## 2026-06-20
 
 ### Added
