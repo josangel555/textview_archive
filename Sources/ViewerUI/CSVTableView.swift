@@ -60,6 +60,10 @@ struct CSVTableView: View {
     // shows only while the grid is focused. ⌘C copies the focused cell.
     @State private var cursorRow = 0
     @State private var cursorCol = 0
+    // TSK-1187: rectangular selection anchor (the cursor is the focus). A plain
+    // arrow collapses it to the cursor; shift+arrow holds it to extend the rect.
+    @State private var selectionAnchorRow = 0
+    @State private var selectionAnchorCol = 0
     @FocusState private var gridFocused: Bool
 
     // Filter state lives on DocumentModel keyed by tab id so it
@@ -208,6 +212,7 @@ struct CSVTableView: View {
                     var cur = CSVCellCursor(
                         rowCount: rowCount, columnCount: colCount,
                         row: cursorRow, column: cursorCol)
+                    let extending = press.modifiers.contains(.shift)
                     switch press.key {
                     case .upArrow:    cur.moveUp()
                     case .downArrow:  cur.moveDown()
@@ -216,7 +221,13 @@ struct CSVTableView: View {
                     default:
                         if press.key == KeyEquivalent("c"),
                            press.modifiers.contains(.command) {
-                            if let text = cur.copyText(from: displayRows) {
+                            // TSK-1187: copy the rectangular selection (anchor→cursor);
+                            // collapses to the single cursor cell when unextended.
+                            let text = CSVRectSelection(
+                                anchorRow: selectionAnchorRow, anchorCol: selectionAnchorCol,
+                                focusRow: cursorRow, focusCol: cursorCol
+                            ).tsv(in: displayRows)
+                            if !text.isEmpty {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(text, forType: .string)
                             }
@@ -226,6 +237,10 @@ struct CSVTableView: View {
                     }
                     cursorRow = cur.row
                     cursorCol = cur.column
+                    if !extending {          // plain move collapses the rect to the cursor
+                        selectionAnchorRow = cur.row
+                        selectionAnchorCol = cur.column
+                    }
                     proxy.scrollTo(cur.row)
                     return .handled
                 }
@@ -756,6 +771,13 @@ struct CSVTableView: View {
     /// (TSK-303), Copy Cell/Row/Column context menu (TSK-924), and per-cell
     /// VoiceOver label (A11Y-01) as before. A double-click begins editing only
     /// when `editingAvailable`; with the gate off it's a no-op overlay (the
+    /// TSK-1187 — is cell `(r, c)` inside the current rectangular selection
+    /// (anchor↔cursor, in either direction)?
+    private func isInSelectionRect(_ r: Int, _ c: Int) -> Bool {
+        r >= min(selectionAnchorRow, cursorRow) && r <= max(selectionAnchorRow, cursorRow)
+            && c >= min(selectionAnchorCol, cursorCol) && c <= max(selectionAnchorCol, cursorCol)
+    }
+
     /// read-only behaviour is byte-identical to pre-TSK-1019).
     @ViewBuilder
     private func cell(value: String, row: [String], allRows: [[String]],
@@ -803,6 +825,12 @@ struct CSVTableView: View {
             // TSK-1102: focus ring on the keyboard-cursor cell, shown only while
             // the grid is focused (the browse-state cell cursor).
             .overlay {
+                // TSK-1187: tint the rectangular selection (excluding the cursor
+                // cell, which keeps its border below).
+                if gridFocused, isInSelectionRect(rowIndex, i),
+                   !(rowIndex == cursorRow && i == cursorCol) {
+                    Rectangle().fill(Color.accentColor.opacity(0.15))
+                }
                 if gridFocused, rowIndex == cursorRow, i == cursorCol {
                     Rectangle().strokeBorder(Color.accentColor, lineWidth: 2)
                 }
