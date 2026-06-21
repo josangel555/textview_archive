@@ -686,4 +686,22 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertFalse(vm.pasteImageFromFile(
             from: URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString).png")))
     }
+
+    // MARK: - airbrush (TSK-1082)
+
+    func test_airbrushDab_spraysAtCenter() throws {
+        let vm = try makeVM(w: 20, h: 20, r: 1, g: 1, b: 1)   // white
+        vm.tool = .airbrush
+        vm.paintColor = .black
+        vm.brushRadius = 5
+        vm.airbrushDensity = 1.0   // full coverage → deterministic for the test
+        let n = vm.airbrushDab(atX: 10, y: 10)
+        XCTAssertGreaterThan(n, 0, "airbrush sprayed pixels")
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 10, y: 10).r, 8,
+                                 "the center is painted after a full-density spray")
+    }
+
+    func test_rasterTool_airbrush_isContinuous() {
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.airbrush.isContinuous)
+    }
 }

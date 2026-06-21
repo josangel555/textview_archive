@@ -265,4 +265,20 @@ final class RasterCanvasTests: XCTestCase {
         XCTAssertGreaterThan(Int(out.g), 100, "~half white shows through (≈127)")
         XCTAssertLessThan(Int(out.g), 160)
     }
+
+    func test_spray_density() {
+        var rng = SystemRandomNumberGenerator()
+        var none = RasterCanvas(width: 9, height: 9, fill: .white)
+        XCTAssertEqual(none.spray(cx: 4, cy: 4, radius: 2, density: 0, color: .red, using: &rng), 0,
+                       "density 0 sprays nothing")
+        var full = RasterCanvas(width: 9, height: 9, fill: .white)
+        let fullN = full.spray(cx: 4, cy: 4, radius: 2, density: 1, color: .red, using: &rng)
+        XCTAssertGreaterThan(fullN, 0, "density 1 sprays the whole disc")
+        XCTAssertEqual(full.pixel(x: 4, y: 4), .red, "center sprayed at density 1")
+        var mid = RasterCanvas(width: 21, height: 21, fill: .white)
+        let midN = mid.spray(cx: 10, cy: 10, radius: 5, density: 0.5, color: .red, using: &rng)
+        var fullBig = RasterCanvas(width: 21, height: 21, fill: .white)
+        let fullBigN = fullBig.spray(cx: 10, cy: 10, radius: 5, density: 1, color: .red, using: &rng)
+        XCTAssertTrue(midN > 0 && midN < fullBigN, "mid density is partial coverage")
+    }
 }

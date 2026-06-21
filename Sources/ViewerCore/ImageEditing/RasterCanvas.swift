@@ -337,6 +337,34 @@ public struct RasterCanvas: Sendable, Equatable {
         return visited.count
     }
 
+    /// TSK-1082 — airbrush: stamp a RANDOM subset of the radius-`radius` disc
+    /// around `(cx, cy)` — each in-disc pixel is painted with probability
+    /// `density` (clamped 0…1). Repeated dabs build up coverage. Returns the
+    /// pixel count written. The RNG is injected so callers/tests control it
+    /// (density 1 → the whole disc; density 0 → nothing).
+    @discardableResult
+    public mutating func spray<G: RandomNumberGenerator>(
+        cx: Int, cy: Int, radius: Int, density: Double, color: RGBAColor, using rng: inout G
+    ) -> Int {
+        let r = Swift.max(0, radius)
+        let limit = (Double(r) + 0.5) * (Double(r) + 0.5)
+        let d = Swift.max(0, Swift.min(1, density))
+        var written = 0
+        for dy in -r...r {
+            let py = cy + dy
+            guard py >= 0, py < height else { continue }
+            for dx in -r...r {
+                let px = cx + dx
+                guard px >= 0, px < width, Double(dx * dx + dy * dy) <= limit else { continue }
+                if Double.random(in: 0..<1, using: &rng) < d {
+                    setPixel(x: px, y: py, to: color)
+                    written += 1
+                }
+            }
+        }
+        return written
+    }
+
     // MARK: - CGImage bridge
 
     /// Build a straight-RGBA8 sRGB `CGImage` from the canvas (for preview/export).

@@ -70,6 +70,8 @@ public final class ImageEditorViewModel: ObservableObject {
         case pencil
         /// Eraser: a brush that paints transparency (erases to clear). TSK-1057.
         case eraser
+        /// Airbrush: drag to spray a random scatter of paintColor. TSK-1082.
+        case airbrush
         /// Paint bucket: a click flood-fills the contiguous region under it.
         case floodFill
         /// Rectangle: click-drag to draw a vector rectangle outline. TSK-1059.
@@ -88,7 +90,9 @@ public final class ImageEditorViewModel: ObservableObject {
         case selectLasso
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
-        var isContinuous: Bool { self == .brush || self == .eraser || self == .pencil }
+        var isContinuous: Bool {
+            self == .brush || self == .eraser || self == .pencil || self == .airbrush
+        }
 
         /// A selection tool (rectangular marquee or free-form lasso).
         var isSelection: Bool { self == .selectRect || self == .selectLasso }
@@ -143,6 +147,8 @@ public final class ImageEditorViewModel: ObservableObject {
     /// TSK-1062 — brush/eraser stamp shape: a square stamp when true, the default
     /// round disc otherwise. (No effect at radius 0 — that's always a single pixel.)
     @Published public var squareBrush: Bool = false
+    /// TSK-1082 — airbrush spray coverage per dab (0…1). Repeated dabs build up.
+    @Published public var airbrushDensity: Double = 0.25
     /// TSK-1063 — the active rectangular marquee selection (canvas pixels), or nil.
     @Published public private(set) var selection: RasterSelection?
 
@@ -388,6 +394,19 @@ public final class ImageEditorViewModel: ObservableObject {
         return n
     }
 
+    /// TSK-1082 — airbrush: spray a random scatter of `paintColor` (radius from the
+    /// brush slider, `airbrushDensity` coverage) at `(x, y)`, then re-render.
+    @discardableResult
+    public func airbrushDab(atX x: Int, y: Int) -> Int {
+        guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
+        var rng = SystemRandomNumberGenerator()
+        let n = canvas.spray(cx: x, cy: y, radius: Swift.max(2, brushRadius),
+                             density: airbrushDensity, color: paintColor, using: &rng)
+        paintCanvas = canvas
+        render()
+        return n
+    }
+
     /// Brush drag: sweep a `paintColor` stroke (radius `brushRadius`) between two
     /// canvas pixels so a drag leaves a continuous mark, then re-render. Returns
     /// the distinct pixel count written.
@@ -426,6 +445,7 @@ public final class ImageEditorViewModel: ObservableObject {
         case .brush:       return brushDab(atX: x, y: y)
         case .pencil:      return brushDab(atX: x, y: y)   // resolvedRadius → 0 (1px)
         case .eraser:      return brushDab(atX: x, y: y)   // resolvedColor → .clear
+        case .airbrush:    return airbrushDab(atX: x, y: y)
         case .floodFill:   return floodFill(atX: x, y: y)
         // Shape tools are drag-committed via drawShape, not a click.
         // Drag-committed (shapes via drawShape, marquee via setSelection) — not a click.

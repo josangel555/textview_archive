@@ -238,7 +238,9 @@ struct ImageEditorView: View {
                                       value.location, in: displayed,
                                       imageWidth: cg.width, imageHeight: cg.height)
                             else { return }
-                            if let last = lastPaintPixel {
+                            if vm.tool == .airbrush {
+                                vm.applyTool(atX: px.x, y: px.y)   // spray at each point
+                            } else if let last = lastPaintPixel {
                                 vm.brushStroke(fromX: last.x, y0: last.y, toX: px.x, y1: px.y)
                             } else {
                                 vm.applyTool(atX: px.x, y: px.y)
@@ -488,6 +490,7 @@ struct ImageEditorView: View {
             Image(systemName: "paintbrush.pointed").tag(ImageEditorViewModel.RasterTool.brush)
             Image(systemName: "pencil").tag(ImageEditorViewModel.RasterTool.pencil)
             Image(systemName: "eraser").tag(ImageEditorViewModel.RasterTool.eraser)
+            Image(systemName: "wind").tag(ImageEditorViewModel.RasterTool.airbrush)
             Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
             Image(systemName: "rectangle").tag(ImageEditorViewModel.RasterTool.drawRect)
             Image(systemName: "circle").tag(ImageEditorViewModel.RasterTool.drawEllipse)
