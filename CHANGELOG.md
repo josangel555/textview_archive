@@ -21,6 +21,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image editor — paint on the image** — with a paint tool selected (brush / pencil / eraser / eyedropper / fill), draw directly on the image; drag for a continuous stroke. The pencil is a hard 1px draw; the brush and eraser can be round or square.
 - **Image editor — shape tools** — pick the rectangle, rounded-rectangle, ellipse, line, or arrow tool and click-drag to draw it, with a live preview as you size it. Toggle "Fill shape" to draw the closed shapes filled instead of outlined.
 - **Image editor — full selection toolkit** — select a region with the rectangular marquee or the free-form lasso (dashed outline); drag inside it to move it, or Copy/Cut it to the clipboard, Paste an image in, Crop to it, Delete it (erase to transparent), Select All, or Invert the selection.
+- **Image editor — flip & rotate** — Flip Horizontal/Vertical and Rotate Left / Right / 180° (all undoable).
 
 ### Performance
 - **Image editor** — adjusting sliders and edits is snappier on large images: the source is now decoded once and reused, instead of being re-decoded on every change.
