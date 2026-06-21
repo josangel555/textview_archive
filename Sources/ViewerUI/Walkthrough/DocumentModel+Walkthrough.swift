@@ -243,6 +243,22 @@ public extension DocumentModel {
         return controller
     }
 
+    /// TSK-1107 — load a walkthrough JSON from `url` and start playback (the
+    /// Walkthroughs browser's Run action; mirrors the --walkthrough CLI path).
+    public func runWalkthrough(at url: URL) {
+        if case .success(let script) = WalkthroughLoader.load(fileAt: url) {
+            walkthroughController.start(script)
+        }
+    }
+
+    /// TSK-1107 — File ▸ Walkthroughs: open a browser of saved walkthroughs
+    /// (WalkthroughCatalog) as a hosted tab; each can be Run. Delete / rename /
+    /// resume are tracked follow-ons.
+    public func showWalkthroughsBrowser() {
+        _ = openHostedView(title: "Walkthroughs",
+                           rootView: WalkthroughsBrowserView(doc: self))
+    }
+
     /// Switch the focused tab to one already showing `url`, if any.
     /// Returns true when a switch happened. Used by the walkthrough
     /// `openFile` handler so an already-open file becomes the active

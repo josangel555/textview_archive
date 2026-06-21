@@ -925,6 +925,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showFolderTreemap()
     }
 
+    /// TSK-1107 — File ▸ Walkthroughs: open the saved-walkthroughs browser.
+    @objc func showWalkthroughsBrowser(_ sender: Any?) {
+        model.showWalkthroughsBrowser()
+    }
+
     /// TSK-1054 / TSK-1208 — File ▸ New Image: prompt for size + background
     /// color, then create + open a blank image. Defaults are pre-filled so a
     /// quick Return makes an 800×600 white canvas.
@@ -1473,6 +1478,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             title: "New Image", action: #selector(newImage(_:)), keyEquivalent: "")
         newImageItem.target = self
         fileMenu.addItem(newImageItem)
+
+        // TSK-1107: File → Walkthroughs — browse + run saved walkthroughs.
+        let walkthroughsItem = NSMenuItem(
+            title: "Walkthroughs",
+            action: #selector(showWalkthroughsBrowser(_:)), keyEquivalent: "")
+        walkthroughsItem.target = self
+        fileMenu.addItem(walkthroughsItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
