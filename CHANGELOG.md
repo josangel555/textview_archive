@@ -26,6 +26,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image editor — foreground & background colors** — a second (background) color with a Swap button; Clear fills the whole canvas with the background color.
 - **Image editor — color palette** — a strip of preset color swatches; click one to set the paint color.
 - **Image editor — resize** — a Resize dialog to scale the image by percent or to exact pixel dimensions, with an optional aspect-ratio lock.
+- **Image editor — Save** — save edits back to the original file (or Save a Copy for an unsaved new image).
 - **Image editor — more save formats** — Save a Copy now writes BMP, GIF, and TIFF in addition to PNG, JPEG, and HEIC.
 - **Image editor — canvas size** — the Resize dialog has a "Canvas size" mode that pads or crops the canvas to new dimensions without scaling the image.
 - **Image editor — copy/paste via file** — Copy the selection (or whole image) out to an image file, and Paste an image file onto the canvas.
