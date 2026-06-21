@@ -435,6 +435,13 @@ struct ImageEditorView: View {
                     Label("Save a Copy…", systemImage: "square.and.arrow.down")
                 }
                 .accessibilityIdentifier("mdv.imageEditor.save")
+                // TSK-1067: copy the selection (or whole image) to a file / paste a file in.
+                HStack {
+                    Button("Copy to File…") { copyToFile() }
+                        .accessibilityIdentifier("mdv.imageEditor.copyToFile")
+                    Button("Paste from File…") { pasteFromFile() }
+                        .accessibilityIdentifier("mdv.imageEditor.pasteFromFile")
+                }
 
                 Spacer(minLength: 0)
             }
@@ -663,5 +670,32 @@ struct ImageEditorView: View {
                 alert.runModal()
             }
         }
+    }
+
+    /// TSK-1067 — copy the selection (or whole image) to a chosen image file.
+    private func copyToFile() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "selection.png"
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .bmp, .gif, .tiff]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let format: ExportSpec.Format
+        switch url.pathExtension.lowercased() {
+        case "jpg", "jpeg": format = .jpeg
+        case "heic": format = .heic
+        case "bmp": format = .bmp
+        case "gif": format = .gif
+        case "tif", "tiff": format = .tiff
+        default: format = .png
+        }
+        _ = vm.copyToFile(to: url, format: format)
+    }
+
+    /// TSK-1067 — paste an image file onto the canvas (at the selection origin).
+    private func pasteFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .bmp, .gif, .tiff]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        _ = vm.pasteImageFromFile(from: url)
     }
 }

@@ -653,4 +653,28 @@ final class ImageEditorPaintTests: XCTestCase {
             XCTAssertEqual(img.height, 8, "\(fmt) height preserved")
         }
     }
+
+    // MARK: - copy-to-file / paste-from-file (TSK-1067)
+
+    func test_copyToFile_andPasteFromFile_roundTrip() throws {
+        let src = try makeVM(w: 6, h: 6, r: 1, g: 0, b: 0)   // red
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-cf-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(src.copyToFile(to: url, format: .png))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+
+        let dest = try makeVM(w: 12, h: 12, r: 1, g: 1, b: 1)   // white
+        dest.setSelection(.rect(x: 2, y: 2, width: 1, height: 1))
+        XCTAssertTrue(dest.pasteImageFromFile(from: url))
+        let p = sample(dest.rendered!, x: 3, y: 3)              // inside the pasted 6x6
+        XCTAssertGreaterThanOrEqual(p.r, 200)
+        XCTAssertLessThanOrEqual(p.g, 60, "pasted red from the file landed at the selection origin")
+    }
+
+    func test_pasteImageFromFile_missingFile_isNoOp() throws {
+        let vm = try makeVM(w: 8, h: 8)
+        XCTAssertFalse(vm.pasteImageFromFile(
+            from: URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString).png")))
+    }
 }

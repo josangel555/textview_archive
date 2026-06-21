@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import CoreGraphics
 import Foundation
+import ImageIO
 import ViewerCore
 
 /// Host-testable model layer for the image editor (TSK-342 UI enablement over
@@ -604,6 +605,37 @@ public final class ImageEditorViewModel: ObservableObject {
     public func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {
         guard let image = NSImage(pasteboard: pasteboard),
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let src = RasterCanvas.from(cg),
+              beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
+        let ox: Int, oy: Int
+        if case let .rect(x, y, _, _) = selection { ox = x; oy = y } else { ox = 0; oy = 0 }
+        let n = canvas.blit(src, atX: ox, atY: oy)
+        paintCanvas = canvas
+        render()
+        return n > 0
+    }
+
+    /// TSK-1067 — copy the selection (or the whole image if none) to an image FILE
+    /// at `url`, encoded as `format`. Failures are captured in `lastError`.
+    @discardableResult
+    public func copyToFile(to url: URL, format: ExportSpec.Format = .png) -> Bool {
+        guard let cg = selectionImage() ?? rendered else { return false }
+        do {
+            try Exporter.encode(cg, ExportSpec(format: format)).write(to: url, options: .atomic)
+            lastError = nil
+            return true
+        } catch {
+            lastError = String(describing: error)
+            return false
+        }
+    }
+
+    /// TSK-1067 — paste an image FILE at `url` onto the canvas (at the selection
+    /// origin, or 0,0), source-over. Returns true if pixels were written.
+    @discardableResult
+    public func pasteImageFromFile(from url: URL) -> Bool {
+        guard let imgSrc = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateImageAtIndex(imgSrc, 0, nil),
               let src = RasterCanvas.from(cg),
               beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
         let ox: Int, oy: Int
