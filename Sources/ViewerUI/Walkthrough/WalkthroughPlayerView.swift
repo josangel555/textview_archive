@@ -21,6 +21,9 @@ public struct WalkthroughPlayerView: View {
 
     @ObservedObject var controller: WalkthroughPlayerController
 
+    /// TSK-1115 — free-form reply buffer for the awaitUser checkpoint field.
+    @State private var replyText = ""
+
     public init(controller: WalkthroughPlayerController) {
         self.controller = controller
     }
@@ -30,6 +33,9 @@ public struct WalkthroughPlayerView: View {
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 topRow
+                if controller.pendingAwaitUser != nil {
+                    awaitUserReplyView
+                }
                 bottomRow
             }
             .padding(.horizontal, 12)
@@ -63,6 +69,45 @@ public struct WalkthroughPlayerView: View {
             scrubBar
                 .frame(width: 140)
         }
+    }
+
+    /// TSK-1115 — the awaitUser checkpoint reply UI: prompt + suggested pills +
+    /// a free-form field. Shown in the strip when the engine is waiting on the
+    /// user; each control routes to `controller.reply(_:)`, which persists the
+    /// answer and resumes the tour.
+    @ViewBuilder
+    private var awaitUserReplyView: some View {
+        if let payload = controller.pendingAwaitUser {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(payload.prompt)
+                    .font(.system(size: 13, weight: .semibold))
+                    .accessibilityIdentifier("mdv.walkthrough.awaitPrompt")
+                if let pills = payload.pills, !pills.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(pills, id: \.self) { pill in
+                            Button(pill) { controller.reply(.option(pill)) }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                HStack(spacing: 6) {
+                    TextField(payload.placeholder ?? "Your reply…", text: $replyText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { submitFreeFormReply() }
+                        .accessibilityIdentifier("mdv.walkthrough.awaitField")
+                    Button("Send") { submitFreeFormReply() }
+                        .disabled(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .accessibilityIdentifier("mdv.walkthrough.awaitReply")
+        }
+    }
+
+    private func submitFreeFormReply() {
+        let t = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        controller.reply(.freeForm(t))
+        replyText = ""
     }
 
     private var bottomRow: some View {
