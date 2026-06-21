@@ -205,7 +205,26 @@ public final class ImageEditorViewModel: ObservableObject {
     /// `scheduleRender()` calls must collapse to ONE bump after the debounce
     /// window; `scheduleRender()` must NOT bump it synchronously.
     public private(set) var renderCount = 0
+    /// Test gauge (TSK-1051): how many times the source was actually decoded. The
+    /// decode-once cache must keep this at 1 across many renders.
+    public private(set) var decodeCount = 0
     #endif
+
+    /// TSK-1051 — the normalized base image, decoded from the source ONCE and
+    /// reused across renders (the source is immutable; ops replay on top). Decoding
+    /// per render was the dominant cost for large images.
+    private var decodedBase: CGImage?
+
+    /// The cached decoded base, decoding (and caching) on first use.
+    private func baseImage() throws -> CGImage {
+        if let cached = decodedBase { return cached }
+        let decoded = try Renderer.decodeBase(document)
+        decodedBase = decoded
+        #if DEBUG
+        decodeCount += 1
+        #endif
+        return decoded
+    }
 
     /// Coalesce rapid adjustment changes (slider drags) into a SINGLE render
     /// after a short pause (TSK-1050). Replaces the per-delta synchronous
@@ -241,7 +260,7 @@ public final class ImageEditorViewModel: ObservableObject {
             return
         }
         do {
-            let image = try Renderer.render(document)
+            let image = try Renderer.render(document, base: baseImage())
             rendered = image
             // Histogram is secondary read-only analysis — a failure there must
             // not blank the preview, so it's best-effort.

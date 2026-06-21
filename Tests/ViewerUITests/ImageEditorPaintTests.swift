@@ -334,4 +334,16 @@ final class ImageEditorPaintTests: XCTestCase {
         let fill = try XCTUnwrap(vm.overlay.shapes.last?.style.fill)
         XCTAssertGreaterThan(fill.b, 0.9, "a filled shape fills with the blue paint color")
     }
+
+    // MARK: - decode-once cache (TSK-1051)
+
+    func test_decodeOnce_sourceDecodedOnceAcrossRenders() throws {
+        let vm = try makeVM(w: 20, h: 16)
+        vm.render()
+        vm.render()
+        XCTAssertEqual(vm.decodeCount, 1, "the source is decoded once and the base cached")
+        vm.commitGeometry(.resize(width: 10, height: 8))   // op + re-render
+        XCTAssertEqual(vm.decodeCount, 1, "ops replay on the cached base — no re-decode")
+        XCTAssertEqual(vm.rendered?.width, 10, "and the op still applies")
+    }
 }

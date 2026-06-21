@@ -31,7 +31,21 @@ public enum Renderer {
     /// it, then replays `doc.ops` in order. Throws `ImageEditError` on decode /
     /// context / geometry failures rather than returning a degenerate image.
     public static func render(_ doc: ImageDocument) throws -> CGImage {
-        var image = try normalized(decode(doc.source))
+        try render(doc, base: decodeBase(doc))
+    }
+
+    /// The normalized base image (decode + normalize the source), before any ops.
+    /// Stable for a document's lifetime — the source is immutable and ops replay on
+    /// top — so a caller can decode it ONCE and reuse it across renders (TSK-1051).
+    public static func decodeBase(_ doc: ImageDocument) throws -> CGImage {
+        try normalized(decode(doc.source))
+    }
+
+    /// Replay `doc.ops` onto an already-decoded `base`, skipping the per-render
+    /// source decode. Output is identical to `render(_:)`; the cached base is the
+    /// only difference (TSK-1051).
+    public static func render(_ doc: ImageDocument, base: CGImage) throws -> CGImage {
+        var image = base
         for op in doc.ops {
             image = try apply(op, to: image)
         }
