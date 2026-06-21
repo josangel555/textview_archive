@@ -42,6 +42,7 @@ pub mod mermaid;
 pub mod meta;
 pub mod nav;
 pub mod outline;
+pub mod runtime;
 pub mod session;
 pub mod table_arena;
 pub mod theme;
