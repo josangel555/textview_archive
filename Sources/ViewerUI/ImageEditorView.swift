@@ -512,6 +512,17 @@ struct ImageEditorView: View {
             }
             .accessibilityIdentifier("mdv.imageEditor.swapColors")
         }
+        // TSK-1070: preset color palette — tap a swatch to set the paint color.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 18), spacing: 3)], spacing: 3) {
+            ForEach(Array(StandardPalette.colors.enumerated()), id: \.offset) { _, c in
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(swiftUIColor(c))
+                    .frame(width: 18, height: 18)
+                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.secondary, lineWidth: 0.5))
+                    .onTapGesture { vm.paintColor = c }
+            }
+        }
+        .accessibilityIdentifier("mdv.imageEditor.palette")
 
         VStack(alignment: .leading, spacing: 2) {
             Text("Brush Size: \(vm.brushRadius)").font(.caption)
@@ -596,6 +607,12 @@ struct ImageEditorView: View {
     }
     private var paintColorBinding: Binding<Color> { colorBinding({ vm.paintColor }, { vm.paintColor = $0 }) }
     private var bgColorBinding: Binding<Color> { colorBinding({ vm.bgColor }, { vm.bgColor = $0 }) }
+
+    /// TSK-1070 — a SwiftUI `Color` from a straight-RGBA8 `RGBAColor` (palette swatches).
+    private func swiftUIColor(_ c: RGBAColor) -> Color {
+        Color(.sRGB, red: Double(c.r) / 255, green: Double(c.g) / 255,
+              blue: Double(c.b) / 255, opacity: Double(c.a) / 255)
+    }
 
     private func slider(
         _ label: String,
