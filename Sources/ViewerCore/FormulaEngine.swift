@@ -770,6 +770,43 @@ public enum FormulaEngine {
             default: return .error(.name)
             }
 
+        case "DATEDIF":
+            // DATEDIF(start, end, unit): "D" total days, "M" complete months,
+            // "Y" complete years. end must be ≥ start.
+            guard args.count == 3 else { return .error(.value) }
+            let sv = evaluate(args[0], &ctx); if case .error = sv { return sv }
+            let ev = evaluate(args[1], &ctx); if case .error = ev { return ev }
+            let uv = evaluate(args[2], &ctx); if case .error = uv { return uv }
+            guard let sp = parseISODate(sv.asText), let ep = parseISODate(ev.asText),
+                  let sd = isoDate(sp.y, sp.m, sp.d), let ed = isoDate(ep.y, ep.m, ep.d),
+                  ed >= sd else { return .error(.value) }
+            let breakdown = utcCalendar.dateComponents([.year, .month, .day], from: sd, to: ed)
+            switch uv.asText.uppercased() {
+            case "D": return .number(Double(utcCalendar.dateComponents([.day], from: sd, to: ed).day ?? 0))
+            case "M": return .number(Double((breakdown.year ?? 0) * 12 + (breakdown.month ?? 0)))
+            case "Y": return .number(Double(breakdown.year ?? 0))
+            default:  return .error(.value)
+            }
+
+        case "EDATE", "EOMONTH":
+            // EDATE: same day-of-month, `months` later (calendar-clamped, e.g.
+            // Jan 31 +1 → Feb 29). EOMONTH: the LAST day of that shifted month.
+            guard args.count == 2 else { return .error(.value) }
+            let dv = evaluate(args[0], &ctx); if case .error = dv { return dv }
+            let mv = evaluate(args[1], &ctx); if case .error = mv { return mv }
+            guard let p = parseISODate(dv.asText), let base = isoDate(p.y, p.m, p.d),
+                  let months = mv.asNumber,
+                  var shifted = utcCalendar.date(byAdding: .month, value: Int(months), to: base)
+            else { return .error(.value) }
+            if name == "EOMONTH" {
+                let c = utcCalendar.dateComponents([.year, .month], from: shifted)
+                guard let nextMonthStart = utcCalendar.date(from: DateComponents(year: c.year, month: (c.month ?? 1) + 1, day: 1)),
+                      let lastDay = utcCalendar.date(byAdding: .day, value: -1, to: nextMonthStart)
+                else { return .error(.value) }
+                shifted = lastDay
+            }
+            return .text(formatISO(shifted))
+
         default:
             return .error(.name)
         }

@@ -207,4 +207,22 @@ final class FormulaEngineMoreFunctionsTests: XCTestCase {
         XCTAssertEqual(num(eval("YEAR(DATE(1999,12,31))")), 1999)
         XCTAssertEqual(num(eval("DAY(DATE(2000,1,1))")), 1)
     }
+
+    func test_datedif_daysMonthsYears() {
+        XCTAssertEqual(num(eval("DATEDIF(\"2024-01-01\",\"2024-01-31\",\"D\")")), 30)
+        XCTAssertEqual(num(eval("DATEDIF(\"2024-01-15\",\"2024-03-20\",\"M\")")), 2)   // complete months
+        XCTAssertEqual(num(eval("DATEDIF(\"2020-06-01\",\"2024-05-31\",\"Y\")")), 3)   // complete years (not yet 4)
+        XCTAssertTrue(isError(eval("DATEDIF(\"2024-05-01\",\"2024-01-01\",\"D\")")))   // end < start
+    }
+
+    func test_edate_clampsToMonthEnd() {
+        XCTAssertEqual(text(eval("EDATE(\"2024-01-31\",1)")), "2024-02-29")   // leap year clamp
+        XCTAssertEqual(text(eval("EDATE(\"2024-03-15\",-2)")), "2024-01-15")  // negative months
+    }
+
+    func test_eomonth_lastDayOfShiftedMonth() {
+        XCTAssertEqual(text(eval("EOMONTH(\"2024-01-15\",0)")), "2024-01-31")
+        XCTAssertEqual(text(eval("EOMONTH(\"2024-01-15\",1)")), "2024-02-29")   // Feb of a leap year
+        XCTAssertEqual(text(eval("EOMONTH(\"2024-12-10\",1)")), "2025-01-31")   // rolls the year
+    }
 }
