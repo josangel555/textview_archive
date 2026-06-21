@@ -704,4 +704,34 @@ final class ImageEditorPaintTests: XCTestCase {
     func test_rasterTool_airbrush_isContinuous() {
         XCTAssertTrue(ImageEditorViewModel.RasterTool.airbrush.isContinuous)
     }
+
+    // MARK: - in-place Save / Save As (TSK-1081)
+
+    func test_sourceURL_reflectsDocumentSource() throws {
+        let dataVM = try makeVM(w: 4, h: 4)
+        XCTAssertNil(dataVM.sourceURL, "a data-backed (New Image) document has no source URL")
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-src-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try solidPNG(width: 4, height: 4, r: 1, g: 0, b: 0).write(to: url)
+        let urlVM = ImageEditorViewModel(ImageDocument(contentsOf: url))
+        XCTAssertEqual(urlVM.sourceURL?.lastPathComponent, url.lastPathComponent,
+                       "a file-backed document reports its URL")
+    }
+
+    func test_saveInPlace_overwritesSourceFile() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-ip-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try solidPNG(width: 8, height: 8, r: 0, g: 0, b: 1).write(to: url)   // blue
+        let vm = ImageEditorViewModel(ImageDocument(contentsOf: url))
+        vm.commitGeometry(.invertColors)                                     // blue → yellow
+        let saved = await vm.saveCopyAsync(format: .png, to: url)
+        XCTAssertTrue(saved, "in-place save writes back to the source URL")
+        let reVM = ImageEditorViewModel(ImageDocument(contentsOf: url))
+        let p = sample(reVM.rendered!, x: 4, y: 4)
+        XCTAssertGreaterThanOrEqual(p.r, 200)
+        XCTAssertGreaterThanOrEqual(p.g, 200)
+        XCTAssertLessThanOrEqual(p.b, 60, "the re-read file shows the saved (inverted) edit")
+    }
 }

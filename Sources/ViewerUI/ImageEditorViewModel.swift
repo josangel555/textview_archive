@@ -212,6 +212,13 @@ public final class ImageEditorViewModel: ObservableObject {
         return doc
     }
 
+    /// TSK-1081 — the document's original file URL, if it was opened from a file
+    /// (nil for an unsaved New Image). In-place Save writes back here.
+    public var sourceURL: URL? {
+        if case let .url(u) = base.source { return u }
+        return nil
+    }
+
     /// `true` once any geometry op is committed, any tonal slider leaves identity,
     /// OR a destructive paint session has marked the surface — i.e. the rendered
     /// preview differs from the source.

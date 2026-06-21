@@ -431,12 +431,17 @@ struct ImageEditorView: View {
                     Button("Reset Tone") { vm.resetTonal() }
                     Button("Revert All") { vm.revertAll() }
                 }
-                Button {
-                    saveCopy()
-                } label: {
-                    Label("Save a Copy…", systemImage: "square.and.arrow.down")
+                // TSK-1081: Save (in-place if opened from a file, else Save As) + Save a Copy.
+                HStack {
+                    Button { saveInPlace() } label: {
+                        Label("Save", systemImage: "square.and.arrow.down.fill")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.saveInPlace")
+                    Button { saveCopy() } label: {
+                        Label("Save a Copy…", systemImage: "square.and.arrow.down")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.save")
                 }
-                .accessibilityIdentifier("mdv.imageEditor.save")
                 // TSK-1067: copy the selection (or whole image) to a file / paste a file in.
                 HStack {
                     Button("Copy to File…") { copyToFile() }
@@ -678,15 +683,7 @@ struct ImageEditorView: View {
         panel.nameFieldStringValue = "edited.png"
         panel.allowedContentTypes = [.png, .jpeg, .heic, .bmp, .gif, .tiff]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let format: ExportSpec.Format
-        switch url.pathExtension.lowercased() {
-        case "jpg", "jpeg": format = .jpeg
-        case "heic": format = .heic
-        case "bmp": format = .bmp
-        case "gif": format = .gif
-        case "tif", "tiff": format = .tiff
-        default: format = .png
-        }
+        let format = imageFormat(forExtension: url.pathExtension)
         // Route through the view-model so a write/encoder failure (disk
         // full, dir not writable, HEIC encode failure) is captured in
         // `lastError` and surfaced — the old `try? vm.export(...)` discarded
@@ -711,16 +708,35 @@ struct ImageEditorView: View {
         panel.nameFieldStringValue = "selection.png"
         panel.allowedContentTypes = [.png, .jpeg, .heic, .bmp, .gif, .tiff]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let format: ExportSpec.Format
-        switch url.pathExtension.lowercased() {
-        case "jpg", "jpeg": format = .jpeg
-        case "heic": format = .heic
-        case "bmp": format = .bmp
-        case "gif": format = .gif
-        case "tif", "tiff": format = .tiff
-        default: format = .png
+        _ = vm.copyToFile(to: url, format: imageFormat(forExtension: url.pathExtension))
+    }
+
+    /// TSK-1081 — map a file extension to an export format (shared by the save paths).
+    private func imageFormat(forExtension ext: String) -> ExportSpec.Format {
+        switch ext.lowercased() {
+        case "jpg", "jpeg": return .jpeg
+        case "heic": return .heic
+        case "bmp": return .bmp
+        case "gif": return .gif
+        case "tif", "tiff": return .tiff
+        default: return .png
         }
-        _ = vm.copyToFile(to: url, format: format)
+    }
+
+    /// TSK-1081 — Save: write back to the document's original file if it has one;
+    /// otherwise fall through to Save-a-Copy (Save As).
+    private func saveInPlace() {
+        guard let url = vm.sourceURL else { saveCopy(); return }
+        let fmt = imageFormat(forExtension: url.pathExtension)
+        Task {
+            if !(await vm.saveCopyAsync(format: fmt, to: url)) {
+                let alert = NSAlert()
+                alert.messageText = "Couldn't save"
+                alert.informativeText = vm.lastError ?? "The image couldn't be saved."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
     }
 
     /// TSK-1067 — paste an image file onto the canvas (at the selection origin).
