@@ -240,6 +240,7 @@ struct ImageEditorView: View {
             Text("Off").tag(ImageEditorViewModel.RasterTool.none)
             Image(systemName: "eyedropper").tag(ImageEditorViewModel.RasterTool.colorPicker)
             Image(systemName: "paintbrush.pointed").tag(ImageEditorViewModel.RasterTool.brush)
+            Image(systemName: "pencil").tag(ImageEditorViewModel.RasterTool.pencil)
             Image(systemName: "eraser").tag(ImageEditorViewModel.RasterTool.eraser)
             Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
         }

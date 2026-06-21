@@ -224,9 +224,30 @@ final class ImageEditorPaintTests: XCTestCase {
     func test_rasterTool_isContinuous() {
         XCTAssertTrue(ImageEditorViewModel.RasterTool.brush.isContinuous)
         XCTAssertTrue(ImageEditorViewModel.RasterTool.eraser.isContinuous)
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.pencil.isContinuous)
         XCTAssertFalse(ImageEditorViewModel.RasterTool.none.isContinuous)
         XCTAssertFalse(ImageEditorViewModel.RasterTool.colorPicker.isContinuous)
         XCTAssertFalse(ImageEditorViewModel.RasterTool.floodFill.isContinuous)
+    }
+
+    // MARK: - pencil (TSK-1056)
+
+    func test_rasterTool_resolvedRadius_pencilIsHairline() {
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.pencil.resolvedRadius(base: 9), 0)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.brush.resolvedRadius(base: 9), 9)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.eraser.resolvedRadius(base: 9), 9)
+    }
+
+    func test_pencil_paintsSinglePixel_ignoringBrushSlider() throws {
+        let vm = try makeVM(w: 12, h: 12, r: 1, g: 1, b: 1)   // white
+        vm.tool = .pencil
+        vm.paintColor = .black
+        vm.brushRadius = 5                  // a fat slider the pencil must ignore
+        let n = vm.applyTool(atX: 6, y: 6)
+        XCTAssertEqual(n, 1, "pencil paints exactly one pixel")
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 6, y: 6).r, 4, "the pencil pixel is black")
+        XCTAssertGreaterThanOrEqual(sample(vm.rendered!, x: 6, y: 8).r, 250,
+                                    "a pixel a brush-radius away is untouched (pencil ignored the slider)")
     }
 
     func test_eraser_paintsTransparency() throws {

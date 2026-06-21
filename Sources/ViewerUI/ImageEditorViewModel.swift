@@ -64,18 +64,26 @@ public final class ImageEditorViewModel: ObservableObject {
         case colorPicker
         /// Brush: a click/drag stamps `paintColor` discs of radius `brushRadius`.
         case brush
+        /// Pencil: a hard 1px brush (ignores the brush-size slider). TSK-1056.
+        case pencil
         /// Eraser: a brush that paints transparency (erases to clear). TSK-1057.
         case eraser
         /// Paint bucket: a click flood-fills the contiguous region under it.
         case floodFill
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
-        var isContinuous: Bool { self == .brush || self == .eraser }
+        var isContinuous: Bool { self == .brush || self == .eraser || self == .pencil }
 
         /// The color this tool paints with, given the user's selected `base`.
         /// The eraser paints transparency; every other tool uses `base`.
         func resolvedColor(base: RGBAColor) -> RGBAColor {
             self == .eraser ? .clear : base
+        }
+
+        /// The brush radius this tool paints with. The pencil is a hard 1px tool
+        /// (radius 0 = a single pixel) regardless of the slider; others use `base`.
+        func resolvedRadius(base: Int) -> Int {
+            self == .pencil ? 0 : base
         }
     }
 
@@ -305,7 +313,8 @@ public final class ImageEditorViewModel: ObservableObject {
     public func brushDab(atX x: Int, y: Int) -> Int {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
         let n = canvas.brushDab(
-            cx: x, cy: y, radius: brushRadius, color: tool.resolvedColor(base: paintColor))
+            cx: x, cy: y, radius: tool.resolvedRadius(base: brushRadius),
+            color: tool.resolvedColor(base: paintColor))
         paintCanvas = canvas
         render()
         return n
@@ -318,7 +327,7 @@ public final class ImageEditorViewModel: ObservableObject {
     public func brushStroke(fromX x0: Int, y0: Int, toX x1: Int, y1: Int) -> Int {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
         let n = canvas.brushStroke(
-            from: (x0, y0), to: (x1, y1), radius: brushRadius,
+            from: (x0, y0), to: (x1, y1), radius: tool.resolvedRadius(base: brushRadius),
             color: tool.resolvedColor(base: paintColor))
         paintCanvas = canvas
         render()
@@ -347,6 +356,7 @@ public final class ImageEditorViewModel: ObservableObject {
         case .none:        return 0
         case .colorPicker: return pickColor(atX: x, y: y) == nil ? 0 : 1
         case .brush:       return brushDab(atX: x, y: y)
+        case .pencil:      return brushDab(atX: x, y: y)   // resolvedRadius → 0 (1px)
         case .eraser:      return brushDab(atX: x, y: y)   // resolvedColor → .clear
         case .floodFill:   return floodFill(atX: x, y: y)
         }
