@@ -423,12 +423,16 @@ struct ImageEditorView: View {
         // `lastError` and surfaced — the old `try? vm.export(...)` discarded
         // EVERY failure, so a failed save looked exactly like a successful
         // one (silent data loss). Mirror AudioEditorView.saveCopy().
-        if !vm.saveCopy(format: format, to: url) {
-            let alert = NSAlert()
-            alert.messageText = "Couldn't save a copy"
-            alert.informativeText = vm.lastError ?? "The image couldn't be saved."
-            alert.alertStyle = .warning
-            alert.runModal()
+        // TSK-1053: encode + write run off-main so a big image doesn't freeze
+        // the UI during save; the alert (on failure) comes back on the main actor.
+        Task {
+            if !(await vm.saveCopyAsync(format: format, to: url)) {
+                let alert = NSAlert()
+                alert.messageText = "Couldn't save a copy"
+                alert.informativeText = vm.lastError ?? "The image couldn't be saved."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
         }
     }
 }

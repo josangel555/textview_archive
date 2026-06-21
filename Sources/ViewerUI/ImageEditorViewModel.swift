@@ -519,6 +519,35 @@ public final class ImageEditorViewModel: ObservableObject {
             return false
         }
     }
+
+    /// TSK-1053 — non-blocking Save-a-Copy: the encode + write run OFF the main
+    /// actor (on a detached task) so a large image doesn't freeze the UI during
+    /// save. All inputs are `Sendable` (document/canvas/spec/url), so the work
+    /// crosses cleanly; `lastError`/the result are set back on the main actor.
+    @discardableResult
+    public func saveCopyAsync(
+        format: ExportSpec.Format, quality: Double = 0.9, to url: URL
+    ) async -> Bool {
+        let spec = ExportSpec(format: format, quality: quality)
+        let canvas = paintCanvas      // Sendable snapshot (paint shadows source+ops)
+        let doc = document            // Sendable snapshot
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                let data: Data
+                if let canvas, let image = canvas.cgImage() {
+                    data = try Exporter.encode(image, spec)
+                } else {
+                    data = try Exporter.export(doc, spec)
+                }
+                try data.write(to: url, options: .atomic)
+            }.value
+            lastError = nil
+            return true
+        } catch {
+            lastError = String(describing: error)
+            return false
+        }
+    }
 }
 
 extension EditOp {

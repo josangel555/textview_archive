@@ -346,4 +346,29 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertEqual(vm.decodeCount, 1, "ops replay on the cached base — no re-decode")
         XCTAssertEqual(vm.rendered?.width, 10, "and the op still applies")
     }
+
+    // MARK: - off-main save (TSK-1053)
+
+    func test_saveCopyAsync_writesDecodableFile() async throws {
+        let vm = try makeVM(w: 8, h: 8, r: 1, g: 0, b: 0)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-save-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let ok = await vm.saveCopyAsync(format: .png, to: url)
+        XCTAssertTrue(ok)
+        XCTAssertNil(vm.lastError)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        let data = try Data(contentsOf: url)
+        let src = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let img = try XCTUnwrap(CGImageSourceCreateImageAtIndex(src, 0, nil))
+        XCTAssertEqual(img.width, 8, "the off-main save wrote the edited image")
+    }
+
+    func test_saveCopyAsync_failureSetsLastError() async throws {
+        let vm = try makeVM(w: 8, h: 8)
+        let bad = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/x.png")
+        let ok = await vm.saveCopyAsync(format: .png, to: bad)
+        XCTAssertFalse(ok)
+        XCTAssertNotNil(vm.lastError, "a failed save is captured, not silently dropped")
+    }
 }
