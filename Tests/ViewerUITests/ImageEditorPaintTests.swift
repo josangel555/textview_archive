@@ -609,4 +609,13 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 2, y: 2).g, 8)
         XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 2, y: 2).b, 8)
     }
+
+    // MARK: - resize (TSK-1073)
+
+    func test_commitResize_changesDimensions() throws {
+        let vm = try makeVM(w: 20, h: 12)
+        vm.commitGeometry(.resize(width: 40, height: 24))
+        XCTAssertEqual(vm.rendered?.width, 40, "resize op applies the target dims")
+        XCTAssertEqual(vm.rendered?.height, 24)
+    }
 }

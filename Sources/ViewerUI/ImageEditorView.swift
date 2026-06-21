@@ -21,6 +21,13 @@ struct ImageEditorView: View {
     @State private var shapeDragCurrent: CGPoint?
     /// TSK-1064 — in-progress lasso path (view points) while dragging the lasso tool.
     @State private var lassoPoints: [CGPoint] = []
+    /// TSK-1073 — resize/stretch dialog state.
+    @State private var resizeSheetShown = false
+    @State private var resizeWidth = ""
+    @State private var resizeHeight = ""
+    @State private var resizePercent = "100"
+    @State private var resizeUsePercent = false
+    @State private var resizeMaintainAspect = true
     /// Called when the user dismisses the editor (returns to the plain viewer).
     let onClose: () -> Void
 
@@ -46,6 +53,50 @@ struct ImageEditorView: View {
         }
         .ignoresSafeArea()
         .accessibilityIdentifier("mdv.imageEditor")
+    }
+
+    /// TSK-1073 — the Resize/Stretch dialog (by percent or pixels, aspect lock).
+    @ViewBuilder private var resizeSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Resize Image").font(.headline)
+            Picker("By", selection: $resizeUsePercent) {
+                Text("Pixels").tag(false)
+                Text("Percent").tag(true)
+            }
+            .pickerStyle(.segmented)
+            if resizeUsePercent {
+                HStack { Text("Percent:"); TextField("100", text: $resizePercent) }
+            } else {
+                HStack { Text("Width:"); TextField("", text: $resizeWidth) }
+                HStack { Text("Height:"); TextField("", text: $resizeHeight) }
+                Toggle("Maintain aspect ratio", isOn: $resizeMaintainAspect)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { resizeSheetShown = false }
+                Button("Resize") { applyResize() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding()
+        .frame(width: 300)
+        .accessibilityIdentifier("mdv.imageEditor.resizeSheet")
+    }
+
+    private func applyResize() {
+        defer { resizeSheetShown = false }
+        guard let cg = vm.rendered else { return }
+        let current = (width: cg.width, height: cg.height)
+        let target: (width: Int, height: Int)
+        if resizeUsePercent {
+            target = ImageResizeMath.scaled(current, percent: Double(resizePercent) ?? 100)
+        } else {
+            target = ImageResizeMath.sized(
+                current: current,
+                width: Int(resizeWidth) ?? current.width,
+                height: Int(resizeHeight) ?? current.height,
+                maintainAspect: resizeMaintainAspect)
+        }
+        vm.commitGeometry(.resize(width: target.width, height: target.height))
     }
 
     /// TSK-1065 — true when a drag from `p` should MOVE the current selection
@@ -287,6 +338,15 @@ struct ImageEditorView: View {
                         Label("Clear", systemImage: "square.slash")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.clearImage")
+                    // TSK-1073: resize / stretch dialog.
+                    Button {
+                        resizeWidth = String(vm.rendered?.width ?? 0)
+                        resizeHeight = String(vm.rendered?.height ?? 0)
+                        resizeSheetShown = true
+                    } label: {
+                        Label("Resize", systemImage: "arrow.up.left.and.arrow.down.right")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.resize")
                     Button { vm.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
@@ -298,6 +358,7 @@ struct ImageEditorView: View {
                     .disabled(!vm.canRedo)
                     .accessibilityIdentifier("mdv.imageEditor.redo")
                 }
+                .sheet(isPresented: $resizeSheetShown) { resizeSheet }
 
                 // Minimal draw-tool affordance (TSK-749): commits a shape / text
                 // op to the undo history. Each draw is undoable via the buttons
