@@ -587,16 +587,25 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertEqual(vm.rendered?.height, 12)
     }
 
-    // MARK: - clear image (TSK-1077)
+    // MARK: - clear image (TSK-1077) + two-color (TSK-1069)
 
-    func test_clearImage_fillsCanvasWithPaintColor() throws {
+    func test_clearImage_fillsCanvasWithBackgroundColor() throws {
         let vm = try makeVM(w: 8, h: 8, r: 1, g: 1, b: 1)   // white
-        vm.paintColor = RGBAColor(r: 0, g: 0, b: 255, a: 255)   // blue
+        vm.bgColor = RGBAColor(r: 0, g: 0, b: 255, a: 255)  // blue background
         XCTAssertTrue(vm.clearImage())
         let a = sample(vm.rendered!, x: 0, y: 0)
         let b = sample(vm.rendered!, x: 7, y: 7)
         XCTAssertGreaterThanOrEqual(a.b, 200); XCTAssertLessThanOrEqual(a.r, 60)
-        XCTAssertGreaterThanOrEqual(b.b, 200, "the whole canvas is filled with the paint color")
+        XCTAssertGreaterThanOrEqual(b.b, 200, "the whole canvas is filled with the background color")
+    }
+
+    func test_swapColors_exchangesForegroundAndBackground() throws {
+        let vm = try makeVM(w: 4, h: 4)
+        vm.paintColor = .black
+        vm.bgColor = .white
+        vm.swapColors()
+        XCTAssertEqual(vm.paintColor, .white)
+        XCTAssertEqual(vm.bgColor, .black)
     }
 
     // MARK: - invert colors (TSK-1075)

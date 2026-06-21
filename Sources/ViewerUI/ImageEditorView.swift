@@ -503,6 +503,15 @@ struct ImageEditorView: View {
 
         ColorPicker("Color", selection: paintColorBinding, supportsOpacity: true)
             .accessibilityIdentifier("mdv.imageEditor.paintColor")
+        // TSK-1069: background color (Clear fills with it) + swap.
+        HStack {
+            ColorPicker("Background", selection: bgColorBinding, supportsOpacity: true)
+                .accessibilityIdentifier("mdv.imageEditor.bgColor")
+            Button { vm.swapColors() } label: {
+                Label("Swap", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .accessibilityIdentifier("mdv.imageEditor.swapColors")
+        }
 
         VStack(alignment: .leading, spacing: 2) {
             Text("Brush Size: \(vm.brushRadius)").font(.caption)
@@ -567,10 +576,12 @@ struct ImageEditorView: View {
     /// Bridge the VM's straight-RGBA8 `paintColor` to SwiftUI's `Color` for the
     /// `ColorPicker`. The setter resolves the picked `Color` into 8-bit sRGB
     /// components via `NSColor`.
-    private var paintColorBinding: Binding<Color> {
+    private func colorBinding(
+        _ get: @escaping () -> RGBAColor, _ set: @escaping (RGBAColor) -> Void
+    ) -> Binding<Color> {
         Binding(
             get: {
-                let c = vm.paintColor
+                let c = get()
                 return Color(.sRGB,
                              red: Double(c.r) / 255, green: Double(c.g) / 255,
                              blue: Double(c.b) / 255, opacity: Double(c.a) / 255)
@@ -578,11 +589,13 @@ struct ImageEditorView: View {
             set: { newColor in
                 let ns = NSColor(newColor).usingColorSpace(.sRGB) ?? NSColor(newColor)
                 func byte(_ v: CGFloat) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
-                vm.paintColor = RGBAColor(
+                set(RGBAColor(
                     r: byte(ns.redComponent), g: byte(ns.greenComponent),
-                    b: byte(ns.blueComponent), a: byte(ns.alphaComponent))
+                    b: byte(ns.blueComponent), a: byte(ns.alphaComponent)))
             })
     }
+    private var paintColorBinding: Binding<Color> { colorBinding({ vm.paintColor }, { vm.paintColor = $0 }) }
+    private var bgColorBinding: Binding<Color> { colorBinding({ vm.bgColor }, { vm.bgColor = $0 }) }
 
     private func slider(
         _ label: String,

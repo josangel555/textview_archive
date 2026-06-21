@@ -130,6 +130,9 @@ public final class ImageEditorViewModel: ObservableObject {
     /// The active paint / fill color (the eyedropper writes here; brush & bucket
     /// read from here). Straight RGBA8.
     @Published public var paintColor: RGBAColor = .black
+    /// TSK-1069 — the secondary / background color (Clear fills with it; a future
+    /// two-color shape "both" mode uses fg=stroke, bg=fill). White by default.
+    @Published public var bgColor: RGBAColor = .white
     /// Brush radius in pixels (0 = single pixel). Clamped non-negative on use.
     @Published public var brushRadius: Int = 4
     /// Flood-fill per-channel tolerance (0…255). 0 requires an exact color match.
@@ -439,15 +442,22 @@ public final class ImageEditorViewModel: ObservableObject {
         render()
     }
 
-    /// TSK-1077 — clear the whole canvas to the current paint color (Image ▸ Clear).
+    /// TSK-1077/1069 — clear the whole canvas to the BACKGROUND color (Image ▸ Clear).
     /// No-op if the canvas can't be baked.
     @discardableResult
     public func clearImage() -> Bool {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
-        canvas.fillRect(x: 0, y: 0, width: canvas.width, height: canvas.height, to: paintColor)
+        canvas.fillRect(x: 0, y: 0, width: canvas.width, height: canvas.height, to: bgColor)
         paintCanvas = canvas
         render()
         return true
+    }
+
+    /// TSK-1069 — swap the foreground (paint) and background colors.
+    public func swapColors() {
+        let fg = paintColor
+        paintColor = bgColor
+        bgColor = fg
     }
 
     /// `true` when a destructive paint session has marked the surface.
