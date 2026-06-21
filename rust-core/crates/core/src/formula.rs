@@ -88,6 +88,13 @@ enum Token {
     Colon,
     /// `,` — function-argument separator.
     Comma,
+    /// Comparison operators: `=`, `<>`, `<`, `<=`, `>`, `>=`.
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
@@ -106,6 +113,24 @@ fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
             ')' => { chars.next(); toks.push(Token::RParen); }
             ':' => { chars.next(); toks.push(Token::Colon); }
             ',' => { chars.next(); toks.push(Token::Comma); }
+            '=' => { chars.next(); toks.push(Token::Eq); }
+            '>' => {
+                chars.next();
+                if matches!(chars.peek(), Some(&'=')) {
+                    chars.next();
+                    toks.push(Token::Ge);
+                } else {
+                    toks.push(Token::Gt);
+                }
+            }
+            '<' => {
+                chars.next();
+                match chars.peek() {
+                    Some(&'=') => { chars.next(); toks.push(Token::Le); }
+                    Some(&'>') => { chars.next(); toks.push(Token::Ne); }
+                    _ => toks.push(Token::Lt),
+                }
+            }
             _ if c.is_ascii_digit() || c == '.' => {
                 let mut lit = String::new();
                 while let Some(&d) = chars.peek() {
@@ -168,6 +193,18 @@ enum Expr {
     Neg(Box<Expr>),
     Percent(Box<Expr>),
     Bin(BinOp, Box<Expr>, Box<Expr>),
+    /// A comparison `l <op> r` — yields a boolean. Binds looser than `+`/`-`.
+    Cmp(CmpOp, Box<Expr>, Box<Expr>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -190,11 +227,28 @@ impl Parser {
     }
 
     fn parse(&mut self) -> Result<Expr, FormulaError> {
-        let e = self.add()?;
+        let e = self.compare()?;
         if self.pos != self.toks.len() {
             return Err(FormulaError::Parse); // trailing/unconsumed tokens
         }
         Ok(e)
+    }
+
+    // Comparisons bind looser than +/-; non-chaining (Excel doesn't chain them).
+    fn compare(&mut self) -> Result<Expr, FormulaError> {
+        let left = self.add()?;
+        let op = match self.peek() {
+            Some(Token::Eq) => CmpOp::Eq,
+            Some(Token::Ne) => CmpOp::Ne,
+            Some(Token::Lt) => CmpOp::Lt,
+            Some(Token::Le) => CmpOp::Le,
+            Some(Token::Gt) => CmpOp::Gt,
+            Some(Token::Ge) => CmpOp::Ge,
+            _ => return Ok(left),
+        };
+        self.pos += 1;
+        let right = self.add()?;
+        Ok(Expr::Cmp(op, Box::new(left), Box::new(right)))
     }
 
     fn add(&mut self) -> Result<Expr, FormulaError> {
@@ -268,7 +322,7 @@ impl Parser {
             return Ok(args); // empty: NAME()
         }
         loop {
-            args.push(self.add()?);
+            args.push(self.compare()?);
             if let Some(Token::Comma) = self.toks.get(self.pos) {
                 self.pos += 1;
             } else {
@@ -313,7 +367,7 @@ impl Parser {
             }
             Some(Token::LParen) => {
                 self.pos += 1;
-                let e = self.add()?;
+                let e = self.compare()?;
                 match self.toks.get(self.pos) {
                     Some(Token::RParen) => {
                         self.pos += 1;
@@ -338,6 +392,17 @@ fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
         },
         Expr::Range(_, _) => Value::Error(FormulaError::Value), // bare range invalid in scalar context
         Expr::Call(name, args) => call_fn(name, args, resolver),
+        Expr::Cmp(op, l, r) => {
+            let lv = eval(l, resolver);
+            if let Value::Error(_) = lv {
+                return lv;
+            }
+            let rv = eval(r, resolver);
+            if let Value::Error(_) = rv {
+                return rv;
+            }
+            Value::Bool(compare_values(*op, &lv, &rv))
+        }
         Expr::Neg(inner) => match as_number(eval(inner, resolver)) {
             Ok(n) => Value::Number(-n),
             Err(v) => v,
@@ -528,6 +593,45 @@ fn as_bool(v: &Value) -> bool {
             s.eq_ignore_ascii_case("true")
                 || s.trim().parse::<f64>().is_ok_and(|n| n != 0.0)
         }
+    }
+}
+
+/// Apply a comparison operator to two already-evaluated, non-error values.
+fn compare_values(op: CmpOp, a: &Value, b: &Value) -> bool {
+    use std::cmp::Ordering;
+    let ord = value_cmp(a, b);
+    match op {
+        CmpOp::Eq => ord == Ordering::Equal,
+        CmpOp::Ne => ord != Ordering::Equal,
+        CmpOp::Lt => ord == Ordering::Less,
+        CmpOp::Le => ord != Ordering::Greater,
+        CmpOp::Gt => ord == Ordering::Greater,
+        CmpOp::Ge => ord != Ordering::Less,
+    }
+}
+
+/// Order two values: numerically when BOTH coerce to numbers (number/bool/blank/
+/// numeric-text — blank counts as 0), otherwise case-insensitive text.
+fn value_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    if let (Ok(x), Ok(y)) = (as_number(a.clone()), as_number(b.clone())) {
+        x.partial_cmp(&y).unwrap_or(Ordering::Equal)
+    } else {
+        value_text(a)
+            .to_lowercase()
+            .cmp(&value_text(b).to_lowercase())
+    }
+}
+
+/// A value's text form (for text comparison): numbers without a trailing `.0`,
+/// booleans as TRUE/FALSE, blank as empty, error as its display code.
+fn value_text(v: &Value) -> String {
+    match v {
+        Value::Number(n) => n.to_string(),
+        Value::Text(s) => s.clone(),
+        Value::Bool(b) => if *b { "TRUE".to_string() } else { "FALSE".to_string() },
+        Value::Blank => String::new(),
+        Value::Error(e) => e.display().to_string(),
     }
 }
 
@@ -778,5 +882,34 @@ mod tests {
         assert!(matches!(evaluate("BOGUS(1)"), Value::Error(FormulaError::Name))); // unknown fn
         assert_eq!(evaluate("SUM()"), Value::Number(0.0)); // empty args
         assert_eq!(evaluate("MIN()"), Value::Number(0.0)); // empty → 0
+    }
+
+    #[test]
+    fn comparison_operators() {
+        assert_eq!(evaluate("1<2"), Value::Bool(true));
+        assert_eq!(evaluate("2<=2"), Value::Bool(true));
+        assert_eq!(evaluate("3>2"), Value::Bool(true));
+        assert_eq!(evaluate("3>=4"), Value::Bool(false));
+        assert_eq!(evaluate("2=2"), Value::Bool(true));
+        assert_eq!(evaluate("2<>3"), Value::Bool(true));
+        assert_eq!(evaluate("1+1=2"), Value::Bool(true)); // comparison binds looser than +
+    }
+
+    #[test]
+    fn comparisons_with_if_refs_blank_and_text() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "7".to_string()),   // A1 = 7
+            (CellRef { col: 1, row: 0 }, "abc".to_string()), // B1
+            (CellRef { col: 2, row: 0 }, "ABC".to_string()), // C1
+        ]
+        .into_iter()
+        .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("IF(A1>5, 100, 200)", &r), Value::Number(100.0));
+        assert_eq!(evaluate_with("IF(A1>10, 100, 200)", &r), Value::Number(200.0));
+        assert_eq!(evaluate_with("AND(A1>5, A1<10)", &r), Value::Bool(true));
+        assert_eq!(evaluate_with("Z9=0", &r), Value::Bool(true)); // blank coerces to 0
+        assert_eq!(evaluate_with("B1=C1", &r), Value::Bool(true)); // text compare is case-insensitive
     }
 }
