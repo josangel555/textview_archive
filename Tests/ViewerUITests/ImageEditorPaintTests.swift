@@ -566,4 +566,24 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 8, y: 8).a, 4,
                                  "the complement is cleared to transparent")
     }
+
+    // MARK: - flip / rotate orient verbs (TSK-1072)
+
+    func test_commitOrient_rotate90SwapsDimensions() throws {
+        let vm = try makeVM(w: 20, h: 12)
+        XCTAssertEqual(vm.rendered?.width, 20)
+        vm.commitGeometry(.orient(.right90))
+        XCTAssertEqual(vm.rendered?.width, 12, "90° rotate swaps width/height (orient op wired)")
+        XCTAssertEqual(vm.rendered?.height, 20)
+    }
+
+    func test_commitOrient_flipPreservesDimensions() throws {
+        let vm = try makeVM(w: 20, h: 12)
+        vm.commitGeometry(.orient(.upMirrored))    // flip H
+        XCTAssertEqual(vm.rendered?.width, 20, "a flip keeps dimensions")
+        XCTAssertEqual(vm.rendered?.height, 12)
+        vm.commitGeometry(.orient(.downMirrored))  // flip V
+        XCTAssertEqual(vm.rendered?.width, 20)
+        XCTAssertEqual(vm.rendered?.height, 12)
+    }
 }

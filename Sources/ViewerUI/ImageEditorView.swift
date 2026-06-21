@@ -260,6 +260,23 @@ struct ImageEditorView: View {
                         Label("Rotate", systemImage: "rotate.right")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.rotate")
+                    // TSK-1072: flip / rotate (wire the existing orientation verbs).
+                    Button { vm.commitGeometry(.orient(.left90)) } label: {
+                        Label("Rotate Left", systemImage: "rotate.left")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.rotateLeft")
+                    Button { vm.commitGeometry(.orient(.down)) } label: {
+                        Label("Rotate 180", systemImage: "arrow.2.circlepath")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.rotate180")
+                    Button { vm.commitGeometry(.orient(.upMirrored)) } label: {
+                        Label("Flip H", systemImage: "arrow.left.and.right")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.flipH")
+                    Button { vm.commitGeometry(.orient(.downMirrored)) } label: {
+                        Label("Flip V", systemImage: "arrow.up.and.down")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.flipV")
                     Button { vm.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
