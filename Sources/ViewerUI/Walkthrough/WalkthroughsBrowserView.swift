@@ -37,6 +37,13 @@ struct WalkthroughsBrowserView: View {
                             .accessibilityIdentifier("mdv.walkthroughs.run")
                     }
                     .padding(.vertical, 2)
+                    // TSK-1211: right-click ▸ Delete removes the walkthrough file.
+                    .contextMenu {
+                        Button("Delete Walkthrough", role: .destructive) {
+                            WalkthroughCatalog.delete(entry)
+                            reload()
+                        }
+                    }
                 }
             }
         }

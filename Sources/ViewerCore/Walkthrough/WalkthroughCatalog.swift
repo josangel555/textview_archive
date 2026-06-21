@@ -152,6 +152,22 @@ public enum WalkthroughCatalog {
         return sorted ? result.sorted(by: orderedBefore) : result
     }
 
+    /// TSK-1211 — delete a catalog walkthrough by removing its file. Returns
+    /// true on success. Best-effort: a missing file or a failed remove returns
+    /// false rather than throwing into the browser's delete action.
+    @discardableResult
+    public static func delete(
+        _ entry: Entry,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        do {
+            try fileManager.removeItem(at: entry.url)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Build one `Entry` from a single file, or nil if it can't be
     /// summarized. Exposed (not private) so a caller that already has a
     /// file URL — e.g. "Open Walkthrough File…" — can produce a row

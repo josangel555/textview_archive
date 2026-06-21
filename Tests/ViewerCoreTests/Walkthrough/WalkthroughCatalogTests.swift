@@ -65,6 +65,27 @@ final class WalkthroughCatalogTests: XCTestCase {
         XCTAssertEqual(byID["a"]?.schema, .v1)
     }
 
+    // MARK: - Delete (TSK-1211)
+
+    func test_delete_removesFileAndDropsFromCatalog() throws {
+        let url = try write("gone.json", script(id: "g", title: "Gone"))
+        let entry = try XCTUnwrap(WalkthroughCatalog.entries(in: tmp).first)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(WalkthroughCatalog.delete(entry), "delete succeeds")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "delete removes the on-disk file")
+        XCTAssertTrue(WalkthroughCatalog.entries(in: tmp).isEmpty,
+                      "deleted walkthrough no longer appears in the catalog")
+    }
+
+    func test_delete_missingFile_returnsFalse() throws {
+        _ = try write("temp.json", script(id: "t", title: "T"))
+        let entry = try XCTUnwrap(WalkthroughCatalog.entries(in: tmp).first)
+        XCTAssertTrue(WalkthroughCatalog.delete(entry))
+        XCTAssertFalse(WalkthroughCatalog.delete(entry),
+                       "deleting an already-removed file returns false, no throw")
+    }
+
     func test_entries_idIsURL_not_scriptID() throws {
         // Two files with the SAME script id (a repo-bound copy of a
         // user-global tour) must remain distinct rows — list identity is
