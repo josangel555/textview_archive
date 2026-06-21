@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-21
 
 ### Added
+- **CSV — rectangular select & copy** — shift+arrow extends a cell rectangle in the table view; ⌘C copies it (tab/newline-delimited, paste-ready into a spreadsheet).
 - **File ▸ Annotations** — a jump-list of the current file's TODO / FIXME / HACK / XXX / NOTE / BUG markers; click one to jump straight to that line.
 - **File ▸ Log Patterns** — a frequency-ranked summary of the current log's repeated line patterns (masked templates + counts + an example), for fast log triage.
 - **Folder stats → treemap** — a "Show Treemap" button on the folder/repo statistics card opens that folder's size treemap.
