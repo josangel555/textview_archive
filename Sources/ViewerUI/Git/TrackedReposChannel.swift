@@ -51,12 +51,12 @@ public final class TrackedReposChannel: ObservableObject {
     /// Read-side normalizer cache (moved from SidebarModel). Bounded —
     /// sidebar churns row URLs as it scrolls, but the visible set +
     /// recently-scrolled-out is bounded.
-    private var normCache: [URL: URL] = [:]
+    private var normCache = InsertionOrderedCache<URL, URL>(cap: TrackedReposChannel.cacheCap)
 
     /// `dir → .git exists` cache. One stat per visible dir row,
     /// invalidated on an FSEvents touch of that dir. Bounded. NEVER
     /// spawns git.
-    private var rootIconCache: [URL: Bool] = [:]
+    private var rootIconCache = InsertionOrderedCache<URL, Bool>(cap: TrackedReposChannel.cacheCap)
 
     private static let cacheCap = 2048
 
@@ -105,10 +105,7 @@ public final class TrackedReposChannel: ObservableObject {
         let d = norm(dir)
         if let hit = rootIconCache[d] { return hit }
         let exists = Self.fileExistsProbe(d.appendingPathComponent(".git").path)
-        if rootIconCache.count > Self.cacheCap {
-            rootIconCache.removeAll(keepingCapacity: true)
-        }
-        rootIconCache[d] = exists
+        rootIconCache.insert(exists, forKey: d)
         return exists
     }
 
@@ -165,11 +162,11 @@ public final class TrackedReposChannel: ObservableObject {
     /// Invalidate the cheap `.git`-existence cache for a directory (an
     /// FSEvents `.git` create/delete flipped its repo-root status).
     func invalidateRootIconCache(for dir: URL) {
-        rootIconCache[norm(dir)] = nil
+        rootIconCache.remove(norm(dir))
     }
 
     func invalidateAllRootIconCache() {
-        rootIconCache.removeAll(keepingCapacity: true)
+        rootIconCache.removeAll()
     }
 
     // MARK: - Test seams
@@ -211,12 +208,10 @@ public final class TrackedReposChannel: ObservableObject {
         normCacheMisses &+= 1
         Obs.shared.counter("trackedRepos.norm.miss")
         let resolved = TrackedReposReducer.normalize(url)
-        if normCache.count > Self.cacheCap {
-            normCache.removeAll(keepingCapacity: true)
+        if normCache.insert(resolved, forKey: url) {
             normCacheResets &+= 1
             Obs.shared.counter("trackedRepos.norm.reset")
         }
-        normCache[url] = resolved
         return resolved
     }
 
