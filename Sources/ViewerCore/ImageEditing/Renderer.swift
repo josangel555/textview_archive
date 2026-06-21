@@ -131,6 +131,7 @@ public enum Renderer {
         case .shadowHighlight(let s, let h):
             return try shadowHighlight(image, shadow: s, highlight: h)
         case .sharpen(let amount): return try sharpen(image, sharpness: amount)
+        case .invertColors: return try invertColors(image)
         case .fillRect(let rect, let color):
             return try draw(on: image) { ctx in
                 ctx.setFillColor(color.cgColor)
@@ -417,6 +418,21 @@ public enum Renderer {
         guard let filter = CIFilter(name: "CISharpenLuminance", parameters: [
             kCIInputImageKey: input,
             kCIInputSharpnessKey: sharpness,
+        ]), let output = filter.outputImage else {
+            throw ImageEditError.contextCreationFailed
+        }
+        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        guard let cg = ciContext.createCGImage(output, from: input.extent) else {
+            throw ImageEditError.contextCreationFailed
+        }
+        return try normalized(cg)
+    }
+
+    /// Invert the image's colors (photo-negative), via `CIColorInvert`. TSK-1075.
+    static func invertColors(_ image: CGImage) throws -> CGImage {
+        let input = CIImage(cgImage: image)
+        guard let filter = CIFilter(name: "CIColorInvert", parameters: [
+            kCIInputImageKey: input,
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }

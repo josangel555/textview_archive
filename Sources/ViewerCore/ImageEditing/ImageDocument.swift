@@ -107,6 +107,8 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// edge contrast (an unsharp-mask-style overshoot at edges). A no-op on flat
     /// regions — only edges are affected. Geometry-preserving.
     case sharpen(sharpness: Double)
+    /// Invert the image's colors (photo-negative). Geometry-preserving. TSK-1075.
+    case invertColors
     /// Paint a filled rectangle in **source pixel space** (top-left origin)
     /// onto the raster (TSK-749). The rect is integralized at render time; an
     /// out-of-bounds rect is clipped to the canvas. Geometry (dimensions) is

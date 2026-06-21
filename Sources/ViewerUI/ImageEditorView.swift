@@ -277,6 +277,11 @@ struct ImageEditorView: View {
                         Label("Flip V", systemImage: "arrow.up.and.down")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.flipV")
+                    // TSK-1075: invert colors (photo-negative).
+                    Button { vm.commitGeometry(.invertColors) } label: {
+                        Label("Invert Colors", systemImage: "circle.lefthalf.filled")
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.invertColors")
                     Button { vm.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }

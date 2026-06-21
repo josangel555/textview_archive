@@ -586,4 +586,15 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertEqual(vm.rendered?.width, 20)
         XCTAssertEqual(vm.rendered?.height, 12)
     }
+
+    // MARK: - invert colors (TSK-1075)
+
+    func test_invertColors_negatesPixels() throws {
+        let vm = try makeVM(w: 6, h: 6, r: 1, g: 1, b: 1)   // white
+        XCTAssertEqual(sample(vm.rendered!, x: 2, y: 2).r, 255)
+        vm.commitGeometry(.invertColors)
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 2, y: 2).r, 8, "white → black")
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 2, y: 2).g, 8)
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 2, y: 2).b, 8)
+    }
 }

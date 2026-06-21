@@ -703,7 +703,7 @@ extension EditOp {
         switch self {
         case .crop, .resize, .orient:
             return true
-        case .colorControls, .exposure, .shadowHighlight, .sharpen,
+        case .colorControls, .exposure, .shadowHighlight, .sharpen, .invertColors,
              .fillRect, .strokeRect, .fillEllipse, .strokeEllipse,
              .strokeLine, .drawText:
             return false
@@ -716,7 +716,7 @@ extension EditOp {
     /// render time, so committing them would spam the history (TSK-749).
     var isCommittable: Bool {
         switch self {
-        case .crop, .resize, .orient,
+        case .crop, .resize, .orient, .invertColors,
              .fillRect, .strokeRect, .fillEllipse, .strokeEllipse,
              .strokeLine, .drawText:
             return true
