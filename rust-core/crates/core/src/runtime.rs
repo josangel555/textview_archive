@@ -16,7 +16,9 @@
 //! byte-budget + count-cap LRU with host pinning + TTL reaper). Owner-ratified
 //! defaults (2026-06-19): 512 MiB / 64 docs / TTL-off, all configurable.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Monotonic, never-reused document id (the audit's Phase-2 `DocId`; the
 /// `usize` token in `crates/ffi/src/handle.rs` is its de-facto precursor).
@@ -145,6 +147,148 @@ pub fn eviction_plan(docs: &[DocMeta], budget: &EvictionBudget, now_ms: u64) -> 
     victims
 }
 
+/// A snapshot of the runtime for diagnostics / `runtime_stats` (size + count
+/// hook). `over_budget` is true when resident bytes exceed `budget.max_bytes` —
+/// which can only happen when pinned docs alone exceed it (the host's signal to
+/// close tabs), since unpinned docs are evicted to stay under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RuntimeStats {
+    pub doc_count: usize,
+    pub total_bytes: usize,
+    pub over_budget: bool,
+    pub budget: EvictionBudget,
+}
+
+/// The multi-document runtime registry (TSK-589 slice 2). Owns the resident
+/// documents keyed by monotonic [`DocId`], tracks per-doc eviction metadata, and
+/// applies [`eviction_plan`] on admission (open) and on demand (`enforce`).
+///
+/// Generic over the stored payload `D` so it is fully host-testable without the
+/// `CsvSession` / FFI layers — slice 4 wires the concrete `DocumentSession` and
+/// its `estimated_bytes()`; slice 5 adds the Swift `DocNotFound` rehydration.
+/// This replaces `crates/ffi/src/handle.rs`'s unbounded `Arc<HashMap>` whose only
+/// GC is Swift ARC `deinit` (which breaks once the core goes remote/out-of-process).
+pub struct CoreRuntime<D> {
+    docs: RwLock<HashMap<DocId, Arc<Mutex<D>>>>,
+    meta: RwLock<HashMap<DocId, DocMeta>>,
+    budget: RwLock<EvictionBudget>,
+    next_id: AtomicU64,
+}
+
+/// Acquire a read guard, recovering from lock poisoning: a holder thread that
+/// panicked left the protected data structurally valid, so the runtime recovers
+/// the guard rather than crashing. (Also keeps the lock sites clippy-clean — no
+/// `unwrap`/`expect`.)
+#[inline]
+fn read_guard<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Acquire a write guard, recovering from lock poisoning (see [`read_guard`]).
+#[inline]
+fn write_guard<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(PoisonError::into_inner)
+}
+
+impl<D> CoreRuntime<D> {
+    pub fn new(budget: EvictionBudget) -> Self {
+        Self {
+            docs: RwLock::new(HashMap::new()),
+            meta: RwLock::new(HashMap::new()),
+            budget: RwLock::new(budget),
+            next_id: AtomicU64::new(1),
+        }
+    }
+
+    /// Replace the budget at runtime (`runtime_configure`).
+    pub fn configure(&self, budget: EvictionBudget) {
+        *write_guard(&self.budget) = budget;
+    }
+
+    pub fn doc_count(&self) -> usize {
+        read_guard(&self.docs).len()
+    }
+
+    /// Open a document: assign a fresh never-reused [`DocId`], insert it, then run
+    /// admission eviction as of `now_ms`. The just-opened doc is protected from
+    /// its OWN admission (spike §5: "admitted anyway, never refuse what the user
+    /// asked for"), so it survives even if it alone exceeds the budget. Returns
+    /// the new id and the ids evicted to admit it.
+    pub fn open(&self, doc: D, estimated_bytes: usize, now_ms: u64) -> (DocId, Vec<DocId>) {
+        let id = DocId(self.next_id.fetch_add(1, Ordering::Relaxed));
+        {
+            write_guard(&self.docs).insert(id, Arc::new(Mutex::new(doc)));
+            write_guard(&self.meta).insert(
+                id,
+                DocMeta { id, estimated_bytes, last_touched_ms: now_ms, pinned: true },
+            );
+        }
+        // Admission runs with the new doc pinned so it can never be its own
+        // victim; restore the default-unpinned state afterwards (the host pins
+        // visible/unsaved docs explicitly via set_pinned).
+        let evicted = self.enforce(now_ms);
+        self.set_pinned(id, false);
+        (id, evicted)
+    }
+
+    /// Fetch a document handle, bumping its `last_touched`. `None` means the id
+    /// was evicted or never existed — a recoverable `DocNotFound` the host
+    /// rehydrates from the bytes it still holds (slice 5).
+    pub fn get(&self, id: DocId, now_ms: u64) -> Option<Arc<Mutex<D>>> {
+        let handle = read_guard(&self.docs).get(&id).cloned();
+        // Bump recency on a hit; meta mirrors docs so a miss is a harmless no-op.
+        if let Some(m) = write_guard(&self.meta).get_mut(&id) {
+            m.last_touched_ms = now_ms;
+        }
+        handle
+    }
+
+    /// Mark a doc pinned (active / visible / unsaved-edit) or not. Pinned docs
+    /// are never eviction victims. (Owner riders: all open tabs pinned; unsaved
+    /// docs always pinned — enforced by the host at its call sites.)
+    pub fn set_pinned(&self, id: DocId, pinned: bool) {
+        if let Some(m) = write_guard(&self.meta).get_mut(&id) {
+            m.pinned = pinned;
+        }
+    }
+
+    /// Explicit close (replaces `session_free`; idempotent).
+    pub fn close(&self, id: DocId) {
+        write_guard(&self.docs).remove(&id);
+        write_guard(&self.meta).remove(&id);
+    }
+
+    /// Apply the eviction policy now (admission ceiling + idle reaper), removing
+    /// victims from the registry. Returns the evicted ids.
+    pub fn enforce(&self, now_ms: u64) -> Vec<DocId> {
+        let budget = *read_guard(&self.budget);
+        let metas: Vec<DocMeta> = read_guard(&self.meta).values().copied().collect();
+        let victims = eviction_plan(&metas, &budget, now_ms);
+        if !victims.is_empty() {
+            let mut docs = write_guard(&self.docs);
+            let mut meta = write_guard(&self.meta);
+            for v in &victims {
+                docs.remove(v);
+                meta.remove(v);
+            }
+        }
+        victims
+    }
+
+    /// Diagnostics snapshot (the enumeration + size hook).
+    pub fn stats(&self, _now_ms: u64) -> RuntimeStats {
+        let budget = *read_guard(&self.budget);
+        let metas: Vec<DocMeta> = read_guard(&self.meta).values().copied().collect();
+        let total_bytes = resident_bytes(&metas);
+        RuntimeStats {
+            doc_count: metas.len(),
+            total_bytes,
+            over_budget: total_bytes > budget.max_bytes,
+            budget,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +379,109 @@ mod tests {
     fn resident_bytes_sums() {
         let docs = [doc(1, 100, 1, false), doc(2, 250, 2, true)];
         assert_eq!(resident_bytes(&docs), 350);
+    }
+
+    // ---- CoreRuntime registry (slice 2) ----
+
+    #[test]
+    fn open_assigns_monotonic_ids() {
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::new(usize::MAX, 0, 0));
+        let (a, _) = rt.open(1, 10, 1);
+        let (b, _) = rt.open(2, 10, 2);
+        assert_eq!(a, DocId(1));
+        assert_eq!(b, DocId(2));
+    }
+
+    #[test]
+    fn get_returns_handle_then_none_after_close() {
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::default());
+        let (id, _) = rt.open(42, 10, 1);
+        assert_eq!(*rt.get(id, 2).unwrap().lock().unwrap(), 42);
+        rt.close(id);
+        assert!(rt.get(id, 3).is_none(), "closed id → DocNotFound");
+    }
+
+    #[test]
+    fn admission_evicts_lru_when_over_budget() {
+        // three 100-byte docs over a 250 budget → the 3rd open evicts the LRU.
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::new(250, 0, 0));
+        let (a, e1) = rt.open(1, 100, 10);
+        assert!(e1.is_empty());
+        let (b, e2) = rt.open(2, 100, 20);
+        assert!(e2.is_empty(), "total 200 ≤ 250");
+        let (c, e3) = rt.open(3, 100, 30);
+        assert_eq!(e3, vec![a], "oldest (a) evicted to admit c");
+        assert!(rt.get(a, 40).is_none());
+        assert!(rt.get(b, 40).is_some());
+        assert!(rt.get(c, 40).is_some());
+    }
+
+    #[test]
+    fn new_doc_admitted_even_when_only_pinned_remain() {
+        // a pinned (alone exceeds 50-byte budget); opening b must still admit b.
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::new(50, 0, 0));
+        let (a, _) = rt.open(1, 100, 1);
+        rt.set_pinned(a, true);
+        let (b, e) = rt.open(2, 100, 2);
+        assert!(e.is_empty(), "new doc admitted anyway (never refused)");
+        assert!(rt.get(b, 3).is_some());
+        assert!(rt.get(a, 3).is_some());
+    }
+
+    #[test]
+    fn pinned_doc_survives_admission_unpinned_evicted() {
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::new(250, 0, 0));
+        let (a, _) = rt.open(1, 100, 10);
+        rt.set_pinned(a, true); // pin the oldest
+        let (b, _) = rt.open(2, 100, 20);
+        let (_c, e3) = rt.open(3, 100, 30);
+        assert_eq!(e3, vec![b], "LRU-unpinned (b) evicted, pinned (a) spared");
+        assert!(rt.get(a, 40).is_some());
+    }
+
+    #[test]
+    fn touch_updates_recency_so_lru_shifts() {
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::new(250, 0, 0));
+        let (a, _) = rt.open(1, 100, 10);
+        let (b, _) = rt.open(2, 100, 20);
+        rt.get(a, 30); // touch a → now newer than b
+        let (_c, e3) = rt.open(3, 100, 40);
+        assert_eq!(e3, vec![b], "b is now the LRU and is evicted, not a");
+        assert!(rt.get(a, 50).is_some());
+    }
+
+    #[test]
+    fn close_is_idempotent() {
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::default());
+        let (id, _) = rt.open(1, 10, 1);
+        rt.close(id);
+        rt.close(id); // no panic
+        assert_eq!(rt.doc_count(), 0);
+    }
+
+    #[test]
+    fn enforce_reaps_idle_via_ttl() {
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::new(usize::MAX, 0, 50));
+        let (a, _) = rt.open(1, 10, 0);
+        let (_b, _) = rt.open(2, 10, 5); // admission at t=5: a idle 5 (<50), kept
+        let b = DocId(2);
+        rt.get(b, 95); // touch b → last_touched 95
+        let evicted = rt.enforce(100); // a idle 100 (>50) reaped; b idle 5 kept
+        assert_eq!(evicted, vec![a]);
+        assert!(rt.get(a, 110).is_none());
+        assert!(rt.get(b, 110).is_some());
+    }
+
+    #[test]
+    fn stats_flags_over_budget_when_pinned_exceed() {
+        let rt: CoreRuntime<u32> = CoreRuntime::new(EvictionBudget::new(150, 0, 0));
+        let (a, _) = rt.open(1, 100, 1);
+        rt.set_pinned(a, true);
+        let (_b, e) = rt.open(2, 100, 2); // admission temp-pins b → both survive
+        assert!(e.is_empty());
+        let s = rt.stats(3);
+        assert_eq!(s.doc_count, 2);
+        assert_eq!(s.total_bytes, 200);
+        assert!(s.over_budget, "pinned docs exceed budget → over_budget flag");
     }
 }
