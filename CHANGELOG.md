@@ -19,6 +19,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Interactive walkthroughs** — when a walkthrough pauses to ask you something, the player now shows the prompt with quick-reply buttons and a free-form field; your answer continues the tour.
 - **File ▸ Walkthroughs** — browse your saved walkthroughs and, from one place, run, resume (from where you left off), rename, or delete them (right-click). Also from the command palette.
 - **Image editor — paint on the image** — with a paint tool selected (brush / pencil / eraser / eyedropper / fill), draw directly on the image; drag for a continuous stroke. The pencil is a hard 1px draw.
+- **Image editor — rectangle tool** — pick the rectangle tool and click-drag to draw a rectangle, with a live preview as you size it.
 
 ### Fixed
 - **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
