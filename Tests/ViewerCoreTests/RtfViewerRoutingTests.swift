@@ -41,4 +41,44 @@ final class RtfViewerRoutingTests: XCTestCase {
                        "raw RTF control words must NOT appear in the view")
         XCTAssertFalse(tf.contents.contains("deff0"))
     }
+
+    func test_docx_categorizedAsPlainText() {
+        XCTAssertEqual(
+            FileTypeDetector.category(for: tmp.appendingPathComponent("doc.docx")),
+            .plainText, "a .docx routes to the source/plainText view")
+    }
+
+    func test_docx_load_extractsParagraphs_andIsReadOnly() throws {
+        let documentXML = """
+        <?xml version="1.0"?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p>
+        <w:p><w:r><w:t>World</w:t></w:r></w:p></w:body></w:document>
+        """
+        let url = try makeDocx(documentXML)
+        let tf = try TextFileLoader(maxBytes: 10_000_000).load(url: url)
+
+        XCTAssertTrue(tf.isExtractedReadOnly,
+                      "a .docx loads as a READ-ONLY extracted view (no save-corruption)")
+        XCTAssertTrue(tf.contents.contains("Hello"), "extracted paragraph text shows")
+        XCTAssertTrue(tf.contents.contains("World"))
+    }
+
+    /// Build a minimal `.docx` (ZIP with `word/document.xml`) via /usr/bin/zip —
+    /// host-safe, the same approach as `MultiFormatLoadTests`.
+    private func makeDocx(_ documentXML: String) throws -> URL {
+        let stage = tmp.appendingPathComponent("stage-\(UUID().uuidString)")
+        let wordDir = stage.appendingPathComponent("word")
+        try FileManager.default.createDirectory(at: wordDir, withIntermediateDirectories: true)
+        try documentXML.data(using: .utf8)!.write(to: wordDir.appendingPathComponent("document.xml"))
+        let zipURL = tmp.appendingPathComponent("doc.docx")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        p.currentDirectoryURL = stage
+        p.arguments = ["-r", zipURL.path, "word"]
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        try p.run(); p.waitUntilExit()
+        XCTAssertEqual(p.terminationStatus, 0, "zip the .docx fixture")
+        return zipURL
+    }
 }
