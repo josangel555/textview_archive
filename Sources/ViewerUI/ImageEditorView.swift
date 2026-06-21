@@ -88,6 +88,26 @@ struct ImageEditorView: View {
                             .allowsHitTesting(false)
                         }
                     }
+                    // TSK-1063: marquee — live dashed rect during the drag.
+                    if vm.tool.isSelection, let s = shapeDragStart, let c = shapeDragCurrent {
+                        let r = CGRect(x: min(s.x, c.x), y: min(s.y, c.y),
+                                       width: abs(c.x - s.x), height: abs(c.y - s.y))
+                        Rectangle()
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .frame(width: r.width, height: r.height)
+                            .position(x: r.midX, y: r.midY)
+                            .allowsHitTesting(false)
+                    }
+                    // TSK-1063: persistent marching-ants for the committed selection.
+                    if let sel = vm.selection,
+                       let r = SelectionGeometry.viewRect(sel, in: displayed,
+                                                          imageWidth: cg.width, imageHeight: cg.height) {
+                        Rectangle()
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .frame(width: r.width, height: r.height)
+                            .position(x: r.midX, y: r.midY)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .contentShape(Rectangle())
                 // TSK-1101: map drag/tap → canvas pixel → apply the current paint
@@ -96,7 +116,7 @@ struct ImageEditorView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            if vm.tool.isShape {
+                            if vm.tool.isShape || vm.tool.isSelection {
                                 shapeDragStart = value.startLocation
                                 shapeDragCurrent = value.location
                                 return
@@ -114,6 +134,13 @@ struct ImageEditorView: View {
                             lastPaintPixel = px
                         }
                         .onEnded { value in
+                            if vm.tool.isSelection {
+                                defer { shapeDragStart = nil; shapeDragCurrent = nil }
+                                vm.setSelection(SelectionGeometry.selectionRect(
+                                    from: value.startLocation, to: value.location,
+                                    in: displayed, imageWidth: cg.width, imageHeight: cg.height))
+                                return
+                            }
                             if let kind = vm.tool.shapeKind {
                                 defer { shapeDragStart = nil; shapeDragCurrent = nil }
                                 let open = vm.tool.isOpenShape
@@ -296,6 +323,7 @@ struct ImageEditorView: View {
             Image(systemName: "rectangle.roundedtop").tag(ImageEditorViewModel.RasterTool.drawRoundedRect)
             Image(systemName: "line.diagonal").tag(ImageEditorViewModel.RasterTool.drawLine)
             Image(systemName: "arrow.up.right").tag(ImageEditorViewModel.RasterTool.drawArrow)
+            Image(systemName: "rectangle.dashed").tag(ImageEditorViewModel.RasterTool.selectRect)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
@@ -322,6 +350,14 @@ struct ImageEditorView: View {
         if vm.tool == .brush || vm.tool == .eraser {
             Toggle("Square brush", isOn: $vm.squareBrush)
                 .accessibilityIdentifier("mdv.imageEditor.squareBrush")
+        }
+
+        if vm.selection != nil {
+            HStack {
+                Button("Crop to Selection") { vm.cropToSelection() }
+                    .accessibilityIdentifier("mdv.imageEditor.cropToSelection")
+                Button("Deselect") { vm.clearSelection() }
+            }
         }
 
         VStack(alignment: .leading, spacing: 2) {

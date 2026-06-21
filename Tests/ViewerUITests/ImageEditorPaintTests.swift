@@ -392,4 +392,28 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 7, y: 7).r, 4,
                                  "the square brush paints the block corner")
     }
+
+    // MARK: - selection + crop (TSK-1063 / 1068)
+
+    func test_rasterTool_isSelection() {
+        XCTAssertTrue(ImageEditorViewModel.RasterTool.selectRect.isSelection)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.brush.isSelection)
+        XCTAssertFalse(ImageEditorViewModel.RasterTool.drawRect.isSelection)
+    }
+
+    func test_cropToSelection_cropsToSelectedRegion() throws {
+        let vm = try makeVM(w: 20, h: 16, r: 1, g: 1, b: 1)
+        vm.setSelection(.rect(x: 4, y: 2, width: 10, height: 8))
+        XCTAssertNotNil(vm.selection)
+        XCTAssertTrue(vm.cropToSelection())
+        XCTAssertEqual(vm.rendered?.width, 10, "cropped to the selection width")
+        XCTAssertEqual(vm.rendered?.height, 8, "cropped to the selection height")
+        XCTAssertNil(vm.selection, "selection is cleared after the crop")
+    }
+
+    func test_cropToSelection_noSelection_isNoOp() throws {
+        let vm = try makeVM(w: 20, h: 16)
+        XCTAssertFalse(vm.cropToSelection())
+        XCTAssertEqual(vm.rendered?.width, 20, "no selection → no crop")
+    }
 }

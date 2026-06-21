@@ -80,9 +80,14 @@ public final class ImageEditorViewModel: ObservableObject {
         case drawLine
         /// Arrow: a line with a head at the end point. TSK-1058.
         case drawArrow
+        /// Rectangular marquee: click-drag to select a region. TSK-1063.
+        case selectRect
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool { self == .brush || self == .eraser || self == .pencil }
+
+        /// The rectangular-marquee selection tool.
+        var isSelection: Bool { self == .selectRect }
 
         /// Tools that draw a vector shape by dragging out a bounding box.
         var isShape: Bool { shapeKind != nil }
@@ -131,6 +136,8 @@ public final class ImageEditorViewModel: ObservableObject {
     /// TSK-1062 — brush/eraser stamp shape: a square stamp when true, the default
     /// round disc otherwise. (No effect at radius 0 — that's always a single pixel.)
     @Published public var squareBrush: Bool = false
+    /// TSK-1063 — the active rectangular marquee selection (canvas pixels), or nil.
+    @Published public private(set) var selection: RasterSelection?
 
     /// The destructive paint buffer for the current session, or `nil` when no
     /// paint has happened yet. Lazily baked from the rendered preview on the first
@@ -414,7 +421,8 @@ public final class ImageEditorViewModel: ObservableObject {
         case .eraser:      return brushDab(atX: x, y: y)   // resolvedColor → .clear
         case .floodFill:   return floodFill(atX: x, y: y)
         // Shape tools are drag-committed via drawShape, not a click.
-        case .drawRect, .drawEllipse, .drawRoundedRect, .drawLine, .drawArrow: return 0
+        // Drag-committed (shapes via drawShape, marquee via setSelection) — not a click.
+        case .drawRect, .drawEllipse, .drawRoundedRect, .drawLine, .drawArrow, .selectRect: return 0
         }
     }
 
@@ -480,6 +488,26 @@ public final class ImageEditorViewModel: ObservableObject {
     /// Clear every vector annotation.
     public func clearShapes() {
         overlay.removeAll()
+    }
+
+    // MARK: - Selection (TSK-1063 / 1068)
+
+    /// Set (or clear) the rectangular marquee selection.
+    public func setSelection(_ sel: RasterSelection?) { selection = sel }
+
+    /// Clear the active selection.
+    public func clearSelection() { selection = nil }
+
+    /// TSK-1068 — crop the image to the current rectangular selection. No-op
+    /// (false) when there's no rect selection. Rides the lossless op-list
+    /// (`EditOp.crop`, undoable); the selection is cleared after (it no longer
+    /// maps once the image is cropped).
+    @discardableResult
+    public func cropToSelection() -> Bool {
+        guard case let .rect(x, y, w, h) = selection, w >= 1, h >= 1 else { return false }
+        commitGeometry(.crop(CGRect(x: x, y: y, width: w, height: h)))
+        selection = nil
+        return true
     }
 
     // MARK: - Export
