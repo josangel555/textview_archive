@@ -261,6 +261,8 @@ pub const MDV_METHOD_HEX_SEARCH: u16 = 10;
 /// `mdvcore_indent_detect` / `mdvcore_hex_render` symbols (coexistence window).
 pub const MDV_METHOD_INDENT_DETECT: u16 = 11;
 pub const MDV_METHOD_HEX_RENDER: u16 = 12;
+/// Formula evaluation (envelope `MDV_METHOD_FORMULA_EVALUATE`) — TSK-1213.
+pub const MDV_METHOD_FORMULA_EVALUATE: u16 = 13;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore

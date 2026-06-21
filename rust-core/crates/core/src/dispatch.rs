@@ -72,12 +72,15 @@ pub enum Method {
     /// ~18 MB dump returns as raw bytes (frame-cap-exempt) — the bulk-output
     /// case the `aux` channel exists for.
     HexRender = 12,
+    /// Formula evaluation (`formula::evaluate_wire`) — batch-evaluate formulas
+    /// against a cell-grid snapshot (stateless; the grid rides `req`).
+    FormulaEvaluate = 13,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 13;
+    pub const NEXT_FREE_ID: u16 = 14;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -97,6 +100,7 @@ impl Method {
             10 => Some(Method::HexSearch),
             11 => Some(Method::IndentDetect),
             12 => Some(Method::HexRender),
+            13 => Some(Method::FormulaEvaluate),
             _ => None,
         }
     }
@@ -140,6 +144,7 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
         // Raw-output methods: bulk input on `aux`, scalars on `req`, raw bytes out.
         Method::IndentDetect => crate::indent::detect_wire_aux(req, aux),
         Method::HexRender => crate::hex::render_wire_aux(req, aux),
+        Method::FormulaEvaluate => crate::formula::evaluate_wire(req),
     }
 }
 
@@ -161,8 +166,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. HexRender is the current last id.
-        assert_eq!(Method::HexRender as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. FormulaEvaluate is the current last id.
+        assert_eq!(Method::FormulaEvaluate as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]

@@ -1440,6 +1440,22 @@ impl CellRef {
         }
         Some(Self { col: col - 1, row: row - 1 })
     }
+
+    /// The A1-style string for this cell (`A1`, `AA10`) — inverse of [`Self::parse`].
+    #[must_use]
+    pub fn a1(&self) -> String {
+        let mut col = self.col + 1; // 1-based for bijective base-26
+        let mut letters = Vec::new();
+        while col > 0 {
+            let rem = (col - 1) % 26; // 0..=25
+            letters.push(char::from(b'A' + u8::try_from(rem).unwrap_or(0)));
+            col = (col - 1) / 26;
+        }
+        letters.reverse();
+        let body: String = letters.into_iter().collect();
+        let row = self.row + 1;
+        format!("{body}{row}")
+    }
 }
 
 /// Evaluate with no cell grid — references resolve to blank. Convenience for
@@ -1468,6 +1484,40 @@ pub fn evaluate_with(formula: &str, resolver: &dyn Fn(CellRef) -> Option<String>
         Ok(expr) => eval(&expr, resolver),
         Err(e) => Value::Error(e),
     }
+}
+
+// MARK: - FFI / dispatch (stateless snapshot evaluation — the spike's first cut)
+
+/// A batch evaluation request: formulas + a cell-grid snapshot (A1 → raw text).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormulaRequest {
+    /// The formulas to evaluate (each may carry a leading `=`).
+    pub formulas: Vec<String>,
+    /// Snapshot of the referenced cells, keyed by A1 address. A missing key is blank.
+    #[serde(default)]
+    pub cells: std::collections::HashMap<String, String>,
+}
+
+/// The evaluated values, one per input formula (same order).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormulaResponse {
+    /// One value per input formula.
+    pub values: Vec<Value>,
+}
+
+/// Dispatch/FFI entry (`Method::FormulaEvaluate`): decode the request frame,
+/// evaluate each formula against the snapshot, encode the response frame.
+/// Stateless — the grid snapshot rides the request (see the spike doc); a stateful
+/// session handle is the later recalc-phase optimization.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a malformed/oversized frame.
+pub fn evaluate_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let req: FormulaRequest = crate::wire::decode_frame(req_frame)?;
+    let cells = req.cells;
+    let resolver = |cr: CellRef| cells.get(&cr.a1()).cloned();
+    let values: Vec<Value> = req.formulas.iter().map(|f| evaluate_with(f, &resolver)).collect();
+    crate::wire::encode_frame(&FormulaResponse { values })
 }
 
 #[cfg(test)]
@@ -1822,5 +1872,41 @@ mod tests {
         assert_eq!(evaluate("EOMONTH(\"2024-01-15\", 0)"), Value::Text("2024-01-31".to_string()));
         assert_eq!(evaluate("EOMONTH(\"2024-01-15\", 1)"), Value::Text("2024-02-29".to_string()));
         assert_eq!(evaluate("EOMONTH(\"2024-12-10\", 1)"), Value::Text("2025-01-31".to_string())); // year roll
+    }
+
+    #[test]
+    fn cellref_a1_roundtrip() {
+        assert_eq!(CellRef { col: 0, row: 0 }.a1(), "A1");
+        assert_eq!(CellRef { col: 1, row: 11 }.a1(), "B12");
+        assert_eq!(CellRef { col: 26, row: 2 }.a1(), "AA3"); // bijective base-26
+        for s in ["A1", "Z100", "AA1", "ABC123"] {
+            assert_eq!(CellRef::parse(s).map(|c| c.a1()).as_deref(), Some(s));
+        }
+    }
+
+    #[test]
+    fn evaluate_wire_roundtrip() {
+        use std::collections::HashMap;
+        let cells: HashMap<String, String> = [
+            ("A1".to_string(), "5".to_string()),
+            ("A2".to_string(), "10".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let req = FormulaRequest {
+            formulas: vec!["A1+A2".to_string(), "SUM(A1:A2)".to_string(), "1/0".to_string()],
+            cells,
+        };
+        let frame = crate::wire::encode_frame(&req).expect("encode request");
+        let out = evaluate_wire(&frame).expect("evaluate_wire");
+        let resp: FormulaResponse = crate::wire::decode_frame(&out).expect("decode response");
+        assert_eq!(
+            resp.values,
+            vec![
+                Value::Number(15.0),
+                Value::Number(15.0),
+                Value::Error(FormulaError::DivideByZero),
+            ]
+        );
     }
 }
