@@ -181,4 +181,30 @@ final class FormulaEngineMoreFunctionsTests: XCTestCase {
         XCTAssertFalse(bool(eval("ISNA(1/0)")))
         XCTAssertFalse(bool(eval("ISNA(5)")))                     // not an error at all
     }
+
+    // MARK: - Date functions (ISO "YYYY-MM-DD")
+
+    func test_date_buildsIsoAndRollsOverflow() {
+        XCTAssertEqual(text(eval("DATE(2024,3,15)")), "2024-03-15")
+        XCTAssertEqual(text(eval("DATE(2024,13,1)")), "2025-01-01")   // month overflow rolls the year
+    }
+
+    func test_year_month_day_extract() {
+        XCTAssertEqual(num(eval("YEAR(\"2024-03-15\")")), 2024)
+        XCTAssertEqual(num(eval("MONTH(\"2024-03-15\")")), 3)
+        XCTAssertEqual(num(eval("DAY(\"2024-03-15\")")), 15)
+        XCTAssertTrue(isError(eval("YEAR(\"2024-02-30\")")))          // impossible date rejected
+        XCTAssertTrue(isError(eval("MONTH(\"not-a-date\")")))
+    }
+
+    func test_weekday_types() {
+        XCTAssertEqual(num(eval("WEEKDAY(\"2024-03-15\")")), 6)       // Friday, type 1 (Sun=1)
+        XCTAssertEqual(num(eval("WEEKDAY(\"2024-03-15\",2)")), 5)     // type 2 (Mon=1) → Fri=5
+        XCTAssertEqual(num(eval("WEEKDAY(\"2024-03-17\")")), 1)       // Sunday → 1 (type 1)
+    }
+
+    func test_date_roundTripsThroughYear() {
+        XCTAssertEqual(num(eval("YEAR(DATE(1999,12,31))")), 1999)
+        XCTAssertEqual(num(eval("DAY(DATE(2000,1,1))")), 1)
+    }
 }

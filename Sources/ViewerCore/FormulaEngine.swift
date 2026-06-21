@@ -738,6 +738,38 @@ public enum FormulaEngine {
             }
             return .boolean(false)
 
+        case "DATE":
+            // DATE(year, month, day) → an ISO "YYYY-MM-DD" text value. Out-of-range
+            // month/day roll over (Excel semantics) via the calendar.
+            guard args.count == 3 else { return .error(.value) }
+            let yv = evaluate(args[0], &ctx); if case .error = yv { return yv }
+            let mv = evaluate(args[1], &ctx); if case .error = mv { return mv }
+            let dv = evaluate(args[2], &ctx); if case .error = dv { return dv }
+            guard let y = yv.asNumber, let m = mv.asNumber, let d = dv.asNumber,
+                  let date = isoDate(Int(y), Int(m), Int(d)) else { return .error(.value) }
+            return .text(formatISO(date))
+
+        case "YEAR", "MONTH", "DAY", "WEEKDAY":
+            guard args.count >= 1 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            guard let p = parseISODate(v.asText) else { return .error(.value) }
+            switch name {
+            case "YEAR":  return .number(Double(p.y))
+            case "MONTH": return .number(Double(p.m))
+            case "DAY":   return .number(Double(p.d))
+            case "WEEKDAY":
+                guard let date = isoDate(p.y, p.m, p.d) else { return .error(.value) }
+                let wd = utcCalendar.component(.weekday, from: date)   // 1 = Sun … 7 = Sat
+                var type = 1
+                if args.count >= 2 {
+                    let tv = evaluate(args[1], &ctx); if case .error = tv { return tv }
+                    type = Int(tv.asNumber ?? 1)
+                }
+                if type == 2 { return .number(Double((wd + 5) % 7 + 1)) }  // 1 = Mon … 7 = Sun
+                return .number(Double(wd))
+            default: return .error(.name)
+            }
+
         default:
             return .error(.name)
         }
@@ -751,6 +783,37 @@ public enum FormulaEngine {
             return an < bn ? .orderedAscending : (an > bn ? .orderedDescending : .orderedSame)
         }
         return a.asText.caseInsensitiveCompare(b.asText)
+    }
+
+    // MARK: - Date helpers (ISO "YYYY-MM-DD"; fixed UTC Gregorian → deterministic)
+
+    private static let utcCalendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return c
+    }()
+
+    private static func isoDate(_ y: Int, _ m: Int, _ d: Int) -> Date? {
+        var dc = DateComponents(); dc.year = y; dc.month = m; dc.day = d
+        return utcCalendar.date(from: dc)
+    }
+
+    private static func formatISO(_ date: Date) -> String {
+        let c = utcCalendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// Parse "YYYY-MM-DD", validating via a calendar round-trip so an impossible
+    /// date (e.g. 2024-02-30) is rejected rather than silently rolled.
+    private static func parseISODate(_ s: String) -> (y: Int, m: Int, d: Int)? {
+        let parts = s.trimmingCharacters(in: .whitespaces).split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]) else { return nil }
+        var dc = DateComponents(); dc.year = y; dc.month = m; dc.day = d
+        guard let date = utcCalendar.date(from: dc),
+              utcCalendar.component(.year, from: date) == y,
+              utcCalendar.component(.month, from: date) == m,
+              utcCalendar.component(.day, from: date) == d else { return nil }
+        return (y, m, d)
     }
 
     /// The cells an argument denotes when it must be a range: a `A1:B2` range
