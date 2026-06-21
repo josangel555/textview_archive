@@ -14,6 +14,8 @@ import ViewerCore
 /// preview + a slider + the Done button.
 struct ImageEditorView: View {
     @StateObject private var vm: ImageEditorViewModel
+    /// TSK-1101 — last canvas pixel painted this drag, for continuous brush strokes.
+    @State private var lastPaintPixel: (x: Int, y: Int)?
     /// Called when the user dismisses the editor (returns to the plain viewer).
     let onClose: () -> Void
 
@@ -60,6 +62,37 @@ struct ImageEditorView: View {
                     // sibling (Canvas), so no opaque-representable occlusion.
                     VectorOverlayView(overlay: vm.overlay, imageRect: displayed)
                 }
+                .contentShape(Rectangle())
+                // TSK-1101: map drag/tap → canvas pixel → apply the current paint
+                // tool. Brush sweeps a continuous stroke; eyedropper/bucket act on
+                // release. Off-image points map to nil and paint nothing.
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard vm.tool == .brush,
+                                  let px = PaintCoordinateMapping.canvasPixel(
+                                      value.location, in: displayed,
+                                      imageWidth: cg.width, imageHeight: cg.height)
+                            else { return }
+                            if let last = lastPaintPixel {
+                                vm.brushStroke(fromX: last.x, y0: last.y, toX: px.x, y1: px.y)
+                            } else {
+                                vm.applyTool(atX: px.x, y: px.y)
+                            }
+                            lastPaintPixel = px
+                        }
+                        .onEnded { value in
+                            defer { lastPaintPixel = nil }
+                            guard vm.tool != .none,
+                                  let px = PaintCoordinateMapping.canvasPixel(
+                                      value.location, in: displayed,
+                                      imageWidth: cg.width, imageHeight: cg.height)
+                            else { return }
+                            if vm.tool != .brush {
+                                vm.applyTool(atX: px.x, y: px.y)
+                            }
+                        }
+                )
             }
             .padding(16)
         } else {
