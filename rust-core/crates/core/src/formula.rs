@@ -606,6 +606,68 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             }
             Value::Text(out)
         }
+        "ABS" | "INT" | "SQRT" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            let x = match arg_num(args.first(), resolver) {
+                Ok(x) => x,
+                Err(e) => return e,
+            };
+            match upper.as_str() {
+                "ABS" => Value::Number(x.abs()),
+                "INT" => Value::Number(x.floor()), // floor, even for negatives
+                "SQRT" => {
+                    if x < 0.0 {
+                        Value::Error(FormulaError::Num)
+                    } else {
+                        Value::Number(x.sqrt())
+                    }
+                }
+                _ => Value::Error(FormulaError::Name),
+            }
+        }
+        "ROUND" => {
+            if args.is_empty() || args.len() > 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let x = match arg_num(args.first(), resolver) {
+                Ok(x) => x,
+                Err(e) => return e,
+            };
+            let digits = if args.len() == 2 {
+                match arg_num(args.get(1), resolver) {
+                    Ok(d) => d,
+                    Err(e) => return e,
+                }
+            } else {
+                0.0
+            };
+            let factor = 10f64.powf(digits.trunc()); // powf avoids a float→int cast
+            Value::Number((x * factor).round() / factor)
+        }
+        "MOD" | "POWER" => {
+            if args.len() != 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let a = match arg_num(args.first(), resolver) {
+                Ok(x) => x,
+                Err(e) => return e,
+            };
+            let b = match arg_num(args.get(1), resolver) {
+                Ok(x) => x,
+                Err(e) => return e,
+            };
+            if upper == "MOD" {
+                if b == 0.0 {
+                    Value::Error(FormulaError::DivideByZero)
+                } else {
+                    Value::Number(a - b * (a / b).floor()) // result takes the sign of the divisor
+                }
+            } else {
+                Value::Number(a.powf(b))
+            }
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -1089,5 +1151,20 @@ mod tests {
             evaluate_with("CONCAT(\"hello \", A1)", &r),
             Value::Text("hello world".to_string())
         );
+    }
+
+    #[test]
+    fn math_functions() {
+        assert_eq!(evaluate("ABS(-3)"), Value::Number(3.0));
+        assert_eq!(evaluate("INT(2.9)"), Value::Number(2.0));
+        assert_eq!(evaluate("INT(-1.5)"), Value::Number(-2.0)); // floor, not truncate
+        assert_eq!(evaluate("SQRT(9)"), Value::Number(3.0));
+        assert!(matches!(evaluate("SQRT(-1)"), Value::Error(FormulaError::Num)));
+        assert_eq!(evaluate("ROUND(1.23456, 2)"), Value::Number(1.23)); // avoid a π-ish literal (clippy::approx_constant)
+        assert_eq!(evaluate("ROUND(2.5, 0)"), Value::Number(3.0)); // half away from zero
+        assert_eq!(evaluate("MOD(7, 3)"), Value::Number(1.0));
+        assert_eq!(evaluate("MOD(-1, 3)"), Value::Number(2.0)); // result takes divisor's sign
+        assert!(matches!(evaluate("MOD(1, 0)"), Value::Error(FormulaError::DivideByZero)));
+        assert_eq!(evaluate("POWER(2, 10)"), Value::Number(1024.0));
     }
 }
