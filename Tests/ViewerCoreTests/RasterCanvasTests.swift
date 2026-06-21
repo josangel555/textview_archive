@@ -239,4 +239,30 @@ final class RasterCanvasTests: XCTestCase {
         let m = c.fillRect(x: 4, y: 4, width: 10, height: 10, to: .blue)
         XCTAssertEqual(m, 4, "off-edge rect clamps to the 2x2 corner")
     }
+
+    func test_blit_compositesOpaqueSrc() {
+        var dest = RasterCanvas(width: 6, height: 6, fill: .white)
+        let src = RasterCanvas(width: 2, height: 2, fill: .red)
+        let n = dest.blit(src, atX: 1, atY: 1)
+        XCTAssertEqual(n, 4)
+        XCTAssertEqual(dest.pixel(x: 1, y: 1), .red)
+        XCTAssertEqual(dest.pixel(x: 2, y: 2), .red)
+        XCTAssertEqual(dest.pixel(x: 0, y: 0), .white, "outside the blit is untouched")
+    }
+
+    func test_blit_skipsTransparentSrc() {
+        var dest = RasterCanvas(width: 4, height: 4, fill: .white)
+        let src = RasterCanvas(width: 2, height: 2, fill: .clear)
+        XCTAssertEqual(dest.blit(src, atX: 0, atY: 0), 0, "fully-transparent src writes nothing")
+        XCTAssertEqual(dest.pixel(x: 0, y: 0), .white)
+    }
+
+    func test_over_blendsHalfAlphaRedOverWhite() {
+        let out = RasterCanvas.over(RGBAColor(r: 255, g: 0, b: 0, a: 128),
+                                    RGBAColor(r: 255, g: 255, b: 255, a: 255))
+        XCTAssertEqual(out.a, 255, "opaque dest → opaque result")
+        XCTAssertEqual(Int(out.r), 255)
+        XCTAssertGreaterThan(Int(out.g), 100, "~half white shows through (≈127)")
+        XCTAssertLessThan(Int(out.g), 160)
+    }
 }

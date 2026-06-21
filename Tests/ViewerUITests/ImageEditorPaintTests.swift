@@ -463,4 +463,32 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 3, y: 3).a, 4,
                                  "cut cleared the region to transparent")
     }
+
+    func test_pasteImage_blitsClipboardImageAtSelectionOrigin() throws {
+        let vm = try makeVM(w: 12, h: 12, r: 1, g: 1, b: 1)   // white
+        // Stage a small red image on a scratch pasteboard (copy it from another VM).
+        let red = try makeVM(w: 4, h: 4, r: 1, g: 0, b: 0)
+        red.selectAll()
+        let pb = NSPasteboard(name: NSPasteboard.Name("mdv-paste-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        XCTAssertTrue(red.copySelection(to: pb))
+        // Paste into vm at the selection origin (2,2).
+        vm.setSelection(.rect(x: 2, y: 2, width: 1, height: 1))
+        XCTAssertTrue(vm.pasteImage(from: pb))
+        let p = sample(vm.rendered!, x: 2, y: 2)
+        XCTAssertGreaterThanOrEqual(p.r, 200)
+        XCTAssertLessThanOrEqual(p.g, 60)
+        XCTAssertLessThanOrEqual(p.b, 60, "pasted red landed at the selection origin")
+        XCTAssertGreaterThanOrEqual(sample(vm.rendered!, x: 11, y: 11).r, 200,
+                                    "the far corner stays white (paste was local)")
+    }
+
+    func test_canPaste_falseForEmptyPasteboard() throws {
+        let vm = try makeVM(w: 8, h: 8)
+        let pb = NSPasteboard(name: NSPasteboard.Name("mdv-empty-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        XCTAssertFalse(vm.canPaste(from: pb))
+        XCTAssertFalse(vm.pasteImage(from: pb), "no image on the pasteboard → no-op")
+    }
 }

@@ -356,6 +356,10 @@ struct ImageEditorView: View {
             HStack {
                 Button("Select All") { vm.selectAll() }
                     .accessibilityIdentifier("mdv.imageEditor.selectAll")
+                if vm.canPaste() {
+                    Button("Paste") { vm.pasteImage() }
+                        .accessibilityIdentifier("mdv.imageEditor.paste")
+                }
                 if vm.selection != nil {
                     Button("Copy") { vm.copySelection() }
                         .accessibilityIdentifier("mdv.imageEditor.copySelection")

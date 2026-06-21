@@ -553,6 +553,28 @@ public final class ImageEditorViewModel: ObservableObject {
         return deleteSelection()
     }
 
+    /// TSK-1066 — true when the pasteboard holds an image (gates the Paste action).
+    public func canPaste(from pasteboard: NSPasteboard = .general) -> Bool {
+        pasteboard.canReadObject(forClasses: [NSImage.self], options: nil)
+    }
+
+    /// TSK-1066 — paste a clipboard image, compositing it (source-over) onto the
+    /// canvas with its top-left at the current selection's origin (or 0,0). No-op
+    /// when the pasteboard has no image.
+    @discardableResult
+    public func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {
+        guard let image = NSImage(pasteboard: pasteboard),
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let src = RasterCanvas.from(cg),
+              beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
+        let ox: Int, oy: Int
+        if case let .rect(x, y, _, _) = selection { ox = x; oy = y } else { ox = 0; oy = 0 }
+        let n = canvas.blit(src, atX: ox, atY: oy)
+        paintCanvas = canvas
+        render()
+        return n > 0
+    }
+
     // MARK: - Export
 
     /// Encode the current edited `document` (geometry history + live tonal

@@ -134,6 +134,43 @@ public struct RasterCanvas: Sendable, Equatable {
         return written
     }
 
+    /// TSK-1066 — composite `src` onto this canvas with its top-left at `(ox, oy)`,
+    /// alpha-blending src OVER dest (straight-alpha "source-over"). Out-of-bounds
+    /// pixels are skipped. Returns the count of dest pixels touched. Paste = blit
+    /// the decoded clipboard image.
+    @discardableResult
+    public mutating func blit(_ src: RasterCanvas, atX ox: Int, atY oy: Int) -> Int {
+        var written = 0
+        for sy in 0..<src.height {
+            let dy = oy + sy
+            guard dy >= 0, dy < height else { continue }
+            for sx in 0..<src.width {
+                let dx = ox + sx
+                guard dx >= 0, dx < width, let s = src.pixel(x: sx, y: sy), s.a > 0 else { continue }
+                if s.a == 255 {
+                    setPixel(x: dx, y: dy, to: s)
+                } else if let d = pixel(x: dx, y: dy) {
+                    setPixel(x: dx, y: dy, to: Self.over(s, d))
+                }
+                written += 1
+            }
+        }
+        return written
+    }
+
+    /// Straight-alpha "source-over" composite of `s` over `d`.
+    static func over(_ s: RGBAColor, _ d: RGBAColor) -> RGBAColor {
+        let sa = Double(s.a) / 255, da = Double(d.a) / 255
+        let oa = sa + da * (1 - sa)
+        guard oa > 0 else { return RGBAColor(r: 0, g: 0, b: 0, a: 0) }
+        func ch(_ sc: UInt8, _ dc: UInt8) -> UInt8 {
+            let v = (Double(sc) * sa + Double(dc) * da * (1 - sa)) / oa
+            return UInt8(Swift.max(0, Swift.min(255, v.rounded())))
+        }
+        return RGBAColor(r: ch(s.r, d.r), g: ch(s.g, d.g), b: ch(s.b, d.b),
+                         a: UInt8((oa * 255).rounded()))
+    }
+
     // MARK: - Color pick (the eyedropper)
 
     /// Sample the color under `(x, y)` — the eyedropper / color-picker tool.
