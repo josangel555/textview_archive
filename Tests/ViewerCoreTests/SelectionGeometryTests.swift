@@ -44,4 +44,32 @@ final class SelectionGeometryTests: XCTestCase {
         XCTAssertEqual(r?.width ?? -1, 50, accuracy: 0.001)
         XCTAssertEqual(r?.height ?? -1, 100, accuracy: 0.001)
     }
+
+    // MARK: - lasso polygon (TSK-1064)
+
+    func test_polygon_mapsViewPointsToPixels() {
+        let poly = SelectionGeometry.polygon(
+            from: [CGPoint(x: 10, y: 20), CGPoint(x: 110, y: 20), CGPoint(x: 60, y: 220)],
+            in: displayed, imageWidth: 50, imageHeight: 80)
+        guard case let .polygon(pts) = poly else { return XCTFail("expected a polygon") }
+        XCTAssertEqual(pts.count, 3)
+        XCTAssertEqual(pts[0], RasterPoint(x: 0, y: 0), "top-left view point → pixel (0,0)")
+        XCTAssertEqual(pts[1], RasterPoint(x: 49, y: 0), "top-right clamps to the last column")
+    }
+
+    func test_polygon_fewerThan3Points_isNil() {
+        XCTAssertNil(SelectionGeometry.polygon(
+            from: [CGPoint(x: 10, y: 20), CGPoint(x: 110, y: 20)],
+            in: displayed, imageWidth: 50, imageHeight: 80))
+    }
+
+    func test_viewPoints_polygonOnly() {
+        let pts = SelectionGeometry.viewPoints(
+            of: .polygon([RasterPoint(x: 0, y: 0), RasterPoint(x: 49, y: 0), RasterPoint(x: 0, y: 79)]),
+            in: displayed, imageWidth: 50, imageHeight: 80)
+        XCTAssertEqual(pts?.count, 3)
+        XCTAssertNil(SelectionGeometry.viewPoints(
+            of: .rect(x: 0, y: 0, width: 4, height: 4),
+            in: displayed, imageWidth: 50, imageHeight: 80), "rect → nil (use viewRect)")
+    }
 }

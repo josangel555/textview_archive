@@ -19,6 +19,8 @@ struct ImageEditorView: View {
     /// TSK-1059 — in-progress shape drag (view points), for the live rubber-band.
     @State private var shapeDragStart: CGPoint?
     @State private var shapeDragCurrent: CGPoint?
+    /// TSK-1064 — in-progress lasso path (view points) while dragging the lasso tool.
+    @State private var lassoPoints: [CGPoint] = []
     /// Called when the user dismisses the editor (returns to the plain viewer).
     let onClose: () -> Void
 
@@ -118,6 +120,21 @@ struct ImageEditorView: View {
                             .position(x: r.midX, y: r.midY)
                             .allowsHitTesting(false)
                     }
+                    // TSK-1064: live lasso path while dragging the lasso tool.
+                    if vm.tool == .selectLasso, lassoPoints.count >= 2 {
+                        Path { p in p.addLines(lassoPoints) }
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .allowsHitTesting(false)
+                    }
+                    // TSK-1064: persistent marching-ants for a committed lasso polygon.
+                    if let sel = vm.selection,
+                       let pts = SelectionGeometry.viewPoints(of: sel, in: displayed,
+                                                              imageWidth: cg.width, imageHeight: cg.height),
+                       pts.count >= 3 {
+                        Path { p in p.addLines(pts); p.closeSubpath() }
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .allowsHitTesting(false)
+                    }
                 }
                 .contentShape(Rectangle())
                 // TSK-1101: map drag/tap → canvas pixel → apply the current paint
@@ -131,7 +148,11 @@ struct ImageEditorView: View {
                                 shapeDragCurrent = value.location
                                 return
                             }
-                            if vm.tool.isSelection {
+                            if vm.tool == .selectLasso {
+                                lassoPoints.append(value.location)
+                                return
+                            }
+                            if vm.tool == .selectRect {
                                 // A drag starting INSIDE the current selection moves it
                                 // (on release); otherwise rubber-band a new marquee.
                                 if !isMovingSelection(value.startLocation, in: displayed, cg: cg) {
@@ -153,7 +174,16 @@ struct ImageEditorView: View {
                             lastPaintPixel = px
                         }
                         .onEnded { value in
-                            if vm.tool.isSelection {
+                            if vm.tool == .selectLasso {
+                                defer { lassoPoints = [] }
+                                if let poly = SelectionGeometry.polygon(
+                                    from: lassoPoints, in: displayed,
+                                    imageWidth: cg.width, imageHeight: cg.height) {
+                                    vm.setSelection(poly)
+                                }
+                                return
+                            }
+                            if vm.tool == .selectRect {
                                 defer { shapeDragStart = nil; shapeDragCurrent = nil }
                                 if isMovingSelection(value.startLocation, in: displayed, cg: cg) {
                                     let dx = Int(value.translation.width / displayed.width * CGFloat(cg.width))
@@ -349,6 +379,7 @@ struct ImageEditorView: View {
             Image(systemName: "line.diagonal").tag(ImageEditorViewModel.RasterTool.drawLine)
             Image(systemName: "arrow.up.right").tag(ImageEditorViewModel.RasterTool.drawArrow)
             Image(systemName: "rectangle.dashed").tag(ImageEditorViewModel.RasterTool.selectRect)
+            Image(systemName: "lasso").tag(ImageEditorViewModel.RasterTool.selectLasso)
         }
         .pickerStyle(.segmented)
         .labelsHidden()

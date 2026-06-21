@@ -83,12 +83,14 @@ public final class ImageEditorViewModel: ObservableObject {
         case drawArrow
         /// Rectangular marquee: click-drag to select a region. TSK-1063.
         case selectRect
+        /// Free-form lasso selection: drag a freehand region. TSK-1064.
+        case selectLasso
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool { self == .brush || self == .eraser || self == .pencil }
 
-        /// The rectangular-marquee selection tool.
-        var isSelection: Bool { self == .selectRect }
+        /// A selection tool (rectangular marquee or free-form lasso).
+        var isSelection: Bool { self == .selectRect || self == .selectLasso }
 
         /// Tools that draw a vector shape by dragging out a bounding box.
         var isShape: Bool { shapeKind != nil }
@@ -423,7 +425,8 @@ public final class ImageEditorViewModel: ObservableObject {
         case .floodFill:   return floodFill(atX: x, y: y)
         // Shape tools are drag-committed via drawShape, not a click.
         // Drag-committed (shapes via drawShape, marquee via setSelection) — not a click.
-        case .drawRect, .drawEllipse, .drawRoundedRect, .drawLine, .drawArrow, .selectRect: return 0
+        case .drawRect, .drawEllipse, .drawRoundedRect, .drawLine, .drawArrow,
+             .selectRect, .selectLasso: return 0
         }
     }
 
