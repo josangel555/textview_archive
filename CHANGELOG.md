@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ### Added
 - **File ▸ Dependency Graph** — visualize your project's import dependency graph (file→file imports) in a tab; click a node to open that file. Also from the command palette.
 - **File ▸ Folder Sizes (Treemap)** — a size-proportional treemap of the open folder, so you can see what's eating disk at a glance. Also from the command palette.
+- **Settings ▸ Advanced ▸ Multi-session workspace** — a toggle for the sessions feature (on by default), now adjustable instead of buried as a hidden preference.
 
 ## 2026-06-20
 
