@@ -15,6 +15,10 @@ enum MsgPackValue: Equatable {
     case bool(Bool)
     case int(Int64)
     case uint(UInt64)
+    /// IEEE float (MessagePack float32 0xca / float64 0xcb). Needed for the
+    /// formula evaluator's numeric values (TSK-1213) — the first wire type with
+    /// non-integer numbers.
+    case double(Double)
     case string(String)
     case array([MsgPackValue])
     case map([(MsgPackValue, MsgPackValue)])
@@ -29,6 +33,7 @@ enum MsgPackValue: Equatable {
         case let (.bool(a), .bool(b)): return a == b
         case let (.int(a), .int(b)): return a == b
         case let (.uint(a), .uint(b)): return a == b
+        case let (.double(a), .double(b)): return a == b
         case let (.string(a), .string(b)): return a == b
         case let (.binary(a), .binary(b)): return a == b
         case let (.array(a), .array(b)): return a == b
@@ -123,6 +128,8 @@ struct MsgPackReader {
         case 0xcd: return .uint(try uintN(2))
         case 0xce: return .uint(try uintN(4))
         case 0xcf: return .uint(try uintN(8))
+        case 0xca: return .double(Double(Float(bitPattern: UInt32(truncatingIfNeeded: try uintN(4)))))
+        case 0xcb: return .double(Double(bitPattern: try uintN(8)))
         case 0xd0: return .int(try intN(1))
         case 0xd1: return .int(try intN(2))
         case 0xd2: return .int(try intN(4))
@@ -294,6 +301,17 @@ extension MsgPackValue {
         }
     }
 
+    /// A number as `Double` — accepts a float or an integer (a whole-valued
+    /// number may arrive as int/uint over the wire).
+    func doubleValue() throws -> Double {
+        switch self {
+        case let .double(d): return d
+        case let .int(i): return Double(i)
+        case let .uint(u): return Double(u)
+        default: throw MsgPackError.typeMismatch("expected number")
+        }
+    }
+
     func stringArray() throws -> [String] {
         try arrayValue().map { try $0.stringValue() }
     }
@@ -364,6 +382,9 @@ extension MsgPackValue {
         case .bool(let b): out.append(b ? 0xc3 : 0xc2)
         case .uint(let u): Self.encodeUInt(u, into: &out)
         case .int(let i): Self.encodeInt(i, into: &out)
+        case .double(let d):
+            out.append(0xcb) // float64
+            Self.appendBE(d.bitPattern, 8, &out)
         case .string(let s): Self.encodeString(s, into: &out)
         case .binary(let b):
             // bin32 unconditionally — mirrors the server's encoder; bodies
