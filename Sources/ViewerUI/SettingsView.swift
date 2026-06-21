@@ -81,6 +81,8 @@ public struct SettingsView: View {
     /// bumps re-run the query after the user flips a default.
     @State private var defaultAppStatuses: [DefaultAppRegistration.GroupStatus] = []
     @State private var defaultAppRefreshToken = 0
+    // TSK-1206: walkthrough library items for the Extensions inventory (loaded off-main).
+    @State private var walkthroughItems: [ExtensionsInventory.ExtensionItem] = []
 
     private var lspSection: some View {
         section("Language servers (LSP)") {
@@ -177,7 +179,27 @@ public struct SettingsView: View {
                     }
                 }
             }
+            // TSK-1206: the user's walkthrough library, alongside plugins.
+            if !walkthroughItems.isEmpty {
+                ForEach(walkthroughItems) { item in
+                    row(item.name) {
+                        Text(item.detail ?? "Walkthrough")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
+        .task { await loadWalkthroughItems() }
+    }
+
+    /// TSK-1206 — load the on-disk walkthrough library off-main and project it
+    /// into inventory items for the Extensions list.
+    private func loadWalkthroughItems() async {
+        let items = await Task.detached(priority: .utility) {
+            WalkthroughCatalog.entries(in: WalkthroughCatalog.defaultLibraryDirectory())
+                .map { ExtensionsInventory.item(from: ExtensionsInventory.snapshot(from: $0)) }
+        }.value
+        walkthroughItems = items
     }
 
     private var appearanceSection: some View {

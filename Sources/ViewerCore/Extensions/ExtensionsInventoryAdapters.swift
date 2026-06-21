@@ -128,6 +128,19 @@ extension ExtensionsInventory {
         )
     }
 
+    /// Project a walkthrough CATALOG entry (on-disk discovery) into the
+    /// inventory snapshot. TSK-1206 — lets the Extensions inventory list the
+    /// user's walkthrough library alongside plugins. Catalog walkthroughs are
+    /// user/library scripts (not bundled).
+    public static func snapshot(from entry: WalkthroughCatalog.Entry) -> WalkthroughSnapshot {
+        WalkthroughSnapshot(
+            id: entry.scriptID,
+            title: entry.title,
+            subtitle: entry.subtitle,
+            author: entry.author,
+            isBundled: false)
+    }
+
     /// Build the merged catalog from both subsystems' snapshots. Plugins
     /// are passed ahead of walkthroughs so that, in the (impossible today
     /// but defensively handled) event of an id collision across the
