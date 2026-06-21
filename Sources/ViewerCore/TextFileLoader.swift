@@ -50,13 +50,21 @@ public struct TextFile: Sendable {
     /// SwiftUI diff churn.
     public let isLargeReadOnly: Bool
 
+    /// TSK-1204: this file is a READ-ONLY extracted/synthesized view of a binary
+    /// source (e.g. .docx/.rtf → plain text, .xlsx/.ods → grid). The editor must
+    /// never write the displayed text back — that would overwrite the source.
+    /// Set by the loader for extracted formats; default false. Not part of
+    /// `Equatable` for the same reason as the flags above (derived from the url).
+    public let isExtractedReadOnly: Bool
+
     public init(
         url: URL,
         contents: String,
         encoding: String.Encoding,
         byteCount: Int,
         modifiedTime: Date? = nil,
-        isLargeReadOnly: Bool = false
+        isLargeReadOnly: Bool = false,
+        isExtractedReadOnly: Bool = false
     ) {
         self.url = url
         self.contents = contents
@@ -64,6 +72,7 @@ public struct TextFile: Sendable {
         self.byteCount = byteCount
         self.modifiedTime = modifiedTime
         self.isLargeReadOnly = isLargeReadOnly
+        self.isExtractedReadOnly = isExtractedReadOnly
     }
 }
 

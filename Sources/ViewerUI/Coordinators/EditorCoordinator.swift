@@ -628,6 +628,12 @@ public final class EditorCoordinator: ObservableObject {
     @discardableResult
     public func saveEditor(forTabID id: UUID) -> Bool {
         guard var buf = tabCoordinator.editorBuffers[id] else { return false }
+        // TSK-1204: NEVER write a READ-ONLY extracted view back to disk. The
+        // displayed text is a synthesized representation of a binary source
+        // (.docx/.rtf/.ods/.xlsx); writing it would overwrite + CORRUPT the
+        // source. Refuse outright — last-line guard at the write chokepoint
+        // (the UI also keeps these out of the editable lens).
+        guard !buf.isReadOnly else { return false }
         AuditLog.shared.record(.fileSave, action: "save", target: buf.url.path)
 
         // --- No-clobber guard (TSK-768 / 2026-06-20 data-loss incident) ---

@@ -37,12 +37,19 @@ public struct EditorBuffer: Sendable, Equatable {
     public private(set) var lastSavedMTime: Date?
     public private(set) var lastSavedSize: Int?
 
+    /// TSK-1204: a read-only buffer — an extracted view of a binary source
+    /// (.docx/.rtf/.ods/.xlsx). `saveEditor` REFUSES to write a read-only buffer
+    /// so the user can't overwrite the source with the displayed extracted text.
+    /// Default false; set from `TextFile.isExtractedReadOnly` at buffer creation.
+    public let isReadOnly: Bool
+
     public init(
         url: URL,
         original: String,
         encoding: String.Encoding = .utf8,
         lastSavedMTime: Date? = nil,
-        lastSavedSize: Int? = nil
+        lastSavedSize: Int? = nil,
+        isReadOnly: Bool = false
     ) {
         self.url = url
         self.originalText = original
@@ -50,6 +57,7 @@ public struct EditorBuffer: Sendable, Equatable {
         self.encoding = encoding
         self.lastSavedMTime = lastSavedMTime
         self.lastSavedSize = lastSavedSize
+        self.isReadOnly = isReadOnly
     }
 
     /// True iff the buffer diverges from the last-saved contents.
@@ -173,7 +181,8 @@ public extension EditorBuffer {
         let size = attrs?[.size] as? Int
         self.init(
             url: file.url, original: file.contents, encoding: file.encoding,
-            lastSavedMTime: mtime, lastSavedSize: size
+            lastSavedMTime: mtime, lastSavedSize: size,
+            isReadOnly: file.isExtractedReadOnly
         )
     }
 }
