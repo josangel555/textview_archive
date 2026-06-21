@@ -595,6 +595,20 @@ public enum FormulaEngine {
             }
             return .number(total)
 
+        case "ISBLANK", "ISNUMBER", "ISTEXT", "ISNONTEXT", "ISLOGICAL", "ISERROR":
+            guard args.count == 1 else { return .error(.value) }
+            // NB: do NOT early-return on .error here — detecting it is the whole point.
+            let v = evaluate(args[0], &ctx)
+            switch name {
+            case "ISBLANK":   if case .blank = v { return .boolean(true) };   return .boolean(false)
+            case "ISNUMBER":  if case .number = v { return .boolean(true) };  return .boolean(false)
+            case "ISTEXT":    if case .text = v { return .boolean(true) };    return .boolean(false)
+            case "ISNONTEXT": if case .text = v { return .boolean(false) };   return .boolean(true)
+            case "ISLOGICAL": if case .boolean = v { return .boolean(true) }; return .boolean(false)
+            case "ISERROR":   if case .error = v { return .boolean(true) };   return .boolean(false)
+            default:          return .error(.name)
+            }
+
         default:
             return .error(.name)
         }

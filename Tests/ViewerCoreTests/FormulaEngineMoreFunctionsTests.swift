@@ -104,4 +104,28 @@ final class FormulaEngineMoreFunctionsTests: XCTestCase {
         XCTAssertEqual(num(eval("AVERAGEIF(A1:A3,\">5\")", g)), 12.5, accuracy: 1e-9)   // (10+15)/2
         XCTAssertTrue(isError(eval("AVERAGEIF(A1:A3,\">100\")", g)))                     // none → #DIV/0
     }
+
+    // MARK: - Type predicates (IS*)
+
+    func test_isPredicates_byType() {
+        XCTAssertTrue(bool(eval("ISNUMBER(5)")))
+        XCTAssertFalse(bool(eval("ISNUMBER(\"x\")")))
+        XCTAssertTrue(bool(eval("ISTEXT(\"x\")")))
+        XCTAssertFalse(bool(eval("ISTEXT(5)")))
+        XCTAssertTrue(bool(eval("ISNONTEXT(5)")))
+        XCTAssertFalse(bool(eval("ISNONTEXT(\"x\")")))
+        XCTAssertTrue(bool(eval("ISLOGICAL(1>0)")))     // a comparison yields a boolean
+        XCTAssertFalse(bool(eval("ISLOGICAL(1)")))
+    }
+
+    func test_iserror_doesNotPropagate() {
+        XCTAssertTrue(bool(eval("ISERROR(1/0)")))       // detects the #DIV/0 instead of propagating it
+        XCTAssertFalse(bool(eval("ISERROR(5)")))
+    }
+
+    func test_isblank_onAbsentCell() {
+        let g = ["A1": "5"]                              // A2 is absent → blank
+        XCTAssertTrue(bool(eval("ISBLANK(A2)", g)))
+        XCTAssertFalse(bool(eval("ISBLANK(A1)", g)))
+    }
 }
