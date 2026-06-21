@@ -836,6 +836,78 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
                 row: start.row + ri - 1,
             }))
         }
+        "VLOOKUP" | "HLOOKUP" => {
+            use std::cmp::Ordering;
+            if args.len() != 3 && args.len() != 4 {
+                return Value::Error(FormulaError::Value);
+            }
+            let target = match args.first() {
+                Some(e) => eval(e, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(_) = target {
+                return target;
+            }
+            let (start, end) = match arg_range_bounds(args.get(1)) {
+                Some(b) => b,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let index = match arg_index1(args.get(2), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            // 4th arg range_lookup: FALSE/0 → exact; omitted/TRUE → approximate.
+            let exact = if args.len() == 4 {
+                let v = match args.get(3) {
+                    Some(e) => eval(e, resolver),
+                    None => return Value::Error(FormulaError::Value),
+                };
+                if let Value::Error(_) = v {
+                    return v;
+                }
+                !as_bool(&v)
+            } else {
+                false
+            };
+            let is_v = upper == "VLOOKUP";
+            let scan_count = if is_v { end.row - start.row + 1 } else { end.col - start.col + 1 };
+            let max_index = if is_v { end.col - start.col + 1 } else { end.row - start.row + 1 };
+            if index > max_index {
+                return Value::Error(FormulaError::Ref);
+            }
+            let mut best: Option<u32> = None; // 0-based scan offset of the matching key
+            for k in 0..scan_count {
+                let key_cell = if is_v {
+                    CellRef { col: start.col, row: start.row + k }
+                } else {
+                    CellRef { col: start.col + k, row: start.row }
+                };
+                let ord = value_cmp(&coerce_cell(resolver(key_cell)), &target);
+                if exact {
+                    if ord == Ordering::Equal {
+                        best = Some(k);
+                        break;
+                    }
+                } else {
+                    // approximate: largest key ≤ target, table assumed ascending
+                    if ord == Ordering::Greater {
+                        break;
+                    }
+                    best = Some(k);
+                }
+            }
+            match best {
+                Some(k) => {
+                    let result_cell = if is_v {
+                        CellRef { col: start.col + index - 1, row: start.row + k }
+                    } else {
+                        CellRef { col: start.col + k, row: start.row + index - 1 }
+                    };
+                    coerce_cell(resolver(result_cell))
+                }
+                None => Value::Error(FormulaError::Na),
+            }
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -1479,5 +1551,46 @@ mod tests {
             evaluate_with("INDEX(B1:B3, MATCH(30, A1:A3, 0))", &r),
             Value::Text("z".to_string())
         );
+    }
+
+    #[test]
+    fn vlookup_hlookup() {
+        use std::collections::HashMap;
+        // VLOOKUP table A1:B3 — 10→"ten", 20→"twenty", 30→"thirty"
+        let v: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "10".to_string()),
+            (CellRef { col: 1, row: 0 }, "ten".to_string()),
+            (CellRef { col: 0, row: 1 }, "20".to_string()),
+            (CellRef { col: 1, row: 1 }, "twenty".to_string()),
+            (CellRef { col: 0, row: 2 }, "30".to_string()),
+            (CellRef { col: 1, row: 2 }, "thirty".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let r = |c: CellRef| v.get(&c).cloned();
+        assert_eq!(evaluate_with("VLOOKUP(20, A1:B3, 2, 0)", &r), Value::Text("twenty".to_string())); // exact
+        assert_eq!(evaluate_with("VLOOKUP(25, A1:B3, 2)", &r), Value::Text("twenty".to_string())); // approx → 20's row
+        assert!(matches!(
+            evaluate_with("VLOOKUP(99, A1:B3, 2, 0)", &r),
+            Value::Error(FormulaError::Na)
+        ));
+        assert!(matches!(
+            evaluate_with("VLOOKUP(20, A1:B3, 9, 0)", &r),
+            Value::Error(FormulaError::Ref)
+        ));
+
+        // HLOOKUP table A1:C2 — row1 = 1,2,3 ; row2 = a,b,c
+        let h: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "1".to_string()),
+            (CellRef { col: 1, row: 0 }, "2".to_string()),
+            (CellRef { col: 2, row: 0 }, "3".to_string()),
+            (CellRef { col: 0, row: 1 }, "a".to_string()),
+            (CellRef { col: 1, row: 1 }, "b".to_string()),
+            (CellRef { col: 2, row: 1 }, "c".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let hr = |c: CellRef| h.get(&c).cloned();
+        assert_eq!(evaluate_with("HLOOKUP(2, A1:C2, 2, 0)", &hr), Value::Text("b".to_string()));
     }
 }
