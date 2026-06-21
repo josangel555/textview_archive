@@ -26,6 +26,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Image editor — clear** — fill the whole canvas with the current paint color.
 - **Image editor — resize** — a Resize dialog to scale the image by percent or to exact pixel dimensions, with an optional aspect-ratio lock.
 - **Image editor — more save formats** — Save a Copy now writes BMP, GIF, and TIFF in addition to PNG, JPEG, and HEIC.
+- **Image editor — canvas size** — the Resize dialog has a "Canvas size" mode that pads or crops the canvas to new dimensions without scaling the image.
 
 ### Performance
 - **Image editor** — adjusting sliders and edits is snappier on large images: the source is now decoded once and reused, instead of being re-decoded on every change.
