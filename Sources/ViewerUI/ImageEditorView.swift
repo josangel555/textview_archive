@@ -357,6 +357,10 @@ struct ImageEditorView: View {
                 Button("Select All") { vm.selectAll() }
                     .accessibilityIdentifier("mdv.imageEditor.selectAll")
                 if vm.selection != nil {
+                    Button("Copy") { vm.copySelection() }
+                        .accessibilityIdentifier("mdv.imageEditor.copySelection")
+                    Button("Cut") { vm.cutSelection() }
+                        .accessibilityIdentifier("mdv.imageEditor.cutSelection")
                     Button("Crop") { vm.cropToSelection() }
                         .accessibilityIdentifier("mdv.imageEditor.cropToSelection")
                     Button("Delete") { vm.deleteSelection() }

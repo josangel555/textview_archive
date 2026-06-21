@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import CoreGraphics
 import Foundation
@@ -527,6 +528,29 @@ public final class ImageEditorViewModel: ObservableObject {
     public func selectAll() {
         guard let img = rendered else { return }
         selection = .rect(x: 0, y: 0, width: img.width, height: img.height)
+    }
+
+    /// TSK-1066 — the current selection as a standalone image: the rendered pixels
+    /// cropped to the selection rect, or nil without a rect selection.
+    public func selectionImage() -> CGImage? {
+        guard case let .rect(x, y, w, h) = selection, let img = rendered else { return nil }
+        return img.cropping(to: CGRect(x: x, y: y, width: w, height: h))
+    }
+
+    /// TSK-1066 — copy the selected region to the pasteboard as an image.
+    @discardableResult
+    public func copySelection(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard let cg = selectionImage() else { return false }
+        let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        pasteboard.clearContents()
+        return pasteboard.writeObjects([image])
+    }
+
+    /// TSK-1066 — cut: copy the selection to the pasteboard, then clear it.
+    @discardableResult
+    public func cutSelection(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard copySelection(to: pasteboard) else { return false }
+        return deleteSelection()
     }
 
     // MARK: - Export

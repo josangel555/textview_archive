@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import CoreGraphics
 import ImageIO
@@ -431,5 +432,35 @@ final class ImageEditorPaintTests: XCTestCase {
         let vm = try makeVM(w: 12, h: 9)
         vm.selectAll()
         XCTAssertEqual(vm.selection, .rect(x: 0, y: 0, width: 12, height: 9))
+    }
+
+    func test_selectionImage_cropsToSelection() throws {
+        let vm = try makeVM(w: 20, h: 16)
+        vm.setSelection(.rect(x: 3, y: 4, width: 8, height: 6))
+        let img = try XCTUnwrap(vm.selectionImage())
+        XCTAssertEqual(img.width, 8)
+        XCTAssertEqual(img.height, 6)
+    }
+
+    func test_copySelection_writesImageToPasteboard() throws {
+        let vm = try makeVM(w: 20, h: 16)
+        vm.setSelection(.rect(x: 0, y: 0, width: 10, height: 10))
+        let pb = NSPasteboard(name: NSPasteboard.Name("mdv-test-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        XCTAssertTrue(vm.copySelection(to: pb))
+        XCTAssertTrue(pb.canReadObject(forClasses: [NSImage.self], options: nil),
+                      "copy wrote an image to the pasteboard")
+    }
+
+    func test_cutSelection_copiesThenClearsRegion() throws {
+        let vm = try makeVM(w: 10, h: 10, r: 1, g: 1, b: 1)
+        vm.setSelection(.rect(x: 2, y: 2, width: 4, height: 4))
+        let pb = NSPasteboard(name: NSPasteboard.Name("mdv-test-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        XCTAssertTrue(vm.cutSelection(to: pb))
+        XCTAssertTrue(pb.canReadObject(forClasses: [NSImage.self], options: nil),
+                      "cut wrote the region to the pasteboard")
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 3, y: 3).a, 4,
+                                 "cut cleared the region to transparent")
     }
 }
