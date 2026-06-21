@@ -34,9 +34,11 @@ import Foundation
 /// the bare `swift test --parallel` sweep on a host with no `dist/` bundle
 /// and no GUI session, so `HeadlessUITestCase` descendants run while
 /// `LiveAppTestCase` (T4) / `PixelTestCase` (T5) descendants self-skip
-/// (`LaunchHarness.isAppBuilt == false`, no Screen-Recording). The same job
-/// runs the `MDV_RUN_WEBVIEW_TESTS=1` lane for the in-process live-WKWebView
-/// suites that `#192`-gate themselves. The heavy T4/T5 tiers run for real in
+/// (`LaunchHarness.isAppBuilt == false`, no Screen-Recording). The in-process
+/// live-WKWebView suites that `#192`-gate themselves on `MDV_RUN_WEBVIEW_TESTS`
+/// are NOT run by the merge gate — `pr.yml` does not set that env, so they
+/// self-skip there too (TSK-1133: corrected — the gate does not run the WebView
+/// lane). Both the WebView lane AND the heavy T4/T5 tiers run for real only in
 /// the separate VM / nightly lane (`scripts/test-in-vm.sh`).
 ///
 /// The "headless" property is made non-regressable by `TierGateObserver`
