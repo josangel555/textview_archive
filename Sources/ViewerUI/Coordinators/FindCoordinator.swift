@@ -37,13 +37,22 @@ public final class FindCoordinator: ObservableObject {
         renderedMatchSummary = s
     }
 
+    /// Preserved find text (TSK-1207, TSK-770 parity): kept across a dismiss so a
+    /// reopen restores it, while `renderedQuery` itself empties on dismiss so the
+    /// existing empty-query path clears the `<mark>` highlights (no lingering marks).
+    private var renderedQueryDraft = ""
+
     public func showRenderedBar() {
         isRenderedBarPresented = true
+        if renderedQuery.isEmpty, !renderedQueryDraft.isEmpty {
+            renderedQuery = renderedQueryDraft   // restore the previous find text
+        }
         renderedFocusRequest &+= 1
     }
 
     public func dismissRenderedBar() {
         isRenderedBarPresented = false
+        if !renderedQuery.isEmpty { renderedQueryDraft = renderedQuery }
         renderedQuery = ""
         renderedMatched = nil
     }
@@ -87,13 +96,20 @@ public final class FindCoordinator: ObservableObject {
         }
     }
 
+    /// Preserved find text (TSK-1207) — see `renderedQueryDraft`.
+    private var sourceQueryDraft = ""
+
     public func showSourceBar() {
         isSourceBarPresented = true
+        if sourceQuery.isEmpty, !sourceQueryDraft.isEmpty {
+            sourceQuery = sourceQueryDraft   // restore the previous find text
+        }
         sourceFocusRequest &+= 1
     }
 
     public func dismissSourceBar() {
         isSourceBarPresented = false
+        if !sourceQuery.isEmpty { sourceQueryDraft = sourceQuery }
         sourceQuery = ""
         setSourceMatchSummary("")
         setSourceMatches(lines: [], currentIndex: nil)
