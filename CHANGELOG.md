@@ -17,7 +17,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **File ▸ New Image** — create a new blank image (choose width, height, and background color) and start editing it right away. Also offered in the New File submenu and the sidebar folder's right-click ▸ New File menu.
 - **CSV/TSV view** — navigate cells with the arrow keys (the focused cell is ringed) and copy the focused cell with ⌘C.
 - **Interactive walkthroughs** — when a walkthrough pauses to ask you something, the player now shows the prompt with quick-reply buttons and a free-form field; your answer continues the tour.
-- **File ▸ Walkthroughs** — browse your saved walkthroughs, run any of them from one place, and delete ones you no longer need (right-click ▸ Delete). Also from the command palette.
+- **File ▸ Walkthroughs** — browse your saved walkthroughs, run any of them from one place, and rename or delete them (right-click). Also from the command palette.
 
 ### Fixed
 - **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
