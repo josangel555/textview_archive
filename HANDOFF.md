@@ -1,56 +1,58 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous curated-drain in progress  (2026-06-21)
+# Handoff — autonomous run: ~20 features shipped, build-pool drained  (2026-06-21)
 
 **Session:** claude-mdv (AUTONOMOUS).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` (verify `git log -1`).
 
-## Mode — AUTONOMOUS DRAIN (cron ARMED)
-The owner re-armed a **5-min cron** (`CronCreate 994c7c56`) whose prompt FORCES reading
-`docs/TASK_WORKFLOW.md` + the CLAUDE.md SOP + the latest `docs/CURATED_TASKS_*.md` every
-tick, then draining relentlessly (curated top-30 → rest → board). **NEVER idle/hold** —
-that is the process failure the owner called out. BUILD render-path/VM/perf features too
-(host-test the model, leave render validation at review; do NOT hold for on-screen confirm).
-One item per tick: spike → implement → test → host-gate → commit. Land rebase+ff. Commit
-trailer ``.
+## Mode — AUTONOMOUS DRAIN (cron ARMED: `994c7c56`, every 5 min)
+Each tick forces reading `docs/TASK_WORKFLOW.md` + the CLAUDE.md SOP + the latest
+`docs/CURATED_TASKS_*.md`, then drains. Discipline that's working: **front-load ONE
+focused spike (what already exists) → build → host-gate → commit per item**; never
+commit in the gate's shell compound (read the verdict first); land rebase+ff.
+Commit trailer ``.
 
-## Done this autonomous run (all on main, gate-green)
-- **TSK-1100** — surfaced DependencyGraphView (File ▸ Dependency Graph + command). fixed.
-- **TSK-506** — surfaced FolderTreemapView (File ▸ Folder Sizes Treemap + command). fixed.
-- **TSK-1105** — Settings ▸ Advanced ▸ Multi-session workspace toggle. fixed.
-- **TSK-1112** — Settings ▸ Extensions plugins inventory list (IN FLIGHT: gate `byxn4xg8d`,
-  commit on green). Walkthroughs in the inventory = a tracked follow-on (needs off-main
-  WalkthroughCatalog→snapshot load).
-- Earlier this session: trust-local-HTML (TSK-1189, review), kill Swift tree-sitter
-  (TSK-854, −12.7MB, validated), sidebar cache fix (TSK-991), read-only-doc foundation
-  (TSK-1204), multi-format viewer rtf/docx/ods/xlsx (TSK-1036), LocalHistory cluster (TSK-1103).
+## Shipped this run (all gate-green on main, ~20 items)
+Reachable views/Settings: **Dependency Graph** (TSK-1100), **Folder Treemap** (506),
+**Sessions toggle** (1105), **Extensions list** (1112). Bugs/perf: sidebar cache
+**bounded-eviction** (591 cand.3 — `InsertionOrderedCache`), **find-bar keep-text**
+(1207), **tooltip delay** (1209). Features: **New Image** + size/color dialog +
+new-file type (1054/1208/1167), **CSV cell cursor** (1102), **awaitUser reply UI**
+(1115), **Walkthroughs browser** — browse/run/resume/rename/delete (1107 + 1211),
+**gated notebook viewer** (717, off by default). Rust: **eviction-policy core +
+CoreRuntime registry** (589 slices 1+2, host-validated). Filed: **TSK-1210**
+(VM 6.1.2 forward-compat broken by RustCore remote-core cycle — owner decides
+toolchain-bump vs source-fix vs drop). Reconciled already-built: 1143 (search
+palette = CommandPaletteView), 1115-handler.
 
-## Hard lesson this run
-**NEVER commit in the same shell compound as the gate-check** — the commit runs regardless
-of the grep result. I landed a red commit (9a173eb9: a verb in ScriptVerbDispatch but not
-ScriptVerbCatalog; `testCatalogMatchesDispatchSwitch` caught it), fixed forward (aa0354f6).
-Now: gate → READ result in a SEPARATE step → commit only if "headless gate PASSED" + 0 failed.
+## ⚠️ The build pool is DRAINED — what's left + WHY it's blocked
+Verified: no clean "built-but-unreachable view" wires remain (the deps-graph
+pattern is exhausted). Remaining work is one of:
+- **OWNER-GATED (the real bottleneck):** `task_next` head = **TSK-590** perf cluster
+  (review-lane epic). Children **591** (hover-lag cand.1 tracking-area density),
+  **592** (resize jank), **598** (MD-open — measured 94% WebKit), **601** (Swift-open)
+  need a LIVE counter read / on-screen re-feel / approval — agent can't progress.
+- **RISKY-BLIND RENDER refactors:** image off-main render (1049), single-surface
+  sidebar hover (591 cand.1), paint gesture (1101) — central/hot views, felt-perf is
+  VM-only; "don't ship risky blind" ⇒ these need a VM-validated pass, not a host tick.
+- **OWNER-INPUT:** 709 (Cmd+K/G unify scheme), 751 (menu org — subjective).
+- **BACKEND builds:** ActionHistory (703 — needs invasive recording hooks),
+  notebook editing/kernels (717 epic tail).
+- **Flag-WIP:** RichText (off-by-default).
 
-## Pattern that's working (the clean drain lane)
-Built-but-unreachable **views** wired to a reachable entry: a `showX()` DocumentModel method →
-`openHostedView(...)` (host-testable: a hosted tab opens) + a File-menu item + a command verb
-in BOTH `ScriptVerbDispatch` AND `ScriptVerbCatalog` (sync test) + 2 host wiring tests; the
-Canvas/SwiftUI render stays review-ceiling. Scan caveat: a view with a same-file WindowController
-(e.g. SettingsView) is a FALSE "0 callers" — verify before wiring.
-
-## Owner-gated (parked, do not block on)
-- **Scroll (TSK-1046, parked)** — warm-cache fix on worktree `a7063b42`, test build was on
-  `/Applications`. Editor scroll is UNVERIFIABLE by any agent (the editor-scroll automation verb
-  is a no-op, TSK-1200) → owner's eyes only. If owner confirms → merge a7063b42; else drop.
-- TSK-1189 trust-HTML (built, review), TSK-1195 render-verify approach.
-
-## Next actions
-1. Commit TSK-1112 on gate-green; record fixed + CHANGELOG; file the walkthroughs follow-on.
-2. Continue the curated drain. Remaining curated clusters: P0 perf (598/591/891/838 — need VM
-   Instruments traces, measure-don't-guess), action-history backend (TSK-703), notebook (717),
-   CSV cursor (1102), then the board's groomed pools.
-3. Keep `main` headless-gate-green; one item per tick; never idle.
+## ⚠️ Review backlog needs the owner / a VM-UAT pass to reach DONE
+The ~20 shipped items are at **fixed/review** — their MODELS are host-tested but the
+RENDER (menus/dialogs/views/pixels) is unconfirmed (review ceiling). They reach
+`validated`/`done` only via the owner on-screen OR a VM GUI/UAT pass
+(`scripts/test-in-vm.sh all` + the run-uat skill). This is the biggest lever for
+"every task to done".
 
 ## How to resume
-1. `git -C <cwd> log -1` + `git status --short`.
-2. Check any in-flight gate log under `/tmp/*-gate.log` (e.g. `extinv-gate.log`).
-3. `CronList` — confirm `994c7c56` armed; if gone, the owner stopped it (then go owner-driven).
-4. Pick the next curated item per `docs/TASK_WORKFLOW.md` §3 and drain.
+1. `git -C <cwd> log -1`; `CronList` (confirm `994c7c56`).
+2. Pick a SAFE item: another gated/foundation slice, OR a board reconcile/triage
+   (front-load-spike reported items → reclassify already-built). AVOID blind-building
+   the risky render refactors; they want VM validation.
+3. Process note for future me: I over-deliberated several late ticks (scanning for
+   "the perfect clean pick" when the pool is drained). Decide FAST: if no clean
+   host-completable build in one spike, do a reconcile/triage drain — don't burn a
+   tick scanning.
+4. When the owner returns: the highest-value asks are (a) re-feel/counter-read the
+   TSK-590 perf cluster, (b) confirm/VM-UAT the review backlog → validated.
