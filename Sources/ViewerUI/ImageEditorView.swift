@@ -28,6 +28,7 @@ struct ImageEditorView: View {
     @State private var resizePercent = "100"
     @State private var resizeUsePercent = false
     @State private var resizeMaintainAspect = true
+    @State private var resizeCanvasMode = false   // TSK-1076: scale vs canvas-size
     /// Called when the user dismisses the editor (returns to the plain viewer).
     let onClose: () -> Void
 
@@ -59,22 +60,35 @@ struct ImageEditorView: View {
     @ViewBuilder private var resizeSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Resize Image").font(.headline)
-            Picker("By", selection: $resizeUsePercent) {
-                Text("Pixels").tag(false)
-                Text("Percent").tag(true)
+            // TSK-1076: Scale (resample) vs Canvas size (pad/crop, no scaling).
+            Picker("Mode", selection: $resizeCanvasMode) {
+                Text("Scale image").tag(false)
+                Text("Canvas size").tag(true)
             }
             .pickerStyle(.segmented)
-            if resizeUsePercent {
-                HStack { Text("Percent:"); TextField("100", text: $resizePercent) }
-            } else {
+            if resizeCanvasMode {
                 HStack { Text("Width:"); TextField("", text: $resizeWidth) }
                 HStack { Text("Height:"); TextField("", text: $resizeHeight) }
-                Toggle("Maintain aspect ratio", isOn: $resizeMaintainAspect)
+                Text("Canvas is padded/cropped; the image is not scaled.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Picker("By", selection: $resizeUsePercent) {
+                    Text("Pixels").tag(false)
+                    Text("Percent").tag(true)
+                }
+                .pickerStyle(.segmented)
+                if resizeUsePercent {
+                    HStack { Text("Percent:"); TextField("100", text: $resizePercent) }
+                } else {
+                    HStack { Text("Width:"); TextField("", text: $resizeWidth) }
+                    HStack { Text("Height:"); TextField("", text: $resizeHeight) }
+                    Toggle("Maintain aspect ratio", isOn: $resizeMaintainAspect)
+                }
             }
             HStack {
                 Spacer()
                 Button("Cancel") { resizeSheetShown = false }
-                Button("Resize") { applyResize() }.keyboardShortcut(.defaultAction)
+                Button("Apply") { applyResize() }.keyboardShortcut(.defaultAction)
             }
         }
         .padding()
@@ -86,6 +100,13 @@ struct ImageEditorView: View {
         defer { resizeSheetShown = false }
         guard let cg = vm.rendered else { return }
         let current = (width: cg.width, height: cg.height)
+        if resizeCanvasMode {
+            // TSK-1076: pad/crop the canvas (no scaling).
+            vm.commitGeometry(.canvasSize(
+                width: Int(resizeWidth) ?? current.width,
+                height: Int(resizeHeight) ?? current.height))
+            return
+        }
         let target: (width: Int, height: Int)
         if resizeUsePercent {
             target = ImageResizeMath.scaled(current, percent: Double(resizePercent) ?? 100)

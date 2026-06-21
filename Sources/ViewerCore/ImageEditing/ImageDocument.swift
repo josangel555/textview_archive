@@ -80,6 +80,10 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// `EditOp.aspectFit(...)` and append the resulting exact dimensions, so
     /// the op itself stays unambiguous and replay is deterministic.
     case resize(width: Int, height: Int)
+    /// Change the CANVAS size to `width`×`height` WITHOUT scaling: the image keeps
+    /// its pixels at the top-left; a larger canvas pads with transparency, a
+    /// smaller one crops. TSK-1076 (Image Attributes / canvas size).
+    case canvasSize(width: Int, height: Int)
     /// Bake the given EXIF orientation into the raster.
     case orient(EXIFOrientation)
     /// Tonal adjustment via Core Image's `CIColorControls` (TSK-344). Identity

@@ -124,6 +124,7 @@ public enum Renderer {
         switch op {
         case .crop(let rect):       return try crop(image, to: rect)
         case .resize(let w, let h): return try resize(image, width: w, height: h)
+        case .canvasSize(let w, let h): return try canvasSize(image, width: w, height: h)
         case .orient(let o):        return try orient(image, orientation: o)
         case .colorControls(let b, let c, let s):
             return try colorControls(image, brightness: b, contrast: c, saturation: s)
@@ -265,6 +266,19 @@ public enum Renderer {
         let ctx = try makeContext(width: width, height: height)
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let out = ctx.makeImage() else { throw ImageEditError.contextCreationFailed }
+        return out
+    }
+
+    /// Change the CANVAS size without scaling: draw the image at its ORIGINAL size,
+    /// top-left aligned, onto a `width`×`height` context. A larger canvas pads with
+    /// transparency; a smaller one crops. TSK-1076. (CG's origin is bottom-left, so
+    /// top-left alignment puts the image at `y = height - imageHeight`.)
+    static func canvasSize(_ image: CGImage, width: Int, height: Int) throws -> CGImage {
+        guard width >= 1, height >= 1 else { throw ImageEditError.degenerateGeometry }
+        let ctx = try makeContext(width: width, height: height)
+        ctx.draw(image, in: CGRect(x: 0, y: height - image.height,
+                                   width: image.width, height: image.height))
         guard let out = ctx.makeImage() else { throw ImageEditError.contextCreationFailed }
         return out
     }

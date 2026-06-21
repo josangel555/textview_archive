@@ -619,6 +619,26 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertEqual(vm.rendered?.height, 24)
     }
 
+    // MARK: - canvas size (TSK-1076)
+
+    func test_commitCanvasSize_padsTopLeftWithoutScaling() throws {
+        let vm = try makeVM(w: 8, h: 8, r: 1, g: 0, b: 0)   // red
+        vm.commitGeometry(.canvasSize(width: 16, height: 12))
+        XCTAssertEqual(vm.rendered?.width, 16, "canvas grew")
+        XCTAssertEqual(vm.rendered?.height, 12)
+        XCTAssertGreaterThanOrEqual(sample(vm.rendered!, x: 1, y: 1).r, 200,
+                                    "the image stays at the top-left (not scaled)")
+        XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 15, y: 11).a, 4,
+                                 "the new padded area is transparent")
+    }
+
+    func test_commitCanvasSize_cropsWhenSmaller() throws {
+        let vm = try makeVM(w: 10, h: 10)
+        vm.commitGeometry(.canvasSize(width: 4, height: 4))
+        XCTAssertEqual(vm.rendered?.width, 4, "smaller canvas crops")
+        XCTAssertEqual(vm.rendered?.height, 4)
+    }
+
     // MARK: - BMP / GIF / TIFF write (TSK-1078/1079/1080)
 
     func test_exportData_bmpGifTiff_roundTrip() throws {
