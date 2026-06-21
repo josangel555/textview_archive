@@ -960,6 +960,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    /// TSK-1144 — File ▸ Export as RTF: write the active document (as Markdown) to .rtf.
+    @objc func exportActiveAsRTF(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "export.rtf"
+        if let rtf = UTType(filenameExtension: "rtf") { panel.allowedContentTypes = [rtf] }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if !model.exportActiveAsRTF(to: url) {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't export"
+            alert.informativeText = "There's no active text document to export, or the file couldn't be written."
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
     /// TSK-1054 / TSK-1208 — File ▸ New Image: prompt for size + background
     /// color, then create + open a blank image. Defaults are pre-filled so a
     /// quick Return makes an 800×600 white canvas.
@@ -1546,6 +1561,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(exportActiveAsDocx(_:)), keyEquivalent: "")
         exportDocxItem.target = self
         fileMenu.addItem(exportDocxItem)
+
+        let exportRtfItem = NSMenuItem(
+            title: "Export as RTF…",
+            action: #selector(exportActiveAsRTF(_:)), keyEquivalent: "")
+        exportRtfItem.target = self
+        fileMenu.addItem(exportRtfItem)
 
         let openItem = NSMenuItem(
             title: "Open…",

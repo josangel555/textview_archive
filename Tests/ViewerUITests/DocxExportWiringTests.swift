@@ -49,4 +49,23 @@ final class DocxExportWiringTests: XCTestCase {
         XCTAssertFalse(model.exportActiveAsDocx(to: tmp.appendingPathComponent("x.docx")),
                        "no active text document → no export")
     }
+
+    func test_exportActiveAsRTF_writesValidRTF() throws {
+        let md = tmp.appendingPathComponent("doc.md")
+        try "# Title\n\nHello **bold**".write(to: md, atomically: true, encoding: .utf8)
+        let model = makeModel()
+        model.open(url: md)
+
+        let out = tmp.appendingPathComponent("out.rtf")
+        XCTAssertTrue(model.exportActiveAsRTF(to: out))
+        let rtf = try String(contentsOf: out, encoding: .utf8)
+        XCTAssertTrue(rtf.hasPrefix("{\\rtf1"), "valid RTF header")
+        XCTAssertTrue(rtf.contains("Title"))
+        XCTAssertTrue(rtf.contains("\\b "), "bold control word")
+    }
+
+    func test_exportActiveAsRTF_noActiveFile_isFalse() {
+        let model = makeModel()
+        XCTAssertFalse(model.exportActiveAsRTF(to: tmp.appendingPathComponent("x.rtf")))
+    }
 }

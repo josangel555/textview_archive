@@ -2804,6 +2804,15 @@ public final class DocumentModel: ObservableObject {
         return (try? data.write(to: url, options: .atomic)) != nil
     }
 
+    /// TSK-1144 — export the ACTIVE text document (parsed as Markdown) to RTF at
+    /// `url`. False when there's no active text file or the write fails.
+    @discardableResult
+    public func exportActiveAsRTF(to url: URL) -> Bool {
+        guard let (text, _) = activeTextFile() else { return false }
+        let rtf = RtfExporter.export(RichTextParser.parse(text))
+        return (try? rtf.write(to: url, atomically: true, encoding: .utf8)) != nil
+    }
+
     public func showDependencyGraph() {
         guard let root = sidebar.rootURL else { return }
         Task { [weak self] in

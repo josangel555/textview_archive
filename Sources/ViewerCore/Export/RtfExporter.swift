@@ -83,4 +83,48 @@ public enum RtfExporter {
         }
         return "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}{\\f1 Menlo;}}\n" + body + "}"
     }
+
+    /// TSK-1144 — convenience: render a `RichTextDocument` straight to RTF.
+    public static func export(_ doc: RichTextDocument) -> String { export(blocks(from: doc)) }
+
+    /// TSK-1144 — project the RichText IR into the RTF block model. Lists become
+    /// prefixed paragraphs (RTF list numbering is out of scope); blockquote lines
+    /// become paragraphs; `strike` collapses to plain text (no RtfRun strike flag).
+    public static func blocks(from doc: RichTextDocument) -> [RtfBlock] {
+        var out: [RtfBlock] = []
+        for block in doc.blocks {
+            switch block {
+            case let .heading(level, inlines):
+                out.append(.heading(level: level, runs(from: inlines)))
+            case let .paragraph(inlines):
+                out.append(.paragraph(runs(from: inlines)))
+            case let .bulletList(items):
+                for item in items { out.append(.paragraph([RtfRun("•\u{00A0}")] + runs(from: item.inlines))) }
+            case let .orderedList(start, items):
+                for (i, item) in items.enumerated() {
+                    out.append(.paragraph([RtfRun("\(start + i).\u{00A0}")] + runs(from: item.inlines)))
+                }
+            case let .blockquote(lines):
+                for line in lines { out.append(.paragraph(runs(from: line))) }
+            }
+        }
+        return out
+    }
+
+    private static func runs(
+        from inlines: [RichInline], bold: Bool = false, italic: Bool = false
+    ) -> [RtfRun] {
+        var out: [RtfRun] = []
+        for inline in inlines {
+            switch inline {
+            case let .text(s):    out.append(RtfRun(s, bold: bold, italic: italic))
+            case let .bold(inner): out += runs(from: inner, bold: true, italic: italic)
+            case let .italic(inner): out += runs(from: inner, bold: bold, italic: true)
+            case let .strike(inner): out += runs(from: inner, bold: bold, italic: italic)
+            case let .code(s):    out.append(RtfRun(s, bold: bold, italic: italic, mono: true))
+            case let .link(text, _): out += runs(from: text, bold: bold, italic: italic)
+            }
+        }
+        return out
+    }
 }
