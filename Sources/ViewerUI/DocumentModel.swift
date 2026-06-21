@@ -2776,6 +2776,24 @@ public final class DocumentModel: ObservableObject {
         return result.distinctPatterns
     }
 
+    /// TSK-1109 — open a read-only explorer of the ACTIVE package manifest's
+    /// declared dependencies (package.json / Cargo.toml, via PackageManifestParser)
+    /// as a hosted tab. Returns the dependency count (0 = no-op: the active file
+    /// isn't a recognized manifest). The parse is host-tested.
+    @discardableResult
+    public func showPackageExplorer() -> Int {
+        guard let (text, url) = activeTextFile() else { return 0 }
+        let manifest: DependencyManifest
+        switch url.lastPathComponent {
+        case "package.json": manifest = PackageManifestParser.parsePackageJSON(text)
+        case "Cargo.toml":   manifest = PackageManifestParser.parseCargoTOML(text)
+        default: return 0
+        }
+        _ = openHostedView(title: "Dependencies — \(url.lastPathComponent)",
+                           rootView: PackageExplorerView(manifest: manifest))
+        return manifest.packages.count
+    }
+
     public func showDependencyGraph() {
         guard let root = sidebar.rootURL else { return }
         Task { [weak self] in

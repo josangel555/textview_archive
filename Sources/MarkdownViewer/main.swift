@@ -940,6 +940,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showLogPatterns()
     }
 
+    /// TSK-1109 — File ▸ Package Dependencies: the active manifest's declared deps.
+    @objc func showPackageExplorer(_ sender: Any?) {
+        model.showPackageExplorer()
+    }
+
     /// TSK-1054 / TSK-1208 — File ▸ New Image: prompt for size + background
     /// color, then create + open a blank image. Defaults are pre-filled so a
     /// quick Return makes an 800×600 white canvas.
@@ -1511,6 +1516,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showLogPatterns(_:)), keyEquivalent: "")
         logPatternsItem.target = self
         fileMenu.addItem(logPatternsItem)
+
+        // TSK-1109: File → Package Dependencies — declared deps of the active
+        // package.json / Cargo.toml (PackageManifestParser).
+        let pkgDepsItem = NSMenuItem(
+            title: "Package Dependencies",
+            action: #selector(showPackageExplorer(_:)), keyEquivalent: "")
+        pkgDepsItem.target = self
+        fileMenu.addItem(pkgDepsItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
