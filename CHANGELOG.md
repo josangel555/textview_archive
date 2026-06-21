@@ -18,7 +18,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **CSV/TSV view** — navigate cells with the arrow keys (the focused cell is ringed) and copy the focused cell with ⌘C.
 - **Interactive walkthroughs** — when a walkthrough pauses to ask you something, the player now shows the prompt with quick-reply buttons and a free-form field; your answer continues the tour.
 - **File ▸ Walkthroughs** — browse your saved walkthroughs and, from one place, run, resume (from where you left off), rename, or delete them (right-click). Also from the command palette.
-- **Image editor — paint on the image** — with a paint tool selected (brush / pencil / eraser / eyedropper / fill), draw directly on the image; drag for a continuous stroke. The pencil is a hard 1px draw; the brush and eraser can be round or square.
+- **Image editor — paint on the image** — with a paint tool selected (brush / pencil / eraser / airbrush / eyedropper / fill), draw directly on the image; drag for a continuous stroke. The pencil is a hard 1px draw; the brush and eraser can be round or square; the airbrush sprays a soft scatter.
 - **Image editor — shape tools** — pick the rectangle, rounded-rectangle, ellipse, line, or arrow tool and click-drag to draw it, with a live preview as you size it. Toggle "Fill shape" to draw the closed shapes filled instead of outlined.
 - **Image editor — full selection toolkit** — select a region with the rectangular marquee or the free-form lasso (dashed outline); drag inside it to move it, or Copy/Cut it to the clipboard, Paste an image in, Crop to it, Delete it (erase to transparent), Select All, or Invert the selection.
 - **Image editor — flip & rotate** — Flip Horizontal/Vertical and Rotate Left / Right / 180° (all undoable).
