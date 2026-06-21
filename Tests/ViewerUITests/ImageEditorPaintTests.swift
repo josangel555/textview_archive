@@ -301,4 +301,17 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertLessThanOrEqual(shape.style.stroke.g, 0.01)
         XCTAssertEqual(shape.style.lineWidth, 4, accuracy: 0.01, "line width from the brush slider")
     }
+
+    func test_drawShape_fillToggle() throws {
+        let vm = try makeVM(w: 10, h: 10)
+        vm.paintColor = RGBAColor(r: 0, g: 0, b: 255, a: 255)   // blue
+        // Default: outline only — no fill.
+        _ = vm.drawShape(.rect, normalizedFrame: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3))
+        XCTAssertNil(vm.overlay.shapes.last?.style.fill, "default shape is outline only")
+        // Fill on: the shape is filled with the paint color.
+        vm.shapeFilled = true
+        _ = vm.drawShape(.rect, normalizedFrame: CGRect(x: 0.5, y: 0.5, width: 0.3, height: 0.3))
+        let fill = try XCTUnwrap(vm.overlay.shapes.last?.style.fill)
+        XCTAssertGreaterThan(fill.b, 0.9, "a filled shape fills with the blue paint color")
+    }
 }

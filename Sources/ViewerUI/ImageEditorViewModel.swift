@@ -112,6 +112,9 @@ public final class ImageEditorViewModel: ObservableObject {
     @Published public var brushRadius: Int = 4
     /// Flood-fill per-channel tolerance (0…255). 0 requires an exact color match.
     @Published public var fillTolerance: UInt8 = 0
+    /// TSK-1059/1060 — when a shape tool draws, fill the shape (in addition to its
+    /// outline) with the paint color. Off = outline only.
+    @Published public var shapeFilled: Bool = false
 
     /// The destructive paint buffer for the current session, or `nil` when no
     /// paint has happened yet. Lazily baked from the rendered preview on the first
@@ -410,7 +413,8 @@ public final class ImageEditorViewModel: ObservableObject {
         let stroke = OverlayColor(
             r: Double(paintColor.r) / 255, g: Double(paintColor.g) / 255,
             b: Double(paintColor.b) / 255, a: Double(paintColor.a) / 255)
-        let style = ShapeStyle(stroke: stroke, lineWidth: max(2, Double(brushRadius)))
+        let style = ShapeStyle(stroke: stroke, lineWidth: max(2, Double(brushRadius)),
+                               fill: shapeFilled ? stroke : nil)
         return addShape(VectorShape(kind: kind, frame: normalizedFrame, style: style))
     }
 

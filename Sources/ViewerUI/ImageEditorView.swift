@@ -295,6 +295,11 @@ struct ImageEditorView: View {
                 .accessibilityIdentifier("mdv.imageEditor.brushSize")
         }
 
+        if vm.tool.isShape {
+            Toggle("Fill shape", isOn: $vm.shapeFilled)
+                .accessibilityIdentifier("mdv.imageEditor.shapeFill")
+        }
+
         VStack(alignment: .leading, spacing: 2) {
             Text("Fill Tolerance: \(vm.fillTolerance)").font(.caption)
             Slider(
