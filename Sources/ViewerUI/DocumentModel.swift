@@ -2849,6 +2849,28 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// TSK-1103 — open the active file's Local History (save-time snapshots) as a
+    /// hosted tab; each version can be VIEWED read-only. Returns the version count
+    /// (0 = no-op: no active text file). The store + snapshotting are host-tested.
+    @discardableResult
+    public func showLocalHistory() -> Int {
+        guard let (_, url) = activeTextFile() else { return 0 }
+        let path = url.path
+        let versions = localHistoryStore.versions(for: path)
+        let view = LocalHistoryView(
+            versions: versions, fileName: url.lastPathComponent,
+            onView: { [weak self] v in
+                guard let self,
+                      let content = self.localHistoryStore.contentString(of: v, for: path)
+                else { return }
+                _ = self.openHostedView(
+                    title: "\(url.lastPathComponent) @ \(v.savedAt.formatted(date: .numeric, time: .shortened))",
+                    rootView: LocalHistoryVersionView(content: content))
+            })
+        _ = openHostedView(title: "History — \(url.lastPathComponent)", rootView: view)
+        return versions.count
+    }
+
     public func showDependencyGraph() {
         guard let root = sidebar.rootURL else { return }
         Task { [weak self] in

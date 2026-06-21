@@ -945,6 +945,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showPackageExplorer()
     }
 
+    /// TSK-1103 — File ▸ Local History: the active file's save-time version snapshots.
+    @objc func showLocalHistory(_ sender: Any?) {
+        model.showLocalHistory()
+    }
+
     /// TSK-1144 — File ▸ Export as Word: write the active document (as Markdown) to .docx.
     @objc func exportActiveAsDocx(_ sender: Any?) {
         let panel = NSSavePanel()
@@ -1574,6 +1579,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showPackageExplorer(_:)), keyEquivalent: "")
         pkgDepsItem.target = self
         fileMenu.addItem(pkgDepsItem)
+
+        // TSK-1103: File → Local History — save-time version snapshots of the
+        // active file (LocalHistoryStore), each viewable read-only.
+        let localHistItem = NSMenuItem(
+            title: "Local History",
+            action: #selector(showLocalHistory(_:)), keyEquivalent: "")
+        localHistItem.target = self
+        fileMenu.addItem(localHistItem)
 
         // TSK-1144: File → Export as Word — the active doc (as Markdown) → .docx.
         let exportDocxItem = NSMenuItem(
