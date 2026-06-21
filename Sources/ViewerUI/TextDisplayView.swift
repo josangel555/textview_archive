@@ -527,7 +527,7 @@ public final class SourceTextController: NSViewController {
         // regression test catches the bug class:
         //   MDV_ENABLE_BROKEN_RULER=1 ./MarkdownViewer …
         // (Don't ship a build with this set.)
-        if ProcessInfo.processInfo.environment["MDV_ENABLE_BROKEN_RULER"] == "1" {
+        if MDVNegativeControl.isBroken("RULER") {   // TSK-1134: codified teeth switch
             let r = LineNumberRulerView(textView: tv)
             scroll.verticalRulerView = r
             scroll.hasVerticalRuler = true

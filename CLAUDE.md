@@ -91,6 +91,13 @@ was diagnosed with the wrong tool. Codified so we catch this class early:
   to go red is not a guard. After writing/maintaining a T5 pixel test, revert
   the fix once, rebuild, and confirm the test FAILS — then restore. A test that
   can't fail on the broken build is the false green we are trying to kill.
+  - **Codified negative-control switch (TSK-1134):** instead of hand-reverting,
+    gate a *deliberate* break behind `MDVNegativeControl.isBroken("<NAME>")`
+    (reads `MDV_ENABLE_BROKEN_<NAME>=1`) and have the T5 test spawn the app with
+    that env set to assert the guard goes RED — a repeatable, committed teeth
+    proof. Use that one helper for every such switch (consistent, greppable key).
+    First instance: `MDV_ENABLE_BROKEN_RULER` (TextDisplayView ↔
+    SourceViewVisualRegressionTests).
 
 > **OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — run UI / live-tier
 > tests on the UTM VM only.** Never run T4 `LiveAppTestCase`, T5 `PixelTestCase`,
