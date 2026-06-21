@@ -18,7 +18,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **CSV/TSV view** — navigate cells with the arrow keys (the focused cell is ringed) and copy the focused cell with ⌘C.
 - **Interactive walkthroughs** — when a walkthrough pauses to ask you something, the player now shows the prompt with quick-reply buttons and a free-form field; your answer continues the tour.
 - **File ▸ Walkthroughs** — browse your saved walkthroughs and, from one place, run, resume (from where you left off), rename, or delete them (right-click). Also from the command palette.
-- **Image editor — paint on the image** — with a paint tool selected (brush / pencil / eraser / eyedropper / fill), draw directly on the image; drag for a continuous stroke. The pencil is a hard 1px draw.
+- **Image editor — paint on the image** — with a paint tool selected (brush / pencil / eraser / eyedropper / fill), draw directly on the image; drag for a continuous stroke. The pencil is a hard 1px draw; the brush and eraser can be round or square.
 - **Image editor — shape tools** — pick the rectangle, ellipse, line, or arrow tool and click-drag to draw it, with a live preview as you size it. Toggle "Fill shape" to draw rectangles/ellipses filled instead of outlined.
 
 ### Performance
