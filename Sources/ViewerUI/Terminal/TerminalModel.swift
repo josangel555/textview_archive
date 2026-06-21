@@ -193,8 +193,9 @@ public final class TerminalModel: ObservableObject {
         _ = pty.start(
             rows: UInt16(clamping: rows),
             cols: UInt16(clamping: cols),
-            workingDirectory: workingDirectory
-                ?? initialWorkingDirectory
+            // TSK-1178: explicit cwd → tab's initial cwd → home (pinned + tested).
+            workingDirectory: TerminalCwd.effectiveSpawnDirectory(
+                explicit: workingDirectory, initial: initialWorkingDirectory)
                 ?? FileManager.default.homeDirectoryForCurrentUser
         )
     }

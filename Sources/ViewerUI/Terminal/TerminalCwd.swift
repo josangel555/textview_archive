@@ -23,4 +23,13 @@ enum TerminalCwd {
         guard url.isFileURL else { return nil }
         return isDirectory ? url : url.deletingLastPathComponent()
     }
+
+    /// TSK-1178 — the directory a spawn should use: an explicit per-spawn cwd wins,
+    /// else the tab's `initialWorkingDirectory` (seeded from the focused item via
+    /// `workingDirectory(forFocusedFile:)`), else nil (caller falls back to home).
+    /// Pins the Open-in-PWD fallback that makes `start()` with no explicit cwd
+    /// still land in the tab's directory.
+    static func effectiveSpawnDirectory(explicit: URL?, initial: URL?) -> URL? {
+        explicit ?? initial
+    }
 }

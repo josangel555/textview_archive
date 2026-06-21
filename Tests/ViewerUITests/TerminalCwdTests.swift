@@ -52,4 +52,23 @@ final class TerminalCwdTests: XCTestCase {
         let web = URL(string: "https://example.com")!
         XCTAssertNil(TerminalCwd.workingDirectory(for: web, isDirectory: true))
     }
+
+    // TSK-1178 — the spawn-dir fallback that makes Open-in-PWD land in the tab's dir.
+
+    func test_effectiveSpawnDirectory_explicitWins() {
+        let explicit = URL(fileURLWithPath: "/a/explicit")
+        let initial = URL(fileURLWithPath: "/b/initial")
+        XCTAssertEqual(TerminalCwd.effectiveSpawnDirectory(explicit: explicit, initial: initial),
+                       explicit)
+    }
+
+    func test_effectiveSpawnDirectory_fallsBackToInitial() {
+        let initial = URL(fileURLWithPath: "/b/initial")
+        XCTAssertEqual(TerminalCwd.effectiveSpawnDirectory(explicit: nil, initial: initial),
+                       initial, "start() with no explicit cwd uses the tab's initial cwd")
+    }
+
+    func test_effectiveSpawnDirectory_bothNil() {
+        XCTAssertNil(TerminalCwd.effectiveSpawnDirectory(explicit: nil, initial: nil))
+    }
 }
