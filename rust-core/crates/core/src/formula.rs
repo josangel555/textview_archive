@@ -755,6 +755,87 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             };
             Value::Bool(b)
         }
+        "MATCH" => {
+            use std::cmp::Ordering;
+            if args.len() != 2 && args.len() != 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let target = match args.first() {
+                Some(e) => eval(e, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(_) = target {
+                return target;
+            }
+            let cells = match arg_cells(args.get(1)) {
+                Some(c) => c,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let mt = if args.len() == 3 {
+                match arg_num(args.get(2), resolver) {
+                    Ok(n) => n,
+                    Err(e) => return e,
+                }
+            } else {
+                1.0
+            };
+            let mut best: Option<usize> = None;
+            for (i, cr) in cells.iter().enumerate() {
+                let ord = value_cmp(&coerce_cell(resolver(*cr)), &target);
+                if mt == 0.0 {
+                    if ord == Ordering::Equal {
+                        return Value::Number((i + 1) as f64); // exact
+                    }
+                } else if mt > 0.0 {
+                    // largest value ≤ target, range assumed ascending
+                    if ord == Ordering::Greater {
+                        break;
+                    }
+                    best = Some(i + 1);
+                } else if ord == Ordering::Less {
+                    break; // mt < 0: smallest value ≥ target, range assumed descending
+                } else {
+                    best = Some(i + 1);
+                }
+            }
+            match best {
+                Some(p) => Value::Number(p as f64),
+                None => Value::Error(FormulaError::Na),
+            }
+        }
+        "INDEX" => {
+            if args.len() != 2 && args.len() != 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let (start, end) = match arg_range_bounds(args.first()) {
+                Some(b) => b,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let nrows = end.row - start.row + 1;
+            let ncols = end.col - start.col + 1;
+            let p1 = match arg_index1(args.get(1), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            let (ri, ci) = if args.len() == 3 {
+                let p2 = match arg_index1(args.get(2), resolver) {
+                    Ok(n) => n,
+                    Err(e) => return e,
+                };
+                (p1, p2)
+            } else if nrows == 1 {
+                (1, p1) // single row → the index is the column
+            } else {
+                (p1, 1) // single column (or default) → the index is the row
+            };
+            if ri > nrows || ci > ncols {
+                return Value::Error(FormulaError::Ref);
+            }
+            coerce_cell(resolver(CellRef {
+                col: start.col + ci - 1,
+                row: start.row + ri - 1,
+            }))
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -954,6 +1035,32 @@ fn arg_cells(arg: Option<&Expr>) -> Option<Vec<CellRef>> {
         Some(Expr::Ref(name)) => CellRef::parse(name).map(|cr| vec![cr]),
         _ => None,
     }
+}
+
+/// The normalized (top-left, bottom-right) bounds of a range/ref argument.
+fn arg_range_bounds(arg: Option<&Expr>) -> Option<(CellRef, CellRef)> {
+    match arg {
+        Some(Expr::Range(a, b)) => {
+            let s = CellRef::parse(a)?;
+            let e = CellRef::parse(b)?;
+            Some((
+                CellRef { col: s.col.min(e.col), row: s.row.min(e.row) },
+                CellRef { col: s.col.max(e.col), row: s.row.max(e.row) },
+            ))
+        }
+        Some(Expr::Ref(name)) => CellRef::parse(name).map(|c| (c, c)),
+        _ => None,
+    }
+}
+
+/// Evaluate an arg to a 1-based positive index (INDEX/VLOOKUP positions). `< 1`
+/// or non-integer-convertible → #REF. Checked conversion (no truncating cast).
+fn arg_index1(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<u32, Value> {
+    let n = arg_count(arg, resolver)?; // usize ≥ 0, bounds-checked
+    if n < 1 {
+        return Err(Value::Error(FormulaError::Ref));
+    }
+    u32::try_from(n).map_err(|_| Value::Error(FormulaError::Ref))
 }
 
 /// Order two values: numerically when BOTH coerce to numbers (number/bool/blank/
@@ -1339,5 +1446,38 @@ mod tests {
         assert_eq!(evaluate("ISERROR(1/0)"), Value::Bool(true)); // detects, does not propagate
         assert_eq!(evaluate("ISERROR(5)"), Value::Bool(false));
         assert_eq!(evaluate_with("ISBLANK(Z9)", &nr), Value::Bool(true)); // missing cell → blank
+    }
+
+    #[test]
+    fn match_and_index() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "10".to_string()), // A1
+            (CellRef { col: 0, row: 1 }, "20".to_string()), // A2
+            (CellRef { col: 0, row: 2 }, "30".to_string()), // A3
+            (CellRef { col: 1, row: 0 }, "x".to_string()),  // B1
+            (CellRef { col: 1, row: 1 }, "y".to_string()),  // B2
+            (CellRef { col: 1, row: 2 }, "z".to_string()),  // B3
+        ]
+        .into_iter()
+        .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("MATCH(20, A1:A3, 0)", &r), Value::Number(2.0)); // exact
+        assert_eq!(evaluate_with("MATCH(25, A1:A3, 1)", &r), Value::Number(2.0)); // largest ≤ 25
+        assert!(matches!(
+            evaluate_with("MATCH(99, A1:A3, 0)", &r),
+            Value::Error(FormulaError::Na)
+        ));
+        assert_eq!(evaluate_with("INDEX(A1:A3, 2)", &r), Value::Number(20.0)); // 1-D
+        assert_eq!(evaluate_with("INDEX(A1:B3, 3, 2)", &r), Value::Text("z".to_string())); // 2-D
+        assert!(matches!(
+            evaluate_with("INDEX(A1:A3, 9)", &r),
+            Value::Error(FormulaError::Ref)
+        ));
+        // INDEX + MATCH combo
+        assert_eq!(
+            evaluate_with("INDEX(B1:B3, MATCH(30, A1:A3, 0))", &r),
+            Value::Text("z".to_string())
+        );
     }
 }
