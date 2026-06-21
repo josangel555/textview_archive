@@ -609,9 +609,114 @@ public enum FormulaEngine {
             default:          return .error(.name)
             }
 
+        case "MATCH":
+            // MATCH(lookup, range, [match_type]) → 1-based position in a 1-D range.
+            // match_type: 0 = exact (any order); 1 (default) = largest ≤ lookup (ascending);
+            // -1 = smallest ≥ lookup (descending). Not found → #N/A.
+            guard args.count == 2 || args.count == 3, let cells = rangeCells(args[1]) else { return .error(.value) }
+            let target = evaluate(args[0], &ctx); if case .error = target { return target }
+            var mt = 1
+            if args.count == 3 {
+                let mv = evaluate(args[2], &ctx); if case .error = mv { return mv }
+                guard let m = mv.asNumber else { return .error(.value) }
+                mt = m > 0 ? 1 : (m < 0 ? -1 : 0)
+            }
+            var bestPos: Int?
+            for (i, ref) in cells.enumerated() {
+                let cv = resolveCell(ref, &ctx); if case .error = cv { return cv }
+                let cmp = lookupCompare(cv, target)
+                if mt == 0 {
+                    if cmp == .orderedSame { return .number(Double(i + 1)) }
+                } else if mt == 1 {
+                    if cmp != .orderedDescending { bestPos = i + 1 } else { break }
+                } else {
+                    if cmp != .orderedAscending { bestPos = i + 1 } else { break }
+                }
+            }
+            if let p = bestPos { return .number(Double(p)) }
+            return .error(.na)
+
+        case "INDEX":
+            // INDEX(range, row_num, [col_num]) — 1-based. A 1-D range uses the
+            // single index along its axis; a 2-D range needs both.
+            guard args.count == 2 || args.count == 3 else { return .error(.value) }
+            guard case .range(let a, let b) = args[0] else {
+                if case .ref(let r) = args[0] { return resolveCell(r, &ctx) }
+                return .error(.value)
+            }
+            let r0 = min(a.row, b.row), r1 = max(a.row, b.row)
+            let c0 = min(a.column, b.column), c1 = max(a.column, b.column)
+            let nRows = r1 - r0 + 1, nCols = c1 - c0 + 1
+            let p1v = evaluate(args[1], &ctx); if case .error = p1v { return p1v }
+            guard let p1 = p1v.asNumber else { return .error(.value) }
+            var rowIdx: Int, colIdx: Int
+            if args.count == 3 {
+                let p2v = evaluate(args[2], &ctx); if case .error = p2v { return p2v }
+                guard let p2 = p2v.asNumber else { return .error(.value) }
+                rowIdx = Int(p1); colIdx = Int(p2)
+            } else if nRows == 1 {
+                rowIdx = 1; colIdx = Int(p1)        // single row → index is the column
+            } else {
+                rowIdx = Int(p1); colIdx = 1        // single column (or default) → index is the row
+            }
+            guard rowIdx >= 1, rowIdx <= nRows, colIdx >= 1, colIdx <= nCols else { return .error(.ref) }
+            return resolveCell(CellReference(row: r0 + rowIdx - 1, column: c0 + colIdx - 1), &ctx)
+
+        case "VLOOKUP", "HLOOKUP":
+            // V: scan first column down, return `index`-th column of the hit row.
+            // H: scan first row across, return `index`-th row of the hit column.
+            // 4th arg range_lookup FALSE → exact; TRUE/omitted → largest ≤ (ascending).
+            guard args.count == 3 || args.count == 4, case .range(let a, let b) = args[1] else { return .error(.value) }
+            let lookup = evaluate(args[0], &ctx); if case .error = lookup { return lookup }
+            let idxV = evaluate(args[2], &ctx); if case .error = idxV { return idxV }
+            guard let idxD = idxV.asNumber, Int(idxD) >= 1 else { return .error(.value) }
+            let index = Int(idxD)
+            var exact = false
+            if args.count == 4 {
+                let rv = evaluate(args[3], &ctx); if case .error = rv { return rv }
+                exact = !rv.asBool
+            }
+            let r0 = min(a.row, b.row), r1 = max(a.row, b.row)
+            let c0 = min(a.column, b.column), c1 = max(a.column, b.column)
+            let isV = (name == "VLOOKUP")
+            let scanCount = isV ? (r1 - r0 + 1) : (c1 - c0 + 1)
+            if isV { guard c0 + index - 1 <= c1 else { return .error(.ref) } }
+            else   { guard r0 + index - 1 <= r1 else { return .error(.ref) } }
+            func keyRef(_ k: Int) -> CellReference {
+                isV ? CellReference(row: r0 + k, column: c0) : CellReference(row: r0, column: c0 + k)
+            }
+            func resultRef(_ k: Int) -> CellReference {
+                isV ? CellReference(row: r0 + k, column: c0 + index - 1)
+                    : CellReference(row: r0 + index - 1, column: c0 + k)
+            }
+            var bestK: Int?
+            for k in 0..<scanCount {
+                let kv = resolveCell(keyRef(k), &ctx); if case .error = kv { return kv }
+                let cmp = lookupCompare(kv, lookup)
+                if exact {
+                    if cmp == .orderedSame { return resolveCell(resultRef(k), &ctx) }
+                } else if cmp != .orderedDescending {
+                    bestK = k
+                } else {
+                    break
+                }
+            }
+            if !exact, let k = bestK { return resolveCell(resultRef(k), &ctx) }
+            return .error(.na)
+
         default:
             return .error(.name)
         }
+    }
+
+    /// Ordering for lookup/MATCH: two `.number`s compare numerically; anything
+    /// else compares as case-insensitive text (numeric cells resolve to `.number`,
+    /// so text vs text is the only other path).
+    private static func lookupCompare(_ a: FormulaValue, _ b: FormulaValue) -> ComparisonResult {
+        if case .number(let an) = a, case .number(let bn) = b {
+            return an < bn ? .orderedAscending : (an > bn ? .orderedDescending : .orderedSame)
+        }
+        return a.asText.caseInsensitiveCompare(b.asText)
     }
 
     /// The cells an argument denotes when it must be a range: a `A1:B2` range
@@ -792,6 +897,7 @@ public enum FormulaError: Error, Equatable, Sendable {
     case num                // #NUM!    — invalid numeric arg (e.g. SQRT(-1))
     case cycle              // #CYCLE!  — circular reference
     case parse              // #ERROR!  — couldn't parse the formula
+    case na                 // #N/A     — value not available (e.g. a lookup miss)
 
     public var display: String {
         switch self {
@@ -802,6 +908,7 @@ public enum FormulaError: Error, Equatable, Sendable {
         case .num:          return "#NUM!"
         case .cycle:        return "#CYCLE!"
         case .parse:        return "#ERROR!"
+        case .na:           return "#N/A"
         }
     }
 }

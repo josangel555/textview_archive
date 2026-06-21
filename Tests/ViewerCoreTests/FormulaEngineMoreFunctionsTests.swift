@@ -128,4 +128,34 @@ final class FormulaEngineMoreFunctionsTests: XCTestCase {
         XCTAssertTrue(bool(eval("ISBLANK(A2)", g)))
         XCTAssertFalse(bool(eval("ISBLANK(A1)", g)))
     }
+
+    // MARK: - Lookup family (MATCH / INDEX / VLOOKUP / HLOOKUP)
+
+    func test_match_exactApproxAndText() {
+        let g = ["A1": "10", "A2": "20", "A3": "30"]
+        XCTAssertEqual(num(eval("MATCH(20,A1:A3,0)", g)), 2)         // exact
+        XCTAssertEqual(num(eval("MATCH(25,A1:A3,1)", g)), 2)         // largest ≤ 25 (ascending) = 20 @ pos 2
+        XCTAssertTrue(isError(eval("MATCH(5,A1:A3,0)", g)))          // not found → #N/A
+        let gt = ["A1": "apple", "A2": "pear", "A3": "plum"]
+        XCTAssertEqual(num(eval("MATCH(\"pear\",A1:A3,0)", gt)), 2)
+    }
+
+    func test_index_1dAnd2dAndBounds() {
+        let g = ["A1": "x", "A2": "y", "A3": "z", "B1": "1", "B2": "2"]
+        XCTAssertEqual(text(eval("INDEX(A1:A3,2)", g)), "y")         // single column → row index
+        XCTAssertEqual(num(eval("INDEX(A1:B2,2,2)", g)), 2)          // 2-D (row 2, col 2) = B2
+        XCTAssertTrue(isError(eval("INDEX(A1:A3,9)", g)))            // out of bounds → #REF
+    }
+
+    func test_vlookup_exactApproxAndMiss() {
+        let g = ["A1": "10", "B1": "ten", "A2": "20", "B2": "twenty", "A3": "30", "B3": "thirty"]
+        XCTAssertEqual(text(eval("VLOOKUP(20,A1:B3,2,0)", g)), "twenty")   // exact (range_lookup 0=FALSE)
+        XCTAssertEqual(text(eval("VLOOKUP(25,A1:B3,2)", g)), "twenty")     // approx: largest ≤ 25 = row 20
+        XCTAssertTrue(isError(eval("VLOOKUP(5,A1:B3,2,0)", g)))            // not found → #N/A
+    }
+
+    func test_hlookup_exact() {
+        let g = ["A1": "a", "B1": "b", "C1": "c", "A2": "1", "B2": "2", "C2": "3"]
+        XCTAssertEqual(num(eval("HLOOKUP(\"b\",A1:C2,2,0)", g)), 2)        // find "b" in row 1 → row 2 = B2
+    }
 }
