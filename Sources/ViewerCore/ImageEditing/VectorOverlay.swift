@@ -102,11 +102,12 @@ public struct ShapeStyle: Sendable, Codable, Equatable {
 /// (`end`) — encoding endpoints as a bounding box keeps move/scale uniform
 /// across all kinds and keeps the persisted shape a single rect either way.
 public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
-    /// The four supported primitives. `arrow` is a `line` with a head drawn at
-    /// `end`; both are open (never filled).
+    /// The supported primitives. `arrow` is a `line` with a head drawn at `end`;
+    /// line/arrow are open (never filled). `roundedRect` is a closed box.
     public enum Kind: String, Sendable, Codable, Equatable, CaseIterable {
         case rect
         case ellipse
+        case roundedRect
         case line
         case arrow
     }

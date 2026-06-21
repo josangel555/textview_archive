@@ -62,6 +62,13 @@ struct VectorOverlayView: View {
             if style.lineWidth > 0, style.stroke.a > 0 {
                 ctx.stroke(path, with: .color(stroke), lineWidth: style.lineWidth)
             }
+        case .roundedRect:
+            let r = map(shape.frame, imageRect)
+            let path = Path(roundedRect: r, cornerRadius: min(r.width, r.height) * 0.2)
+            if let fill = style.fill { ctx.fill(path, with: .color(Color(rgba: fill))) }
+            if style.lineWidth > 0, style.stroke.a > 0 {
+                ctx.stroke(path, with: .color(stroke), lineWidth: style.lineWidth)
+            }
         case .line:
             guard style.lineWidth > 0, style.stroke.a > 0 else { return }
             let a = map(shape.start, imageRect)

@@ -76,6 +76,9 @@ struct ImageEditorView: View {
                             Group {
                                 if vm.tool.shapeKind == .ellipse {
                                     Ellipse().stroke(Color.accentColor, lineWidth: 1)
+                                } else if vm.tool.shapeKind == .roundedRect {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.accentColor, lineWidth: 1)
                                 } else {
                                     Rectangle().stroke(Color.accentColor, lineWidth: 1)
                                 }
@@ -290,6 +293,7 @@ struct ImageEditorView: View {
             Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
             Image(systemName: "rectangle").tag(ImageEditorViewModel.RasterTool.drawRect)
             Image(systemName: "circle").tag(ImageEditorViewModel.RasterTool.drawEllipse)
+            Image(systemName: "rectangle.roundedtop").tag(ImageEditorViewModel.RasterTool.drawRoundedRect)
             Image(systemName: "line.diagonal").tag(ImageEditorViewModel.RasterTool.drawLine)
             Image(systemName: "arrow.up.right").tag(ImageEditorViewModel.RasterTool.drawArrow)
         }
@@ -381,7 +385,7 @@ struct ImageEditorView: View {
     static func centeredShape(_ kind: VectorShape.Kind) -> VectorShape {
         let style = ShapeStyle(stroke: .red, lineWidth: 3)
         switch kind {
-        case .rect, .ellipse:
+        case .rect, .ellipse, .roundedRect:
             return VectorShape(
                 kind: kind, frame: CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4),
                 style: style)

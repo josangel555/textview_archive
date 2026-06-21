@@ -74,6 +74,8 @@ public final class ImageEditorViewModel: ObservableObject {
         case drawRect
         /// Ellipse: click-drag to draw a vector ellipse outline. TSK-1060.
         case drawEllipse
+        /// Rounded rectangle: click-drag, closed shape. TSK-1061.
+        case drawRoundedRect
         /// Line: click-drag to draw a vector line (direction-preserving). TSK-1058.
         case drawLine
         /// Arrow: a line with a head at the end point. TSK-1058.
@@ -90,6 +92,7 @@ public final class ImageEditorViewModel: ObservableObject {
             switch self {
             case .drawRect: return .rect
             case .drawEllipse: return .ellipse
+            case .drawRoundedRect: return .roundedRect
             case .drawLine: return .line
             case .drawArrow: return .arrow
             default: return nil
@@ -411,7 +414,7 @@ public final class ImageEditorViewModel: ObservableObject {
         case .eraser:      return brushDab(atX: x, y: y)   // resolvedColor → .clear
         case .floodFill:   return floodFill(atX: x, y: y)
         // Shape tools are drag-committed via drawShape, not a click.
-        case .drawRect, .drawEllipse, .drawLine, .drawArrow: return 0
+        case .drawRect, .drawEllipse, .drawRoundedRect, .drawLine, .drawArrow: return 0
         }
     }
 

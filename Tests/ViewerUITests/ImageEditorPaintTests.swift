@@ -276,6 +276,7 @@ final class ImageEditorPaintTests: XCTestCase {
     func test_rasterTool_shapeKind() {
         XCTAssertEqual(ImageEditorViewModel.RasterTool.drawRect.shapeKind, .rect)
         XCTAssertEqual(ImageEditorViewModel.RasterTool.drawEllipse.shapeKind, .ellipse)
+        XCTAssertEqual(ImageEditorViewModel.RasterTool.drawRoundedRect.shapeKind, .roundedRect)
         XCTAssertEqual(ImageEditorViewModel.RasterTool.drawLine.shapeKind, .line)
         XCTAssertEqual(ImageEditorViewModel.RasterTool.drawArrow.shapeKind, .arrow)
         XCTAssertNil(ImageEditorViewModel.RasterTool.brush.shapeKind)
@@ -293,6 +294,12 @@ final class ImageEditorPaintTests: XCTestCase {
         let vm = try makeVM(w: 10, h: 10)
         _ = vm.drawShape(.ellipse, normalizedFrame: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.6))
         XCTAssertEqual(vm.overlay.shapes.last?.kind, .ellipse)
+    }
+
+    func test_drawShape_addsRoundedRect() throws {
+        let vm = try makeVM(w: 10, h: 10)
+        _ = vm.drawShape(.roundedRect, normalizedFrame: CGRect(x: 0.1, y: 0.1, width: 0.6, height: 0.6))
+        XCTAssertEqual(vm.overlay.shapes.last?.kind, .roundedRect)
     }
 
     func test_drawShape_lineKeepsSignedFrameDirection() throws {
