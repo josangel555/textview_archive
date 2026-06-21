@@ -15,6 +15,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Settings ▸ Advanced ▸ Multi-session workspace** — a toggle for the sessions feature (on by default), now adjustable instead of buried as a hidden preference.
 - **Settings ▸ Extensions** — an at-a-glance list of your installed plugins.
 - **File ▸ New Image** — create a new blank image (choose width, height, and background color) and start editing it right away.
+- **CSV/TSV view** — navigate cells with the arrow keys (the focused cell is ringed) and copy the focused cell with ⌘C.
 
 ### Fixed
 - **Find bar** — reopening Find (Cmd+F) now restores your previous search text in the rendered and source views (the editor already did this).
