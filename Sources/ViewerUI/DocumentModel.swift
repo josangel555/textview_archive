@@ -2681,6 +2681,26 @@ public final class DocumentModel: ObservableObject {
         openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
     }
 
+    /// TSK-1100: open the project's import-dependency graph (DependencyGraphView)
+    /// as a hosted tab — surfaces the built-but-unreachable TSK-280 feature.
+    /// The extraction walks the source tree, so it's built OFF-MAIN; the view
+    /// paints the laid-out result (model + layout are host-tested; the Canvas
+    /// render is the VM/review residue). Clicking a node opens that file.
+    /// No-op when no folder/project root is open.
+    public func showDependencyGraph() {
+        guard let root = sidebar.rootURL else { return }
+        Task { [weak self] in
+            let graph = await Task.detached(priority: .userInitiated) {
+                DependencyGraph.importGraph(root: root)
+            }.value
+            guard let self else { return }
+            let view = DependencyGraphView(
+                graph: graph,
+                onOpenFile: { [weak self] url in self?.openPath(url) })
+            _ = self.openHostedView(title: "Dependency Graph", rootView: view)
+        }
+    }
+
     /// Whether Local History can be shown for `url` — it has saved versions.
     /// (Always offer the menu; the viewer shows a friendly "no versions yet"
     /// empty state when there are none, so this returns true for any file URL.)

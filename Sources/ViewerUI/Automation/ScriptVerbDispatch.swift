@@ -108,6 +108,7 @@ public enum ScriptVerb {
         case "move-tab-right":  model.moveCurrentTabRight()
         case "terminal-open-here": model.openTerminalHere()
         case "show-palette":    model.showPalette()
+        case "show-dependency-graph": model.showDependencyGraph()
         case "dismiss-palette": model.dismissPalette()
         case "show-goto":       model.showGoToPath()
         case "dismiss-goto":    model.dismissGoToPath()

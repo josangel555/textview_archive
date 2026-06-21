@@ -915,6 +915,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openHTTPClient()
     }
 
+    /// TSK-1100 — open the project's import dependency graph in a hosted tab.
+    @objc func showDependencyGraph(_ sender: Any?) {
+        model.showDependencyGraph()
+    }
+
     @objc func closeCurrentTab(_ sender: Any?) {
         guard model.tabs.selectedIndex != nil else {
             window?.performClose(nil)
@@ -1395,6 +1400,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(newHTTPRequest(_:)), keyEquivalent: "")
         newHTTPItem.target = self
         fileMenu.addItem(newHTTPItem)
+
+        // TSK-1100: File → Dependency Graph — the project's import graph in a
+        // hosted tab (surfaces the built-but-unreachable DependencyGraphView).
+        let depGraphItem = NSMenuItem(
+            title: "Dependency Graph",
+            action: #selector(showDependencyGraph(_:)), keyEquivalent: "")
+        depGraphItem.target = self
+        fileMenu.addItem(depGraphItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
