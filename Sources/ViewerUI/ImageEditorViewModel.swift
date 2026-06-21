@@ -137,6 +137,10 @@ public final class ImageEditorViewModel: ObservableObject {
     /// TSK-1069 — the secondary / background color (Clear fills with it; a future
     /// two-color shape "both" mode uses fg=stroke, bg=fill). White by default.
     @Published public var bgColor: RGBAColor = .white
+    /// TSK-1118 — recently-chosen paint colors (newest-first, deduped, bounded),
+    /// surfaced as a swatch strip. Updated via `recordRecentColor`.
+    @Published public private(set) var recentColors: [RGBAColor] = []
+    private var recentsStore = RecentColors(limit: 12)
     /// Brush radius in pixels (0 = single pixel). Clamped non-negative on use.
     @Published public var brushRadius: Int = 4
     /// Flood-fill per-channel tolerance (0…255). 0 requires an exact color match.
@@ -384,7 +388,14 @@ public final class ImageEditorViewModel: ObservableObject {
         guard beginPaintSessionIfNeeded(), let picked = paintCanvas?.pickColor(x: x, y: y)
         else { return nil }
         paintColor = picked
+        recordRecentColor(picked)
         return picked
+    }
+
+    /// TSK-1118 — record a deliberately-chosen color into the recent-swatches MRU.
+    public func recordRecentColor(_ color: RGBAColor) {
+        recentsStore.record(color)
+        recentColors = recentsStore.colors
     }
 
     /// Brush: stamp a single circular dab of `paintColor` (radius `brushRadius`)

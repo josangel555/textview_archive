@@ -556,14 +556,20 @@ struct ImageEditorView: View {
         // TSK-1070: preset color palette — tap a swatch to set the paint color.
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 18), spacing: 3)], spacing: 3) {
             ForEach(Array(StandardPalette.colors.enumerated()), id: \.offset) { _, c in
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(swiftUIColor(c))
-                    .frame(width: 18, height: 18)
-                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.secondary, lineWidth: 0.5))
-                    .onTapGesture { vm.paintColor = c }
+                swatch(c)
             }
         }
         .accessibilityIdentifier("mdv.imageEditor.palette")
+        // TSK-1118: recently-used colors (newest first), shown only once non-empty.
+        if !vm.recentColors.isEmpty {
+            Text("Recent").font(.caption2).foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 18), spacing: 3)], spacing: 3) {
+                ForEach(Array(vm.recentColors.enumerated()), id: \.offset) { _, c in
+                    swatch(c)
+                }
+            }
+            .accessibilityIdentifier("mdv.imageEditor.recentColors")
+        }
 
         VStack(alignment: .leading, spacing: 2) {
             Text("Brush Size: \(vm.brushRadius)").font(.caption)
@@ -653,6 +659,16 @@ struct ImageEditorView: View {
     private func swiftUIColor(_ c: RGBAColor) -> Color {
         Color(.sRGB, red: Double(c.r) / 255, green: Double(c.g) / 255,
               blue: Double(c.b) / 255, opacity: Double(c.a) / 255)
+    }
+
+    /// TSK-1070/1118 — a tappable color swatch: sets the paint color and records
+    /// it into the recent-swatches MRU. Shared by the preset palette + recent rows.
+    private func swatch(_ c: RGBAColor) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(swiftUIColor(c))
+            .frame(width: 18, height: 18)
+            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.secondary, lineWidth: 0.5))
+            .onTapGesture { vm.paintColor = c; vm.recordRecentColor(c) }
     }
 
     private func slider(

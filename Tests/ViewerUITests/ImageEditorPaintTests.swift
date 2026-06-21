@@ -760,4 +760,19 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertEqual(vm.rendered?.width, 20)
         XCTAssertEqual(vm.rendered?.height, 12)
     }
+
+    // MARK: - recent colors (TSK-1118)
+
+    func test_recordRecentColor_updatesRecentColorsNewestFirst() throws {
+        let vm = try makeVM(w: 4, h: 4)
+        vm.recordRecentColor(.red)
+        vm.recordRecentColor(.blue)
+        XCTAssertEqual(vm.recentColors, [.blue, .red], "newest-first MRU exposed on the VM")
+    }
+
+    func test_eyedropper_recordsRecentColor() throws {
+        let vm = try makeVM(w: 4, h: 4, r: 0, g: 0, b: 1)   // blue
+        _ = vm.pickColor(atX: 1, y: 1)
+        XCTAssertEqual(vm.recentColors.first?.b, 255, "the eyedropper records the picked color")
+    }
 }
