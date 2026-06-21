@@ -615,12 +615,15 @@ struct ImageEditorView: View {
     private func saveCopy() {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "edited.png"
-        panel.allowedContentTypes = [.png, .jpeg, .heic]
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .bmp, .gif, .tiff]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let format: ExportSpec.Format
         switch url.pathExtension.lowercased() {
         case "jpg", "jpeg": format = .jpeg
         case "heic": format = .heic
+        case "bmp": format = .bmp
+        case "gif": format = .gif
+        case "tif", "tiff": format = .tiff
         default: format = .png
         }
         // Route through the view-model so a write/encoder failure (disk

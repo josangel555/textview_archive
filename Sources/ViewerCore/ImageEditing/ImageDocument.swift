@@ -298,6 +298,9 @@ public struct ExportSpec: Sendable, Equatable {
         case png
         case jpeg
         case heic
+        case bmp    // TSK-1078
+        case gif    // TSK-1079
+        case tiff   // TSK-1080
 
         /// The Uniform Type Identifier ImageIO keys the destination on.
         public var utType: UTType {
@@ -305,15 +308,18 @@ public struct ExportSpec: Sendable, Equatable {
             case .png:  return .png
             case .jpeg: return .jpeg
             case .heic: return .heic
+            case .bmp:  return .bmp
+            case .gif:  return .gif
+            case .tiff: return .tiff
             }
         }
 
-        /// Whether `quality` is meaningful for this format. PNG is lossless;
-        /// the quality knob is ignored for it.
+        /// Whether `quality` is meaningful for this format. PNG/BMP/GIF/TIFF are
+        /// lossless; the quality knob is ignored for them.
         public var isLossy: Bool {
             switch self {
-            case .png:         return false
-            case .jpeg, .heic: return true
+            case .png, .bmp, .gif, .tiff: return false
+            case .jpeg, .heic:            return true
             }
         }
     }

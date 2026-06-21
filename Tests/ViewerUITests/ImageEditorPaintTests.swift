@@ -618,4 +618,19 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertEqual(vm.rendered?.width, 40, "resize op applies the target dims")
         XCTAssertEqual(vm.rendered?.height, 24)
     }
+
+    // MARK: - BMP / GIF / TIFF write (TSK-1078/1079/1080)
+
+    func test_exportData_bmpGifTiff_roundTrip() throws {
+        let vm = try makeVM(w: 8, h: 8, r: 1, g: 0, b: 0)
+        for fmt in [ExportSpec.Format.bmp, .gif, .tiff] {
+            let data = try vm.exportData(format: fmt)
+            XCTAssertFalse(data.isEmpty, "\(fmt) export produced bytes")
+            let src = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil),
+                                    "\(fmt) export decodes")
+            let img = try XCTUnwrap(CGImageSourceCreateImageAtIndex(src, 0, nil))
+            XCTAssertEqual(img.width, 8, "\(fmt) width preserved")
+            XCTAssertEqual(img.height, 8, "\(fmt) height preserved")
+        }
+    }
 }
