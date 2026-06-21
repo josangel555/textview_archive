@@ -425,6 +425,68 @@ public enum FormulaEngine {
             default:      return .error(.name)
             }
 
+        case "LEFT", "RIGHT":
+            guard args.count == 1 || args.count == 2 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            let s = v.asText
+            var n = 1
+            if args.count == 2 {
+                let nv = evaluate(args[1], &ctx); if case .error = nv { return nv }
+                guard let d = nv.asNumber else { return .error(.value) }
+                n = Int(d)
+            }
+            guard n >= 0 else { return .error(.value) }
+            let count = min(n, s.count)
+            return .text(name == "LEFT" ? String(s.prefix(count)) : String(s.suffix(count)))
+
+        case "MID":
+            guard args.count == 3 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            let sv = evaluate(args[1], &ctx); if case .error = sv { return sv }
+            let lv = evaluate(args[2], &ctx); if case .error = lv { return lv }
+            guard let startD = sv.asNumber, let lenD = lv.asNumber, startD >= 1, lenD >= 0
+            else { return .error(.value) }
+            let chars = Array(v.asText)
+            let from = Int(startD) - 1                       // Excel MID is 1-based
+            guard from < chars.count else { return .text("") }
+            let to = min(from + Int(lenD), chars.count)
+            return .text(String(chars[from..<to]))
+
+        case "ROUNDUP", "ROUNDDOWN":
+            guard args.count == 1 || args.count == 2 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            guard let x = v.asNumber else { return .error(.value) }
+            var digits = 0
+            if args.count == 2 {
+                let dv = evaluate(args[1], &ctx); if case .error = dv { return dv }
+                guard let d = dv.asNumber else { return .error(.value) }
+                digits = Int(d)
+            }
+            let factor = Foundation.pow(10.0, Double(digits))
+            let scaled = x * factor
+            let r = (name == "ROUNDUP") ? scaled.rounded(.awayFromZero) : scaled.rounded(.towardZero)
+            return .number(r / factor)
+
+        case "CEILING", "FLOOR":
+            guard args.count == 1 || args.count == 2 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx); if case .error = v { return v }
+            guard let x = v.asNumber else { return .error(.value) }
+            var sig = 1.0
+            if args.count == 2 {
+                let s = evaluate(args[1], &ctx); if case .error = s { return s }
+                guard let sg = s.asNumber else { return .error(.value) }
+                sig = sg
+            }
+            guard sig != 0 else { return .number(0) }
+            let q = x / sig
+            return .number((name == "CEILING" ? q.rounded(.up) : q.rounded(.down)) * sig)
+
+        case "IFERROR":
+            guard args.count == 2 else { return .error(.value) }
+            let v = evaluate(args[0], &ctx)
+            if case .error = v { return evaluate(args[1], &ctx) }
+            return v
+
         default:
             return .error(.name)
         }

@@ -303,4 +303,37 @@ final class FormulaEngineTests: XCTestCase {
         // B1 -> grid (row 1, col 1) = "=A1*2" ; A1 -> "5" → 10.
         XCTAssertEqual(model.evaluateFormulaCell(at: CellReference(a1: "B1")!), .number(10))
     }
+
+    // MARK: - TSK-1141 added builtins (LEFT/RIGHT/MID, ROUNDUP/DOWN, CEILING/FLOOR, IFERROR)
+
+    private func txt(_ v: FormulaValue) -> String? {
+        if case .text(let s) = v { return s }; return nil
+    }
+
+    func test_textExtractionFunctions() {
+        XCTAssertEqual(txt(eval("LEFT(\"hello\", 3)")), "hel")
+        XCTAssertEqual(txt(eval("RIGHT(\"hello\", 2)")), "lo")
+        XCTAssertEqual(txt(eval("MID(\"hello\", 2, 3)")), "ell")
+        XCTAssertEqual(txt(eval("LEFT(\"hi\", 10)")), "hi", "n past end clamps")
+        XCTAssertEqual(txt(eval("LEFT(\"hello\")")), "h", "default length 1")
+        XCTAssertEqual(txt(eval("MID(\"hi\", 5, 2)")), "", "start past end → empty")
+    }
+
+    func test_roundUpDown() {
+        XCTAssertEqual(num(eval("ROUNDUP(2.1, 0)")), 3)
+        XCTAssertEqual(num(eval("ROUNDDOWN(2.9, 0)")), 2)
+        if let v = num(eval("ROUNDUP(2.345, 2)")) { XCTAssertEqual(v, 2.35, accuracy: 1e-9) }
+        if let v = num(eval("ROUNDDOWN(2.349, 2)")) { XCTAssertEqual(v, 2.34, accuracy: 1e-9) }
+    }
+
+    func test_ceilingFloor() {
+        XCTAssertEqual(num(eval("CEILING(4.1)")), 5)
+        XCTAssertEqual(num(eval("FLOOR(4.9)")), 4)
+        XCTAssertEqual(num(eval("CEILING(12, 5)")), 15, "round up to a multiple of 5")
+    }
+
+    func test_iferror() {
+        XCTAssertEqual(num(eval("IFERROR(1/0, 99)")), 99)
+        XCTAssertEqual(num(eval("IFERROR(5, 99)")), 5)
+    }
 }
