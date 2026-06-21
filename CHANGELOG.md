@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-21
 
 ### Added
+- **File ▸ Local History** — browse the save-time version snapshots of the current file (timestamp + size) and view any past version read-only.
 - **View ▸ Toggle Read-Only** — lock the editor against accidental edits for the session (checkable menu item).
 - **File ▸ Export as Word / RTF / RTFD** — export the current Markdown document to a `.docx` Word file, an `.rtf` file, or an `.rtfd` package (headings, lists, bold/italic/strike).
 - **Copy as RTF** — copy the current Markdown document to the clipboard as rich text, so it pastes formatted into Mail, Pages, etc.
