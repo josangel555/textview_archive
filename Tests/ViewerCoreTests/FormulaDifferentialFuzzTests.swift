@@ -74,4 +74,37 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// A random rectangular A1 range within the 3×3 grid (start <= end on both axes).
+    private func randomRange(_ rng: inout Xorshift) -> String {
+        let cols = ["A", "B", "C"]
+        var c1 = rng.int(0, 2)
+        var c2 = rng.int(0, 2)
+        if c1 > c2 { swap(&c1, &c2) }
+        var r1 = rng.int(1, 3)
+        var r2 = rng.int(1, 3)
+        if r1 > r2 { swap(&r1, &r2) }
+        return "\(cols[c1])\(r1):\(cols[c2])\(r2)"
+    }
+
+    /// Differential fuzz over the shared AGGREGATE functions (a distinct eval path
+    /// from arithmetic: function dispatch + range collection). Integer grid values
+    /// are exactly representable in f64, so the sum/product is order-independent —
+    /// no float-associativity false divergence; equality stays exact.
+    func test_swift_rust_aggregate_parity_random() throws {
+        let funcs = ["SUM", "AVERAGE", "MIN", "MAX", "COUNT", "PRODUCT"]
+        for seed in UInt64(101)...UInt64(140) {
+            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<25 { // 40 seeds × 25 = 1000 random aggregate cases
+                let cells = randomGrid(&rng)
+                let fn = funcs[rng.int(0, funcs.count - 1)]
+                let formula = "=\(fn)(\(randomRange(&rng)))"
+                let resolver: CellResolver = { ref in cells[ref.a1] }
+                let swiftResult = FormulaEngine.evaluate(raw: formula, resolve: resolver)
+                let rustResult = try RustFormulaAdapter.rustEvaluate(formula, cells: cells)
+                XCTAssertEqual(rustResult, swiftResult,
+                               "aggregate parity diverged: \(formula) over \(cells)")
+            }
+        }
+    }
 }
