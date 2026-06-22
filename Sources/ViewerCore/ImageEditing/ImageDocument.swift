@@ -149,6 +149,10 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// the polygon / parametric-shape FILL tools. The multi-click/drag gesture
     /// that builds it is the render tail. Geometry-preserving (never resizes).
     case fillPolygon(points: [CGPoint], color: DrawColor)
+    /// TSK-1084/1085 — stroke the closed-polygon OUTLINE through `points` (source
+    /// pixel space) at `lineWidth`, anti-aliased — the outline complement of
+    /// fillPolygon (a shape commits fill, outline, or both). Geometry-preserving.
+    case strokePolygon(points: [CGPoint], color: DrawColor, lineWidth: Double)
 }
 
 /// A straight (non-premultiplied) RGBA color for the draw ops, each channel in

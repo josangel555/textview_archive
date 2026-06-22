@@ -250,6 +250,24 @@ final class ImageEditingTests: XCTestCase {
                       "removing the fillPolygon op (undo) must restore the base pixel")
     }
 
+    func test_strokePolygon_op_outlines_not_fills() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 32, height: 32, r: 1, g: 1, b: 1),
+            ExportSpec(format: .png))
+        let red = DrawColor(red: 1, green: 0, blue: 0)
+        let tri = [CGPoint(x: 16, y: 4), CGPoint(x: 4, y: 28), CGPoint(x: 28, y: 28)]
+        let stroked = try Renderer.render(
+            ImageDocument(data: data).appending(.strokePolygon(points: tri, color: red, lineWidth: 4)))
+        // A point ON the left edge (x≈10 at y=16 in either context orientation) is stroked.
+        let edge = sampleRGBA(stroked, x: 10, y: 16)
+        XCTAssertTrue(edge.r > 180 && edge.g < 80 && edge.b < 80,
+                      "strokePolygon did not stroke the triangle edge: \(edge)")
+        // The interior is NOT filled — distinguishes an outline from a fill.
+        let interior = sampleRGBA(stroked, x: 16, y: 16)
+        XCTAssertTrue(interior.r > 200 && interior.g > 200 && interior.b > 200,
+                      "strokePolygon filled the interior (should only outline): \(interior)")
+    }
+
     func test_colorControls_brightnessUp_lightens() throws {
         let base = solidImage(width: 32, height: 32, r: 0.4, g: 0.4, b: 0.4)
         let before = sampleRGBA(try Renderer.render(ImageDocument(data:

@@ -191,6 +191,17 @@ public enum Renderer {
                 ctx.closePath()
                 ctx.fillPath()
             }
+        case .strokePolygon(let points, let color, let lineWidth):
+            return try draw(on: image) { ctx in
+                guard let first = points.first, points.count >= 3 else { return }
+                ctx.setStrokeColor(color.cgColor)
+                ctx.setLineWidth(CGFloat(max(lineWidth, 0)))
+                ctx.setLineJoin(.round)
+                ctx.move(to: first)
+                for p in points.dropFirst() { ctx.addLine(to: p) }
+                ctx.closePath()
+                ctx.strokePath()
+            }
         }
     }
 
