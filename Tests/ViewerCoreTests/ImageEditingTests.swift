@@ -268,6 +268,27 @@ final class ImageEditingTests: XCTestCase {
                       "strokePolygon filled the interior (should only outline): \(interior)")
     }
 
+    func test_drawCurve_op_strokes_a_bowed_bezier() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 32, height: 32, r: 1, g: 1, b: 1),
+            ExportSpec(format: .png))
+        let red = DrawColor(red: 1, green: 0, blue: 0)
+        // A cubic Bézier (4,16)→(28,16) whose controls pull it well off the chord.
+        let curved = try Renderer.render(
+            ImageDocument(data: data).appending(.drawCurve(
+                from: CGPoint(x: 4, y: 16), to: CGPoint(x: 28, y: 16),
+                control1: CGPoint(x: 12, y: 4), control2: CGPoint(x: 20, y: 4),
+                color: red, lineWidth: 4)))
+        // The start endpoint is on the stroke (flip-invariant: an endpoint at y≈16).
+        let start = sampleRGBA(curved, x: 4, y: 16)
+        XCTAssertTrue(start.r > 180 && start.g < 80 && start.b < 80,
+                      "drawCurve did not stroke the start point: \(start)")
+        // The straight-chord midpoint is NOT on the curve (it bows away) — proves it curved.
+        let chordMid = sampleRGBA(curved, x: 16, y: 16)
+        XCTAssertTrue(chordMid.r > 200 && chordMid.g > 200 && chordMid.b > 200,
+                      "drawCurve did not bow away from the straight chord: \(chordMid)")
+    }
+
     func test_colorControls_brightnessUp_lightens() throws {
         let base = solidImage(width: 32, height: 32, r: 0.4, g: 0.4, b: 0.4)
         let before = sampleRGBA(try Renderer.render(ImageDocument(data:

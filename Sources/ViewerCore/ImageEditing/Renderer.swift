@@ -202,6 +202,15 @@ public enum Renderer {
                 ctx.closePath()
                 ctx.strokePath()
             }
+        case .drawCurve(let from, let to, let control1, let control2, let color, let lineWidth):
+            return try draw(on: image) { ctx in
+                ctx.setStrokeColor(color.cgColor)
+                ctx.setLineWidth(CGFloat(max(lineWidth, 0)))
+                ctx.setLineCap(.round)
+                ctx.move(to: from)
+                ctx.addCurve(to: to, control1: control1, control2: control2)
+                ctx.strokePath()
+            }
         }
     }
 

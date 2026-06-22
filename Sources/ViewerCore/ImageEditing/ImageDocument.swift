@@ -153,6 +153,10 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// pixel space) at `lineWidth`, anti-aliased — the outline complement of
     /// fillPolygon (a shape commits fill, outline, or both). Geometry-preserving.
     case strokePolygon(points: [CGPoint], color: DrawColor, lineWidth: Double)
+    /// TSK-1083 — stroke a cubic Bézier from `from` to `to` via `control1`/`control2`
+    /// at `lineWidth`, anti-aliased (round caps). The MS-Paint curve tool's draw op
+    /// (1–2 arcs collapse to a cubic). Geometry-preserving; rides the lossless op-list.
+    case drawCurve(from: CGPoint, to: CGPoint, control1: CGPoint, control2: CGPoint, color: DrawColor, lineWidth: Double)
 }
 
 /// A straight (non-premultiplied) RGBA color for the draw ops, each channel in
