@@ -82,4 +82,33 @@ final class FormulaParityTests: XCTestCase {
             try assertParity(formula, cells)
         }
     }
+
+    /// Extended math batch (TSK-1213 parity round 2): CEILING/FLOOR/ROUNDUP/
+    /// ROUNDDOWN/TRUNC/SIGN/EXP/LN/LOG10 — Swift had these, the Rust port gained
+    /// them to close the parity gap. Inputs chosen for exact/representable results.
+    func test_parity_extended_math() throws {
+        let cases: [(String, [String: String])] = [
+            ("=ROUNDUP(A1, 2)", ["A1": "3.14159"]),
+            ("=ROUNDUP(A1, 2)", ["A1": "-3.14159"]),
+            ("=ROUNDDOWN(A1, 1)", ["A1": "3.789"]),
+            ("=TRUNC(A1)", ["A1": "3.789"]),
+            ("=TRUNC(A1)", ["A1": "-3.789"]),
+            ("=TRUNC(A1, 2)", ["A1": "3.14159"]),
+            ("=CEILING(A1)", ["A1": "4.2"]),
+            ("=CEILING(A1, 0.5)", ["A1": "4.2"]),
+            ("=FLOOR(A1)", ["A1": "4.8"]),
+            ("=FLOOR(A1, 0.5)", ["A1": "4.8"]),
+            ("=SIGN(A1)", ["A1": "-3"]),
+            ("=SIGN(A1)", ["A1": "0"]),
+            ("=SIGN(A1)", ["A1": "7"]),
+            ("=EXP(A1)", ["A1": "0"]),
+            ("=EXP(A1)", ["A1": "1"]),
+            ("=LN(A1)", ["A1": "1"]),
+            ("=LN(A1)", ["A1": "-1"]), // #NUM
+            ("=LOG10(A1)", ["A1": "1000"]),
+        ]
+        for (formula, cells) in cases {
+            try assertParity(formula, cells)
+        }
+    }
 }

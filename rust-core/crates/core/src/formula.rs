@@ -1039,6 +1039,90 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             let (fy, fm, fd) = civil_from_days(days_from_civil(ny, nm, day));
             Value::Text(format_iso(fy, fm, fd))
         }
+        "ROUNDUP" | "ROUNDDOWN" | "TRUNC" => {
+            if args.is_empty() || args.len() > 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let x = match arg_num(args.first(), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            let digits = if args.len() == 2 {
+                match arg_int(args.get(1), resolver) {
+                    Ok(n) => n,
+                    Err(e) => return e,
+                }
+            } else {
+                0
+            };
+            let factor = 10.0_f64.powf(digits as f64);
+            let scaled = x * factor;
+            // ROUNDUP rounds away from zero; ROUNDDOWN/TRUNC truncate toward zero.
+            let r = if upper == "ROUNDUP" { round_away(scaled) } else { scaled.trunc() };
+            Value::Number(r / factor)
+        }
+        "CEILING" | "FLOOR" => {
+            if args.is_empty() || args.len() > 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let x = match arg_num(args.first(), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            let sig = if args.len() == 2 {
+                match arg_num(args.get(1), resolver) {
+                    Ok(n) => n,
+                    Err(e) => return e,
+                }
+            } else {
+                1.0
+            };
+            if sig == 0.0 {
+                return Value::Number(0.0);
+            }
+            let q = x / sig;
+            let rounded = if upper == "CEILING" { q.ceil() } else { q.floor() };
+            Value::Number(rounded * sig)
+        }
+        "SIGN" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            let x = match arg_num(args.first(), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            Value::Number(if x > 0.0 {
+                1.0
+            } else if x < 0.0 {
+                -1.0
+            } else {
+                0.0
+            })
+        }
+        "EXP" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            let x = match arg_num(args.first(), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            Value::Number(x.exp())
+        }
+        "LN" | "LOG10" => {
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            let x = match arg_num(args.first(), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            if x <= 0.0 {
+                return Value::Error(FormulaError::Num);
+            }
+            Value::Number(if upper == "LN" { x.ln() } else { x.log10() })
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -1332,6 +1416,15 @@ fn format_iso(y: i64, m: i64, d: i64) -> String {
 fn days_in_month(y: i64, m: i64) -> i64 {
     let next = y * 12 + (m - 1) + 1;
     days_from_civil(next.div_euclid(12), next.rem_euclid(12) + 1, 1) - days_from_civil(y, m, 1)
+}
+
+/// Round away from zero (Excel ROUNDUP / Swift `.awayFromZero`): magnitude up.
+fn round_away(x: f64) -> f64 {
+    if x >= 0.0 {
+        x.ceil()
+    } else {
+        x.floor()
+    }
 }
 
 /// Order two values: numerically when BOTH coerce to numbers (number/bool/blank/
@@ -1908,5 +2001,25 @@ mod tests {
                 Value::Error(FormulaError::DivideByZero),
             ]
         );
+    }
+
+    #[test]
+    fn math_extended_functions() {
+        assert_eq!(evaluate("ROUNDUP(3.14159, 2)"), Value::Number(3.15));
+        assert_eq!(evaluate("ROUNDUP(-3.14159, 2)"), Value::Number(-3.15)); // away from zero
+        assert_eq!(evaluate("ROUNDDOWN(3.789, 1)"), Value::Number(3.7));
+        assert_eq!(evaluate("TRUNC(3.789)"), Value::Number(3.0));
+        assert_eq!(evaluate("TRUNC(-3.789)"), Value::Number(-3.0));
+        assert_eq!(evaluate("CEILING(4.2)"), Value::Number(5.0));
+        assert_eq!(evaluate("CEILING(4.2, 0.5)"), Value::Number(4.5));
+        assert_eq!(evaluate("FLOOR(4.8)"), Value::Number(4.0));
+        assert_eq!(evaluate("FLOOR(4.8, 0.5)"), Value::Number(4.5));
+        assert_eq!(evaluate("SIGN(-3)"), Value::Number(-1.0));
+        assert_eq!(evaluate("SIGN(0)"), Value::Number(0.0));
+        assert_eq!(evaluate("EXP(0)"), Value::Number(1.0));
+        assert_eq!(evaluate("LN(1)"), Value::Number(0.0));
+        assert_eq!(evaluate("LOG10(1000)"), Value::Number(3.0));
+        assert!(matches!(evaluate("LN(-1)"), Value::Error(FormulaError::Num)));
+        assert!(matches!(evaluate("LN(0)"), Value::Error(FormulaError::Num)));
     }
 }
