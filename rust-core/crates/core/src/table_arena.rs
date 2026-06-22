@@ -134,6 +134,17 @@ impl TableArena {
         self.row_count
     }
 
+    /// Estimated heap footprint of this arena, for the runtime's byte-budget
+    /// eviction (TSK-589 slice 3): the interned cell `bytes` + the per-cell
+    /// `offsets` index + the delimiter. The fixed scalar fields are negligible.
+    /// An ESTIMATE — counts live lengths, not allocator capacity/slack — which is
+    /// the right granularity for a soft eviction budget. The future FFI registry
+    /// (slice 4) passes this to `CoreRuntime::open`'s `estimated_bytes`.
+    #[must_use]
+    pub fn estimated_bytes(&self) -> usize {
+        self.bytes.len() + self.offsets.len() * std::mem::size_of::<usize>() + self.delimiter.len()
+    }
+
     /// The span of global cell `k`. Out-of-range → `""` (no-panic).
     fn span(&self, k: usize) -> &str {
         let (Some(&start), Some(&end)) = (self.offsets.get(k), self.offsets.get(k + 1)) else {
@@ -284,6 +295,33 @@ mod tests {
             assert_eq!(arena.truncated(), t.truncated);
             assert_eq!(arena.delimiter(), t.delimiter);
         }
+    }
+
+    #[test]
+    fn estimated_bytes_grows_with_content() {
+        let small = TableArena::from_table(Table {
+            delimiter: ",".into(),
+            header: vec!["a".into(), "b".into()],
+            rows: vec![vec!["1".into(), "2".into()]],
+            truncated: false,
+        });
+        let big = TableArena::from_table(Table {
+            delimiter: ",".into(),
+            header: vec!["a".into(), "b".into()],
+            rows: vec![
+                vec!["a_much_longer_value".into(), "another_long_value".into()],
+                vec!["x".into(), "y".into()],
+                vec!["z".into(), "w".into()],
+            ],
+            truncated: false,
+        });
+        assert!(small.estimated_bytes() > 0, "a non-empty arena has a nonzero footprint");
+        assert!(
+            big.estimated_bytes() > small.estimated_bytes(),
+            "a larger table must estimate more bytes (small={}, big={})",
+            small.estimated_bytes(),
+            big.estimated_bytes()
+        );
     }
 
     #[test]
