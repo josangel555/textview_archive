@@ -1,64 +1,61 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — autonomous drain run (~66 user-facing features + foundations)  (2026-06-21)
+# Handoff — Rust FormulaEngine port (TSK-1213)  (2026-06-21)
 
-**Session:** claude-mdv (AUTONOMOUS, cron ~5min).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `9970bed3` (verify `git log -1`).
+**Session:** claude-mdv (AUTONOMOUS, cron ~5min).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `54b2da7a` (verify `git log -1`).
 
-## Mode — AUTONOMOUS DRAIN (cron ARMED)
-Each tick: read `docs/TASK_WORKFLOW.md` + the CLAUDE.md SOP + the latest
-`docs/CURATED_TASKS_*.md`, then drain toward done. **Working discipline that
-works (keep it):**
-- **Converge-fast:** ONE pick → ONE focused probe → build OR reconcile-and-move.
-  Do NOT chain probes. Many board/curated items turn out already-done on a fresh
-  read (the curated 06-20 list is significantly STALE) — reconcile those (`task_advance`/comment) and move.
-- **Build → host-test the model → host-gate → commit per item.** Confirm the gate
-  verdict (`==> headless gate PASSED`, 0 failed) in a SEPARATE step before committing.
-  Run the gate in the background; the completion notification drives the commit.
-- **Render-path = review ceiling.** Build render features too, host-test the model/seam,
-  leave the on-screen behavior at `review` (owner/VM closes). Pure-logic + a teeth-test → self-`task_validate` to `validated`.
-- Land rebase+ff. Commit trailer ``.
-- Keep `CHANGELOG.md` current for USER-FACING changes only (skip foundations/infra).
+## Mission
+Owner redirect (overrides the older "drain user-facing features" handoff): STOP building
+new engine work in Swift; PORT the Swift `FormulaEngine` to rust-core, **hand-written,
+ZERO new dependencies**. Sibling to the CSV/diff/hex rust ports.
 
-## Proven patterns this run
-- **View-wire:** built-but-unreachable engine → reachable hosted tab via
-  `model.showX()` + `openHostedView` + a File-menu item; host-test = "opens a tab
-  + returns count / no-op". Shipped: Dependency Graph, Folder Treemap (+from stats card),
-  Annotations, Log Patterns, Package Dependencies, Local History.
-- **Model-foundation:** extract/build a pure host-tested model; UI/integration deferred.
-- **Re-verify-and-pin:** trace a "re-verify" bug end-to-end; if correct, pin the
-  untested link with a teeth-test (e.g. Open-in-PWD → `effectiveSpawnDirectory`).
+## Current state — PORT FUNCTIONALLY COMPLETE + CONSUMED AT THE MODEL LAYER
+All slices hand-written, zero-dep, gated OFF by default (`RustFormulaGate` / `MDV_RUST_FORMULA`),
+each gated+committed. ~60 Swift↔Rust A/B parity cases all green.
+- **Pure evaluator** (`rust-core/crates/core/src/formula.rs`): full current-Swift function
+  parity — arithmetic, refs/ranges, comparisons, aggregates, conditional-aggregates, logical,
+  IS*, lookup (MATCH/INDEX/VLOOKUP/HLOOKUP), text, math (incl. CEILING/FLOOR/ROUNDUP/DOWN/TRUNC/
+  SIGN/EXP/LN/LOG10), dates (DATE/YEAR/MONTH/DAY/WEEKDAY/DATEDIF/EDATE/EOMONTH, hand-rolled
+  Hinnant civil-date). PROPER is NOT ported — handled by `#NAME!`-fallback to Swift in the adapter.
+- **FFI**: `Method::FormulaEvaluate` (id 13) + `Method::FormulaRecalc` (id 14) over `mdvcore_call`;
+  `evaluate_wire`/`recalc_wire`; MessagePack float support added Swift-side (`MessagePack.swift`).
+- **Swift consumption**: `RustFormulaAdapter` (`Sources/ViewerCore/`) — `mapValue`, `rustEvaluate`,
+  gated `evaluate` (#NAME-fallback), `recalc`. `EditableCSVModel.recalcAllFormulas()`
+  (`Sources/ViewerCore/FormulaEngine.swift`) — ONE-pass batch recalc, A/B parity-proven.
+- **Recalc engine** (slice 6b): memoized recursive `recalc()` with `visiting` cycle set (→ #CYCLE);
+  closes the recursion gap (a formula cell referencing another formula cell sees its COMPUTED value).
 
-## Shipped this run (all gate-green on main; render at review)
-- **Image-editor epic TSK-1048 — DELIVERED** (MS-Paint-class): paint/shapes/full
-  selection/Image-menu transforms incl. **skew/canvas-size/invert/clear/resize**,
-  **6 save formats + copy/paste-via-file + in-place Save**, **fg/bg + swap + palette + recent-swatches**,
-  **airbrush**, decode-once + off-main-save perf. (Rollup on TSK-1048.) Remaining: 1049/1052/1055 (VM/architecture, filed).
-- **Exports TSK-1144 (review):** Markdown → `.docx` (dep-free `DocxExporter`: CRC32 +
-  store-ZIP + WordprocessingML), `.rtf`, `.rtfd` + **Copy as RTF**; File menu wired; legacy `.doc` = recommend WONT-DO.
-- **Terminal:** command-history model (1176, progress), ANSI themes + pure `AnsiColorResolver` (1175, progress, color-preserving), Open-in-PWD re-verified+pinned (1178).
-- **CSV:** rectangular select/copy/paste (1187, review) — `CSVRectSelection`/`CSVClipboard` + `EditableCSVModel.paste`.
-- **FormulaEngine (1141):** +LEFT/RIGHT/MID, ROUNDUP/DOWN, CEILING/FLOOR, IFERROR (user-facing in CSV `=` cells).
-- **Editor:** View ▸ Toggle Read-Only (936). **Local History** reachable (1103, review). Feeds: parser+`FeedFetcher`+OPML (1148✓validated/1150✓validated).
-- **Test-infra (TSK-788 audit, host-level done):** coverage script `scripts/coverage.sh` (1131),
-  Swift Testing pilot + CLAUDE.md convention (1130), G3 doc truth-fix (1133), G4 teeth-codify `MDVNegativeControl` (1134). **991** prune-cap validated.
+## Next action (remaining = render-path / owner-gated TAIL, NOT agent-closeable to `done`)
+1. **VIEW WIRING**: make the CSV view call `model.recalcAllFormulas()` (batch) instead of per-cell
+   `evaluateFormulaCell`. Render-path -> REVIEW CEILING + VM/owner on-screen confirmation. Leave at review.
+2. **GATE FLIP**: `MDV_RUST_FORMULA` default OFF->ON after a soak (owner decision; see
+   `RustCoreCapability.defaultEnabled` in `Sources/ViewerCore/RustCoreGates.swift`).
+3. **SWIFT ENGINE DELETION**: migration-policy endgame (owner-gated, after gate-ON soak).
+If the formula tail is exhausted/owner-gated, fall back to the board: validate `fixed` items, drain curated.
 
-## Deferred / blocked (do NOT blind-build)
-- **TSK-1132** WebViewTestCase heavy-tier base — turnkey spec on the ticket; touches
-  the gate observer the merge gate depends on → focused session + gate-verify, not a heartbeat tick.
-- **Big-levers** TSK-1049 (off-main render), 1055 (undoable paint), 1052 (dirty-rect),
-  the **TSK-590** perf cluster — VM/owner-gated (design notes on tickets).
-- **TSK-1098** bundle-cap doc drift — ambiguous (needs real bundle size or owner intent on the cap).
-
-## Current state of the vein
-The clean **host-buildable USER-FACING** pool is essentially EXHAUSTED — probes now
-consistently hit already-done / render / VM / owner-gated / rust-FFI-heavy. Remaining
-clean autonomous work: validation-drain (move done-but-misparked pure-logic → validated),
-reconcile (confirm stale-curated done), test-speed (1181 needs TSK-836 slow-class data;
-847 worker-bump in progress). **The single biggest "→ done" lever is an owner / VM-UAT
-pass** to close the large `review` backlog (~66 features + this run's view-wires) — that
-is the agent's `review` ceiling for render-path and is owner/VM-only.
+## Key facts / gotchas (also LESSONS.md)
+- **The Swift `FormulaEngine` GREW** past the original corpus (CEILING/IFERROR/etc.); diff the live
+  fn sets before claiming parity. Verify with the cross-language parity harness
+  (`Tests/ViewerCoreTests/FormulaParityTests.swift`), not per-engine unit tests.
+- **`String.capitalized` is ICU word-segmentation**, not whitespace — don't reproduce in Rust; PROPER
+  stays Swift via the `#NAME!`-fallback (Rust fn-set is a subset of Swift's, so a genuine #NAME matches both).
+- **Per-method ABI ripple** (adding a `dispatch::Method`): enum + `NEXT_FREE_ID` + `from_u16` + router +
+  FFI `MDV_METHOD_*` const + 3 pinning tests in `ffi/src/tests.rs` + regenerate the cbindgen header via
+  `scripts/build-rust-core.sh` (the headers `Sources/CMdvCore/mdvcore.h` + `ffi/include/mdvcore.h` are
+  GITIGNORED generated artifacts; the rust-core gate's ABI-drift check fails until restaged).
+- **After ANY rust-core change**, run `scripts/build-rust-core.sh` BEFORE the Swift parity tests so the
+  linked `.a` (`rust-core/link/libmdvcore_ffi.a`) has the new behavior.
+- **`ChromeBodyEvalCountTests.test_findTypeahead_doesNotReBodyChromeStrip`** is a pre-existing SwiftUI
+  body-eval-count flake under full-suite parallel load — passes in isolation; unrelated to formulas.
+- **Commit messages: NO backticks** (zsh command-substitutes them inside `-m "..."`).
 
 ## How to resume
-1. `git -C <cwd> log -1`; `bash scripts/test-headless-gate.sh` should be green.
-2. Converge-fast: pick next curated/board item, ONE probe; if already-done → reconcile+move; if a clean host-testable seam → build+test+gate+commit; if render → build+leave at review.
-3. Don't blind-build the Deferred items. Don't run T4/T5/WebView/dist on the host.
-4. If genuinely no clean build: validation-drain (pure-logic+teeth → `task_validate`) or accurate reconcile. NEVER "no work" — but be honest the user-facing clean vein is thin; surface the owner/VM-UAT lever.
+1. `git -C <cwd> log -1`; both gates should be green: `bash scripts/rust-core-gate.sh` +
+   `bash scripts/test-headless-gate.sh`.
+2. Per-slice loop that's been working: read Swift impl (authoritative) -> implement in `formula.rs` ->
+   Rust unit test (`cargo test -p mdvcore-core formula`) -> Swift parity cases -> `build-rust-core.sh` ->
+   `swift test --filter FormulaParityTests` -> both gates (background) -> confirm verdict in a SEPARATE
+   step -> commit per slice (trailer below). Record on TSK-1213 (`mcp__tasked__task_record`).
+3. The remaining formula work is render/owner-gated; if so, drain the board instead. Don't run T4/T5/
+   WebView/dist on the host.
+
+Commit trailer:
