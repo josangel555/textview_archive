@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import ViewerCore
 
 /// UAT — TSK-1036: routed multi-format documents open as their EXTRACTED text,
 /// not raw container bytes. T4 live-app: spawns `dist/TextView.app`, opens an
@@ -53,6 +54,41 @@ final class MultiFormatViewerUATTests: MultiScenarioTestCase {
                         file: file, line: line)
                     XCTAssertFalse(text.contains("\\rtf1"),
                         "[mfv01] raw RTF control words leaked into the view — routing/extraction did NOT fire",
+                        file: file, line: line)
+                })
+        ])
+    }
+
+    /// MFV-02 — open a `.docx` (a real OOXML ZIP, built via `DocxExporter`); the
+    /// loaded source text is the EXTRACTED text, not the raw ZIP container bytes.
+    /// Distinct from MFV-01: this exercises the ZIP-container routing path (unzip
+    /// `word/document.xml` → extract), where RTF is plain control-word text.
+    func test_MFV_02_docxOpensAsExtractedText() throws {
+        let doc = RichTextDocument.parse("DOCXROUNDTRIP marker paragraph one.")
+        let docx = try harness.writeFile("note.docx", "")
+        try DocxExporter.export(doc).write(to: docx)
+        let script = """
+        delay
+        delay
+        delay
+        """
+        try runScenarios([
+            Scenario(
+                name: "docx-extracted-text",
+                argFile: docx,
+                script: script,
+                assert: { [self] dumps, file, line in
+                    XCTAssertFalse(dumps.isEmpty, "[mfv02] no dumps", file: file, line: line)
+                    let docxDumps = dumps.filter { modelString($0, "currentURL").hasSuffix("note.docx") }
+                    XCTAssertFalse(docxDumps.isEmpty,
+                        "[mfv02] note.docx never committed currentURL (open didn't land)", file: file, line: line)
+                    guard let last = docxDumps.last else { return }
+                    let text = modelString(last, "loadedTextPrefix")
+                    XCTAssertTrue(text.contains("DOCXROUNDTRIP"),
+                        "[mfv02] extracted DOCX text not loaded; loadedTextPrefix=\(text.prefix(120))",
+                        file: file, line: line)
+                    XCTAssertFalse(text.contains("document.xml"),
+                        "[mfv02] raw .docx container (word/document.xml) leaked — routing/extraction did NOT fire",
                         file: file, line: line)
                 })
         ])
