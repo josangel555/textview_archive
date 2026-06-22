@@ -1419,6 +1419,24 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Value) -> Va
             }
             Value::Text(parts.join(&delim))
         }
+        "CHOOSE" => {
+            // CHOOSE(index, value1, value2, …) → the 1-based index-th value.
+            if args.len() < 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let idx = match arg_int(args.first(), resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            if idx < 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            // args[0] is the index; values are args[1..], so the i-th value is args[idx].
+            match usize::try_from(idx).ok().and_then(|i| args.get(i)) {
+                Some(e) => eval(e, resolver),
+                None => Value::Error(FormulaError::Value),
+            }
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -2766,5 +2784,14 @@ mod tests {
                 .collect();
         let r2 = |c: CellRef| g2.get(&c).cloned();
         assert_eq!(evaluate_with("TEXTJOIN(\",\", 1, A1:A3)", &r2), Value::Text("x,z".to_string())); // range + skip blank
+    }
+
+    #[test]
+    fn choose_function() {
+        assert_eq!(evaluate("CHOOSE(2, \"a\", \"b\", \"c\")"), Value::Text("b".to_string()));
+        assert_eq!(evaluate("CHOOSE(1, 10, 20)"), Value::Number(10.0));
+        assert_eq!(evaluate("CHOOSE(3, 1, 2, 3)"), Value::Number(3.0));
+        assert!(matches!(evaluate("CHOOSE(0, 1, 2)"), Value::Error(FormulaError::Value))); // index < 1
+        assert!(matches!(evaluate("CHOOSE(5, 1, 2)"), Value::Error(FormulaError::Value))); // out of range
     }
 }
