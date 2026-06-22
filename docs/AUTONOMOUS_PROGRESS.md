@@ -3,10 +3,22 @@
 ## DECISIONS NEEDED (owner) — as of 2026-06-21
 
 Four owner-gated items block the highest-value next steps; each is parked with full homework on the board:
-- **TSK-1215 — formula on-screen.** View-wiring (a) now BUILT @ 9983e46d (gated, zero-risk: CSVTableView shows computed formula values when `MDV_RUST_FORMULA` on + file order; off → raw, unchanged). Remaining is just YOUR call: (b) flip `MDV_RUST_FORMULA` ON after a soak (lights up engine + display together) → VM/owner on-screen confirm → (c) delete the Swift twin. THE unlock for the whole formula investment; the agent build is done.
+- **TSK-1215 — formula on-screen.** View-wiring (a) now BUILT @ 9983e46d (gated, zero-risk: CSVTableView shows computed formula values when `MDV_RUST_FORMULA` on + file order; off → raw, unchanged). Remaining is just YOUR call: (b) flip `MDV_RUST_FORMULA` ON after a soak (lights up engine + display together) → VM/owner on-screen confirm → (c) delete the Swift twin. THE unlock for the whole formula investment; the agent build is done. **Soak note (TSK-1218):** differential fuzz found that under Rust, whitespace-only/trailing-whitespace TEXT cells become Excel-correct (`LEN(" ")=1`, `UPPER(" ")=" "`) vs Swift's silent strip — a behavior *improvement* to expect on flip.
 - **TSK-775 — migration horizon.** Engines-only (recommended; ~done) vs whole-core (larger, later). Roadmap: `docs/RUST_MIGRATION_ROADMAP_2026-06-21.md`.
 - **TSK-1214 / TSK-1098 — bundle cap target.** Exec ~60MB at cap; CLAUDE.md (26MB) stale vs the script (60MB). Decide the real budget → then grammar lazy-load (meaty) or accept+raise. Spike findings on TSK-1214.
 - **TSK-788 — test-audit depth.** Recommend STANDARD (sufficient). `docs/TEST_SUITE_AUDIT_2026-06-21.md`.
+
+## LOG 2026-06-22 — cron drain continuation: formula on-screen, eviction engine, LSP cores, differential-fuzz suite
+
+Inline autonomous cron (no workflows); all on main, host/rust-core-gate-green per item. (Durable record of the post-port continuation — board has per-item detail.)
+- **Formula ON-SCREEN wiring (TSK-1215, BUILT @ 9983e46d):** `CSVTableView` renders computed formula values, gated behind `RustFormulaGate` (OFF) + file order → zero-risk (gate-off/sorted/filtered = raw, byte-identical). Pure host-tested `formulaCellDisplay`. The formula engine's missing view consumer — now built; the flip remains the owner's (above).
+- **Differential parity fuzz (TSK-1125/586) — COMPLETE for formula:** seeded Swift-vs-Rust fuzz across 4 eval paths (arithmetic · aggregate-range · text · date; ~4000 cases/run, fixed seeds in the merge gate, each teeth-proven). FOUND a real divergence → **TSK-1218** (Swift strips whitespace from cell TEXT, Rust preserves = Excel-correct); filed, fuzz scoped to the clean domain. Dates (two independent calendars) confirmed parity-clean.
+- **Session eviction ENGINE (TSK-589 slices 1-3):** `runtime.rs` — `eviction_plan` (byte-budget + count-cap LRU, pinned-never-evicted, TTL) + `CoreRuntime<D>` registry + `TableArena.estimated_bytes`. Host-tested; the design to bound the unbounded `handle.rs` map. Remaining: FFI shims + Swift rehydration (slices 4-5, focused integration).
+- **LSP-spike children (from reconciled TSK-781):** **TSK-1129** slice 1 — workspace-local-binary trust decision core (symlink-safe path confinement; the RCE-on-browse guard), host-tested. **TSK-1127** — zero-server fallback completion core + cursor-aware API (in-file identifier completions when no LSP), host-tested. Both have render/FFI wiring tails.
+- **Bundle-cap doc drift FIXED + guarded (TSK-1098, validated):** CLAUDE.md/build-app.sh/README aligned to the enforced 80/60; `BundleCapDocConsistencyTests` pins docs to the script (teeth-proven, stops the recurring drift).
+- **Validation drain (host-tested behavior → validated):** TSK-1113 (TextTransform Edit menu), TSK-936 (⇧⌘L view-only toggle), TSK-530 (code-review export no-source-leak), TSK-264 (sessions-optional). Each proven via the EXACT action path; render surfaces noted VM.
+- **Spikes reconciled (complete → fixed):** TSK-779 (plugin/core boundary, FINDINGS Part B), TSK-781 (LSP own-vs-external → children), TSK-787 (Swift Testing hybrid).
+- **Recurring finding:** `CURATED_TASKS_2026-06-20` + many board lanes are heavily STALE — items at reported/triaged that are actually built+tested (986/991/1102/1105/1113/936/779/781…). A board reconcile (owner-triggered ultracode) would refocus the per-tick drain.
 
 ## LOG 2026-06-21 — Rust FormulaEngine port (owner redirect) + web markdown + strategy spikes
 
