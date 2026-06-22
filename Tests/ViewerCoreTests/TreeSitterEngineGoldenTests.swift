@@ -64,15 +64,14 @@ final class TreeSitterEngineGoldenTests: XCTestCase {
         assertContains(runs, in: src, substring: "func",   kind: .keyword)
         assertContains(runs, in: src, substring: "let",    kind: .keyword)
         assertContains(runs, in: src, substring: "return", kind: .keyword)
-        // KNOWN GAP (TSK-1201): the rust `tree-sitter-swift` (=0.7.3) highlight
-        // query does NOT tag `//` line comments — so on the rust path (the
-        // on-screen highlighter since TSK-660) Swift comments render plain.
-        // The old Swift engine's alex-pinkus grammar tagged them. Pinned as a
-        // negative assertion so closing the gap flips this to RED → promote it
-        // back to a positive `.comment` golden.
-        XCTAssertFalse(
+        // TSK-1201 (FIXED): the bundled `tree-sitter-swift` query tagged `//`
+        // comments only via a dual `@comment @spell` capture our highlighter
+        // dropped; we append a single-capture `(comment) @comment` rule, so Swift
+        // comments now tag @comment on the rust path. Positive golden (was a
+        // negative gap-control).
+        XCTAssertTrue(
             runs.contains { $0.kind == .comment },
-            "rust swift grammar now emits a comment scope — TSK-1201 closed; restore the positive golden")
+            "Swift // line comment must tag @comment (TSK-1201 fixed)")
         assertContains(runs, in: src, substring: "42",     kind: .number)
         assertContains(runs, in: src, substring: "String", kind: .type)
     }
@@ -198,9 +197,12 @@ final class TreeSitterEngineGoldenTests: XCTestCase {
                 && $0.range.location + $0.range.length <= ns.length
                 && ns.substring(with: $0.range) == "MAX_SIZE"
         }.map(\.kind)
-        XCTAssertFalse(
+        // TSK-1201 (FIXED): appended `(const_item/static_item name: (identifier)
+        // @constant)` so SCREAMING_CASE const/static names tag @constant. Positive
+        // golden (was a negative gap-control).
+        XCTAssertTrue(
             maxSizeKinds.contains(.constant),
-            "rust grammar now tags rust SCREAMING_CASE as .constant — TSK-1201 closed; restore the positive golden")
+            "rust SCREAMING_CASE const name must tag @constant (TSK-1201 fixed)")
     }
 
     func testPredicateGatedConstants_acrossLanguages() {
