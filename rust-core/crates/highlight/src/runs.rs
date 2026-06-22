@@ -313,6 +313,60 @@ mod tests {
         }
     }
 
+    /// Dep-free robustness fuzz of the attacker-facing tree-sitter path (the
+    /// audit's #1 fuzz target — the only crate parsing untrusted files through
+    /// unsafe C). Random source across every shipped language must NEVER panic,
+    /// and every run must stay within the UTF-16 length and be ordered +
+    /// non-overlapping (the runs contract the host applies directly). Merge gate
+    /// runs a fixed seed; the nightly lane varies MDV_FUZZ_SEED_BASE.
+    #[test]
+    fn highlight_runs_fuzz_invariants_across_languages() {
+        let seed_base: u64 = std::env::var("MDV_FUZZ_SEED_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let langs = [
+            Lang::Rust, Lang::Swift, Lang::Json, Lang::JavaScript, Lang::TypeScript,
+            Lang::Python, Lang::Ruby, Lang::Go, Lang::Lua, Lang::Sql, Lang::Xml, Lang::Markdown,
+        ];
+        // Structural punctuation + keywords + ASCII + multibyte (é, 😀, 日) to
+        // stress the byte→UTF-16 offset math the runs contract depends on.
+        let alpha: Vec<char> =
+            "{}[]()<>\"'`/*-#;:=, \n\tabcABC123éé😀日 fn let func class def import return if while"
+                .chars()
+                .collect();
+        let mut s: u64 = seed_base.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        // 600 iters keeps the merge gate snappy; the nightly seed sweep grows
+        // cumulative coverage over runs.
+        for _ in 0..600 {
+            let len = (next() % 100) as usize;
+            let text: String =
+                (0..len).map(|_| alpha[(next() % alpha.len() as u64) as usize]).collect();
+            let total = text.encode_utf16().count();
+            for &lang in &langs {
+                let runs = runs_utf16(&text, lang); // must not panic
+                let mut prev_end = 0usize;
+                for r in &runs {
+                    assert!(
+                        r.start + r.len <= total,
+                        "{lang:?}: run {r:?} exceeds utf16 len {total} for {text:?}"
+                    );
+                    assert!(
+                        r.start >= prev_end,
+                        "{lang:?}: runs overlap/unordered {runs:?} for {text:?}"
+                    );
+                    prev_end = r.start + r.len;
+                }
+            }
+        }
+    }
+
     /// TSK-410 class: the Swift engine never evaluates `#match?`/`#eq?`
     /// predicates, so TS/JS queries that constrain e.g. constructors to
     /// `^[A-Z]` mis-classified ordinary lowercase identifiers. The
