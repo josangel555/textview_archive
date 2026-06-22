@@ -25,13 +25,35 @@ else
 fi
 test_status=$?
 tail -3 /tmp/mdv-coverage-test.log
-[ "$test_status" -ne 0 ] && echo "   (tests reported failures — coverage below is still computed from what ran)"
+[ "$test_status" -ne 0 ] && echo "   (swift test exited $test_status — often the benign coverage+--parallel non-zero exit, NOT a real test failure (TSK-1233); the headless gate is the failure authority. Coverage still computed below via the manual-merge fallback.)"
 
 bin="$(swift build --show-bin-path 2>/dev/null)"
 prof="$bin/codecov/default.profdata"
 xctest="$(/usr/bin/find "$bin" -maxdepth 1 -name '*.xctest' 2>/dev/null | head -1)"
 exec_bin=""
 [ -n "$xctest" ] && exec_bin="$xctest/Contents/MacOS/$(basename "$xctest" .xctest)"
+
+# Manual profdata merge fallback (TSK-1233). SwiftPM auto-merges the per-test
+# .profraw into codecov/default.profdata ONLY when the run exits 0; the full
+# --parallel coverage run exits non-zero (a ViewerUITests-specific trigger under
+# coverage+parallel — NO test actually fails; the headless gate is green), so it
+# skips the merge and no report can generate. The .profraw files survive, so when
+# the auto-merged profdata is missing we merge them ourselves.
+if [ ! -f "$prof" ] && [ -n "$bin" ]; then
+  raws_list="$(mktemp -t mdv-profraws.XXXXXX)"
+  /usr/bin/find "$bin" -name '*.profraw' 2>/dev/null > "$raws_list"
+  n="$(grep -c . "$raws_list" 2>/dev/null || echo 0)"
+  if [ "$n" -gt 0 ]; then
+    echo "==> SwiftPM skipped its auto-merge; merging $n surviving .profraw manually (TSK-1233)…"
+    mkdir -p "$(dirname "$prof")"
+    # Pass the inputs via `-f <listfile>`, NOT argv — a full run leaves 6000+
+    # .profraw and the argv form blows past ARG_MAX (the merge silently fails).
+    xcrun llvm-profdata merge -sparse -f "$raws_list" -o "$prof" 2>/dev/null \
+      && echo "    merged → $prof" \
+      || echo "    llvm-profdata merge failed (partials may be corrupt)"
+  fi
+  rm -f "$raws_list"
+fi
 
 if [ -f "$prof" ] && [ -n "$exec_bin" ] && [ -f "$exec_bin" ]; then
   echo "==> coverage summary (Sources/ only):"
