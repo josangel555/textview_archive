@@ -223,7 +223,12 @@ impl Lang {
             ),
             Self::Rust => (
                 tree_sitter_rust::LANGUAGE.into(),
-                tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
+                // The bundled query doesn't surface SCREAMING_CASE const/static
+                // declaration names as @constant. Append explicit declaration rules
+                // so e.g. `const MAX_VALUE` tags @constant (TSK-1201). Scoped to the
+                // const/static decl name fields — no type-param/identifier over-match.
+                tree_sitter_rust::HIGHLIGHTS_QUERY.to_string()
+                    + "\n(const_item name: (identifier) @constant)\n(static_item name: (identifier) @constant)\n",
             ),
             Self::JavaScript => (
                 tree_sitter_javascript::LANGUAGE.into(),
@@ -269,7 +274,14 @@ impl Lang {
             ),
             Self::Swift => (
                 tree_sitter_swift::LANGUAGE.into(),
-                tree_sitter_swift::HIGHLIGHTS_QUERY.to_string(),
+                // The bundled query captures comments as a DUAL capture
+                // `[(comment) (multiline_comment)] @comment @spell`; our highlighter
+                // resolves the node to the trailing unconfigured `@spell` and drops
+                // it, so `//` / `/* */` comments rendered unstyled. Append plain
+                // single-capture rules (a later match wins) so they tag @comment
+                // (TSK-1201).
+                tree_sitter_swift::HIGHLIGHTS_QUERY.to_string()
+                    + "\n(comment) @comment\n(multiline_comment) @comment\n",
             ),
             // `tree-sitter-kotlin-ng` ships the grammar but NO highlights query,
             // so we vendor a minimal one (below). `highlight()` returns an empty

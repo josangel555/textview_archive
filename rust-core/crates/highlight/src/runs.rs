@@ -335,6 +335,21 @@ mod tests {
     }
 
     #[test]
+    fn swift_comments_and_rust_screaming_case_are_tagged() {
+        // TSK-1201: highlight gaps vs the deleted Swift twin.
+        // Swift `//` line comment must be tagged @comment.
+        let sw = "// hi\nlet x = 1";
+        let swr = runs_utf16(sw, Lang::Swift);
+        assert_eq!(kind_at(&swr, sw, "// hi").as_deref(), Some("comment"),
+                   "Swift // line comment must be tagged");
+        // Rust SCREAMING_CASE const name → constant.
+        let rs = "const MAX_VALUE: i32 = 5;";
+        let rsr = runs_utf16(rs, Lang::Rust);
+        assert_eq!(kind_at(&rsr, rs, "MAX_VALUE").as_deref(), Some("constant"),
+                   "Rust SCREAMING_CASE const must be tagged");
+    }
+
+    #[test]
     fn wire_round_trip_supported_language() {
         let frame = mdvcore_core::wire::encode_frame(&RunsRequest {
             text: "fn main() {}".into(),
