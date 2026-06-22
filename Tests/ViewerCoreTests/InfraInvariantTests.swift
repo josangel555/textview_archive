@@ -18,6 +18,23 @@ final class InfraInvariantTests: XCTestCase {
                    encoding: .utf8)
     }
 
+    /// TSK-1231 — the WebView lane is load-bearing + nightly-only. The in-process
+    /// live-WKWebView suites `#192`-gate on `MDV_RUN_WEBVIEW_TESTS` and run ONLY in
+    /// nightly-vm.yml's WebView lane; if a CI refactor silently drops it their
+    /// coverage vanishes with no other signal, and if it leaks into pr.yml the
+    /// merge gate would realize real WKWebViews on the runner (CLAUDE.md: "not the
+    /// merge gate").
+    func test_webViewLane_inNightly_notInMergeGate() throws {
+        let nightly = try contents(".github/workflows/nightly-vm.yml")
+        let pr = try contents(".github/workflows/pr.yml")
+        XCTAssertTrue(nightly.contains("MDV_RUN_WEBVIEW_TESTS"),
+            "nightly-vm.yml must run the WebView lane (MDV_RUN_WEBVIEW_TESTS) — the live-WKWebView "
+            + "suites run nowhere else; dropping it silently loses their coverage")
+        XCTAssertFalse(pr.contains("MDV_RUN_WEBVIEW_TESTS"),
+            "pr.yml (the merge gate) must NOT set MDV_RUN_WEBVIEW_TESTS — it would realize real "
+            + "WKWebViews on the CI runner; the WebView lane is nightly-only")
+    }
+
     /// TSK-170 — the PR workflow must cache the SwiftPM + Rust build
     /// trees. Without these steps every PR run recompiles the entire
     /// dependency tree from scratch.
