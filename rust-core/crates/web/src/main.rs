@@ -1196,6 +1196,23 @@ fn nav_html(dir: &Path, selected: Option<&str>, sort: SortKey, show_hidden: bool
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Web-only: server-render a markdown file's sanitized HTML for `?mode=rendered`,
+/// with a Rendered/Source toggle. The shared `markdown::render` does the GFM
+/// render + URL sanitization (the TUI stays source-only — owner decision). Pure
+/// over (bytes, name) so it is host-testable without a temp file.
+fn markdown_rendered_body(raw: &[u8], name: &str, href: &str, total: usize, truncated: bool) -> String {
+    let html = mdvcore_core::markdown::render(&String::from_utf8_lossy(raw)).html;
+    let trunc = if truncated { " · TRUNCATED" } else { "" };
+    format!(
+        "<div class=\"modes\"><b>Rendered</b> <a href=\"/view?path={href}&mode=text\">Source</a></div>\
+         <div class=\"bar\">{} · Rendered · {}{}</div>\
+         <div class=\"md-rendered\">{html}</div>",
+        esc(name),
+        format::human_size(total),
+        trunc
+    )
+}
+
 fn content_html(
     file: &Path,
     mode_param: Option<&str>,
@@ -1214,6 +1231,19 @@ fn content_html(
     };
     let name = file_name(file);
     let kind = view::classify(&name);
+    // Web-only rendered markdown (the TUI stays source-only per owner): a `.md`
+    // file with `?mode=rendered` is server-rendered to sanitized HTML by the
+    // shared markdown engine (safe_url drops javascript:/data: links). The
+    // HTML-native web tier gets the real rendered view; TSK-256.
+    if outline::is_markdown(&name) && mode_param == Some("rendered") {
+        return markdown_rendered_body(
+            &raw,
+            &name,
+            &pct_encode(&file.to_string_lossy()),
+            total,
+            truncated,
+        );
+    }
     let mode = parse_mode(mode_param, kind);
     // The shared core view-model does ALL the shaping (file-type detect, mode
     // set, text/hex/table build, indent badge) — the SAME path the TUI uses.
@@ -1229,6 +1259,10 @@ fn content_html(
         } else {
             modes.push_str(&format!("<a href=\"/view?path={href}&mode={s}\">{s}</a> "));
         }
+    }
+    // A `.md` file also offers the web-only Rendered view (server-rendered HTML).
+    if outline::is_markdown(&name) {
+        modes.push_str(&format!("<a href=\"/view?path={href}&mode=rendered\">Rendered</a> "));
     }
     modes.push_str("</div>");
 
@@ -2517,6 +2551,21 @@ mod tests {
         assert!(status.starts_with("200"), "browse ok, got {status}");
         assert!(body.contains("<b>size</b>"), "size key active via ?sort=:\n{body}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn markdown_rendered_mode_renders_html_and_sanitizes_urls() {
+        let body = markdown_rendered_body(
+            b"# Title\n\nsome **bold** and a [bad](javascript:alert(1)) link.",
+            "doc.md",
+            "doc.md",
+            50,
+            false,
+        );
+        assert!(body.contains("<h1"), "renders the heading as HTML:\n{body}");
+        assert!(body.contains("<strong>bold</strong>"), "renders bold:\n{body}");
+        assert!(!body.contains("javascript:"), "sanitizer drops the javascript: URL:\n{body}");
+        assert!(body.contains(">Source</a>"), "offers a Source toggle back to the raw view");
     }
 
     #[test]
