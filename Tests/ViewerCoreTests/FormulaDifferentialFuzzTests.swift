@@ -335,4 +335,33 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// LOGICAL-function parity (IF / AND / OR / NOT + nesting) over numeric
+    /// conditions — exercises truthiness coercion and branch selection, a path the
+    /// arithmetic / comparison / criteria fuzzes don't cover. Conditions are numeric
+    /// comparisons (shared semantics); IF branches return cell values or arithmetic.
+    func test_swift_rust_logical_parity_random() throws {
+        let ops = ["<", ">", "<=", ">=", "=", "<>"]
+        for seed in UInt64(701)...UInt64(740) {
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<25 {
+                let cells = randomGrid(&rng)
+                let resolver: CellResolver = { ref in cells[ref.a1] }
+                let op1 = ops[rng.int(0, ops.count - 1)]
+                let op2 = ops[rng.int(0, ops.count - 1)]
+                let formulas = [
+                    "=IF(A1\(op1)B1, A1, B1)",
+                    "=AND(A1\(op1)B1, C1\(op2)A2)",
+                    "=OR(A1\(op1)B1, C1\(op2)A2)",
+                    "=NOT(A1\(op1)B1)",
+                    "=IF(AND(A1\(op1)B1, C1\(op2)A2), A1+B1, A1-B1)",
+                    "=IF(OR(A1\(op1)B1, C1\(op2)A2), 1, 0)",
+                ]
+                let f = formulas[rng.int(0, formulas.count - 1)]
+                let swiftResult = FormulaEngine.evaluate(raw: f, resolve: resolver)
+                let rustResult = try RustFormulaAdapter.rustEvaluate(f, cells: cells)
+                XCTAssertEqual(rustResult, swiftResult, "logical parity diverged: \(f) over \(cells)")
+            }
+        }
+    }
 }
