@@ -46,11 +46,19 @@ if [ ! -f "$prof" ] && [ -n "$bin" ]; then
   if [ "$n" -gt 0 ]; then
     echo "==> SwiftPM skipped its auto-merge; merging $n surviving .profraw manually (TSK-1233)…"
     mkdir -p "$(dirname "$prof")"
-    # Pass the inputs via `-f <listfile>`, NOT argv — a full run leaves 6000+
-    # .profraw and the argv form blows past ARG_MAX (the merge silently fails).
-    xcrun llvm-profdata merge -sparse -f "$raws_list" -o "$prof" 2>/dev/null \
-      && echo "    merged → $prof" \
-      || echo "    llvm-profdata merge failed (partials may be corrupt)"
+    # Two non-obvious requirements (both verified the hard way, TSK-1233):
+    #  - `-f <listfile>`, NOT argv: a full run leaves 6000-9000 .profraw and the
+    #    argv form blows past ARG_MAX (merges nothing, exits 0 — silent).
+    #  - `--failure-mode=warn`: the non-zero-exit run leaves CORRUPT partial
+    #    .profraw ("file header is corrupt"); the default mode aborts the whole
+    #    merge ("no profile can be merged") on the first bad input. warn skips the
+    #    bad ones and merges the good ones.
+    xcrun llvm-profdata merge -sparse --failure-mode=warn -f "$raws_list" -o "$prof" 2>/dev/null || true
+    if [ -f "$prof" ]; then
+      echo "    merged → $prof"
+    else
+      echo "    llvm-profdata merge produced no profdata (all inputs unreadable?)"
+    fi
   fi
   rm -f "$raws_list"
 fi
