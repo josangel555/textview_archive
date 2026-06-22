@@ -619,6 +619,13 @@ mod tests {
             (Lang::Css, ".a { /* note */ color: red; }", "/* note */", TokenKind::Comment),
             (Lang::Html, "<div><!-- note --></div>", "<!-- note -->", TokenKind::Comment),
             (Lang::Xml, "<root><!-- note --></root>", "<!-- note -->", TokenKind::Comment),
+            // STRING coverage — the other @spell-prone token class. The string
+            // sweep covered rust/go/js/ts/python/ruby/lua/sql; pin the C-family on
+            // the span path so a dropped string literal can't slip in.
+            (Lang::C, "char *s = \"hi\";", "\"hi\"", TokenKind::String),
+            (Lang::Cpp, "auto s = \"hi\";", "\"hi\"", TokenKind::String),
+            (Lang::CSharp, "var s = \"hi\";", "\"hi\"", TokenKind::String),
+            (Lang::Java, "String s = \"hi\";", "\"hi\"", TokenKind::String),
         ];
         for (lang, src, needle, kind) in cases {
             let spans = highlight(src, *lang);
