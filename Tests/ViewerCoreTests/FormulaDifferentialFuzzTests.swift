@@ -364,4 +364,32 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// LOOKUP-function parity (VLOOKUP / HLOOKUP / MATCH / INDEX) over a random grid.
+    /// EXACT-match only (FALSE / 0) + in-bounds INDEX: approximate match assumes
+    /// sorted data (undefined on random input — a parity-lock zone), excluded like the
+    /// criteria fuzz's wildcards. The lookup value is sometimes a real grid cell (a
+    /// hit) and sometimes random (an #N/A miss), so both branches are exercised.
+    func test_swift_rust_lookup_parity_random() throws {
+        for seed in UInt64(801)...UInt64(840) {
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<25 {
+                let cells = randomGrid(&rng)
+                let resolver: CellResolver = { ref in cells[ref.a1] }
+                let val = (rng.int(0, 1) == 0) ? (cells["A1"] ?? "0") : "\(rng.int(0, 30))"
+                let row = rng.int(1, 3)
+                let col = rng.int(1, 3)
+                let formulas = [
+                    "=VLOOKUP(\(val), A1:C3, \(col), FALSE)",
+                    "=HLOOKUP(\(val), A1:C3, \(row), FALSE)",
+                    "=MATCH(\(val), A1:A3, 0)",
+                    "=INDEX(A1:C3, \(row), \(col))",
+                ]
+                let f = formulas[rng.int(0, formulas.count - 1)]
+                let swiftResult = FormulaEngine.evaluate(raw: f, resolve: resolver)
+                let rustResult = try RustFormulaAdapter.rustEvaluate(f, cells: cells)
+                XCTAssertEqual(rustResult, swiftResult, "lookup parity diverged: \(f) over \(cells)")
+            }
+        }
+    }
 }

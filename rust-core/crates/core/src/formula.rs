@@ -434,7 +434,19 @@ fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Value) -> Value {
         Expr::Str(s) => Value::Text(s.clone()),
         Expr::Ref(name) => match CellRef::parse(name) {
             Some(cr) => resolver(cr),
-            None => Value::Error(FormulaError::Name), // not a valid cell ref
+            // A bare identifier that isn't a cell ref: TRUE/FALSE are boolean
+            // literals (case-insensitive — Excel + Swift parity); anything else is an
+            // unknown name. Fixes the Rust port treating e.g. VLOOKUP(x, r, c, FALSE)
+            // as #NAME? (found by the lookup differential fuzz, TSK-1222).
+            None => {
+                if name.eq_ignore_ascii_case("true") {
+                    Value::Bool(true)
+                } else if name.eq_ignore_ascii_case("false") {
+                    Value::Bool(false)
+                } else {
+                    Value::Error(FormulaError::Name)
+                }
+            }
         },
         Expr::Range(_, _) => Value::Error(FormulaError::Value), // bare range invalid in scalar context
         Expr::Call(name, args) => call_fn(name, args, resolver),
@@ -2503,6 +2515,20 @@ mod tests {
         assert_eq!(format_number(1e20), "1e+20");
         assert_eq!(format_number(1e-10), "1e-10");
         assert_eq!(format_number(1.5e-7), "1.5e-07");
+    }
+
+    #[test]
+    fn boolean_literals() {
+        // TSK-1222: TRUE/FALSE bare literals (case-insensitive) — Excel + Swift parity.
+        assert_eq!(evaluate("TRUE"), Value::Bool(true));
+        assert_eq!(evaluate("FALSE"), Value::Bool(false));
+        assert_eq!(evaluate("true"), Value::Bool(true));
+        assert_eq!(evaluate("False"), Value::Bool(false));
+        // The common trigger: a boolean literal as a function argument.
+        assert_eq!(evaluate("IF(FALSE, 1, 2)"), Value::Number(2.0));
+        assert_eq!(evaluate("AND(TRUE, FALSE)"), Value::Bool(false));
+        // An unknown bare name is still #NAME? (literals didn't swallow it).
+        assert!(matches!(evaluate("BOGUS"), Value::Error(FormulaError::Name)));
     }
 
     #[test]
