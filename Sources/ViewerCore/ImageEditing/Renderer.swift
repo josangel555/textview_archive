@@ -100,7 +100,12 @@ public enum Renderer {
     /// — a per-keystroke-class antipattern on the image-editor hot path. `CIContext`
     /// is documented thread-safe to share, and the working color space is constant, so
     /// one cached instance serves every op. Created lazily on first filter use.
-    private static let sharedCIContext: CIContext =
+    /// `nonisolated(unsafe)` asserts that documented thread-safety: CIContext is
+    /// thread-safe-in-practice (Apple docs) but not `Sendable`, so the Swift 6 checker
+    /// can't prove the shared static is safe. Without this the stricter VM Swift-6.3
+    /// build rejects the static non-Sendable global (the host toolchain accepts it) —
+    /// TSK-1234 forward-compat fix.
+    nonisolated(unsafe) private static let sharedCIContext: CIContext =
         CIContext(options: [.workingColorSpace: workingColorSpace])
 
     /// Premultiplied RGBA8, little-endian (`BGRA` byte order in memory). This
