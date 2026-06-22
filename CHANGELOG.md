@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-22
 
 ### Added
+- **Open Word / RTF / OpenDocument / Excel files as text** — `.docx`, `.rtf`, `.ods`, and `.xlsx` files now open as readable **read-only** text (their extracted content) instead of raw bytes; a save can never overwrite the original document.
 - **Command palette ▸ text case** — Uppercase, Lowercase, and Capitalize text transforms are now invokable from the command palette (they were menu-only).
 
 ### Changed

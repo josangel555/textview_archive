@@ -1,45 +1,50 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — VM validation lane brought up (owner re-enabled it); 3 dist-build defects fixed  (2026-06-22)
+# Handoff — VM-lane repair DONE+validated; render-backlog VM-UAT work-stream started  (2026-06-22)
 
-**Session:** claude-mdv (AUTONOMOUS, ~5min cron).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `57eb9816` (verify `git log -1`).
+**Session:** claude-mdv (AUTONOMOUS, ~5min cron).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `52c57736` (verify `git log -1`).
 
 ## Mission
-Autonomous cron drain. The owner re-enabled the UTM VM ("we don't have to stick with host-doable tasks; VM is up — UI evals/tests/dev/validation there"). PRIMARY this arc: stand up the VM render-validation lane and use it to drain the render-path review backlog. Keep `main` headless-gate-green; commit per item, inline (NO workflows).
+Autonomous cron drain. Owner re-enabled the UTM VM ("VM is up — UI evals/tests/dev/validation there"). This session: (1) stood up + repaired the VM validation lane; (2) started draining the render-path backlog via targeted VM UATs. Keep `main` headless-gate-green; commit per item, inline (NO workflows).
 
-## Current state — VM lane is UP and the render tiers are GREEN; a final verify re-run is in flight
-Standing up the VM lane surfaced 3 `dist/`-build defects the host gate never sees (it never builds `dist/`). All fixed + committed this arc:
-- **TSK-1234 (validated)** — `sharedCIContext` (TSK-1049, `Renderer.swift:103`) is a static non-`Sendable` `CIContext` the host accepts but the VM's Swift 6.3 rejects (`#MutableGlobalVariable`). Broke EVERY VM `dist/` build since Mon → **the nightly VM lane had been red for days**. Fixed `nonisolated(unsafe)` (`c309c852`). Host gate green + VM compiles past it.
-- **TSK-1235 (validated)** — `build-app.sh` globbed `$BIN_DIR/libTreeSitter*Lazy.dylib` → shipped 8 STALE orphan dylibs from a former Package.swift (both host AND VM `.build` carry them) → 11 shipped vs 3 declared → tripped `verify-app.sh` SIGN-13 (would also break the owner's `--install`). Fixed: allowlist from Package.swift (`308cb23c`). Host-verified: copied 3, SIGN-13 PASS.
-- **TSK-1236 (fixed, VM-verify pending)** — the WebView lane ran `swift test --parallel` over 16 live-WKWebView suites → fd-exhaustion EMFILE false-failures (TSK-500 class). Fixed: run SERIAL (dropped `--parallel`) in `test-in-vm.sh` + `nightly-vm.yml`, + ulimit 8192→16384 (`57eb9816`).
-- VM result before the WebView fix: **main lane (headless + T4 GitPanel UAT + T5 ImageEditor pixel) = 0 real failures**; only the WebView lane fd-exhausted. So the render-validation lane WORKS for T4/T5.
+## Current state
+**VM-lane CI-infrastructure repair — COMPLETE + validated** (4 latent breakages the host gate structurally can't see, all surfaced by bringing the VM up):
+- **TSK-1234 (validated)** — `sharedCIContext` static non-`Sendable` `CIContext`; host accepts, VM Swift-6.3 rejects → broke EVERY VM build since Mon (nightly red for days). `nonisolated(unsafe)` (`c309c852`).
+- **TSK-1235 (validated)** — `build-app.sh` globbed lazy-grammar dylibs → shipped 8 stale orphans (host + VM `.build`) → tripped verify-app.sh SIGN-13 (would break owner's `--install`). Allowlist from Package.swift (`308cb23c`).
+- **TSK-1236 (validated)** — WebView lane fd-exhaustion: ran `--parallel` (multiplies WKWebView fds) AND `MDV_RUN_WEBVIEW_TESTS` leaked into the main sweep. Fix: serial dedicated lane + strip the env from the main sweep (`57eb9816`+`1e32d666`). VM-confirmed: dedicated lane 16/16 ran, 0 EMFILE.
+- **TSK-1233 (validated)** — coverage.sh produced no report (SwiftPM skips auto-merge on the benign coverage+parallel non-zero exit). Manual `llvm-profdata merge -f listfile --failure-mode=warn` fallback (`1226742f`+`5cb7ff68`); verified on the real 8943 profraw → 69.56% report. (`-f`=ARG_MAX, `--failure-mode=warn`=corrupt partials — both self-caught by verifying.)
+- **TSK-1133 (validated)** — pr.yml WebView-lane doc truth (guard test green).
 
-**In flight:** full VM re-run `bxuqofm3a` (background, `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh all`) verifying all 3 fixes end-to-end + the WebView lane going green. Output: `/private/tmp/claude-501/.../tasks/bxuqofm3a.output`. ~23 min; notifies on completion.
+**Render-backlog VM-UAT work-stream — STARTED:**
+- **TSK-1241 (validated)** — added `DocumentModel.selectedLoadedTextPrefix` + `loadedTextPrefix` dump field (`cbfd0a5b`). The reusable enabler: lets a UAT assert source-view CONTENT (the dump's `editorText` is "" for read-only tabs). 3 host tests.
+- **TSK-1036 (fixed; UAT VM-verify IN FLIGHT)** — routes .rtf/.docx/.ods/.xlsx into the viewer as extracted text, read-only (host core done, 9 tests). NEW `MultiFormatViewerUATTests` (`52c57736`) asserts a routed .rtf shows extracted text (not raw `\rtf1`) via `loadedTextPrefix`. **In flight:** VM run `bjyssd9eh` = `test-in-vm.sh build && test --filter ViewerUITests.MultiFormatViewerUATTests` (GUI lane). Output `/private/tmp/claude-501/.../tasks/bjyssd9eh.output`.
+
+**Findings filed (open):** TSK-1237 (#NNN-trap cluster 326/373/375/376 — understandings mismatch titles), 1238 (coverage-gate.sh sibling defect), 1239 (general heavy-tier fd leak — full single-process VM suite exceeds ulimit 16384; use TARGETED runs), 1240 (PaneRetentionMountProbeTests LRU failure, real, unmasked by the WebView serial fix).
 
 ## Next action
-1. **Read the `bxuqofm3a` verdict** (grep `with [0-9]+ failures` excluding `0 failures`; tail for `all done`). If the WebView lane is now green → validate TSK-1236 (VM evidence). If still failing → diagnose (serial should bound fds; check the ulimit actually applied in the WebView invocation's process).
-2. **Drain the render-review backlog via the now-working T4/T5 lanes.** BUT note the framework limit (learned this arc): the `*UATTests` `--script` dispatcher asserts MODEL FLAGS and **cannot open Settings, read menu enable/checkmark, or drive NSAlerts** ("live-menu only"). So font-picker (259, in Settings), menu-item, and alert-driven review items are NOT agent-VM-validatable — they stay owner-gated. The drainable subset = script-reachable + model-flag-backed items (preview, table-find, view-mode flows) + whatever existing T5/UAT tiers already cover. Author a real assertion per drainable item, run on the VM, validate; leave the rest at review honestly.
-3. Owner-gated leverage still parked: **TSK-1215** (formula flip) + **TSK-1202** (fold flip) — `waiting:human`; the VM now makes their render-confirm doable, but flipping the default is still the owner's call. TSK-775 (migration horizon), TSK-1214 (bundle budget), TSK-1138 (Tier-D ratification).
+1. **Read `bjyssd9eh`** (grep `MultiFormatViewerUATTests` for passed/failed; tail for `test done`). If the RTF UAT passed → **validate TSK-1036** (VM evidence) + extend the UAT to docx/ods/xlsx (reuse the ZIP fixtures from `RtfViewerRoutingTests`). If it failed → diagnose from the dump (did the open land? is `loadedTextPrefix` populated? — `currentURL`/`loadedTextPrefix` in the dump).
+2. **Continue the render-backlog via TARGETED VM UATs** (the pattern is now proven: `loadedTextPrefix` for content, `assertModel` for flags). Each: author a `*UATTests` assertion → `build && test --filter <Suite>` in the GUI lane → validate.
+3. **Owner-gated (skip in the loop):** TSK-1046 (scroll-restore, `waiting:human` — needs owner's eyes on editor-scroll), TSK-1215/1202 (engine flips — owner's call), 775/1214/1138.
 
-## Key gotchas / lessons (also LESSONS.md — new section dated 2026-06-22 "Bringing up the VM validation lane…")
-- **A red VM build = ZERO render coverage, not "render is fine."** The VM 6.3 is the forward-compat catcher; when it's red, fix the build FIRST.
-- **A build script that globs a build dir ships whatever a stale `.build` left behind.** Derive from the manifest, not a glob.
-- **Many DIVERSE suites failing + EMFILE/Code=24 = systemic fd exhaustion, not N regressions.** WKWebView suites must run serial.
-- **VM render/UAT needs `test-in-vm.sh all`** (rebuilds `dist/`; `test` spawns a stale bundle). GUI lane needs `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>`; WebView suites need `MDV_RUN_WEBVIEW_TESTS=1`.
-- Commit messages: NO backticks (zsh). Gate verdict in a SEPARATE step from the commit. Append the `Claude-Session:` trailer.
+## Key gotchas / lessons (also LESSONS.md "Bringing up the VM validation lane…")
+- **Use TARGETED VM runs** (`test-in-vm.sh build` then `test --filter <Suite>`, both with `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>`) — `all` runs the full single-process suite which hits the general fd leak (TSK-1239, intermittent EMFILE) + is slow. `build` rebuilds `dist/`; `test` does NOT (don't run `test` alone against a stale dist).
+- **The render-backlog is at the agent ceiling** (host model done, render at review — the cron's bar). Push past review only via: (a) script-reachable + a dump field (model flag OR `loadedTextPrefix`), OR (b) owner on-screen. The `--script` UAT CANNOT reach Settings/menus/NSAlerts ("live-menu only") — those stay owner-gated.
+- **The dump's `editorText` is "" for un-edited read-only tabs** (buffer not materialized) — use `loadedTextPrefix` (TSK-1241) for source-view content assertions.
+- **VERIFY on real data** — both coverage.sh bugs (ARG_MAX, corrupt-partial) were caught only by running on the real 8943 profraw, not by reasoning.
+- Commit messages: NO backticks (zsh). Gate verdict SEPARATE from the commit. Append the `Claude-Session:` trailer. Curated `[reported]` is STALE — state-check vs the board (task_get) before working.
 
 ## Files that matter
-- `Sources/ViewerCore/ImageEditing/Renderer.swift:103` — `nonisolated(unsafe)` sharedCIContext (TSK-1234).
-- `scripts/build-app.sh:137` — lazy-grammar dylib allowlist copy (TSK-1235).
-- `scripts/test-in-vm.sh:53,231` — ulimit 16384 + serial WebView lane (TSK-1236).
-- `.github/workflows/nightly-vm.yml:64` — serial WebView lane + ulimit (TSK-1236).
-- `Tests/ViewerUITests/uat/*UATTests.swift` — the `--script` model-flag UAT framework (read SettingsMenusAndShortcutsUATTests for the limits).
+- `Sources/ViewerUI/DocumentModel.swift:1836` — `selectedLoadedTextPrefix` (TSK-1241).
+- `Sources/ViewerUI/Automation/ScriptVerbDispatch.swift` — `loadedTextPrefix` dump field.
+- `Tests/ViewerUITests/uat/MultiFormatViewerUATTests.swift` — the routed-doc UAT (extend to docx/ods/xlsx).
+- `Tests/ViewerUITests/RtfViewerRoutingTests.swift` — host routing tests + the docx/ods/xlsx fixture construction to reuse.
+- `scripts/test-in-vm.sh` — modes: `build` (rebuild dist), `test --filter X` (targeted), `all` (full — avoid, fd leak).
 
 ## Tracker (tasked, agent claude-mdv)
-- TSK-1234 validated · TSK-1235 validated · TSK-1236 fixed (VM-verify pending) · TSK-1233 (coverage.sh defect, reported, diagnosed).
+- Validated this session: 1234, 1235, 1236, 1233, 1133, 1241. · In flight: 1036 (UAT VM-verify `bjyssd9eh`). · Open findings: 1237, 1238, 1239, 1240. · Owner-gated: 1046, 1215, 1202, 775, 1214, 1138.
 
 ## How to resume
-1. `git -C <cwd> log -1` (expect `57eb9816` or later). Gates: `bash scripts/test-headless-gate.sh` + `bash scripts/rust-core-gate.sh` (read each verdict separately).
-2. Read the `bxuqofm3a` VM-run verdict (path above). Act per "Next action".
-3. Drain the render-review backlog via the VM T4/T5 lanes (rsync → `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh all`), respecting the UAT framework limits (Settings/menu/alert items stay owner-gated).
+1. `git -C <cwd> log -1` (expect `52c57736`+). Gates: `bash scripts/test-headless-gate.sh` + `bash scripts/rust-core-gate.sh` (verdicts in separate steps).
+2. Read `bjyssd9eh` output → act per "Next action" (validate TSK-1036 if green; extend the UAT to the other formats).
+3. Continue render-backlog targeted VM UATs; skip owner-gated items.
 
 Commit trailer:
