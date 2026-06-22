@@ -392,4 +392,41 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// MATH-function parity (ROUND/ROUNDUP/ROUNDDOWN/TRUNC/INT/ABS/SQRT/MOD/POWER/
+    /// CEILING/FLOOR) over random decimals + negatives. Edge-prone: MOD's sign
+    /// convention (result takes the DIVISOR's sign in Excel, not Rust `%`'s dividend
+    /// sign), rounding direction, and CEILING/FLOOR with negatives + fractional
+    /// significance. Literals (not cells) so both engines parse the SAME f64 — any
+    /// divergence is a real algorithm difference, not parse noise. Errors (MOD by 0)
+    /// must match too.
+    func test_swift_rust_math_func_parity_random() throws {
+        let resolver: CellResolver = { _ in nil }
+        for seed in UInt64(901)...UInt64(940) {
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<25 {
+                let a = Double(rng.int(-500, 500)) / 10.0  // -50.0…50.0, one decimal
+                let b = rng.int(-12, 12)                   // MOD divisor / POWER exponent (may be 0)
+                let d = rng.int(0, 3)                      // round digits
+                let sig = Double(rng.int(1, 5)) / 2.0      // CEILING/FLOOR significance 0.5…2.5
+                let formulas = [
+                    "=ROUND(\(a), \(d))",
+                    "=ROUNDUP(\(a), \(d))",
+                    "=ROUNDDOWN(\(a), \(d))",
+                    "=TRUNC(\(a), \(d))",
+                    "=INT(\(a))",
+                    "=ABS(\(a))",
+                    "=SQRT(\(abs(a)))",
+                    "=MOD(\(a), \(b))",
+                    "=POWER(\(b), \(d))",
+                    "=CEILING(\(a), \(sig))",
+                    "=FLOOR(\(a), \(sig))",
+                ]
+                let f = formulas[rng.int(0, formulas.count - 1)]
+                let swiftResult = FormulaEngine.evaluate(raw: f, resolve: resolver)
+                let rustResult = try RustFormulaAdapter.rustEvaluate(f, cells: [:])
+                XCTAssertEqual(rustResult, swiftResult, "math-func parity diverged: \(f)")
+            }
+        }
+    }
 }
