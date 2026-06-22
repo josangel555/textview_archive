@@ -81,4 +81,62 @@ extension DocumentModel {
         get { find.sourceFocusRequest }
         set { find.sourceFocusRequest = newValue }
     }
+
+    // CM6 editor mode
+    public var isEditorFindBarPresented: Bool {
+        get { find.isEditorBarPresented }
+        set { find.isEditorBarPresented = newValue }
+    }
+    public var editorFindQuery: String {
+        get { find.editorQuery }
+        set { find.editorQuery = newValue }
+    }
+    public var editorFindCaseSensitive: Bool {
+        get { find.editorCaseSensitive }
+        set { find.editorCaseSensitive = newValue }
+    }
+    public var editorFindIsRegex: Bool {
+        get { find.editorIsRegex }
+        set { find.editorIsRegex = newValue }
+    }
+    public var editorFindNextRequest: Int {
+        get { find.editorNextRequest }
+        set { find.editorNextRequest = newValue }
+    }
+    public var editorFindPrevRequest: Int {
+        get { find.editorPrevRequest }
+        set { find.editorPrevRequest = newValue }
+    }
+    public var editorFindFocusRequest: Int {
+        get { find.editorFocusRequest }
+        set { find.editorFocusRequest = newValue }
+    }
+    public var editorFindMatchSummary: String {
+        get { find.editorMatchSummary }
+        set { find.editorMatchSummary = newValue }
+    }
+    public var editorFindReplacement: String {
+        get { find.editorReplacement }
+        set { find.editorReplacement = newValue }
+    }
+    public var editorReplaceNextRequest: Int {
+        get { find.editorReplaceNextRequest }
+        set { find.editorReplaceNextRequest = newValue }
+    }
+    public var editorReplaceAllRequest: Int {
+        get { find.editorReplaceAllRequest }
+        set { find.editorReplaceAllRequest = newValue }
+    }
+
+    public func showEditorFindBar() { find.showEditorBar() }
+    public func showEditorReplaceBar() { find.showEditorReplaceBar() }
+    public func dismissEditorFindBar() { find.dismissEditorBar() }
+    public func toggleEditorFindBar() { find.toggleEditorBar() }
+    public func editorFindNext() { find.editorNext() }
+    public func editorFindPrev() { find.editorPrev() }
+    public func editorReplaceNext() { find.editorReplaceNext() }
+    public func editorReplaceAll() { find.editorReplaceAll() }
+    public func setEditorFindMatchSummary(_ s: String) {
+        find.setEditorMatchSummary(s)
+    }
 }
