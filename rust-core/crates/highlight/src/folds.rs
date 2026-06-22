@@ -129,8 +129,11 @@ fn fold_kind(lang: Lang, node: Node) -> Option<FoldKind> {
             "comment" => Some(FoldKind::Comment),
             _ => None,
         },
-        // typescript-folds.scm (TS; tree-sitter-typescript also backs TSX)
-        Lang::TypeScript => match kind {
+        // typescript-folds.scm (TS + TSX — the Swift fold uses typescript-folds
+        // for BOTH, and tree-sitter-typescript backs both grammars). TSK-1202:
+        // Tsx was missing here, which would have regressed .tsx folds under the
+        // .fold flip (gate-ON → no folds; gate-OFF Swift → folds).
+        Lang::TypeScript | Lang::Tsx => match kind {
             "statement_block" => Some(FoldKind::Function),
             "class_body" | "interface_body" | "object_type" | "enum_body" => {
                 Some(FoldKind::Type)
@@ -343,6 +346,23 @@ mod tests {
         assert!(
             folds.iter().any(|f| f.kind == FoldKind::Type && f.start_line == 1),
             "interface_body fold from line 1, got {folds:?}"
+        );
+    }
+
+    #[test]
+    fn tsx_folds_like_typescript() {
+        // TSK-1202: .tsx must fold (the Swift fold uses typescript-folds for tsx);
+        // Lang::Tsx was missing from fold_kind → would have regressed .tsx folds
+        // under the .fold flip. Teeth — fails if the Tsx arm is dropped.
+        let src = "interface Foo {\n  a: number;\n}\nclass C {\n  m() {\n    return 1;\n  }\n}";
+        let folds = fold_regions(src, Lang::Tsx);
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Type),
+            "tsx interface/class body folds, got {folds:?}"
+        );
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Function),
+            "tsx method body folds, got {folds:?}"
         );
     }
 
