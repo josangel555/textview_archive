@@ -4328,6 +4328,30 @@ mod tests {
     }
 
     #[test]
+    fn image_card_renders_pixel_dimensions_from_the_header() {
+        let dir = fixture_dir();
+        // Minimal PNG: the 8-byte signature + IHDR length/type, then width=10 @16
+        // and height=20 @20 (big-endian — the only fields `identify` reads). Proves
+        // the image card draws the REAL W×H from the bytes into the TestBackend
+        // buffer, not the "dimensions unavailable" placeholder (TSK-1099).
+        let png: Vec<u8> = vec![
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+            0, 0, 0, 13, 73, 72, 68, 82, // IHDR length(13) + "IHDR"
+            0, 0, 0, 10, // width = 10 @16
+            0, 0, 0, 20, // height = 20 @20
+        ];
+        fs::write(dir.join("pic.png"), &png).unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "pic.png");
+        app.enter();
+        let out = app.snapshot(220, 24).expect("snapshot render");
+        assert!(out.contains("10 × 20 px"), "image card draws W×H px from the header:\n{out}");
+        assert!(!out.contains("dimensions unavailable"),
+                "dimensions were parsed from the header, not the fallback:\n{out}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn w_toggles_word_wrap_in_text_view() {
         let dir = fixture_dir();
         // A line far longer than the content pane so wrap vs truncate is
