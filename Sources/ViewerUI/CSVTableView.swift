@@ -181,6 +181,7 @@ struct CSVTableView: View {
                 ScrollView([.horizontal, .vertical]) {
                     LazyVStack(alignment: .leading, spacing: 0,
                                pinnedViews: [.sectionHeaders]) {
+                        let formulaValues = formulaValuesMap()
                         if advancedShown {
                             perColumnRow(result: result)
                         }
@@ -188,7 +189,7 @@ struct CSVTableView: View {
                             ForEach(displayRows.indices, id: \.self) { i in
                                 cellRow(displayRows[i], isAlt: i % 2 == 1,
                                         header: result.header, allRows: displayRows,
-                                        rowIndex: i)
+                                        rowIndex: i, formulaValues: formulaValues)
                                     .id(i)
                             }
                         } header: {
@@ -430,6 +431,25 @@ struct CSVTableView: View {
         guard let cell = editingCell else { return false }
         return cell.row == Self.gridRow(forDisplayIndex: rowIndex)
             && cell.column == column
+    }
+
+    /// The text a read-only cell shows: a formula cell's COMPUTED value when one
+    /// was resolved for it (TSK-1215), else the raw cell text. Pure → host-testable.
+    static func formulaCellDisplay(raw: String, computed: FormulaValue?) -> String {
+        computed?.display ?? raw
+    }
+
+    /// Computed values for every formula cell, keyed by A1-space `CellReference`,
+    /// for ON-screen display — ONLY when `RustFormulaGate` is on AND the grid is in
+    /// file order (no sort/filter), so display-row index == A1 row and the map
+    /// (keyed by original position) lines up. Empty otherwise → cells render their
+    /// raw text, so the DEFAULT view (gate off) is byte-identical. Computed once
+    /// per render pass by the caller and threaded down (not per cell). Render/VM
+    /// validates the on-screen result; the gate flip is TSK-1215.
+    private func formulaValuesMap() -> [CellReference: FormulaValue] {
+        guard RustFormulaGate.isEnabled(), sortColumn == nil, debouncedFilter.isEmpty,
+              let m = editModel else { return [:] }
+        return m.recalcAllFormulas()
     }
 
     /// 200 ms debounce on filter commits — typing into the global
@@ -762,11 +782,13 @@ struct CSVTableView: View {
 
     @ViewBuilder
     private func cellRow(_ row: [String], isAlt: Bool, header: [String],
-                         allRows: [[String]], rowIndex: Int) -> some View {
+                         allRows: [[String]], rowIndex: Int,
+                         formulaValues: [CellReference: FormulaValue]) -> some View {
         HStack(spacing: 0) {
             ForEach(row.indices, id: \.self) { i in
                 cell(value: row[i], row: row, allRows: allRows,
-                     header: header, rowIndex: rowIndex, column: i)
+                     header: header, rowIndex: rowIndex, column: i,
+                     formulaValues: formulaValues)
             }
         }
         .background(isAlt ? Palette.controlBackground.opacity(0.3) : Color.clear)
@@ -792,7 +814,8 @@ struct CSVTableView: View {
     /// read-only behaviour is byte-identical to pre-TSK-1019).
     @ViewBuilder
     private func cell(value: String, row: [String], allRows: [[String]],
-                      header: [String], rowIndex: Int, column i: Int) -> some View {
+                      header: [String], rowIndex: Int, column i: Int,
+                      formulaValues: [CellReference: FormulaValue]) -> some View {
         if isEditingCell(rowIndex: rowIndex, column: i) {
             // TSK-1019: inline editor for the active cell. onCommit/onSubmit
             // folds the buffer into the model; Esc cancels without writing.
@@ -809,7 +832,8 @@ struct CSVTableView: View {
                 .accessibilityIdentifier("mdv.csvCell.edit.\(rowIndex).\(i)")
         } else {
             readOnlyCell(value: value, row: row, allRows: allRows,
-                         header: header, rowIndex: rowIndex, column: i)
+                         header: header, rowIndex: rowIndex, column: i,
+                         formulaValues: formulaValues)
         }
     }
 
@@ -820,8 +844,9 @@ struct CSVTableView: View {
     /// available, a double-click recognizer is layered on to begin editing.
     @ViewBuilder
     private func readOnlyCell(value cell: String, row: [String], allRows: [[String]],
-                              header: [String], rowIndex: Int, column i: Int) -> some View {
-        Text(cell)
+                              header: [String], rowIndex: Int, column i: Int,
+                              formulaValues: [CellReference: FormulaValue]) -> some View {
+        Text(Self.formulaCellDisplay(raw: cell, computed: formulaValues[CellReference(row: rowIndex, column: i)]))
             .font(.system(size: cellFontSize, design: .monospaced))
             .lineLimit(1)
             .truncationMode(.tail)
