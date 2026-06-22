@@ -1973,7 +1973,11 @@ fn format_number(n: f64) -> String {
     }
     // Integer-valued and modest magnitude → plain integer (Swift's Int64 path).
     if n.fract() == 0.0 && n.abs() < 1e15 {
-        return format!("{}", n as i64);
+        // The guard proves n is integer-valued and within i64 range, so the cast is
+        // exact — clippy can't see the guard (cf. arg_count's same justification).
+        #[allow(clippy::cast_possible_truncation)]
+        let int = n as i64;
+        return format!("{int}");
     }
     if n == 0.0 {
         return "0".to_string();
