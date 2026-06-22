@@ -17,7 +17,7 @@ use tree_sitter::{Node, Parser};
 /// The fold category, mirroring `FoldRegion.Kind` on the Swift side. Only the
 /// kinds reachable from the languages ported so far are listed; markdown's
 /// `heading`/`codeFence` and any `other` land with their languages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FoldKind {
     Object,
     Array,
@@ -26,6 +26,10 @@ pub enum FoldKind {
     Element,
     StringLiteral,
     Comment,
+    /// A markdown ``` fenced code block.
+    CodeFence,
+    /// A markdown heading → span to the next heading of equal-or-lower level.
+    Heading,
     /// A generic ≥2-line container we recognise (control-flow blocks, etc.).
     Other,
 }
@@ -98,6 +102,11 @@ fn fold_kind(lang: Lang, node: Node) -> Option<FoldKind> {
             },
             _ => None,
         },
+        // markdown-folds.scm (atx_heading is the special span post-pass below)
+        Lang::Markdown => match kind {
+            "fenced_code_block" => Some(FoldKind::CodeFence),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -118,10 +127,17 @@ pub fn fold_regions(text: &str, lang: Lang) -> Vec<FoldRegion> {
     let total_lines = text.bytes().filter(|&b| b == b'\n').count() + 1;
 
     let mut out = Vec::new();
+    // Markdown headings are single-line nodes folded as a span to the next
+    // heading of equal-or-lower level — collected here, materialised below.
+    let mut headings: Vec<(usize, usize)> = Vec::new();
+
     let mut cursor = tree.root_node().walk();
     'walk: loop {
         let node = cursor.node();
-        if let Some(kind) = fold_kind(lang, node) {
+        if lang == Lang::Markdown && node.kind() == "atx_heading" {
+            let line = node.start_position().row + 1;
+            headings.push((line, atx_level(text, line)));
+        } else if let Some(kind) = fold_kind(lang, node) {
             let start = node.start_position().row + 1;
             let mut end = node.end_position().row + 1;
             // When the node ends exactly at a line boundary (column 0), the row
@@ -151,7 +167,39 @@ pub fn fold_regions(text: &str, lang: Lang) -> Vec<FoldRegion> {
             }
         }
     }
+
+    // Materialise heading folds: each spans to the line before the next heading
+    // at level <= its own, else to EOF (mirrors the Swift post-pass).
+    headings.sort_by_key(|&(line, _)| line);
+    for (i, &(line, level)) in headings.iter().enumerate() {
+        let mut end = total_lines;
+        for &(next_line, next_level) in &headings[i + 1..] {
+            if next_level <= level {
+                end = next_line - 1;
+                break;
+            }
+        }
+        if end > line {
+            out.push(FoldRegion { start_line: line, end_line: end, kind: FoldKind::Heading });
+        }
+    }
+
+    // Dedup identical (start,end,kind) regions — nested grammars can capture the
+    // same range twice — then sort start ASC / end DESC so outer folds precede
+    // inner (mirrors the Swift tail).
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|r| seen.insert((r.start_line, r.end_line, r.kind)));
+    out.sort_by(|a, b| a.start_line.cmp(&b.start_line).then(b.end_line.cmp(&a.end_line)));
     out
+}
+
+/// ATX heading level = the count of leading `#` on the heading's first line
+/// (after any indentation). Mirrors the Swift `atxHeadingLevel`.
+fn atx_level(text: &str, line: usize) -> usize {
+    text.lines()
+        .nth(line - 1)
+        .map(|l| l.trim_start().bytes().take_while(|&b| b == b'#').count())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -230,5 +278,50 @@ mod tests {
             folds.iter().any(|f| f.kind == FoldKind::Other),
             "if-statement statements fold as .other, got {folds:?}"
         );
+    }
+
+    #[test]
+    fn markdown_folds_headings_by_level() {
+        // Lines: 1 "# A", 2 intro, 3 "## B", 4 body, 5 "# C", 6 tail.
+        let src = "# A\nintro\n## B\nbody\n# C\ntail";
+        let folds = fold_regions(src, Lang::Markdown);
+        // # A (h1) → line before the next h<=1 (# C @5) ⇒ 1..4.
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Heading && f.start_line == 1 && f.end_line == 4),
+            "# A folds lines 1-4, got {folds:?}"
+        );
+        // ## B (h2) → next h<=2 is # C @5 ⇒ 3..4.
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Heading && f.start_line == 3 && f.end_line == 4),
+            "## B folds lines 3-4, got {folds:?}"
+        );
+    }
+
+    #[test]
+    fn markdown_folds_fenced_code_block() {
+        let src = "text\n```\ncode\nmore\n```\n";
+        let folds = fold_regions(src, Lang::Markdown);
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::CodeFence),
+            "fenced code block folds, got {folds:?}"
+        );
+    }
+
+    #[test]
+    fn regions_are_sorted_and_deduped() {
+        // Outer object before inner array (start ASC); no duplicate (start,end,kind).
+        let src = "{\n  \"a\": [\n    1\n  ]\n}";
+        let folds = fold_regions(src, Lang::Json);
+        for w in folds.windows(2) {
+            assert!(
+                w[0].start_line < w[1].start_line
+                    || (w[0].start_line == w[1].start_line && w[0].end_line >= w[1].end_line),
+                "not sorted: {folds:?}"
+            );
+        }
+        let mut seen = std::collections::HashSet::new();
+        for f in &folds {
+            assert!(seen.insert((f.start_line, f.end_line, f.kind)), "dup region: {folds:?}");
+        }
     }
 }
