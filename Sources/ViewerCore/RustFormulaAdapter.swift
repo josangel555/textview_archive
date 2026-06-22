@@ -60,7 +60,14 @@ public enum RustFormulaAdapter {
     ) -> FormulaValue {
         guard RustFormulaGate.isEnabled(environment: environment) else { return swiftEval() }
         do {
-            return try rustEvaluate(formula, cells: cells)
+            let result = try rustEvaluate(formula, cells: cells)
+            // A #NAME! from Rust can mean a Swift-only function the port doesn't
+            // implement (e.g. PROPER, whose Foundation `.capitalized` ICU word
+            // semantics aren't safely reproducible in Rust). Fall back so we never
+            // regress an existing function. Sound: the Rust function set is a
+            // subset of Swift's, so a genuine #NAME! matches in both engines.
+            if case .error(.name) = result { return swiftEval() }
+            return result
         } catch {
             return swiftEval()
         }

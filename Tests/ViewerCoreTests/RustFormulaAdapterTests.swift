@@ -42,4 +42,24 @@ final class RustFormulaAdapterTests: XCTestCase {
         }
         XCTAssertEqual(r, .number(15))
     }
+
+    func test_evaluate_falls_back_to_swift_on_name_error() {
+        // PROPER isn't in the Rust port → Rust returns #NAME! → the adapter falls
+        // back to Swift, which computes it via Foundation .capitalized. Gated ON.
+        let raw = "=PROPER(\"hello world\")"
+        let r = RustFormulaAdapter.evaluate(raw, cells: [:], environment: ["MDV_RUST_FORMULA": "1"]) {
+            FormulaEngine.evaluate(raw: raw, resolve: { _ in nil })
+        }
+        XCTAssertEqual(r, .text("Hello World"))
+    }
+
+    func test_evaluate_genuine_name_error_not_masked() {
+        // A genuinely unknown function is #NAME! in BOTH engines — falling back
+        // just returns Swift's #NAME!, the same result (no masking).
+        let raw = "=NOPENOTAFUNC(1)"
+        let r = RustFormulaAdapter.evaluate(raw, cells: [:], environment: ["MDV_RUST_FORMULA": "1"]) {
+            FormulaEngine.evaluate(raw: raw, resolve: { _ in nil })
+        }
+        XCTAssertEqual(r, .error(.name))
+    }
 }

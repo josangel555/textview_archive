@@ -5,6 +5,30 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Rust FormulaEngine port — parity gaps & the PROPER/`.capitalized` trap (2026-06-21)
+- **The Swift `FormulaEngine` GREW after the original ~40-fn corpus** (pre-redirect
+  run added ROUNDUP/DOWN, CEILING/FLOOR, IFERROR, etc.). A Rust port claiming
+  "function-library parity" off the old corpus is WRONG — diff the live fn sets
+  (`grep -oE '"[A-Z]+"'` both engines) before claiming parity. Real gap was 19 fns.
+- **Verify the port with cross-language A/B parity, not just per-engine unit tests**
+  (`Tests/ViewerCoreTests/FormulaParityTests.swift`): same formula + same A1→raw
+  snapshot through BOTH engines, assert equal. It caught the gap and is the teeth.
+  Cells must hold LITERALS only — a cell referencing another *formula* cell needs
+  recursive eval (Swift's `visiting`), which the stateless Rust snapshot can't do.
+- **`String.capitalized` is ICU word-segmentation, NOT the documented whitespace rule.**
+  Empirically: apostrophe is MidLetter (`o'brien`→`O'brien`, `don't`→`Don't`), but
+  digits and hyphens ARE boundaries (`abc123def`→`Abc123Def`, `hello-world`→`Hello-World`).
+  Don't try to reproduce it in Rust without ICU. PROPER stays Swift-only.
+- **`#NAME!`-fallback pattern for Swift-only functions:** `RustFormulaAdapter.evaluate`
+  routes the whole formula to Rust, but on a Rust `#NAME!` it falls back to Swift.
+  Sound because the Rust fn-set ⊆ Swift's, so a *genuine* `#NAME!` matches in both —
+  yet a Swift-only fn (PROPER) gets computed correctly. Lets us ship parity without
+  porting every tail function.
+- **The stateless snapshot FFI re-sends the whole grid per formula eval** → O(grid)
+  per cell + can't resolve formula-cell references. The CSV consumption wiring
+  (slice 5b) genuinely DEPENDS on the recalc/evaluated-snapshot work (slice 6); don't
+  try to wire per-cell Rust eval before that or you get silent wrong results.
+
 ## Test-coverage tooling — scope `coverage.sh`, never full-suite it (2026-06-21)
 - **`scripts/coverage.sh` (TSK-1131): SCOPE it.** `FILTER=ViewerCoreTests bash
   scripts/coverage.sh` reports reliably; the bare full-suite run is cursed three
