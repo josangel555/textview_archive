@@ -3499,6 +3499,18 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// Map LSP completion items to editor items, ordered by the server's `sortText`
+    /// (the LSP-prescribed presentation order) with `label` as a stable tiebreak, and
+    /// committing `insert` (the spec-resolved text). Pure + `nonisolated` → fully
+    /// host-testable without a live server or the MainActor (TSK-1136).
+    nonisolated static func editorCompletions(
+        from lspItems: [LSPCompletionItem]
+    ) -> [EditorCompletionItem] {
+        lspItems
+            .sorted { ($0.sortText, $0.label) < ($1.sortText, $1.label) }
+            .map { EditorCompletionItem(label: $0.label, detail: $0.detail, insertText: $0.insert) }
+    }
+
     #if DEBUG
     /// Test-only: the last completion request that PASSED the language gate
     /// (URL + the 0-based position handed downstream). nil when the gate
@@ -3527,19 +3539,23 @@ public final class DocumentModel: ObservableObject {
             fileURL: fileURL, line: lspLine, character: lspChar)
     }
 
-    /// The pool seam for completion (0-based LSP position). Returns `[]` until
-    /// `textDocument/completion` is wired through `LSPPool`/`LSPClient` +
-    /// the CM6 autocomplete source (TSK-463 follow-up). Kept as a private
-    /// override-able point so that wiring is a single localized change.
+    /// The pool seam for completion (0-based LSP position). Invokes the LSP
+    /// `textDocument/completion` round-trip (the wire layer landed in TSK-463) via
+    /// `LSPPool.completion` and maps the result to editor items (TSK-1136). The caller
+    /// already gated on a configured LSP language, so this never spawns a server for a
+    /// non-LSP file. A server error or cancellation degrades honestly to "no
+    /// completions". The CM6 autocomplete extension that drives this seam (and a
+    /// no-LSP in-file/buffer-word fallback source) are the remaining render-side slice.
     private func requestCompletions(
         fileURL: URL, line: Int, character: Int
     ) async -> [EditorCompletionItem] {
-        // No `lspPool.completion(...)` exists yet — see the scope note above.
-        // Returning empty is correct (degrades to "no completions"), and the
-        // gate above already guaranteed we never spawned a server for a
-        // non-LSP file.
-        _ = (fileURL, line, character)
-        return []
+        do {
+            let list = try await lspPool.completion(
+                fileURL: fileURL, line: line, character: character)
+            return Self.editorCompletions(from: list.items)
+        } catch {
+            return []
+        }
     }
 
     /// The four LSP go-to verbs surfaceable as deliberate commands
