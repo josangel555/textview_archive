@@ -2971,43 +2971,9 @@ public final class DocumentModel: ObservableObject {
     }
     // `swapSplit()` moved to `DocumentModel+Split.swift` (TSK-308).
     // MARK: Find bar (source mode) — match state forwarders
+    // → extracted to DocumentModel+FindBarForwarders.swift (TSK-1110 SRP split, slice 5).
 
-    public var sourceFindMatchSummary: String {
-        get { find.sourceMatchSummary }
-        set { find.sourceMatchSummary = newValue }
-    }
-    public var sourceFindMatchLines: [Int] {
-        get { find.sourceMatchLines }
-        set { find.sourceMatchLines = newValue }
-    }
-    public var sourceFindCurrentMatchIndex: Int? {
-        get { find.sourceCurrentMatchIndex }
-        set { find.sourceCurrentMatchIndex = newValue }
-    }
-
-    public func setSourceFindMatchSummary(_ s: String) {
-        find.setSourceMatchSummary(s)
-    }
-    public func setSourceFindMatches(lines: [Int], currentIndex: Int?) {
-        find.setSourceMatches(lines: lines, currentIndex: currentIndex)
-    }
-
-    public func showSourceFindBar() { find.showSourceBar() }
-    public func dismissSourceFindBar() { find.dismissSourceBar() }
-    public func toggleSourceFindBar() { find.toggleSourceBar() }
-    public func sourceFindNext() { find.sourceNext() }
-    public func sourceFindPrev() { find.sourcePrev() }
-    public func renderedFindNext() { find.renderedNext() }
-    public func renderedFindPrev() { find.renderedPrev() }
-
-    /// ⌘G / ⌥⌘G — step the *open* find bar (TSK-946). The previous menu
-    /// items targeted `NSTextView.performFindPanelAction` (NSTextFinder),
-    /// which is inert here because no surface sets `usesFindBar` — our find
-    /// bars are custom. Route to whichever bar is presented instead.
-    public func findNext() { find.next() }
-    public func findPrev() { find.prev() }
-    /// Gates the Find Next/Previous menu items — only meaningful with a bar open.
-    public var canFindNextPrev: Bool { find.isAnyBarPresented }
+    // MARK: Find — menu gating (canFind*, findIsAvailable)
 
     /// Gates Find & Replace (⌥⌘F, TSK-949). Replace is only possible on the
     /// editable CM6 editor surface; the rendered (WKWebView) and source

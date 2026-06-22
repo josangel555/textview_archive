@@ -139,4 +139,42 @@ extension DocumentModel {
     public func setEditorFindMatchSummary(_ s: String) {
         find.setEditorMatchSummary(s)
     }
+
+    // Source match-state + cross-bar next/prev
+    public var sourceFindMatchSummary: String {
+        get { find.sourceMatchSummary }
+        set { find.sourceMatchSummary = newValue }
+    }
+    public var sourceFindMatchLines: [Int] {
+        get { find.sourceMatchLines }
+        set { find.sourceMatchLines = newValue }
+    }
+    public var sourceFindCurrentMatchIndex: Int? {
+        get { find.sourceCurrentMatchIndex }
+        set { find.sourceCurrentMatchIndex = newValue }
+    }
+
+    public func setSourceFindMatchSummary(_ s: String) {
+        find.setSourceMatchSummary(s)
+    }
+    public func setSourceFindMatches(lines: [Int], currentIndex: Int?) {
+        find.setSourceMatches(lines: lines, currentIndex: currentIndex)
+    }
+
+    public func showSourceFindBar() { find.showSourceBar() }
+    public func dismissSourceFindBar() { find.dismissSourceBar() }
+    public func toggleSourceFindBar() { find.toggleSourceBar() }
+    public func sourceFindNext() { find.sourceNext() }
+    public func sourceFindPrev() { find.sourcePrev() }
+    public func renderedFindNext() { find.renderedNext() }
+    public func renderedFindPrev() { find.renderedPrev() }
+
+    /// ⌘G / ⌥⌘G — step the *open* find bar (TSK-946). The previous menu
+    /// items targeted `NSTextView.performFindPanelAction` (NSTextFinder),
+    /// which is inert here because no surface sets `usesFindBar` — our find
+    /// bars are custom. Route to whichever bar is presented instead.
+    public func findNext() { find.next() }
+    public func findPrev() { find.prev() }
+    /// Gates the Find Next/Previous menu items — only meaningful with a bar open.
+    public var canFindNextPrev: Bool { find.isAnyBarPresented }
 }
