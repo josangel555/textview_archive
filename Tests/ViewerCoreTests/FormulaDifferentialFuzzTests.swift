@@ -253,4 +253,26 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             XCTAssertEqual(rustResult, swiftResult, "concat-operator parity diverged: \(f)")
         }
     }
+
+    /// Comparison-operator parity over MIXED operand types — number/number,
+    /// case-insensitive text/text, text-vs-number (Excel ranks any text above any
+    /// number), and blank coercion. Exercises the value_text path touched by the
+    /// TSK-1221 fix; completes the core-operator parity coverage.
+    func test_swift_rust_comparison_parity() throws {
+        let pairs = [("5", "10"), ("10", "5"), ("5", "5"), ("abc", "ABC"), ("abc", "abd"),
+                     ("5", "abc"), ("abc", "5"), ("", "0"), ("0", ""), ("1", "1.0"),
+                     ("2.5", "2.5"), ("TRUE", "TRUE")]
+        let ops = ["=", "<>", "<", ">", "<=", ">="]
+        for (a, b) in pairs {
+            let cells = ["A1": a, "B1": b]
+            let resolver: CellResolver = { ref in cells[ref.a1] }
+            for op in ops {
+                let f = "=A1\(op)B1"
+                let swiftResult = FormulaEngine.evaluate(raw: f, resolve: resolver)
+                let rustResult = try RustFormulaAdapter.rustEvaluate(f, cells: cells)
+                XCTAssertEqual(rustResult, swiftResult,
+                               "comparison parity diverged: \(f) over A1=\(a.debugDescription) B1=\(b.debugDescription)")
+            }
+        }
+    }
 }
