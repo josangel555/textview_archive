@@ -20,7 +20,7 @@ import ViewerCore
 /// validate every property up to that boundary, which is where most
 /// invisible-content bugs live.
 @MainActor
-final class DiagnosticDumpTests: XCTestCase {
+final class DiagnosticDumpTests: WebViewTestCase {
 
     private var tmpDir: URL!
     private var suiteName: String!

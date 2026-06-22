@@ -13,7 +13,7 @@ import XCTest
 /// the regression surface. `#192`-gated; listed in `test-in-vm.sh` AND
 /// `nightly-vm.yml`.
 @MainActor
-final class MultiCursorWebViewTests: XCTestCase {
+final class MultiCursorWebViewTests: WebViewTestCase {
 
     private var webView: WKWebView!
 

@@ -11,7 +11,7 @@ import ViewerCore
 /// representative inline copy — subgraphs + <br/> labels, the features it
 /// uses. `#192`-gated; listed in `test-in-vm.sh` AND `nightly-vm.yml`.
 @MainActor
-final class MermaidRenderProbeTests: XCTestCase {
+final class MermaidRenderProbeTests: WebViewTestCase {
 
     private var webView: WKWebView!
 

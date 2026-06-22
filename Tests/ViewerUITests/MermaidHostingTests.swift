@@ -24,7 +24,7 @@ import ViewerCore
 /// UNGATED T1m `MermaidRenderModelTests` — they are pure `DocumentModel` /
 /// `HTMLRenderer` string output and never host a view.
 @MainActor
-final class MermaidHostingTests: XCTestCase {
+final class MermaidHostingTests: WebViewTestCase {
 
     private var tmpDir: URL!
     private var suiteName: String!

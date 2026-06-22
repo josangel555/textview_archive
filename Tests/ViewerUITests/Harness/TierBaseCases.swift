@@ -108,6 +108,25 @@ class LiveAppTestCase: XCTestCase {
     }
 }
 
+// MARK: - WebView lane — in-process live WKWebView suites (#192)
+
+/// Base for the in-process live-`WKWebView` suites (component snapshots, hosting
+/// probes, Mermaid realization, rendered find bar, gutter/editor WebView probes, …).
+/// They realize a real `WKWebView` in the host process, so they `#192`-gate on
+/// `MDV_RUN_WEBVIEW_TESTS` (the VM/nightly WebView lane) via
+/// `WebViewTestTeardown.skipUnlessEnabled()` in their own `setUp`, self-skipping in
+/// the headless gate. Making the tier a TYPE — not just a per-suite skip — lets
+/// `TierGateObserver` ENFORCE it: if a suite's manual gate ever regresses and a body
+/// runs in the headless gate, the observer flags it, the same machine-checkable
+/// guarantee the T4/T5 bases carry (TSK-1132, per the TSK-788 audit). Like the other
+/// heavy bases, this only arms the observer; the suites keep their own skip + teardown.
+class WebViewTestCase: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        TierGateObserver.register()
+    }
+}
+
 // MARK: - T5 — WindowServer pixels (the real screen)
 
 /// Base for the single irreducibly-real-screen tier: tests that read the

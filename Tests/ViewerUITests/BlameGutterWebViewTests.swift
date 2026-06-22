@@ -13,7 +13,7 @@ import XCTest
 /// are dispatched. Mirrors FoldGutterWebViewTests. `#192`-gated; listed in
 /// `test-in-vm.sh` AND `nightly-vm.yml`.
 @MainActor
-final class BlameGutterWebViewTests: XCTestCase {
+final class BlameGutterWebViewTests: WebViewTestCase {
 
     private var webView: WKWebView!
 

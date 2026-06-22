@@ -11,7 +11,7 @@ import ViewerCore
 /// `run_webview_tests` AND `nightly-vm.yml` (a gated suite in no lane
 /// list runs nowhere).
 @MainActor
-final class PDFExportWebViewTests: XCTestCase {
+final class PDFExportWebViewTests: WebViewTestCase {
 
     private var webView: WKWebView!
 

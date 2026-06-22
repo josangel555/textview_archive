@@ -10,7 +10,7 @@ import XCTest
 /// pixels, sufficient: the gutter element IS the rendered artifact).
 /// `#192`-gated; listed in `test-in-vm.sh` AND `nightly-vm.yml`.
 @MainActor
-final class FoldGutterWebViewTests: XCTestCase {
+final class FoldGutterWebViewTests: WebViewTestCase {
 
     private var webView: WKWebView!
 

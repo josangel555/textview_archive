@@ -23,7 +23,7 @@ import ViewerCore
 /// when it renders." It would have caught the "only line numbers visible"
 /// regression directly.
 @MainActor
-final class ContentViewHostingTests: XCTestCase {
+final class ContentViewHostingTests: WebViewTestCase {
 
     private var tmpDir: URL!
     private var suiteName: String!

@@ -22,7 +22,7 @@ import ViewerCore
 /// — they read `model.*` only and were paying the WebView-gate tax for
 /// nothing.
 @MainActor
-final class RenderedFindBarTests: XCTestCase {
+final class RenderedFindBarTests: WebViewTestCase {
 
     private var tmpDir: URL!
     private var suiteName: String!

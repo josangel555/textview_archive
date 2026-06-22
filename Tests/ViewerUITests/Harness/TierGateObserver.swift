@@ -151,12 +151,14 @@ final class TierGateObserver: NSObject, XCTestObservation {
 
     // MARK: - tier membership
 
-    /// True iff `cls` is `LiveAppTestCase`, `PixelTestCase`, or any subclass
+    /// True iff `cls` is `LiveAppTestCase` (T4), `PixelTestCase` (T5),
+    /// `WebViewTestCase` (the #192 in-process WebView lane), or any subclass
     /// (e.g. `MultiScenarioTestCase`, `SourceViewVisualRegressionTests`). The
     /// `is *.Type` check walks the superclass chain, so the check is "tier is
     /// the type", not a name match — adding a new heavy subclass is
     /// automatically covered.
     static func isHeavyTier(_ cls: AnyClass) -> Bool {
         cls is LiveAppTestCase.Type || cls is PixelTestCase.Type
+            || cls is WebViewTestCase.Type
     }
 }

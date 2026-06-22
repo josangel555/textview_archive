@@ -24,7 +24,7 @@ import ViewerCore
 /// only and never called `renderHost`, so they were paying the WebView-gate
 /// tax for nothing.
 @MainActor
-final class ComponentVisualTests: XCTestCase {
+final class ComponentVisualTests: WebViewTestCase {
 
     private var tmpDir: URL!
     private var suiteName: String!

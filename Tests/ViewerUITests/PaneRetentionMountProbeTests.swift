@@ -16,7 +16,7 @@ import ViewerCore
 /// `MDV_RUN_WEBVIEW_TESTS` / VM lane:
 ///   MDV_RUN_WEBVIEW_TESTS=1 swift test --filter PaneRetentionMountProbeTests
 @MainActor
-final class PaneRetentionMountProbeTests: XCTestCase {
+final class PaneRetentionMountProbeTests: WebViewTestCase {
 
     private var tmpDir: URL!
     private var suiteName: String!

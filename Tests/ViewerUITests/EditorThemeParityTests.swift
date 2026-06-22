@@ -23,7 +23,7 @@ import WebKit
 /// live-WKWebView suite; runs in the VM/nightly WebView lane
 /// (`scripts/test-in-vm.sh`, `.github/workflows/nightly-vm.yml`).
 @MainActor
-final class EditorThemeParityTests: XCTestCase {
+final class EditorThemeParityTests: WebViewTestCase {
 
     /// Captures the host's `ready` post. Non-isolated NSObject because
     /// `WKScriptMessageHandler` is a nonisolated protocol; WebKit calls

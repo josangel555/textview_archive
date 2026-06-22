@@ -18,7 +18,7 @@ import ViewerCore
 /// in `test-in-vm.sh` `run_webview_tests` AND `nightly-vm.yml` (a gated suite in
 /// no lane list runs nowhere).
 @MainActor
-final class PaneScrollRestoreWebViewTests: XCTestCase {
+final class PaneScrollRestoreWebViewTests: WebViewTestCase {
 
     private var webView: WKWebView!
 

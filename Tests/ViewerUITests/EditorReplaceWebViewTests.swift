@@ -10,7 +10,7 @@ import XCTest
 /// replaceAll/replaceNext → the doc text changes. Mirrors
 /// FoldGutterWebViewTests. `#192`-gated; listed in test-in-vm.sh + nightly-vm.yml.
 @MainActor
-final class EditorReplaceWebViewTests: XCTestCase {
+final class EditorReplaceWebViewTests: WebViewTestCase {
 
     private var webView: WKWebView!
 
