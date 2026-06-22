@@ -232,6 +232,29 @@ final class SessionsCoordinatorTests: XCTestCase {
         XCTAssertTrue(coord.sessions.isEmpty)
     }
 
+    // MARK: rename / updateSession -----------------------------------
+
+    /// TSK-1106: the session-tab rename icon drives `core.updateSession` to set a
+    /// manual displayName and PIN `displayNameIsUserSet` (so a later root change
+    /// can't auto-relabel it back). This pins that coordinator-level behavior — the
+    /// model action the rename closure ultimately invokes — headlessly.
+    func testUpdateSessionRenamesAndPinsUserSetFlag() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let sA = coord.openFolder(a)
+        coord.updateSession(id: sA.id) { snap in
+            snap = snap.with(displayName: "Custom Name", displayNameIsUserSet: .some(true))
+        }
+        let updated = try XCTUnwrap(coord.sessions.first { $0.id == sA.id })
+        XCTAssertEqual(updated.displayName, "Custom Name")
+        XCTAssertEqual(updated.displayNameIsUserSet, true)
+        // An unknown id is a guard no-op: no crash, no mutation, no spurious session.
+        coord.updateSession(id: UUID()) { snap in
+            snap = snap.with(displayName: "ignored", displayNameIsUserSet: .some(true))
+        }
+        XCTAssertEqual(coord.sessions.count, 1)
+        XCTAssertEqual(coord.sessions.first?.displayName, "Custom Name")
+    }
+
     // MARK: restore --------------------------------------------------
 
     func testRestoreReconstructsFromDisk() throws {
