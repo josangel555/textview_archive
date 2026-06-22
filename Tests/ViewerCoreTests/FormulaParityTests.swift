@@ -168,4 +168,35 @@ final class FormulaParityTests: XCTestCase {
             try assertParity(formula, cells)
         }
     }
+
+    /// Date batch (TSK-1213 parity round 6): verify the Rust ISO-string date model
+    /// (slices 3h/3i) matches Swift's UTC-Gregorian-Calendar model across
+    /// DATE/YEAR/MONTH/DAY/WEEKDAY/DATEDIF/EDATE/EOMONTH — the place a calendar /
+    /// weekday / rollover divergence would surface.
+    func test_parity_dates() throws {
+        let cases: [(String, [String: String])] = [
+            ("=DATE(2024, 3, 15)", [:]),
+            ("=DATE(2024, 13, 1)", [:]), // month rollover → next year
+            ("=DATE(2024, 1, 32)", [:]), // day rollover → next month
+            ("=YEAR(A1)", ["A1": "2024-03-15"]),
+            ("=MONTH(A1)", ["A1": "2024-03-15"]),
+            ("=DAY(A1)", ["A1": "2024-03-15"]),
+            ("=WEEKDAY(A1)", ["A1": "2024-03-15"]), // Friday → 6 (type 1)
+            ("=WEEKDAY(A1, 2)", ["A1": "2024-03-15"]), // Friday → 5 (type 2)
+            ("=WEEKDAY(A1)", ["A1": "2024-03-17"]), // Sunday → 1
+            ("=DATEDIF(A1, A2, \"D\")", ["A1": "2024-01-01", "A2": "2024-03-15"]),
+            ("=DATEDIF(A1, A2, \"M\")", ["A1": "2024-01-20", "A2": "2024-03-15"]), // d2<d1 boundary
+            ("=DATEDIF(A1, A2, \"M\")", ["A1": "2024-01-31", "A2": "2024-03-01"]),
+            ("=DATEDIF(A1, A2, \"Y\")", ["A1": "2020-06-15", "A2": "2024-05-10"]), // not yet full year
+            ("=DATEDIF(A1, A2, \"Y\")", ["A1": "2020-06-15", "A2": "2024-07-10"]), // full years
+            ("=EDATE(A1, 1)", ["A1": "2024-01-31"]), // clamp to Feb 29
+            ("=EDATE(A1, -2)", ["A1": "2024-03-15"]),
+            ("=EOMONTH(A1, 0)", ["A1": "2024-02-10"]),
+            ("=EOMONTH(A1, 1)", ["A1": "2024-01-15"]), // Feb 29
+            ("=EOMONTH(A1, -1)", ["A1": "2024-03-15"]),
+        ]
+        for (formula, cells) in cases {
+            try assertParity(formula, cells)
+        }
+    }
 }
