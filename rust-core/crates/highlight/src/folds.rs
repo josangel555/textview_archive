@@ -458,4 +458,53 @@ mod tests {
             assert_eq!(FoldKind::from_raw(k.raw_value()), Some(k));
         }
     }
+
+    /// Robustness fuzz de-risking the pending `.fold` flip (TSK-1202): random
+    /// source across every fold language must NEVER panic, and every region must
+    /// be a valid 1-based span (start < end <= total_lines), sorted by start, and
+    /// free of exact duplicates — the contract DocumentModel's gutter consumes.
+    /// Merge gate runs a fixed seed; the nightly lane varies MDV_FUZZ_SEED_BASE.
+    #[test]
+    fn fold_regions_fuzz_invariants_across_languages() {
+        let seed_base: u64 = std::env::var("MDV_FUZZ_SEED_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let langs = [
+            Lang::Json, Lang::JavaScript, Lang::TypeScript, Lang::Xml, Lang::Swift, Lang::Markdown,
+        ];
+        let alpha: Vec<char> =
+            "{}[]()<>\"'`/*-#;:=, \n\t日 func class struct fn let if for while interface enum"
+                .chars()
+                .collect();
+        let mut s: u64 = seed_base.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        for _ in 0..600 {
+            let len = (next() % 120) as usize;
+            let text: String =
+                (0..len).map(|_| alpha[(next() % alpha.len() as u64) as usize]).collect();
+            let total = text.bytes().filter(|&b| b == b'\n').count() + 1;
+            for &lang in &langs {
+                let folds = fold_regions(&text, lang); // must not panic
+                let mut prev_start = 0usize;
+                let mut seen = std::collections::HashSet::new();
+                for f in &folds {
+                    assert!(f.start_line >= 1, "{lang:?}: start<1 {f:?} for {text:?}");
+                    assert!(f.start_line < f.end_line, "{lang:?}: start>=end {f:?} for {text:?}");
+                    assert!(f.end_line <= total, "{lang:?}: end>total({total}) {f:?} for {text:?}");
+                    assert!(f.start_line >= prev_start, "{lang:?}: unsorted {folds:?} for {text:?}");
+                    prev_start = f.start_line;
+                    assert!(
+                        seen.insert((f.start_line, f.end_line, f.kind)),
+                        "{lang:?}: dup region {folds:?} for {text:?}"
+                    );
+                }
+            }
+        }
+    }
 }
