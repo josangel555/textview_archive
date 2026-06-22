@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
+pub mod folds;
 pub mod runs;
 
 /// Process-wide cache of CONFIGURED highlight configurations (TSK-545/552):
@@ -215,7 +216,7 @@ impl Lang {
     /// JS base query with the TS overlay (the TS grammar is a superset of JS, so
     /// every JS pattern still resolves). Per-call `to_string()` is cheap — the
     /// front-ends cache the highlight result, so `grammar()` runs once per file.
-    fn grammar(self) -> (tree_sitter::Language, String) {
+    pub(crate) fn grammar(self) -> (tree_sitter::Language, String) {
         match self {
             Self::Json => (
                 tree_sitter_json::LANGUAGE.into(),
