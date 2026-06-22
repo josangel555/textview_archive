@@ -26,4 +26,15 @@ final class FormulaEvaluateFFITests: XCTestCase {
     func test_empty_formula_list() throws {
         XCTAssertEqual(try mdvCoreEvaluateFormulas([], cells: [:]), [])
     }
+
+    func test_recalc_over_ffi() throws {
+        // The recalc path resolves formula-cell references to computed values
+        // (the recursion the per-formula path can't do) and flags cycles.
+        let cells = ["A1": "5", "A2": "=A1+1", "A3": "=A2*2", "B1": "=B2", "B2": "=B1"]
+        let out = try mdvCoreRecalc(cells: cells)
+        XCTAssertEqual(out["A2"], .number(6))
+        XCTAssertEqual(out["A3"], .number(12)) // A3 sees A2's computed 6, not its raw text
+        XCTAssertEqual(out["B1"], .error("cycle"))
+        XCTAssertNil(out["A1"]) // data cell omitted from the result
+    }
 }

@@ -852,6 +852,33 @@ private func decodeFormulaValue(_ v: MsgPackValue) throws -> CoreFormulaValue {
     }
 }
 
+/// Recalculate a whole grid in the Rust core (TSK-1213): the full grid as
+/// A1 → raw text in, A1 → computed `CoreFormulaValue` (formula cells only) out.
+/// Unlike `mdvCoreEvaluateFormulas`, references to other FORMULA cells resolve to
+/// their computed value (cycles → an `error("cycle")`). Throws `CoreError` on a
+/// bridge fault so the adapter can fall back to the Swift engine.
+public func mdvCoreRecalc(cells: [String: String]) throws -> [String: CoreFormulaValue] {
+    let cellPairs: [(MsgPackValue, MsgPackValue)] = cells.map { (.string($0.key), .string($0.value)) }
+    let request = MsgPackValue.map([(.string("cells"), .map(cellPairs))])
+    guard let body = try CoreTransportRegistry.current.call("formula_recalc", request: request) else {
+        throw CoreError.decode("empty formula_recalc response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let valuesVal = map["values"] else { throw CoreError.decode("missing 'values'") }
+        let valuesMap = try valuesVal.mapValue()
+        var out: [String: CoreFormulaValue] = [:]
+        out.reserveCapacity(valuesMap.count)
+        for (a1, v) in valuesMap {
+            out[a1] = try decodeFormulaValue(v)
+        }
+        return out
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
 // TSK-563 (wire v2): diff per-element records are POSITIONAL MessagePack
 // arrays — the per-line field keys were ~41 bytes/line of pure key text.
 // Element order is the wire contract, mirrored by the Rust `FileView`/

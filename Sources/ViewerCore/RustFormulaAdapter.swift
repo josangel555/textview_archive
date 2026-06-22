@@ -49,6 +49,21 @@ public enum RustFormulaAdapter {
         return mapValue(first)
     }
 
+    /// Recalculate a whole grid through the Rust core: A1 → raw text in, the
+    /// computed `FormulaValue` of every formula cell out (keyed by `CellReference`).
+    /// References to other formula cells resolve to their computed value (the
+    /// recursion the stateless per-cell path can't do). Throws on a bridge fault.
+    public static func recalc(cells: [String: String]) throws -> [CellReference: FormulaValue] {
+        let raw = try mdvCoreRecalc(cells: cells)
+        var out: [CellReference: FormulaValue] = [:]
+        out.reserveCapacity(raw.count)
+        for (a1, value) in raw {
+            guard let ref = CellReference(a1: a1) else { continue }
+            out[ref] = mapValue(value)
+        }
+        return out
+    }
+
     /// Gated evaluate: route through the Rust core when `RustFormulaGate` is on
     /// AND the bridge succeeds; otherwise run `swiftEval` (the incumbent
     /// `FormulaEngine` path, which keeps its own lazy cell resolver). Fail-safe.

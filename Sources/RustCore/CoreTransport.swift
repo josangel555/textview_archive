@@ -68,6 +68,7 @@ public struct InProcessTransport: CoreTransport {
         // too — the FFI intercepts id 9 and routes it to mdvcore-highlight.
         "highlight_runs": UInt16(MDV_METHOD_HIGHLIGHT_RUNS),
         "formula_evaluate": UInt16(MDV_METHOD_FORMULA_EVALUATE),
+        "formula_recalc": UInt16(MDV_METHOD_FORMULA_RECALC),
     ]
 
     /// AUX-bearing method ids (TSK-651): the bulk input rides the `aux`

@@ -62,4 +62,11 @@ final class RustFormulaAdapterTests: XCTestCase {
         }
         XCTAssertEqual(r, .error(.name))
     }
+
+    func test_recalc_maps_to_cellreference_and_formulavalue() throws {
+        let out = try RustFormulaAdapter.recalc(cells: ["A1": "5", "A2": "=A1+1", "A3": "=A2*2"])
+        XCTAssertEqual(out[CellReference(a1: "A2")!], .number(6))
+        XCTAssertEqual(out[CellReference(a1: "A3")!], .number(12)) // recursion resolved
+        XCTAssertNil(out[CellReference(a1: "A1")!]) // data cell omitted
+    }
 }
