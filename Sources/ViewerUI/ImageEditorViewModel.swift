@@ -796,7 +796,7 @@ extension EditOp {
             return true
         case .colorControls, .exposure, .shadowHighlight, .sharpen, .invertColors,
              .fillRect, .strokeRect, .fillEllipse, .strokeEllipse,
-             .strokeLine, .drawText, .paintStroke:
+             .strokeLine, .drawText, .paintStroke, .fillPolygon:
             return false
         }
     }
@@ -809,7 +809,7 @@ extension EditOp {
         switch self {
         case .crop, .resize, .canvasSize, .skew, .orient, .invertColors,
              .fillRect, .strokeRect, .fillEllipse, .strokeEllipse,
-             .strokeLine, .drawText, .paintStroke:
+             .strokeLine, .drawText, .paintStroke, .fillPolygon:
             return true
         case .colorControls, .exposure, .shadowHighlight, .sharpen:
             return false

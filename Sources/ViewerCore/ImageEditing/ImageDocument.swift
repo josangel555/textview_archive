@@ -144,6 +144,11 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// is Ctrl-Z-able and composes with crop/resize/tonal ops (TSK-1055).
     /// Geometry-preserving — painting never resizes the canvas.
     case paintStroke(points: [CGPoint], radius: Int, color: RGBAColor, square: Bool)
+    /// TSK-1084/1085 — scanline-fill the closed polygon through `points` (source
+    /// pixel space, top-left origin) with `color`: the model + rasterization for
+    /// the polygon / parametric-shape FILL tools. The multi-click/drag gesture
+    /// that builds it is the render tail. Geometry-preserving (never resizes).
+    case fillPolygon(points: [CGPoint], color: RGBAColor)
 }
 
 /// A straight (non-premultiplied) RGBA color for the draw ops, each channel in

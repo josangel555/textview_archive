@@ -134,6 +134,50 @@ public struct RasterCanvas: Sendable, Equatable {
         return written
     }
 
+    /// TSK-1084/1085 — scanline-fill the closed polygon through `points` (source
+    /// pixel space) with `color`, even-odd rule. `<3` points is a no-op. The
+    /// rasterization foundation the polygon + parametric-shape FILL tools commit
+    /// through. Returns the pixel count written.
+    @discardableResult
+    public mutating func fillPolygon(points: [(x: Int, y: Int)], to color: RGBAColor) -> Int {
+        guard points.count >= 3 else { return 0 }
+        let ys = points.map(\.y)
+        let minY = Swift.max(0, ys.min() ?? 0)
+        let maxY = Swift.min(height - 1, ys.max() ?? -1)
+        guard maxY >= minY else { return 0 }
+        var written = 0
+        let n = points.count
+        for y in minY...maxY {
+            // Sample at the scanline CENTER (y+0.5) so shared vertices aren't
+            // double-counted (each edge is half-open in y).
+            let yc = Double(y) + 0.5
+            var xs: [Double] = []
+            for i in 0..<n {
+                let a = points[i]
+                let b = points[(i + 1) % n]
+                let ay = Double(a.y), by = Double(b.y)
+                if (ay <= yc) != (by <= yc) {
+                    let t = (yc - ay) / (by - ay)
+                    xs.append(Double(a.x) + t * (Double(b.x) - Double(a.x)))
+                }
+            }
+            xs.sort()
+            var i = 0
+            while i + 1 < xs.count {
+                let x0 = Swift.max(0, Int(xs[i].rounded()))
+                let x1 = Swift.min(width - 1, Int(xs[i + 1].rounded()))
+                if x1 >= x0 {
+                    for x in x0...x1 {
+                        setPixel(x: x, y: y, to: color)
+                        written += 1
+                    }
+                }
+                i += 2
+            }
+        }
+        return written
+    }
+
     /// TSK-1066 — composite `src` onto this canvas with its top-left at `(ox, oy)`,
     /// alpha-blending src OVER dest (straight-alpha "source-over"). Out-of-bounds
     /// pixels are skipped. Returns the count of dest pixels touched. Paste = blit

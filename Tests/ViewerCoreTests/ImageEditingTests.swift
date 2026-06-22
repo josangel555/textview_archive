@@ -225,6 +225,31 @@ final class ImageEditingTests: XCTestCase {
                       "removing the paintStroke op (undo) must restore the base pixel")
     }
 
+    // MARK: - Polygon fill as a lossless op (TSK-1084/1085)
+
+    func test_fillPolygon_op_fills_triangle_interior_not_exterior() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 32, height: 32, r: 1, g: 1, b: 1),
+            ExportSpec(format: .png))
+        let red = RGBAColor(r: 255, g: 0, b: 0)
+        // A triangle covering the center (top, bottom-left, bottom-right).
+        let tri = [CGPoint(x: 16, y: 4), CGPoint(x: 4, y: 28), CGPoint(x: 28, y: 28)]
+        let filled = try Renderer.render(
+            ImageDocument(data: data).appending(.fillPolygon(points: tri, color: red)))
+        // Interior point (10..22 at y=16) is filled red.
+        let center = sampleRGBA(filled, x: 16, y: 16)
+        XCTAssertTrue(center.r > 200 && center.g < 60 && center.b < 60,
+                      "fillPolygon did not fill the triangle interior: \(center)")
+        // A corner OUTSIDE the triangle stays white (no over-fill).
+        let corner = sampleRGBA(filled, x: 0, y: 0)
+        XCTAssertTrue(corner.r > 200 && corner.g > 200 && corner.b > 200,
+                      "fillPolygon spilled outside the triangle: \(corner)")
+        // Undo (op removed) restores the base pixel — it rides the lossless op-list.
+        let plainCenter = sampleRGBA(try Renderer.render(ImageDocument(data: data)), x: 16, y: 16)
+        XCTAssertTrue(plainCenter.r > 200 && plainCenter.g > 200 && plainCenter.b > 200,
+                      "removing the fillPolygon op (undo) must restore the base pixel")
+    }
+
     func test_colorControls_brightnessUp_lightens() throws {
         let base = solidImage(width: 32, height: 32, r: 0.4, g: 0.4, b: 0.4)
         let before = sampleRGBA(try Renderer.render(ImageDocument(data:
