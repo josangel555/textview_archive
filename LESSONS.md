@@ -5,6 +5,21 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## `swift test --filter` does NOT relink the rust-core `.a` after a rebuild (2026-06-22)
+- The Swift package links `rust-core/link/libmdvcore_ffi.a` via a `-L` linker flag
+  (`Package.swift` `rustLinkDir`). SwiftPM does NOT treat that `.a` as a tracked build
+  input — so after `scripts/build-rust-core.sh` rebuilds it with a Rust behavior change,
+  a `swift test --filter …` run (even after `touch`-ing Swift sources) keeps the STALE
+  binary and tests the OLD `.a`. Cost ~4 confused iterations chasing a "the fix isn't
+  taking effect" ghost when verifying the TSK-1219 coerce_cell fix.
+- **To verify an FFI/rust-core behavior change from Swift, run the FULL headless gate
+  (`scripts/test-headless-gate.sh`, a clean `swift test --parallel` rebuild) — not a
+  `--filter` slice.** The full rebuild relinks the fresh `.a`. (Cargo tests in rust-core
+  verify the Rust side immediately; it's only the Swift-side FFI assertion that needs the
+  full relink.) Symptom to recognise: rust-core cargo test green + `.a` mtime fresh +
+  `Compiling mdvcore-core` ran, yet a `--filter` Swift parity test still fails → it's the
+  relink, not the fix.
+
 ## "Engine tested ≠ feature shipped" — green tests can hide an unwired engine (2026-06-21)
 - The Rust+Swift FormulaEngine passed EVERY host gate (dense unit tests + ~60 cross-language
   A/B parity cases) yet had ZERO view consumers — `CSVTableView` rendered cells as raw
