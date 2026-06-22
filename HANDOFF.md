@@ -40,7 +40,8 @@ Autonomous cron drain. Owner re-enabled the UTM VM ("VM is up — UI evals/tests
 - `scripts/test-in-vm.sh` — modes: `build` (rebuild dist), `test --filter X` (targeted), `all` (full — avoid, fd leak).
 
 ## Tracker (tasked, agent claude-mdv)
-- Validated this session: 1234, 1235, 1236, 1233, 1133, 1241. · In flight: 1036 (UAT VM-verify `bjyssd9eh`). · Open findings: 1237, 1238, 1239, 1240. · Owner-gated: 1046, 1215, 1202, 775, 1214, 1138.
+- Validated this session: 1234, 1235, 1236, 1233, 1133, 1241, **1036** (routed-doc viewing), **1242** (rtf+docx on-screen UATs — both extraction paths VM-confirmed). · Open findings: 1237, 1238, 1239, 1240. · Owner-gated: 1046, 1215, 1202, 775, 1214, 1138.
+- **Next render-backlog item:** apply the proven methodology (enabler dump field if needed → targeted VM UAT via `build` + `test --filter`, GUI lane) to the next script-reachable review item. Candidates: TSK-272 (arrow-preview — sidebar arrows → preview-slot model flag, via KeySynth), TSK-303 (table-find), TSK-1102 (CSV cell cursor). State-check each vs the board first (curated is stale).
 
 ## How to resume
 1. `git -C <cwd> log -1` (expect `52c57736`+). Gates: `bash scripts/test-headless-gate.sh` + `bash scripts/rust-core-gate.sh` (verdicts in separate steps).
