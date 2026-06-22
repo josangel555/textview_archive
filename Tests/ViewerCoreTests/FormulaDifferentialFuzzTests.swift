@@ -298,4 +298,41 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// RECALC parity — the app's actual formula display path (EditableCSVModel.
+    /// recalcAllFormulas), distinct from single-eval: formula cells reference OTHER
+    /// cells, forming chains and (randomly) cycles. A/B via the gate env toggle.
+    /// Arithmetic-only refs keep cells comma-free (CSV-safe) and parity-clean.
+    func test_swift_rust_recalc_parity_random() throws {
+        let cols = ["A", "B", "C"]
+        for seed in UInt64(501)...UInt64(530) {
+            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<10 { // 30 seeds × 10 = 300 random formula grids
+                var rows: [[String]] = []
+                for _ in 0..<3 {
+                    var row: [String] = []
+                    for _ in 0..<3 {
+                        if rng.int(0, 2) == 0 {
+                            let ref1 = "\(cols[rng.int(0, 2)])\(rng.int(1, 3))"
+                            if rng.int(0, 1) == 0 {
+                                row.append("=\(ref1)+\(rng.int(1, 9))")
+                            } else {
+                                let ref2 = "\(cols[rng.int(0, 2)])\(rng.int(1, 3))"
+                                let op = ["+", "-", "*"][rng.int(0, 2)]
+                                row.append("=\(ref1)\(op)\(ref2)")
+                            }
+                        } else {
+                            row.append("\(rng.int(0, 20))")
+                        }
+                    }
+                    rows.append(row)
+                }
+                let csv = "a,b,c\n" + rows.map { $0.joined(separator: ",") }.joined(separator: "\n")
+                let model = EditableCSVModel(parsing: csv)
+                let rust = model.recalcAllFormulas(environment: ["MDV_RUST_FORMULA": "1"])
+                let swift = model.recalcAllFormulas(environment: ["MDV_RUST_FORMULA": "0"])
+                XCTAssertEqual(rust, swift, "recalc parity diverged:\n\(csv)")
+            }
+        }
+    }
 }
