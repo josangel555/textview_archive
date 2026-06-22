@@ -1359,6 +1359,66 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Value) -> Va
                 Value::Number(total)
             }
         }
+        "IFNA" => {
+            // Like IFERROR but ONLY catches #N/A (pairs with the lookup family).
+            if args.len() != 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let v = match args.first() {
+                Some(a) => eval(a, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if matches!(v, Value::Error(FormulaError::Na)) {
+                args.get(1).map_or(Value::Error(FormulaError::Value), |b| eval(b, resolver))
+            } else {
+                v
+            }
+        }
+        "TEXTJOIN" => {
+            // TEXTJOIN(delimiter, ignore_empty, text1, …) — join values/range cells
+            // with the delimiter; skip blank/empty when ignore_empty is true.
+            if args.len() < 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let delim = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let ignore_empty = match args.get(1).map(|e| eval(e, resolver)) {
+                Some(Value::Error(e)) => return Value::Error(e),
+                Some(v) => as_bool(&v),
+                None => return Value::Error(FormulaError::Value),
+            };
+            let mut parts: Vec<String> = Vec::new();
+            for arg in args.iter().skip(2) {
+                if let Expr::Range(a, b) = arg {
+                    let cells = match expand_range(a, b) {
+                        Some(c) => c,
+                        None => return Value::Error(FormulaError::Ref),
+                    };
+                    for cr in cells {
+                        let v = resolver(cr);
+                        if let Value::Error(e) = v {
+                            return Value::Error(e);
+                        }
+                        let t = value_text(&v);
+                        if !ignore_empty || !t.is_empty() {
+                            parts.push(t);
+                        }
+                    }
+                } else {
+                    let v = eval(arg, resolver);
+                    if let Value::Error(e) = v {
+                        return Value::Error(e);
+                    }
+                    let t = value_text(&v);
+                    if !ignore_empty || !t.is_empty() {
+                        parts.push(t);
+                    }
+                }
+            }
+            Value::Text(parts.join(&delim))
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -2676,5 +2736,35 @@ mod tests {
             evaluate_with("COUNTIFS(A1:A4, \"x\", B1:B2, \">5\")", &r),
             Value::Error(FormulaError::Value)
         ));
+    }
+
+    #[test]
+    fn ifna_and_textjoin() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> =
+            [(CellRef { col: 0, row: 0 }, "1"), (CellRef { col: 0, row: 1 }, "2")]
+                .into_iter()
+                .map(|(k, v)| (k, v.to_string()))
+                .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        // IFNA catches only #N/A
+        assert_eq!(
+            evaluate_with("IFNA(MATCH(99, A1:A2, 0), \"missing\")", &r),
+            Value::Text("missing".to_string())
+        );
+        assert_eq!(evaluate("IFNA(5, 99)"), Value::Number(5.0));
+        assert!(matches!(evaluate("IFNA(1/0, 99)"), Value::Error(FormulaError::DivideByZero))); // not #N/A
+
+        // TEXTJOIN (1/0 = ignore_empty bool)
+        assert_eq!(evaluate("TEXTJOIN(\"-\", 1, \"a\", \"b\", \"c\")"), Value::Text("a-b-c".to_string()));
+        assert_eq!(evaluate("TEXTJOIN(\"-\", 1, \"a\", \"\", \"c\")"), Value::Text("a-c".to_string())); // skip empty
+        assert_eq!(evaluate("TEXTJOIN(\"-\", 0, \"a\", \"\", \"c\")"), Value::Text("a--c".to_string())); // keep empty
+        let g2: HashMap<CellRef, String> =
+            [(CellRef { col: 0, row: 0 }, "x"), (CellRef { col: 0, row: 2 }, "z")] // A2 missing → blank
+                .into_iter()
+                .map(|(k, v)| (k, v.to_string()))
+                .collect();
+        let r2 = |c: CellRef| g2.get(&c).cloned();
+        assert_eq!(evaluate_with("TEXTJOIN(\",\", 1, A1:A3)", &r2), Value::Text("x,z".to_string())); // range + skip blank
     }
 }
