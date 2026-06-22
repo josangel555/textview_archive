@@ -6,7 +6,7 @@ import XCTest
 /// `EXEC_BUDGET_MB` defaults), and every doc that quotes the caps MUST cite the same
 /// numbers. A future script bump that leaves a doc stale fails here, on the host gate.
 final class BundleCapDocConsistencyTests: XCTestCase {
-    private let docsThatQuoteCaps = ["CLAUDE.md", "scripts/build-app.sh"]
+    private let docsThatQuoteCaps = ["CLAUDE.md", "scripts/build-app.sh", "README.md"]
 
     func test_docs_match_enforced_bundle_caps() throws {
         let root = packageRoot()
