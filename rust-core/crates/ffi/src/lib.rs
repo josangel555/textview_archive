@@ -57,6 +57,7 @@ use mdvcore_core::hex;
 use mdvcore_core::indent;
 use mdvcore_core::session::{CsvSession, OpenError};
 use mdvcore_core::wire;
+use mdvcore_highlight::folds;
 use mdvcore_highlight::runs as highlight_runs;
 
 pub use buf::MdvBuf;
@@ -265,6 +266,9 @@ pub const MDV_METHOD_HEX_RENDER: u16 = 12;
 pub const MDV_METHOD_FORMULA_EVALUATE: u16 = 13;
 /// Formula whole-grid recalc (envelope `MDV_METHOD_FORMULA_RECALC`) — TSK-1213.
 pub const MDV_METHOD_FORMULA_RECALC: u16 = 14;
+/// Code-fold regions (envelope `MDV_METHOD_FOLD_REGIONS`) — TSK-1202. Impl lives
+/// in mdvcore-highlight; routed at the FFI layer like HIGHLIGHT_RUNS.
+pub const MDV_METHOD_FOLD_REGIONS: u16 = 15;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore
@@ -327,6 +331,7 @@ pub unsafe extern "C" fn mdvcore_call(
         // it); intercept it here. Everything else dispatches in safe-Rust core.
         let result = match m {
             dispatch::Method::HighlightRuns => highlight_runs::runs_wire(req_bytes),
+            dispatch::Method::FoldRegions => folds::fold_regions_wire(req_bytes),
             other => dispatch::call(other, req_bytes, aux_bytes),
         };
         match result {

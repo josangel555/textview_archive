@@ -647,6 +647,7 @@ fn method_id_consts_match_the_dispatch_enum() {
     assert_eq!(MDV_METHOD_HEX_RENDER, Method::HexRender as u16);
     assert_eq!(MDV_METHOD_FORMULA_EVALUATE, Method::FormulaEvaluate as u16);
     assert_eq!(MDV_METHOD_FORMULA_RECALC, Method::FormulaRecalc as u16);
+    assert_eq!(MDV_METHOD_FOLD_REGIONS, Method::FoldRegions as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
@@ -655,10 +656,11 @@ fn method_id_consts_match_the_dispatch_enum() {
         MDV_METHOD_HIGHLIGHT_RUNS, MDV_METHOD_HEX_SEARCH,
         MDV_METHOD_INDENT_DETECT, MDV_METHOD_HEX_RENDER,
         MDV_METHOD_FORMULA_EVALUATE, MDV_METHOD_FORMULA_RECALC,
+        MDV_METHOD_FOLD_REGIONS,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 15, "14 methods defined; next free id is 15");
+    assert_eq!(Method::NEXT_FREE_ID, 16, "15 methods defined; next free id is 16");
 }
 
 #[test]
@@ -685,6 +687,39 @@ fn envelope_routes_highlight_to_the_same_result_as_its_symbol() {
     assert_eq!(via_bytes, direct_bytes, "byte-identical highlight result");
     unsafe { mdvcore_buf_free(&mut via) };
     unsafe { mdvcore_buf_free(&mut direct) };
+}
+
+#[test]
+fn envelope_routes_fold_regions() {
+    // Folds, like highlight, live in mdvcore-highlight — the envelope must route
+    // id 15 to fold_regions_wire. TEETH: a mis-route to dispatch::call hits the
+    // defensive Err → status would diverge from Ok.
+    let frame = mdvcore_core::wire::encode_frame(&folds::FoldsRequest {
+        text: "{\n  \"a\": 1,\n  \"b\": 2\n}".into(),
+        lang: "json".into(),
+    })
+    .unwrap();
+    let mut buf = MdvBuf::empty();
+    let st = unsafe {
+        mdvcore_call(
+            MDV_METHOD_FOLD_REGIONS,
+            frame.as_ptr(),
+            frame.len(),
+            core::ptr::null(),
+            0,
+            &mut buf,
+        )
+    };
+    assert_eq!(st, MdvStatus::Ok, "a real fold request succeeds via the envelope");
+    let out = unsafe { buf.as_slice() }.to_vec();
+    unsafe { mdvcore_buf_free(&mut buf) };
+    let resp: folds::FoldsResponse = mdvcore_core::wire::decode_frame(&out).unwrap();
+    assert!(resp.supported);
+    assert!(
+        resp.regions.iter().any(|r| r.kind == folds::FoldKind::Object),
+        "round-tripped object fold, got {:?}",
+        resp.regions
+    );
 }
 
 #[test]
