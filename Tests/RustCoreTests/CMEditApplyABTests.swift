@@ -49,6 +49,60 @@ final class CMEditApplyABTests: XCTestCase {
         }
     }
 
+    // MARK: - Randomized differential fuzz (edit-stream parity)
+
+    private struct Xorshift {
+        var s: UInt64
+        mutating func next() -> UInt64 { s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s }
+        mutating func int(_ lo: Int, _ hi: Int) -> Int { lo + Int(next() % UInt64(hi - lo + 1)) }
+    }
+
+    private func randomAscii(_ rng: inout Xorshift, _ maxLen: Int) -> String {
+        let alpha = Array("abc \n")
+        let n = rng.int(0, maxLen)
+        var s = ""
+        for _ in 0..<n { s.append(alpha[rng.int(0, alpha.count - 1)]) }
+        return s
+    }
+
+    /// A sorted, non-overlapping, in-bounds edit batch (ASCII base → UTF-16 offsets ==
+    /// char offsets) — the valid-ACCEPT space, where both engines must return
+    /// byte-identical applied text. (The reject space — overlap / OOB / surrogate-split
+    /// — is the corpus's job.) `cursor` advances strictly past each edit so no two
+    /// ranges touch.
+    private func randomValidBatch(_ rng: inout Xorshift, baseLen: Int) -> [CMEdit] {
+        var edits: [CMEdit] = []
+        var cursor = 0
+        let k = rng.int(0, 4)
+        for _ in 0..<k {
+            guard cursor <= baseLen else { break }
+            let from = cursor + rng.int(0, baseLen - cursor)
+            let to = from + rng.int(0, baseLen - from)
+            edits.append(e(from, to, randomAscii(&rng, 3)))
+            cursor = to + 1
+        }
+        return edits
+    }
+
+    /// Randomized edit-stream differential: the highest-frequency editor path (typing)
+    /// fuzzed for Swift↔Rust parity, the flip-critical complement to the hand corpus.
+    /// Merge gate runs fixed seeds; the nightly lane varies MDV_FUZZ_SEED_BASE.
+    func test_rust_matches_swift_random_edit_batches() throws {
+        let seedBase = UInt64(ProcessInfo.processInfo.environment["MDV_FUZZ_SEED_BASE"] ?? "0") ?? 0
+        for seed in UInt64(1)...UInt64(80) {
+            var rng = Xorshift(s: ((seed &+ seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<25 {
+                let base = randomAscii(&rng, 24)
+                let edits = randomValidBatch(&rng, baseLen: base.utf16.count)
+                let swift = CMEditApplier.apply(edits, to: base)
+                let rust = try mdvCoreApplyCMEdits(
+                    base: base, edits: edits.map { (from: $0.from, to: $0.to, insert: $0.insert) })
+                XCTAssertEqual(rust, swift,
+                               "edit-stream parity diverged: base=\(base.debugDescription) edits=\(edits)")
+            }
+        }
+    }
+
     func test_gate_off_uses_swift_and_matches() {
         // Env-pinned OFF (the shipped default is ON since TSK-649 round 4).
         let edits = [e(2, 2, "Z")]
