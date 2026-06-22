@@ -349,6 +349,30 @@ mod tests {
                    "Rust SCREAMING_CASE const must be tagged");
     }
 
+    /// Comment-coverage sweep (TSK-1201 follow-on): the Swift gap was a dual
+    /// `@comment @spell` capture our highlighter resolves to the trailing
+    /// unconfigured @spell. That @spell pattern is common in modern grammars, so
+    /// assert EVERY shipped language tags its line comment @comment — any new gap
+    /// fails here (then fix it like Swift: append a single-capture comment rule).
+    #[test]
+    fn line_comments_tag_at_comment_across_languages() {
+        let cases: &[(Lang, &str, &str)] = &[
+            (Lang::Rust, "// c\nfn m() {}", "// c"),
+            (Lang::Go, "// c\npackage m", "// c"),
+            (Lang::JavaScript, "// c\nlet x = 1;", "// c"),
+            (Lang::TypeScript, "// c\nlet x = 1;", "// c"),
+            (Lang::Python, "# c\nx = 1", "# c"),
+            (Lang::Ruby, "# c\nx = 1", "# c"),
+            (Lang::Lua, "-- c\nx = 1", "-- c"),
+            (Lang::Sql, "-- c\nSELECT 1", "-- c"),
+        ];
+        for &(lang, src, needle) in cases {
+            let runs = runs_utf16(src, lang);
+            assert_eq!(kind_at(&runs, src, needle).as_deref(), Some("comment"),
+                       "{lang:?} line comment must tag @comment");
+        }
+    }
+
     #[test]
     fn wire_round_trip_supported_language() {
         let frame = mdvcore_core::wire::encode_frame(&RunsRequest {

@@ -332,7 +332,11 @@ impl Lang {
             ),
             Self::Sql => (
                 tree_sitter_sequel::LANGUAGE.into(),
-                tree_sitter_sequel::HIGHLIGHTS_QUERY.to_string(),
+                // Same gap as Swift (TSK-1201): the bundled query captures `comment`
+                // as a dual `@comment @spell`, which our highlighter resolves to the
+                // trailing unconfigured @spell and drops. Append a single-capture rule.
+                tree_sitter_sequel::HIGHLIGHTS_QUERY.to_string()
+                    + "\n(comment) @comment\n",
             ),
         }
     }
