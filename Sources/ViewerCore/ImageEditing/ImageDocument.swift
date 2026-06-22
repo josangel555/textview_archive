@@ -136,6 +136,14 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// box, source pixel space; TSK-749). `fontSize` is in pixels; the system
     /// font is used so the op is self-contained (no bundled font dependency).
     case drawText(String, origin: CGPoint, DrawColor, fontSize: Double)
+    /// Paint a freehand brush stroke: stamp a radius-`radius` disc (or square when
+    /// `square`) of `color` along the polyline through `points` (source pixel space,
+    /// top-left origin). A single point is one dab. Rasterized by the SAME
+    /// `RasterCanvas` brush the live paint preview uses, so a committed stroke is
+    /// pixel-identical to its in-drag preview — and, riding the lossless op-list, it
+    /// is Ctrl-Z-able and composes with crop/resize/tonal ops (TSK-1055).
+    /// Geometry-preserving — painting never resizes the canvas.
+    case paintStroke(points: [CGPoint], radius: Int, color: RGBAColor, square: Bool)
 }
 
 /// A straight (non-premultiplied) RGBA color for the draw ops, each channel in

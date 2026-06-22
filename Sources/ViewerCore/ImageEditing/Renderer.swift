@@ -177,7 +177,30 @@ public enum Renderer {
         case .drawText(let text, let origin, let color, let fontSize):
             return try drawText(on: image, text: text, origin: origin,
                                 color: color, fontSize: fontSize)
+        case .paintStroke(let points, let radius, let color, let square):
+            return paintStroke(image, points: points, radius: radius,
+                               color: color, square: square)
         }
+    }
+
+    /// Rasterize a freehand brush stroke (TSK-1055) by replaying it through the SAME
+    /// `RasterCanvas` brush the live paint preview uses — so a committed stroke op is
+    /// pixel-identical to its in-drag preview. One point stamps a single dab; multiple
+    /// points sweep the brush along each consecutive segment. Falls through to the
+    /// input image if the canvas round-trip fails (degrades, never crashes).
+    static func paintStroke(
+        _ image: CGImage, points: [CGPoint], radius: Int, color: RGBAColor, square: Bool
+    ) -> CGImage {
+        guard !points.isEmpty, var canvas = RasterCanvas.from(image) else { return image }
+        let pts = points.map { (x: Int($0.x.rounded()), y: Int($0.y.rounded())) }
+        if pts.count == 1 {
+            canvas.brushDab(cx: pts[0].x, cy: pts[0].y, radius: radius, color: color, square: square)
+        } else {
+            for i in 1..<pts.count {
+                canvas.brushStroke(from: pts[i - 1], to: pts[i], radius: radius, color: color, square: square)
+            }
+        }
+        return canvas.cgImage() ?? image
     }
 
     // MARK: - Draw ops (rasterize shapes/text onto the buffer; TSK-749)

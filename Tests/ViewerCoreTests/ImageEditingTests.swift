@@ -201,6 +201,30 @@ final class ImageEditingTests: XCTestCase {
                       "saturation 0 should grayscale (R≈G≈B), got \(c)")
     }
 
+    // MARK: - Paint stroke as a lossless op (TSK-1055)
+
+    func test_paintStroke_op_paints_and_composes_in_the_op_list() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 32, height: 32, r: 1, g: 1, b: 1),
+            ExportSpec(format: .png))
+        let red = RGBAColor(r: 255, g: 0, b: 0)
+        // A single dab at the center, radius 2 — rides the op-list like any EditOp.
+        let painted = try Renderer.render(
+            ImageDocument(data: data)
+                .appending(.paintStroke(points: [CGPoint(x: 16, y: 16)], radius: 2,
+                                        color: red, square: false)))
+        let center = sampleRGBA(painted, x: 16, y: 16)
+        XCTAssertTrue(center.r > 200 && center.g < 60 && center.b < 60,
+                      "paintStroke op did not paint red at the dab center: \(center)")
+        let corner = sampleRGBA(painted, x: 0, y: 0)
+        XCTAssertTrue(corner.r > 200 && corner.g > 200 && corner.b > 200,
+                      "paintStroke op painted outside the dab radius: \(corner)")
+        // Rendering the op-list WITHOUT the stroke (an undo) restores the base pixel.
+        let plainCenter = sampleRGBA(try Renderer.render(ImageDocument(data: data)), x: 16, y: 16)
+        XCTAssertTrue(plainCenter.r > 200 && plainCenter.g > 200 && plainCenter.b > 200,
+                      "removing the paintStroke op (undo) must restore the base pixel")
+    }
+
     func test_colorControls_brightnessUp_lightens() throws {
         let base = solidImage(width: 32, height: 32, r: 0.4, g: 0.4, b: 0.4)
         let before = sampleRGBA(try Renderer.render(ImageDocument(data:
