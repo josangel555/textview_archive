@@ -1951,10 +1951,14 @@ fn coerce_cell(raw: Option<String>) -> Value {
     match raw {
         None => Value::Blank,
         Some(s) => {
-            let t = s.trim();
-            if t.is_empty() {
+            // Emptiness is judged on the ORIGINAL string: Excel (and the Swift
+            // FormulaEngine) treat a whitespace-only cell as the text " ", NOT
+            // blank. The trim is only for number DETECTION. TSK-1218: a prior
+            // version tested the TRIMMED string for emptiness, so " " coerced to
+            // Blank — diverging from Swift/Excel (LEN(" ")=0, UPPER(" ")="").
+            if s.is_empty() {
                 Value::Blank
-            } else if let Ok(n) = t.parse::<f64>() {
+            } else if let Ok(n) = s.trim().parse::<f64>() {
                 Value::Number(n)
             } else {
                 Value::Text(s)
@@ -2363,6 +2367,19 @@ mod tests {
         assert_eq!(evaluate_with("AND(A1>5, A1<10)", &r), Value::Bool(true));
         assert_eq!(evaluate_with("Z9=0", &r), Value::Bool(true)); // blank coerces to 0
         assert_eq!(evaluate_with("B1=C1", &r), Value::Bool(true)); // text compare is case-insensitive
+    }
+
+    #[test]
+    fn coerce_cell_whitespace_only_is_text_not_blank() {
+        // TSK-1218: a whitespace-only cell is the text " " (Excel + Swift), NOT
+        // blank. Emptiness is judged on the original string; trim is only for
+        // number detection.
+        assert_eq!(coerce_cell(Some(" ".to_string())), Value::Text(" ".to_string()));
+        assert_eq!(coerce_cell(Some("  ".to_string())), Value::Text("  ".to_string()));
+        assert_eq!(coerce_cell(Some(String::new())), Value::Blank); // truly empty → blank
+        assert_eq!(coerce_cell(None), Value::Blank);
+        assert_eq!(coerce_cell(Some(" 5 ".to_string())), Value::Number(5.0)); // trim for number
+        assert_eq!(coerce_cell(Some("abc ".to_string())), Value::Text("abc ".to_string()));
     }
 
     #[test]

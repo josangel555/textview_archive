@@ -108,29 +108,30 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
         }
     }
 
-    /// A short random ASCII LETTERS string (possibly empty; NO whitespace). The
-    /// fuzz deliberately stays whitespace-free: differential fuzzing found that the
-    /// Swift engine STRIPS whitespace from cell text values during coercion while
-    /// the Rust port preserves it (Excel-correct) — UPPER(" ")="" vs " ", LEN(" ")=0
-    /// vs 1, CONCAT drops a trailing space. That divergence is filed (TSK-1218), not
-    /// hidden; here we pin the genuine text-function parity on the clean domain.
+    /// A short random ASCII LETTERS string, sometimes with a leading/trailing SPACE
+    /// (for TRIM + whitespace-coercion coverage). Whitespace was briefly excluded
+    /// while TSK-1218 was open: this fuzz found the RUST port coerced a whitespace-
+    /// only cell to Blank (LEN=0, UPPER="") vs Swift/Excel's text " ". Now FIXED
+    /// (coerce_cell judges emptiness on the original string), so whitespace is
+    /// re-enabled here to GUARD the fix against regression.
     private func randomAsciiCell(_ rng: inout Xorshift) -> String {
-        var s = ""
+        var s = rng.int(0, 3) == 0 ? " " : ""
         for _ in 0..<rng.int(0, 8) {
             let c = rng.int(0, 51)
             let code = c < 26 ? (65 + c) : (97 + c - 26) // A–Z or a–z
             s.append(Character(UnicodeScalar(UInt8(code))))
         }
+        if rng.int(0, 3) == 0 { s += " " }
         return s
     }
 
     /// Differential fuzz over the shared, index-free TEXT functions (a third eval
-    /// path: string ops). UPPER/LOWER/LEN/CONCAT over random ASCII-letter cells —
-    /// excludes LEFT/RIGHT/MID (index-arg clamping is its own surface), PROPER (Rust
-    /// defers ICU `.capitalized`), and TRIM/whitespace (the coercion divergence,
-    /// TSK-1218). ASCII letters keep the comparison exact.
+    /// path: string ops). UPPER/LOWER/LEN/TRIM/CONCAT over random ASCII cells
+    /// (incl. whitespace — guards the TSK-1218 coerce_cell fix). Excludes LEFT/RIGHT/
+    /// MID (index-arg clamping is its own surface) and PROPER (Rust defers ICU
+    /// `.capitalized`). ASCII keeps the comparison exact.
     func test_swift_rust_text_parity_random() throws {
-        let unary = ["UPPER", "LOWER", "LEN"]
+        let unary = ["UPPER", "LOWER", "LEN", "TRIM"]
         for seed in UInt64(201)...UInt64(240) {
             var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<25 { // 40 seeds × 25 = 1000 random text cases
