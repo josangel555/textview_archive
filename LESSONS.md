@@ -3446,3 +3446,11 @@ Continuation of "the five constraints" above; these three close every remaining 
 - **`swift test --filter` does NOT relink the rust-core `.a`** (it's a `-L` dependency, not a tracked SwiftPM input).
   After a `build-rust-core.sh`, a `--filter` run can pass/fail against the STALE archive. Only the FULL headless gate
   (clean `swift test --parallel`) reliably relinks — verify any FFI-behavior change there, not via `--filter`.
+- **The Swift headless gate does NOT run `cargo clippy` — a rust-core clippy red persists SILENTLY (2026-06-22).**
+  `format_number` (TSK-1221) shipped `n as i64` without the project's justified `#[allow(clippy::cast_possible_truncation)]`;
+  the rust-core gate (`-D cast_possible_truncation`) went RED but stayed undetected for ~9 ticks because the per-tick gate
+  I ran was `test-headless-gate.sh` (Swift only). RULE: after ANY change under `rust-core/`, run `scripts/rust-core-gate.sh`
+  EXPLICITLY and read the literal `==> Rust-core gate green.` verdict — do NOT conflate it with `build-rust-core.sh`
+  succeeding (the build compiles; the gate adds strict clippy). The two gates are disjoint: Swift = `test-headless-gate.sh`,
+  rust-core = `rust-core-gate.sh`. For provably-safe f64→int casts, mirror `arg_count`/`format_number`: a tight
+  statement-level `#[allow(clippy::cast_possible_truncation)]` with the range-guard justification, not a bare cast.
