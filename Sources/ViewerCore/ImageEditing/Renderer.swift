@@ -94,6 +94,15 @@ public enum Renderer {
     private static let workingColorSpace: CGColorSpace =
         CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
 
+    /// Shared CoreImage render context (TSK-1049). A `CIContext` allocates GPU/CPU
+    /// render resources on creation, so building one per filter op (colorControls,
+    /// exposure, shadow/highlight, sharpen, invert) re-paid that cost on every render
+    /// — a per-keystroke-class antipattern on the image-editor hot path. `CIContext`
+    /// is documented thread-safe to share, and the working color space is constant, so
+    /// one cached instance serves every op. Created lazily on first filter use.
+    private static let sharedCIContext: CIContext =
+        CIContext(options: [.workingColorSpace: workingColorSpace])
+
     /// Premultiplied RGBA8, little-endian (`BGRA` byte order in memory). This
     /// is the format `CGContext` is happiest drawing into on Apple silicon and
     /// the one all downstream ops assume.
@@ -404,7 +413,7 @@ public enum Renderer {
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }
-        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        let ciContext = sharedCIContext
         guard let cg = ciContext.createCGImage(output, from: input.extent) else {
             throw ImageEditError.contextCreationFailed
         }
@@ -425,7 +434,7 @@ public enum Renderer {
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }
-        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        let ciContext = sharedCIContext
         guard let cg = ciContext.createCGImage(output, from: input.extent) else {
             throw ImageEditError.contextCreationFailed
         }
@@ -446,7 +455,7 @@ public enum Renderer {
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }
-        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        let ciContext = sharedCIContext
         guard let cg = ciContext.createCGImage(output, from: input.extent) else {
             throw ImageEditError.contextCreationFailed
         }
@@ -465,7 +474,7 @@ public enum Renderer {
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }
-        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        let ciContext = sharedCIContext
         guard let cg = ciContext.createCGImage(output, from: input.extent) else {
             throw ImageEditError.contextCreationFailed
         }
@@ -480,7 +489,7 @@ public enum Renderer {
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }
-        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        let ciContext = sharedCIContext
         guard let cg = ciContext.createCGImage(output, from: input.extent) else {
             throw ImageEditError.contextCreationFailed
         }
