@@ -1936,6 +1936,32 @@ pub fn evaluate_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault
     crate::wire::encode_frame(&FormulaResponse { values })
 }
 
+/// A whole-grid recalc request: every cell as raw text (A1 → raw).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecalcRequest {
+    /// The full grid, A1 address → raw cell text (data + formula cells).
+    pub cells: std::collections::HashMap<String, String>,
+}
+
+/// The computed value of each FORMULA cell (A1 → value); data cells are omitted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecalcResponse {
+    /// A1 address → computed `Value`, for formula cells only.
+    pub values: std::collections::HashMap<String, Value>,
+}
+
+/// Dispatch/FFI entry (`Method::FormulaRecalc`): decode the grid, recalc every
+/// formula cell in dependency order (references resolve to computed values; cycles
+/// → `#CYCLE`), encode the result map.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a malformed/oversized frame.
+pub fn recalc_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let req: RecalcRequest = crate::wire::decode_frame(req_frame)?;
+    let values = recalc(&req.cells);
+    crate::wire::encode_frame(&RecalcResponse { values })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2416,5 +2442,20 @@ mod tests {
         assert_eq!(out.get("D1"), Some(&Value::Bool(true))); // 6 > 5 — recursion gap closed
         assert_eq!(out.get("E1"), Some(&Value::Bool(true))); // bool value propagated through a formula ref
         assert_eq!(out.get("A1"), None); // data cells are not in the output
+    }
+
+    #[test]
+    fn recalc_wire_roundtrip() {
+        use std::collections::HashMap;
+        let cells: HashMap<String, String> = [("A1", "5"), ("A2", "=A1+1"), ("A3", "=A2*2")]
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        let frame = crate::wire::encode_frame(&RecalcRequest { cells }).expect("encode request");
+        let out = recalc_wire(&frame).expect("recalc_wire");
+        let resp: RecalcResponse = crate::wire::decode_frame(&out).expect("decode response");
+        assert_eq!(resp.values.get("A2"), Some(&Value::Number(6.0)));
+        assert_eq!(resp.values.get("A3"), Some(&Value::Number(12.0)));
+        assert_eq!(resp.values.get("A1"), None); // data cell omitted from the result
     }
 }

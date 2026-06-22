@@ -75,12 +75,15 @@ pub enum Method {
     /// Formula evaluation (`formula::evaluate_wire`) — batch-evaluate formulas
     /// against a cell-grid snapshot (stateless; the grid rides `req`).
     FormulaEvaluate = 13,
+    /// Formula whole-grid recalc (`formula::recalc_wire`) — evaluate every formula
+    /// cell in dependency order, resolving refs to computed values (cycles → #CYCLE).
+    FormulaRecalc = 14,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 14;
+    pub const NEXT_FREE_ID: u16 = 15;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -101,6 +104,7 @@ impl Method {
             11 => Some(Method::IndentDetect),
             12 => Some(Method::HexRender),
             13 => Some(Method::FormulaEvaluate),
+            14 => Some(Method::FormulaRecalc),
             _ => None,
         }
     }
@@ -145,6 +149,7 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
         Method::IndentDetect => crate::indent::detect_wire_aux(req, aux),
         Method::HexRender => crate::hex::render_wire_aux(req, aux),
         Method::FormulaEvaluate => crate::formula::evaluate_wire(req),
+        Method::FormulaRecalc => crate::formula::recalc_wire(req),
     }
 }
 
@@ -166,8 +171,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. FormulaEvaluate is the current last id.
-        assert_eq!(Method::FormulaEvaluate as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. FormulaRecalc is the current last id.
+        assert_eq!(Method::FormulaRecalc as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]
