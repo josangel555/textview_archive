@@ -1123,6 +1123,72 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             }
             Value::Number(if upper == "LN" { x.ln() } else { x.log10() })
         }
+        "EXACT" => {
+            if args.len() != 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let a = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let b = match arg_text(args.get(1), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            Value::Bool(a == b) // case-sensitive, unlike =
+        }
+        "REPT" => {
+            if args.len() != 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let s = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let n = match arg_num(args.get(1), resolver) {
+                Ok(d) => d,
+                Err(e) => return e,
+            };
+            if n < 0.0 {
+                return Value::Error(FormulaError::Value);
+            }
+            let count = trunc_to_count(n);
+            if s.chars().count().saturating_mul(count) > 32767 {
+                return Value::Error(FormulaError::Value); // Excel REPT cap; guards memory
+            }
+            Value::Text(s.repeat(count))
+        }
+        "SUBSTITUTE" => {
+            if args.len() != 3 && args.len() != 4 {
+                return Value::Error(FormulaError::Value);
+            }
+            let text = match arg_text(args.first(), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let old_s = match arg_text(args.get(1), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let new_s = match arg_text(args.get(2), resolver) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            if old_s.is_empty() {
+                return Value::Text(text);
+            }
+            if args.len() == 4 {
+                let nth = match arg_num(args.get(3), resolver) {
+                    Ok(d) => d,
+                    Err(e) => return e,
+                };
+                if nth < 1.0 {
+                    return Value::Error(FormulaError::Value);
+                }
+                return Value::Text(substitute_nth(&text, &old_s, &new_s, trunc_to_count(nth)));
+            }
+            Value::Text(text.replace(&old_s, &new_s))
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -1425,6 +1491,41 @@ fn round_away(x: f64) -> f64 {
     } else {
         x.floor()
     }
+}
+
+/// Truncate a finite, non-negative count to `usize` (Excel `Int()`; the caller
+/// range-guards, and the f64→usize cast saturates on overflow).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn trunc_to_count(n: f64) -> usize {
+    n.trunc() as usize
+}
+
+/// Replace the `nth` (1-based) occurrence of `old` in `text` with `new`; all
+/// other occurrences are left intact (Excel SUBSTITUTE's instance form).
+fn substitute_nth(text: &str, old: &str, new: &str, nth: usize) -> String {
+    if nth == 0 || old.is_empty() {
+        return text.to_string();
+    }
+    let mut count = 0usize;
+    let mut result = String::new();
+    let mut rest = text;
+    while let Some(pos) = rest.find(old) {
+        count += 1;
+        let before = rest.get(..pos).unwrap_or("");
+        let end = pos + old.len();
+        let after = rest.get(end..).unwrap_or("");
+        if count == nth {
+            result.push_str(before);
+            result.push_str(new);
+            result.push_str(after);
+            return result;
+        }
+        result.push_str(before);
+        result.push_str(rest.get(pos..end).unwrap_or(""));
+        rest = after;
+    }
+    result.push_str(rest);
+    result
 }
 
 /// Order two values: numerically when BOTH coerce to numbers (number/bool/blank/
@@ -2021,5 +2122,17 @@ mod tests {
         assert_eq!(evaluate("LOG10(1000)"), Value::Number(3.0));
         assert!(matches!(evaluate("LN(-1)"), Value::Error(FormulaError::Num)));
         assert!(matches!(evaluate("LN(0)"), Value::Error(FormulaError::Num)));
+    }
+
+    #[test]
+    fn text_extended_functions() {
+        assert_eq!(evaluate("EXACT(\"abc\", \"abc\")"), Value::Bool(true));
+        assert_eq!(evaluate("EXACT(\"abc\", \"ABC\")"), Value::Bool(false)); // case-sensitive
+        assert_eq!(evaluate("REPT(\"ab\", 3)"), Value::Text("ababab".to_string()));
+        assert_eq!(evaluate("REPT(\"x\", 0)"), Value::Text(String::new()));
+        assert!(matches!(evaluate("REPT(\"x\", -1)"), Value::Error(FormulaError::Value)));
+        assert_eq!(evaluate("SUBSTITUTE(\"a-b-c\", \"-\", \"+\")"), Value::Text("a+b+c".to_string()));
+        assert_eq!(evaluate("SUBSTITUTE(\"a-b-c\", \"-\", \"+\", 2)"), Value::Text("a-b+c".to_string()));
+        assert_eq!(evaluate("SUBSTITUTE(\"abc\", \"\", \"x\")"), Value::Text("abc".to_string())); // empty old → unchanged
     }
 }

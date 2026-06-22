@@ -111,4 +111,23 @@ final class FormulaParityTests: XCTestCase {
             try assertParity(formula, cells)
         }
     }
+
+    /// Extended text batch (TSK-1213 parity round 3): EXACT/REPT/SUBSTITUTE —
+    /// deterministic string ops the Swift engine gained; matched exactly in Rust.
+    /// (PROPER deferred: Swift uses Foundation `.capitalized`, Unicode word-boundary
+    /// semantics not safely reproducible in Rust without Foundation.)
+    func test_parity_extended_text() throws {
+        let cases: [(String, [String: String])] = [
+            ("=EXACT(A1, A2)", ["A1": "abc", "A2": "abc"]),
+            ("=EXACT(A1, A2)", ["A1": "abc", "A2": "ABC"]),
+            ("=REPT(A1, 3)", ["A1": "ab"]),
+            ("=REPT(A1, 0)", ["A1": "x"]),
+            ("=SUBSTITUTE(A1, \"-\", \"+\")", ["A1": "a-b-c"]),
+            ("=SUBSTITUTE(A1, \"-\", \"+\", 2)", ["A1": "a-b-c"]),
+            ("=SUBSTITUTE(A1, \"x\", \"y\")", ["A1": "abc"]), // no occurrence → unchanged
+        ]
+        for (formula, cells) in cases {
+            try assertParity(formula, cells)
+        }
+    }
 }
