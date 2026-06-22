@@ -3,7 +3,7 @@
 ## DECISIONS NEEDED (owner) — as of 2026-06-21
 
 Four owner-gated items block the highest-value next steps; each is parked with full homework on the board:
-- **TSK-1215 — formula on-screen.** The Rust+Swift formula engine is complete + tested but UNSURFACED (no view consumes it; `=A1+B1` shows literal text). Decide: (a) wire `recalcAllFormulas` into `CSVTableView` (render, VM-validated) + (b) flip `MDV_RUST_FORMULA` ON after a soak. THE unlock for the whole formula investment.
+- **TSK-1215 — formula on-screen.** View-wiring (a) now BUILT @ 9983e46d (gated, zero-risk: CSVTableView shows computed formula values when `MDV_RUST_FORMULA` on + file order; off → raw, unchanged). Remaining is just YOUR call: (b) flip `MDV_RUST_FORMULA` ON after a soak (lights up engine + display together) → VM/owner on-screen confirm → (c) delete the Swift twin. THE unlock for the whole formula investment; the agent build is done.
 - **TSK-775 — migration horizon.** Engines-only (recommended; ~done) vs whole-core (larger, later). Roadmap: `docs/RUST_MIGRATION_ROADMAP_2026-06-21.md`.
 - **TSK-1214 / TSK-1098 — bundle cap target.** Exec ~60MB at cap; CLAUDE.md (26MB) stale vs the script (60MB). Decide the real budget → then grammar lazy-load (meaty) or accept+raise. Spike findings on TSK-1214.
 - **TSK-788 — test-audit depth.** Recommend STANDARD (sufficient). `docs/TEST_SUITE_AUDIT_2026-06-21.md`.
