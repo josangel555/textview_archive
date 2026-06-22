@@ -599,6 +599,12 @@ mod tests {
             (Lang::Go, "func main() { return }", "func", TokenKind::Keyword),
             (Lang::Ruby, "def f\n  1\nend # note", "# note", TokenKind::Comment),
             (Lang::Sql, "SELECT a FROM t;", "SELECT", TokenKind::Keyword),
+            // TSK-1201: Swift `//` and SQL `--` line comments now tag on the
+            // highlight() span path too (the TUI render path: TokenKind::Comment
+            // → Color::DarkGray cells), not just runs_utf16. Teeth — these failed
+            // before the dual-`@comment @spell` / single-capture fix.
+            (Lang::Swift, "// note\nlet x = 1", "// note", TokenKind::Comment),
+            (Lang::Sql, "-- note\nSELECT 1", "-- note", TokenKind::Comment),
         ];
         for (lang, src, needle, kind) in cases {
             let spans = highlight(src, *lang);
