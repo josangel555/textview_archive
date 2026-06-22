@@ -152,4 +152,20 @@ final class FormulaParityTests: XCTestCase {
             try assertParity(formula, cells)
         }
     }
+
+    /// Stats batch (TSK-1213 parity round 5): COUNTA (count non-blank), MEDIAN
+    /// (sorted middle / mean of two middle; empty → #NUM).
+    func test_parity_stats() throws {
+        let cases: [(String, [String: String])] = [
+            ("=MEDIAN(A1:A3)", ["A1": "1", "A2": "3", "A3": "2"]), // odd
+            ("=MEDIAN(A1:A4)", ["A1": "1", "A2": "2", "A3": "3", "A4": "4"]), // even
+            ("=MEDIAN(A1, A2, A3)", ["A1": "5", "A2": "1", "A3": "9"]),
+            ("=COUNTA(A1:A3)", ["A1": "5", "A2": "x", "A3": "9"]), // 3 non-blank
+            ("=COUNTA(A1:A3)", ["A1": "5", "A3": "9"]), // A2 missing → 2
+            ("=COUNTA(1, \"x\", 5)", [:]), // 3 scalar args
+        ]
+        for (formula, cells) in cases {
+            try assertParity(formula, cells)
+        }
+    }
 }

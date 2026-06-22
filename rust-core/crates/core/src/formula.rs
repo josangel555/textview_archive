@@ -1261,6 +1261,29 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             }
             Value::Error(FormulaError::Na)
         }
+        "COUNTA" => match non_blank_count(args, resolver) {
+            Ok(n) => Value::Number(n as f64),
+            Err(e) => e,
+        },
+        "MEDIAN" => {
+            let mut nums = match numeric_values(args, resolver) {
+                Ok(n) => n,
+                Err(e) => return e,
+            };
+            if nums.is_empty() {
+                return Value::Error(FormulaError::Num);
+            }
+            nums.sort_by(f64::total_cmp);
+            let mid = nums.len() / 2;
+            let median = if nums.len().is_multiple_of(2) {
+                // even count → mean of the two middle values
+                (nums.get(mid - 1).copied().unwrap_or(0.0) + nums.get(mid).copied().unwrap_or(0.0))
+                    / 2.0
+            } else {
+                nums.get(mid).copied().unwrap_or(0.0)
+            };
+            Value::Number(median)
+        }
         "ISNA" | "ISERR" => {
             // ISNA → #N/A only; ISERR → any error EXCEPT #N/A. Does not propagate.
             if args.len() != 1 {
@@ -1375,6 +1398,35 @@ fn numeric_values(
         }
     }
     Ok(nums)
+}
+
+/// Count of non-blank values across `args` (COUNTA): every range cell or scalar
+/// arg that is not blank counts (text/number/bool all do). A scalar arg that
+/// evaluates to an error propagates.
+fn non_blank_count(
+    args: &[Expr],
+    resolver: &dyn Fn(CellRef) -> Option<String>,
+) -> Result<usize, Value> {
+    let mut n = 0;
+    for arg in args {
+        if let Expr::Range(a, b) = arg {
+            let cells = expand_range(a, b).ok_or(Value::Error(FormulaError::Ref))?;
+            for cr in cells {
+                if !matches!(coerce_cell(resolver(cr)), Value::Blank) {
+                    n += 1;
+                }
+            }
+        } else {
+            let v = eval(arg, resolver);
+            if let Value::Error(_) = v {
+                return Err(v);
+            }
+            if !matches!(v, Value::Blank) {
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
 }
 
 /// A value's numeric contribution to an aggregate: numbers + booleans count;
@@ -2245,5 +2297,15 @@ mod tests {
         assert_eq!(evaluate("ISERR(1/0)"), Value::Bool(true)); // #DIV/0! is an error ≠ #N/A
         assert_eq!(evaluate("ISNA(1/0)"), Value::Bool(false));
         assert_eq!(evaluate("ISNA(5)"), Value::Bool(false)); // non-error → false
+    }
+
+    #[test]
+    fn stats_functions() {
+        assert_eq!(evaluate("MEDIAN(1, 3, 2)"), Value::Number(2.0)); // odd → middle
+        assert_eq!(evaluate("MEDIAN(1, 2, 3, 4)"), Value::Number(2.5)); // even → mean of two
+        assert_eq!(evaluate("MEDIAN(5)"), Value::Number(5.0));
+        assert!(matches!(evaluate("MEDIAN(\"x\")"), Value::Error(FormulaError::Num))); // no numbers → #NUM
+        assert_eq!(evaluate("COUNTA(1, \"x\", 5)"), Value::Number(3.0));
+        assert_eq!(evaluate("COUNTA(A1:A3)"), Value::Number(0.0)); // all blank (no resolver)
     }
 }
