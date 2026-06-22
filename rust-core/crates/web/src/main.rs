@@ -3459,6 +3459,60 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// Security fuzz of the localhost server's attacker-facing request parse
+    /// (rust-core audit fuzz target #2). Random + traversal-spliced request lines
+    /// must NEVER panic through route / viewed_path / pct_decode, and a confined
+    /// `/view` target must never carry a `..` (parent-dir) component — the
+    /// arbitrary-read fence. Merge gate fixed seed; nightly varies MDV_FUZZ_SEED_BASE.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // RNG indices are modulo-bounded
+    fn route_fuzz_never_panics_and_confines_view_target() {
+        let seed_base: u64 = std::env::var("MDV_FUZZ_SEED_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let root = fixture();
+        let alpha: Vec<char> =
+            "GET POST /view /browse /recent ?path= filter sort & = % 2e 2f 2F .. / \\ etc passwd hosts \0\n\t aА日#"
+                .chars()
+                .collect();
+        let fragments = [
+            "GET /view?path=../../../../etc/passwd HTTP/1.1",
+            "GET /view?path=%2e%2e%2f%2e%2e%2fetc%2fpasswd HTTP/1.1",
+            "GET /view?path=%2Fetc%2Fhosts HTTP/1.1",
+            "GET /../../ HTTP/1.1",
+            "POST / HTTP/1.1",
+            "GET /browse?path=%2F HTTP/1.1",
+            "GET /view?path=..\\..\\windows HTTP/1.1",
+            "\0\0\0",
+            "GET",
+        ];
+        let mut s: u64 = seed_base.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        for _ in 0..600 {
+            let len = (next() % 90) as usize;
+            let mut req: String =
+                (0..len).map(|_| alpha[(next() % alpha.len() as u64) as usize]).collect();
+            if next() % 2 == 0 {
+                req = fragments[(next() % fragments.len() as u64) as usize].to_string();
+            }
+            let _ = route(&req, &root); // must not panic
+            if let Some(p) = viewed_path(&req, &root) {
+                assert!(
+                    !p.components().any(|c| c == std::path::Component::ParentDir),
+                    "viewed_path leaked a traversal component: req={req:?} p={p:?}"
+                );
+            }
+            let _ = pct_decode(&req); // must not panic
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn route_confines_path_to_root() {
         let root = fixture().canonicalize().unwrap();
