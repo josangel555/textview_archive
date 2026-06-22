@@ -375,6 +375,52 @@ pub fn parse_jsonl(text: &str) -> Vec<JsonlLine> {
 mod tests {
     use super::*;
 
+    /// Robustness fuzz (TSK-1232, completing the TSK-1223 engine-fuzz coverage):
+    /// the hand-rolled recursive-descent parser must NEVER panic on adversarial
+    /// input — random concatenations of structural tokens, unterminated strings,
+    /// bad `\uXXXX` escapes (incl. lone surrogates), huge/malformed numbers, raw
+    /// garbage, and pathological nesting. Deterministic LCG, no dep. Teeth: a
+    /// panic (unbounded recursion, a slice past the cursor, an escape mis-handle)
+    /// fails it; `parse` always returns Ok|Err, and `parse_jsonl` yields exactly
+    /// one outcome per `\n`-separated line.
+    #[test]
+    #[allow(clippy::cast_possible_truncation, reason = "LCG output is modulo-bounded before indexing")]
+    fn parse_fuzz_never_panics_and_jsonl_is_line_aligned() {
+        const TOKENS: &[&str] = &[
+            "{", "}", "[", "]", ":", ",", "\"", "\\", "\\u", "\\uD800", "\\n",
+            "true", "false", "null", "0", "-0", "1e999", "9999999999999999999",
+            "1.5e-", "\"k\"", "  ", "\n", "\t", "\u{4e2d}", "\u{0}", ".", "+", "NaN",
+        ];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0x4A53_4F4E_0001_0001;
+        for _ in 0..4000u32 {
+            let n = (lcg(&mut state) % 60) as usize;
+            let mut s = String::new();
+            for _ in 0..n {
+                s.push_str(TOKENS[(lcg(&mut state) % TOKENS.len() as u64) as usize]);
+            }
+            // No-panic discipline: parse returns Ok|Err for ANY input.
+            let _ = parse(&s);
+            // JSONL framing: exactly one outcome per '\n'-separated line.
+            assert_eq!(
+                parse_jsonl(&s).len(),
+                s.split('\n').count(),
+                "parse_jsonl must yield one outcome per line for {s:?}"
+            );
+        }
+        // Pathological nesting must hit the MAX_DEPTH cap as an Err, never a
+        // stack overflow (pins the depth guard on the fuzz path too).
+        assert!(
+            parse(&"[".repeat(10_000)).is_err(),
+            "deep nesting must error at the depth cap, not overflow the stack"
+        );
+    }
+
     #[test]
     fn scalars() {
         assert_eq!(parse("null").unwrap(), JsonValue::Null);
