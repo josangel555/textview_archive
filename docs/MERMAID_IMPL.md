@@ -1241,17 +1241,20 @@ Add ~2.5 MB for `mermaid.min.js`, ~5 KB for the shim + CSS + license.
 
 **Projected post-merge:** ~22.5 MB per app bundle.
 
-**Hard guard:** project policy caps bundles at 25 MB. We have ~2.5 MB of
-headroom after this PR. **Action items:**
+**Hard guard:** project policy now caps bundles at **80 MB total / 60 MB
+main-executable** (`scripts/check-bundle-size.sh` defaults; the cap grew
+25→48→80 as rust tree-sitter grammars landed — see CLAUDE.md, the authoritative
+figure). The 25 MB figure below is the historical cap at this doc's writing.
+**Action items:**
 
 - Add a `swift test` assertion (or a CI step) that checks
   `du -sb dist/TextView.app/Contents/Resources/mermaid.min.js` against a
   recorded ceiling (set ceiling to `3145728` = 3 MB, leaving a little
   upgrade buffer). Bigger means the implementer accidentally vendored a
   non-minified build.
-- Add a CI line that checks total app bundle size against 25 MB and
-  fails on overage. (May already exist — grep `scripts/` for size
-  guards.)
+- DONE: `scripts/check-bundle-size.sh` checks total + main-executable
+  bundle size against the 80/60 MB caps and fails on overage; it is wired
+  into `scripts/build-app.sh`. (Overridable via `BUDGET_MB` / `EXEC_BUDGET_MB`.)
 
 Mitigations if we ever blow the cap:
 
