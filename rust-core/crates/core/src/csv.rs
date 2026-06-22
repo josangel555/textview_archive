@@ -639,6 +639,57 @@ mod tests {
         assert!(!t.truncated);
     }
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary CSV-shaped input
+    /// across the danger surface — quotes, escaped quotes, all three line endings
+    /// (\n \r\n \r), control chars incl. NUL, multi-byte scalars, unbalanced
+    /// quotes — must NEVER panic in `parse` OR the shipped arena `parse_arena`,
+    /// and the wire `Table`'s body rows stay normalized to header width.
+    /// Deterministic LCG (no `rand` dep). Teeth: a row-width mis-normalization
+    /// fails the assert; an edge-case panic (e.g. a fencepost-offset bug in the
+    /// arena path) fails outright.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // LCG values are modulo-bounded before use
+    fn parse_fuzz_never_panics_and_normalizes_row_width() {
+        const ALPHABET: &[char] = &[
+            '"', '"', ',', '\n', '\r', '\t', ';', '|', 'a', 'b', ' ', '\0', 'é', '中',
+        ];
+        const SEEDS: &[&str] = &[
+            "", "\"", "\"\"", "\"\"\"", "a,\"b", "a,b\"c\"d", "\r", "\r\n", "\n\r",
+            "a\r\nb\rc\nd", ",,,", "\"a\"\"b\"", "h1,h2,h3\n\"x\ny\",2",
+        ];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0x0123_4567_89ab_cdef;
+        for iter in 0..3000u32 {
+            let mut s = String::new();
+            let len = (lcg(&mut state) % 80) as usize;
+            for _ in 0..len {
+                s.push(ALPHABET[(lcg(&mut state) as usize) % ALPHABET.len()]);
+            }
+            match iter % 4 {
+                0 => s.push_str(SEEDS[(lcg(&mut state) as usize) % SEEDS.len()]),
+                1 => s.insert_str(0, SEEDS[(lcg(&mut state) as usize) % SEEDS.len()]),
+                _ => {}
+            }
+            let t = parse(&s);
+            let cols = t.header.len();
+            for row in &t.rows {
+                assert_eq!(
+                    row.len(),
+                    cols,
+                    "row width {} != header width {cols} for input {s:?}",
+                    row.len()
+                );
+            }
+            // The shipped arena path (parse_arena → TableArena) must also survive.
+            let _ = parse_arena(&s);
+        }
+    }
+
     #[test]
     fn tab_wins_over_comma() {
         let t = parse("a\tb,c\td\n1\t2,3\t4\n");
