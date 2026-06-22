@@ -10,7 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-21
 
 ### Added
-- **Web viewer — rendered Markdown** — the standalone web front-end now shows `.md` files as formatted HTML (headings, bold, lists, links) with a Rendered/Source toggle, instead of raw source only; unsafe links are stripped.
+- **Web viewer — rendered Markdown (default)** — the standalone web front-end now shows `.md` files as formatted HTML by default (headings, bold, lists, links), with Source/Hex toggles to see the raw bytes; unsafe links are stripped.
 - **File ▸ Local History** — browse the save-time version snapshots of the current file (timestamp + size) and view any past version read-only.
 - **View ▸ Toggle Read-Only** — lock the editor against accidental edits for the session (checkable menu item).
 - **File ▸ Export as Word / RTF / RTFD** — export the current Markdown document to a `.docx` Word file, an `.rtf` file, or an `.rtfd` package (headings, lists, bold/italic/strike).
