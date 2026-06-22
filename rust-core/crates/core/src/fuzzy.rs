@@ -182,6 +182,61 @@ mod tests {
         assert!(match_query("a", "").is_none());
     }
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary query × target —
+    /// empty, unicode, repeated + boundary chars, long — must NEVER panic in
+    /// match_query OR rank, and any returned Match's `indices` must be strictly
+    /// ascending, each within the target's char count, and no more numerous than
+    /// the query's chars. Deterministic LCG, no dep. Teeth: an out-of-range or
+    /// out-of-order index (the consumer-crash class) fails the assert.
+    #[test]
+    #[allow(clippy::cast_possible_truncation, reason = "char counts of tiny fuzz inputs fit u32; LCG modulo-bounded")]
+    fn match_query_fuzz_never_panics_and_indices_in_bounds() {
+        const CHARS: &[char] = &['a', 'b', 'A', '/', '_', '-', '.', ' ', 'é', '中', 'a', 'b'];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0xF022_15EE_DDCC_BBAA;
+        for _ in 0..4000u32 {
+            let qlen = (lcg(&mut state) % 8) as usize;
+            let mut query = String::new();
+            for _ in 0..qlen {
+                query.push(CHARS[(lcg(&mut state) as usize) % CHARS.len()]);
+            }
+            let tlen = (lcg(&mut state) % 40) as usize;
+            let mut target = String::new();
+            for _ in 0..tlen {
+                target.push(CHARS[(lcg(&mut state) as usize) % CHARS.len()]);
+            }
+            let qchars = query.chars().count() as u32;
+            let tchars = target.chars().count() as u32;
+            if let Some(m) = match_query(&query, &target) {
+                let mut prev: i64 = -1;
+                for &idx in &m.indices {
+                    assert!(
+                        idx < tchars,
+                        "fuzzy index {idx} >= target char count {tchars}; q={query:?} t={target:?}"
+                    );
+                    assert!(
+                        i64::from(idx) > prev,
+                        "fuzzy indices not strictly ascending: {idx} after {prev}"
+                    );
+                    prev = i64::from(idx);
+                }
+                assert!(
+                    m.indices.len() as u32 <= qchars,
+                    "more matched indices ({}) than query chars ({qchars})",
+                    m.indices.len()
+                );
+            }
+            // rank over a small candidate set must also survive arbitrary queries.
+            let cands = [target.as_str(), "abc", "", "a/b_c-d.e"];
+            let _ = rank(&query, cands.iter().copied());
+        }
+    }
+
     #[test]
     fn requires_all_chars_in_order() {
         assert!(match_query("abc", "a_b_c").is_some());
