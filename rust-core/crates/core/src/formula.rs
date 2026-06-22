@@ -1300,6 +1300,65 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Value) -> Va
                 Value::Bool(false)
             }
         }
+        "COUNTIFS" => {
+            // COUNTIFS(range1, crit1, [range2, crit2, …]) — count indices where
+            // EVERY (range, criterion) pair matches. Ranges must be the same shape.
+            if args.is_empty() || !args.len().is_multiple_of(2) {
+                return Value::Error(FormulaError::Value);
+            }
+            let (ranges, crits) = match collect_criteria_pairs(args, 0, resolver) {
+                Ok(pairs) => pairs,
+                Err(e) => return e,
+            };
+            let n = ranges.first().map_or(0, Vec::len);
+            if ranges.iter().any(|r| r.len() != n) {
+                return Value::Error(FormulaError::Value);
+            }
+            let mut count: usize = 0;
+            for idx in 0..n {
+                if all_criteria_match(&ranges, &crits, idx, resolver) {
+                    count += 1;
+                }
+            }
+            Value::Number(count as f64)
+        }
+        "SUMIFS" | "AVERAGEIFS" => {
+            // SUMIFS(sum_range, range1, crit1, …) — sum/avg sum_range[i] where every
+            // (range, criterion) pair matches. Odd arg count (sum_range + pairs).
+            if args.len() < 3 || args.len().is_multiple_of(2) {
+                return Value::Error(FormulaError::Value);
+            }
+            let sum_cells = match arg_cells(args.first()) {
+                Some(c) => c,
+                None => return Value::Error(FormulaError::Value),
+            };
+            let (ranges, crits) = match collect_criteria_pairs(args, 1, resolver) {
+                Ok(pairs) => pairs,
+                Err(e) => return e,
+            };
+            if ranges.iter().any(|r| r.len() != sum_cells.len()) {
+                return Value::Error(FormulaError::Value);
+            }
+            let mut total = 0.0;
+            let mut matched: usize = 0;
+            for (idx, scr) in sum_cells.iter().enumerate() {
+                if all_criteria_match(&ranges, &crits, idx, resolver)
+                    && let Some(n) = numeric_contribution(&resolver(*scr))
+                {
+                    total += n;
+                    matched += 1;
+                }
+            }
+            if upper == "AVERAGEIFS" {
+                if matched == 0 {
+                    Value::Error(FormulaError::DivideByZero)
+                } else {
+                    Value::Number(total / matched as f64)
+                }
+            } else {
+                Value::Number(total)
+            }
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -1586,6 +1645,47 @@ fn arg_cells(arg: Option<&Expr>) -> Option<Vec<CellRef>> {
         Some(Expr::Ref(name)) => CellRef::parse(name).map(|cr| vec![cr]),
         _ => None,
     }
+}
+
+/// Collect (range-cells, evaluated-criterion) pairs from `args` starting at
+/// `start` (COUNTIFS from 0; SUMIFS/AVERAGEIFS from 1, past the sum-range). An
+/// error-valued criterion short-circuits to `Err`. Used by the *IFS family.
+#[allow(clippy::type_complexity)]
+fn collect_criteria_pairs(
+    args: &[Expr],
+    start: usize,
+    resolver: &dyn Fn(CellRef) -> Value,
+) -> Result<(Vec<Vec<CellRef>>, Vec<Value>), Value> {
+    let mut ranges: Vec<Vec<CellRef>> = Vec::new();
+    let mut crits: Vec<Value> = Vec::new();
+    let mut i = start;
+    while i < args.len() {
+        let cells = arg_cells(args.get(i)).ok_or(Value::Error(FormulaError::Value))?;
+        let crit = match args.get(i + 1) {
+            Some(e) => eval(e, resolver),
+            None => return Err(Value::Error(FormulaError::Value)),
+        };
+        if let Value::Error(_) = crit {
+            return Err(crit);
+        }
+        ranges.push(cells);
+        crits.push(crit);
+        i += 2;
+    }
+    Ok((ranges, crits))
+}
+
+/// True iff EVERY (range, criterion) pair matches at row index `idx`.
+fn all_criteria_match(
+    ranges: &[Vec<CellRef>],
+    crits: &[Value],
+    idx: usize,
+    resolver: &dyn Fn(CellRef) -> Value,
+) -> bool {
+    ranges
+        .iter()
+        .zip(crits)
+        .all(|(cells, crit)| cells.get(idx).is_some_and(|cr| matches_criterion(&resolver(*cr), crit)))
 }
 
 /// The normalized (top-left, bottom-right) bounds of a range/ref argument.
@@ -2545,5 +2645,36 @@ mod tests {
                 .collect();
         let rl = |c: CellRef| lit.get(&c).cloned();
         assert_eq!(evaluate_with("COUNTIF(A1:A2, \"a~*b\")", &rl), Value::Number(1.0)); // ~ escapes * → literal
+    }
+
+    #[test]
+    fn multi_criteria_ifs() {
+        use std::collections::HashMap;
+        // col A = category, col B = value
+        let grid: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "x"), (CellRef { col: 1, row: 0 }, "10"),
+            (CellRef { col: 0, row: 1 }, "y"), (CellRef { col: 1, row: 1 }, "20"),
+            (CellRef { col: 0, row: 2 }, "x"), (CellRef { col: 1, row: 2 }, "30"),
+            (CellRef { col: 0, row: 3 }, "y"), (CellRef { col: 1, row: 3 }, "40"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k, v.to_string()))
+        .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("COUNTIFS(A1:A4, \"x\")", &r), Value::Number(2.0));
+        assert_eq!(evaluate_with("COUNTIFS(A1:A4, \"x\", B1:B4, \">15\")", &r), Value::Number(1.0));
+        assert_eq!(evaluate_with("SUMIFS(B1:B4, A1:A4, \"x\")", &r), Value::Number(40.0));
+        assert_eq!(evaluate_with("SUMIFS(B1:B4, A1:A4, \"x\", B1:B4, \">15\")", &r), Value::Number(30.0));
+        assert_eq!(evaluate_with("AVERAGEIFS(B1:B4, A1:A4, \"y\")", &r), Value::Number(30.0));
+        // wildcard criterion works in the *IFS path too
+        assert_eq!(
+            evaluate_with("AVERAGEIFS(B1:B4, A1:A4, \"y\", B1:B4, \"<>nope\")", &r),
+            Value::Number(30.0)
+        );
+        // mismatched range shapes → #VALUE
+        assert!(matches!(
+            evaluate_with("COUNTIFS(A1:A4, \"x\", B1:B2, \">5\")", &r),
+            Value::Error(FormulaError::Value)
+        ));
     }
 }
