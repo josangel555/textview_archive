@@ -12,7 +12,7 @@
 //! intentionally NOT in the kind map yet.
 
 use crate::Lang;
-use tree_sitter::Parser;
+use tree_sitter::{Node, Parser};
 
 /// The fold category, mirroring `FoldRegion.Kind` on the Swift side. Only the
 /// kinds reachable from the languages ported so far are listed; markdown's
@@ -26,6 +26,8 @@ pub enum FoldKind {
     Element,
     StringLiteral,
     Comment,
+    /// A generic ≥2-line container we recognise (control-flow blocks, etc.).
+    Other,
 }
 
 /// A foldable region: a 1-based, inclusive line span (matching the Swift
@@ -37,18 +39,22 @@ pub struct FoldRegion {
     pub kind: FoldKind,
 }
 
-/// Maps a `(language, tree-sitter node kind)` to a fold kind — the Rust encoding
-/// of the per-language fold `.scm` queries. `None` = the node is not foldable.
-fn fold_kind(lang: Lang, node_kind: &str) -> Option<FoldKind> {
+/// Maps a `(language, node)` to a fold kind — the Rust encoding of the
+/// per-language fold `.scm` queries. Most rules are pure node-kind matches; the
+/// Swift control-flow rules are parent-constrained (a `statements` node folds
+/// only inside if/for/while/do), which is why this takes the `Node` (for
+/// `parent()`), not just its kind. `None` = the node is not foldable.
+fn fold_kind(lang: Lang, node: Node) -> Option<FoldKind> {
+    let kind = node.kind();
     match lang {
         // json-folds.scm
-        Lang::Json => match node_kind {
+        Lang::Json => match kind {
             "object" => Some(FoldKind::Object),
             "array" => Some(FoldKind::Array),
             _ => None,
         },
         // javascript-folds.scm (JS / JSX)
-        Lang::JavaScript => match node_kind {
+        Lang::JavaScript => match kind {
             "statement_block" => Some(FoldKind::Function),
             "class_body" => Some(FoldKind::Type),
             "object" | "object_pattern" => Some(FoldKind::Object),
@@ -56,6 +62,40 @@ fn fold_kind(lang: Lang, node_kind: &str) -> Option<FoldKind> {
             "jsx_element" => Some(FoldKind::Element),
             "template_string" => Some(FoldKind::StringLiteral),
             "comment" => Some(FoldKind::Comment),
+            _ => None,
+        },
+        // typescript-folds.scm (TS; tree-sitter-typescript also backs TSX)
+        Lang::TypeScript => match kind {
+            "statement_block" => Some(FoldKind::Function),
+            "class_body" | "interface_body" | "object_type" | "enum_body" => {
+                Some(FoldKind::Type)
+            }
+            "object" | "object_pattern" => Some(FoldKind::Object),
+            "array" | "array_pattern" => Some(FoldKind::Array),
+            "template_string" => Some(FoldKind::StringLiteral),
+            "comment" => Some(FoldKind::Comment),
+            _ => None,
+        },
+        // xml-folds.scm
+        Lang::Xml => match kind {
+            "element" => Some(FoldKind::Element),
+            _ => None,
+        },
+        // swift-folds.scm
+        Lang::Swift => match kind {
+            "function_body" => Some(FoldKind::Function),
+            "class_body" | "enum_class_body" | "protocol_body" => Some(FoldKind::Type),
+            "switch_statement" => Some(FoldKind::Other),
+            "multiline_string_literal" => Some(FoldKind::StringLiteral),
+            "comment" => Some(FoldKind::Comment),
+            // A `statements` block folds only inside a control-flow construct
+            // (otherwise it double-folds function/closure bodies, etc.).
+            "statements" => match node.parent().map(|p| p.kind()) {
+                Some("if_statement" | "for_statement" | "while_statement" | "do_statement") => {
+                    Some(FoldKind::Other)
+                }
+                _ => None,
+            },
             _ => None,
         },
         _ => None,
@@ -81,7 +121,7 @@ pub fn fold_regions(text: &str, lang: Lang) -> Vec<FoldRegion> {
     let mut cursor = tree.root_node().walk();
     'walk: loop {
         let node = cursor.node();
-        if let Some(kind) = fold_kind(lang, node.kind()) {
+        if let Some(kind) = fold_kind(lang, node) {
             let start = node.start_position().row + 1;
             let mut end = node.end_position().row + 1;
             // When the node ends exactly at a line boundary (column 0), the row
@@ -154,5 +194,41 @@ mod tests {
     fn unsupported_language_yields_no_folds() {
         let folds = fold_regions("fn main() {\n    let x = 1;\n}", Lang::Rust);
         assert!(folds.is_empty(), "rust has no fold map yet, got {folds:?}");
+    }
+
+    #[test]
+    fn typescript_folds_interface_body_as_type() {
+        let src = "interface Foo {\n  a: number;\n  b: string;\n}";
+        let folds = fold_regions(src, Lang::TypeScript);
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Type && f.start_line == 1),
+            "interface_body fold from line 1, got {folds:?}"
+        );
+    }
+
+    #[test]
+    fn xml_folds_element() {
+        let src = "<root>\n  <child/>\n</root>";
+        let folds = fold_regions(src, Lang::Xml);
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Element && f.start_line == 1),
+            "element fold from line 1, got {folds:?}"
+        );
+    }
+
+    #[test]
+    fn swift_folds_function_body_and_control_flow_statements() {
+        // function_body folds; the if's `statements` block folds as .other (the
+        // parent-constrained rule), while a bare statements elsewhere would not.
+        let src = "func f() {\n  if x {\n    a()\n    b()\n  }\n}";
+        let folds = fold_regions(src, Lang::Swift);
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Function),
+            "function_body fold, got {folds:?}"
+        );
+        assert!(
+            folds.iter().any(|f| f.kind == FoldKind::Other),
+            "if-statement statements fold as .other, got {folds:?}"
+        );
     }
 }
