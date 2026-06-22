@@ -5,6 +5,36 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Bringing up the VM validation lane surfaced 3 dist/-build traps the host gate never sees (2026-06-22)
+The headless host gate is window-free and never builds `dist/` — so a whole class of
+build/packaging defects is invisible to it and only shows on the VM (or the owner's
+`build-app.sh --install`). Standing up the VM lane after the owner re-enabled it caught three:
+- **The VM's stricter Swift 6.3 catches forward-compat concurrency errors the host accepts —
+  and a broken VM build silently REDS the nightly lane for days.** TSK-1049's
+  `static let sharedCIContext: CIContext` (non-`Sendable` global) compiled on the host but the
+  VM 6.3 rejected it (`#MutableGlobalVariable`), failing every VM `dist/` build since it landed
+  Mon → the nightly VM lane had been red for days with no render tests running. Fix:
+  `nonisolated(unsafe)` (CIContext is Apple-documented thread-safe). TSK-1234. The VM lane is
+  the forward-compat catcher (same class as the TSK-401 skew) — when it's red, FIX THE BUILD
+  first; a red VM build means zero render coverage, not "render is fine."
+- **`build-app.sh` globbed `$BIN_DIR/libTreeSitter*Lazy.dylib` → shipped STALE orphan dylibs
+  from a FORMER Package.swift.** Both the host AND VM `.build` (rsync-excluded, so persistent)
+  carried 8 orphan grammar dylibs (Bash/C/CPP/CSharp/Java/Lua/Python/Rust) from when more
+  grammars were lazy; the glob shipped all 11 vs the 3 declared (XML/JS/TS) → tripped
+  `verify-app.sh` SIGN-13, and would have shipped 8 stale grammars in the owner's install.
+  Fix: derive the copy allowlist from Package.swift's `.library(name: "TreeSitter*Lazy")`
+  declarations (the same source SIGN-13 checks), glob only as a fallback. TSK-1235. Lesson:
+  a build script that globs a build dir trusts whatever cruft a stale `.build` left behind.
+- **The WebView lane ran `swift test --parallel` over 16 live-WKWebView suites → fd-exhaustion
+  EMFILE false-failures.** Each WKWebView spawns WebContent/GPU/Networking helpers holding many
+  fds; parallel xctest workers multiplied that past `ulimit -n 8192` → a "Too many open files"
+  cascade across the alphabetically-later suites (couldn't even save fixtures) — the TSK-500
+  fd-exhaustion class recurring in the separate WebView invocation, NOT real regressions (the
+  main lane + all pure-logic suites were green). Fix: run the WebView lane SERIAL (drop
+  `--parallel`) in both `test-in-vm.sh` and `nightly-vm.yml`, + raise ulimit headroom. TSK-1236.
+  Recognise it: many DIVERSE suites failing (incl. pure-logic ones that passed elsewhere) +
+  EMFILE/Code=24 = systemic fd exhaustion, not N regressions.
+
 ## `swift test --filter` does NOT relink the rust-core `.a` after a rebuild (2026-06-22)
 - The Swift package links `rust-core/link/libmdvcore_ffi.a` via a `-L` linker flag
   (`Package.swift` `rustLinkDir`). SwiftPM does NOT treat that `.a` as a tracked build
