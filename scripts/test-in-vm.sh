@@ -160,7 +160,9 @@ write_junit() {
 # vm-smoke.sh). Needs MDV_VM_SUDO_PASS for `sudo -S` (never hardcode the secret).
 swift_test() {
   if [[ "${MDV_VM_GUI_SESSION:-0}" != "1" ]]; then
-    swift test "$@"
+    # MDV_RUN_WEBVIEW_TESTS stripped from the MAIN sweep here too (TSK-1236) —
+    # the live-WKWebView suites belong only to run_webview_tests (serial).
+    env -u MDV_RUN_WEBVIEW_TESTS swift test "$@"
     return $?
   fi
   local uid; uid=$(stat -f %u /dev/console)
@@ -181,6 +183,13 @@ swift_test() {
   local v
   for v in $(compgen -v | grep '^MDV_' || true); do
     [[ "$v" == "MDV_VM_SUDO_PASS" || "$v" == "MDV_VM_SUDO_PASSWORD" ]] && continue
+    # Do NOT forward MDV_RUN_WEBVIEW_TESTS into the MAIN sweep (TSK-1236): the
+    # live-WKWebView suites are process-isolated to their OWN dedicated lane
+    # (run_webview_tests, serial). If this knob leaks into the main `swift test`,
+    # those suites un-skip and run there too — under --parallel — multiplying
+    # WebContent/GPU helper fds past the open-files limit → an EMFILE cascade of
+    # FALSE failures in the main sweep. The dedicated lane sets it inline itself.
+    [[ "$v" == "MDV_RUN_WEBVIEW_TESTS" ]] && continue
     inner+=" && export $v=$(printf '%q' "${!v}")"
   done
   inner+=" && exec swift test"
