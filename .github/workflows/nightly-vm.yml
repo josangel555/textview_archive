@@ -63,7 +63,13 @@ jobs:
       # which this isn't.
       - name: WebView lane (MDV_RUN_WEBVIEW_TESTS)
         run: |
-          MDV_RUN_WEBVIEW_TESTS=1 swift test --parallel \
+          ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null || true
+          # SERIAL (no --parallel): each live-WKWebView suite realizes WebContent+
+          # GPU+Networking helper processes (many fds each); parallel xctest workers
+          # multiply that past the open-files limit → an EMFILE "Too many open files"
+          # cascade of FALSE file-IO failures (TSK-1236, fd-exhaustion class of
+          # TSK-500). Serial bounds the live WKWebViews to one suite at a time.
+          MDV_RUN_WEBVIEW_TESTS=1 swift test \
             --filter ViewerUITests.ComponentVisualTests \
             --filter ViewerUITests.ContentViewHostingTests \
             --filter ViewerUITests.DiagnosticDumpTests \

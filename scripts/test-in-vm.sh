@@ -50,7 +50,7 @@ cd "$ROOT_DIR"
 # (the same classes pass in isolation, e.g. XattrIOTests/TextFileLoaderTests).
 # The hard limit is `unlimited`, so bump the soft limit high. Best-effort — never
 # abort the run if a platform refuses the raise.
-ulimit -n 8192 2>/dev/null || ulimit -n 4096 2>/dev/null || true
+ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null || ulimit -n 4096 2>/dev/null || true
 printf "==> open-files soft limit: %s\n" "$(ulimit -n)"
 
 # Track results separately from the test runner so we can produce JUnit
@@ -226,9 +226,16 @@ run_tests() {
 # naming them in a filter list silently skips 100% of them (false-green render
 # coverage). Results go to a separate file so the primary artifact is untouched.
 run_webview_tests() {
-  log "MDV_RUN_WEBVIEW_TESTS=1 swift test (WebView lane)"
+  log "MDV_RUN_WEBVIEW_TESTS=1 swift test (WebView lane, serial)"
   set +e
-  MDV_RUN_WEBVIEW_TESTS=1 swift test --parallel \
+  # SERIAL (no --parallel): each live-WKWebView suite realizes WebContent+GPU+
+  # Networking helper processes, each holding many fds. Run in parallel, the
+  # concurrent xctest workers multiply that past the open-files limit → an EMFILE
+  # ("Too many open files") cascade of FALSE file-IO failures across the later
+  # suites (TSK-1236, same fd-exhaustion class as TSK-500). Serial bounds the
+  # live WKWebViews to one suite at a time — correctness over speed for these
+  # resource-heavy integration suites.
+  MDV_RUN_WEBVIEW_TESTS=1 swift test \
     --filter ViewerUITests.ComponentVisualTests \
     --filter ViewerUITests.ContentViewHostingTests \
     --filter ViewerUITests.DiagnosticDumpTests \
