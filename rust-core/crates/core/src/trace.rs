@@ -188,12 +188,22 @@ mod tests {
     /// tests that install/clear it must serialize or they clobber each other.
     static STATE_LOCK: Mutex<()> = Mutex::new(());
 
-    #[derive(Default)]
-    struct CollectSink(Arc<Mutex<Vec<Record>>>);
+    /// Captures ONLY the records this test owns (by span name / event message).
+    /// `cargo test` runs in parallel and OTHER suites (e.g. the CSV/find fuzzes)
+    /// emit into the same process-global sink while a test has it installed — an
+    /// unfiltered collector would capture that pollution and break an exact
+    /// assert. STATE_LOCK only serializes the trace tests against each other, not
+    /// against unrelated emitters, so the collector must filter to its own names.
+    struct CollectSink {
+        store: Arc<Mutex<Vec<Record>>>,
+        owns: fn(&Record) -> bool,
+    }
 
     impl Sink for CollectSink {
         fn record(&self, record: &Record) {
-            self.0.lock().unwrap().push(record.clone());
+            if (self.owns)(record) {
+                self.store.lock().unwrap().push(record.clone());
+            }
         }
     }
 
@@ -201,7 +211,13 @@ mod tests {
     fn span_emits_enter_and_exit() {
         let _state = STATE_LOCK.lock().unwrap();
         let store = Arc::new(Mutex::new(Vec::new()));
-        set_sink(Box::new(CollectSink(Arc::clone(&store))));
+        set_sink(Box::new(CollectSink {
+            store: Arc::clone(&store),
+            owns: |r| match r {
+                Record::SpanEnter { name } | Record::SpanExit { name, .. } => *name == "unit.span",
+                Record::Event { message, .. } => *message == "inside",
+            },
+        }));
         {
             let _span = Span::enter("unit.span");
             event(Level::Info, "inside", vec![("k", "v".to_string())]);
@@ -243,7 +259,13 @@ mod tests {
         assert!(!sink_installed(), "flag must be false after clear");
 
         let store = Arc::new(Mutex::new(Vec::new()));
-        set_sink(Box::new(CollectSink(Arc::clone(&store))));
+        set_sink(Box::new(CollectSink {
+            store: Arc::clone(&store),
+            owns: |r| {
+                matches!(r, Record::Event { message, .. }
+                    if *message == "after-install" || *message == "after-clear")
+            },
+        }));
         assert!(sink_installed(), "flag must be true after set");
         event(Level::Info, "after-install", vec![]);
 
