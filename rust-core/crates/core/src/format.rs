@@ -510,6 +510,66 @@ mod tests {
         assert_eq!(out, "{\n  \"a\": 1,\n  \"b\": 2\n}");
     }
 
+    /// Robustness audit (un-fuzzed shipped engine — completes the engine-fuzz
+    /// sweep): arbitrary JSON/XML-ish text — deep nesting (exercising the
+    /// MAX_DEPTH=128 recursion cap), malformed structures, raw noise, unicode —
+    /// must NEVER panic in pretty_json OR pretty_xml. And the formatters must be
+    /// IDEMPOTENT: formatting already-formatted output returns it unchanged.
+    /// Deterministic LCG, no dep. Teeth: a non-idempotent reformat or a panic on
+    /// a degenerate input fails the assert.
+    #[test]
+    #[allow(clippy::cast_possible_truncation, reason = "LCG values are modulo-bounded before use")]
+    fn pretty_fuzz_never_panics_and_is_idempotent() {
+        const JSON_TOK: &[&str] = &[
+            "{", "}", "[", "]", ":", ",", "\"k\"", "\"v\"", "1", "-2.5e3", "true",
+            "false", "null", " ", "\n", "\t", "{}", "[]", "\"\\u00e9\"", "中",
+        ];
+        const XML_TOK: &[&str] = &[
+            "<a>", "</a>", "<b/>", "text", "<c x=\"1\">", "</c>", "<!--x-->",
+            "<![CDATA[y]]>", "<", ">", "&amp;", "\n", " ", "中",
+        ];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0xF02A_7ED1_C0FF_EE01;
+        for _ in 0..3000u32 {
+            // JSON-ish input.
+            let n = (lcg(&mut state) % 30) as usize;
+            let mut j = String::new();
+            for _ in 0..n {
+                j.push_str(JSON_TOK[(lcg(&mut state) as usize) % JSON_TOK.len()]);
+            }
+            // Sometimes prepend a deep nest that exceeds MAX_DEPTH (cap → None, no overflow).
+            if lcg(&mut state).is_multiple_of(5) {
+                let d = (lcg(&mut state) % 300) as usize;
+                j = format!("{}{j}", "[".repeat(d));
+            }
+            if let Some(y) = pretty_json(&j) {
+                assert_eq!(
+                    pretty_json(&y).as_deref(),
+                    Some(y.as_str()),
+                    "pretty_json not idempotent for {j:?}"
+                );
+            }
+            // XML-ish input.
+            let m = (lcg(&mut state) % 20) as usize;
+            let mut x = String::new();
+            for _ in 0..m {
+                x.push_str(XML_TOK[(lcg(&mut state) as usize) % XML_TOK.len()]);
+            }
+            if let Some(y) = pretty_xml(&x) {
+                assert_eq!(
+                    pretty_xml(&y).as_deref(),
+                    Some(y.as_str()),
+                    "pretty_xml not idempotent for {x:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn nested_object_and_array() {
         let out = pretty_json(r#"{"x":[1,2,{"y":true}]}"#).expect("valid json");
