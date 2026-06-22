@@ -3468,3 +3468,15 @@ Continuation of "the five constraints" above; these three close every remaining 
   succeeding (the build compiles; the gate adds strict clippy). The two gates are disjoint: Swift = `test-headless-gate.sh`,
   rust-core = `rust-core-gate.sh`. For provably-safe f64→int casts, mirror `arg_count`/`format_number`: a tight
   statement-level `#[allow(clippy::cast_possible_truncation)]` with the range-guard justification, not a bare cast.
+- **A process-global test sink captures events from PARALLEL suites — an exact-match assert on it flakes unless it filters to its own records (2026-06-22).**
+  The `trace` tests install a process-GLOBAL `Sink` and assert the exact captured `Record`s. A `STATE_LOCK` mutex serialized
+  the trace tests against EACH OTHER but did NOT stop unrelated parallel suites from emitting into that same global sink during
+  a test's `set_sink..clear_sink` window — the CSV `parse` fuzz (3000 calls, each emits `csv.parse.*` when a sink is installed)
+  polluted `span_emits_enter_and_exit`'s collector, so its exact-match assert went RED under `cargo test` parallelism but GREEN
+  in isolation. The fuzz AMPLIFIED a latent flake that predated it. FIX (0b3ed0c7): the test `CollectSink` filters to ONLY its
+  own records (by span name / event message) so parallel pollution is excluded DETERMINISTICALLY — NOT thread-local (production
+  wants one global sink) and NOT just `--test-threads=1` (that masks it). RULE: any test asserting on GLOBAL mutable state (a
+  sink, a registry, a static) must isolate against PARALLEL EMITTERS — filter the assertion to this test's own marker; don't
+  assume the global is yours alone. A `serial`-style lock only covers tests that take the lock, not unrelated emitters. Smell:
+  a test that's green alone but red in the full `--parallel` suite (cf. the FoldBench/RepoFocusTracker WALL-CLOCK flakes, a
+  different class — those are load-timing, this is shared-state pollution; both need isolated re-runs to diagnose).
