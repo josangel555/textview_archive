@@ -90,6 +90,17 @@ final class CommandPaletteRegistryTests: XCTestCase {
         XCTAssertTrue(hits.contains { $0.item.id == "view.toggleSidebar" })
     }
 
+    func test_caseTransforms_arePaletteListed() {
+        // TSK-1186: edit.uppercase/lowercase/capitalize dispatch (verb-tested in
+        // PaletteEditTransformVerbTests) but had NO palette descriptors — menu-only.
+        // Now registered, so they appear in the command palette.
+        let (model, _) = makeModelAndSessions()
+        let ids = Set(model.commandRegistry.commands.map(\.id))
+        XCTAssertTrue(ids.contains("edit.uppercase"), "Uppercase must be palette-listed")
+        XCTAssertTrue(ids.contains("edit.lowercase"), "Lowercase must be palette-listed")
+        XCTAssertTrue(ids.contains("edit.capitalize"), "Capitalize must be palette-listed")
+    }
+
     // MARK: - Palette invocation dispatches through ScriptVerb
 
     // NOTE: `model.sessionsCoordinator` is `weak`; bind `sessions` (not `_`) and

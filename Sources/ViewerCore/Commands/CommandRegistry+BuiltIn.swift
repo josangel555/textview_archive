@@ -210,6 +210,17 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "edit.ensureFinalNewline", title: "Ensure Final Newline", category: .edit,
             scriptVerb: "edit-ensure-final-newline"),
+        // TSK-1186: the case transforms dispatch (edit-uppercase/lowercase/capitalize
+        // via TextTransform) but had no palette descriptors — menu-only until now.
+        CommandDescriptor(
+            id: "edit.uppercase", title: "Uppercase", category: .edit,
+            scriptVerb: "edit-uppercase"),
+        CommandDescriptor(
+            id: "edit.lowercase", title: "Lowercase", category: .edit,
+            scriptVerb: "edit-lowercase"),
+        CommandDescriptor(
+            id: "edit.capitalize", title: "Capitalize", category: .edit,
+            scriptVerb: "edit-capitalize"),
         CommandDescriptor(
             // TSK-904: "Compact" keyword so the palette finds the inverse of
             // Pretty-Print under its common synonym, not just "minify".

@@ -7,6 +7,11 @@ This file is the at-a-glance "what's new" view of the app's progress.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-22
+
+### Added
+- **Command palette ▸ text case** — Uppercase, Lowercase, and Capitalize text transforms are now invokable from the command palette (they were menu-only).
+
 ## 2026-06-21
 
 ### Added
