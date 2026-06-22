@@ -335,6 +335,78 @@ mod tests {
         assert_eq!(hex_search_find(&[0xAB, 0xEE], &data), Vec::<usize>::new());
     }
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary bytes × widths
+    /// (incl. 0) through render_all, and arbitrary query/mode × data through
+    /// hex_search / hex_search_find — must NEVER panic (width=0 divide guard plus
+    /// offset/row math are the risk surface). Every search hit must FIT the
+    /// data (offset + pattern.len() <= data.len()) and be non-overlapping.
+    /// Deterministic LCG, no dep. Teeth: an out-of-bounds/overlapping hit or a
+    /// render panic fails outright.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // LCG modulo-bounded; tiny fuzz inputs
+    fn hex_fuzz_never_panics_render_and_search() {
+        const BYTES: &[u8] = &[0x00, 0xff, 0x41, 0x0a, 0x09, 0x80, 0x7f, 0xc3, 0x28, 0x41];
+        const QUERIES: &[&str] = &[
+            "", "41", "ff 00", "4", "zz", "deadbeef", "G", "0x41", " 41 41 ", "ффф", "41 4",
+        ];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0x4EC0_DEBA_BE00_0001;
+        for _ in 0..3000u32 {
+            let dlen = (lcg(&mut state) % 64) as usize;
+            let mut data = Vec::new();
+            for _ in 0..dlen {
+                data.push(BYTES[(lcg(&mut state) as usize) % BYTES.len()]);
+            }
+
+            // render_all at a random width INCLUDING 0 (the divide-by-zero guard).
+            let width = (lcg(&mut state) % 40) as usize;
+            let total = data.len() + (lcg(&mut state) % 100) as usize;
+            let _ = render_all(&data, width, total, lcg(&mut state) & 1 == 0);
+
+            // hex_search (parse + find): hits fit + are non-overlapping.
+            let q = QUERIES[(lcg(&mut state) as usize) % QUERIES.len()];
+            let mode = if lcg(&mut state) & 1 == 0 {
+                HexSearchMode::Hex
+            } else {
+                HexSearchMode::Ascii
+            };
+            let pat_len = hex_search_parse(q, mode).map_or(0, |p| p.len());
+            let mut prev_end = 0usize;
+            for &off in &hex_search(q, mode, &data) {
+                assert!(
+                    off.checked_add(pat_len).is_some_and(|e| e <= data.len()),
+                    "hex_search hit {off}+{pat_len} out of data len {} q={q:?}",
+                    data.len()
+                );
+                assert!(off >= prev_end, "hex_search hits overlap: {off} < {prev_end}");
+                prev_end = off + pat_len;
+            }
+
+            // hex_search_find directly with a random raw pattern.
+            let plen = (lcg(&mut state) % 5) as usize;
+            let mut pat = Vec::new();
+            for _ in 0..plen {
+                pat.push(BYTES[(lcg(&mut state) as usize) % BYTES.len()]);
+            }
+            let mut prev = 0usize;
+            for &off in &hex_search_find(&pat, &data) {
+                assert!(
+                    off.checked_add(pat.len()).is_some_and(|e| e <= data.len()),
+                    "hex_search_find hit {off}+{} out of data len {}",
+                    pat.len(),
+                    data.len()
+                );
+                assert!(off >= prev, "hex_search_find hits overlap");
+                prev = off + pat.len();
+            }
+        }
+    }
+
     #[test]
     fn row_math_matches_swift() {
         assert_eq!(rendered_row_length(16), 8 + 2 + 47 + 2 + 16 + 1);
