@@ -1824,6 +1824,84 @@ pub fn evaluate_with(formula: &str, resolver: &dyn Fn(CellRef) -> Option<String>
     }
 }
 
+/// Max dependency-chain depth `recalc` follows before declaring a cycle —
+/// stack-safety for pathological chains (the `visiting` set already catches true
+/// cycles; this bounds non-cyclic chains deeper than any realistic sheet).
+const MAX_RECALC_DEPTH: usize = 1000;
+
+/// Whether a raw cell value is a formula (its trimmed text starts with `=`).
+fn is_formula(raw: &str) -> bool {
+    raw.trim_start().starts_with('=')
+}
+
+/// Recalculate a grid: given every cell as raw text (A1 → raw), compute the
+/// `Value` of each FORMULA cell, resolving references to other cells' COMPUTED
+/// values in dependency order (so a formula referencing another formula cell sees
+/// its result, not its raw text). Returns A1 → `Value` for the formula cells only.
+/// A reference cycle yields `#CYCLE` for the cells on it (matching the Swift engine).
+#[must_use]
+pub fn recalc(
+    cells: &std::collections::HashMap<String, String>,
+) -> std::collections::HashMap<String, Value> {
+    let rc = Recalc {
+        cells,
+        cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+        visiting: std::cell::RefCell::new(std::collections::HashSet::new()),
+    };
+    let mut out = std::collections::HashMap::new();
+    for (a1, raw) in cells {
+        if is_formula(raw) {
+            out.insert(a1.clone(), rc.resolve(a1, 0));
+        }
+    }
+    out
+}
+
+/// Recalc working state: the raw grid plus a memo cache and the in-progress
+/// `visiting` set for cycle detection. `RefCell` so the eval resolver closure can
+/// borrow `&self` while recursively resolving referenced cells.
+struct Recalc<'a> {
+    cells: &'a std::collections::HashMap<String, String>,
+    cache: std::cell::RefCell<std::collections::HashMap<String, Value>>,
+    visiting: std::cell::RefCell<std::collections::HashSet<String>>,
+}
+
+impl Recalc<'_> {
+    /// The computed `Value` of the cell at A1 address `a1`.
+    fn resolve(&self, a1: &str, depth: usize) -> Value {
+        if let Some(v) = self.cache.borrow().get(a1) {
+            return v.clone();
+        }
+        let raw = match self.cells.get(a1) {
+            Some(r) => r,
+            None => return Value::Blank,
+        };
+        if !is_formula(raw) {
+            return coerce_cell(Some(raw.clone()));
+        }
+        if depth > MAX_RECALC_DEPTH || self.visiting.borrow().contains(a1) {
+            return Value::Error(FormulaError::Cycle);
+        }
+        self.visiting.borrow_mut().insert(a1.to_string());
+        let trimmed = raw.trim();
+        let body = trimmed.strip_prefix('=').unwrap_or(trimmed);
+        let value = match tokenize(body) {
+            Ok(toks) if toks.is_empty() => Value::Blank,
+            Ok(toks) => {
+                let mut p = Parser { toks, pos: 0 };
+                match p.parse() {
+                    Ok(expr) => eval(&expr, &|cr| self.resolve(&cr.a1(), depth + 1)),
+                    Err(e) => Value::Error(e),
+                }
+            }
+            Err(e) => Value::Error(e),
+        };
+        self.visiting.borrow_mut().remove(a1);
+        self.cache.borrow_mut().insert(a1.to_string(), value.clone());
+        value
+    }
+}
+
 // MARK: - FFI / dispatch (stateless snapshot evaluation — the spike's first cut)
 
 /// A batch evaluation request: formulas + a cell-grid snapshot (A1 → raw text).
@@ -2311,5 +2389,32 @@ mod tests {
         assert!(matches!(evaluate("MEDIAN(\"x\")"), Value::Error(FormulaError::Num))); // no numbers → #NUM
         assert_eq!(evaluate("COUNTA(1, \"x\", 5)"), Value::Number(3.0));
         assert_eq!(evaluate("COUNTA(A1:A3)"), Value::Number(0.0)); // all blank (no resolver)
+    }
+
+    #[test]
+    fn recalc_engine() {
+        use std::collections::HashMap;
+        let cells: HashMap<String, String> = [
+            ("A1", "5"),
+            ("A2", "=A1+1"), // chain: → 6
+            ("A3", "=A2*2"), // chain: → 12
+            ("B1", "=B2"), // mutual cycle
+            ("B2", "=B1"),
+            ("C1", "=C1"), // self cycle
+            ("D1", "=A2>A1"), // bool, references FORMULA cell A2 (must see 6, not "=A1+1")
+            ("E1", "=D1"), // references a bool-formula cell (bool VALUE must propagate)
+        ]
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
+        let out = recalc(&cells);
+        assert_eq!(out.get("A2"), Some(&Value::Number(6.0)));
+        assert_eq!(out.get("A3"), Some(&Value::Number(12.0)));
+        assert!(matches!(out.get("B1"), Some(Value::Error(FormulaError::Cycle))));
+        assert!(matches!(out.get("B2"), Some(Value::Error(FormulaError::Cycle))));
+        assert!(matches!(out.get("C1"), Some(Value::Error(FormulaError::Cycle))));
+        assert_eq!(out.get("D1"), Some(&Value::Bool(true))); // 6 > 5 — recursion gap closed
+        assert_eq!(out.get("E1"), Some(&Value::Bool(true))); // bool value propagated through a formula ref
+        assert_eq!(out.get("A1"), None); // data cells are not in the output
     }
 }
