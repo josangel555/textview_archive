@@ -62,7 +62,7 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
 
     func test_swift_rust_arithmetic_parity_random() throws {
         for seed in UInt64(1)...UInt64(40) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<25 { // 40 seeds × 25 = 1000 random cases
                 let cells = randomGrid(&rng)
                 let formula = "=" + randomExpr(&rng, depth: 4)
@@ -94,7 +94,7 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
     func test_swift_rust_aggregate_parity_random() throws {
         let funcs = ["SUM", "AVERAGE", "MIN", "MAX", "COUNT", "PRODUCT"]
         for seed in UInt64(101)...UInt64(140) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<25 { // 40 seeds × 25 = 1000 random aggregate cases
                 let cells = randomGrid(&rng)
                 let fn = funcs[rng.int(0, funcs.count - 1)]
@@ -133,7 +133,7 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
     func test_swift_rust_text_parity_random() throws {
         let unary = ["UPPER", "LOWER", "LEN", "TRIM"]
         for seed in UInt64(201)...UInt64(240) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<25 { // 40 seeds × 25 = 1000 random text cases
                 var cells: [String: String] = [:]
                 for name in cellNames { cells[name] = randomAsciiCell(&rng) }
@@ -167,7 +167,7 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             "\(rng.int(2000, 2035))-\(pad2(rng.int(1, 12)))-\(pad2(rng.int(1, 28)))"
         }
         for seed in UInt64(301)...UInt64(340) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<25 { // 40 seeds × 25 = 1000 random date cases
                 let a = iso(&rng)
                 let b = iso(&rng)
@@ -283,7 +283,7 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
     func test_swift_rust_countif_criteria_parity() throws {
         let ops = [">", "<", ">=", "<=", "<>", "=", ""] // "" = bare value (implicit =)
         for seed in UInt64(401)...UInt64(440) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<25 {
                 let cells = randomGrid(&rng)
                 let op = ops[rng.int(0, ops.count - 1)]
@@ -306,7 +306,7 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
     func test_swift_rust_recalc_parity_random() throws {
         let cols = ["A", "B", "C"]
         for seed in UInt64(501)...UInt64(530) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<10 { // 30 seeds × 10 = 300 random formula grids
                 var rows: [[String]] = []
                 for _ in 0..<3 {

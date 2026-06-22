@@ -45,6 +45,14 @@ jobs:
       # (headless + T4 + T5). test-in-vm.sh builds dist/TextView.app, runs
       # `swift test`, and emits JUnit XML at /tmp/mdv-test-results.xml.
       - name: Build + full suite (headless + T4/T5)
+        env:
+          # Varying-seed nightly exploration for the differential parity fuzzes
+          # (TSK-1125): each nightly run gets a distinct seed base, so the Formula/
+          # Fuzzy/Find/Transcript fuzzes cover NEW regions of the input space over
+          # time. test-in-vm.sh forwards MDV_* over ssh into the VM swift test. The
+          # merge gate leaves this UNSET → seed base 0 → the deterministic fixed-seed
+          # corpus (the regression guard). A nightly red logs its concrete inputs.
+          MDV_FUZZ_SEED_BASE: ${{ github.run_number }}
         run: bash scripts/test-in-vm.sh all
 
       # The in-process live-WKWebView suites — process-isolated from the bare

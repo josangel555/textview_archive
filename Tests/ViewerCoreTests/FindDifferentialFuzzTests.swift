@@ -28,7 +28,7 @@ final class FindDifferentialFuzzTests: XCTestCase {
 
     func test_swift_rust_find_literal_parity() throws {
         for seed in UInt64(1)...UInt64(60) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<25 { // 60 seeds × 25 = 1500 random searches
                 let text = randomText(&rng, 40)
                 let pattern = randomText(&rng, 3) // short → frequent matches

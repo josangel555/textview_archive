@@ -33,7 +33,7 @@ final class TranscriptDifferentialFuzzTests: XCTestCase {
     func test_swift_rust_transcript_parse_parity() throws {
         let ts = "2026-06-22T10:00:00Z"
         for seed in UInt64(1)...UInt64(50) {
-            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            var rng = Xorshift(s: ((seed &+ DifferentialFuzz.seedBase) &* 0x9E37_79B9_7F4A_7C15) | 1)
             for _ in 0..<20 { // 50 seeds × 20 = 1000 random transcripts
                 var lines: [String] = []
                 let n = rng.int(1, 6)
