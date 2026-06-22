@@ -608,6 +608,17 @@ mod tests {
             // TSK-1201: rust-lang SCREAMING_CASE const/static names tag @constant
             // on the span path too (TokenKind::Constant → Color::Yellow on the TUI).
             (Lang::Rust, "const MAX_VALUE: i32 = 5;", "MAX_VALUE", TokenKind::Constant),
+            // Comment-coverage audit (TSK-1201 class): the C-family `//` line
+            // comments must tag @comment too — a dropped comment (the @spell
+            // dual-capture class that bit Swift/SQL) is a LIVE highlight bug.
+            (Lang::C, "int x = 0; // note", "// note", TokenKind::Comment),
+            (Lang::Cpp, "int x = 0; // note", "// note", TokenKind::Comment),
+            (Lang::CSharp, "int x = 0; // note", "// note", TokenKind::Comment),
+            (Lang::Java, "int x = 0; // note", "// note", TokenKind::Comment),
+            // Block-comment languages (the @spell class can hit these too).
+            (Lang::Css, ".a { /* note */ color: red; }", "/* note */", TokenKind::Comment),
+            (Lang::Html, "<div><!-- note --></div>", "<!-- note -->", TokenKind::Comment),
+            (Lang::Xml, "<root><!-- note --></root>", "<!-- note -->", TokenKind::Comment),
         ];
         for (lang, src, needle, kind) in cases {
             let spans = highlight(src, *lang);
