@@ -1,5 +1,22 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## DECISIONS NEEDED (owner) — as of 2026-06-21
+
+Four owner-gated items block the highest-value next steps; each is parked with full homework on the board:
+- **TSK-1215 — formula on-screen.** The Rust+Swift formula engine is complete + tested but UNSURFACED (no view consumes it; `=A1+B1` shows literal text). Decide: (a) wire `recalcAllFormulas` into `CSVTableView` (render, VM-validated) + (b) flip `MDV_RUST_FORMULA` ON after a soak. THE unlock for the whole formula investment.
+- **TSK-775 — migration horizon.** Engines-only (recommended; ~done) vs whole-core (larger, later). Roadmap: `docs/RUST_MIGRATION_ROADMAP_2026-06-21.md`.
+- **TSK-1214 / TSK-1098 — bundle cap target.** Exec ~60MB at cap; CLAUDE.md (26MB) stale vs the script (60MB). Decide the real budget → then grammar lazy-load (meaty) or accept+raise. Spike findings on TSK-1214.
+- **TSK-788 — test-audit depth.** Recommend STANDARD (sufficient). `docs/TEST_SUITE_AUDIT_2026-06-21.md`.
+
+## LOG 2026-06-21 — Rust FormulaEngine port (owner redirect) + web markdown + strategy spikes
+
+Inline autonomous cron run (no workflows); all on main, host/rust-core-gate-green per item.
+- **Rust FormulaEngine PORT (TSK-1213) — hand-written, ZERO deps, owner-directed.** Full Swift-parity pure evaluator (arithmetic/refs/ranges/comparisons/aggregates/conditional-aggregates/logical/IS*/lookup/text/math/dates, hand-rolled Hinnant civil-date) → FFI (`FormulaEvaluate`+`FormulaRecalc` over mdvcore_call; MessagePack float added) → Swift `RustFormulaAdapter` (gate + #NAME-fallback) → `EditableCSVModel.recalcAllFormulas` (batch, recursion-gap closed via cycle-detecting recalc). ~60 cross-language A/B parity cases (`FormulaParityTests`). Gated OFF.
+- **Formula extensions BEYOND Swift (TSK-1216, validated):** wildcards (`* ? ~`) in criteria, COUNTIFS/SUMIFS/AVERAGEIFS, IFNA, TEXTJOIN, CHOOSE. Rust supersedes the bugfix-only Swift twin.
+- **Web rendered Markdown (TSK-256, validated):** `markdown::render` wired into the std-only web front-end; renders `.md` to sanitized HTML BY DEFAULT (Source/Hex toggles). 96 web tests.
+- **SYSTEMIC FINDING — "engine tested != feature shipped":** the formula engine passes every host gate yet has ZERO view consumers. Corrected an over-claimed CHANGELOG entry (e4ad9f10); shipped a partial consumption guard (`EngineConsumptionGuardTests`, TSK-1217) + filed the reachability limitation.
+- **Strategy spikes:** migration roadmap (TSK-775), test-suite audit (TSK-788), bundle-size spike (TSK-1214 — exec is __TEXT-heavy/grammar tables, strip already maxed, precise share needs bloaty/map).
+
 ## LOG 2026-06-20 (PM, 5-min cron) — trust-local-HTML feature + sidebar cache fix + integrations
 
 Inline autonomous cron run (no workflows). All on main, host-gate-green per item.
