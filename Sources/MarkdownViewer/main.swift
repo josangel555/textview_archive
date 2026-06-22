@@ -1941,7 +1941,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let paletteItem = NSMenuItem(
             title: "Quick Open…",
             action: #selector(showPalette(_:)),
-            keyEquivalent: "k"
+            keyEquivalent: ""  // TSK-709: ⌘K freed for the terminal; palette = ⇧⌘P + double-Shift
         )
         paletteItem.target = self
         applyShortcut("view.quickOpen", to: paletteItem)

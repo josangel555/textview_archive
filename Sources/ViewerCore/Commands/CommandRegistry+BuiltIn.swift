@@ -112,7 +112,8 @@ extension CommandRegistry {
             scriptVerb: nil),
         CommandDescriptor(
             id: "view.quickOpen", title: "Quick Open…", category: .view,
-            defaultShortcut: Shortcut(key: "k", modifiers: [.command]),
+            // TSK-709 (owner): ⌘K UNBOUND — freed for the terminal. The palette
+            // opens via nav.showPalette (⇧⌘P) + double-Shift instead.
             // Opens the interactive command palette — excluded from macros
             // (a macro recorded FROM the palette shouldn't reopen it; TSK-957).
             scriptVerb: "show-palette", replayability: .excluded),
@@ -293,7 +294,7 @@ extension CommandRegistry {
             id: "nav.showPalette", title: "Quick Open (Command Palette)",
             category: .navigation,
             // TSK-720: ⇧⌘P opens the command palette — the iconic VS Code
-            // binding. (⌘K still opens it via view.quickOpen.) We deliberately
+            // binding. (⌘K was freed for the terminal — TSK-709.) We deliberately
             // do NOT bind ⌘P — that's the macOS-standard Print chord (Mac HIG;
             // reserved for print/PDF, TSK-638), unlike VS Code which overrides
             // it. So VS Code users get ⇧⌘P; ⌘P stays Print.

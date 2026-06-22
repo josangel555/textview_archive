@@ -12,6 +12,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ### Added
 - **Command palette ▸ text case** — Uppercase, Lowercase, and Capitalize text transforms are now invokable from the command palette (they were menu-only).
 
+### Changed
+- **⌘K freed for the terminal** — ⌘K no longer opens the command palette; use **⇧⌘P** or **double-Shift** to open it.
+
 ## 2026-06-21
 
 ### Added

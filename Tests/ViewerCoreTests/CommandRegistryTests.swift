@@ -337,13 +337,15 @@ final class CommandRegistryTests: XCTestCase {
     // MARK: - Override precedence (user > default)
 
     func test_applying_overrideReplacesDefault() {
-        let original = CommandRegistry.builtIn.command(id: "view.quickOpen")!
-        XCTAssertEqual(original.defaultShortcut, Shortcut(key: "k", modifiers: [.command]))
+        // nav.showPalette has a stable built-in default (⇧⌘P); a user override
+        // must win over it. (Was view.quickOpen/⌘K before TSK-709 freed ⌘K.)
+        let original = CommandRegistry.builtIn.command(id: "nav.showPalette")!
+        XCTAssertEqual(original.defaultShortcut, Shortcut(key: "p", modifiers: [.command, .shift]))
 
         let merged = CommandRegistry.builtIn.applying(
-            overrides: ["view.quickOpen": Shortcut(key: "p", modifiers: [.command])])
-        let after = merged.command(id: "view.quickOpen")!
-        XCTAssertEqual(after.defaultShortcut, Shortcut(key: "p", modifiers: [.command]),
+            overrides: ["nav.showPalette": Shortcut(key: "j", modifiers: [.command])])
+        let after = merged.command(id: "nav.showPalette")!
+        XCTAssertEqual(after.defaultShortcut, Shortcut(key: "j", modifiers: [.command]),
                        "user override must win over built-in default")
         // Identity/category/verb preserved through the merge.
         XCTAssertEqual(after.id, original.id)
@@ -422,16 +424,16 @@ final class CommandRegistryTests: XCTestCase {
     // MARK: - Command-palette VS Code parity (TSK-720)
 
     /// ⇧⌘P opens the command palette (VS Code parity), routed to nav.showPalette
-    /// without collision; ⌘K still routes the palette via view.quickOpen; plain
-    /// ⌘P is left UNBOUND, reserved for the macOS-standard Print chord (Mac HIG).
+    /// without collision; ⌘K is FREED for the terminal (TSK-709); plain ⌘P is
+    /// left UNBOUND, reserved for the macOS-standard Print chord (Mac HIG).
     func test_commandPalette_shiftCmdP_routesToShowPalette_andPlainCmdPStaysFree() {
         let map = CommandRegistry.builtIn.shortcutMap()
         let shiftCmdP = Shortcut(key: "p", modifiers: [.command, .shift])
         XCTAssertEqual(CommandRegistry.builtIn.command(id: "nav.showPalette")?.defaultShortcut,
                        shiftCmdP)
         XCTAssertEqual(map[shiftCmdP], "nav.showPalette", "⇧⌘P must open the command palette")
-        XCTAssertEqual(map[Shortcut(key: "k", modifiers: [.command])], "view.quickOpen",
-                       "⌘K must still open the palette (existing binding preserved)")
+        XCTAssertNil(map[Shortcut(key: "k", modifiers: [.command])],
+                     "⌘K must be FREED for the terminal (TSK-709)")
         XCTAssertNil(map[Shortcut(key: "p", modifiers: [.command])],
                      "plain ⌘P must stay free for the standard Print chord (Mac HIG)")
     }
