@@ -1955,12 +1955,60 @@ fn value_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
 /// booleans as TRUE/FALSE, blank as empty, error as its display code.
 fn value_text(v: &Value) -> String {
     match v {
-        Value::Number(n) => n.to_string(),
+        Value::Number(n) => format_number(*n),
         Value::Text(s) => s.clone(),
         Value::Bool(b) => if *b { "TRUE".to_string() } else { "FALSE".to_string() },
         Value::Blank => String::new(),
         Value::Error(e) => e.display().to_string(),
     }
+}
+
+/// Format a Number to text mirroring the Swift `FormulaEngine.formatNumber`
+/// (`%.10g` + integer special-case + trailing-zero trim) so concat/`&`/comparison
+/// text agrees cross-language. TSK-1221: `f64::to_string` showed full round-trip
+/// precision (0.3333333333333333) vs Swift's 10 significant digits (0.3333333333).
+fn format_number(n: f64) -> String {
+    if !n.is_finite() {
+        return n.to_string(); // defensive — not reachable via coerce_cell
+    }
+    // Integer-valued and modest magnitude → plain integer (Swift's Int64 path).
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        return format!("{}", n as i64);
+    }
+    if n == 0.0 {
+        return "0".to_string();
+    }
+    // `%.10g`: 10 significant digits; scientific iff the decimal exponent is < -4
+    // or >= 10. Derive the exponent from a fixed-precision scientific render rather
+    // than log10 (avoids float boundary misclassification).
+    let sci = format!("{n:.9e}"); // e.g. "3.333333333e-1" / "1.000000000e20"
+    let exp: i32 = sci.rsplit('e').next().and_then(|e| e.parse().ok()).unwrap_or(0);
+    if (-4..10).contains(&exp) {
+        let prec = usize::try_from(9 - exp).unwrap_or(0);
+        trim_fixed(&format!("{n:.prec$}"))
+    } else {
+        c_scientific(&sci)
+    }
+}
+
+/// Trim trailing zeros (and a dangling `.`) from a fixed-point render.
+fn trim_fixed(s: &str) -> String {
+    if !s.contains('.') {
+        return s.to_string();
+    }
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// Render Rust's `{:e}` ("1e20" / "3.33e-1") in C `%g` scientific form
+/// ("1e+20" / "3.33e-07"): trim the mantissa, sign the exponent, pad to >=2 digits.
+fn c_scientific(sci: &str) -> String {
+    let Some((mantissa, exp_str)) = sci.split_once('e') else {
+        return sci.to_string();
+    };
+    let mantissa = trim_fixed(mantissa);
+    let exp: i32 = exp_str.parse().unwrap_or(0);
+    let sign = if exp < 0 { '-' } else { '+' };
+    format!("{mantissa}e{sign}{:02}", exp.abs())
 }
 
 /// Coerce a value to a number for arithmetic (Excel-style): numbers as-is,
@@ -2432,6 +2480,25 @@ mod tests {
         assert_eq!(coerce_cell(None), Value::Blank);
         assert_eq!(coerce_cell(Some(" 5 ".to_string())), Value::Number(5.0)); // trim for number
         assert_eq!(coerce_cell(Some("abc ".to_string())), Value::Text("abc ".to_string()));
+    }
+
+    #[test]
+    fn format_number_matches_swift_g10() {
+        // TSK-1221: mirror Swift formatNumber (%.10g + integer special-case).
+        assert_eq!(format_number(5.0), "5");
+        assert_eq!(format_number(-5.0), "-5");
+        assert_eq!(format_number(0.0), "0");
+        assert_eq!(format_number(1.0 / 3.0), "0.3333333333");
+        assert_eq!(format_number(2.0 / 3.0), "0.6666666667");
+        assert_eq!(format_number(0.1), "0.1");
+        assert_eq!(format_number(123.456), "123.456");
+        assert_eq!(format_number(0.0001), "0.0001");
+        assert_eq!(format_number(2.5), "2.5");
+        assert_eq!(format_number(1_000_000_000_000.0), "1000000000000");
+        // scientific (exp < -4 or >= 10), C %g form
+        assert_eq!(format_number(1e20), "1e+20");
+        assert_eq!(format_number(1e-10), "1e-10");
+        assert_eq!(format_number(1.5e-7), "1.5e-07");
     }
 
     #[test]
