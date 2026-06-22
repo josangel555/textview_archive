@@ -605,6 +605,9 @@ mod tests {
             // before the dual-`@comment @spell` / single-capture fix.
             (Lang::Swift, "// note\nlet x = 1", "// note", TokenKind::Comment),
             (Lang::Sql, "-- note\nSELECT 1", "-- note", TokenKind::Comment),
+            // TSK-1201: rust-lang SCREAMING_CASE const/static names tag @constant
+            // on the span path too (TokenKind::Constant → Color::Yellow on the TUI).
+            (Lang::Rust, "const MAX_VALUE: i32 = 5;", "MAX_VALUE", TokenKind::Constant),
         ];
         for (lang, src, needle, kind) in cases {
             let spans = highlight(src, *lang);
