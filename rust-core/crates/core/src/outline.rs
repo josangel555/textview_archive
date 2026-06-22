@@ -238,6 +238,44 @@ mod tests {
         hs.iter().map(|h| h.title.as_str()).collect()
     }
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary markdown-ish text —
+    /// ATX (#..######, over-#, no-space), setext (===/---), fenced code, leading
+    /// spaces/tabs, unicode, raw noise — must NEVER panic in headings(), and every
+    /// Heading has a level in 1..=6 and a 1-based line. Deterministic LCG, no dep.
+    /// Teeth: a level outside 1..=6 or a 0 line fails the assert.
+    #[test]
+    #[allow(clippy::cast_possible_truncation, reason = "LCG values are modulo-bounded before use")]
+    fn headings_fuzz_never_panics_levels_and_lines_valid() {
+        const LINES: &[&str] = &[
+            "# h1", "## h2", "###### h6", "####### over", "#nospace", "#", "###   ",
+            "title", "===", "---", "- - -", "```rust", "```", "~~~", "    indented",
+            "\ttab", "> quote", "中文 标题", "## ## nested", "",
+        ];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0x011D_E217_0A7E_0001;
+        for _ in 0..3000u32 {
+            let n = (lcg(&mut state) % 12) as usize;
+            let mut s = String::new();
+            for _ in 0..n {
+                s.push_str(LINES[(lcg(&mut state) as usize) % LINES.len()]);
+                s.push('\n');
+            }
+            for h in &headings(&s, "f.md") {
+                assert!(
+                    (1..=6).contains(&h.level),
+                    "heading level {} out of 1..=6 for {s:?}",
+                    h.level
+                );
+                assert!(h.line >= 1, "heading line must be 1-based, got {}", h.line);
+            }
+        }
+    }
+
     #[test]
     fn is_markdown_by_extension() {
         assert!(is_markdown("README.md"));
