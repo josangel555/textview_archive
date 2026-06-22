@@ -943,6 +943,47 @@ extension EditableCSVModel {
         guard let raw = resolver(reference) else { return .blank }
         return FormulaEngine.evaluate(raw: raw, origin: reference, resolve: resolver)
     }
+
+    /// A1 → raw text for every non-empty DATA cell (the header, grid row 0, is
+    /// skipped — matching `formulaResolver`'s "A1 = first data row"). The snapshot
+    /// the Rust recalc resolves against.
+    func formulaGridSnapshot() -> [String: String] {
+        var snapshot: [String: String] = [:]
+        guard rowCount > 1 else { return snapshot }
+        for r in 1..<rowCount {
+            for c in 0..<columnCount {
+                guard let v = getCell(row: r, column: c), !v.isEmpty else { continue }
+                snapshot[CellReference(row: r - 1, column: c).a1] = v
+            }
+        }
+        return snapshot
+    }
+
+    /// Compute every FORMULA cell's value in ONE pass: A1-space `CellReference` →
+    /// computed `FormulaValue`. When `RustFormulaGate` is on (and the bridge
+    /// succeeds) this routes through the Rust recalc engine — one snapshot + one
+    /// recalc for the whole grid, resolving formula-cell references correctly
+    /// (the recursion the per-cell stateless path can't do). Otherwise it falls
+    /// back to the Swift `FormulaEngine`, evaluating each formula cell. The two
+    /// paths agree cell-for-cell (A/B parity).
+    public func recalcAllFormulas(environment: [String: String]? = nil) -> [CellReference: FormulaValue] {
+        if RustFormulaGate.isEnabled(environment: environment),
+           let rust = try? RustFormulaAdapter.recalc(cells: formulaGridSnapshot()) {
+            return rust
+        }
+        var out: [CellReference: FormulaValue] = [:]
+        guard rowCount > 1 else { return out }
+        let resolver = formulaResolver()
+        for r in 1..<rowCount {
+            for c in 0..<columnCount {
+                guard let v = getCell(row: r, column: c),
+                      v.trimmingCharacters(in: .whitespaces).hasPrefix("=") else { continue }
+                let ref = CellReference(row: r - 1, column: c)
+                out[ref] = FormulaEngine.evaluate(raw: v, origin: ref, resolve: resolver)
+            }
+        }
+        return out
+    }
 }
 
 // MARK: - Value type
