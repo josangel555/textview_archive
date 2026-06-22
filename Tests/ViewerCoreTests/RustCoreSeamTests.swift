@@ -23,9 +23,11 @@ final class RustCoreSeamTests: XCTestCase {
         // Editing this set is a DELIBERATE soak decision, never a side effect.
         // ROUND 4 / STAGE A COMPLETE: every stage-A capability ships ON.
         // TSK-660 flip round (2026-06-12): highlight completed its ladder
-        // (consumption + A/B + parity + the compile cache) and ships ON —
-        // the soak set is once again ALL capabilities.
-        let soakSet = Set(RustCoreCapability.allCases)
+        // (consumption + A/B + parity + the compile cache) and ships ON.
+        // TSK-1213: `formula` is the first NEW port since stage A — it ships OFF
+        // until its own soak round (cross-language parity proven against the Swift
+        // FormulaEngine first), so it is excluded from the all-on soak set.
+        let soakSet = Set(RustCoreCapability.allCases).subtracting([.formula])
         for cap in RustCoreCapability.allCases {
             XCTAssertEqual(
                 RustCoreGates.isEnabled(cap, defaults: defaults, environment: [:]),

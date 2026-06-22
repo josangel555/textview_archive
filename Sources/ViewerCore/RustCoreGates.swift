@@ -41,6 +41,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     /// Tree-sitter highlight runs (engine port TSK-660). The first
     /// post-stage-A port: ships OFF until its own soak round.
     case highlight
+    /// Spreadsheet formula evaluation (engine port TSK-1213). Brand-new port —
+    /// ships OFF until its own soak round; the Swift FormulaEngine stays default.
+    case formula
 
     /// Persisted UserDefaults key. `csv` keeps its original key for
     /// back-compat with any already-persisted preference / the Settings toggle.
@@ -88,6 +91,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // It also FIXES the TSK-410 class (predicates evaluated). Off-switch
         // unchanged: MDV_RUST_HIGHLIGHT=0 / the Settings toggle.
         case .highlight: return true
+        // TSK-1213: brand-new formula port — ships OFF until its own soak round
+        // (parity proven against the Swift FormulaEngine first).
+        case .formula: return false
         }
     }
 }
