@@ -19,6 +19,20 @@ hours.
   full relink.) Symptom to recognise: rust-core cargo test green + `.a` mtime fresh +
   `Compiling mdvcore-core` ran, yet a `--filter` Swift parity test still fails → it's the
   relink, not the fix.
+- **Even the FULL gate can FALSE-PASS right after `build-rust-core` (3rd bite, 2026-06-22).**
+  The claim above ("the full rebuild relinks") is OPTIMISTIC: if the change is
+  rust-core-ONLY (no Swift source touched), `swift test --parallel` may STILL not relink —
+  SwiftPM relinks only when a Swift compile unit changes, and the `.a` is not a tracked
+  input. The Rust change's effect then surfaces on the NEXT run that recompiles any Swift
+  source. This bit TSK-1201: last tick's full gate PASSED on a STALE `.a`, so the
+  negative-control golden tests (`TreeSitterEngineGoldenTests`) only flipped RED a tick
+  later — after an unrelated Swift palette change forced the relink — and a *validated*
+  ticket briefly rested on a false green.
+- **MITIGATION:** after ANY `build-rust-core` + a Rust behavior change, FORCE the relink
+  before trusting the Swift gate — `touch` a Swift file in the test target (or
+  `rm -rf .build`) and run the full gate, OR run the full gate TWICE, OR confirm a
+  rust-dependent Swift test flips red→green as expected (teeth on the linkage). Do NOT
+  validate an FFI/rust-behavior ticket on the FIRST post-`build-rust-core` gate alone.
 
 ## "Engine tested ≠ feature shipped" — green tests can hide an unwired engine (2026-06-21)
 - The Rust+Swift FormulaEngine passed EVERY host gate (dense unit tests + ~60 cross-language
