@@ -701,6 +701,12 @@ public enum ScriptVerb {
             "isCrossSearchPresented": model.isCrossSearchPresented,
             "sidebarVisible": model.sidebar.isVisible,
             "currentURL": model.currentURL?.path ?? "",
+            // Bounded prefix of the selected tab's LOADED source text (TSK-1241).
+            // Lets a UAT assert WHAT loaded for read-only/source-view content —
+            // e.g. a routed .rtf/.docx shows its EXTRACTED text — where
+            // `editorText` is "" (no materialized buffer for an un-edited
+            // read-only tab).
+            "loadedTextPrefix": model.selectedLoadedTextPrefix,
             "lastGoToError": model.lastGoToError,
             "sessions": sessionSummaries,
             "activeSessionID": sessions.core.activeID?.uuidString ?? "",

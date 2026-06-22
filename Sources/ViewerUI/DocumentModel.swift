@@ -1834,6 +1834,17 @@ public final class DocumentModel: ObservableObject {
         return nil
     }
 
+    /// Bounded prefix of the SELECTED tab's loaded source text — the content the
+    /// source view renders. Lets a diagnostic dump / UAT assert WHAT loaded (e.g.
+    /// that a routed .rtf/.docx shows its EXTRACTED text, not raw container
+    /// bytes), since the editor buffer (`editorText`) is nil for an un-edited
+    /// read-only tab. Capped so the per-step dump stays small. "" when no tab is
+    /// loaded. (TSK-1241 — render-content VM-UAT enabler.)
+    public var selectedLoadedTextPrefix: String {
+        guard let tab = tabs.selected, let text = Self.loadedText(of: tab) else { return "" }
+        return String(text.prefix(400))
+    }
+
     /// Resolve the gutter's repo root via the registry first (shared
     /// cached resolution + already-running watcher), falling back to a
     /// fresh `.git` walk for files in not-yet-tracked repos.
