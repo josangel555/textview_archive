@@ -231,7 +231,7 @@ final class ImageEditingTests: XCTestCase {
         let data = try Exporter.encode(
             solidImage(width: 32, height: 32, r: 1, g: 1, b: 1),
             ExportSpec(format: .png))
-        let red = RGBAColor(r: 255, g: 0, b: 0)
+        let red = DrawColor(red: 1, green: 0, blue: 0)
         // A triangle covering the center (top, bottom-left, bottom-right).
         let tri = [CGPoint(x: 16, y: 4), CGPoint(x: 4, y: 28), CGPoint(x: 28, y: 28)]
         let filled = try Renderer.render(

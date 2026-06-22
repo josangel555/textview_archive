@@ -148,7 +148,7 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// pixel space, top-left origin) with `color`: the model + rasterization for
     /// the polygon / parametric-shape FILL tools. The multi-click/drag gesture
     /// that builds it is the render tail. Geometry-preserving (never resizes).
-    case fillPolygon(points: [CGPoint], color: RGBAColor)
+    case fillPolygon(points: [CGPoint], color: DrawColor)
 }
 
 /// A straight (non-premultiplied) RGBA color for the draw ops, each channel in

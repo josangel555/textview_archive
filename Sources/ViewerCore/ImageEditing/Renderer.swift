@@ -181,7 +181,16 @@ public enum Renderer {
             return paintStroke(image, points: points, radius: radius,
                                color: color, square: square)
         case .fillPolygon(let points, let color):
-            return fillPolygon(image, points: points, color: color)
+            // Consistent with the sibling shape fills (fillRect/fillEllipse): fill a
+            // CGContext path so the polygon is anti-aliased like the other shapes.
+            return try draw(on: image) { ctx in
+                guard let first = points.first, points.count >= 3 else { return }
+                ctx.setFillColor(color.cgColor)
+                ctx.move(to: first)
+                for p in points.dropFirst() { ctx.addLine(to: p) }
+                ctx.closePath()
+                ctx.fillPath()
+            }
         }
     }
 
@@ -202,16 +211,6 @@ public enum Renderer {
                 canvas.brushStroke(from: pts[i - 1], to: pts[i], radius: radius, color: color, square: square)
             }
         }
-        return canvas.cgImage() ?? image
-    }
-
-    /// (TSK-1084/1085) Scanline-fill a closed polygon onto the buffer via the SAME
-    /// `RasterCanvas` the live tools use. `<3` points / a failed round-trip degrades
-    /// to the input image (never crashes).
-    static func fillPolygon(_ image: CGImage, points: [CGPoint], color: RGBAColor) -> CGImage {
-        guard points.count >= 3, var canvas = RasterCanvas.from(image) else { return image }
-        let pts = points.map { (x: Int($0.x.rounded()), y: Int($0.y.rounded())) }
-        canvas.fillPolygon(points: pts, to: color)
         return canvas.cgImage() ?? image
     }
 
