@@ -410,12 +410,12 @@ impl Parser {
 
 // MARK: - Evaluator
 
-fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
+fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Value) -> Value {
     match e {
         Expr::Number(n) => Value::Number(*n),
         Expr::Str(s) => Value::Text(s.clone()),
         Expr::Ref(name) => match CellRef::parse(name) {
-            Some(cr) => coerce_cell(resolver(cr)),
+            Some(cr) => resolver(cr),
             None => Value::Error(FormulaError::Name), // not a valid cell ref
         },
         Expr::Range(_, _) => Value::Error(FormulaError::Value), // bare range invalid in scalar context
@@ -468,7 +468,7 @@ fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
 /// Evaluate a function call. Unknown name → #NAME?. (Slice 3a: aggregates +
 /// logical; text/math/lookup arrive in following slices, ported against the
 /// Swift FormulaEngine corpus.)
-fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<String>) -> Value {
+fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Value) -> Value {
     let upper = name.to_ascii_uppercase();
     match upper.as_str() {
         "SUM" | "AVERAGE" | "MIN" | "MAX" | "COUNT" | "PRODUCT" => {
@@ -594,7 +594,7 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
                         None => return Value::Error(FormulaError::Ref),
                     };
                     for cr in cells {
-                        out.push_str(&value_text(&coerce_cell(resolver(cr))));
+                        out.push_str(&value_text(&resolver(cr)));
                     }
                 } else {
                     let v = eval(arg, resolver);
@@ -685,7 +685,7 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             }
             let mut count: usize = 0;
             for cr in cells {
-                if matches_criterion(&coerce_cell(resolver(cr)), &crit) {
+                if matches_criterion(&resolver(cr), &crit) {
                     count += 1;
                 }
             }
@@ -717,9 +717,9 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             let mut total = 0.0;
             let mut matched: usize = 0;
             for (i, cr) in crit_cells.iter().enumerate() {
-                if matches_criterion(&coerce_cell(resolver(*cr)), &crit) {
+                if matches_criterion(&resolver(*cr), &crit) {
                     let target = sum_cells.get(i).copied().unwrap_or(*cr);
-                    if let Some(n) = numeric_contribution(&coerce_cell(resolver(target))) {
+                    if let Some(n) = numeric_contribution(&resolver(target)) {
                         total += n;
                         matched += 1;
                     }
@@ -781,7 +781,7 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             };
             let mut best: Option<usize> = None;
             for (i, cr) in cells.iter().enumerate() {
-                let ord = value_cmp(&coerce_cell(resolver(*cr)), &target);
+                let ord = value_cmp(&resolver(*cr), &target);
                 if mt == 0.0 {
                     if ord == Ordering::Equal {
                         return Value::Number((i + 1) as f64); // exact
@@ -831,10 +831,10 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             if ri > nrows || ci > ncols {
                 return Value::Error(FormulaError::Ref);
             }
-            coerce_cell(resolver(CellRef {
+            resolver(CellRef {
                 col: start.col + ci - 1,
                 row: start.row + ri - 1,
-            }))
+            })
         }
         "VLOOKUP" | "HLOOKUP" => {
             use std::cmp::Ordering;
@@ -882,7 +882,7 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
                 } else {
                     CellRef { col: start.col + k, row: start.row }
                 };
-                let ord = value_cmp(&coerce_cell(resolver(key_cell)), &target);
+                let ord = value_cmp(&resolver(key_cell), &target);
                 if exact {
                     if ord == Ordering::Equal {
                         best = Some(k);
@@ -903,7 +903,7 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
                     } else {
                         CellRef { col: start.col + k, row: start.row + index - 1 }
                     };
-                    coerce_cell(resolver(result_cell))
+                    resolver(result_cell)
                 }
                 None => Value::Error(FormulaError::Na),
             }
@@ -1305,7 +1305,7 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
 }
 
 /// Evaluate an optional arg to a number for a scalar function (missing → #VALUE).
-fn arg_num(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<f64, Value> {
+fn arg_num(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Value) -> Result<f64, Value> {
     match arg {
         Some(e) => as_number(eval(e, resolver)),
         None => Err(Value::Error(FormulaError::Value)),
@@ -1317,7 +1317,7 @@ fn arg_num(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> 
 // Bounds-checked f64→usize: non-finite rejected above; `trunc() as i64` takes the
 // integer part toward zero, and `usize::try_from` rejects negatives/overflow → #VALUE.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn arg_count(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<usize, Value> {
+fn arg_count(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Value) -> Result<usize, Value> {
     let x = arg_num(arg, resolver)?;
     if !x.is_finite() {
         return Err(Value::Error(FormulaError::Value));
@@ -1328,7 +1328,7 @@ fn arg_count(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -
 /// Evaluate an optional arg to its text form for a scalar function (missing → #VALUE).
 fn arg_text(
     arg: Option<&Expr>,
-    resolver: &dyn Fn(CellRef) -> Option<String>,
+    resolver: &dyn Fn(CellRef) -> Value,
 ) -> Result<String, Value> {
     match arg {
         Some(e) => {
@@ -1376,14 +1376,14 @@ fn aggregate(name: &str, nums: &[f64]) -> Value {
 /// scalar arg propagates as `Err`.
 fn numeric_values(
     args: &[Expr],
-    resolver: &dyn Fn(CellRef) -> Option<String>,
+    resolver: &dyn Fn(CellRef) -> Value,
 ) -> Result<Vec<f64>, Value> {
     let mut nums = Vec::new();
     for arg in args {
         if let Expr::Range(a, b) = arg {
             let cells = expand_range(a, b).ok_or(Value::Error(FormulaError::Ref))?;
             for cr in cells {
-                if let Some(n) = numeric_contribution(&coerce_cell(resolver(cr))) {
+                if let Some(n) = numeric_contribution(&resolver(cr)) {
                     nums.push(n);
                 }
             }
@@ -1405,14 +1405,14 @@ fn numeric_values(
 /// evaluates to an error propagates.
 fn non_blank_count(
     args: &[Expr],
-    resolver: &dyn Fn(CellRef) -> Option<String>,
+    resolver: &dyn Fn(CellRef) -> Value,
 ) -> Result<usize, Value> {
     let mut n = 0;
     for arg in args {
         if let Expr::Range(a, b) = arg {
             let cells = expand_range(a, b).ok_or(Value::Error(FormulaError::Ref))?;
             for cr in cells {
-                if !matches!(coerce_cell(resolver(cr)), Value::Blank) {
+                if !matches!(resolver(cr), Value::Blank) {
                     n += 1;
                 }
             }
@@ -1548,7 +1548,7 @@ fn arg_range_bounds(arg: Option<&Expr>) -> Option<(CellRef, CellRef)> {
 
 /// Evaluate an arg to a 1-based positive index (INDEX/VLOOKUP positions). `< 1`
 /// or non-integer-convertible → #REF. Checked conversion (no truncating cast).
-fn arg_index1(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<u32, Value> {
+fn arg_index1(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Value) -> Result<u32, Value> {
     let n = arg_count(arg, resolver)?; // usize ≥ 0, bounds-checked
     if n < 1 {
         return Err(Value::Error(FormulaError::Ref));
@@ -1559,7 +1559,7 @@ fn arg_index1(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) 
 /// Evaluate an arg to a (possibly negative) integer (date components, month shifts).
 // Bounds-checked f64→i64: non-finite rejected; `trunc()` takes the integer part.
 #[allow(clippy::cast_possible_truncation)]
-fn arg_int(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Option<String>) -> Result<i64, Value> {
+fn arg_int(arg: Option<&Expr>, resolver: &dyn Fn(CellRef) -> Value) -> Result<i64, Value> {
     let x = arg_num(arg, resolver)?;
     if !x.is_finite() {
         return Err(Value::Error(FormulaError::Value));
@@ -1814,8 +1814,12 @@ pub fn evaluate_with(formula: &str, resolver: &dyn Fn(CellRef) -> Option<String>
         return Value::Blank;
     }
     let mut p = Parser { toks, pos: 0 };
+    // The public API takes a raw-text resolver; compose `coerce_cell` once so the
+    // internal evaluator resolves refs to `Value` (lets recalc resolve a formula
+    // cell to its computed value — bool/error can't round-trip as text).
+    let value_resolver = |cr: CellRef| coerce_cell(resolver(cr));
     match p.parse() {
-        Ok(expr) => eval(&expr, resolver),
+        Ok(expr) => eval(&expr, &value_resolver),
         Err(e) => Value::Error(e),
     }
 }
