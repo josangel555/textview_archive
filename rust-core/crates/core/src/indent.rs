@@ -112,6 +112,40 @@ pub fn detect_wire_aux(req: &[u8], aux: &[u8]) -> Result<Vec<u8>, crate::wire::W
 mod tests {
     use super::*;
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary text — mixed
+    /// tabs/spaces, varying widths, blank/comment lines, unicode, raw noise —
+    /// must NEVER panic in detect(), which always returns a non-empty label
+    /// (— / Tabs / "N spaces"). Deterministic LCG, no dep. Teeth: an empty label
+    /// fails the assert.
+    #[test]
+    #[allow(clippy::cast_possible_truncation, reason = "LCG values are modulo-bounded before use")]
+    fn detect_fuzz_never_panics_and_returns_a_label() {
+        const LINES: &[&str] = &[
+            "abc", "  two", "    four", "\ttab", "        eight", " one", "   three",
+            "\t  mixed", "中文", "", "   ", "\t\t", "// c", "def foo():", "      six",
+        ];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0x12DE_27AA_0001_0001;
+        for _ in 0..3000u32 {
+            let n = (lcg(&mut state) % 20) as usize;
+            let mut s = String::new();
+            for _ in 0..n {
+                s.push_str(LINES[(lcg(&mut state) as usize) % LINES.len()]);
+                s.push('\n');
+            }
+            let sample = (lcg(&mut state) % 100) as usize;
+            assert!(
+                !detect(&s, sample).is_empty(),
+                "detect returned an empty label for {s:?}"
+            );
+        }
+    }
+
     #[test]
     fn no_indent_is_dash() {
         assert_eq!(detect("abc\ndef\n", 50), "—");
