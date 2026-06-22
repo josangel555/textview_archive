@@ -44,6 +44,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     /// Spreadsheet formula evaluation (engine port TSK-1213). Brand-new port —
     /// ships OFF until its own soak round; the Swift FormulaEngine stays default.
     case formula
+    /// Code-fold regions (engine port TSK-1202). Brand-new port — ships OFF until
+    /// its own soak round; the Swift TreeSitterEngine fold path stays default.
+    case fold
 
     /// Persisted UserDefaults key. `csv` keeps its original key for
     /// back-compat with any already-persisted preference / the Settings toggle.
@@ -94,6 +97,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // TSK-1213: brand-new formula port — ships OFF until its own soak round
         // (parity proven against the Swift FormulaEngine first).
         case .formula: return false
+        // TSK-1202: brand-new fold port — ships OFF until its own soak round
+        // (parity proven against the Swift TreeSitterEngine folds first).
+        case .fold: return false
         }
     }
 }

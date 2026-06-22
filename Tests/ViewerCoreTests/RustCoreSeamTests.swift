@@ -27,7 +27,9 @@ final class RustCoreSeamTests: XCTestCase {
         // TSK-1213: `formula` is the first NEW port since stage A — it ships OFF
         // until its own soak round (cross-language parity proven against the Swift
         // FormulaEngine first), so it is excluded from the all-on soak set.
-        let soakSet = Set(RustCoreCapability.allCases).subtracting([.formula])
+        // TSK-1202: `fold` is the next new port — also ships OFF until its soak
+        // (6-language parity proven against the Swift TreeSitterEngine folds first).
+        let soakSet = Set(RustCoreCapability.allCases).subtracting([.formula, .fold])
         for cap in RustCoreCapability.allCases {
             XCTAssertEqual(
                 RustCoreGates.isEnabled(cap, defaults: defaults, environment: [:]),
