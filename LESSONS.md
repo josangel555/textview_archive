@@ -3480,3 +3480,12 @@ Continuation of "the five constraints" above; these three close every remaining 
   assume the global is yours alone. A `serial`-style lock only covers tests that take the lock, not unrelated emitters. Smell:
   a test that's green alone but red in the full `--parallel` suite (cf. the FoldBench/RepoFocusTracker WALL-CLOCK flakes, a
   different class — those are load-timing, this is shared-state pollution; both need isolated re-runs to diagnose).
+- **Before building a GUARD/invariant test, grep `Tests/` for an existing one — state-check the TEST surface, not just the feature (2026-06-22).**
+  Built `BundleCapDocSyncTests` (a bundle-cap doc-drift guard) only to find `BundleCapDocConsistencyTests` already did the exact
+  thing — and BETTER (it checks CLAUDE.md + build-app.sh + README.md; mine checked two). The `AUTONOMOUS_PROGRESS` LOG even NAMED
+  the existing guard; I'd read the LOG but not registered it. Self-corrected (removed the dup, dismissed the ticket as duplicate),
+  but it was wasted work. RULE: the "state-check the curated `[reported]` item against the code before building" habit (which keeps
+  catching built-but-stale features) must extend to GUARDS — `grep -rl <conceptName> Tests/` first; the drift/invariant a ticket
+  asks you to guard is often already guarded. Corollary: **CI-workflow invariants live in `InfraInvariantTests`** (pr.yml caching,
+  supply-chain gate, vm lane, killall, the WebView-lane-in-nightly-not-pr guard) and **bundle-cap doc sync in
+  `BundleCapDocConsistencyTests`** — add to those homes, don't spawn a parallel `CIWorkflowTruthTests`/`*DocSyncTests` file.
