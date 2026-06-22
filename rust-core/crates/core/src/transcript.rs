@@ -699,6 +699,55 @@ mod tests {
         assert_eq!(ev[1].kind, EventKind::AssistantMessage { text: "yo".into() });
     }
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary .jsonl — valid +
+    /// malformed JSON records, ADVERSARIAL timestamps (month 13, day 45, empty,
+    /// huge year, fractional, all-zero), null/wrong-typed fields, raw noise —
+    /// must NEVER panic in parse() with redaction ON or OFF. Exercises
+    /// parse_record, the rfc3339 date math (days_in_month / days_from_civil —
+    /// overflow/divide/index-prone on out-of-range month/day), redact, and
+    /// to_compact_json. Deterministic LCG, no dep. Teeth: a date-math or JSON-nav
+    /// panic on a degenerate record fails outright.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // LCG values are modulo-bounded before use
+    fn parse_fuzz_never_panics_on_arbitrary_jsonl() {
+        const TIMESTAMPS: &[&str] = &[
+            "2026-06-22T12:00:00Z", "2026-13-45T99:99:99Z", "0000-00-00T00:00:00Z",
+            "9999-12-31T23:59:59Z", "-1-1-1T0:0:0Z", "", "not-a-date",
+            "2026-02-30T00:00:00Z", "99999999999999999999-01-01T00:00:00Z",
+            "2026-06-22T12:00:00.123456789Z", "2026-00-00", "1-13-32T25:61:61Z",
+        ];
+        const RECORDS: &[&str] = &[
+            r#"{"uuid":"u","type":"user","timestamp":"TS","message":{"role":"user","content":"hi"}}"#,
+            r#"{"uuid":"a","type":"assistant","timestamp":"TS","message":{"role":"assistant","content":[{"type":"text","text":"x"}]}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"t","input":{"a":1}}]}}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"r"}]}}"#,
+            r#"{"type":"summary","timestamp":"TS"}"#, r#"{}"#, r#"{"type":42,"timestamp":"TS"}"#,
+            r#"{"timestamp":"TS"}"#, r#"not json"#, r#"{"#, r#"{"type":"user","message":null}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"image","source":{"data":"x"}}]}}"#,
+        ];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0x7A11_C0DE_F00D_2026;
+        for _ in 0..3000u32 {
+            let n = (lcg(&mut state) % 10) as usize;
+            let mut s = String::new();
+            for _ in 0..n {
+                let rec = RECORDS[(lcg(&mut state) as usize) % RECORDS.len()];
+                let ts = TIMESTAMPS[(lcg(&mut state) as usize) % TIMESTAMPS.len()];
+                s.push_str(&rec.replace("TS", ts));
+                s.push('\n');
+            }
+            let redacting = lcg(&mut state) & 1 == 0;
+            for e in &parse(&s, redacting) {
+                let _ = e.timestamp_ms;
+            }
+        }
+    }
+
     #[test]
     fn block_array_text_thinking_tool_use_tool_result() {
         let log = concat!(
