@@ -373,6 +373,28 @@ mod tests {
         }
     }
 
+    /// String-coverage sweep: the @spell dual-capture gap (TSK-1201) commonly hits
+    /// STRINGS too (spell-checkable text is often `@string @spell`). Assert each
+    /// shipped language tags its string literal @string — a new gap fails here.
+    #[test]
+    fn string_literals_tag_at_string_across_languages() {
+        let cases: &[(Lang, &str, &str)] = &[
+            (Lang::Rust, "fn m() { let s = \"hi\"; }", "\"hi\""),
+            (Lang::Go, "package m\nvar s = \"hi\"", "\"hi\""),
+            (Lang::JavaScript, "let s = \"hi\";", "\"hi\""),
+            (Lang::TypeScript, "let s = \"hi\";", "\"hi\""),
+            (Lang::Python, "s = \"hi\"", "\"hi\""),
+            (Lang::Ruby, "s = \"hi\"", "\"hi\""),
+            (Lang::Lua, "s = \"hi\"", "\"hi\""),
+            (Lang::Sql, "SELECT 'hi'", "'hi'"),
+        ];
+        for &(lang, src, needle) in cases {
+            let runs = runs_utf16(src, lang);
+            assert_eq!(kind_at(&runs, src, needle).as_deref(), Some("string"),
+                       "{lang:?} string literal must tag @string");
+        }
+    }
+
     #[test]
     fn wire_round_trip_supported_language() {
         let frame = mdvcore_core::wire::encode_frame(&RunsRequest {
