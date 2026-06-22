@@ -40,7 +40,10 @@ public enum RustFormulaAdapter {
     /// (A1 → raw text), mapped to `FormulaValue`. Throws on a bridge fault.
     /// Bypasses the gate — for the A/B harness and parity tests.
     public static func rustEvaluate(_ formula: String, cells: [String: String]) throws -> FormulaValue {
-        guard let first = try mdvCoreEvaluateFormulas([formula], cells: cells).first else {
+        // Mirror FormulaEngine's raw contract: a leading `=` marks a formula and
+        // the Rust evaluator parses the body, so strip it before sending.
+        let body = formula.hasPrefix("=") ? String(formula.dropFirst()) : formula
+        guard let first = try mdvCoreEvaluateFormulas([body], cells: cells).first else {
             throw CoreError.decode("formula_evaluate returned no value")
         }
         return mapValue(first)
