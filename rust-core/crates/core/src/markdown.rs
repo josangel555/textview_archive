@@ -895,4 +895,66 @@ mod tests {
         assert_eq!(resp.chunks[0].lang, "swift");
         assert_eq!(resp.chunks[0].payload, "let a = 1\n");
     }
+
+    /// Security fuzz of the untrusted-.md render path (the web viewer renders
+    /// attacker-controlled markdown). For random input — including spliced
+    /// injection fragments — render() must NEVER panic, and the structural
+    /// `out.html` must never carry a raw `<script` tag or a `javascript:` /
+    /// `vbscript:` URL scheme in an href/src (raw HTML is sentinel-replaced; link
+    /// schemes are rewritten). Merge gate fixed seed; nightly varies
+    /// MDV_FUZZ_SEED_BASE. (Raw-HTML CHUNK payloads are sanitized downstream and
+    /// are out of scope here — this pins the structural-html guarantee.)
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // RNG outputs are modulo-bounded to a small index/len
+    fn render_fuzz_structural_html_never_leaks_script_or_js_scheme() {
+        let seed_base: u64 = std::env::var("MDV_FUZZ_SEED_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let alpha: Vec<char> =
+            "<>/\\\"'`[]()!#*_-=:;. \n\tabc日 script img a href src onerror alert".chars().collect();
+        let fragments = [
+            "<script>x</script>",
+            "[a](javascript:b)",
+            "<a href=\"javascript:c\">t</a>",
+            "<img src=\"javascript:d\">",
+            "![i](javascript:e)",
+            "<SCRIPT>Y</SCRIPT>",
+            "[v](vbscript:f)",
+            "<iframe src=\"javascript:g\"></iframe>",
+        ];
+        let mut s: u64 = seed_base.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        for _ in 0..600 {
+            let len = (next() % 120) as usize;
+            let mut text: String =
+                (0..len).map(|_| alpha[(next() % alpha.len() as u64) as usize]).collect();
+            if next() % 2 == 0 {
+                text.push_str(fragments[(next() as usize) % fragments.len()]);
+            }
+            let out = render(&text); // must not panic
+            let lower = out.html.to_lowercase();
+            assert!(!lower.contains("<script"), "raw <script in out.html for in={text:?}");
+            assert!(
+                !lower.contains("href=\"javascript:"),
+                "javascript: href leaked for in={text:?} out={}",
+                out.html
+            );
+            assert!(
+                !lower.contains("src=\"javascript:"),
+                "javascript: src leaked for in={text:?} out={}",
+                out.html
+            );
+            assert!(
+                !lower.contains("href=\"vbscript:"),
+                "vbscript: href leaked for in={text:?} out={}",
+                out.html
+            );
+        }
+    }
 }
