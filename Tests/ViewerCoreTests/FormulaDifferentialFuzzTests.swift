@@ -152,4 +152,48 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// Differential fuzz over the shared DATE functions — the highest-risk parity
+    /// surface, since the two engines use INDEPENDENT calendar implementations
+    /// (Swift UTC Gregorian `Calendar` vs the Rust hand-rolled Hinnant civil-date).
+    /// Random valid ISO dates through YEAR/MONTH/DAY/WEEKDAY, DATEDIF (ordered span,
+    /// D/M/Y — the day-boundary logic is subtle), EDATE/EOMONTH (±months, month-end
+    /// clamping + leap years), and DATE() with month/day rollover.
+    func test_swift_rust_date_parity_random() throws {
+        func pad2(_ n: Int) -> String { n < 10 ? "0\(n)" : "\(n)" }
+        func iso(_ rng: inout Xorshift) -> String {
+            // day 1–28 keeps every (year, month) valid without a days-in-month table.
+            "\(rng.int(2000, 2035))-\(pad2(rng.int(1, 12)))-\(pad2(rng.int(1, 28)))"
+        }
+        for seed in UInt64(301)...UInt64(340) {
+            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<25 { // 40 seeds × 25 = 1000 random date cases
+                let a = iso(&rng)
+                let b = iso(&rng)
+                let cells = ["A1": min(a, b), "A2": max(a, b)] // ISO sorts chronologically
+                let resolver: CellResolver = { ref in cells[ref.a1] }
+                let formula: String
+                switch rng.int(0, 6) {
+                case 0: // DATE() with month/day rollover
+                    formula = "=DATE(\(rng.int(2000, 2035)),\(rng.int(1, 15)),\(rng.int(1, 35)))"
+                case 1: formula = "=YEAR(A1)"
+                case 2: formula = "=MONTH(A1)"
+                case 3: formula = "=DAY(A1)"
+                case 4:
+                    let t = ["", ",2"][rng.int(0, 1)] // the parity-pinned WEEKDAY types
+                    formula = "=WEEKDAY(A1\(t))"
+                case 5:
+                    let unit = ["D", "M", "Y"][rng.int(0, 2)]
+                    formula = "=DATEDIF(A1,A2,\"\(unit)\")"
+                default:
+                    let fn = rng.int(0, 1) == 0 ? "EDATE" : "EOMONTH"
+                    formula = "=\(fn)(A1,\(rng.int(-24, 24)))"
+                }
+                let swiftResult = FormulaEngine.evaluate(raw: formula, resolve: resolver)
+                let rustResult = try RustFormulaAdapter.rustEvaluate(formula, cells: cells)
+                XCTAssertEqual(rustResult, swiftResult,
+                               "date parity diverged: \(formula) over \(cells)")
+            }
+        }
+    }
 }
