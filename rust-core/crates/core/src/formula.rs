@@ -1947,6 +1947,24 @@ fn as_number(v: Value) -> Result<f64, Value> {
 
 /// Interpret a raw cell string as a value: empty/missing → Blank, numeric →
 /// Number, otherwise Text. (Booleans arrive with the function/literal slice.)
+/// Parse a cell's text as a number the way Excel + the Swift engine's `parseNumber`
+/// do: trim, then accept ONLY `[0-9.+-eE]` so `inf`/`nan`/`infinity`/hex are TEXT
+/// (not numbers), then `f64::parse`. TSK-1219: bare `f64::parse` accepts inf/nan
+/// textual forms, which diverged from Swift (`ISNUMBER("inf")` true vs false).
+fn parse_cell_number(s: &str) -> Option<f64> {
+    let t = s.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if !t
+        .bytes()
+        .all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'+' | b'e' | b'E'))
+    {
+        return None;
+    }
+    t.parse::<f64>().ok()
+}
+
 fn coerce_cell(raw: Option<String>) -> Value {
     match raw {
         None => Value::Blank,
@@ -1958,7 +1976,7 @@ fn coerce_cell(raw: Option<String>) -> Value {
             // Blank — diverging from Swift/Excel (LEN(" ")=0, UPPER(" ")="").
             if s.is_empty() {
                 Value::Blank
-            } else if let Ok(n) = s.trim().parse::<f64>() {
+            } else if let Some(n) = parse_cell_number(&s) {
                 Value::Number(n)
             } else {
                 Value::Text(s)
@@ -2380,6 +2398,18 @@ mod tests {
         assert_eq!(coerce_cell(None), Value::Blank);
         assert_eq!(coerce_cell(Some(" 5 ".to_string())), Value::Number(5.0)); // trim for number
         assert_eq!(coerce_cell(Some("abc ".to_string())), Value::Text("abc ".to_string()));
+    }
+
+    #[test]
+    fn coerce_cell_rejects_inf_nan_textual_forms() {
+        // TSK-1219: inf/nan/infinity/hex are TEXT (Excel + Swift char-restrict the
+        // number parse to [0-9.+-eE]); only genuine numerics become Number.
+        for s in ["inf", "-inf", "nan", "NaN", "Infinity", "infinity", "0x10"] {
+            assert_eq!(coerce_cell(Some(s.to_string())), Value::Text(s.to_string()), "{s} must be text");
+        }
+        assert_eq!(coerce_cell(Some("1e3".to_string())), Value::Number(1000.0));
+        assert_eq!(coerce_cell(Some("-5".to_string())), Value::Number(-5.0));
+        assert_eq!(coerce_cell(Some(".5".to_string())), Value::Number(0.5));
     }
 
     #[test]

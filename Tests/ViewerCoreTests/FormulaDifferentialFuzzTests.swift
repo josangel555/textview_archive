@@ -197,4 +197,22 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// Number-coercion edge parity: whether a cell value is classified as a NUMBER.
+    /// Excel + the Swift engine char-restrict number detection to `[0-9.+-eE]`, so
+    /// `inf`/`nan`/`infinity` are TEXT — but Rust's `f64::parse` accepts them. Pins
+    /// the boundary so the two engines agree on what is (and isn't) a number.
+    func test_swift_rust_number_coercion_edges() throws {
+        let edges = ["inf", "-inf", "nan", "NaN", "Infinity", "infinity",
+                     "5", "+5", "-5", ".5", "5.", "1e3", "1E3", "0x10", "abc", " 7 ", ""]
+        for v in edges {
+            let cells = ["A1": v]
+            let resolver: CellResolver = { ref in cells[ref.a1] }
+            let formula = "=ISNUMBER(A1)"
+            let swiftResult = FormulaEngine.evaluate(raw: formula, resolve: resolver)
+            let rustResult = try RustFormulaAdapter.rustEvaluate(formula, cells: cells)
+            XCTAssertEqual(rustResult, swiftResult,
+                           "number-coercion parity diverged: ISNUMBER over A1=\(v.debugDescription)")
+        }
+    }
 }
