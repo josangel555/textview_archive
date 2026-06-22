@@ -135,15 +135,39 @@ cp "$SCRIPT_DIR/Info.plist" "$CONTENTS/Info.plist"
 # bare-name would fail without an rpath-relative install name. Setting
 # it now is cheap insurance.
 echo "==> Copying lazy-grammar dylibs into Contents/Frameworks/"
-shopt -s nullglob
-DYLIB_COUNT=0
-for dylib in "$BIN_DIR"/libTreeSitter*Lazy.dylib; do
-  base="$(basename "$dylib")"
-  cp "$dylib" "$CONTENTS/Frameworks/$base"
+# Copy ONLY the dylibs for the .dynamic TreeSitter*Lazy products DECLARED in
+# Package.swift — NOT a bare glob of $BIN_DIR. A stale .build left over from a
+# FORMER Package.swift (more lazy grammars) leaves orphan libTreeSitter*Lazy.dylib
+# in the bin dir; globbing them ships removed grammars and trips verify-app.sh
+# SIGN-13 (TSK-1235: both the host and VM .build carried 8 orphans → 11 shipped
+# vs 3 declared). Deriving the allowlist from the same source verify-app.sh
+# checks against keeps the bundle correct regardless of bin-dir cruft. Falls back
+# to the glob if the parse finds nothing (regex-drift safety).
+copy_one_dylib() {
+  local src="$1" base
+  base="$(basename "$src")"
+  cp "$src" "$CONTENTS/Frameworks/$base"
   /usr/bin/install_name_tool -id "@rpath/$base" "$CONTENTS/Frameworks/$base" 2>/dev/null || true
   /usr/bin/strip -x "$CONTENTS/Frameworks/$base" 2>/dev/null || true
   DYLIB_COUNT=$((DYLIB_COUNT + 1))
-done
+}
+DYLIB_COUNT=0
+DECLARED_GRAMMARS="$(grep -oE '\.library\(name: "TreeSitter[A-Za-z0-9]+Lazy"' "$ROOT_DIR/Package.swift" 2>/dev/null \
+  | grep -oE 'TreeSitter[A-Za-z0-9]+Lazy' | sort -u)"
+shopt -s nullglob
+if [[ -n "$DECLARED_GRAMMARS" ]]; then
+  for name in $DECLARED_GRAMMARS; do
+    src="$BIN_DIR/lib$name.dylib"
+    if [[ -f "$src" ]]; then
+      copy_one_dylib "$src"
+    else
+      echo "    WARN: declared grammar $name has no built dylib at $src" >&2
+    fi
+  done
+else
+  echo "    WARN: parsed 0 declared TreeSitter*Lazy products from Package.swift — falling back to glob" >&2
+  for dylib in "$BIN_DIR"/libTreeSitter*Lazy.dylib; do copy_one_dylib "$dylib"; done
+fi
 shopt -u nullglob
 echo "    copied $DYLIB_COUNT grammar dylib(s)"
 
