@@ -1,61 +1,57 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — Rust FormulaEngine port (TSK-1213)  (2026-06-21)
+# Handoff — Rust FormulaEngine port + on-screen wiring (TSK-1213/1215)  (2026-06-22)
 
-**Session:** claude-mdv (AUTONOMOUS, cron ~5min).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `54b2da7a` (verify `git log -1`).
+**Session:** claude-mdv (AUTONOMOUS, ~5min cron).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `12fdd237` (verify `git log -1`).
 
 ## Mission
-Owner redirect (overrides the older "drain user-facing features" handoff): STOP building
-new engine work in Swift; PORT the Swift `FormulaEngine` to rust-core, **hand-written,
-ZERO new dependencies**. Sibling to the CSV/diff/hex rust ports.
+Owner redirect: STOP new engine work in Swift; PORT the Swift `FormulaEngine` to rust-core,
+hand-written, ZERO deps. Then (this session's later arc) surface it on screen + drain the board.
 
-## Current state — PORT FUNCTIONALLY COMPLETE + CONSUMED AT THE MODEL LAYER
-All slices hand-written, zero-dep, gated OFF by default (`RustFormulaGate` / `MDV_RUST_FORMULA`),
-each gated+committed. ~60 Swift↔Rust A/B parity cases all green.
-- **Pure evaluator** (`rust-core/crates/core/src/formula.rs`): full current-Swift function
-  parity — arithmetic, refs/ranges, comparisons, aggregates, conditional-aggregates, logical,
-  IS*, lookup (MATCH/INDEX/VLOOKUP/HLOOKUP), text, math (incl. CEILING/FLOOR/ROUNDUP/DOWN/TRUNC/
-  SIGN/EXP/LN/LOG10), dates (DATE/YEAR/MONTH/DAY/WEEKDAY/DATEDIF/EDATE/EOMONTH, hand-rolled
-  Hinnant civil-date). PROPER is NOT ported — handled by `#NAME!`-fallback to Swift in the adapter.
-- **FFI**: `Method::FormulaEvaluate` (id 13) + `Method::FormulaRecalc` (id 14) over `mdvcore_call`;
-  `evaluate_wire`/`recalc_wire`; MessagePack float support added Swift-side (`MessagePack.swift`).
-- **Swift consumption**: `RustFormulaAdapter` (`Sources/ViewerCore/`) — `mapValue`, `rustEvaluate`,
-  gated `evaluate` (#NAME-fallback), `recalc`. `EditableCSVModel.recalcAllFormulas()`
-  (`Sources/ViewerCore/FormulaEngine.swift`) — ONE-pass batch recalc, A/B parity-proven.
-- **Recalc engine** (slice 6b): memoized recursive `recalc()` with `visiting` cycle set (→ #CYCLE);
-  closes the recursion gap (a formula cell referencing another formula cell sees its COMPUTED value).
+## Current state — DONE this run (all on main, gates green per item, gated OFF)
+- **Rust FormulaEngine port (TSK-1213)** — full Swift parity (arith/refs/ranges/cmp/aggregates/
+  conditional-agg/logical/IS*/lookup/text/math/dates) → FFI (`FormulaEvaluate`+`FormulaRecalc`) →
+  `RustFormulaAdapter` (gate + #NAME-fallback) → `EditableCSVModel.recalcAllFormulas` (cycle-detecting
+  recalc). ~60 A/B parity cases (`FormulaParityTests`).
+- **Extensions beyond Swift (TSK-1216, validated):** wildcards `* ? ~`, COUNTIFS/SUMIFS/AVERAGEIFS,
+  IFNA, TEXTJOIN, CHOOSE.
+- **Formula ON-SCREEN wiring (TSK-1215, BUILT @ 9983e46d):** `CSVTableView` renders computed values,
+  gated behind `RustFormulaGate` (OFF) + file order → **zero-risk** (gate-off/sorted/filtered = raw,
+  byte-identical). Pure helper `formulaCellDisplay` host-tested. This was the missing view consumer.
+- **Web rendered Markdown (TSK-256, validated):** `.md` renders to sanitized HTML BY DEFAULT in the
+  std-only web front-end (Source/Hex toggles).
+- **Integrity + infra:** corrected an over-claimed CHANGELOG formula entry; `EngineConsumptionGuardTests`
+  (TSK-1217, partial); roadmap (TSK-775) + test-audit (TSK-788) + bundle spike (TSK-1214) docs.
 
-## Next action (remaining = render-path / owner-gated TAIL, NOT agent-closeable to `done`)
-1. **VIEW WIRING**: make the CSV view call `model.recalcAllFormulas()` (batch) instead of per-cell
-   `evaluateFormulaCell`. Render-path -> REVIEW CEILING + VM/owner on-screen confirmation. Leave at review.
-2. **GATE FLIP**: `MDV_RUST_FORMULA` default OFF->ON after a soak (owner decision; see
-   `RustCoreCapability.defaultEnabled` in `Sources/ViewerCore/RustCoreGates.swift`).
-3. **SWIFT ENGINE DELETION**: migration-policy endgame (owner-gated, after gate-ON soak).
-If the formula tail is exhausted/owner-gated, fall back to the board: validate `fixed` items, drain curated.
+## Next action — 4 OWNER decisions (all parked, full homework; see AUTONOMOUS_PROGRESS.md → DECISIONS NEEDED)
+1. **TSK-1215** — flip `MDV_RUST_FORMULA` ON after a soak (lights up engine + on-screen display together)
+   → VM/owner confirm the rendered values → delete the Swift twin. **The build is done; this is just the
+   flip + a VM pass.** THE highest-value unlock.
+2. **TSK-775** — migration horizon: engines-only (recommended) vs whole-core.
+3. **TSK-1214 / TSK-1098** — bundle cap target (exec ~60MB at cap; CLAUDE.md 26MB stale vs script 60MB)
+   → then grammar lazy-load (meaty) or accept+raise. Precise `__TEXT` breakdown needs bloaty/linker-map
+   (nm -S gives zeros on the stripped binary).
+4. **TSK-788** — test-audit depth (recommend STANDARD).
 
-## Key facts / gotchas (also LESSONS.md)
-- **The Swift `FormulaEngine` GREW** past the original corpus (CEILING/IFERROR/etc.); diff the live
-  fn sets before claiming parity. Verify with the cross-language parity harness
-  (`Tests/ViewerCoreTests/FormulaParityTests.swift`), not per-engine unit tests.
-- **`String.capitalized` is ICU word-segmentation**, not whitespace — don't reproduce in Rust; PROPER
-  stays Swift via the `#NAME!`-fallback (Rust fn-set is a subset of Swift's, so a genuine #NAME matches both).
-- **Per-method ABI ripple** (adding a `dispatch::Method`): enum + `NEXT_FREE_ID` + `from_u16` + router +
-  FFI `MDV_METHOD_*` const + 3 pinning tests in `ffi/src/tests.rs` + regenerate the cbindgen header via
-  `scripts/build-rust-core.sh` (the headers `Sources/CMdvCore/mdvcore.h` + `ffi/include/mdvcore.h` are
-  GITIGNORED generated artifacts; the rust-core gate's ABI-drift check fails until restaged).
-- **After ANY rust-core change**, run `scripts/build-rust-core.sh` BEFORE the Swift parity tests so the
-  linked `.a` (`rust-core/link/libmdvcore_ffi.a`) has the new behavior.
-- **`ChromeBodyEvalCountTests.test_findTypeahead_doesNotReBodyChromeStrip`** is a pre-existing SwiftUI
-  body-eval-count flake under full-suite parallel load — passes in isolation; unrelated to formulas.
-- **Commit messages: NO backticks** (zsh command-substitutes them inside `-m "..."`).
+## Key gotchas / lessons (also LESSONS.md)
+- **Engine tested ≠ feature shipped:** green tests prove the MODEL, never view consumption. Grep
+  `Sources/` for a non-test consumer before claiming/CHANGELOG-ing. A grep guard can't do reachability
+  (markdown core-mediated vs formula dead-ref look identical) — needs call-graph.
+- **Gated-zero-risk render pattern:** to build render features host-side safely, gate the new behavior
+  default-OFF (gate-off branch byte-identical), host-test the pure decision helper, leave gate-on at review.
+- **Per-method FFI ABI ripple:** dispatch enum + NEXT_FREE_ID + from_u16 + router + `MDV_METHOD_*` const +
+  3 pinning tests in `ffi/src/tests.rs` + regenerate cbindgen header via `build-rust-core.sh` (gate's
+  ABI-drift check fails until restaged). After ANY rust-core change, run `build-rust-core.sh` before the
+  Swift parity tests so the linked `.a` has the new behavior.
+- **Commit messages: NO backticks** (zsh command-substitutes inside `-m "..."`).
+- **ChromeBodyEvalCountTests.test_findTypeahead_doesNotReBodyChromeStrip** is a pre-existing flake (fails
+  under full-suite parallel load, passes isolated; unrelated to anything I changed).
 
 ## How to resume
-1. `git -C <cwd> log -1`; both gates should be green: `bash scripts/rust-core-gate.sh` +
-   `bash scripts/test-headless-gate.sh`.
-2. Per-slice loop that's been working: read Swift impl (authoritative) -> implement in `formula.rs` ->
-   Rust unit test (`cargo test -p mdvcore-core formula`) -> Swift parity cases -> `build-rust-core.sh` ->
-   `swift test --filter FormulaParityTests` -> both gates (background) -> confirm verdict in a SEPARATE
-   step -> commit per slice (trailer below). Record on TSK-1213 (`mcp__tasked__task_record`).
-3. The remaining formula work is render/owner-gated; if so, drain the board instead. Don't run T4/T5/
-   WebView/dist on the host.
+1. `git -C <cwd> log -1`; both gates green: `bash scripts/rust-core-gate.sh` + `bash scripts/test-headless-gate.sh`.
+2. The clean agent-actionable code vein is EXHAUSTED this run; the leverage is the 4 owner decisions above.
+   If continuing autonomously: re-check the board (`mcp__tasked__task_next`/`task_list`) for genuinely-new
+   actionable items; do NOT manufacture marginal spikes. Don't run T4/T5/WebView/dist on the host.
+3. Per-engine port loop (if more migration work): read Swift impl → implement in `formula.rs` → cargo test →
+   Swift parity cases → `build-rust-core.sh` → both gates (background) → confirm verdict separately → commit.
 
 Commit trailer:

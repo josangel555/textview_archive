@@ -5,6 +5,33 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## "Engine tested ≠ feature shipped" — green tests can hide an unwired engine (2026-06-21)
+- The Rust+Swift FormulaEngine passed EVERY host gate (dense unit tests + ~60 cross-language
+  A/B parity cases) yet had ZERO view consumers — `CSVTableView` rendered cells as raw
+  `Text(cell)`, so `=A1+B1` showed literal text on screen. A prior CHANGELOG entry
+  over-claimed it as user-facing (corrected). **Lesson: a passing test suite proves the
+  MODEL, never that a view consumes it.** Before claiming/CHANGELOG-ing a feature, grep
+  `Sources/` for a NON-test consumer of the engine; "ported + gated + validated" ≠ "shipped".
+- A grep "consumption guard" CANNOT distinguish core-mediated consumption from a dead
+  reference: `RustMarkdownAdapter` is genuinely consumed via a ViewerCore path with 0
+  ViewerUI refs, while `RustFormulaAdapter` was dead-referenced by view-unreachable
+  `recalcAllFormulas` — textually identical. A real guard needs call-graph reachability.
+  The partial guard that shipped (`EngineConsumptionGuardTests`, TSK-1217) only catches an
+  ON engine with ZERO app refs; documented its limit.
+
+## Building render features safely host-side — the gated-zero-risk pattern (2026-06-21)
+- To build a render-path change autonomously WITHOUT risking the owner's live view (and honor
+  "leave render at review"): gate the NEW behavior behind a default-OFF flag so the gate-off
+  branch is BYTE-IDENTICAL to today. Example: the CSV formula on-screen display
+  (`CSVTableView`) shows computed values only when `RustFormulaGate` is on AND the grid is in
+  file order; otherwise it falls through to the unchanged `Text(cell)`. The default view is
+  provably unchanged (host-build + existing tests), and the gate-ON behavior is the VM/owner
+  review surface. Pair with a PURE host-tested helper for the decision logic
+  (`formulaCellDisplay`) so the model layer is regression-guarded even though the render is VM-only.
+- Render wiring detail that bites: cells render by DISPLAY-row index, but engines (formulas)
+  key on ORIGINAL-grid position. Under sort/filter they diverge — gate the feature to file
+  order (display-row == original) and show raw otherwise, rather than guess a mapping.
+
 ## Rust FormulaEngine port — parity gaps & the PROPER/`.capitalized` trap (2026-06-21)
 - **The Swift `FormulaEngine` GREW after the original ~40-fn corpus** (pre-redirect
   run added ROUNDUP/DOWN, CEILING/FLOOR, IFERROR, etc.). A Rust port claiming
