@@ -517,4 +517,64 @@ mod tests {
         let req: BorrowReq<'_> = decode_frame_borrowed(&frame).unwrap();
         assert_eq!(req.text, "x");
     }
+
+    /// Audit fuzz #3: the FFI/RPC boundary decodes UNTRUSTED frames. Random bytes
+    /// and mutated-valid frames must NEVER panic through decode_frame — only Ok or
+    /// a WireFault. Allocations stay bounded (the 16 MB MAX_FRAME_LEN framing cap +
+    /// serde's cautious capacity), so a malformed length marker can't allocate-bomb.
+    /// Decodes into string/array/tuple/map shapes. Merge gate fixed seed; nightly
+    /// varies MDV_FUZZ_SEED_BASE.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // RNG bytes/indices are intentionally truncated
+    fn decode_frame_fuzz_never_panics_on_arbitrary_bytes() {
+        use std::collections::HashMap;
+        let seed_base: u64 = std::env::var("MDV_FUZZ_SEED_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let valids: Vec<Vec<u8>> = vec![
+            encode_frame(&"hello world".to_string()).unwrap(),
+            encode_frame(&vec![1i64, -2, 3, 1_000_000]).unwrap(),
+            encode_frame(&(7u64, "x".to_string(), true)).unwrap(),
+            encode_frame(&{
+                let mut m = HashMap::new();
+                m.insert("k".to_string(), 9i64);
+                m
+            })
+            .unwrap(),
+        ];
+        let mut s: u64 = seed_base.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        for _ in 0..1000 {
+            let buf: Vec<u8> = if next() % 3 == 0 {
+                // Mutate a valid frame (flip / insert / delete one byte) — stresses
+                // the framing length-prefix AND the rmp-serde body decoder.
+                let mut v = valids[(next() % valids.len() as u64) as usize].clone();
+                if !v.is_empty() {
+                    let idx = (next() % v.len() as u64) as usize;
+                    match next() % 3 {
+                        0 => v[idx] = next() as u8,
+                        1 => v.insert(idx, next() as u8),
+                        _ => {
+                            v.remove(idx);
+                        }
+                    }
+                }
+                v
+            } else {
+                // Pure random bytes (mostly trip the framing cap/short-buffer check).
+                let len = (next() % 256) as usize;
+                (0..len).map(|_| next() as u8).collect()
+            };
+            let _ = decode_frame::<String>(&buf);
+            let _ = decode_frame::<Vec<i64>>(&buf);
+            let _ = decode_frame::<(u64, String, bool)>(&buf);
+            let _ = decode_frame::<HashMap<String, i64>>(&buf);
+        }
+    }
 }
