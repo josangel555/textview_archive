@@ -130,4 +130,26 @@ final class FormulaParityTests: XCTestCase {
             try assertParity(formula, cells)
         }
     }
+
+    /// Logical/error batch (TSK-1213 parity round 4): IFERROR/IFS/SWITCH/ISNA/ISERR
+    /// — control-flow + error-inspection. Note ISNA/ISERR do NOT propagate the
+    /// inner error; IFS/SWITCH conditions do.
+    func test_parity_logical_error() throws {
+        let cases: [(String, [String: String])] = [
+            ("=IFERROR(A1/A2, 99)", ["A1": "1", "A2": "0"]), // #DIV/0! → 99
+            ("=IFERROR(A1/A2, 99)", ["A1": "10", "A2": "2"]), // 5
+            ("=IFS(A1>2, \"a\", A1>1, \"b\")", ["A1": "2"]), // first true is A1>1 → "b"
+            ("=IFS(A1>5, \"a\", A1>4, \"b\")", ["A1": "1"]), // none → #N/A
+            ("=SWITCH(A1, 1, \"one\", 2, \"two\", \"def\")", ["A1": "2"]),
+            ("=SWITCH(A1, 1, \"one\", 2, \"two\", \"def\")", ["A1": "9"]), // default
+            ("=SWITCH(A1, 1, \"one\", 2, \"two\")", ["A1": "9"]), // no default → #N/A
+            ("=ISNA(MATCH(99, A1:A3, 0))", ["A1": "1", "A2": "2", "A3": "3"]), // miss → #N/A → true
+            ("=ISERR(MATCH(99, A1:A3, 0))", ["A1": "1", "A2": "2", "A3": "3"]), // #N/A → ISERR false
+            ("=ISERR(A1/A2)", ["A1": "1", "A2": "0"]), // #DIV/0! → true
+            ("=ISNA(A1)", ["A1": "5"]), // non-error → false
+        ]
+        for (formula, cells) in cases {
+            try assertParity(formula, cells)
+        }
+    }
 }

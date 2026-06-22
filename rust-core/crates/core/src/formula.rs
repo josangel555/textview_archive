@@ -1189,6 +1189,94 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Option<Strin
             }
             Value::Text(text.replace(&old_s, &new_s))
         }
+        "IFERROR" => {
+            if args.len() != 2 {
+                return Value::Error(FormulaError::Value);
+            }
+            let v = match args.first() {
+                Some(a) => eval(a, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(_) = v {
+                args.get(1).map_or(Value::Error(FormulaError::Value), |b| eval(b, resolver))
+            } else {
+                v
+            }
+        }
+        "IFS" => {
+            // IFS(cond1, val1, …) → val for the first true cond; none → #N/A.
+            if args.len() < 2 || !args.len().is_multiple_of(2) {
+                return Value::Error(FormulaError::Value);
+            }
+            let mut i = 0;
+            while i < args.len() {
+                let cond = match args.get(i) {
+                    Some(c) => eval(c, resolver),
+                    None => return Value::Error(FormulaError::Value),
+                };
+                if let Value::Error(_) = cond {
+                    return cond;
+                }
+                if as_bool(&cond) {
+                    return args
+                        .get(i + 1)
+                        .map_or(Value::Error(FormulaError::Value), |v| eval(v, resolver));
+                }
+                i += 2;
+            }
+            Value::Error(FormulaError::Na)
+        }
+        "SWITCH" => {
+            // SWITCH(expr, case1, val1, …, [default]) → first matching case's val;
+            // a trailing odd arg is the default; no match + no default → #N/A.
+            if args.len() < 3 {
+                return Value::Error(FormulaError::Value);
+            }
+            let subject = match args.first() {
+                Some(s) => eval(s, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(_) = subject {
+                return subject;
+            }
+            let mut i = 1;
+            while i + 1 < args.len() {
+                let c = match args.get(i) {
+                    Some(c) => eval(c, resolver),
+                    None => return Value::Error(FormulaError::Value),
+                };
+                if let Value::Error(_) = c {
+                    return c;
+                }
+                if value_cmp(&subject, &c) == std::cmp::Ordering::Equal {
+                    return args
+                        .get(i + 1)
+                        .map_or(Value::Error(FormulaError::Value), |v| eval(v, resolver));
+                }
+                i += 2;
+            }
+            if i < args.len() {
+                // trailing default
+                return args.get(i).map_or(Value::Error(FormulaError::Na), |d| eval(d, resolver));
+            }
+            Value::Error(FormulaError::Na)
+        }
+        "ISNA" | "ISERR" => {
+            // ISNA → #N/A only; ISERR → any error EXCEPT #N/A. Does not propagate.
+            if args.len() != 1 {
+                return Value::Error(FormulaError::Value);
+            }
+            let v = match args.first() {
+                Some(a) => eval(a, resolver),
+                None => return Value::Error(FormulaError::Value),
+            };
+            if let Value::Error(e) = v {
+                let is_na = e == FormulaError::Na;
+                Value::Bool(if upper == "ISNA" { is_na } else { !is_na })
+            } else {
+                Value::Bool(false)
+            }
+        }
         _ => Value::Error(FormulaError::Name),
     }
 }
@@ -2134,5 +2222,28 @@ mod tests {
         assert_eq!(evaluate("SUBSTITUTE(\"a-b-c\", \"-\", \"+\")"), Value::Text("a+b+c".to_string()));
         assert_eq!(evaluate("SUBSTITUTE(\"a-b-c\", \"-\", \"+\", 2)"), Value::Text("a-b+c".to_string()));
         assert_eq!(evaluate("SUBSTITUTE(\"abc\", \"\", \"x\")"), Value::Text("abc".to_string())); // empty old → unchanged
+    }
+
+    #[test]
+    fn logical_error_functions() {
+        assert_eq!(evaluate("IFERROR(1/0, 99)"), Value::Number(99.0));
+        assert_eq!(evaluate("IFERROR(5, 99)"), Value::Number(5.0));
+        assert_eq!(evaluate("IFS(1>2, \"a\", 3>2, \"b\")"), Value::Text("b".to_string()));
+        assert!(matches!(evaluate("IFS(1>2, \"a\", 2>3, \"b\")"), Value::Error(FormulaError::Na)));
+        assert_eq!(
+            evaluate("SWITCH(2, 1, \"one\", 2, \"two\", \"def\")"),
+            Value::Text("two".to_string())
+        );
+        assert_eq!(
+            evaluate("SWITCH(9, 1, \"one\", 2, \"two\", \"def\")"),
+            Value::Text("def".to_string())
+        );
+        assert!(matches!(
+            evaluate("SWITCH(9, 1, \"one\", 2, \"two\")"),
+            Value::Error(FormulaError::Na)
+        ));
+        assert_eq!(evaluate("ISERR(1/0)"), Value::Bool(true)); // #DIV/0! is an error ≠ #N/A
+        assert_eq!(evaluate("ISNA(1/0)"), Value::Bool(false));
+        assert_eq!(evaluate("ISNA(5)"), Value::Bool(false)); // non-error → false
     }
 }
