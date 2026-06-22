@@ -3419,3 +3419,30 @@ Continuation of "the five constraints" above; these three close every remaining 
   wall-clock asserts — documented in TASK_WORKFLOW). A single red `swift test --parallel` is not a regression by
   itself: re-run once and confirm the SAME non-bench failure before chasing it. (Seen 2026-06-14: gate red once,
   clean on immediate re-run, EXIT=0.)
+
+## 2026-06-22 — differential fuzzing of dual-twin (Swift+Rust gated) engines
+
+- **The method that paid off: A/B a gated engine against its Swift twin over seeded-random inputs.** Each migrated
+  engine that keeps both impls behind a `RustCoreGates` capability is A/B-runnable via the env override
+  `MDV_RUST_<CAP>` (e.g. `MDV_RUST_FORMULA`/`FUZZY`/`FIND`/`TRANSCRIPT`) — the adapters take an `environment:`
+  param (`RustXAdapter.outcome(..., environment: [...])`). A xorshift-seeded generator feeds BOTH and asserts equal
+  output. This found **4 real formula-port bugs the per-engine tests missed** (TSK-1218 whitespace coercion,
+  TSK-1219 inf/nan coercion, TSK-1220 the `&` operator was entirely missing, TSK-1221 number formatting was 16-digit
+  `to_string` vs Swift `%.10g`). The other three dual-twins verified CLEAN (fuzzy scores/order, find literal ranges,
+  transcript event projection). Bugs cluster in COERCION/FORMATTING/OPERATOR-COMPLETENESS, not core algorithm.
+- **ALWAYS pair the parity fuzz with a toggle-teeth test** asserting the env A/B actually switches engines
+  (`outcome(...).source == .rust` for gate-on vs `.swiftBecauseGateOff` for gate-off). A non-applied env →
+  both runs hit the same engine → a vacuous green. The parity suites carry this (`test_*_AB_toggle_actually_switches_engines`).
+- **Scope OUT the documented/expected divergences or you chase non-bugs:** regex (Swift `NSRegularExpression` vs the
+  Rust `regex` crate are different dialects — find/transcript fuzzes stay `.literal`/`redacting:false`), fuzzy
+  `matchedIndices` (Unicode-scalar vs grapheme offsets — ASCII-only inputs, compare scores+order), and the
+  transcript `line-<n>` id fallback (always supply `uuid`s so ids are deterministic). The adapter doc-comments name
+  these — read them before fuzzing.
+- **Verifying the Rust `%g` against Swift: use the fuzz as the ORACLE.** Replicating C `printf %.10g` in Rust (no
+  native `%g`) is error-prone; rather than guess Swift's exact scientific format, derive the exponent from a
+  `format!("{n:.9e}")` render (avoids `log10` boundary fuzz), choose fixed-vs-scientific per the `%g` rule
+  (`exp` in `[-4,10)`), trim — then let the differential fuzz (Swift==Rust) confirm the format byte-for-byte. A
+  mismatch shows Swift's actual output in the failure.
+- **`swift test --filter` does NOT relink the rust-core `.a`** (it's a `-L` dependency, not a tracked SwiftPM input).
+  After a `build-rust-core.sh`, a `--filter` run can pass/fail against the STALE archive. Only the FULL headless gate
+  (clean `swift test --parallel`) reliably relinks — verify any FFI-behavior change there, not via `--filter`.
