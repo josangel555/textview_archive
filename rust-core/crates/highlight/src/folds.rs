@@ -12,6 +12,8 @@
 //! intentionally NOT in the kind map yet.
 
 use crate::Lang;
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use tree_sitter::{Node, Parser};
 
 /// The fold category, mirroring `FoldRegion.Kind` on the Swift side. Only the
@@ -34,6 +36,42 @@ pub enum FoldKind {
     Other,
 }
 
+impl FoldKind {
+    /// The Swift `FoldRegion.Kind` rawValue — the wire contract string. Kept in
+    /// exact sync with `Sources/ViewerCore/Highlight/FoldRegion.swift`.
+    fn raw_value(self) -> &'static str {
+        match self {
+            FoldKind::Object => "object",
+            FoldKind::Array => "array",
+            FoldKind::Function => "function",
+            FoldKind::Type => "type",
+            FoldKind::Element => "element",
+            FoldKind::StringLiteral => "stringLiteral",
+            FoldKind::Comment => "comment",
+            FoldKind::CodeFence => "codeFence",
+            FoldKind::Heading => "heading",
+            FoldKind::Other => "other",
+        }
+    }
+
+    /// Inverse of [`FoldKind::raw_value`]; `None` for an unknown rawValue.
+    fn from_raw(s: &str) -> Option<FoldKind> {
+        Some(match s {
+            "object" => FoldKind::Object,
+            "array" => FoldKind::Array,
+            "function" => FoldKind::Function,
+            "type" => FoldKind::Type,
+            "element" => FoldKind::Element,
+            "stringLiteral" => FoldKind::StringLiteral,
+            "comment" => FoldKind::Comment,
+            "codeFence" => FoldKind::CodeFence,
+            "heading" => FoldKind::Heading,
+            "other" => FoldKind::Other,
+            _ => return None,
+        })
+    }
+}
+
 /// A foldable region: a 1-based, inclusive line span (matching the Swift
 /// `FoldRegion`) plus its kind. Single-line nodes never produce a region.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +79,29 @@ pub struct FoldRegion {
     pub start_line: usize,
     pub end_line: usize,
     pub kind: FoldKind,
+}
+
+// Wire shape: a positional `(start_line, end_line, kind_rawvalue)` tuple — the
+// same compact, teeth-y contract as `runs::Run` (NOT a named map).
+impl Serialize for FoldRegion {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeTuple;
+        let mut t = serializer.serialize_tuple(3)?;
+        t.serialize_element(&self.start_line)?;
+        t.serialize_element(&self.end_line)?;
+        t.serialize_element(self.kind.raw_value())?;
+        t.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for FoldRegion {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (start_line, end_line, kind) =
+            <(usize, usize, String)>::deserialize(deserializer)?;
+        let kind = FoldKind::from_raw(&kind)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown fold kind: {kind}")))?;
+        Ok(FoldRegion { start_line, end_line, kind })
+    }
 }
 
 /// Maps a `(language, node)` to a fold kind — the Rust encoding of the
@@ -202,6 +263,37 @@ fn atx_level(text: &str, line: usize) -> usize {
         .unwrap_or(0)
 }
 
+/// Wire request: `{text, lang}` where `lang` is the host's `HighlightLanguage`
+/// rawValue — mirrors [`crate::runs::RunsRequest`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FoldsRequest<'a> {
+    /// The source text to compute folds for.
+    #[serde(borrow)]
+    pub text: Cow<'a, str>,
+    /// Host `HighlightLanguage` rawValue.
+    pub lang: String,
+}
+
+/// Wire response. `supported == false` ⇒ this build has no grammar for `lang`
+/// (the host keeps its own engine); an empty `regions` with `supported == true`
+/// is a real "no folds" answer.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FoldsResponse {
+    pub supported: bool,
+    pub regions: Vec<FoldRegion>,
+}
+
+/// Wire entry: `{text, lang}` frame → `{supported, regions}` frame. The FFI /
+/// mdv-serve fold export rides on this (capability bit `MDV_CAP_FOLDS`).
+pub fn fold_regions_wire(req_frame: &[u8]) -> Result<Vec<u8>, mdvcore_core::wire::WireFault> {
+    let req: FoldsRequest<'_> = mdvcore_core::wire::decode_frame_borrowed(req_frame)?;
+    let resp = match Lang::from_name(&req.lang) {
+        Some(lang) => FoldsResponse { supported: true, regions: fold_regions(&req.text, lang) },
+        None => FoldsResponse { supported: false, regions: Vec::new() },
+    };
+    mdvcore_core::wire::encode_frame(&resp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +414,48 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for f in &folds {
             assert!(seen.insert((f.start_line, f.end_line, f.kind)), "dup region: {folds:?}");
+        }
+    }
+
+    #[test]
+    fn wire_round_trip_supported_language() {
+        let frame = mdvcore_core::wire::encode_frame(&FoldsRequest {
+            text: Cow::Borrowed("{\n  \"a\": 1,\n  \"b\": 2\n}"),
+            lang: "json".into(),
+        })
+        .expect("encode");
+        let out = fold_regions_wire(&frame).expect("wire");
+        let resp: FoldsResponse = mdvcore_core::wire::decode_frame(&out).expect("decode");
+        assert!(resp.supported);
+        assert!(
+            resp.regions.iter().any(|r| r.kind == FoldKind::Object && r.start_line == 1),
+            "round-tripped object fold, got {:?}",
+            resp.regions
+        );
+    }
+
+    #[test]
+    fn wire_unsupported_language_is_not_supported() {
+        let frame = mdvcore_core::wire::encode_frame(&FoldsRequest {
+            text: Cow::Borrowed("x"),
+            lang: "no-such-lang".into(),
+        })
+        .expect("encode");
+        let out = fold_regions_wire(&frame).expect("wire");
+        let resp: FoldsResponse = mdvcore_core::wire::decode_frame(&out).expect("decode");
+        assert!(!resp.supported);
+        assert!(resp.regions.is_empty());
+    }
+
+    #[test]
+    fn fold_kind_raw_values_round_trip() {
+        // Every kind survives raw_value -> from_raw (the wire contract has teeth).
+        for k in [
+            FoldKind::Object, FoldKind::Array, FoldKind::Function, FoldKind::Type,
+            FoldKind::Element, FoldKind::StringLiteral, FoldKind::Comment,
+            FoldKind::CodeFence, FoldKind::Heading, FoldKind::Other,
+        ] {
+            assert_eq!(FoldKind::from_raw(k.raw_value()), Some(k));
         }
     }
 }
