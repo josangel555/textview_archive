@@ -54,4 +54,27 @@ final class RustFoldParityTests: XCTestCase {
     func test_markdown_fold_parity() throws {
         try assertParity(.markdown, "# A\nintro\n## B\nbody text\n# C\ntail\n")
     }
+
+    // MARK: - Gate routing (toggle teeth)
+
+    func test_gate_off_uses_swiftFolds() {
+        var swiftCalled = false
+        let sentinel = [FoldRegion(startLine: 1, endLine: 3, kind: .other)]
+        let r = RustFoldAdapter.foldRegions(
+            "{\n  \"a\": 1\n}", language: .json,
+            environment: ["MDV_RUST_FOLD": "0"],
+            swiftFolds: { swiftCalled = true; return sentinel })
+        XCTAssertTrue(swiftCalled, "gate OFF must use the Swift folds")
+        XCTAssertEqual(r, sentinel, "gate OFF returns the Swift result verbatim")
+    }
+
+    func test_gate_on_uses_rust_not_swiftFolds() {
+        var swiftCalled = false
+        let r = RustFoldAdapter.foldRegions(
+            "{\n  \"a\": 1,\n  \"b\": 2\n}", language: .json,
+            environment: ["MDV_RUST_FOLD": "1"],
+            swiftFolds: { swiftCalled = true; return [] })
+        XCTAssertFalse(swiftCalled, "gate ON must route to rust, not the Swift fallback")
+        XCTAssertTrue(r.contains { $0.kind == .object }, "rust folds present, got \(r)")
+    }
 }
