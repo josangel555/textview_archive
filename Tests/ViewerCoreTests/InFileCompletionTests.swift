@@ -33,4 +33,20 @@ final class InFileCompletionTests: XCTestCase {
         let result = InFileCompletion.completions(in: text, prefix: "aa", limit: 3)
         XCTAssertEqual(result.count, 3)
     }
+
+    func test_cursor_extracts_prefix_at_position() {
+        // line 1 is "pri" (cursor at col 3); print:2, printf:1 from line 0
+        let text = "print printf print\npri"
+        XCTAssertEqual(InFileCompletion.completions(in: text, line: 1, column: 3), ["print", "printf"])
+    }
+
+    func test_cursor_no_prefix_after_nonidentifier_or_out_of_range() {
+        let text = "alpha beta\n"
+        // column 0 → empty prefix → none
+        XCTAssertEqual(InFileCompletion.completions(in: text, line: 0, column: 0), [])
+        // column right after a space (col 6, the 'b' not yet typed → prefix empty) → none
+        XCTAssertEqual(InFileCompletion.completions(in: text, line: 0, column: 6), [])
+        // out-of-range line → none
+        XCTAssertEqual(InFileCompletion.completions(in: text, line: 9, column: 0), [])
+    }
 }

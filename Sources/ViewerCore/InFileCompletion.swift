@@ -42,4 +42,27 @@ public enum InFileCompletion {
             }
         return ranked.prefix(limit).map(\.key)
     }
+
+    /// Cursor-aware entry point the editor wiring uses: completions for the
+    /// identifier prefix ending at `column` (0-based, in UTF-16-agnostic Character
+    /// units) on 0-based `line` of `text`. Walks back from the column over the
+    /// trailing `[A-Za-z0-9_]` run; if that run doesn't begin with a letter/`_`
+    /// (e.g. the cursor follows whitespace, punctuation, or a digit-led token)
+    /// there is no prefix and no suggestions. Out-of-range line/column → none.
+    public static func completions(
+        in text: String, line: Int, column: Int, limit: Int = 50
+    ) -> [String] {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard line >= 0, line < lines.count else { return [] }
+        let chars = Array(lines[line])
+        guard column >= 0, column <= chars.count else { return [] }
+        var start = column
+        while start > 0 {
+            let c = chars[start - 1]
+            if c == "_" || c.isLetter || c.isNumber { start -= 1 } else { break }
+        }
+        let prefixChars = chars[start..<column]
+        guard let first = prefixChars.first, first.isLetter || first == "_" else { return [] }
+        return completions(in: text, prefix: String(prefixChars), limit: limit)
+    }
 }
