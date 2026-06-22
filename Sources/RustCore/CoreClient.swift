@@ -879,6 +879,56 @@ public func mdvCoreRecalc(cells: [String: String]) throws -> [String: CoreFormul
     }
 }
 
+/// A code-fold region from the Rust core (TSK-1202): a 1-based inclusive line
+/// span + the kind rawValue (matches the Swift `FoldRegion.Kind`). ViewerCore's
+/// `RustFoldAdapter` maps it onto its own `FoldRegion` (RustCore can't depend on
+/// ViewerCore).
+public struct CoreFoldRegion: Sendable, Equatable {
+    public let startLine: Int
+    public let endLine: Int
+    public let kind: String
+    public init(startLine: Int, endLine: Int, kind: String) {
+        self.startLine = startLine
+        self.endLine = endLine
+        self.kind = kind
+    }
+}
+
+/// Compute code-fold regions in the Rust core (TSK-1202): source text + the host
+/// `HighlightLanguage` rawValue in, fold regions out. Throws `CoreError` on a
+/// bridge fault OR when the core has no grammar for `lang` (`supported == false`),
+/// so the adapter falls back to the Swift engine in both cases.
+public func mdvCoreFoldRegions(text: String, lang: String) throws -> [CoreFoldRegion] {
+    let request = MsgPackValue.map([
+        (.string("text"), .string(text)),
+        (.string("lang"), .string(lang)),
+    ])
+    guard let body = try CoreTransportRegistry.current.call("fold_regions", request: request) else {
+        throw CoreError.decode("empty fold_regions response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        let supported = try (map["supported"] ?? .bool(false)).boolValue()
+        guard supported else {
+            throw CoreError.decode("fold_regions: unsupported language '\(lang)'")
+        }
+        guard let regionsVal = map["regions"] else { throw CoreError.decode("missing 'regions'") }
+        return try regionsVal.arrayValue().map(decodeFoldRegion)
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
+private func decodeFoldRegion(_ v: MsgPackValue) throws -> CoreFoldRegion {
+    let a = try positional(v, count: 3, what: "fold region")
+    return CoreFoldRegion(
+        startLine: Int(try a[0].doubleValue()),
+        endLine: Int(try a[1].doubleValue()),
+        kind: try a[2].stringValue()
+    )
+}
+
 // TSK-563 (wire v2): diff per-element records are POSITIONAL MessagePack
 // arrays — the per-line field keys were ~41 bytes/line of pure key text.
 // Element order is the wire contract, mirrored by the Rust `FileView`/
