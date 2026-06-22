@@ -236,4 +236,20 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             XCTAssertEqual(rustResult, swiftResult, "number-format parity diverged: \(f)")
         }
     }
+
+    /// `&` string-concat operator parity (TSK-1220, now implemented in the Rust port).
+    /// Mixed text/number operands, chaining, and precedence (`&` looser than +/*,
+    /// tighter than comparison). Integer numerics only (avoids the TSK-1221 long-
+    /// decimal formatNumber gap).
+    func test_swift_rust_concat_operator_parity() throws {
+        let cells = ["A1": "foo", "B1": "bar", "C1": "5"]
+        let resolver: CellResolver = { ref in cells[ref.a1] }
+        let formulas = ["=A1&B1", "=A1&\" \"&B1", "=\"x\"&C1", "=C1&\"!\"", "=A1&B1&C1",
+                        "=1+2&3", "=2&3*4", "=\"\"&A1", "=C1&C1"]
+        for f in formulas {
+            let swiftResult = FormulaEngine.evaluate(raw: f, resolve: resolver)
+            let rustResult = try RustFormulaAdapter.rustEvaluate(f, cells: cells)
+            XCTAssertEqual(rustResult, swiftResult, "concat-operator parity diverged: \(f)")
+        }
+    }
 }

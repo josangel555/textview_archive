@@ -79,6 +79,8 @@ enum Token {
     Slash,
     Caret,
     Percent,
+    /// `&` — Excel's string-concatenation operator.
+    Amp,
     LParen,
     RParen,
     /// An identifier run (letters then alphanumerics) — a cell reference like `A1`
@@ -108,6 +110,7 @@ fn tokenize(s: &str) -> Result<Vec<Token>, FormulaError> {
             '+' => { chars.next(); toks.push(Token::Plus); }
             '-' => { chars.next(); toks.push(Token::Minus); }
             '*' => { chars.next(); toks.push(Token::Star); }
+            '&' => { chars.next(); toks.push(Token::Amp); }
             '/' => { chars.next(); toks.push(Token::Slash); }
             '^' => { chars.next(); toks.push(Token::Caret); }
             '%' => { chars.next(); toks.push(Token::Percent); }
@@ -237,6 +240,8 @@ enum BinOp {
     Mul,
     Div,
     Pow,
+    /// `&` string concatenation (operands coerced to text via `value_text`).
+    Concat,
 }
 
 struct Parser {
@@ -259,7 +264,7 @@ impl Parser {
 
     // Comparisons bind looser than +/-; non-chaining (Excel doesn't chain them).
     fn compare(&mut self) -> Result<Expr, FormulaError> {
-        let left = self.add()?;
+        let left = self.concat()?;
         let op = match self.peek() {
             Some(Token::Eq) => CmpOp::Eq,
             Some(Token::Ne) => CmpOp::Ne,
@@ -270,8 +275,21 @@ impl Parser {
             _ => return Ok(left),
         };
         self.pos += 1;
-        let right = self.add()?;
+        let right = self.concat()?;
         Ok(Expr::Cmp(op, Box::new(left), Box::new(right)))
+    }
+
+    // `&` concatenation binds looser than +/- (additive) and tighter than the
+    // comparisons — mirrors Excel and the Swift parser
+    // (`concat := additive ('&' additive)*`).
+    fn concat(&mut self) -> Result<Expr, FormulaError> {
+        let mut left = self.add()?;
+        while let Some(Token::Amp) = self.peek() {
+            self.pos += 1;
+            let right = self.add()?;
+            left = Expr::Bin(BinOp::Concat, Box::new(left), Box::new(right));
+        }
+        Ok(left)
     }
 
     fn add(&mut self) -> Result<Expr, FormulaError> {
@@ -439,6 +457,19 @@ fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Value) -> Value {
             Ok(n) => Value::Number(n / 100.0),
             Err(v) => v,
         },
+        // `&` concatenation: text coercion (value_text), not numeric — an error
+        // operand propagates. Handled before the numeric arm so it never coerces.
+        Expr::Bin(BinOp::Concat, l, r) => {
+            let lv = eval(l, resolver);
+            if let Value::Error(_) = lv {
+                return lv;
+            }
+            let rv = eval(r, resolver);
+            if let Value::Error(_) = rv {
+                return rv;
+            }
+            Value::Text(format!("{}{}", value_text(&lv), value_text(&rv)))
+        }
         Expr::Bin(op, l, r) => {
             let lv = match as_number(eval(l, resolver)) {
                 Ok(n) => n,
@@ -460,6 +491,9 @@ fn eval(e: &Expr, resolver: &dyn Fn(CellRef) -> Value) -> Value {
                     }
                 }
                 BinOp::Pow => Value::Number(lv.powf(rv)),
+                // Unreachable: the Concat arm above handles it. A safe value
+                // (no panic) keeps the match exhaustive.
+                BinOp::Concat => Value::Error(FormulaError::Parse),
             }
         }
     }
@@ -2398,6 +2432,19 @@ mod tests {
         assert_eq!(coerce_cell(None), Value::Blank);
         assert_eq!(coerce_cell(Some(" 5 ".to_string())), Value::Number(5.0)); // trim for number
         assert_eq!(coerce_cell(Some("abc ".to_string())), Value::Text("abc ".to_string()));
+    }
+
+    #[test]
+    fn concat_operator() {
+        // TSK-1220: the `&` string-concat operator (Excel + Swift parity).
+        assert_eq!(evaluate("\"a\"&\"b\""), Value::Text("ab".to_string()));
+        assert_eq!(evaluate("5&\"\""), Value::Text("5".to_string()));
+        assert_eq!(evaluate("\"x\"&5"), Value::Text("x5".to_string()));
+        // precedence: `&` binds looser than + and *, tighter than comparison.
+        assert_eq!(evaluate("1+2&3"), Value::Text("33".to_string())); // (1+2)&3
+        assert_eq!(evaluate("2&3*4"), Value::Text("212".to_string())); // 2&(3*4)
+        // an error operand propagates.
+        assert_eq!(evaluate("(1/0)&\"x\""), Value::Error(FormulaError::DivideByZero));
     }
 
     #[test]
