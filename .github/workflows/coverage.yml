@@ -1,0 +1,72 @@
+name: Coverage (non-gating)
+
+# Surfaces code coverage on a schedule + on demand — NEVER gates (TSK-788 G1 /
+# TSK-1131: coverage gates cause assertion-padding, so this is purely
+# informational). scripts/coverage.sh runs the instrumented headless suite and
+# emits a per-file + TOTAL llvm-cov report over Sources/; it always exits 0.
+# The TOTAL is also written to the GitHub step summary for at-a-glance reading.
+#
+# Dedicated weekly workflow (not a PR-gate step, not the VM nightly) so it never
+# slows the merge gate and doesn't load the GUI VM lane (coverage is host
+# headless). Manually runnable via the Actions "Run workflow" button.
+on:
+  schedule:
+    - cron: '0 7 * * 1'   # Mondays 07:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  coverage:
+    name: Coverage report (macOS 15, non-gating)
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      # Same workspace-relative Rust target dir as pr.yml so the cache captures it.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.build/rust-target
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM build (.build)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            !.build/rust-target
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache Rust target dir
+        uses: actions/cache@v4
+        with:
+          path: .build/rust-target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
+
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Build Rust core (mdvcore staticlib)
+        run: bash scripts/build-rust-core.sh
+
+      # Non-gating: coverage.sh always exits 0. The full report is in the log;
+      # the TOTAL line is teed into the step summary. coverage.sh handles the
+      # coverage+parallel non-zero exit + corrupt-partial profraw itself
+      # (TSK-1233 manual-merge fallback), so the report generates reliably.
+      - name: Coverage report (Sources/)
+        run: |
+          bash scripts/coverage.sh | tee /tmp/mdv-coverage.out
+          {
+            echo "### Code coverage (Sources/) — non-gating"
+            echo '```'
+            grep -E 'coverage summary|TOTAL' /tmp/mdv-coverage.out | tail -3 || echo '(no TOTAL line — see job log)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
