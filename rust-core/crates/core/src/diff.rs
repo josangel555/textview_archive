@@ -621,6 +621,55 @@ mod tests {
         assert!(parse("commit abc\nAuthor: x\n\n    msg\n").is_empty());
     }
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary diff-shaped text —
+    /// malformed / huge / negative `@@` hunk coords, truncated hunks, bogus git
+    /// headers, +/-/context interleavings, raw noise — must NEVER panic in
+    /// `parse()` OR `hunk_marks()` (the gutter-mark path). The `@@ -a,b +c,d @@`
+    /// coordinate parse is the integer-overflow-prone surface. Deterministic LCG,
+    /// no dep. Teeth: a parse/coord panic on a degenerate header fails outright.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // LCG values are modulo-bounded before use
+    fn parse_fuzz_never_panics_on_arbitrary_diff_text() {
+        const LINES: &[&str] = &[
+            "@@ -1,2 +3,4 @@", "@@ -0,0 +1 @@", "@@ +1 @@", "@@ -", "@@ -x,y +z,w @@",
+            "@@ -99999999999999999999,1 +1,1 @@", "@@ -1,99999999999999999999 +1 @@",
+            "diff --git a/f b/g", "index a1b2..c3d4 100644", "--- a/f", "+++ b/g",
+            "+added", "-removed", " context", "\\ No newline at end of file", "@@",
+            "+", "-", "", "@@ -1 +1 @@", "Binary files a and b differ", "@@ -,- +,- @@",
+            "rename from a", "rename to b", "new file mode 100644", "deleted file mode 100644",
+        ];
+        const NOISE: &[char] = &['@', '-', '+', ',', ' ', '\t', '0', '9', 'a', '/', '\\', 'é'];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0xD1FF_F00D_1234_5678;
+        for _ in 0..4000u32 {
+            let n = (lcg(&mut state) % 12) as usize;
+            let mut s = String::new();
+            for _ in 0..n {
+                s.push_str(LINES[(lcg(&mut state) as usize) % LINES.len()]);
+                if lcg(&mut state) & 3 == 0 {
+                    let m = (lcg(&mut state) % 8) as usize;
+                    for _ in 0..m {
+                        s.push(NOISE[(lcg(&mut state) as usize) % NOISE.len()]);
+                    }
+                }
+                s.push('\n');
+            }
+            let files = parse(&s);
+            for f in &files {
+                for h in &f.hunks {
+                    let _ = (h.old_start, h.old_count, h.new_start, h.new_count);
+                }
+            }
+            // The gutter-mark path must also survive arbitrary input.
+            let _ = hunk_marks(&s);
+        }
+    }
+
     #[test]
     fn single_file_one_hunk() {
         let d = "diff --git a/foo.txt b/foo.txt\n\
