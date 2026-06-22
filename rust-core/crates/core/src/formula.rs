@@ -1507,6 +1507,56 @@ fn parse_criterion_op(s: &str) -> (CmpOp, &str) {
 /// Does a cell value match a COUNTIF-style criterion? Numeric compare when the
 /// needle parses as a number and the cell coerces to one; else case-insensitive
 /// text (with operator ordering). A blank cell matches only an empty `=` test.
+/// Excel-style glob match: `*` = any run (incl. empty), `?` = any one char, `~`
+/// escapes the next `*`/`?`/`~` to a literal (a lone `~` is a literal tilde).
+/// Plain text with no special chars reduces to exact match. Both inputs are
+/// pre-lowercased by the caller (criteria are case-insensitive). Iterative
+/// two-pointer with star backtracking — bounded stack, `.get()` only (no indexing).
+fn glob_match(pattern: &str, text: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let mut pi = 0usize;
+    let mut ti = 0usize;
+    let mut star: Option<(usize, usize)> = None; // (pattern pos after '*', text pos)
+    while ti < t.len() {
+        match p.get(pi).copied() {
+            Some('*') => {
+                pi += 1;
+                star = Some((pi, ti));
+            }
+            Some('?') => {
+                pi += 1;
+                ti += 1;
+            }
+            other => {
+                // A literal token: a `~`-escaped char or a plain char.
+                let (lit, adv) = match other {
+                    Some('~') => match p.get(pi + 1).copied() {
+                        Some(esc @ ('*' | '?' | '~')) => (Some(esc), 2),
+                        _ => (Some('~'), 1), // lone '~' is a literal tilde
+                    },
+                    Some(c) => (Some(c), 1),
+                    None => (None, 0),
+                };
+                if lit.is_some() && lit == t.get(ti).copied() {
+                    pi += adv;
+                    ti += 1;
+                } else if let Some((sp, st)) = star {
+                    pi = sp;
+                    ti = st + 1;
+                    star = Some((sp, st + 1));
+                } else {
+                    return false;
+                }
+            }
+        }
+    }
+    while p.get(pi).copied() == Some('*') {
+        pi += 1;
+    }
+    pi == p.len()
+}
+
 fn matches_criterion(cell: &Value, crit: &Value) -> bool {
     let cs = value_text(crit);
     let (op, rest) = parse_criterion_op(&cs);
@@ -1516,6 +1566,14 @@ fn matches_criterion(cell: &Value, crit: &Value) -> bool {
     }
     if let (Ok(rn), Ok(cn)) = (needle.parse::<f64>(), as_number(cell.clone())) {
         return cmp_apply(op, cn.partial_cmp(&rn).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    // Wildcard text match (Excel `*` / `?`, `~`-escape) for `=` / `<>` criteria;
+    // other operators fall through to ordering comparison.
+    if matches!(op, CmpOp::Eq | CmpOp::Ne) {
+        // Exact / `<>` text criteria go through the glob matcher (plain text with no
+        // wildcards is just exact match; `*` `?` glob, `~` escapes).
+        let matched = glob_match(&needle.to_lowercase(), &value_text(cell).to_lowercase());
+        return if op == CmpOp::Eq { matched } else { !matched };
     }
     let ord = value_text(cell).to_lowercase().cmp(&needle.to_lowercase());
     cmp_apply(op, ord)
@@ -2457,5 +2515,35 @@ mod tests {
         assert_eq!(resp.values.get("A2"), Some(&Value::Number(6.0)));
         assert_eq!(resp.values.get("A3"), Some(&Value::Number(12.0)));
         assert_eq!(resp.values.get("A1"), None); // data cell omitted from the result
+    }
+
+    #[test]
+    fn wildcard_criteria() {
+        use std::collections::HashMap;
+        let grid: HashMap<CellRef, String> = [
+            (CellRef { col: 0, row: 0 }, "apple"),
+            (CellRef { col: 0, row: 1 }, "apricot"),
+            (CellRef { col: 0, row: 2 }, "banana"),
+            (CellRef { col: 0, row: 3 }, "grape"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k, v.to_string()))
+        .collect();
+        let r = |c: CellRef| grid.get(&c).cloned();
+        assert_eq!(evaluate_with("COUNTIF(A1:A4, \"a*\")", &r), Value::Number(2.0)); // prefix: apple, apricot
+        assert_eq!(evaluate_with("COUNTIF(A1:A4, \"*e\")", &r), Value::Number(2.0)); // suffix: apple, grape
+        assert_eq!(evaluate_with("COUNTIF(A1:A4, \"*a*\")", &r), Value::Number(4.0)); // contains a
+        assert_eq!(evaluate_with("COUNTIF(A1:A4, \"?a*\")", &r), Value::Number(1.0)); // 2nd char a: banana
+        assert_eq!(evaluate_with("COUNTIF(A1:A4, \"gr?pe\")", &r), Value::Number(1.0)); // grape
+        assert_eq!(evaluate_with("COUNTIF(A1:A4, \"A*\")", &r), Value::Number(2.0)); // case-insensitive
+        assert_eq!(evaluate_with("COUNTIF(A1:A4, \"<>a*\")", &r), Value::Number(2.0)); // NOT a*: banana, grape
+
+        let lit: HashMap<CellRef, String> =
+            [(CellRef { col: 0, row: 0 }, "a*b"), (CellRef { col: 0, row: 1 }, "axb")]
+                .into_iter()
+                .map(|(k, v)| (k, v.to_string()))
+                .collect();
+        let rl = |c: CellRef| lit.get(&c).cloned();
+        assert_eq!(evaluate_with("COUNTIF(A1:A2, \"a~*b\")", &rl), Value::Number(1.0)); // ~ escapes * → literal
     }
 }
