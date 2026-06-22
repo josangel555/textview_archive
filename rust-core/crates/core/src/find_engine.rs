@@ -303,6 +303,65 @@ mod tests {
         assert!(lit("hello", "").is_empty());
     }
 
+    /// Robustness audit (un-fuzzed shipped engine): arbitrary (pattern × text)
+    /// across Literal AND Regex modes (incl. malformed regex → Err, never panic),
+    /// case-sensitive/insensitive, whole-word, over multi-byte + CR/CRLF/LF text.
+    /// `search` must NEVER panic; every returned match must lie within the text's
+    /// UTF-16 length, carry 1-based line/column (CORR-6), and be ordered + non-
+    /// overlapping (the monotonic single sweep). This exercises the byte→UTF-16
+    /// offset conversion (off-by-one-prone, like the highlight runs class).
+    /// Deterministic LCG, no extra dep. Teeth: an out-of-bounds offset, a 0
+    /// line/column, or an ordering break fails the assert.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // LCG modulo-bounded; fuzz texts are tiny
+    fn search_fuzz_never_panics_and_stays_in_bounds() {
+        const PAT_CHARS: &[char] = &[
+            'a', 'b', '.', '*', '+', '?', '(', ')', '[', ']', '\\', '|', '^', '$', '{', '}', 'é',
+        ];
+        const TEXT_CHARS: &[char] = &['a', 'b', 'a', '\n', '\r', ' ', 'é', '中'];
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+        let mut state: u64 = 0xDEAD_BEEF_CAFE_F00D;
+        for _ in 0..4000u32 {
+            let plen = (lcg(&mut state) % 12) as usize;
+            let mut pat = String::new();
+            for _ in 0..plen {
+                pat.push(PAT_CHARS[(lcg(&mut state) as usize) % PAT_CHARS.len()]);
+            }
+            let tlen = (lcg(&mut state) % 60) as usize;
+            let mut text = String::new();
+            for _ in 0..tlen {
+                text.push(TEXT_CHARS[(lcg(&mut state) as usize) % TEXT_CHARS.len()]);
+            }
+            let kind = if lcg(&mut state) & 1 == 0 { QueryKind::Literal } else { QueryKind::Regex };
+            let case_sensitive = lcg(&mut state) & 1 == 0;
+            let whole_word = lcg(&mut state) & 1 == 0;
+            let utf16_len = text.encode_utf16().count() as u32;
+            if let Ok(matches) = search(&text, &pat, kind, case_sensitive, whole_word) {
+                let mut prev_end = 0u32;
+                for m in &matches {
+                    assert!(
+                        m.location.checked_add(m.length).is_some_and(|e| e <= utf16_len),
+                        "match {m:?} out of bounds (utf16 len {utf16_len}); pat={pat:?} text={text:?}"
+                    );
+                    assert!(
+                        m.line >= 1 && m.column >= 1,
+                        "line/column must be 1-based (CORR-6): {m:?}; pat={pat:?} text={text:?}"
+                    );
+                    assert!(
+                        m.location >= prev_end,
+                        "matches must be ordered + non-overlapping: {m:?} after end {prev_end}"
+                    );
+                    prev_end = m.location + m.length;
+                }
+            }
+        }
+    }
+
     #[test]
     fn literal_basics_and_positions() {
         let m = lit("hello world hello", "hello");
