@@ -275,4 +275,27 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
             }
         }
     }
+
+    /// COUNTIF/SUMIF criteria-parsing parity over NUMERIC criteria (operator +
+    /// threshold, and the bare-value implicit-equals form). Wildcards/text criteria
+    /// are excluded — those are a Rust-only extension (TSK-1216), a legitimate (not
+    /// bug) divergence. Exercises the criterion-operator parser, lightly hand-tested.
+    func test_swift_rust_countif_criteria_parity() throws {
+        let ops = [">", "<", ">=", "<=", "<>", "=", ""] // "" = bare value (implicit =)
+        for seed in UInt64(401)...UInt64(440) {
+            var rng = Xorshift(s: (seed &* 0x9E37_79B9_7F4A_7C15) | 1)
+            for _ in 0..<25 {
+                let cells = randomGrid(&rng)
+                let op = ops[rng.int(0, ops.count - 1)]
+                let threshold = rng.int(-20, 20)
+                let fn = ["COUNTIF", "SUMIF"][rng.int(0, 1)]
+                let formula = "=\(fn)(A1:C3,\"\(op)\(threshold)\")"
+                let resolver: CellResolver = { ref in cells[ref.a1] }
+                let swiftResult = FormulaEngine.evaluate(raw: formula, resolve: resolver)
+                let rustResult = try RustFormulaAdapter.rustEvaluate(formula, cells: cells)
+                XCTAssertEqual(rustResult, swiftResult,
+                               "criteria parity diverged: \(formula) over \(cells)")
+            }
+        }
+    }
 }
