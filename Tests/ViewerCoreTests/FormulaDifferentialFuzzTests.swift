@@ -215,4 +215,25 @@ final class FormulaDifferentialFuzzTests: XCTestCase {
                            "number-coercion parity diverged: ISNUMBER over A1=\(v.debugDescription)")
         }
     }
+
+    /// Number FORMATTING parity (Number → text via CONCAT/asText/formatNumber) — the
+    /// on-screen display path, never pinned by the value-equality fuzz. Integers,
+    /// terminating decimals, large/small magnitudes, negatives. (Uses CONCAT, not `&`
+    /// — the `&` concat operator is missing from the Rust port, TSK-1220.) NON-
+    /// terminating decimals (1/3, 2/3) are EXCLUDED pending TSK-1221: Rust formats a
+    /// Number via `f64::to_string` (shortest round-trip, 16 digits) while Swift uses
+    /// `%.10g` (10 sig digits) — so 1/3 → "0.3333333333333333" vs "0.3333333333".
+    func test_swift_rust_number_format_edges() throws {
+        let formulas = ["=CONCAT(5,\"\")", "=CONCAT(-5,\"\")", "=CONCAT(0,\"\")",
+                        "=CONCAT(1000000,\"\")", "=CONCAT(0.5,\"\")", "=CONCAT(0.1,\"\")",
+                        "=CONCAT(1.5,\"\")", "=CONCAT(123.456,\"\")", "=CONCAT((10/4),\"\")",
+                        "=CONCAT(100000000,\"\")", "=CONCAT(0.0001,\"\")", "=CONCAT((1/8),\"\")",
+                        "=CONCAT((7/2),\"\")", "=CONCAT((-1/4),\"\")", "=CONCAT(1000000000000,\"\")"]
+        for f in formulas {
+            let resolver: CellResolver = { _ in nil }
+            let swiftResult = FormulaEngine.evaluate(raw: f, resolve: resolver)
+            let rustResult = try RustFormulaAdapter.rustEvaluate(f, cells: [:])
+            XCTAssertEqual(rustResult, swiftResult, "number-format parity diverged: \(f)")
+        }
+    }
 }
