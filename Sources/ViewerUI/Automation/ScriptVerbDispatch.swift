@@ -592,6 +592,13 @@ public enum ScriptVerb {
             // `AppDelegate.settleNanos(for:)`); the in-process headless
             // harness has no wall clock to wait on, so it just no-ops.
             _ = arg
+        case "wait-editor-line", "wait-rendered-scroll":
+            // No model effect. Harness-only (ScriptRunner.swift): the VM
+            // `--script` runner BLOCKS the step until the LIVE CM6 top line /
+            // window.scrollY reaches ~N (wait-for-settle + timeout) and stashes
+            // it for the next dump (TSK-1047). The in-process headless harness
+            // has no live view to poll, so it just no-ops here.
+            _ = arg
         case "editor-scroll-to-line":
             // TSK-1046 (VM scroll-restore test setup): scroll the LIVE CM6 editor
             // so line N is at the viewport top, WITHOUT moving the caret — the
