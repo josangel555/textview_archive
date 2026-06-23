@@ -578,6 +578,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             // subdirectories so all three live side-by-side in
             // Bundle.module.resourceURL.
             let baseDir = htmlURL.deletingLastPathComponent()
+            LiveScrollProbe.navLog("load(\(htmlURL.lastPathComponent))")
             webView.loadFileURL(htmlURL, allowingReadAccessTo: baseDir)
         }
 
@@ -915,7 +916,26 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             // `.other` navigation to file:/data: is an in-page script
             // escape, not the bootstrap load — see
             // `decide(..., didFinishFirstLoad:)`.
+            LiveScrollProbe.navLog("finish")
             didFinishFirstLoad = true
+        }
+
+        // TSK-1047 diag delegates: capture the CM6 nav lifecycle so a loadFileURL
+        // that never commits under the VM GUI lane is no longer silent.
+        public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            LiveScrollProbe.navLog("start")
+        }
+        public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            LiveScrollProbe.navLog("commit")
+        }
+        public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            LiveScrollProbe.navLog("failProv:\((error as NSError).domain)#\((error as NSError).code)")
+        }
+        public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            LiveScrollProbe.navLog("fail:\((error as NSError).domain)#\((error as NSError).code)")
+        }
+        public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            LiveScrollProbe.navLog("WC-TERMINATED")
         }
 
         public func webView(
@@ -929,6 +949,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 currentDocumentURL: webView.url,
                 didFinishFirstLoad: didFinishFirstLoad
             )
+            LiveScrollProbe.navLog("policy[\(navigationAction.navigationType.rawValue)]:\(navigationAction.request.url?.lastPathComponent ?? "nil")=\(decision)")
             switch decision {
             case .allow:
                 decisionHandler(.allow)

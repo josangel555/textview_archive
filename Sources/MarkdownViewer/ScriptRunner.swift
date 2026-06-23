@@ -314,7 +314,7 @@ extension AppDelegate {
             """) ?? "evalnil"
             diags.append("[url=\(wv.url?.lastPathComponent ?? "nil") key=\(wv.window?.isKeyWindow ?? false) \(dom)]")
         }
-        LiveScrollProbe.lastEditorProbeDiag = "ok=false n=\(webViews.count) " + diags.joined(separator: " ")
+        LiveScrollProbe.lastEditorProbeDiag = "ok=false n=\(webViews.count) " + diags.joined(separator: " ") + " nav=[\(LiveScrollProbe.editorNavLog)]"
         return nil
     }
 

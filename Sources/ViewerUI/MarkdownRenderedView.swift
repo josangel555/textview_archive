@@ -1133,6 +1133,14 @@ public enum LiveScrollProbe {
     /// (CM6 not registered) / ok=false (mounted but __mdvView/CM6 not up) / throw /
     /// ok. Surfaced in the dump as editorProbeDiag.
     public static var lastEditorProbeDiag: String = "init"
+    /// TSK-1047 diag: rolling CM6 navigation-lifecycle log (loadHostHTML → start →
+    /// commit/fail → finish + policy decisions) — pinpoints WHERE the editor's
+    /// loadFileURL dies under the VM GUI lane. Bounded so it can't grow unbounded.
+    public static var editorNavLog: String = ""
+    public static func navLog(_ s: String) {
+        if editorNavLog.count > 600 { editorNavLog = String(editorNavLog.suffix(300)) }
+        editorNavLog += s + ";"
+    }
 
     /// TSK-1047 — the most recently probed LIVE CM6 editor scroll, read straight
     /// off the active editor WebView's `__mdvView.scrollDOM.scrollTop`. This is
