@@ -48,6 +48,13 @@ extension AppDelegate {
             // Give launch one full second to settle (window appears, file loads).
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             for (step, line) in lines.enumerated() {
+                // TSK-1047: keep the app frontmost so WebKit doesn't mark the
+                // WebContent processes NotVisible → jetsam-priority-0 → idle-kill them.
+                // Under the GUI lane the CM6 WebContent was jetsam'd mid-init (root
+                // found in the runningboard log: "none-NotVisible" + "Set jetsam
+                // priority to 0"); the lighter rendered WebContent finished first.
+                NSApp.activate(ignoringOtherApps: true)
+                self.window?.makeKeyAndOrderFront(nil)
                 await self.runScriptStep(line)
                 // Settle window per step before snapshotting. A `delay SECS`
                 // verb pauses for its arg (parsed as seconds) so FSEvents /
