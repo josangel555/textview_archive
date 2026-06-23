@@ -1,9 +1,11 @@
 # Changelog
 
-User-facing changes to the app — **features, fixes, and additions you can see or
-feel** while using it. Deliberately **excludes** tests, validation, CI, refactors,
-and internal/infra work (those live in `docs/AUTONOMOUS_PROGRESS.md` + the git log).
-This file is the at-a-glance "what's new" view of the app's progress.
+The **owner's** at-a-glance view of progress — both **user-facing** change and
+**total effort**. User-facing features/fixes/perf go under **Added / Changed / Fixed /
+Performance** (descriptive, from the user's seat). Non-user-facing effort (tests,
+CI/infra, refactors, gated rust-core ports, tracking) is summarized terse under
+**System work** per date — so a "147 commits, 3 user-facing" day shows where the rest
+went. Detailed per-item narrative lives in `docs/AUTONOMOUS_PROGRESS.md`.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
@@ -15,6 +17,13 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ### Changed
 - **⌘K freed for the terminal** — ⌘K no longer opens the command palette; use **⇧⌘P** or **double-Shift** to open it.
+
+### System work
+_147 commits today; ~3 user-facing (above). The rest, by area:_
+- **Tests (~63)** — robustness + Swift-vs-Rust differential-parity fuzz sweep across the shipped engines (find, diff, CSV, hex, format, outline, fuzzy, indent, transcript, formula); host-coverage backfill for the JSON / CSV / edit / security model wiring; WebView-tier + bundle-cap doc guards.
+- **Rust-core ports, behind flags — pending owner flip (~17)** — folds engine + FFI + 6-language A/B parity adapter; the formula port made parity-clean (5 fuzz-found bugs fixed); LSP zero-server completion + workspace-binary-trust decision cores.
+- **CI / VM / build (~16)** — repaired the VM validation lane (Swift-6.3 build, lazy-grammar dylib shipping, WebView fd-exhaustion false-failures); hardened the coverage scripts (low-disk guard, manual profdata-merge fallback) + reclaimed 23 GB of stale profraw; prod `/Applications` release build; exec-size cap 60→65 MB.
+- **Tracking (part of ~34 doc commits)** — root-caused the VM-UAT 0-dumps blocker (TSK-1243, HOME-half fixed); 7-subagent board reconcile (confirmed the board is accurate, not lagging); consolidated all tracking docs into one `BACKLOG.md` + archived the stale ones.
 
 ## 2026-06-21
 

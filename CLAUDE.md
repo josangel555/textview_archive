@@ -378,6 +378,12 @@ continue", document blockers and move on):
   **committed** commit, not a torn worktree:
   `bash scripts/test-headless-gate.sh` (Swift) / `bash scripts/rust-core-gate.sh`
   (rust-core). New deps need explicit owner approval.
+- **Commit hygiene — NO process-noise commits (owner directive 2026-06-22).** Do
+  NOT make standalone doc-churn commits. FOLD the `LESSONS.md` / `HANDOFF.md` /
+  `AUTONOMOUS_PROGRESS.md` / `CHANGELOG.md` updates for an item INTO that item's CODE
+  commit, when possible. Commit a doc on its own only when it genuinely stands alone
+  (a fresh design doc; the periodic handoff at a real session checkpoint). A day must
+  NOT carry 30+ separate doc commits — combine docs with the code change they describe.
 - **Validation ladder:** (1) `swift build` compile; (2) targeted
   `swift test --filter …` for the changed logic; (3) host headless gate
   (window-free); (4) `bash scripts/build-app.sh debug --install` to push the
@@ -388,15 +394,23 @@ continue", document blockers and move on):
   macOS15` + `swift test` / `vm-smoke.sh`. **Do NOT run T4/T5/live-app UI tests
   on the host.**
 - **Log every landed item** to `docs/AUTONOMOUS_PROGRESS.md` (the narrative that
-  survives compaction) and advance the board task to `fixed` with the commit SHA.
-- **Keep `CHANGELOG.md` current (OWNER ASK 2026-06-13).** Whenever a
-  **user-facing** change ships (a feature, fix, or addition the owner can SEE or
-  FEEL in the app), add a one-line plain-language entry to the repo-root
-  `CHANGELOG.md` under the current date (Added / Fixed / Performance). It is the
-  owner's at-a-glance progress view, so write it from the USER's seat, newest
-  first. **Exclude** tests, validation, CI, refactors, and internal/infra work
-  (those stay in `AUTONOMOUS_PROGRESS.md`) — `CHANGELOG.md` is app-visible
-  changes ONLY. If a tick lands nothing user-facing, leave it untouched.
+  survives compaction) and advance the board task to `fixed` with the commit SHA —
+  but FOLD that log line INTO the item's code commit (per Commit hygiene above), not
+  a separate doc commit.
+- **Keep `CHANGELOG.md` current (OWNER ASK 2026-06-13; expanded 2026-06-22).** It is
+  the **OWNER's** at-a-glance view of TOTAL effort — not only end-user-visible change.
+  Two parts per date:
+  - **User-facing** — `Added` / `Changed` / `Fixed` / `Performance`: descriptive,
+    one plain-language line each, from the USER's seat (a feature/fix/perf the owner
+    can SEE or FEEL).
+  - **`### System work`** — a TERSE INFORMATIONAL roll-up (a few bullets, per AREA:
+    tests, CI/infra, refactors, gated rust-core ports, tracking) of the
+    NON-user-facing effort, so the owner can see where a day's commits actually went
+    (a "147 commits, 3 user-facing" day shows the other ~144's shape here). Summarize
+    the INFORMATION — what was done, per area — NOT per-commit detail, NOT
+    feature-descriptive prose, NOT a literal table.
+  Detailed per-item narrative still lives in `AUTONOMOUS_PROGRESS.md`. If a tick lands
+  nothing at all, leave it untouched.
 - A perf-bench-only gate failure (e.g. `FoldBench`/`CrossFileSearchBench`
   wall-clock asserts) under machine load is flaky — re-run / confirm no
   non-bench failures before chasing it.
