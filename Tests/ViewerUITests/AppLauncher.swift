@@ -178,6 +178,22 @@ enum AppLauncher {
                 // BUG-027: per-run scratch session store (see mdvEnv above).
                 "MDV_SESSIONS_DIR=\(artifacts.appendingPathComponent("SessionsScratch").path)",
             ]
+            // TSK-1243: `open --env` does NOT deliver env to the LS-launched app
+            // under `sudo -u <consoleUser>` (the VM GUI lane), so the app dropped
+            // MDV_SCRIPT_PATH / MDV_ARTIFACT_DIR / MDV_SKIP_WORKSPACE_RESTORE and
+            // ran workspace-restore instead of the script. ALSO persist the same
+            // knobs to the deterministic config file the app reads early
+            // (AppDelegate.applyLaunchConfigFileIfPresent), chowned to the spawn
+            // user so the console-user app can read+delete it. This is the
+            // delivery that actually works under sudo; the `--env` below stays for
+            // the (rare) non-sudo viaOpen path.
+            if let user = spawnUser {
+                let cfg = AppLauncher.spawnUserHome
+                    .appendingPathComponent(".mdv-launch-config.env")
+                try? openEnv.joined(separator: "\n").write(
+                    to: cfg, atomically: true, encoding: .utf8)
+                AppLauncher.chownRecursive(cfg.path, to: user)
+            }
             var argv = ["/usr/bin/open", "-n", "-W"]
             for pair in openEnv { argv += ["--env", pair] }
             argv += ["-a", appBundlePath]

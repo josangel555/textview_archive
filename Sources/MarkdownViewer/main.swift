@@ -61,7 +61,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// SwiftUI-owned controller without rebuilding the view body.
     fileprivate var walkthroughController: WalkthroughPlayerController?
 
+    /// TSK-1243/1247: env-independent launch-config delivery for the VM GUI lane.
+    /// LaunchServices `open --env` does NOT deliver env vars to the app under
+    /// `sudo -u <consoleUser>`, so a viaOpen test launch silently drops
+    /// MDV_SCRIPT_PATH / MDV_ARTIFACT_DIR / MDV_SKIP_WORKSPACE_RESTORE / … — the
+    /// app then runs workspace-restore (polluted layout, blank preview) and never
+    /// runs the script. The harness instead writes those knobs to a deterministic
+    /// HOME-relative file (`~/.mdv-launch-config.env`, KEY=VALUE per line); read it
+    /// and `setenv` each so every downstream `ProcessInfo.environment` read works
+    /// unchanged. One-shot (deleted after read); absent in prod ⇒ no-op.
+    static func applyLaunchConfigFileIfPresent() {
+        let path = (NSHomeDirectory() as NSString)
+            .appendingPathComponent(".mdv-launch-config.env")
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
+            let kv = line.split(separator: "=", maxSplits: 1).map(String.init)
+            guard kv.count == 2, !kv[0].isEmpty else { continue }
+            setenv(kv[0], kv[1], 1)
+        }
+        try? FileManager.default.removeItem(atPath: path)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // TSK-1243/1247: deliver the VM-GUI-lane launch config (env-independent)
+        // BEFORE any env reader below (skip-restore @ ~350, script @ ~395, …).
+        Self.applyLaunchConfigFileIfPresent()
         // TSK-636: core-call auditing at the transport seam. FAILURES only —
         // successes are routine and high-volume (fuzzy ranks per palette
         // keystroke); a failing/panicking core is the security signal.
