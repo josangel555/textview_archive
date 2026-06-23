@@ -3519,3 +3519,32 @@ Continuation of "the five constraints" above; these three close every remaining 
   asks you to guard is often already guarded. Corollary: **CI-workflow invariants live in `InfraInvariantTests`** (pr.yml caching,
   supply-chain gate, vm lane, killall, the WebView-lane-in-nightly-not-pr guard) and **bundle-cap doc sync in
   `BundleCapDocConsistencyTests`** — add to those homes, don't spawn a parallel `CIWorkflowTruthTests`/`*DocSyncTests` file.
+
+## 2026-06-22 (late) — VM viaOpen-UAT harness: the silent-0-tests trap + the launched-but-no-dumps chain (TSK-1243/1245)
+
+- **GUI-lane `build` root-poisons `.build` → a following `swift test` SILENTLY runs 0 XCTest tests (TSK-1245).**
+  `scripts/test-in-vm.sh build` runs `build-app.sh` as ROOT (via launchctl-asuser), leaving root-owned files in `.build`.
+  A SUBSEQUENT `test-in-vm.sh test --filter <XCTestSuite>` (even in a later ssh) then runs ZERO XCTest tests — the output
+  shows ONLY the swift-testing summary `Test run with 0 tests in 0 suites passed` and NO XCTest body, and it READS LIKE A
+  PASS. This silently undermined `build && test` VM validations (the suspect ones — MFV/TSK-1036/1242 — were re-checked
+  test-only and genuinely pass). FIX: the `test` mode now self-heals with the same guarded `find .build -not -user
+  $(whoami)` → in-sudo `chown -R` the `clean` mode uses (commit 6c0d0ea5). RULES: after a GUI-lane build, ALWAYS `chown -R
+  vm-tester .build` before `swift test`; ALWAYS check the test COUNT (`Executed N tests`) — "0 tests passed" is a false green.
+- **A viaOpen GUI-lane UAT can LAUNCH the app GUI-active yet produce 0 step dumps — diagnose by LAYER (TSK-1243, OPEN).**
+  KEY-02/SAP-01 (`launchViaOpen=true`, needed for real CGEvent keys) fail "no step dumps". The chain that isolated it,
+  each layer ruled out cheaply: (1) the launch-COMMAND stderr (`sudo -u <consoleUser> /usr/bin/open -n -W -a <app>`) is
+  EMPTY → the command is clean — so CAPTURE it (not `/dev/null`; AppLauncher.swift ~207); (2) `log show 'process ==
+  "MarkdownViewer"'` shows the app runs FOREGROUND GUI (gui/501, WindowServer assertions) then SIGTERM at the 30s
+  poll-timeout → NOT a crash, NOT a launch failure (confirm via no fresh `~/Library/Logs/DiagnosticReports/*.ips`);
+  (3) so it's "launched-but-no-dumps" — open question is whether `open --env` delivers MDV_SCRIPT_PATH/MDV_ARTIFACT_DIR
+  under `sudo -u` (an app-side env probe is committed to confirm). LESSON: the app's OWN stderr does NOT relay through
+  `open`/LaunchServices, so capturing the launch-command stderr is the WRONG layer for app-side failures — use `log show`
+  + an app-side marker file. DIRECT-spawn UATs (no real keys) work; only viaOpen hits this.
+- **Verify coverage SCRIPTS on a real run, not by reasoning (TSK-1233/1238).** Both coverage.sh AND its sibling
+  coverage-gate.sh shared the defect: SwiftPM only auto-merges `default.profdata` on a 0-exit, but `swift test
+  --enable-code-coverage --parallel` exits NON-ZERO on a benign coverage+parallel trigger → profdata absent → the script
+  fails. FIX: a manual `xcrun llvm-profdata merge -sparse --failure-mode=warn -f <listfile>` fallback (the `-f listfile`
+  avoids ARG_MAX on 6000-9000 `.profraw`; warn-mode skips the corrupt partials the torn run leaves). coverage-gate.sh ALSO
+  hard-exited on the benign run-exit BEFORE measuring — a coverage gate must defer pass/fail to the headless gate and gate
+  only on the coverage THRESHOLD. Both classes were invisible to reasoning; only the real run surfaced ARG_MAX + corrupt
+  partials.
