@@ -592,13 +592,14 @@ public enum ScriptVerb {
             // `AppDelegate.settleNanos(for:)`); the in-process headless
             // harness has no wall clock to wait on, so it just no-ops.
             _ = arg
-        case "wait-editor-line", "wait-rendered-scroll":
-            // No model effect. Harness-only (ScriptRunner.swift): the VM
-            // `--script` runner BLOCKS the step until the LIVE CM6 top line /
-            // window.scrollY reaches ~N (wait-for-settle + timeout) and stashes
-            // it for the next dump (TSK-1047). The in-process headless harness
-            // has no live view to poll, so it just no-ops here.
-            _ = arg
+        // wait-editor-line / wait-rendered-scroll are DELIBERATELY NOT handled here
+        // (no `case`): they must fall through to `return false` so the VM `--script`
+        // runner (ScriptRunner.swift) runs the REAL blocking poll
+        // (waitForRenderedScroll / waitForEditorTopLine) that stashes the live scroll
+        // into LiveScrollProbe for the next dump. A no-op `case` here would report
+        // them HANDLED → runScriptStep returns early → the runner SKIPS the poll →
+        // renderedScrollY stays −1 (the TSK-1046 ScrollRestoreUAT setup −1 bug). The
+        // in-process headless harness has no live view and skips unhandled verbs.
         case "editor-scroll-to-line":
             // TSK-1046 (VM scroll-restore test setup): scroll the LIVE CM6 editor
             // so line N is at the viewport top, WITHOUT moving the caret — the
