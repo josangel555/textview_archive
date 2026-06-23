@@ -264,6 +264,18 @@ A "no work" stop while `reported`/`fixed`/`review` still have items is a PROCESS
 ## 6. Pointers
 
 - `docs/AUTONOMOUS_PROGRESS.md` — run narrative + `DECISIONS NEEDED` (owner-gated queue).
-- `docs/HANDOFF_2026-06-05.md` — fresh/compacted-session bootstrap.
+- `HANDOFF.md` (repo root) — fresh/compacted-session bootstrap (the live handoff; old dated `docs/HANDOFF_*` are archived under `archive/tracking-2026-06-22/`).
 - Memory: `project_autonomous_loop_mandate`, `feedback_tasked_board`,
   `reference_tasked_board_is_shared_across_projects`, `project_audit_pending_list_stale`.
+
+---
+
+## 7. The autonomous tick prompt (canonical source)
+
+The autonomous loop is driven by a session cron (`CronCreate`, every 5 min, session-only)
+that injects the prompt below each tick. The scheduler does NOT store it on disk — so when
+you re-launch the cron in a new session, copy it from HERE so it stays consistent with this
+SOP. Selector is `BACKLOG.md` (the dated `CURATED_TASKS_*` / `WORK_QUEUE.md` were folded in +
+archived 2026-06-22).
+
+> Autonomous drain tick. MANDATORY FIRST STEP every tick — actually read these NOW, do not skip: (1) docs/TASK_WORKFLOW.md IN FULL; (2) the "Automated / autonomous runs (SOP)" section of CLAUDE.md; (3) BACKLOG.md — the SINGLE curated worklist (the dated docs/CURATED_TASKS_* and WORK_QUEUE.md were folded into it + archived 2026-06-22). Then DRAIN RELENTLESSLY toward done in priority order: BACKLOG.md top-down → then the rest of the board (mcp__tasked__task_next / task_list). NEVER idle, hold, or stop with "no more work" — that is a PROCESS FAILURE; there is ALWAYS work (build features, fix bugs, validate fixed with teeth, re-verify, triage). BUILD render-path / VM-tail / perf features TOO — host-test the model, leave render/VM validation at review; do NOT hold for owner on-screen confirmation. Work INLINE, ONE item at a time: spike → implement → test → host-gate → commit per item; land rebase+ff; keep main headless-gate-green. COMMIT HYGIENE: fold LESSONS/HANDOFF/AUTONOMOUS_PROGRESS/CHANGELOG updates INTO the item's code commit — no standalone process-noise commits. If an item is GENUINELY owner-blocked (dep approval / true ambiguity), task_park it and IMMEDIATELY take the next item — never let a block stop the loop. Commit trailer: Claude-Session: &lt;current session URL&gt;

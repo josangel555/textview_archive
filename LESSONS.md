@@ -393,6 +393,7 @@ generated `Sources/CMdvCore/mdvcore.h` + `rust-core/link/libmdvcore_ffi.a` are *
 ## Velocity: BATCH queue items + GATE ONCE; never bundle `git commit` with the gate-read (2026-06-14)
 - The headless gate (~2-3 min) is the per-item bottleneck. Owner ask: implement 2-3 INDEPENDENT WORK_QUEUE items,
   run `scripts/test-headless-gate.sh` ONCE, then commit each separately. Amortizes the gate.
+  (2026-06-22: `WORK_QUEUE.md` is now `BACKLOG.md` — the single curated worklist; same batching principle.)
 - BUT: never `git add … && git commit` in the SAME Bash call as the gate-verdict grep — I committed TSK-841
   prematurely that way and main went (briefly) red on a stale-serve false failure. Confirm the gate verdict in a
   SEPARATE step, THEN commit.
