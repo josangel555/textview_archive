@@ -405,12 +405,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // points at those env vars NOT reaching the app under `sudo -u open`.
         // This pid-keyed /tmp probe (survives the harness cleanup; test-only)
         // confirms whether the env delivered. Cheap; remove once the path is fixed.
-        if environment["MDV_TEST_INSTANCE"] == "1" {
+        // UNCONDITIONAL during the TSK-1243 investigation (temporary): if even
+        // MDV_TEST_INSTANCE reads <unset> under viaOpen, that DEFINITIVELY
+        // confirms `open --env` isn't delivering env to the LS-launched app
+        // under `sudo -u`. Writing regardless of the gate also proves the app
+        // reached this point. Removed once the launch path is fixed.
+        do {
             let probe = [
+                "MDV_TEST_INSTANCE=\(environment["MDV_TEST_INSTANCE"] ?? "<unset>")",
                 "scriptPath(resolved)=\(scriptPath ?? "<nil>")",
                 "MDV_SCRIPT_PATH=\(environment["MDV_SCRIPT_PATH"] ?? "<unset>")",
                 "MDV_ARTIFACT_DIR=\(environment["MDV_ARTIFACT_DIR"] ?? "<unset>")",
                 "MDV_OPEN_FILE=\(environment["MDV_OPEN_FILE"] ?? "<unset>")",
+                "MDV_BACKGROUND=\(environment["MDV_BACKGROUND"] ?? "<unset>")",
                 "pathArgs=\(pathArgs)",
             ].joined(separator: "\n")
             try? probe.write(
