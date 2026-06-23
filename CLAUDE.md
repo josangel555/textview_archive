@@ -28,6 +28,29 @@ skill, NOT `swift test`). Two modes (do NOT conflate them):
   NEVER say "fixed" / move to `done` on model evidence alone. The acceptance
   criterion for a UI bug is the pixels/behavior the user sees.
 
+### Root-cause discipline — DIAGNOSE before you fix (OWNER DIRECTIVE 2026-06-23)
+
+Before implementing ANY bug fix, answer these — explicitly, in the ticket:
+1. **Is this a CLASS of bugs?** Does the same pattern live elsewhere? `grep` for siblings and
+   fix the class, not the one instance. (The session-switch scroll reset, the footer-stats
+   blank-on-switch (TSK-1120), and "loading…" flashes are the SAME class: imperative state
+   populated AROUND a switch, raced by the declarative render that reads it.)
+2. **What is the MECHANISM — sync sequencing, async timing, or a data bug?** Is the value
+   never CAPTURED, never SERIALIZED, never RESTORED, or restored-but-mis-TIMED vs the render?
+   Don't patch the RESTORE side when the root is CAPTURE/serialize, and don't patch one stage
+   of a multi-handoff async chain — the bug just moves to the next stage (this is *why* a bug
+   "keeps coming back" after each "fix").
+3. **VERIFY the mechanism end-to-end — do NOT infer from code order.** SwiftUI body re-eval is
+   async/coalesced; an `@Published` mutation does not re-render synchronously. "restoreScroll
+   runs after select(), so it's too late" is WRONG without proving the render actually reads
+   before the seed. For timing bugs, INSTRUMENT / observe at runtime.
+4. **Prefer collapsing the fragile chain over adding a stage-patch.** A single source of truth
+   (e.g. scroll lives on the Tab, the view reads it declaratively) removes the race by
+   construction; another imperative seed just adds one more handoff to drop at.
+5. **Render/timing bugs you cannot observe host-only: do NOT claim "fixed" on static
+   inference** — build to the VM / `/Applications` and confirm on-screen first (ties to the
+   render-confirm directive above).
+
 ### Change → tests + tracker mandate (OWNER DIRECTIVE 2026-06-07)
 
 Non-negotiable for **every** change. This codifies the terminal-tab-strip
