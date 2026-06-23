@@ -301,10 +301,21 @@ extension AppDelegate {
         // the GUI lane (TSK-1047). evalJS is async-correct (no run-loop pump) AND
         // bridges the dict.
         let (ok, line) = await evalEditorLine(webView, LiveScrollProbe.editorScrollReadJS)
+        if ok, let line {
+            LiveScrollProbe.lastEditorProbeDiag = "ok=true line=\(line)"
+            return line
+        }
+        // Not ready: capture WHY — is the CM6 page even loaded + the EditorView up on
+        // THIS webview? (url=nil + ok=false suggests a blank / wrong / pre-init view.)
+        let probe = await evalString(webView, """
+        (function(){try{return 'mdv='+(!!window.__mdvView)+' rs='+document.readyState\
+        +' cm='+document.querySelectorAll('.cm-editor').length\
+        +' cc='+document.querySelectorAll('.cm-content').length\
+        +' blen='+(document.body?document.body.innerHTML.length:-1);}catch(e){return 'err:'+e;}})()
+        """) ?? "diagnil"
         LiveScrollProbe.lastEditorProbeDiag =
-            "ok=\(ok) line=\(line.map { String($0) } ?? "nil") key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
-        guard ok, let line else { return nil }
-        return line
+            "ok=false key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.absoluteString ?? "nil") | \(probe)"
+        return nil
     }
 
     /// Synchronously sample the live rendered `window.scrollY`, pumping the run
@@ -333,6 +344,12 @@ extension AppDelegate {
                 let line = (dict?["line"] as? NSNumber)?.intValue
                 cont.resume(returning: (ok, line))
             }
+        }
+    }
+
+    private func evalString(_ webView: WKWebView, _ js: String) async -> String? {
+        await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            webView.evaluateJavaScript(js) { value, _ in cont.resume(returning: value as? String) }
         }
     }
 
