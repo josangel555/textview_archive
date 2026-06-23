@@ -436,19 +436,30 @@ final class ScrollPositionPersistenceTests: XCTestCase {
                        "restoreScroll must seed renderedScrollByURL for a markdown tab")
     }
 
-    func test_restoreScroll_renderedTab_seedsRenderedChannel() {
-        // Direct unit on the restore half: a lazy markdown tab carrying a
-        // persisted rendered offset must seed renderedScrollByURL on restore,
-        // even when it has NO scrollTopLine (rendered tabs usually don't).
+    func test_renderedScrollOffset_resolvesPersistedTab_beforeSeed_TSK1046() {
+        // TSK-1046 (race-free read): a lazy markdown tab carrying a persisted
+        // rendered offset must resolve to that offset IMMEDIATELY — BEFORE
+        // restoreScroll's seed runs. On a session switch the live
+        // `renderedScrollByURL` dict is drained and re-seeded async, so the FIRST
+        // render after restore reads this getter; it used to return nil → the
+        // preview snapped to top. `renderedScrollOffset` now falls back to the
+        // tab's persisted `renderedScrollY`, so the read is correct regardless of
+        // seed timing.
+        //
+        // NOTE: this assertion was previously `XCTAssertNil(... "no live rendered
+        // scroll yet")` — a FALSE GREEN that encoded the very race causing the
+        // on-screen reset. The model round-trip test stayed green (it checks the
+        // SETTLED state) while the app reset on the unsettled first render.
         let model = DocumentModel()
         let a = makeMarkdownFile("doc.md")
         model.appendLazyTab(url: a, viewMode: .rendered, renderedScrollY: 1390)
         let resolved = a.standardizedFileURL.resolvingSymlinksInPath()
-        XCTAssertNil(model.renderedScrollOffset(for: resolved),
-                     "precondition: no live rendered scroll yet")
+        XCTAssertEqual(model.renderedScrollOffset(for: resolved), 1390,
+                       "race-free: must fall back to the tab's persisted offset BEFORE the seed")
+        // restoreScroll then promotes it onto the live channel (idempotent).
         model.restoreScroll(forTabAt: 0)
         XCTAssertEqual(model.renderedScrollOffset(for: resolved), 1390,
-                       "rendered-tab restore must seed the rendered channel")
+                       "restore seeds the live rendered channel; value unchanged")
     }
 
     func test_seedRenderedScroll_doesNotClobberLivePosition() {

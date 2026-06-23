@@ -2411,7 +2411,17 @@ public final class DocumentModel: ObservableObject {
     /// The remembered rendered scroll offset for `url`, if any (nil ⇒ top).
     func renderedScrollOffset(for url: URL?) -> Double? {
         guard let url else { return nil }
-        return renderedScrollByURL[url]
+        // TSK-1046: prefer the LIVE in-memory offset, but FALL BACK to the tab's
+        // persisted `renderedScrollY` (the durable source of truth) when the live
+        // dict has no entry. `renderedScrollByURL` is dropped on a session-switch
+        // drain and re-injected ASYNC via `seedRenderedScroll` (from `restoreScroll`),
+        // so the FIRST render after a session restore used to read nil here and snap
+        // the preview to the top — a seed-vs-render race. Resolving to the Tab makes
+        // this read correct regardless of seed timing: the one unavoidable async
+        // boundary (WebView `didFinish`) then reads a value that is ALREADY right
+        // instead of racing the imperative seed. Single source of truth, pull-based.
+        if let live = renderedScrollByURL[url] { return live }
+        return tabs.tabs.first(where: { $0.url == url })?.renderedScrollY
     }
 
     /// TSK-1041: seed `url`'s rendered scroll offset from a persisted value
