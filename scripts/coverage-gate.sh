@@ -133,7 +133,7 @@ log "profdata: $PROFDATA"
 BIN_ARGS=()
 while IFS= read -r b; do
   BIN_ARGS+=("-object" "$b")
-done < <(find "$COV_SCRATCH" -type f -path '*.xctest/Contents/MacOS/*' 2>/dev/null)
+done < <(find "$COV_SCRATCH" -type f -path '*.xctest/Contents/MacOS/*' -not -path '*.dSYM/*' 2>/dev/null)
 if [[ ${#BIN_ARGS[@]} -eq 0 ]]; then
   echo "coverage-gate: no .xctest test binary found under $COV_SCRATCH" >&2
   exit 3
@@ -148,7 +148,7 @@ log "llvm-cov export → $COV_OUT (line-coverage JSON)"
 # tree, and test sources themselves — we gate the SHIPPING Sources/ surface.
 "$LLVM_COV" export \
   -instr-profile="$PROFDATA" \
-  -ignore-filename-regex='(/\.build/|/Tests/|/checkouts/)' \
+  -ignore-filename-regex='(/\.build|/Tests/|/checkouts/)' \
   "${BIN_ARGS[@]}" \
   > "$COV_OUT"
 
