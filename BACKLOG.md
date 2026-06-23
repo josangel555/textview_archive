@@ -18,8 +18,8 @@ internal-quality / rust-core / test work).
 > **Checkboxes are the at-a-glance progress mirror; the `tasked` board is authoritative for STATE.** Tick `[x]` when the board item reaches `done`/`validated` (render items: when on-screen-confirmed). From the 7-subagent board reconcile (the board is ACCURATE — done work already left the open lanes; no shipped-but-unmarked backlog). The OLD curated Next-50 + lane snapshot below are the prior capture, superseded by this section.
 
 ### A. BUILT user-facing fixes — unmerged on worktree branches; verify → merge (highest leverage)
-- [ ] **TSK-921 / 922** — close-split-pane + open-split race; fix `46e845eb` on `worktree-agent-a6297ba8dfd1e09ae`; `main` still has the bug.
-- [ ] **TSK-1046** — scroll-reset on session/tab switch (**owner top priority, still present 2026-06-23**); root-cause in flight; prior warm-cache fix on `worktree-agent-a7063b42` only half-worked (rendered-session ✓ / rendered-tab ✗ / editor unverified).
+- [x] **TSK-921 / 922** — close/open-split race — **FIXED on main** (`17932af8`: wave2 re-applied the worktree fix — `ContentView` observes `tabCoordinator` so `splitURL` re-bodies on open/close). Host teeth green (`SplitObservationTests` 5/5 + `ChromeBodyEvalCount` open/close re-body). At **review** (on-screen pixel = VM/owner). Board was stale (reconcile predated `17932af8`); both → `fixed` 2026-06-23.
+- [ ] **TSK-1046** — scroll-reset on session/tab switch (**owner top priority**) — **COMPLETE fix LANDED on main** (`e50e4538`: integrated the reaped `worktree-agent-a7063b42` fix — editor `editorMountSelectionSeed` + rendered idempotent re-apply + the 260-line `ScrollRestoreUATTests`). Host-green; design VM-validated 06-20. On-screen RE-PROOF blocked by **TSK-1243** (viaOpen UAT harness: env-delivery fixed `b992e80c`; lifecycle last-mile — `runScript` not firing under viaOpen — needs fresh-context marker instrumentation).
 
 ### B. Render/VM tails — host/model half shipped, render remains (need the screen)
 - [ ] **1049** off-main image pipeline
