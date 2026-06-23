@@ -70,6 +70,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// HOME-relative file (`~/.mdv-launch-config.env`, KEY=VALUE per line); read it
     /// and `setenv` each so every downstream `ProcessInfo.environment` read works
     /// unchanged. One-shot (deleted after read); absent in prod ⇒ no-op.
+    /// TSK-1243: read an env var from the LIVE C environ (getenv), NOT
+    /// `ProcessInfo.processInfo.environment` — which on Darwin caches a snapshot of
+    /// environ at first access. The viaOpen launch config is delivered by
+    /// `applyLaunchConfigFileIfPresent` via `setenv()` at module scope; if anything
+    /// snapshotted environ before that, ProcessInfo wouldn't reflect the setenv'd
+    /// values (→ the script-runner / skip-restore silently saw nothing). getenv
+    /// always reflects the live environ, so the config-delivered launch knobs are
+    /// read through this. (Matches the getenv idiom in LocalHistoryPolicy /
+    /// RustCoreGates.) Direct-spawn UATs are unaffected — their env is in environ
+    /// from process start, so getenv and ProcessInfo agree.
+    nonisolated static func mdvLiveEnv(_ key: String) -> String? {
+        guard let c = getenv(key) else { return nil }
+        return String(cString: c)
+    }
+
     static func applyLaunchConfigFileIfPresent() {
         // FIXED ABSOLUTE path (not HOME-relative): a LaunchServices-launched app
         // does NOT inherit the `open` process's HOME (`sudo -H` sets it only for
@@ -372,7 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // skip rehydrating the user's last session for test/automation
         // launches, but the machinery for opening new sessions must stay live.
         sessions.wireLifecycle()
-        if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
+        if Self.mdvLiveEnv("MDV_SKIP_WORKSPACE_RESTORE") != "1" {
             sessions.bootstrap()
         }
         // One-way callback: folder context menus invoke this to spawn a
@@ -416,11 +431,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // can genuinely self-activate on macOS 14+ (fork/exec'd processes
         // are denied cooperative activation), and real activation is what
         // synthesized SwiftUI clicks require. argv wins when both are set.
-        let environment = ProcessInfo.processInfo.environment
-        if scriptPath == nil, let envScript = environment["MDV_SCRIPT_PATH"] {
+        if scriptPath == nil, let envScript = Self.mdvLiveEnv("MDV_SCRIPT_PATH") {
             scriptPath = envScript
         }
-        if pathArgs.isEmpty, let envFile = environment["MDV_OPEN_FILE"] {
+        if pathArgs.isEmpty, let envFile = Self.mdvLiveEnv("MDV_OPEN_FILE") {
             pathArgs.append(envFile)
         }
         // CORR-10: open EVERY positional path, not just the first. The
@@ -3888,7 +3902,7 @@ let claudeMonitorMode = CommandLine.arguments.contains("--claude-monitor")
 /// windowid mismatch (harness + app now agree on the path).
 enum ArtifactDir {
     static let url: URL = {
-        let env = ProcessInfo.processInfo.environment["MDV_ARTIFACT_DIR"]
+        let env = AppDelegate.mdvLiveEnv("MDV_ARTIFACT_DIR")
         guard let path = env, !path.isEmpty else {
             return FileManager.default.temporaryDirectory
         }
