@@ -51,30 +51,45 @@ final class EditorScrollRestoreWebViewTests: WebViewTestCase {
         _ = await evalUntil("Boolean(window.__mdvView)", deadline: 5)
     }
 
+    // TSK-1047: ALL evaluateJavaScript goes through the COMPLETION-HANDLER API
+    // bridged by withCheckedContinuation — NOT `try await webView.evaluateJavaScript`.
+    // The async variant intermittently throws WKError-5 ("result of an unsupported
+    // type") even for a Number/Bool result (it bit viewportTopLine here, flaky); the
+    // completion-handler variant doesn't. This is the pattern PaneScrollRestoreWebView
+    // Tests uses. The Sendable value is extracted INSIDE the handler so no non-Sendable
+    // `Any` crosses the continuation.
+    private func evalBool(_ js: String) async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            webView.evaluateJavaScript(js) { value, _ in
+                cont.resume(returning: ((value as? NSNumber)?.boolValue) ?? (value as? Bool ?? false))
+            }
+        }
+    }
+
     @discardableResult
     private func evalUntil(_ expr: String, deadline seconds: TimeInterval) async -> Bool {
         let until = Date().addingTimeInterval(seconds)
         while Date() < until {
-            if let ok = try? await webView.evaluateJavaScript("Boolean(\(expr))") as? Bool, ok {
-                return true
-            }
+            if await evalBool("Boolean(\(expr))") { return true }
             try? await Task.sleep(for: .milliseconds(50))
         }
         return false
     }
 
-    /// Run a CM6 bridge dispatch. The trailing `;true` keeps the async
-    /// evaluateJavaScript from throwing WKError-5 ("unsupported type") on the
-    /// `undefined` a bare `cmDispatch(...)` returns.
+    /// Run a CM6 bridge dispatch (result ignored) via the completion-handler API.
     private func dispatch(_ js: String) async throws {
-        _ = try await webView.evaluateJavaScript(js + "\n;true")
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            webView.evaluateJavaScript(js) { _, _ in cont.resume() }
+        }
     }
 
-    /// The 1-based document line currently at the TOP of the live CM6 viewport.
+    /// The 1-based document line at the TOP of the live CM6 viewport (-1 if unread).
     private func viewportTopLine() async throws -> Int {
-        try await webView.evaluateJavaScript(
-            "window.__mdvView.state.doc.lineAt(window.__mdvView.viewport.from).number"
-        ) as? Int ?? -1
+        await withCheckedContinuation { (cont: CheckedContinuation<Int, Never>) in
+            webView.evaluateJavaScript(
+                "window.__mdvView.state.doc.lineAt(window.__mdvView.viewport.from).number"
+            ) { value, _ in cont.resume(returning: (value as? NSNumber)?.intValue ?? -1) }
+        }
     }
 
     /// Load a long, line-numbered doc into the live CM6 so a scroll is observable.
