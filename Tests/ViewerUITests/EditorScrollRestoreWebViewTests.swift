@@ -63,6 +63,13 @@ final class EditorScrollRestoreWebViewTests: WebViewTestCase {
         return false
     }
 
+    /// Run a CM6 bridge dispatch. The trailing `;true` keeps the async
+    /// evaluateJavaScript from throwing WKError-5 ("unsupported type") on the
+    /// `undefined` a bare `cmDispatch(...)` returns.
+    private func dispatch(_ js: String) async throws {
+        _ = try await webView.evaluateJavaScript(js + "\n;true")
+    }
+
     /// The 1-based document line currently at the TOP of the live CM6 viewport.
     private func viewportTopLine() async throws -> Int {
         try await webView.evaluateJavaScript(
@@ -72,7 +79,7 @@ final class EditorScrollRestoreWebViewTests: WebViewTestCase {
 
     /// Load a long, line-numbered doc into the live CM6 so a scroll is observable.
     private func loadLongDoc(lines: Int) async throws {
-        _ = try await webView.evaluateJavaScript("""
+        try await dispatch("""
         window.cmDispatch({ v: 2, type: "setLanguage", lang: "plain" });
         window.cmDispatch({ v: 2, type: "setText",
           text: Array.from({length: \(lines)}, (_, i) => "line " + (i + 1) + " lorem ipsum dolor sit amet").join("\\n") });
@@ -96,7 +103,7 @@ final class EditorScrollRestoreWebViewTests: WebViewTestCase {
         // RESTORE: drive the SAME seed the mount path uses — anchor=head=offset of
         // the saved line, scroll:true → applySetSelection → scrollIntoView(center).
         let targetLine = 220
-        _ = try await webView.evaluateJavaScript("""
+        try await dispatch("""
         (function () {
           const off = window.__mdvView.state.doc.line(\(targetLine)).from;
           window.cmDispatch({ v: 2, type: "setSelection", anchor: off, head: off, scroll: true });
@@ -127,8 +134,8 @@ final class EditorScrollRestoreWebViewTests: WebViewTestCase {
         _ = await evalUntil("window.__mdvView.state.doc.lines >= 400", deadline: 5)
 
         let targetLine = 150
-        _ = try await webView.evaluateJavaScript(
-            "window.cmDispatch({ v: 2, type: \"scrollToLine\", line: \(targetLine) });")
+        try await dispatch(
+            "window.cmDispatch({ v: 2, type: \"scrollToLine\", line: \(targetLine) })")
 
         let reached = await evalUntil("""
         (function () {
