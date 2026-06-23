@@ -62,6 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     fileprivate var walkthroughController: WalkthroughPlayerController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // TSK-1243 bisect markers (TEMPORARY): map how far didFinishLaunching
+        // reaches on a viaOpen launch (the probe at ~:413 isn't reached). The
+        // entry marker also proves HOME is writable from here.
+        let _mdvBisectPid = ProcessInfo.processInfo.processIdentifier
+        try? "entered".write(toFile: "\(NSHomeDirectory())/mdv-mark-entry-\(_mdvBisectPid).log",
+                             atomically: false, encoding: .utf8)
         // TSK-636: core-call auditing at the transport seam. FAILURES only —
         // successes are routine and high-volume (fuzzy ranks per palette
         // keystroke); a failing/panicking core is the security signal.
@@ -350,6 +356,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
             sessions.bootstrap()
         }
+        // TSK-1243 bisect marker (TEMPORARY): reached past sessions.bootstrap().
+        // Records the skip-env value too (confirms whether open --env delivered).
+        try? "post-bootstrap skip=\(ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] ?? "<unset>")"
+            .write(toFile: "\(NSHomeDirectory())/mdv-mark-postboot-\(_mdvBisectPid).log",
+                   atomically: false, encoding: .utf8)
         // One-way callback: folder context menus invoke this to spawn a
         // new session via the coordinator without DocumentModel needing
         // to import SessionsAppCoordinator.
