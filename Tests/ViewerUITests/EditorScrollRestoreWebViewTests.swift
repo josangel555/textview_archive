@@ -141,25 +141,11 @@ final class EditorScrollRestoreWebViewTests: WebViewTestCase {
             + "\(targetLine) is in the viewport — NOT the top (viewport top after = \(topAfter))")
     }
 
-    /// Sibling guard for the SETUP scroll the harness/editor uses: `scrollToLine`
-    /// puts the requested line at the viewport top on the live editor.
-    func test_scrollToLine_putsLineAtTop_onLiveCM6() async throws {
-        try await loadEditorPage()
-        try await loadLongDoc(lines: 400)
-        _ = await evalUntil("window.__mdvView.state.doc.lines >= 400", deadline: 5)
-
-        let targetLine = 150
-        try await dispatch(
-            "window.cmDispatch({ v: 2, type: \"scrollToLine\", line: \(targetLine) })")
-
-        let reached = await evalUntil("""
-        (function () {
-          const top = window.__mdvView.state.doc.lineAt(window.__mdvView.viewport.from).number;
-          return Math.abs(top - \(targetLine)) <= 6;
-        })()
-        """, deadline: 5)
-        let topAfter = try await viewportTopLine()
-        XCTAssertTrue(reached,
-            "scrollToLine must put line \(targetLine) at the live CM6 viewport top (got \(topAfter))")
-    }
+    // NOTE: a `scrollToLine`-puts-line-at-TOP sibling guard was tried here but
+    // removed — `applyScrollToLine` relies on a measured viewport/rAF cycle that a
+    // HEADLESS in-process WKWebView doesn't run (the same limitation BlameGutter
+    // works around with a repaintNudge), so its top-line assertion is unreliable in
+    // this vehicle. The restore path above uses scrollIntoView, which works
+    // headless; `scrollToLine` itself is exercised by the `editor-scroll-to-line`
+    // script verb elsewhere. (TSK-1047)
 }
