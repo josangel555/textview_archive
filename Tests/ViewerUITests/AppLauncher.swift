@@ -188,8 +188,12 @@ enum AppLauncher {
             // delivery that actually works under sudo; the `--env` below stays for
             // the (rare) non-sudo viaOpen path.
             if let user = spawnUser {
-                let cfg = AppLauncher.spawnUserHome
-                    .appendingPathComponent(".mdv-launch-config.env")
+                // FIXED ABSOLUTE path (not HOME-relative): the LS-launched app
+                // doesn't inherit `open`'s HOME, so NSHomeDirectory() is
+                // unpredictable — write where the app can deterministically find
+                // it. /tmp is world-visible; chown so the console-user app can
+                // read AND delete it (the one-shot delete is the read breadcrumb).
+                let cfg = URL(fileURLWithPath: "/tmp/mdv-launch-config.env")
                 try? openEnv.joined(separator: "\n").write(
                     to: cfg, atomically: true, encoding: .utf8)
                 AppLauncher.chownRecursive(cfg.path, to: user)

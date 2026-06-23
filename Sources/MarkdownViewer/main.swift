@@ -71,8 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// and `setenv` each so every downstream `ProcessInfo.environment` read works
     /// unchanged. One-shot (deleted after read); absent in prod ⇒ no-op.
     static func applyLaunchConfigFileIfPresent() {
-        let path = (NSHomeDirectory() as NSString)
-            .appendingPathComponent(".mdv-launch-config.env")
+        // FIXED ABSOLUTE path (not HOME-relative): a LaunchServices-launched app
+        // does NOT inherit the `open` process's HOME (`sudo -H` sets it only for
+        // `open` itself), so NSHomeDirectory() is unpredictable under the VM GUI
+        // lane — a HOME-relative path is unfindable. /tmp (/private/tmp, 1777) is
+        // visible to both the root harness writer and the console-user app.
+        let path = "/tmp/mdv-launch-config.env"
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
         for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
             let kv = line.split(separator: "=", maxSplits: 1).map(String.init)
