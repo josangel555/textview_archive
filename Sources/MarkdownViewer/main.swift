@@ -85,6 +85,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return String(cString: c)
     }
 
+    /// TEMP (TSK-1243 diagnostic — REMOVE after): set true when the viaOpen
+    /// launch-config file is found+consumed at module scope; gates the marker
+    /// writes so prod / direct-spawn never write them.
+    nonisolated(unsafe) static var diagLaunchConfigSeen = false
+    /// TEMP (TSK-1243): write a /tmp marker (CREATE) to pinpoint where the viaOpen
+    /// script path stops. The first ABSENT marker after a run = the stop.
+    nonisolated static func diagMark(_ name: String, _ detail: String = "") {
+        guard diagLaunchConfigSeen else { return }
+        try? detail.write(
+            toFile: "/tmp/mdv-mark-\(name).txt", atomically: true, encoding: .utf8)
+    }
+
     static func applyLaunchConfigFileIfPresent() {
         // FIXED ABSOLUTE path (not HOME-relative): a LaunchServices-launched app
         // does NOT inherit the `open` process's HOME (`sudo -H` sets it only for
@@ -93,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // visible to both the root harness writer and the console-user app.
         let path = "/tmp/mdv-launch-config.env"
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        diagLaunchConfigSeen = true
+        diagMark("A-MODULE", "module-scope reached; config read OK")
         for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
             let kv = line.split(separator: "=", maxSplits: 1).map(String.init)
             guard kv.count == 2, !kv[0].isEmpty else { continue }
@@ -102,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.diagMark("B-DFL-ENTRY", "applicationDidFinishLaunching reached")
         // TSK-636: core-call auditing at the transport seam. FAILURES only —
         // successes are routine and high-volume (fuzzy ranks per palette
         // keystroke); a failing/panicking core is the security signal.
@@ -494,7 +509,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if autoSnapshotDelay >= 0 {
             scheduleAutoSnapshot(after: autoSnapshotDelay, forceSource: forceSource)
         }
+        Self.diagMark("C-PRERUN", "scriptPath=\(scriptPath ?? "NIL") env.MDV_SCRIPT_PATH=\(Self.mdvLiveEnv("MDV_SCRIPT_PATH") ?? "NIL") env.MDV_ARTIFACT_DIR=\(Self.mdvLiveEnv("MDV_ARTIFACT_DIR") ?? "NIL")")
         if let scriptPath {
+            Self.diagMark("D-RUNSCRIPT", "calling runScript")
             runScript(at: scriptPath)
         }
         if let walkthroughPath {
