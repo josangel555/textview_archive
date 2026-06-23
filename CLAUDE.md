@@ -31,6 +31,13 @@ skill, NOT `swift test`). Two modes (do NOT conflate them):
 ### Root-cause discipline — DIAGNOSE before you fix (OWNER DIRECTIVE 2026-06-23)
 
 Before implementing ANY bug fix, answer these — explicitly, in the ticket:
+0. **READ the ticket's existing `understanding` + comments FIRST.** A prior diagnosis
+   often already pinpoints the root — re-diagnosing from scratch wastes effort AND risks
+   landing a fix for a DIFFERENT cause than the one already found. (Live miss 2026-06-23:
+   re-diagnosed TSK-1046 as a read-race and committed a partial fix, when the ticket
+   already documented the real on-screen roots — warm-cache re-attach skips `didFinish`
+   so the rendered restore never runs; CM6 `initialSelection` is built from the cursor
+   channel and ignores the scroll channel.)
 1. **Is this a CLASS of bugs?** Does the same pattern live elsewhere? `grep` for siblings and
    fix the class, not the one instance. (The session-switch scroll reset, the footer-stats
    blank-on-switch (TSK-1120), and "loading…" flashes are the SAME class: imperative state

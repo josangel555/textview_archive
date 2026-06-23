@@ -143,6 +143,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
            let parked = WarmWebViewCache.shared.retrieve(forKey: key) {
             let webView = parked.webView
             context.coordinator.adoptNavigationState(from: parked.coordinator)
+            // TSK-1046: a warm re-attach skips the reload (lastHTML == html) so
+            // didFinish won't fire — stash the offset to re-apply once in updateNSView.
+            context.coordinator.pendingReattachScrollY = restoreScrollY
             webView.navigationDelegate = context.coordinator
             return webView
         }
@@ -305,6 +308,16 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                 .render, "WKWebView.loadToFinish")
             webView.loadHTMLString(html, baseURL: baseURL)
             coord.lastHTML = html
+        } else if let y = coord.pendingReattachScrollY {
+            // TSK-1046: warm re-attach (no reload → no didFinish). Apply the restored
+            // rendered offset directly, exactly ONCE. The content is already loaded in
+            // the parked WebView, so window.scrollTo takes effect immediately.
+            coord.pendingReattachScrollY = nil
+            if y > 0 {
+                webView.evaluateJavaScript(
+                    "window.scrollTo({top: \(y), behavior: 'instant'});",
+                    completionHandler: nil)
+            }
         }
         if abs(webView.pageZoom - CGFloat(zoom)) > 0.001 {
             webView.pageZoom = CGFloat(zoom)
@@ -527,6 +540,13 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// finishes (consumed in `didFinish`; nil ⇒ leave at top).
         var currentURL: URL?
         var pendingRestoreY: Double?
+        /// TSK-1046: a ONE-SHOT scroll offset to apply when a PARKED WebView is
+        /// warm-re-attached (WarmWebViewCache). On re-attach `lastHTML == html`, so
+        /// `updateNSView`'s reload gate is skipped and `didFinish` never fires — the
+        /// normal `pendingRestoreY`/didFinish restore therefore cannot run, which is
+        /// why the rendered scroll reset on a session switch. Set on adopt; consumed
+        /// once in `updateNSView`'s no-reload branch.
+        var pendingReattachScrollY: Double?
         /// TSK-358: the live content-scale (mirrors zoom tracking). Stored so
         /// `didFinish` can re-apply the `--mdv-content-scale` CSS var after a
         /// reload resets the DOM; `lastAppliedScale` debounces the live push.
