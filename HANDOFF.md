@@ -1,9 +1,28 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — VM-lane repair DONE+validated; render-backlog VM-UAT work-stream started  (2026-06-22)
+# Handoff — scroll-restore fix mid-verify + tracking consolidation done  (2026-06-23)
 
-**Session:** claude-mdv (AUTONOMOUS, ~5min cron).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `52c57736` (verify `git log -1`).
+**Session:** claude-mdv (AUTONOMOUS ~5min cron + heavy owner interaction).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `1e339e9c` (verify `git log -1`). ⚠️ This session ran EXTREMELY long — a fresh `/compact` is recommended before the next chunk (esp. the scroll UAT bridge).
 
-## Mission
+## CURRENT STATE (2026-06-23 — read first; the VM-lane sections below are 2026-06-22 historical)
+
+**SCROLL BUG (TSK-1046 — owner TOP priority) — 2 rendered roots fixed, gate-green, installed, AWAITING owner on-screen confirm:**
+- Root A (read race, `a28a5a35`): `renderedScrollOffset` falls back to persisted `tab.renderedScrollY` (single source of truth). Teeth: flipped a FALSE-GREEN test that had asserted nil-before-seed.
+- Root B (warm-reattach apply, `1e339e9c`): on session switch the WebView is warm-re-attached → `didFinish` never fires → restore never ran. One-shot `pendingReattachScrollY` applies `window.scrollTo` in `updateNSView`'s no-reload branch.
+- Built to `/Applications` (mtime 00:58). **GATE = owner's 10-sec on-screen check** (session-switch a scrolled rendered .md): holds → rooting confirmed; resets → re-root (I mis-rooted TWICE this session — now SOP step 0: read the ticket's prior `understanding` first).
+- **VM UAT scoped EXECUTE-READY on TSK-1046** — it needs a coordinator→model `window.scrollY` observability bridge (the live scroll is unreachable from the model dump — the bug's camouflage; why host tests stayed green). DON'T build it until the on-screen confirm.
+- **EDITOR (CM6) scroll = a SEPARATE root, NOT fixed** (ContentView.swift:732 builds `initialSelection` from `editorCursorByTab`, ignoring `editorScrollByTab`) — needs its own CM6 initialScroll wiring.
+
+**TRACKING CONSOLIDATION — DONE (owner directives):** ONE `BACKLOG.md` = the single CHECKABLE (`- [ ]`) curated worklist; the `tasked` board = system of record for STATE; dated `CURATED_TASKS_*` / `WORK_QUEUE` / old `HANDOFF_*` archived → `archive/tracking-2026-06-22/`. Cron updated (session job `4bf4ae72`: selector → `BACKLOG.md`; canonical copy in `docs/TASK_WORKFLOW.md §7`). `CHANGELOG.md` is OWNER-visibility now (user-facing sections + a terse `### System work` roll-up).
+
+**SOP added (CLAUDE.md):** bug-fix root-cause discipline — step 0 READ the ticket's existing `understanding` before re-diagnosing; class?/sync-async-data?; verify don't infer; collapse the chain; never claim a render fix on-screen without VM/owner. + commit hygiene (fold LESSONS/HANDOFF/PROGRESS/CHANGELOG into the code commit; no process-noise commits).
+
+## NEXT ACTION (2026-06-23)
+1. **SCROLL (TSK-1046):** get the owner's on-screen confirm of the `/Applications` build. HOLDS → build the VM UAT per the ticket's execute-ready scope (observability bridge + `rendered-scroll-to` verb + a SessionsUAT-style session-switch test + VM GUI-lane run). RESETS → re-root before any UAT. Then the EDITOR root.
+2. Render queue + owner-gated (resume #5 + the board): TSK-1182/1151/1101/1102 (render/VM), 1215/1202 (engine flips — owner's call).
+3. Board is ACCURATE (7-subagent reconcile); the clean host-buildable pool is drained; remaining = render-VM / owner-gated / epics.
+
+---
+## Mission (2026-06-22 historical)
 Autonomous cron drain. Owner re-enabled the UTM VM ("VM is up — UI evals/tests/dev/validation there"). This session: (1) stood up + repaired the VM validation lane; (2) started draining the render-path backlog via targeted VM UATs. Keep `main` headless-gate-green; commit per item, inline (NO workflows).
 
 ## Current state
