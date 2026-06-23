@@ -1129,6 +1129,10 @@ public enum LiveScrollProbe {
     /// no-current-webview vs eval-pending (async unresolved before the dump) vs
     /// eval-failed (JS returned nil / errored) vs ok. Surfaced in the dump.
     public static var lastProbeDiag: String = "init"
+    /// TSK-1047 diag: why the last editor probe produced its value — no-current
+    /// (CM6 not registered) / ok=false (mounted but __mdvView/CM6 not up) / throw /
+    /// ok. Surfaced in the dump as editorProbeDiag.
+    public static var lastEditorProbeDiag: String = "init"
 
     /// TSK-1047 — the most recently probed LIVE CM6 editor scroll, read straight
     /// off the active editor WebView's `__mdvView.scrollDOM.scrollTop`. This is

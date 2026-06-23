@@ -292,16 +292,28 @@ extension AppDelegate {
     /// short per-sample budget elapses). Returns nil when no editor is mounted /
     /// CM6 isn't up yet / the read times out.
     private func sampleLiveEditorTopLine() async -> Int? {
-        guard let webView = CodeMirrorEditorRegistry.shared.current() else { return nil }
+        guard let webView = CodeMirrorEditorRegistry.shared.current() else {
+            LiveScrollProbe.lastEditorProbeDiag = "no-current"
+            return nil
+        }
         // TSK-1046: await the async evaluateJavaScript API rather than pumping a
         // nested RunLoop.run inside this @MainActor Task — the nested-runloop pattern
         // intermittently STARVED the WKWebView completion under the VM GUI lane
         // (root WebContent IPC), making the live read flaky (done=false). The async
         // API lets the executor service the IPC reply correctly.
-        let value = try? await webView.evaluateJavaScript(LiveScrollProbe.editorScrollReadJS)
-        guard let dict = value as? [String: Any], (dict["ok"] as? Bool) == true,
-              let line = (dict["line"] as? NSNumber)?.intValue else { return nil }
-        return line
+        do {
+            let value = try await webView.evaluateJavaScript(LiveScrollProbe.editorScrollReadJS)
+            let dict = value as? [String: Any]
+            let ok = (dict?["ok"] as? Bool) ?? false
+            let line = (dict?["line"] as? NSNumber)?.intValue
+            LiveScrollProbe.lastEditorProbeDiag =
+                "ok=\(ok) line=\(line.map { String($0) } ?? "nil") err=\(dict?["err"].map { "\($0)" } ?? "-") key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
+            guard ok, let line else { return nil }
+            return line
+        } catch {
+            LiveScrollProbe.lastEditorProbeDiag = "throw \(error)"
+            return nil
+        }
     }
 
     /// Synchronously sample the live rendered `window.scrollY`, pumping the run
