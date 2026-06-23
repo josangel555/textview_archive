@@ -296,47 +296,56 @@ extension AppDelegate {
             LiveScrollProbe.lastEditorProbeDiag = "no-current"
             return nil
         }
-        // TSK-1046: await the async evaluateJavaScript API rather than pumping a
-        // nested RunLoop.run inside this @MainActor Task — the nested-runloop pattern
-        // intermittently STARVED the WKWebView completion under the VM GUI lane
-        // (root WebContent IPC), making the live read flaky (done=false). The async
-        // API lets the executor service the IPC reply correctly.
-        do {
-            // PRIMITIVE read (editorTopLineJS → Number): the async API throws
-            // WKError Code 5 on an OBJECT result, so we MUST NOT use the {ok,top,line}
-            // dict here (that's editorScrollReadJS, for the completion-handler path).
-            let value = try await webView.evaluateJavaScript(LiveScrollProbe.editorTopLineJS)
-            let line = (value as? NSNumber)?.intValue
-            LiveScrollProbe.lastEditorProbeDiag =
-                "line=\(line.map { String($0) } ?? "nil") key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
-            guard let line, line >= 1 else { return nil }   // -1 = CM6 not up yet
-            return line
-        } catch {
-            LiveScrollProbe.lastEditorProbeDiag = "throw \(error)"
-            return nil
-        }
+        // Completion-handler-bridged (evalJS) read of the {ok,top,line} dict — the
+        // async evaluateJavaScript variant threw WKError Code 5 on this read under
+        // the GUI lane (TSK-1047). evalJS is async-correct (no run-loop pump) AND
+        // bridges the dict.
+        let (ok, line) = await evalEditorLine(webView, LiveScrollProbe.editorScrollReadJS)
+        LiveScrollProbe.lastEditorProbeDiag =
+            "ok=\(ok) line=\(line.map { String($0) } ?? "nil") key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
+        guard ok, let line else { return nil }
+        return line
     }
 
     /// Synchronously sample the live rendered `window.scrollY`, pumping the run
     /// loop until the async read lands. nil when no preview is mounted / times out.
+    /// Bridge the COMPLETION-HANDLER evaluateJavaScript into async via a checked
+    /// continuation. TSK-1046/1047: deliberately NOT `try await
+    /// webView.evaluateJavaScript(_:)` — that async variant throws WKError Code 5
+    /// ("result of an unsupported type") for the CM6 dict read under the VM GUI lane,
+    /// while the completion-handler variant bridges it fine. The continuation also
+    /// avoids the nested-RunLoop pump that starved the IPC reply. The result is
+    /// extracted to a Sendable value INSIDE the handler so no non-Sendable `Any`
+    /// crosses the continuation. WKWebView guarantees the handler fires once.
+    private func evalDouble(_ webView: WKWebView, _ js: String) async -> Double? {
+        await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            webView.evaluateJavaScript(js) { value, _ in
+                cont.resume(returning: (value as? NSNumber)?.doubleValue)
+            }
+        }
+    }
+
+    private func evalEditorLine(_ webView: WKWebView, _ js: String) async -> (ok: Bool, line: Int?) {
+        await withCheckedContinuation { (cont: CheckedContinuation<(Bool, Int?), Never>) in
+            webView.evaluateJavaScript(js) { value, _ in
+                let dict = value as? [String: Any]
+                let ok = (dict?["ok"] as? Bool) ?? false
+                let line = (dict?["line"] as? NSNumber)?.intValue
+                cont.resume(returning: (ok, line))
+            }
+        }
+    }
+
     private func sampleLiveRenderedScroll() async -> Double? {
         let n = MarkdownRenderedRegistry.shared.liveEntryCount
         guard let webView = MarkdownRenderedRegistry.shared.current() else {
             LiveScrollProbe.lastProbeDiag = "sample:no-current entries=\(n)"
             return nil
         }
-        // TSK-1046: await the async API (see sampleLiveEditorTopLine) — the old
-        // nested RunLoop.run pump starved the WKWebView IPC reply under the GUI lane.
-        do {
-            let value = try await webView.evaluateJavaScript("window.scrollY")
-            let y = (value as? NSNumber)?.doubleValue
-            LiveScrollProbe.lastProbeDiag =
-                "sample y=\(y.map { String($0) } ?? "nil") entries=\(n) key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
-            return y
-        } catch {
-            LiveScrollProbe.lastProbeDiag = "sample:throw \(error) entries=\(n)"
-            return nil
-        }
+        let y = await evalDouble(webView, "window.scrollY")
+        LiveScrollProbe.lastProbeDiag =
+            "sample y=\(y.map { String($0) } ?? "nil") entries=\(n) key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
+        return y
     }
 
     func captureStepArtifacts(step: Int, label: String) {

@@ -1195,23 +1195,6 @@ public enum LiveScrollProbe {
     })()
     """
 
-    /// TSK-1047 — PRIMITIVE-returning twin of `editorScrollReadJS` for the ASYNC
-    /// probe path: returns the 1-based viewport top line as a NUMBER (or -1 when CM6
-    /// isn't up). The async `evaluateJavaScript` API throws WKError Code 5
-    /// ("result of an unsupported type") when JS returns an OBJECT — only the
-    /// completion-handler API bridges a JS dict. So the async sampler MUST read a
-    /// primitive, not the `{ok,top,line}` dict. This bit the editor scroll UAT
-    /// (SCROLL03/04): the rendered probe (window.scrollY → Number) bridged fine, the
-    /// editor probe (dict) threw.
-    public static let editorTopLineJS = """
-    (function () {
-      try {
-        var v = window.__mdvView;
-        if (!v || !v.viewport) return -1;
-        return v.state.doc.lineAt(v.viewport.from).number;
-      } catch (e) { return -1; }
-    })()
-    """
 
     /// Read the active CM6 editor's LIVE scroll (`__mdvView.scrollDOM.scrollTop`
     /// + viewport top line) and stash it in `editorScrollTop` / `editorTopLine`,
