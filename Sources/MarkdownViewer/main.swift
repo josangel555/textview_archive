@@ -85,14 +85,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return String(cString: c)
     }
 
-    /// TEMP (TSK-1243 diagnostic — REMOVE after): set true when the viaOpen
-    /// launch-config file is found+consumed at module scope; gates the marker
-    /// writes so prod / direct-spawn never write them.
-    nonisolated(unsafe) static var diagLaunchConfigSeen = false
+    /// TSK-1243: true when the viaOpen test launch-config file was found+consumed at
+    /// module scope (prod / direct-spawn never have it). Gates the didFinishLaunching
+    /// fallback below (and, temporarily, the diag markers).
+    nonisolated(unsafe) static var launchConfigPresent = false
+    /// TSK-1243: idempotency latch so the normal auto-fired didFinishLaunching and the
+    /// viaOpen force-call fallback never run the launch sequence twice.
+    nonisolated(unsafe) static var launchSequenceRan = false
     /// TEMP (TSK-1243): write a /tmp marker (CREATE) to pinpoint where the viaOpen
     /// script path stops. The first ABSENT marker after a run = the stop.
     nonisolated static func diagMark(_ name: String, _ detail: String = "") {
-        guard diagLaunchConfigSeen else { return }
+        guard launchConfigPresent else { return }
         try? detail.write(
             toFile: "/tmp/mdv-mark-\(name).txt", atomically: true, encoding: .utf8)
     }
@@ -105,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // visible to both the root harness writer and the console-user app.
         let path = "/tmp/mdv-launch-config.env"
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
-        diagLaunchConfigSeen = true
+        launchConfigPresent = true
         diagMark("A-MODULE", "module-scope reached; config read OK")
         for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
             let kv = line.split(separator: "=", maxSplits: 1).map(String.init)
@@ -117,6 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.diagMark("B-DFL-ENTRY", "applicationDidFinishLaunching reached")
+        // TSK-1243: idempotent. Under the viaOpen VM launch AppKit doesn't post this
+        // (no launch Apple Event under sudo-u LS), so a module-scope fallback force-
+        // calls it; the latch ensures the normal auto-fire + the fallback never run
+        // the launch sequence twice.
+        if Self.launchSequenceRan { return }
+        Self.launchSequenceRan = true
         // TSK-636: core-call auditing at the transport seam. FAILURES only —
         // successes are routine and high-volume (fuzzy ranks per palette
         // keystroke); a failing/panicking core is the security signal.
@@ -3947,4 +3956,17 @@ let policy: NSApplication.ActivationPolicy = {
 app.setActivationPolicy(policy)
 let delegate = AppDelegate()
 app.delegate = delegate
+// TSK-1243: under the viaOpen VM-UAT launch (sudo -u open), AppKit does NOT post
+// applicationDidFinishLaunching (the launch Apple Event isn't delivered in that
+// context), so the spawned test app would never run its --script. When launched via
+// the test config-file (launchConfigPresent), post a one-shot fallback that
+// force-runs the launch sequence on the first run-loop tick; idempotent
+// (launchSequenceRan) so the normal auto-fire path is unaffected. Prod (no config
+// file) is untouched.
+if AppDelegate.launchConfigPresent {
+    DispatchQueue.main.async {
+        delegate.applicationDidFinishLaunching(
+            Notification(name: NSApplication.didFinishLaunchingNotification))
+    }
+}
 app.run()
