@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — scroll fix LANDED; TSK-1243 master-UAT-blocker breakthrough (env-delivery fixed, last mile pinpointed)  (2026-06-23)
 
-**Session:** claude-mdv (AUTONOMOUS ~5min cron + owner interaction).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `f98a34cf` (verify `git log -1`). ⚠️ EXTREMELY long session — **`/compact` strongly recommended**; the TSK-1243 last mile needs fresh-context runtime instrumentation (see below).
+**Session:** claude-mdv (AUTONOMOUS ~5min cron + owner interaction).  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `f37f8ed2` (verify `git log -1`). ⚠️ EXTREMELY long session — **`/compact` strongly recommended**; the TSK-1243 last mile needs fresh-context runtime instrumentation (see below). **Session-end:** TSK-921/922 verified fixed-on-main + advanced; the clean autonomous-drainable pool is EMPIRICALLY exhausted (progress lane = #NNN-trap/unimplemented; bucket-B render = blind-build-risky; pure-logic = well-covered) — remaining is render-VM / fresh-context / delicate-untangle. Prod (release) build re-installed to `/Applications`. New LESSONS entries: the viaOpen env/lifecycle traps + `git log --all`-before-rebuild.
 
 ## CURRENT STATE (2026-06-23 — read first; sections below are older history)
 
@@ -12,7 +12,7 @@
 **TRACKING CONSOLIDATION + SOP (done earlier this session):** ONE CHECKABLE `BACKLOG.md`; `tasked` board = SoR; stale docs → `archive/tracking-2026-06-22/`; CHANGELOG owner-visibility. Bug-fix root-cause SOP + commit-hygiene in CLAUDE.md.
 
 ## NEXT ACTION (2026-06-23)
-1. **TSK-1243 last mile (HIGHEST leverage — unblocks ALL live-WebView / interaction-render UATs AND the scroll on-screen proof):** confirm the ProcessInfo-snapshot theory (in `didFinishLaunching`, compare `getenv("MDV_SCRIPT_PATH")` vs `ProcessInfo.environment` on the VM), then route the config-delivered readers through an override dict / `getenv`. ~1-2 VM cycles. Then KEY-02 should dump → flip `ScrollRestoreUATTests` `override class var launchViaOpen { true }` → the scroll fix proves on-screen.
+1. **TSK-1243 last mile (HIGHEST leverage — unblocks ALL live-WebView / interaction-render UATs AND the scroll on-screen proof):** env-delivery is FIXED (config-file at `/tmp`, read+`setenv` at module scope, readers on `getenv` — VM-proven the `/tmp` config is consumed); the ProcessInfo-snapshot lead is RULED OUT (`getenv` didn't fix it). The script STILL doesn't run under viaOpen. INSTRUMENT to pinpoint the stop: a FIXED-`/tmp` marker (via the proven removeItem channel) at `didFinishLaunching` ENTRY + immediately before `runScript(at:)` (also dump `scriptPath`) + `runScript`'s first line → the first ABSENT marker = where execution diverts. Also `cat` the consumed `/tmp/mdv-launch-config.env` to confirm it actually held `MDV_SCRIPT_PATH=`. ~1-2 VM cycles. Then KEY-02 dumps → flip `ScrollRestoreUATTests` `override class var launchViaOpen { true }` → the scroll fix (+ 921/922 + the render backlog) prove on-screen. See LESSONS "viaOpen VM-UAT-harness env/lifecycle traps".
 2. **Integration-mission follow-ups (other stranded worktree fixes, un-merged):** TSK-1103 (Local History + its 77 GB-runaway diff fix — branches `a3772e69`/`a917006c`), TSK-854 (−12.5 MB bundle — `a8d85385`). Same "ultracode worktree never landed" gap.
 3. Render queue + owner-gated: TSK-1182/1151/1101 (render/VM), 1215/1202 (engine flips — owner).
 
