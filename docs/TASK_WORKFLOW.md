@@ -99,16 +99,15 @@ grep this repo for the symbols/feature it names** — if they don't exist here, 
 
 ## 3. Prioritize (pick the ONE highest-value actionable task)
 
-**0. PRIMARY SELECTOR (owner directive 2026-06-14): DRAIN `WORK_QUEUE.md` top-down.** The repo-root
-`WORK_QUEUE.md` is the owner-curated next-~50 features/bugs, already ordered by priority (Section 0 Perf →
-A Quick wins → B `[PARTIAL]` slices → C Medium → D Epics; **E = owner-input-needed, skip**). Each firing:
-pick the next UNCHECKED `[ ]` item, drive its `TSK-###` on the board to at least `review`/`validated`, then
-check it off `[x]` in `WORK_QUEUE.md` with the commit SHA. The board (`tasked`) stays the SYSTEM OF RECORD
-for lifecycle/status; `WORK_QUEUE.md` is the priority SELECTOR for *what to pull next*. The rank rules below
-order *within* the queue and govern the FALLBACK once it is fully drained — and a fresh USER-FACING
-regression (rule 1) still pre-empts the queue. When a queue item is owner-blocked, `task_park` it and take
-the next unchecked one. When `WORK_QUEUE.md` is drained, fall to the groomed pools (rule 2) then the
-validation drain (rule 1.5).
+**0. PRIMARY SELECTOR (owner directive 2026-06-22): DRAIN `BACKLOG.md` top-down — the SINGLE curated worklist.**
+The repo-root `BACKLOG.md` is the ONE owner-curated worklist (the dated `docs/CURATED_TASKS_*.md` + `WORK_QUEUE.md`
+were folded into it + archived under `archive/tracking-2026-06-22/`), priority-ordered (P0 user-facing bugs/perf →
+P1 user-facing features → P2 internal/rust-core/test). Each firing: pick the next actionable item, drive its
+`TSK-###` on the board to at least `review`/`validated`. The board (`tasked`) is the SYSTEM OF RECORD for task
+STATE — advance items THERE, do NOT check them off in a file. The rank rules below order *within* the worklist and
+govern the FALLBACK once it is fully drained — and a fresh USER-FACING regression (rule 1) still pre-empts. When an
+item is owner-blocked, `task_park` it and take the next. When `BACKLOG.md` is drained, fall to the groomed pools
+(rule 2) then the validation drain (rule 1.5).
 
 Rank order each firing (within the queue, and the fallback when it is drained):
 

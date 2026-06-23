@@ -323,22 +323,19 @@ continue", document blockers and move on):
   RETIRED — never recreate or spoof them. The board is **shared across
   projects** — grep this repo before acting on a task; skip foreign
   `agent:forge`/`sess-forge-*` tasks.
-- **PRIORITY: DRAIN the latest `docs/CURATED_TASKS_<date>.md` top-down** (e.g.
-  `docs/CURATED_TASKS_2026-06-20.md` + its `Next 50` worklist — the current
-  curated selector). `WORK_QUEUE.md` was SUPERSEDED (reconciled 2026-06-19 into
-  the dated curated lists); same drain discipline. The curated list is the
-  owner-curated next-~50 features/bugs,
-  already ordered by priority (Section 0 Perf → A Quick wins → B `[PARTIAL]`
-  slices → C Medium → D Epics; E = owner-input-needed, skip). Each firing: pick
-  the next UNCHECKED item, drive its `TSK-###` on the board to at least
-  `review`/`validated`, then check it off `[x]` in `WORK_QUEUE.md` with the
-  commit SHA. The board stays the SYSTEM OF RECORD for lifecycle; `WORK_QUEUE.md`
-  is the priority SELECTOR. USER-FACING value still wins ties (it's baked into
-  the ordering: app bugs/perf the owner feels over internal-quality work). When
-  an item is owner-blocked, `task_park` it + take the next unchecked one. When
-  `WORK_QUEUE.md` is fully drained, fall back to the board's groomed pools
-  (security/rust-core/parity/theming), then the `fixed`-lane validation drain.
-  DON'T ship a risky blind change; if it needs the screen/owner, file it and move on.
+- **PRIORITY: DRAIN `BACKLOG.md` top-down — the SINGLE curated worklist**
+  (owner directive 2026-06-22: ONE backlog = the curated "what to work on" list;
+  everything else lives on the board; stale tracking docs are archived). The dated
+  `docs/CURATED_TASKS_*.md` + `WORK_QUEUE.md` were folded into `BACKLOG.md` and
+  archived under `archive/tracking-2026-06-22/`. `BACKLOG.md` is owner-curated and
+  priority-ordered (P0 user-facing bugs/perf → P1 user-facing features → P2
+  internal/rust-core/test). Each firing: pick the next actionable item, drive its
+  `TSK-###` on the board to at least `review`/`validated`. The board (`tasked`) is
+  the SYSTEM OF RECORD for task STATE — advance items THERE; do NOT check items off
+  in a file. USER-FACING value wins ties. When an item is owner-blocked, `task_park`
+  it + take the next. When `BACKLOG.md` is fully drained, fall back to the board's
+  groomed pools (security/rust-core/parity/theming), then the `fixed`-lane validation
+  drain. DON'T ship a risky blind change; if it needs the screen/owner, file it and move on.
 - **Spike + design are AUTO-APPROVED (owner directive 2026-06-13; full text
   TASK_WORKFLOW §0.5).** For any non-trivial ticket the agent runs the spike
   (scope/what-exists/feasibility/options) AND produces the design + breakdown
