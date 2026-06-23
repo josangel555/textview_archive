@@ -416,6 +416,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingInitialSelection: CMSelectionSeed?
         private var didApplyInitialSelection: Bool = false
         private var isReady = false
+        /// TSK-1047: WebContent-termination recovery attempts (capped).
+        private var wcTerminateCount = 0
         /// Mirrors what we last successfully pushed to JS. Lets us
         /// skip redundant `setText` round-trips when the model just
         /// republished the same string after a JS → Swift → JS hop.
@@ -935,7 +937,18 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             LiveScrollProbe.navLog("fail:\((error as NSError).domain)#\((error as NSError).code)")
         }
         public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            LiveScrollProbe.navLog("WC-TERMINATED")
+            // TSK-1047: the CM6 WebContent process died (observed under the VM GUI
+            // lane right after the heavy bundle loads + initializes). Production
+            // hardening — re-bootstrap the host page so the editor is never left
+            // permanently blank after a WebContent crash, resetting the gates the
+            // first load set (else decidePolicyFor would cancel the re-bootstrap
+            // file: nav). Capped so a deterministic crash can't loop forever.
+            wcTerminateCount += 1
+            LiveScrollProbe.navLog("WC-TERMINATED#\(wcTerminateCount)")
+            guard wcTerminateCount <= 3 else { return }
+            isReady = false
+            didFinishFirstLoad = false
+            loadHostHTML()
         }
 
         public func webView(
