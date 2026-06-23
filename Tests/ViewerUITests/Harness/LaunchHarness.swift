@@ -149,6 +149,15 @@ final class LaunchHarness {
     /// `AppLauncher.killTestInstances`.
     func cleanup() {
         AppLauncher.killTestInstances(named: "MarkdownViewer")
+        // UAT debugging seam: MDV_KEEP_FIXTURES=1 preserves this scenario's
+        // per-step dumps + PNG screencaptures (under `tmpDir`) for post-run
+        // inspection instead of removing them. Opt-in so normal/CI runs stay
+        // clean. The path is echoed to stderr (lands in the persistent
+        // mdv-launch-*.log) so a debugger knows where to look.
+        if ProcessInfo.processInfo.environment["MDV_KEEP_FIXTURES"] == "1" {
+            fputs("MDV_KEEP_FIXTURES: preserved UAT fixtures at \(tmpDir.path)\n", stderr)
+            return
+        }
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
