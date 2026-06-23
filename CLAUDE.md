@@ -218,14 +218,15 @@ ViewerCoreTests is the unambiguous host-safe target).
 - Bundle id stays `com.markdownviewer.MarkdownViewer` (TCC-stable).
 - Local signing only (cert `MarkdownViewer Local Dev`); no Developer
   ID until shipping public.
-- Bundle size cap: 80 MB total + 60 MB main-executable sub-cap
+- Bundle size cap: 80 MB total + 65 MB main-executable sub-cap
   (`scripts/check-bundle-size.sh` defaults; override via `BUDGET_MB` /
   `EXEC_BUDGET_MB`), wired into `scripts/build-app.sh`. The two caps are
   tracked separately because grammar parsers can live as
   `Contents/Frameworks/` dylibs OR static-linked in the exec, and the
   exec sub-cap catches a silent regression to static-linking. The exec
-  cap grew 26→44→52→60 (owner-approved TSK-660 rust-grammar landings + a
-  2026-06-14 headroom ask); most of the ~60 MB exec is double-carried
+  cap grew 26→44→52→60→65 (owner-approved TSK-660 rust-grammar landings + a
+  2026-06-14 headroom ask + a 2026-06-22 owner bump to 65 — release exec hit
+  60.4 MB organically, no static-link regression); most of the ~60 MB exec is double-carried
   tree-sitter grammar parse tables, so REDUCING the cap (lazy-load /
   dedup) is the real reclaim — tracked by TSK-1214/TSK-1098, an owner
   call on the target budget. (The older "48/26" and "25 MB" figures

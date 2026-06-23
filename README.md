@@ -102,7 +102,7 @@ All in `scripts/`, all `bash` (no zsh-isms):
 | `build-app.sh [debug\|release]` | Build SPM, assemble `dist/TextView.app`, sign locally, run bundle-size check |
 | `install-app.sh` | Copy `dist/TextView.app` to `/Applications` and re-register with LaunchServices |
 | `verify-app.sh` | 17 checks on the assembled bundle (signing, plist keys, executable arch, icon) |
-| `check-bundle-size.sh` | Fails if bundle > `BUDGET_MB` (default 80) or exec > `EXEC_BUDGET_MB` (default 60). Wired into `build-app.sh` |
+| `check-bundle-size.sh` | Fails if bundle > `BUDGET_MB` (default 80) or exec > `EXEC_BUDGET_MB` (default 65). Wired into `build-app.sh` |
 | `gen-third-party-notices.sh` | Regenerate `THIRD_PARTY_NOTICES.md` from `.build/checkouts/*` + vendored JS bundles. `--check` fails if stale |
 | `visual-smoke.sh` | Headless launch, capture screenshot, assert TabBar/ModeBar/Sidebar/StatusBar rendered |
 | `pack-icns.swift` | Hand-pack `.icns` preserving oxipng compression (iconutil re-encodes) |
@@ -119,7 +119,7 @@ See `MANUAL_TESTING.md` for the full list. Quick reference:
 - `MDV_SKIP_WORKSPACE_RESTORE=1` — clean-room launch
 - `MDV_NO_RULER=1` — disable line-number gutter
 - `MDV_SKIP_VISUAL=1` — skip visual regression tests locally
-- `BUDGET_MB=<N>` / `EXEC_BUDGET_MB=<N>` — override the 80 MB total / 60 MB exec bundle caps
+- `BUDGET_MB=<N>` / `EXEC_BUDGET_MB=<N>` — override the 80 MB total / 65 MB exec bundle caps
 
 ## Distribution & signing
 

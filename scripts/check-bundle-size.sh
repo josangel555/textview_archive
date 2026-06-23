@@ -89,7 +89,11 @@ BUDGET_MB="${BUDGET_MB:-${1:-80}}"
 # measured 51.8 MB (~160 KB under the 52 cap). +8 MB headroom for upcoming
 # work. Most of the exec is tree-sitter grammar parse tables (~29 MB of the
 # rust archive) double-carried with the Swift dylibs — Stage 4 is the reclaim.
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-60}"
+# 60 -> 65 (2026-06-22, owner ask "update to 65"): release exec measured
+# 60.4 MB, just over the 60 cap — organic growth, NOT a static-link regression
+# (grammars still ship as Frameworks/ dylibs). +~5 MB headroom; the real fix is
+# the reclaim (TSK-1214/1098: lazy-load / dedup the double-carried parse tables).
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-65}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 
