@@ -62,12 +62,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     fileprivate var walkthroughController: WalkthroughPlayerController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // TSK-1243 bisect markers (TEMPORARY): map how far didFinishLaunching
-        // reaches on a viaOpen launch (the probe at ~:413 isn't reached). The
-        // entry marker also proves HOME is writable from here.
-        let _mdvBisectPid = ProcessInfo.processInfo.processIdentifier
-        try? "entered".write(toFile: "\(NSHomeDirectory())/mdv-mark-entry-\(_mdvBisectPid).log",
-                             atomically: false, encoding: .utf8)
         // TSK-636: core-call auditing at the transport seam. FAILURES only —
         // successes are routine and high-volume (fuzzy ranks per palette
         // keystroke); a failing/panicking core is the security signal.
@@ -356,11 +350,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
             sessions.bootstrap()
         }
-        // TSK-1243 bisect marker (TEMPORARY): reached past sessions.bootstrap().
-        // Records the skip-env value too (confirms whether open --env delivered).
-        try? "post-bootstrap skip=\(ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] ?? "<unset>")"
-            .write(toFile: "\(NSHomeDirectory())/mdv-mark-postboot-\(_mdvBisectPid).log",
-                   atomically: false, encoding: .utf8)
         // One-way callback: folder context menus invoke this to spawn a
         // new session via the coordinator without DocumentModel needing
         // to import SessionsAppCoordinator.
@@ -408,39 +397,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         if pathArgs.isEmpty, let envFile = environment["MDV_OPEN_FILE"] {
             pathArgs.append(envFile)
-        }
-        // TSK-1243: when test-spawned, record what the app actually SAW from the
-        // launch env. The viaOpen GUI lane delivers MDV_SCRIPT_PATH/
-        // MDV_ARTIFACT_DIR via `open --env` (LS drops --prefixed argv), and the
-        // 0-dumps symptom (app launches GUI-active but produces no step dumps)
-        // points at those env vars NOT reaching the app under `sudo -u open`.
-        // This pid-keyed /tmp probe (survives the harness cleanup; test-only)
-        // confirms whether the env delivered. Cheap; remove once the path is fixed.
-        // UNCONDITIONAL during the TSK-1243 investigation (temporary): if even
-        // MDV_TEST_INSTANCE reads <unset> under viaOpen, that DEFINITIVELY
-        // confirms `open --env` isn't delivering env to the LS-launched app
-        // under `sudo -u`. Writing regardless of the gate also proves the app
-        // reached this point. Removed once the launch path is fixed.
-        do {
-            let probe = [
-                "MDV_TEST_INSTANCE=\(environment["MDV_TEST_INSTANCE"] ?? "<unset>")",
-                "scriptPath(resolved)=\(scriptPath ?? "<nil>")",
-                "MDV_SCRIPT_PATH=\(environment["MDV_SCRIPT_PATH"] ?? "<unset>")",
-                "MDV_ARTIFACT_DIR=\(environment["MDV_ARTIFACT_DIR"] ?? "<unset>")",
-                "MDV_OPEN_FILE=\(environment["MDV_OPEN_FILE"] ?? "<unset>")",
-                "MDV_BACKGROUND=\(environment["MDV_BACKGROUND"] ?? "<unset>")",
-                "pathArgs=\(pathArgs)",
-            ].joined(separator: "\n")
-            let pid = ProcessInfo.processInfo.processIdentifier
-            // TSK-1243 dual-path probe: /tmp (atomic) vs the app's HOME
-            // (non-atomic). If HOME appears but /tmp doesn't → the LS-launched
-            // console-user app's literal /tmp write is the blocker (use a
-            // non-/tmp artifact path for viaOpen). If NEITHER appears → this
-            // block isn't reached on the viaOpen launch (instrument the entry).
-            try? probe.write(toFile: "/tmp/mdv-appenv-\(pid).log",
-                             atomically: true, encoding: .utf8)
-            try? probe.write(toFile: "\(NSHomeDirectory())/mdv-appenv-\(pid).log",
-                             atomically: false, encoding: .utf8)
         }
         // CORR-10: open EVERY positional path, not just the first. The
         // first opens via `openPath` (reuses/replaces the initial blank
