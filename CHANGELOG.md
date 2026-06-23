@@ -16,6 +16,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ### Changed
 - **⌘K freed for the terminal** — ⌘K no longer opens the command palette; use **⇧⌘P** or **double-Shift** to open it.
 
+### Performance
+- **Image editor — snappier on large images** — editing a large image no longer re-decodes the source file or rebuilds the render context on every change (decode once + cached Core Image context), and Save a Copy now encodes + writes off the main thread, so a big export no longer freezes the window.
+
 ## 2026-06-21
 
 ### Added

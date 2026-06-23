@@ -1,6 +1,7 @@
 .DS_Store
 .build/
-.build-gate/
+# SwiftPM scratch siblings: -gate (headless gate), -cov (coverage), future ones
+.build-*/
 .swiftpm/
 DerivedData/
 xcuserdata/

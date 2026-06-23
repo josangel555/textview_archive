@@ -1,5 +1,40 @@
 # Backlog
 
+## 2026-06-22 — Disjoint / incomplete / not-fully-wired (visibility sweep, owner ask)
+
+Built-but-not-fully-delivered work, consolidated for visibility. Each line: what exists → what's missing. Most are board tickets — drive there; grouped by kind (ports/model/core/wiring/render/docs/infra/quick-wins).
+
+### Ports — built, behind a gate, owner-flip pending
+- **Formula (Rust port)** — TSK-1215 + 1218–1222. Parity-clean (differential fuzz green); on-screen CSV value display BUILT but GATED OFF. Missing: owner go-ahead to flip the gate + VM/on-screen validation.
+- **Folds (Rust port)** — TSK-1202. Engine + FFI + RustFoldAdapter + 6-lang A/B parity done, behind a gate. Missing: owner flip + validation.
+
+### Model / engine built — NOT wired to a usable UI
+- **Image paint ops** — TSK-1055/1083/1084/1085 (paintStroke/drawCurve/strokePolygon/fillPolygon + undo) built+tested, but NO canvas gesture → no paint tool usable on screen. Missing: TSK-1101 (tap/drag gesture) + tools TSK-1056–1060 (pencil/eraser/line/rect/ellipse). Render/VM.
+- **Diff multi-line selection** — TSK-1182/910. Host helpers (AttributedString builder + LineSpan mapper) landed+tested; DiffView still renders per-line so drag-select can't span lines. Missing: collapse to one selectable Text per hunk + keep the line-number GUTTER aligned (render-only-verifiable — the crux). Render/VM.
+- **CSV cell-cursor** — TSK-1102. CSVCellCursor model shipped; not wired to arrow-nav + focus ring + Cmd-C whole-cell copy. Blocked on the TSK-1243 ui-key unblock for VM validation.
+
+### Core/seam built — verify the consumer is wired
+- **LSP completion** — TSK-1127/1136. Zero-server fallback + cursor-aware in-file completion core built; a CM6 autocomplete extension drives the `requestCompletions` seam (DocumentModel.swift:3304). Missing: confirm it surfaces a VISIBLE completion popup on screen (VM).
+- **LSP-binary trust** — TSK-1129. Workspace-local trust-decision core built. Missing: confirm it's wired into the LSP launch/spawn path (not just the model).
+
+### Wiring-tail — engine built+tested, needs a menu/UI hook (curated 06-20)
+- **Local History** — TSK-1103. LocalHistoryStore done+tested, owner policy resolved; TWO worktree branches ready to merge as a set (storage + viewer) with 3 dup-resolutions noted in the 06-20 PM entry below. Missing: merge + save-hook + version-list/restore UI.
+- **Walkthrough catalog** (TSK-1107), **awaitUser reply UI** (TSK-1115), **Focus Mode menu** (TSK-1116), **unified search palette** (TSK-1143) — built foundations from the ultracode wave; need their UI hooks.
+
+### Root-caused, not built — render/VM
+- **View↔Edit line-height/font** — TSK-1151/732. CM6 hardcodes line-height 1.45 + Int-rounds the font size vs View's exact CGFloat. Missing: derive CM6 line-height from SourceTextController + send px as Double (JS bundle + setFontSize bridge). VM.
+
+### Design-only — documented, not implemented
+- **Plugin Tier-D (long-lived PTY/socket) contract** — TSK-1138. Design doc only; no implementation.
+
+### Infra slices — partial
+- **cm_apply-delta** — TSK-543/1124. cm_apply ships the FULL document across FFI per edit batch (~10× doc-size traffic/tick). The stateful delta seam (FFI method + Swift consumer) is the delivery half — not wired.
+
+### Quick-win host-buildable user-facing (curated 06-20 Quick Wins — NOT done, pickable next)
+- **Cmd+F keep previous find text (Rendered + Source bars)** — `FindCoordinator.swift:47,97` wipe the query on dismiss; the editor bar preserves it (TSK-770). Copy that pattern + a test. HOST-TESTABLE. (no ticket)
+- **Tooltip open-delay too short** — `FloatingTooltip.swift:34` appearDelay 0.3→0.6. (no ticket, TINY)
+- **Tab inserts literal tab** (CM6 keymap), **cursor +1px** (CM6 CSS), **Find highlights remain after dismiss (Rendered MD)** (WebView JS) — render/CM6, smaller, (no ticket).
+
 ## 2026-06-20 PM — integration pass, agent-tooling, open decisions
 - **OPEN OWNER DECISIONS:**
   - **TSK-854** — kill the Swift tree-sitter twin (−16 MB: 11 `libTreeSitter*Lazy.dylib` in Frameworks). Owner APPROVED ("lets kill"); not yet executed — spawn the refactor agent (collapse `RustHighlightAdapter` to rust-only, drop `TreeSitterEngine` + SwiftTreeSitter dep + grammar targets, update consumers). End-state: editor=Lezer, viewer+rendered-fences+remote-core=rust TS.
