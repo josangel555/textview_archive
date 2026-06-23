@@ -245,6 +245,14 @@ extension AppDelegate {
     ) async {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
+            // TSK-1047: RE-ISSUE the scroll each poll. CM6's WebContent can crash +
+            // recover under the VM GUI lane (resets to the top), dropping the one-shot
+            // editor-scroll-to-line — so keep re-applying scrollToLine(target) until
+            // the live top line actually reaches it. Idempotent; safe because
+            // wait-editor-line is SETUP-only (the restore read uses capture-editor-scroll).
+            for wv in CodeMirrorEditorRegistry.shared.liveWebViews {
+                _ = await evalString(wv, "(function(){try{if(window.cmDispatch){window.cmDispatch({type:'scrollToLine',line:\(target)});return 'ok';}return 'no';}catch(e){return 'e';}})()")
+            }
             if let line = await sampleLiveEditorTopLine(), line >= target - tolerance {
                 // Settled within tolerance — record the live value for the dump.
                 LiveScrollProbe.editorScrollTop = Double(max(0, line))
