@@ -1269,6 +1269,13 @@ public final class CodeMirrorEditorRegistry {
     private func prune() {
         entries.removeAll { $0.value == nil }
     }
+
+    /// TSK-1047: all live registered editor WebViews — the probe iterates these to
+    /// find the one with CM6 actually up (`current()` can return a blank/parked one).
+    public var liveWebViews: [WKWebView] {
+        prune()
+        return entries.compactMap { $0.value }
+    }
 }
 
 /// Map a `HighlightLanguage` to the short token CM6's `setLanguage`

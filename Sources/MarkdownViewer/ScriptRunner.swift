@@ -292,29 +292,29 @@ extension AppDelegate {
     /// short per-sample budget elapses). Returns nil when no editor is mounted /
     /// CM6 isn't up yet / the read times out.
     private func sampleLiveEditorTopLine() async -> Int? {
-        guard let webView = CodeMirrorEditorRegistry.shared.current() else {
-            LiveScrollProbe.lastEditorProbeDiag = "no-current"
+        // TSK-1047: iterate ALL live CM6 webviews — current() can hand back a blank /
+        // parked / pre-init one (key-window or entries.last) whose JS context is empty
+        // (url=nil, eval→nil). The one with CM6 actually up (ok=true) is the authority.
+        let webViews = CodeMirrorEditorRegistry.shared.liveWebViews
+        guard !webViews.isEmpty else {
+            LiveScrollProbe.lastEditorProbeDiag = "no-current entries=0"
             return nil
         }
-        // Completion-handler-bridged (evalJS) read of the {ok,top,line} dict — the
-        // async evaluateJavaScript variant threw WKError Code 5 on this read under
-        // the GUI lane (TSK-1047). evalJS is async-correct (no run-loop pump) AND
-        // bridges the dict.
-        let (ok, line) = await evalEditorLine(webView, LiveScrollProbe.editorScrollReadJS)
-        if ok, let line {
-            LiveScrollProbe.lastEditorProbeDiag = "ok=true line=\(line)"
-            return line
+        var diags: [String] = []
+        for wv in webViews {
+            let (ok, line) = await evalEditorLine(wv, LiveScrollProbe.editorScrollReadJS)
+            if ok, let line {
+                LiveScrollProbe.lastEditorProbeDiag = "ok=true line=\(line) n=\(webViews.count)"
+                return line
+            }
+            let dom = await evalString(wv, """
+            (function(){try{return 'mdv='+(!!window.__mdvView)+' rs='+document.readyState\
+            +' cm='+document.querySelectorAll('.cm-editor').length\
+            +' blen='+(document.body?document.body.innerHTML.length:-1);}catch(e){return 'e:'+e;}})()
+            """) ?? "evalnil"
+            diags.append("[url=\(wv.url?.lastPathComponent ?? "nil") key=\(wv.window?.isKeyWindow ?? false) \(dom)]")
         }
-        // Not ready: capture WHY — is the CM6 page even loaded + the EditorView up on
-        // THIS webview? (url=nil + ok=false suggests a blank / wrong / pre-init view.)
-        let probe = await evalString(webView, """
-        (function(){try{return 'mdv='+(!!window.__mdvView)+' rs='+document.readyState\
-        +' cm='+document.querySelectorAll('.cm-editor').length\
-        +' cc='+document.querySelectorAll('.cm-content').length\
-        +' blen='+(document.body?document.body.innerHTML.length:-1);}catch(e){return 'err:'+e;}})()
-        """) ?? "diagnil"
-        LiveScrollProbe.lastEditorProbeDiag =
-            "ok=false key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.absoluteString ?? "nil") | \(probe)"
+        LiveScrollProbe.lastEditorProbeDiag = "ok=false n=\(webViews.count) " + diags.joined(separator: " ")
         return nil
     }
 
