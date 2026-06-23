@@ -13,22 +13,29 @@ carried-forward context below. The next-50 list is prioritized by the owner's st
 **user-facing value first** (app bugs + perf the owner can feel → user-facing features →
 internal-quality / rust-core / test work).
 
-## 2026-06-22 — Board reconcile result (7-subagent sweep — THIS is the current accurate picture)
+## Current worklist (checkable — updated 2026-06-23)
 
-A 7-agent reconcile of the FULL open board (~113 `reported` + ~90 `progress`, project `tasked`) confirmed **the board is ACCURATE** — only 1 task advanced (TSK-1178 → review). The 2026-06-20 sweep had already demoted over-claims to `progress` with children filed for residuals, so there is **no shipped-but-unmarked backlog**. The Next-50 below is the OLD curated capture (kept for context); the buckets here are the verified current state. Open work splits into:
+> **Checkboxes are the at-a-glance progress mirror; the `tasked` board is authoritative for STATE.** Tick `[x]` when the board item reaches `done`/`validated` (render items: when on-screen-confirmed). From the 7-subagent board reconcile (the board is ACCURATE — done work already left the open lanes; no shipped-but-unmarked backlog). The OLD curated Next-50 + lane snapshot below are the prior capture, superseded by this section.
 
-### A. BUILT user-facing fixes — unmerged on worktree branches; verify on VM → merge (highest leverage)
-- **TSK-921 close-split-pane + TSK-922 open-split race** — fix `46e845eb` on `worktree-agent-a6297ba8dfd1e09ae`; `main` still has the bug.
-- **TSK-1046 scroll-reset on tab/session switch** — fix on `worktree-agent-a7063b42`; VM showed rendered-session ✓ / rendered-tab ✗ / editor-unverifiable → owner on-screen confirm needed before merge (else pivot to CM6-side scroll restore).
+### A. BUILT user-facing fixes — unmerged on worktree branches; verify → merge (highest leverage)
+- [ ] **TSK-921 / 922** — close-split-pane + open-split race; fix `46e845eb` on `worktree-agent-a6297ba8dfd1e09ae`; `main` still has the bug.
+- [ ] **TSK-1046** — scroll-reset on session/tab switch (**owner top priority, still present 2026-06-23**); root-cause in flight; prior warm-cache fix on `worktree-agent-a7063b42` only half-worked (rendered-session ✓ / rendered-tab ✗ / editor unverified).
 
 ### B. Render/VM tails — host/model half shipped, render remains (need the screen)
-1049, 1055, 1101, 1102, 1127/1129/1136/463, 1151, 1175/1176, 1182, 838/1183, 1141.
+- [ ] **1049** off-main image pipeline
+- [ ] **1055** paint commit-on-drag-end · [ ] **1101** paint gesture · [ ] **1102** CSV cell-cursor
+- [ ] **1127 / 1129 / 1136 / 463** LSP completion + workspace-binary-trust
+- [ ] **1151** View↔Edit line-height · [ ] **1175 / 1176** terminal color / history UI
+- [ ] **1182** diff multi-line select · [ ] **838 / 1183** WebView DOM-patch · [ ] **1141** xlsx sheet UI
 
 ### C. Owner-gated — need a decision/flip
-1138 (Tier-D plugin contract), 1202 (folds flip `MDV_RUST_FOLD`), 1213/1215 (formula flip `MDV_RUST_FORMULA`), 1045 (per-session DocumentModel), 854 (kill Swift TS twin — approved, not executed), dep-gated rust lanes 399/584/585/587/835.
+- [ ] **TSK-1215** formula flip (`MDV_RUST_FORMULA`) — parity-clean; ON → live computed CSV formula values (user-facing)
+- [ ] **TSK-1202** folds flip (`MDV_RUST_FOLD`) — backend swap, parity-proven (no new user-visible feature)
+- [ ] **TSK-1138** Tier-D plugin contract · [ ] **1045** per-session DocumentModel · [ ] **854** kill Swift TS twin (approved) · [ ] dep-gated rust lanes 399/584/585/587/835
 
 ### D. Epics (ongoing, slice-and-iterate)
-1048, 537, 538, 379, 694, 697/703/706/713/715/716/722/723, 764, 955/956/957/958.
+- [ ] **1048** image · [ ] **537** code-review · [ ] **538** rust-audit · [ ] **379** rust-migration
+- [ ] **694** log-clustering · [ ] **697/703/706/713/715/716/722/723** P7/P8 wish · [ ] **764** git-reconcile · [ ] **955/956/957/958** feeds/AU/macros/paste
 
 Metadata: TSK-589 `blocker=owner-decision` is stale (resolved 2026-06-19) → pure implementation now.
 
