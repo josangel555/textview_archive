@@ -13,6 +13,25 @@ carried-forward context below. The next-50 list is prioritized by the owner's st
 **user-facing value first** (app bugs + perf the owner can feel → user-facing features →
 internal-quality / rust-core / test work).
 
+## 2026-06-22 — Board reconcile result (7-subagent sweep — THIS is the current accurate picture)
+
+A 7-agent reconcile of the FULL open board (~113 `reported` + ~90 `progress`, project `tasked`) confirmed **the board is ACCURATE** — only 1 task advanced (TSK-1178 → review). The 2026-06-20 sweep had already demoted over-claims to `progress` with children filed for residuals, so there is **no shipped-but-unmarked backlog**. The Next-50 below is the OLD curated capture (kept for context); the buckets here are the verified current state. Open work splits into:
+
+### A. BUILT user-facing fixes — unmerged on worktree branches; verify on VM → merge (highest leverage)
+- **TSK-921 close-split-pane + TSK-922 open-split race** — fix `46e845eb` on `worktree-agent-a6297ba8dfd1e09ae`; `main` still has the bug.
+- **TSK-1046 scroll-reset on tab/session switch** — fix on `worktree-agent-a7063b42`; VM showed rendered-session ✓ / rendered-tab ✗ / editor-unverifiable → owner on-screen confirm needed before merge (else pivot to CM6-side scroll restore).
+
+### B. Render/VM tails — host/model half shipped, render remains (need the screen)
+1049, 1055, 1101, 1102, 1127/1129/1136/463, 1151, 1175/1176, 1182, 838/1183, 1141.
+
+### C. Owner-gated — need a decision/flip
+1138 (Tier-D plugin contract), 1202 (folds flip `MDV_RUST_FOLD`), 1213/1215 (formula flip `MDV_RUST_FORMULA`), 1045 (per-session DocumentModel), 854 (kill Swift TS twin — approved, not executed), dep-gated rust lanes 399/584/585/587/835.
+
+### D. Epics (ongoing, slice-and-iterate)
+1048, 537, 538, 379, 694, 697/703/706/713/715/716/722/723, 764, 955/956/957/958.
+
+Metadata: TSK-589 `blocker=owner-decision` is stale (resolved 2026-06-19) → pure implementation now.
+
 > **Snapshot caveat:** this lane sweep was taken WHILE `board-reconcile-v2` was concurrently
 > refining the OPEN lanes (re-triaging, un-claiming stale leases, merging dupes). A handful of
 > these `TSK-###` ids may have shifted lane / been folded / re-stated since capture. Re-`task_get`
