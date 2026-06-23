@@ -87,9 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // TSK-1243/1247: deliver the VM-GUI-lane launch config (env-independent)
-        // BEFORE any env reader below (skip-restore @ ~350, script @ ~395, …).
-        Self.applyLaunchConfigFileIfPresent()
         // TSK-636: core-call auditing at the transport seam. FAILURES only —
         // successes are routine and high-volume (fuzzy ranks per palette
         // keystroke); a failing/panicking core is the security signal.
@@ -3851,6 +3848,17 @@ func activateIfForeground() {
     guard ProcessInfo.processInfo.environment["MDV_BACKGROUND"] != "1" else { return }
     NSApp.activate(ignoringOtherApps: true)
 }
+
+// TSK-1243/1247: deliver the VM-GUI-lane launch config at the VERY START of
+// module execution — BEFORE the env-mode detection below and before app.run().
+// A LaunchServices launch under `sudo -u` delivers neither the `open --env` vars
+// NOR (verified) an AppDelegate.didFinishLaunching that runs our config-read (the
+// /tmp config file was left UNconsumed when the read lived there). Module-scope
+// code provably runs (app.run() at the bottom does → the app launches), so read
+// the harness's config file + setenv each knob HERE; every downstream
+// ProcessInfo.environment read (skip-restore @ ~378, artifact dir, script path)
+// then sees them. Absent in prod ⇒ no-op.
+AppDelegate.applyLaunchConfigFileIfPresent()
 
 let app = NSApplication.shared
 
