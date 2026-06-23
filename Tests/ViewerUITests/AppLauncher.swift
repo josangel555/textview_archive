@@ -204,8 +204,18 @@ enum AppLauncher {
             }
             p.environment = env
         }
+        // TSK-1243: capture the launch process's stderr to a stable per-run log
+        // instead of /dev/null. The viaOpen GUI-lane launch
+        // (`sudo -n -u <consoleUser> open -n -W -a <app>`) can fail silently — a
+        // sudo/open/LaunchServices error in the asuser-root context yields 0 step
+        // dumps + a 30s poll-timeout with NO clue why (the KEY-02/SAP-01 symptom).
+        // Leaving the error on disk (/tmp survives the artifacts cleanup; the
+        // artifacts UUID keys it so parallel runs don't clobber) makes the next VM
+        // run diagnosable. Working (direct-spawn) modes write little/nothing here.
+        let launchLog = "/tmp/mdv-launch-\(artifacts.lastPathComponent).log"
+        FileManager.default.createFile(atPath: launchLog, contents: nil)
         p.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-        p.standardError  = FileHandle(forWritingAtPath: "/dev/null")
+        p.standardError  = FileHandle(forWritingAtPath: launchLog) ?? FileHandle(forWritingAtPath: "/dev/null")
         try p.run()
         // Give the window a beat to appear. We don't activate via
         // osascript anymore — see env var above. Tradeoff: PNG
