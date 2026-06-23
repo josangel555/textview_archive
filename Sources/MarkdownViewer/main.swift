@@ -92,13 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// TSK-1243: idempotency latch so the normal auto-fired didFinishLaunching and the
     /// viaOpen force-call fallback never run the launch sequence twice.
     nonisolated(unsafe) static var launchSequenceRan = false
-    /// TEMP (TSK-1243): write a /tmp marker (CREATE) to pinpoint where the viaOpen
-    /// script path stops. The first ABSENT marker after a run = the stop.
-    nonisolated static func diagMark(_ name: String, _ detail: String = "") {
-        guard launchConfigPresent else { return }
-        try? detail.write(
-            toFile: "/tmp/mdv-mark-\(name).txt", atomically: true, encoding: .utf8)
-    }
 
     static func applyLaunchConfigFileIfPresent() {
         // FIXED ABSOLUTE path (not HOME-relative): a LaunchServices-launched app
@@ -109,7 +102,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let path = "/tmp/mdv-launch-config.env"
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
         launchConfigPresent = true
-        diagMark("A-MODULE", "module-scope reached; config read OK")
         for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
             let kv = line.split(separator: "=", maxSplits: 1).map(String.init)
             guard kv.count == 2, !kv[0].isEmpty else { continue }
@@ -119,7 +111,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Self.diagMark("B-DFL-ENTRY", "applicationDidFinishLaunching reached")
         // TSK-1243: idempotent. Under the viaOpen VM launch AppKit doesn't post this
         // (no launch Apple Event under sudo-u LS), so a module-scope fallback force-
         // calls it; the latch ensures the normal auto-fire + the fallback never run
@@ -518,9 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if autoSnapshotDelay >= 0 {
             scheduleAutoSnapshot(after: autoSnapshotDelay, forceSource: forceSource)
         }
-        Self.diagMark("C-PRERUN", "scriptPath=\(scriptPath ?? "NIL") env.MDV_SCRIPT_PATH=\(Self.mdvLiveEnv("MDV_SCRIPT_PATH") ?? "NIL") env.MDV_ARTIFACT_DIR=\(Self.mdvLiveEnv("MDV_ARTIFACT_DIR") ?? "NIL")")
         if let scriptPath {
-            Self.diagMark("D-RUNSCRIPT", "calling runScript")
             runScript(at: scriptPath)
         }
         if let walkthroughPath {

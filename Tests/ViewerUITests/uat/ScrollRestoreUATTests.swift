@@ -48,6 +48,11 @@ final class ScrollRestoreUATTests: MultiScenarioTestCase {
     // We open files, scroll live WebViews (need load+layout to settle), switch
     // sessions/tabs, and probe live scroll — give the WebViews room to mount.
     override class var defaultScenarioTimeout: TimeInterval { 90 }
+    // TSK-1243: live WebView/CM6 scroll only renders when the app is genuinely
+    // ACTIVATED (LaunchServices) — a fork/exec'd sudo-direct spawn isn't, on
+    // macOS 14+. viaOpen activates it; its launch config + --script now run via the
+    // AppDelegate module-scope fallback (LS-under-sudo doesn't post didFinishLaunching).
+    override class var launchViaOpen: Bool { true }
 
     // A document long enough to scroll meaningfully in both lenses.
     private func longMarkdown(_ leadHeading: String) -> String {
