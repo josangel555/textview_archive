@@ -306,17 +306,25 @@ extension AppDelegate {
     /// Synchronously sample the live rendered `window.scrollY`, pumping the run
     /// loop until the async read lands. nil when no preview is mounted / times out.
     private func sampleLiveRenderedScroll() -> Double? {
-        guard let webView = MarkdownRenderedRegistry.shared.current() else { return nil }
+        let n = MarkdownRenderedRegistry.shared.liveEntryCount
+        guard let webView = MarkdownRenderedRegistry.shared.current() else {
+            LiveScrollProbe.lastProbeDiag = "sample:no-current entries=\(n)"
+            return nil
+        }
         var result: Double?
         var done = false
-        webView.evaluateJavaScript("window.scrollY") { value, _ in
+        var evalErr: Error?
+        webView.evaluateJavaScript("window.scrollY") { value, err in
             if let y = (value as? NSNumber)?.doubleValue { result = y }
+            evalErr = err
             done = true
         }
         let budget = Date().addingTimeInterval(0.5)
         while !done && Date() < budget {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
+        LiveScrollProbe.lastProbeDiag =
+            "sample done=\(done) result=\(result.map { String($0) } ?? "nil") err=\(evalErr.map { "\($0)" } ?? "nil") entries=\(n) key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
         return result
     }
 
