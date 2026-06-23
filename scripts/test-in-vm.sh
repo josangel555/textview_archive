@@ -296,6 +296,18 @@ case "$MODE" in
     ;;
   test)
     ensure_tools
+    # TSK-1245: self-heal root-owned .build (TSK-502 class) BEFORE testing. A
+    # prior GUI-lane `build` (build-app.sh runs as root via launchctl-asuser)
+    # leaves root-owned files in .build; a following `swift test` then SILENTLY
+    # runs 0 XCTest tests ("Test run with 0 tests in 0 suites" + no XCTest body)
+    # — a false-negative that masquerades as a pass. Same guarded in-sudo chown
+    # the `clean` mode uses; only fires when root-owned residue is present (no-op
+    # otherwise). Verified 2026-06-22 (run byrtcus2k): chown+test ran the MFV
+    # suite where the immediately-prior `build && test` had run 0.
+    if find .build -not -user "$(whoami)" -print -quit 2>/dev/null | grep -q .; then
+      log "TSK-1245: root-owned files in .build — chown -R $(whoami) via sudo before test"
+      printf '%s\n' "${MDV_VM_SUDO_PASSWORD:-<vm-sudo-password>}" | sudo -S chown -R "$(whoami)" .build
+    fi
     # Forward everything after the mode word (e.g. `test --filter Suite`)
     # to `swift test`. run_tests already handled a filter list — the
     # dispatch just never passed it, so filters were silently ignored
