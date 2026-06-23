@@ -54,6 +54,19 @@ log() { printf "==> %s\n" "$*"; }
 # headless posture as test-headless-gate.sh so no window ever opens.
 export MDV_HEADLESS_GATE=1
 
+# TSK-1246: the instrumented run emits one .profraw per test (~8900 → ~23GB) into
+# COV_SCRATCH; on a near-full disk it ENOSPCs mid-run (hard enough to kill captured
+# output). Fail fast with a clear message if free disk is below the threshold — a
+# gate that can't MEASURE must SIGNAL (exit non-zero), not ENOSPC mid-run or
+# silently pass. Reap the .profraw on exit so they don't pile up ~23GB across runs.
+MIN_FREE_MB="${COV_MIN_FREE_MB:-35000}"
+FREE_MB="$(df -m "$ROOT_DIR" 2>/dev/null | awk 'NR==2{print $4}')"
+if [[ -n "$FREE_MB" && "$FREE_MB" -lt "$MIN_FREE_MB" ]]; then
+  echo "coverage-gate: only ${FREE_MB}MB free (<${MIN_FREE_MB}MB needed for the ~23GB of instrumented .profraw) — refusing to run to avoid ENOSPC. Free disk or lower COV_MIN_FREE_MB." >&2
+  exit 2
+fi
+trap 'find "$COV_SCRATCH" -name "*.profraw" -delete 2>/dev/null || true' EXIT
+
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   log "build Rust core (mdvcore staticlib) — required for the RustCore static link"
   bash "$SCRIPT_DIR/build-rust-core.sh"

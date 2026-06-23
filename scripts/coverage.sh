@@ -16,6 +16,20 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 0
 
+# TSK-1246: the instrumented run emits one .profraw PER TEST (~8900 → ~23GB) into
+# .build; on a near-full disk it ENOSPCs mid-run (hard enough to kill the harness
+# output). Fail fast (non-gating: exit 0) if free disk is below the threshold, and
+# clean the .profraw on exit so they don't accumulate ~23GB across runs.
+min_free_mb="${COV_MIN_FREE_MB:-35000}"
+free_mb="$(df -m . 2>/dev/null | awk 'NR==2{print $4}')"
+if [ -n "$free_mb" ] && [ "$free_mb" -lt "$min_free_mb" ]; then
+  echo "==> coverage.sh: only ${free_mb}MB free (<${min_free_mb}MB needed for the ~23GB of instrumented .profraw) — skipping to avoid ENOSPC. Free disk or lower COV_MIN_FREE_MB. (exit 0, non-gating)"
+  exit 0
+fi
+# Reap the per-test .profraw on exit (the merge below has already consumed them;
+# the report is printed to stdout, not kept in .build) so they don't pile up.
+trap 'find .build -name "*.profraw" -delete 2>/dev/null || true' EXIT
+
 echo "==> swift test --enable-code-coverage ${FILTER:+(filter: $FILTER)} — runs the suite…"
 # NB: expand no array under `set -u` — macOS bash 3.2 errors on "${empty[@]}".
 if [ -n "${FILTER:-}" ]; then
