@@ -1109,6 +1109,9 @@ public final class MarkdownRenderedRegistry {
     private func prune() {
         entries.removeAll { $0.value == nil }
     }
+
+    /// TSK-1046 diag: count of live (non-nil) registered preview WebViews.
+    public var liveEntryCount: Int { entries.compactMap { $0.value }.count }
 }
 
 /// TSK-1046 — a side-channel the `capture-rendered-scroll` script verb writes the
@@ -1122,6 +1125,10 @@ public enum LiveScrollProbe {
     /// preview. `-1` until the first `capture-rendered-scroll` verb resolves;
     /// reset between scenarios by the harness via `reset()`.
     public static var renderedScrollY: Double = -1
+    /// TSK-1046 diag: why the last rendered probe produced its value — distinguishes
+    /// no-current-webview vs eval-pending (async unresolved before the dump) vs
+    /// eval-failed (JS returned nil / errored) vs ok. Surfaced in the dump.
+    public static var lastProbeDiag: String = "init"
 
     /// TSK-1047 — the most recently probed LIVE CM6 editor scroll, read straight
     /// off the active editor WebView's `__mdvView.scrollDOM.scrollTop`. This is
@@ -1146,13 +1153,20 @@ public enum LiveScrollProbe {
     /// post-verb settle delay elapses, so the next dump reflects it. No-op (and
     /// leaves the prior value) when no preview is mounted.
     public static func captureRenderedScroll() {
+        let n = MarkdownRenderedRegistry.shared.liveEntryCount
         guard let webView = MarkdownRenderedRegistry.shared.current() else {
             renderedScrollY = -1
+            lastProbeDiag = "no-current entries=\(n)"
             return
         }
-        webView.evaluateJavaScript("window.scrollY") { value, _ in
+        lastProbeDiag = "pending entries=\(n) hasURL=\(webView.url != nil) key=\(webView.window?.isKeyWindow ?? false)"
+        webView.evaluateJavaScript("window.scrollY") { value, err in
             if let y = (value as? NSNumber)?.doubleValue {
                 LiveScrollProbe.renderedScrollY = y
+                LiveScrollProbe.lastProbeDiag = "ok y=\(y)"
+            } else {
+                LiveScrollProbe.lastProbeDiag =
+                    "eval-fail v=\(String(describing: value)) e=\(String(describing: err))"
             }
         }
     }

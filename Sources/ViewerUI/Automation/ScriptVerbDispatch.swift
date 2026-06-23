@@ -783,6 +783,7 @@ public enum ScriptVerb {
             // surface's scroll-restore — the dump can't read a live WebView, so the
             // verb stashes it in `LiveScrollProbe` for the following dump to surface.
             "renderedScrollY": LiveScrollProbe.renderedScrollY,
+            "renderedProbeDiag": LiveScrollProbe.lastProbeDiag,
             // TSK-1047: the LIVE CM6 scroll the active editor WebView ACTUALLY
             // holds on screen, read straight off `__mdvView` by the
             // `capture-editor-scroll` / `wait-editor-line` verbs (−1 until one
