@@ -48,7 +48,7 @@ extension AppDelegate {
             // Give launch one full second to settle (window appears, file loads).
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             for (step, line) in lines.enumerated() {
-                self.runScriptStep(line)
+                await self.runScriptStep(line)
                 // Settle window per step before snapshotting. A `delay SECS`
                 // verb pauses for its arg (parsed as seconds) so FSEvents /
                 // the accordion / a git re-list can settle past 300 ms; every
@@ -78,7 +78,7 @@ extension AppDelegate {
         return UInt64(clamped * 1_000_000_000)
     }
 
-    func runScriptStep(_ line: String) {
+    func runScriptStep(_ line: String) async {
         // Keystone (§3.1): the bulk of the verb dispatch — every model /
         // sessions verb — now lives in the free function
         // `ScriptVerb.apply(verb:to:sessions:)` (ViewerUI), so the same
@@ -135,7 +135,7 @@ extension AppDelegate {
             // bounded timeout elapses — and stashes the settled live value into
             // `LiveScrollProbe` so the following dump surfaces `liveEditorTopLine`.
             if let n = Int(arg), n >= 1 {
-                waitForEditorTopLine(atLeast: n)
+                await waitForEditorTopLine(atLeast: n)
             }
         case "wait-rendered-scroll":
             // TSK-1047 (VM scroll-restore test SETUP): the rendered-preview twin
@@ -143,7 +143,7 @@ extension AppDelegate {
             // reaches ~N (the genuine on-screen offset), stashing the settled
             // value into `LiveScrollProbe.renderedScrollY` for the next dump.
             if let y = Double(arg), y >= 0 {
-                waitForRenderedScroll(atLeast: y)
+                await waitForRenderedScroll(atLeast: y)
             }
         case "diagnostic-window":
             // WAVE 2b item 4: open the diagnostic tool window (gated).
@@ -242,23 +242,23 @@ extension AppDelegate {
         // Generous budgets (sample 4s, poll 25s) make the live read reliable; the
         // per-scenario timeout is 90s.
         timeout: TimeInterval = 25.0
-    ) {
+    ) async {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let line = sampleLiveEditorTopLine(), line >= target - tolerance {
+            if let line = await sampleLiveEditorTopLine(), line >= target - tolerance {
                 // Settled within tolerance — record the live value for the dump.
                 LiveScrollProbe.editorScrollTop = Double(max(0, line))
                 LiveScrollProbe.editorTopLine = line
                 return
             }
-            // Pump the run loop so the async JS read + CM6's own scroll settle
-            // can advance before the next sample.
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            // Yield ~150ms so the async JS read + CM6's own scroll settle can
+            // advance before the next sample (await, not a nested RunLoop pump).
+            try? await Task.sleep(nanoseconds: 150_000_000)
         }
         // Timed out — leave the LAST observed value in the probe (a final read so
         // the dump shows where it actually got, surfacing a genuine failure
         // instead of a stale -1).
-        if let line = sampleLiveEditorTopLine() {
+        if let line = await sampleLiveEditorTopLine() {
             LiveScrollProbe.editorScrollTop = Double(max(0, line))
             LiveScrollProbe.editorTopLine = line
         }
@@ -273,16 +273,16 @@ extension AppDelegate {
         // TSK-1046: 25s (was 6s) — see waitForEditorTopLine; slow GUI-lane
         // WebContent IPC needs a generous budget for the live window.scrollY read.
         timeout: TimeInterval = 25.0
-    ) {
+    ) async {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let y = sampleLiveRenderedScroll(), y >= target - tolerance {
+            if let y = await sampleLiveRenderedScroll(), y >= target - tolerance {
                 LiveScrollProbe.renderedScrollY = y
                 return
             }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            try? await Task.sleep(nanoseconds: 150_000_000)
         }
-        if let y = sampleLiveRenderedScroll() {
+        if let y = await sampleLiveRenderedScroll() {
             LiveScrollProbe.renderedScrollY = y
         }
     }
@@ -291,48 +291,39 @@ extension AppDelegate {
     /// shared read JS and pumping the run loop until the async result lands (or a
     /// short per-sample budget elapses). Returns nil when no editor is mounted /
     /// CM6 isn't up yet / the read times out.
-    private func sampleLiveEditorTopLine() -> Int? {
+    private func sampleLiveEditorTopLine() async -> Int? {
         guard let webView = CodeMirrorEditorRegistry.shared.current() else { return nil }
-        var result: Int?
-        var done = false
-        webView.evaluateJavaScript(LiveScrollProbe.editorScrollReadJS) { value, _ in
-            if let dict = value as? [String: Any],
-               (dict["ok"] as? Bool) == true,
-               let line = (dict["line"] as? NSNumber)?.intValue {
-                result = line
-            }
-            done = true
-        }
-        let budget = Date().addingTimeInterval(4.0)
-        while !done && Date() < budget {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-        }
-        return result
+        // TSK-1046: await the async evaluateJavaScript API rather than pumping a
+        // nested RunLoop.run inside this @MainActor Task — the nested-runloop pattern
+        // intermittently STARVED the WKWebView completion under the VM GUI lane
+        // (root WebContent IPC), making the live read flaky (done=false). The async
+        // API lets the executor service the IPC reply correctly.
+        let value = try? await webView.evaluateJavaScript(LiveScrollProbe.editorScrollReadJS)
+        guard let dict = value as? [String: Any], (dict["ok"] as? Bool) == true,
+              let line = (dict["line"] as? NSNumber)?.intValue else { return nil }
+        return line
     }
 
     /// Synchronously sample the live rendered `window.scrollY`, pumping the run
     /// loop until the async read lands. nil when no preview is mounted / times out.
-    private func sampleLiveRenderedScroll() -> Double? {
+    private func sampleLiveRenderedScroll() async -> Double? {
         let n = MarkdownRenderedRegistry.shared.liveEntryCount
         guard let webView = MarkdownRenderedRegistry.shared.current() else {
             LiveScrollProbe.lastProbeDiag = "sample:no-current entries=\(n)"
             return nil
         }
-        var result: Double?
-        var done = false
-        var evalErr: Error?
-        webView.evaluateJavaScript("window.scrollY") { value, err in
-            if let y = (value as? NSNumber)?.doubleValue { result = y }
-            evalErr = err
-            done = true
+        // TSK-1046: await the async API (see sampleLiveEditorTopLine) — the old
+        // nested RunLoop.run pump starved the WKWebView IPC reply under the GUI lane.
+        do {
+            let value = try await webView.evaluateJavaScript("window.scrollY")
+            let y = (value as? NSNumber)?.doubleValue
+            LiveScrollProbe.lastProbeDiag =
+                "sample y=\(y.map { String($0) } ?? "nil") entries=\(n) key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
+            return y
+        } catch {
+            LiveScrollProbe.lastProbeDiag = "sample:throw \(error) entries=\(n)"
+            return nil
         }
-        let budget = Date().addingTimeInterval(4.0)
-        while !done && Date() < budget {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-        }
-        LiveScrollProbe.lastProbeDiag =
-            "sample done=\(done) result=\(result.map { String($0) } ?? "nil") err=\(evalErr.map { "\($0)" } ?? "nil") entries=\(n) key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
-        return result
     }
 
     func captureStepArtifacts(step: Int, label: String) {
