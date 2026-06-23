@@ -420,9 +420,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 "MDV_BACKGROUND=\(environment["MDV_BACKGROUND"] ?? "<unset>")",
                 "pathArgs=\(pathArgs)",
             ].joined(separator: "\n")
-            try? probe.write(
-                toFile: "/tmp/mdv-appenv-\(ProcessInfo.processInfo.processIdentifier).log",
-                atomically: true, encoding: .utf8)
+            let pid = ProcessInfo.processInfo.processIdentifier
+            // TSK-1243 dual-path probe: /tmp (atomic) vs the app's HOME
+            // (non-atomic). If HOME appears but /tmp doesn't → the LS-launched
+            // console-user app's literal /tmp write is the blocker (use a
+            // non-/tmp artifact path for viaOpen). If NEITHER appears → this
+            // block isn't reached on the viaOpen launch (instrument the entry).
+            try? probe.write(toFile: "/tmp/mdv-appenv-\(pid).log",
+                             atomically: true, encoding: .utf8)
+            try? probe.write(toFile: "\(NSHomeDirectory())/mdv-appenv-\(pid).log",
+                             atomically: false, encoding: .utf8)
         }
         // CORR-10: open EVERY positional path, not just the first. The
         // first opens via `openPath` (reuses/replaces the initial blank
