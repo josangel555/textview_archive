@@ -182,7 +182,14 @@ enum AppLauncher {
             for pair in openEnv { argv += ["--env", pair] }
             argv += ["-a", appBundlePath]
             if let user = spawnUser {
-                argv = ["/usr/bin/sudo", "-n", "-u", user] + argv
+                // -H: set HOME to the TARGET user's home. Without it sudo keeps the
+                // caller's HOME (=/var/root under the launchctl-asuser ROOT xctest),
+                // so the LS-launched app got NSHomeDirectory()=/var/root and wrote
+                // prefs/artifacts into root's home — invisible to the harness
+                // (TSK-1243; proven by mdv-*.plist in /var/root/Library/Preferences).
+                // NB: this fixes the HOME half only; env delivery via `open --env`
+                // under sudo may still need a config-file fallback — see TSK-1243.
+                argv = ["/usr/bin/sudo", "-n", "-H", "-u", user] + argv
             }
             p.executableURL = URL(fileURLWithPath: argv[0])
             p.arguments = Array(argv.dropFirst())
