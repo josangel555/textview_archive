@@ -398,6 +398,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if pathArgs.isEmpty, let envFile = environment["MDV_OPEN_FILE"] {
             pathArgs.append(envFile)
         }
+        // TSK-1243: when test-spawned, record what the app actually SAW from the
+        // launch env. The viaOpen GUI lane delivers MDV_SCRIPT_PATH/
+        // MDV_ARTIFACT_DIR via `open --env` (LS drops --prefixed argv), and the
+        // 0-dumps symptom (app launches GUI-active but produces no step dumps)
+        // points at those env vars NOT reaching the app under `sudo -u open`.
+        // This pid-keyed /tmp probe (survives the harness cleanup; test-only)
+        // confirms whether the env delivered. Cheap; remove once the path is fixed.
+        if environment["MDV_TEST_INSTANCE"] == "1" {
+            let probe = [
+                "scriptPath(resolved)=\(scriptPath ?? "<nil>")",
+                "MDV_SCRIPT_PATH=\(environment["MDV_SCRIPT_PATH"] ?? "<unset>")",
+                "MDV_ARTIFACT_DIR=\(environment["MDV_ARTIFACT_DIR"] ?? "<unset>")",
+                "MDV_OPEN_FILE=\(environment["MDV_OPEN_FILE"] ?? "<unset>")",
+                "pathArgs=\(pathArgs)",
+            ].joined(separator: "\n")
+            try? probe.write(
+                toFile: "/tmp/mdv-appenv-\(ProcessInfo.processInfo.processIdentifier).log",
+                atomically: true, encoding: .utf8)
+        }
         // CORR-10: open EVERY positional path, not just the first. The
         // first opens via `openPath` (reuses/replaces the initial blank
         // tab and detects folder-vs-file); subsequent paths each get
