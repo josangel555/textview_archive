@@ -302,13 +302,14 @@ extension AppDelegate {
         // (root WebContent IPC), making the live read flaky (done=false). The async
         // API lets the executor service the IPC reply correctly.
         do {
-            let value = try await webView.evaluateJavaScript(LiveScrollProbe.editorScrollReadJS)
-            let dict = value as? [String: Any]
-            let ok = (dict?["ok"] as? Bool) ?? false
-            let line = (dict?["line"] as? NSNumber)?.intValue
+            // PRIMITIVE read (editorTopLineJS → Number): the async API throws
+            // WKError Code 5 on an OBJECT result, so we MUST NOT use the {ok,top,line}
+            // dict here (that's editorScrollReadJS, for the completion-handler path).
+            let value = try await webView.evaluateJavaScript(LiveScrollProbe.editorTopLineJS)
+            let line = (value as? NSNumber)?.intValue
             LiveScrollProbe.lastEditorProbeDiag =
-                "ok=\(ok) line=\(line.map { String($0) } ?? "nil") err=\(dict?["err"].map { "\($0)" } ?? "-") key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
-            guard ok, let line else { return nil }
+                "line=\(line.map { String($0) } ?? "nil") key=\(webView.window?.isKeyWindow ?? false) url=\(webView.url?.lastPathComponent ?? "nil")"
+            guard let line, line >= 1 else { return nil }   // -1 = CM6 not up yet
             return line
         } catch {
             LiveScrollProbe.lastEditorProbeDiag = "throw \(error)"
