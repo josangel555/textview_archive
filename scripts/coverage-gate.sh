@@ -65,8 +65,15 @@ swift test --enable-code-coverage --parallel --scratch-path "$COV_SCRATCH"
 TEST_RC=$?
 set -e
 if [[ $TEST_RC -ne 0 ]]; then
-  log "FAILED: instrumented swift test exited $TEST_RC — coverage not measured"
-  exit "$TEST_RC"
+  # TSK-1238: do NOT gate on this exit. `swift test --enable-code-coverage
+  # --parallel` exits non-zero on a benign coverage+parallel trigger even when
+  # no test failed; the HEADLESS GATE (scripts/test-headless-gate.sh) is the
+  # pass/fail authority. coverage-gate's job is to MEASURE coverage and gate on
+  # the COVERAGE THRESHOLD (coverage_gate.py below) — so note the exit and
+  # continue to measurement instead of failing here (matches the script's own
+  # "non-gating by default" contract; gating on TEST_RC made it exit 3 on
+  # essentially every run, same root cause as the coverage.sh defect TSK-1233).
+  log "note: instrumented swift test exited $TEST_RC (benign coverage+parallel trigger; pass/fail is the headless gate's authority) — measuring coverage anyway"
 fi
 
 # `swift test --enable-code-coverage` writes a merged .profdata under
@@ -81,7 +88,28 @@ if [[ -z "$PROFDATA" || ! -f "$PROFDATA" ]]; then
   PROFDATA="$(find "$COV_SCRATCH" -name 'default.profdata' -path '*codecov*' 2>/dev/null | head -1)"
 fi
 if [[ -z "$PROFDATA" || ! -f "$PROFDATA" ]]; then
-  echo "coverage-gate: could not locate default.profdata under $COV_SCRATCH" >&2
+  # TSK-1238: SwiftPM only auto-merges default.profdata on a 0-exit, but the
+  # instrumented --parallel run exits non-zero (benign), so it's usually absent.
+  # Merge the raw .profraw ourselves — same fallback coverage.sh uses (TSK-1233):
+  #  - `-f <listfile>` (NOT argv): a full run leaves 6000-9000 .profraw and the
+  #    expanded argv blows ARG_MAX (silently merged nothing before the -f fix).
+  #  - `--failure-mode=warn`: the non-zero-exit run leaves CORRUPT partial
+  #    .profraw; warn-mode skips them instead of aborting the whole merge.
+  log "default.profdata absent (expected on the non-zero coverage run) — manual llvm-profdata merge"
+  RAWS_LIST="$(mktemp -t mdv-gate-profraws.XXXXXX)"
+  find "$COV_SCRATCH" -name '*.profraw' 2>/dev/null > "$RAWS_LIST"
+  if [[ -s "$RAWS_LIST" ]]; then
+    MERGED="$COV_SCRATCH/mdv-coverage-gate.profdata"
+    xcrun llvm-profdata merge -sparse --failure-mode=warn -f "$RAWS_LIST" -o "$MERGED" 2>/dev/null || true
+    if [[ -f "$MERGED" ]]; then
+      PROFDATA="$MERGED"
+      log "manual-merged profdata: $PROFDATA ($(grep -c . "$RAWS_LIST") profraw inputs)"
+    fi
+  fi
+  rm -f "$RAWS_LIST"
+fi
+if [[ -z "$PROFDATA" || ! -f "$PROFDATA" ]]; then
+  echo "coverage-gate: could not locate or merge default.profdata under $COV_SCRATCH" >&2
   exit 3
 fi
 log "profdata: $PROFDATA"
