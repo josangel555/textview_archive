@@ -236,7 +236,12 @@ extension AppDelegate {
     private func waitForEditorTopLine(
         atLeast target: Int,
         tolerance: Int = 8,
-        timeout: TimeInterval = 6.0
+        // TSK-1046: 25s (was 6s). Under the VM GUI lane the WKWebView WebContent
+        // IPC for evaluateJavaScript is slow/cold — the probe diag showed done=false
+        // at the old 0.5s sample budget / 6s timeout, with only occasional done=true.
+        // Generous budgets (sample 4s, poll 25s) make the live read reliable; the
+        // per-scenario timeout is 90s.
+        timeout: TimeInterval = 25.0
     ) {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -265,7 +270,9 @@ extension AppDelegate {
     private func waitForRenderedScroll(
         atLeast target: Double,
         tolerance: Double = 40,
-        timeout: TimeInterval = 6.0
+        // TSK-1046: 25s (was 6s) — see waitForEditorTopLine; slow GUI-lane
+        // WebContent IPC needs a generous budget for the live window.scrollY read.
+        timeout: TimeInterval = 25.0
     ) {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -296,7 +303,7 @@ extension AppDelegate {
             }
             done = true
         }
-        let budget = Date().addingTimeInterval(0.5)
+        let budget = Date().addingTimeInterval(4.0)
         while !done && Date() < budget {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
@@ -319,7 +326,7 @@ extension AppDelegate {
             evalErr = err
             done = true
         }
-        let budget = Date().addingTimeInterval(0.5)
+        let budget = Date().addingTimeInterval(4.0)
         while !done && Date() < budget {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
