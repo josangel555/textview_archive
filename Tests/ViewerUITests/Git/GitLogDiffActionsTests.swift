@@ -1,5 +1,6 @@
 import XCTest
 import ViewerCore
+import TestSupport
 @testable import ViewerUI
 
 /// TSK-522/523/620 — the Git Log row/toolbar EXACT action closures
@@ -16,12 +17,7 @@ final class GitLogDiffActionsTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        repo = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GitLogActions-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
-        try git("init", "-q", "-b", "main")
-        try git("config", "user.email", "t@t")
-        try git("config", "user.name", "t")
+        repo = try GitTestRepo.makeRepo(prefix: "GitLogActions", email: "t@t", name: "t")
         for (i, body) in ["one\n", "one\ntwo\n", "one\ntwo\nthree\n"].enumerated() {
             try body.write(to: repo.appendingPathComponent("f.txt"),
                            atomically: true, encoding: .utf8)
