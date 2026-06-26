@@ -97,6 +97,34 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "TSK-1186: promote decreases the heading level (## → #)")
     }
 
+    func test_sortLines_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("s.txt", "c\na\nb\n")
+        XCTAssertTrue(apply("edit-sort-lines", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "a\nb\nc\n", "TSK-1186: lines sorted ascending")
+    }
+
+    func test_sortLinesDescending_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("sd.txt", "a\nc\nb\n")
+        XCTAssertTrue(apply("edit-sort-lines-desc", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "c\nb\na\n", "TSK-1186: lines sorted descending")
+    }
+
+    func test_reverseLines_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("r.txt", "a\nb\nc\n")
+        XCTAssertTrue(apply("edit-reverse-lines", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "c\nb\na\n", "TSK-1186: line order reversed")
+    }
+
+    func test_removeDuplicateLines_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("dup.txt", "a\nb\na\nc\nb\n")
+        XCTAssertTrue(apply("edit-remove-duplicate-lines", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "a\nb\nc\n", "TSK-1186: duplicate lines removed (first kept)")
+    }
+
     /// Every new verb must be RECOGNIZED by the dispatcher (a no-op on a
     /// non-applicable file still returns true — the verb is known). Guards the
     /// registry↔dispatcher vocabulary wiring for every command in the slice.
@@ -109,6 +137,8 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "edit-minify-json", "edit-insert-toc", "edit-insert-date",
             "edit-uppercase", "edit-lowercase", "edit-capitalize",
             "edit-promote-heading", "edit-demote-heading",
+            "edit-sort-lines", "edit-sort-lines-desc",
+            "edit-reverse-lines", "edit-remove-duplicate-lines",
             "toggle-view-only",
         ] {
             XCTAssertTrue(apply(verb, on: model), "\(verb) must be a recognized script verb")

@@ -89,6 +89,8 @@ final class CommandRegistryTests: XCTestCase {
             // case transforms surfaced to the palette (TSK-1113)
             "edit-uppercase", "edit-lowercase", "edit-capitalize",
             "edit-promote-heading", "edit-demote-heading",
+            "edit-sort-lines", "edit-sort-lines-desc",
+            "edit-reverse-lines", "edit-remove-duplicate-lines",
             "edit-remove-empty-lines", "edit-collapse-blank-lines",
             "edit-trim-trailing", "edit-ensure-final-newline",
             "edit-minify-json", "edit-insert-toc", "edit-insert-date",

@@ -230,6 +230,19 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "edit.demoteHeading", title: "Demote Heading", category: .edit,
             scriptVerb: "edit-demote-heading"),
+        // TSK-1186: line ops (sort/reverse/dedup) had model methods but no verbs.
+        CommandDescriptor(
+            id: "edit.sortLines", title: "Sort Lines (Ascending)", category: .edit,
+            scriptVerb: "edit-sort-lines"),
+        CommandDescriptor(
+            id: "edit.sortLinesDescending", title: "Sort Lines (Descending)", category: .edit,
+            scriptVerb: "edit-sort-lines-desc"),
+        CommandDescriptor(
+            id: "edit.reverseLines", title: "Reverse Lines", category: .edit,
+            scriptVerb: "edit-reverse-lines"),
+        CommandDescriptor(
+            id: "edit.removeDuplicateLines", title: "Remove Duplicate Lines", category: .edit,
+            scriptVerb: "edit-remove-duplicate-lines"),
         CommandDescriptor(
             // TSK-904: "Compact" keyword so the palette finds the inverse of
             // Pretty-Print under its common synonym, not just "minify".

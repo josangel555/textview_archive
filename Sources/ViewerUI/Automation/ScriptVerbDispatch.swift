@@ -140,6 +140,11 @@ public enum ScriptVerb {
         // TSK-1186: heading promote/demote (MarkdownHeadingShift) — menu-only until now.
         case "edit-promote-heading":       _ = model.shiftActiveMarkdownHeadings(by: -1)
         case "edit-demote-heading":        _ = model.shiftActiveMarkdownHeadings(by: 1)
+        // TSK-1186: line ops (sort/reverse/dedup) — menu-only model methods until now.
+        case "edit-sort-lines":            _ = model.sortActiveFileLines(ascending: true)
+        case "edit-sort-lines-desc":       _ = model.sortActiveFileLines(ascending: false)
+        case "edit-reverse-lines":         _ = model.reverseActiveFileLines()
+        case "edit-remove-duplicate-lines": _ = model.removeDuplicateActiveFileLines()
         // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.
