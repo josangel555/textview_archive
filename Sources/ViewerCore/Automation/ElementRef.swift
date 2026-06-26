@@ -129,3 +129,38 @@ public enum ElementRef: Equatable, Sendable {
         return nil
     }
 }
+
+// TSK-1256 slice 2 (resolver plan) — the typed action an `ElementRef` resolves to.
+//
+// Pure-logic only: `ElementRef → ElementResolution`. The EXECUTION (AX activate,
+// cmDispatch goto/select, file load + reveal, tab select) is the render/VM slice;
+// this is the host-testable CONTRACT the out-of-process driver, the in-app
+// resolver, and `URLSchemeRouter` all dispatch on — so every ref kind is
+// guaranteed to map to exactly one resolvable action, carrying its params
+// through, and a regression (a kind that stops resolving) fails on the host gate.
+public enum ElementResolution: Equatable, Sendable {
+    /// Find + activate a native element via the AX driver (`AXDriverCore.find`).
+    case activateAX(AXQuery)
+    /// Scroll/caret a WebView document to a 1-based line (cmDispatch goto-line).
+    case gotoWebLine(docId: String, line: Int)
+    /// Select + reveal a WebView DOM node (querySelector + scrollIntoView).
+    case selectWebNode(docId: String, selector: String)
+    /// Open a file (deep-load when unmounted), optionally revealing a 1-based line.
+    case openFile(path: String, line: Int?)
+    /// Select an existing tab by its stable id.
+    case selectTab(id: String)
+}
+
+extension ElementRef {
+    /// The typed action this reference resolves to. Total over all ref kinds —
+    /// every `ElementRef` is resolvable to exactly one `ElementResolution`.
+    public var resolution: ElementResolution {
+        switch self {
+        case .ax(let id):               return .activateAX(AXQuery(id))
+        case .webLine(let d, let l):    return .gotoWebLine(docId: d, line: l)
+        case .webSelector(let d, let s): return .selectWebNode(docId: d, selector: s)
+        case .file(let p, let l):       return .openFile(path: p, line: l)
+        case .tab(let id):              return .selectTab(id: id)
+        }
+    }
+}

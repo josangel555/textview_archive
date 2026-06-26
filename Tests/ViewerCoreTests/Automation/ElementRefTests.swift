@@ -75,4 +75,28 @@ struct ElementRefTests {
         // A non-line query is ignored, not fatal.
         #expect(ElementRef(parsing: "mdv://file/x.md?foo=bar") == .file(path: "x.md", line: nil))
     }
+
+    // TSK-1256 slice 2 — the resolver plan: every ref kind maps to exactly one
+    // typed ElementResolution, carrying its params; the resolution survives a
+    // serialize→parse round-trip (what an agent pastes resolves to the same action).
+    @Test func resolutionMapsEveryKind() {
+        #expect(ElementRef.ax(identifier: "mdv.hexView").resolution
+                == .activateAX(AXQuery("mdv.hexView")))
+        #expect(ElementRef.webLine(docId: "d1", line: 9).resolution
+                == .gotoWebLine(docId: "d1", line: 9))
+        #expect(ElementRef.webSelector(docId: "d1", selector: ".cm-line").resolution
+                == .selectWebNode(docId: "d1", selector: ".cm-line"))
+        #expect(ElementRef.file(path: "a.md", line: 3).resolution
+                == .openFile(path: "a.md", line: 3))
+        #expect(ElementRef.file(path: "a.md", line: nil).resolution
+                == .openFile(path: "a.md", line: nil))
+        #expect(ElementRef.tab(id: "t1").resolution == .selectTab(id: "t1"))
+    }
+
+    @Test func resolutionSurvivesRoundTrip() {
+        for ref in Self.samples {
+            let parsed = ElementRef(parsing: ref.serialized)
+            #expect(parsed?.resolution == ref.resolution, "resolution drift for \(ref)")
+        }
+    }
 }
