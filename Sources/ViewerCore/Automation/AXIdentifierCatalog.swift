@@ -79,6 +79,9 @@ public enum AXIdentifierCatalog {
         Entry("mdv.folderStats.showTreemap", .tools, "Folder-stats treemap toggle."),
         Entry("mdv.claudeMonitor", .tools, "Claude session monitor window."),
         Entry("mdv.gitPanel", .tools, "Git panel (log / diff / status tool window)."),
+        Entry("mdv.gitLog.searchField", .tools, "Git log search field."),
+        Entry("mdv.terminal.pane", .tools, "Terminal pane (PTY tool window) surface."),
+        Entry("mdv.settings.languages", .tools, "Settings: supported syntax-highlighting languages list."),
         // media
         Entry("mdv.audioEditor", .media, "The audio editor surface."),
         Entry("mdv.imageEditor", .media, "The image editor surface."),
