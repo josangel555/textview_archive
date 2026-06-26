@@ -178,6 +178,7 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "edit-reverse-lines", "edit-remove-duplicate-lines",
             "convert-line-endings-lf", "convert-line-endings-crlf", "convert-line-endings-cr",
             "convert-indentation-to-spaces", "convert-indentation-to-tabs",
+            "macro-record-start", "macro-record-stop", "macro-replay-last",
             "toggle-view-only",
         ] {
             XCTAssertTrue(apply(verb, on: model), "\(verb) must be a recognized script verb")
@@ -195,6 +196,25 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
         XCTAssertTrue(model.viewModePresentation.viewOnly, "verb must turn the lock ON")
         XCTAssertTrue(apply("toggle-view-only", on: model))
         XCTAssertFalse(model.viewModePresentation.viewOnly, "verb must turn the lock OFF again")
+    }
+
+    // MARK: - Macro record/replay integration (TSK-1162 Slice B)
+
+    /// End-to-end through the live verb dispatch: macro-record-start captures the
+    /// dispatched verbs (via the record-hook), macro-record-stop stores them, and
+    /// macro-replay-last re-dispatches the recorded sequence through
+    /// LiveMacroDispatcher → ScriptVerb.apply.
+    func test_macro_record_replay_reappliesRecordedTransform() throws {
+        let (model, url) = try openText("macro.txt", "hello\n")
+        XCTAssertTrue(apply("macro-record-start", on: model))
+        XCTAssertTrue(apply("edit-uppercase", on: model))   // file → HELLO (recorded)
+        XCTAssertTrue(apply("macro-record-stop", on: model))
+        // Lower it back — NOT recorded (recording stopped) — then replay the macro.
+        XCTAssertTrue(apply("edit-lowercase", on: model))   // file → hello
+        XCTAssertTrue(apply("macro-replay-last", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "HELLO\n",
+                       "macro replay re-applied the recorded uppercase (not the post-stop lowercase)")
     }
 
     func test_toggleWordWrap_verb_flipsModelState() throws {

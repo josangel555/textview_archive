@@ -1104,6 +1104,11 @@ public final class DocumentModel: ObservableObject {
         return CommandRegistry.builtIn.applying(overrides: result.config.bindings)
     }()
 
+    /// Macro record/replay coordinator (TSK-1162), keyed off the same command
+    /// registry the verb dispatch uses. Lazy so a bare DocumentModel pays
+    /// nothing until a recording starts.
+    public private(set) lazy var macros = MacroController(registry: commandRegistry)
+
     /// Reload the keybinding config from disk (e.g. after the user edits
     /// the file or a settings UI rewrites it). Re-validates ids, re-folds
     /// overrides, re-logs partial failures. Triggers an objectWillChange

@@ -58,6 +58,11 @@ public enum ScriptVerb {
         let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
         guard let cmd = parts.first else { return true }
         let arg = parts.count > 1 ? parts[1] : ""
+        // TSK-1162: capture the invocation into an in-flight macro recording.
+        // recordVerb gates internally (no-op when not recording / replaying / the
+        // verb maps to no replayable command); the macro-control verbs are
+        // excluded so a recording never captures its own start/stop/replay.
+        if !cmd.hasPrefix("macro-") { model.macros.recordVerb(cmd) }
         switch cmd {
         case "toggle-view":    model.toggleViewMode()
         case "toggle-sidebar": model.sidebar.toggleVisibility()
@@ -152,6 +157,12 @@ public enum ScriptVerb {
         // TSK-1186: indentation converters (per-target, param-less) — file-write.
         case "convert-indentation-to-spaces": _ = model.convertActiveFileIndentation(toSpaces: true)
         case "convert-indentation-to-tabs":   _ = model.convertActiveFileIndentation(toSpaces: false)
+        // TSK-1162: macro record/replay control verbs (excluded from capture).
+        case "macro-record-start": model.macros.startRecording()
+        case "macro-record-stop":  model.macros.finishRecording()
+        case "macro-replay-last":
+            var dispatcher = LiveMacroDispatcher(model: model, sessions: sessions)
+            model.macros.replayLast(on: &dispatcher)
         // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.
@@ -883,5 +894,22 @@ public enum ScriptVerb {
                 ],
             ],
         ]
+    }
+}
+
+/// Production `MacroDispatcher` (TSK-1162): re-dispatches a recorded command by
+/// forwarding its script-verb back through `ScriptVerb.apply` — the same path the
+/// verb originally took (its record-hook re-fires but is re-entrancy-guarded by
+/// `MacroController.isReplaying`, so a replay never re-records itself). A replay
+/// runs on the main thread (`MacroController.replayLast` is `@MainActor`), so the
+/// non-isolated protocol hop is bridged with `MainActor.assumeIsolated`.
+struct LiveMacroDispatcher: MacroDispatcher {
+    let model: DocumentModel
+    let sessions: SessionsAppCoordinator
+    func dispatch(command: CommandDescriptor, args: [String: String]) -> Bool {
+        guard let verb = command.scriptVerb else { return false }
+        return MainActor.assumeIsolated {
+            ScriptVerb.apply(verb: verb, to: model, sessions: sessions)
+        }
     }
 }

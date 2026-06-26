@@ -262,6 +262,17 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "edit.convertIndentationToTabs", title: "Convert Indentation to Tabs", category: .edit,
             scriptVerb: "convert-indentation-to-tabs"),
+        // TSK-1162: macro record/replay control verbs. Marked .excluded so a
+        // recording never captures its own start/stop/replay.
+        CommandDescriptor(
+            id: "macro.recordStart", title: "Start Recording Macro", category: .view,
+            scriptVerb: "macro-record-start", replayability: .excluded),
+        CommandDescriptor(
+            id: "macro.recordStop", title: "Stop Recording Macro", category: .view,
+            scriptVerb: "macro-record-stop", replayability: .excluded),
+        CommandDescriptor(
+            id: "macro.replayLast", title: "Replay Last Macro", category: .view,
+            scriptVerb: "macro-replay-last", replayability: .excluded),
         CommandDescriptor(
             // TSK-904: "Compact" keyword so the palette finds the inverse of
             // Pretty-Print under its common synonym, not just "minify".
