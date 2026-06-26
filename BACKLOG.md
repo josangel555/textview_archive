@@ -27,6 +27,20 @@ internal-quality / rust-core / test work).
 
 > **Filed wishlist (P2): TSK-1256** — globally-referenceable element refs (right-click → *Copy Reference* → share to an agent; spans native chrome AND WebView; future Chrome-devtools-style element picker, incl. a real Chrome/CDP target). Builds on the same addressing foundation as TSK-1254 (mdv.* AX path for native, cmDispatch/JS for WebView).
 
+### 🌊 NEXT WAVE — high-value (12, proposed 2026-06-26)
+
+Owner: "no more low-hanging mandate" → substantial features/epics for next week. **Verify-state + spike each before committing** (the board's "open" tags are stale — see the warning below). Thesis: lean into the AGENT-NATIVE differentiator + clear the loudest felt pain + surface built-but-unwired engines.
+
+- **App lane (3):** in-app **web browser** (sandboxed: no `file://`, block 3rd-party cookies; reuse the rendered-MD WebView security; doubles as the future Chrome/CDP element-picker target) · **image-editor overhaul** (TSK-1048 epic; owner flagged "clunky"; model built, perf-first slice = TSK-1052 dirty-rect) · **RSS feed reader** (TSK-1149; foundation built, TSK-955).
+- **Perf (2):** rendered-MD **persistent WebView + DOM-patch** (TSK-838/1183 — "biggest single perf lever", kills the 2–9s MD-open reload) · editor **cm_apply delta seam** (TSK-1124/543 — stop shipping the full doc across FFI per keystroke; the CM6 typing-lag root).
+- **Agent (2):** **diff review/approve** (TSK-941) · **Agent-Services MCP tools** (TSK-1154 — semantic/LSP search, refactor, test-runner, code-review; 1/5 shipped).
+- **Leverage (2):** **Local History UI** (TSK-1103 — engine+policy DONE, just UI) · **unified search palette** (TSK-1143/677 over `SearchRouter`).
+- **Polish (1):** **dark-mode / theme-readiness audit + fix** (owner: "Dark mode is so broken").
+- **Parity (1):** **LSP autocomplete** + own-vs-external decision (TSK-1127/781; owner: "autocomplete: none at all").
+- **Finish (1):** **tmux `-CC` completion** (TSK-1023 — signal-translation DONE this session; only live PTY spawn + SwiftUI split render remain, VM-tail).
+
+_History:_ started at 10; owner dropped element-reference + share-context-to-agent, pulled in the app lane + a 2nd perf item, set count to 12. _Bench (next waves):_ Notebooks (TSK-717) · PDF reader · Dependency-package explorer (TSK-319/692/1147) · DevTools tool window · Audio editor · Rust remote-core (TSK-400/1117). _Perf alt_ (if visibility > speedup): render-FPS jank meter + per-tab memory in the status bar.
+
 ### Low-hanging-fruit sweep (2026-06-25) — outcome + NEXT 10
 
 **Sweep result** (the 2026-06-20 Quick-Wins list, re-verified against current `main`): **5 of 10 already shipped** since the audit — tooltip delay (TSK-1209), find-text-preserve (TSK-1207), View-only toggle (TSK-936 validated), rendered find-highlight clear (`MarkdownRenderedView`), text-transforms menu (TSK-1113 validated). **3 fixed + committed `30a3af2f`**: editor 2px caret + literal-Tab insert (**TSK-1250**, render → `review`) and the `check-bundle-size.sh` 48/26→80/65 doc drift (residual of the validated **TSK-1098**). **2 deferred as tickets** (prereqs missing, not blind-hacked): Cmd+F sidebar routing (**TSK-1248**), terminal header row (**TSK-1249**). LESSON: the Quick-Wins audit is stale — verify each item against `main` before working it.

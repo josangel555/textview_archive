@@ -1,53 +1,50 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — scroll fix FULLY VALIDATED (editor done via in-process WebView test)  (2026-06-23)
+# Handoff — tmux -CC signal-translation done+integrated; next-wave-12 proposed  (2026-06-26)
 
-**Session:** claude-mdv (autonomous ~5min cron + owner interaction)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `d1a1c36e` (verify `git log -1`).
+**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `c26951ab` (verify `git log -1`). ⚠️ Extremely long session — `/compact` recommended.
 
 ## Mission
-Immediate: make the session/tab-switch **scroll-reset fix (TSK-1046)** validated + reproducible for UAT/smoke on BOTH surfaces (rendered preview AND CM6 editor). **DONE.** Broader autonomous mission: drain the `tasked` board toward `done` (BACKLOG.md is the curated selector; board is system of record).
+Drain toward done + build genuinely high-value work (owner: "no more low-hanging mandate"). This session: validated the scroll fix, cleaned + vended the repo, reconciled the board (it's far more complete than the lists), assessed the AX/UAT test pyramid, **completed + integrated the tmux `-CC` host signal-translation**, and proposed the **next wave of 12** features.
 
 ## Current state
-- **DONE — scroll fix has full, correctly-shaped coverage:**
-  - RENDERED preview: on-screen green via spawned-app UAT (`ScrollRestoreUATTests` SCROLL01 tab-switch + SCROLL02 session-switch).
-  - EDITOR (CM6): live-CM6 green **in-process** — `EditorScrollRestoreWebViewTests.test_restoreSeed_scrollsLiveCM6_toSavedLine_notTop` (commit `d1a1c36e`, green on VM run `bp75y4deg`). Wired into `run_webview_tests` (test-in-vm.sh) + `nightly-vm.yml`.
-  - MODEL/seed: host-tested (`editorMountSelectionSeed`) + **owner manually confirmed fixed on-screen**.
-  - This arc's commits (all on main): `155b61a0` (new test + lane wiring) → `4cb35015` (`;true` attempt) → `a3ebdf9a` (completion-handler bridge) → `d1a1c36e` (drop flaky sibling + LESSONS). Working tree clean (untracked `OwnerWishlist.md`/`Untitled.txt` are NOT mine).
-- **DONE earlier this session:** TSK-1243 viaOpen UAT-harness env-delivery + `didFinishLaunching` fallback (unblocks the keystroke/`--script` UAT class); prod (release) build re-installed to `/Applications`; crons stopped (owner asked).
-- **In flight:** nothing mid-edit. This `/handoff` is the wrap-up (a compaction fired mid-handoff; this doc is the corrected, current handoff — the prior on-disk one was stale at `f37f8ed2`).
-- **Next action (autonomous loop):** TSK-1046 sits at `review` for the owner to close → `done`. For new work: pull the next BACKLOG.md item — section B (render/VM tails) or the board's groomed pools. TSK-1047 (editor warm-cache, perf) is the natural follow-on but is VM-blocked (see below).
+- **Done + on main:** editor scroll-restore validated in-process (TSK-1046, `review`); CM6 2px caret + literal-Tab + `check-bundle-size.sh` doc-drift (TSK-1250/1098, `review`); View↔Edit size-match **host half** (TSK-1151, `review`); VST-non-goal doc (TSK-1097, `review`); vim mode-chip per-mode colors (TSK-1251, `review`). Repo cleaned (7.6G→92M). Prod `dist` built + **vended** to `github.com/josangel555/mvd_dist` (v1 + v2 zips). Stale-progress reclaim: TSK-280/302→`fixed`; INT-126 (`internal`) + TSK-1253 filed.
+- **tmux `-CC` — host signal-translation COMPLETE + integrated (188 tmux tests green):** slices a/b/c were already done; this session added the **pump** (`TmuxController`, slice-d host half, `46e3ffb1`), the **typed outbound serializer** (`TmuxCommand`, `26c4f53a`, via the `tmux-cc-harden` ultracode run, 48 tests), and **inbound hardening** (`c26951ab`, 32 tests). Worktrees reaped.
+- **In flight / next:** the next-wave-12 (in BACKLOG, awaiting owner groom/spike); the tmux **live wiring** remains (TSK-1023, VM-tail).
+- **Next action (pick one):** (a) the small **`TmuxController` typed `encode(_ cmd: TmuxCommand)` overload** — closes the signal-translation loop now the serializer exists (host, quick); (b) **spike + groom the next-wave-12** as a board "Wave — high-value" epic; (c) the tmux **live wiring** (slice d spawn + slice e render — VM-tail).
 
 ## Key decisions & rationale
-- **Editor scroll-restore validated via an IN-PROCESS `WebViewTestCase`, not the spawned-app `--script` UAT.** The owner's redirect ("why grind headless, why not a proper test?") was the unlock. The spawned-app GUI-lane UAT cannot validate CM6 — its WebContent is jetsam-killed (`none-NotVisible` → idle-kill). In-process mounts CM6 in the test process (no spawned app → no jetsam); the sibling Fold/Blame/MultiCursor/EditorReplace/PaneScrollRestore WebViewTests all pass in-process on the VM, proving CM6 survives there.
-- **Dropped the `scrollToLine`-puts-line-at-TOP sibling test** rather than leave a flaky red: `applyScrollToLine` needs a measured viewport/rAF cycle a HEADLESS in-process WKWebView doesn't run. The restore path uses `scrollIntoView` (works headless), so `test_restoreSeed` is the reliable validation; `scrollToLine` is exercised by the `editor-scroll-to-line` verb elsewhere.
-- **All test JS reads go through the completion-handler `evaluateJavaScript` + `withCheckedContinuation`**, not the async `try await` variant (which throws WKError-5 flakily even for Number/Bool).
+- **tmux:** host signal-translation done; live PTY spawn + SwiftUI split render = VM-tail (TSK-1023). Don't redo a/b/c.
+- **Self-driving / UAT = two lanes** (owner 2026-06-26): AX-structural (out-of-process, `mdv.*` ids) + script-bus + CGEvent = the TEST lane (TSK-1254); human-like stays **purely screenshot-based**, no AX.
+- **Next wave = 12** (owner): app-lane (web browser, image editor, RSS) + 2 perf + 2 agent + 2 leverage + dark-mode + LSP-autocomplete + tmux-finish. Dropped element-ref/share-context per owner.
+- **Stale-progress reclaim** = a tool-side sweep (INT-126), NOT hand-mutating 80 #NNN-corrupted tickets.
 
-## Gotchas / lessons (also in LESSONS.md — 5 new dated entries)
-- **CM6 can't be UAT'd via the spawned-app GUI lane** — WebContent jetsam (`NotVisible`). Use in-process WebViewTestCase. NOT memory (purge → 2.5GB free, still died).
-- **async `try await webView.evaluateJavaScript` throws WKError-5 ("unsupported type") flakily** even for a Number/Bool result — use the completion-handler API via `withCheckedContinuation`, extract the Sendable value INSIDE the handler.
-- **rsync -a preserves mtimes → SwiftPM skips recompiling on the VM → stale test/dist.** `touch` changed `Sources/`+`Tests/` files on the VM before `swift build`/`test`; watch for `Compiling <file>` in the log. Bit me 3× this session (looked like "my fix didn't work").
-- **A `#192`-gated in-process WebView suite runs ONLY via `run_webview_tests`** (test-in-vm.sh `quick`/`all`). `test --filter X` STRIPS `MDV_RUN_WEBVIEW_TESTS` → self-skips (instant 0.003s). New suites MUST be added to the filter list in BOTH `run_webview_tests()` AND `nightly-vm.yml` or they run nowhere (false green).
+## Gotchas / lessons (full text in LESSONS.md — 6 new entries this session)
+- **Verify-before-build:** "open" board/backlog items are mostly already DONE — grep main + `task_get` before working anything.
+- **The BOARD, not BACKLOG.md tags,** is the source of truth (`task_next`/`fleet`). Bottleneck = ~414 fixed/review awaiting owner close.
+- **AX automation is out-of-process only** (`TerminalAccessibilityTests:78`).
+- **Dist vend:** iCloud FinderInfo xattr trips strict-verify → `ditto --noextattr` + `xattr -cr` outside the synced tree; self-signed → clear quarantine; arm64-only.
+- **Swift Testing** prints `✔ Test run with N tests passed` (not the XCTest line) — grep both.
+- **`task_advance`** needs all params (understanding+note+summary+commits) in one call to reach `review`.
 
 ## Files that matter
-- `Tests/ViewerUITests/EditorScrollRestoreWebViewTests.swift` — the NEW in-process editor scroll-restore test (the deliverable). Pattern source: `Tests/ViewerUITests/BlameGutterWebViewTests.swift`.
-- `scripts/test-in-vm.sh` — `run_webview_tests()` (~line 237) has the hardcoded `--filter` list (EditorScrollRestore added); `quick`/`all` modes invoke it; `test` mode strips the env (TSK-1236). Output → `/tmp/mdv-webview-output.txt`.
-- `.github/workflows/nightly-vm.yml` — the WebView-lane `--filter` list (EditorScrollRestore added).
-- `Sources/ViewerUI/DocumentModel.swift:3235` — `editorMountSelectionSeed` (the seed-belt the test validates). `Sources/ViewerUI/Resources/codemirror/codemirror.html:1446` — `applySetSelection` (the seed → `scrollIntoView`).
-- `Sources/MarkdownViewer/main.swift` / `ScriptRunner.swift` — the TSK-1243 viaOpen launch-config + async-eval bridge + diag scaffolding (committed earlier, harmless).
-- `LESSONS.md` (top) — the 5 new entries. `BACKLOG.md` (TSK-1046 line) — updated to validated.
+- `Sources/ViewerUI/Terminal/TmuxController.swift` — the pump (slice-d host half). NEXT: add typed `encode(_ cmd:)`; add live `start/stop` (PTYProcess spawn `tmux -CC` + `onOutput→ingest` + `drainCommands→stdin`) — VM-tail.
+- `Sources/ViewerCore/Terminal/TmuxCommand.swift` — the outbound serializer (use for input/resize in the live wiring).
+- `docs/TMUX_CC_DESIGN_2026-06-18.md` §3 + §5 — the live-wiring plan (slices d/e).
+- `Tests/ViewerUITests/EditorScrollRestoreWebViewTests.swift` — the in-process live-CM6 test pattern (template for editor render tests).
+- `BACKLOG.md` — the **NEXT WAVE (12)** section + the **HIGH PRIORITY** section (TSK-1253/1254/1255).
 
 ## Open questions / blockers
-- **TSK-1047 (editor warm-WebView cache, PERF) is VM-blocked.** Its `WarmEditorWebViewCache` (branch `worktree-agent-a7b9fc7b...`, commits `e25fc38f`/`539eb8f0`/`3c80a3c7`) FAILED on the VM (SCROLL03/04 still reset); DEBUG probes added (`EditorWarmCacheProbe`, `capture-editor-scroll` verb, `liveEditorTopLine` dump field). Needs the VM `[WARMCACHE-PROBE]` trace to pinpoint where park→re-attach breaks (6 hypotheses listed on the ticket). NOTE: validate it IN-PROCESS, not via the spawned-app UAT.
-- TSK-1046 → `done` is the owner's close (render-path agent ceiling = review).
+- **dist v2 M5-Pro crash retest** — pending owner. v1 crashed on an M5 Pro with a `Bundle.module` trap that did NOT reproduce locally (build's 11 grammar bundles are intentional per TSK-854; not a missing-grammar issue). v2 uploaded for retest. If it recrashes, NEED the `Fatal error:` line (names the bundle) + the `OS Version:` from the `.ips` crash report.
+- **Next-wave-12** — owner to confirm groom/spike, or pick the first feature.
 
-## Tracker (tasked, localhost:8787, agent claude-mdv)
-- **TSK-1046** — `review`. Full-coverage resolution recorded (rendered + editor in-process + model). Ready for owner to close to `done`.
-- **TSK-1047** — `progress` (blocker: live-validation). Handoff note added: seed-belt validated (TSK-1046); warm-cache (this ticket's scope) still failing on VM, needs the probe trace.
-- **TSK-1243** — viaOpen UAT harness env-delivery + lifecycle fixed earlier (keystroke/script UAT class unblocked).
+## Tracker (tasked, agent claude-mdv)
+- `review`: TSK-1046, TSK-1097, TSK-1151, TSK-1250, TSK-1251.
+- `fixed`: TSK-280, TSK-302 (stale-progress reclaim).
+- `reported` (filed this session): TSK-1248 (Cmd+F sidebar), TSK-1249 (terminal header), TSK-1252 (vim Esc beep), TSK-1253 (stale-ticket reclaim), TSK-1254 (AX UAT driver), TSK-1255 (pyramid health), TSK-1256 (element-ref); INT-126 (`internal`: stale-lease sweep).
+- TSK-1023 (tmux live wiring, VM-tail) — commented with the full host-landing detail (pump+serializer+hardening commits).
 
 ## How to resume
-1. Read this file, then `git log -1` (expect `d1a1c36e` on `main`) + `git status` (expect clean).
-2. The scroll fix is DONE — nothing to re-run unless re-validating. To re-run the editor test on the VM:
-   `rsync -az --delete --exclude='.build/' --exclude='.swiftpm/' --exclude='dist/' --exclude='.git/objects/pack/' /Users/me/Documents/workspaces/claude/markdown_viewer/ macOS15:markdown_viewer/`
-   then `ssh macOS15 'cd markdown_viewer && touch Tests/ViewerUITests/EditorScrollRestoreWebViewTests.swift && export MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> && bash scripts/test-in-vm.sh quick'` — grep `/tmp/mdv-webview-output.txt` for `EditorScrollRestoreWebViewTests test.*passed`. (`touch` dodges the stale-mtime trap; `quick` runs the WebView lane.)
-3. For NEW autonomous work: read `docs/TASK_WORKFLOW.md` + `BACKLOG.md`; pick the next actionable item (TSK-1047 warm-cache needs VM diagnosis; or section-B render/VM tails; or the board's groomed pools). Host gate: `bash scripts/test-headless-gate.sh`.
-4. VM creds: host `macOS15`, user `vm-tester@<vm-ip>`, sudo `<vm-sudo-password>`. NEVER `killall MarkdownViewer`. UI/live tiers VM-only.
+1. Read this + `LESSONS.md` (top 6 entries) + `BACKLOG.md` (NEXT WAVE + HIGH PRIORITY). `git log -1` (expect `c26951ab`), `git status` (clean; untracked `OwnerWishlist.md*`/`Untitled.txt` are the owner's — leave them).
+2. Quick win if continuing tmux: add `TmuxController.encode(_ cmd: TmuxCommand) -> Data` (wraps `core.encodeCommand(cmd.commandLine)`) + a host test; `swift test --filter ViewerUITests.TmuxControllerTests`.
+3. Host gate: `bash scripts/test-headless-gate.sh`. tmux suites: `swift test --filter Tmux` (XCTest) + `swift test --filter TmuxCommandTests` (Swift Testing).
+4. For ANY board pick: verify against main + `task_get` first (the "open" tags lie). VM creds: host `macOS15`, user `vm-tester`, sudo `<vm-sudo-password>`. NEVER `killall MarkdownViewer`; UI/live tiers VM-only.
