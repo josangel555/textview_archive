@@ -2,6 +2,7 @@ import XCTest
 import Foundation
 import ViewerKit
 import ViewerCore
+import TestSupport
 @testable import ViewerUI
 
 /// Wiring coverage for the `git-file-history` verb that makes the shipped
@@ -40,13 +41,7 @@ final class GitFileHistoryVerbTests: HeadlessUITestCase {
 
     /// A fresh git repo with one committed file; returns that file's URL.
     private func makeRepoWithCommittedFile() throws -> URL {
-        repo = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GitFileHistoryVerbTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
-        try git(["init", "-q", "-b", "main"], in: repo)
-        try git(["config", "user.email", "t@example.com"], in: repo)
-        try git(["config", "user.name", "Tester"], in: repo)
-        try git(["config", "commit.gpgsign", "false"], in: repo)
+        repo = try GitTestRepo.makeRepo(prefix: "GitFileHistoryVerbTests")
         let file = repo.appendingPathComponent("tracked.txt")
         try "v1\n".write(to: file, atomically: true, encoding: .utf8)
         try git(["add", "tracked.txt"], in: repo)

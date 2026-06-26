@@ -1,5 +1,6 @@
 import XCTest
 @testable import ViewerCore
+import TestSupport
 @testable import ViewerUI
 
 /// TSK-523 slice 3 (host core) — "Review Commit…" from the Git Log. The
@@ -14,13 +15,8 @@ final class CommitReviewLaunchTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        repo = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CommitReviewLaunchTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
-        try git(["init", "-q", "-b", "main"])
-        try git(["config", "user.email", "rev@example.com"])
-        try git(["config", "user.name", "Reviewer"])
-        try git(["config", "commit.gpgsign", "false"])
+        repo = try GitTestRepo.makeRepo(
+            prefix: "CommitReviewLaunchTests", email: "rev@example.com", name: "Reviewer")
         try commit("first", file: "a.txt", content: "one\n")
         try commit("second", file: "a.txt", content: "two\n")
     }
