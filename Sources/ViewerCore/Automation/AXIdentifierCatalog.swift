@@ -69,15 +69,19 @@ public enum AXIdentifierCatalog {
         Entry("mdv.hex.search.field", .data, "Hex viewer search field."),
         Entry("mdv.diff.findField", .data, "Diff viewer find field."),
         // nav
+        Entry("mdv.sidebar", .nav, "The file-navigator sidebar surface."),
         Entry("mdv.bookmarks", .nav, "Bookmarks sidebar section."),
         Entry("mdv.archive.browser", .nav, "Archive (zip/tar) browser."),
         Entry("mdv.emptyState.newFile", .nav, "Empty-state 'New File' action."),
+        Entry("mdv.emptyState.recents", .nav, "Empty-state recents list."),
         // tools
         Entry("mdv.commandPaletteButton", .tools, "Command-palette toolbar button."),
         Entry("mdv.folderStats.showTreemap", .tools, "Folder-stats treemap toggle."),
         Entry("mdv.claudeMonitor", .tools, "Claude session monitor window."),
+        Entry("mdv.gitPanel", .tools, "Git panel (log / diff / status tool window)."),
         // media
         Entry("mdv.audioEditor", .media, "The audio editor surface."),
+        Entry("mdv.imageEditor", .media, "The image editor surface."),
     ]
 
     /// All catalogued ids.
