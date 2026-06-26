@@ -1,5 +1,6 @@
 import XCTest
 import ViewerCore
+import TestSupport
 @testable import ViewerUI
 
 /// TSK-596 — GitPanelModel's log-search state machine, pinned headless:
@@ -14,13 +15,7 @@ final class GitLogSearchModelTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        repo = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GitLogSearchModelTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
-        try git(["init", "-q", "-b", "main"])
-        try git(["config", "user.email", "t@example.com"])
-        try git(["config", "user.name", "Tester"])
-        try git(["config", "commit.gpgsign", "false"])
+        repo = try GitTestRepo.makeRepo(prefix: "GitLogSearchModelTests")
         try commit("add waveform reducer", file: "a.txt")
         try commit("fix sidebar layout", body: "Heartbeat polling drift.", file: "b.txt")
         try commit("docs: readme", file: "c.txt")
