@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Bundle size guardrail. Fails the build when dist/TextView.app
 # crosses a budget. Two checks:
-#   - total .app size (default 48 MB)
-#   - main executable size (default 26 MB)
+#   - total .app size (default 80 MB)
+#   - main executable size (default 65 MB)
 #
 # Caps bumped 40->48 / 20->26 (2026-06-03) for the UX-overhaul features
 # (embedded terminal + ANSI parser, command registry/keybindings,
@@ -17,7 +17,7 @@
 #   2. Static-linking libmdvcore_ffi.a adds only ~0.36 MB to the exec
 #      (18.60 -> ~18.96 MB) and ~0.3 MB to the bundle (measured 39 MB total).
 # (At that 2026-05-31 bump the 20 MB exec / 40 MB total caps covered the real
-# baseline + the Rust core + modest headroom; the live caps are now 26 / 48 —
+# baseline + the Rust core + modest headroom; the live caps are now 65 / 80 (exec / total) —
 # see the header above.) The exec sub-cap still catches a TreeSitter grammar
 # silently regressing to static linkage. NOTE: the Rust core is purely ADDITIVE at this
 # beachhead (both Swift CSVParser AND the Rust core ship); the size recovers

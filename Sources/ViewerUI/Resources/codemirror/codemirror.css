@@ -108,3 +108,7 @@ body.dark .cm-invisible {
 .cm-line:hover            { background: rgba(127, 127, 127, 0.05); }
 body.dark  .cm-line:hover { background: rgba(255, 255, 255, 0.05); }
 body.light .cm-line:hover { background: rgba(0, 0, 0, 0.04); }
+
+/* Owner ask: a slightly wider caret so the insertion point is easier to spot
+ * (CM's default cursor border-left is ~1.2px). Render-validated on the VM. */
+.cm-cursor, .cm-dropCursor { border-left-width: 2px; }

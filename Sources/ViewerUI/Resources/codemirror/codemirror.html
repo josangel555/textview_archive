@@ -814,6 +814,19 @@
     },
   };
 
+  // Owner ask: a plain Tab at the caret inserts a LITERAL tab character (\t)
+  // instead of an indent step. A Tab with an active selection still indents the
+  // block (we return false → fall through to indentWithTab), and Shift-Tab still
+  // dedents (indentWithTab's shift handler). Ordered just before indentWithTab.
+  const literalTabBinding = {
+    key: "Tab",
+    run: (view) => {
+      if (!view.state.selection.main.empty) return false; // selection → indentWithTab indents
+      view.dispatch(view.state.replaceSelection("\t"));
+      return true;
+    },
+  };
+
   // updateListener — every transaction. Emit change / cursor / scroll
   // signals; bump docVersion on docChanged.
   const updateListener = EditorView.updateListener.of((update) => {
@@ -1032,6 +1045,7 @@
         ...searchKeymap,   // ⌘F open search, ⌘G next, ⇧⌘G prev
         ...historyKeymap,  // ⌘Z / ⇧⌘Z
         ...foldKeymap,
+        literalTabBinding,
         indentWithTab,
         ...defaultKeymap,
       ]),
