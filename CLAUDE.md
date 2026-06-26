@@ -459,6 +459,9 @@ continue", document blockers and move on):
   (modes open|resize, configs release|debug — debug for symbolicated
   stacks).
 - `MANUAL_TESTING.md` — checklist for features without automation.
+- `docs/TEST_PYRAMID.md` — THE canonical test-pyramid map (tiers + base
+  classes, gating, the structural-AX vs human-screenshot UAT lanes);
+  consolidates the scattered `TEST_*` audits. Read before touching test tiers.
 - `DESIGN.md` — top-level architecture.
 - `docs/TRACKER_FEEDBACK.md` — feedback queue for the `tasked` tool itself
   (file new items as INT-### tickets in the `internal` project).
