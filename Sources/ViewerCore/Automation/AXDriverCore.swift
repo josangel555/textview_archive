@@ -119,4 +119,38 @@ public enum AXDriverCore {
         }
         return .unavailable("node '\(node.axIdentifier ?? "?")' has no press AX action and no usable frame")
     }
+
+    // MARK: - Plan resolution (the executor's host-testable entry)
+
+    /// A fully-resolved drive operation — everything the out-of-process executor
+    /// needs to ACT, decoupled from the live `AXUIElement` so the resolution is
+    /// host-testable (assert the op, not node identity). The executor maps each
+    /// case to an `AXUIElementPerformAction` / CGEvent / attribute read+write.
+    public enum ResolvedDriveOp: Equatable {
+        /// Activate the matched node (native AX action or CGEvent-at-frame).
+        case press(AXResolvedAction)
+        /// Scroll the matched node; `frame` lets the executor target a wheel event.
+        case scroll(AXScrollDirection, frame: CGRect?)
+        /// Read the matched node's value/label (role + frame for the executor).
+        case read(role: String?, frame: CGRect?)
+        /// Set the matched node's value.
+        case setValue(String)
+        /// No element matched the plan's query.
+        case targetNotFound(AXQuery)
+    }
+
+    /// Resolve a parsed `AXDrivePlan` against the AX tree `root` into a
+    /// `ResolvedDriveOp`. Pure: find the target, then map the plan's action to
+    /// the concrete operation. The executor performs the op on the live element.
+    public static func resolve(_ plan: AXDrivePlan, in root: AXNode) -> ResolvedDriveOp {
+        guard let node = find(plan.query, in: root) else {
+            return .targetNotFound(plan.query)
+        }
+        switch plan.action {
+        case .press:            return .press(resolvePress(node))
+        case .scroll(let dir):  return .scroll(dir, frame: node.axFrame)
+        case .read:             return .read(role: node.axRole, frame: node.axFrame)
+        case .setValue(let v):  return .setValue(v)
+        }
+    }
 }

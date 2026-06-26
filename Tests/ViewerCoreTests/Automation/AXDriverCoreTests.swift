@@ -126,4 +126,44 @@ struct AXDriverCoreTests {
             Issue.record("a zero-size frame is not a clickable target")
         }
     }
+
+    // MARK: - resolve(plan:in:) — the executor's host-testable entry
+
+    private func driveTree() -> Fake {
+        Fake("mdv.window", children: [
+            Fake("mdv.hexView", role: "AXButton",
+                 frame: CGRect(x: 10, y: 20, width: 40, height: 30), actions: ["AXPress"]),
+            Fake("mdv.csvTable", role: "AXTable",
+                 frame: CGRect(x: 0, y: 50, width: 200, height: 300)),
+            Fake("mdv.findBar.field", role: "AXTextField",
+                 frame: CGRect(x: 0, y: 0, width: 100, height: 20)),
+        ])
+    }
+
+    @Test func resolvePlan_press_usesNativeActionOnFoundNode() throws {
+        let plan = try #require(AXDrivePlan(parsing: "press mdv.hexView"))
+        #expect(AXDriverCore.resolve(plan, in: driveTree()) == .press(.axAction("AXPress")))
+    }
+
+    @Test func resolvePlan_scroll_carriesDirectionAndFrame() throws {
+        let plan = try #require(AXDrivePlan(parsing: "scroll mdv.csvTable down"))
+        #expect(AXDriverCore.resolve(plan, in: driveTree())
+                == .scroll(.down, frame: CGRect(x: 0, y: 50, width: 200, height: 300)))
+    }
+
+    @Test func resolvePlan_read_carriesRoleAndFrame() throws {
+        let plan = try #require(AXDrivePlan(parsing: "read mdv.findBar.field"))
+        #expect(AXDriverCore.resolve(plan, in: driveTree())
+                == .read(role: "AXTextField", frame: CGRect(x: 0, y: 0, width: 100, height: 20)))
+    }
+
+    @Test func resolvePlan_set_carriesValue() throws {
+        let plan = try #require(AXDrivePlan(parsing: "set mdv.findBar.field hello"))
+        #expect(AXDriverCore.resolve(plan, in: driveTree()) == .setValue("hello"))
+    }
+
+    @Test func resolvePlan_missingTarget_isNotFound() throws {
+        let plan = try #require(AXDrivePlan(parsing: "press mdv.doesNotExist"))
+        #expect(AXDriverCore.resolve(plan, in: driveTree()) == .targetNotFound(AXQuery("mdv.doesNotExist")))
+    }
 }
