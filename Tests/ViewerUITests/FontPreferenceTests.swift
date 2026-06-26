@@ -26,6 +26,22 @@ final class FontPreferenceTests: HeadlessUITestCase {
                        sys.fontName)
     }
 
+    /// TSK-1151: the CM6 editor must match the AppKit View's line-height instead
+    /// of its old hardcoded 1.45. The View uses NSTextView's default line height,
+    /// so the multiple is the layout-manager default / point size — a sane ratio
+    /// above 1.0 and well under 1.45 (the ~18% gap being closed).
+    func test_editorLineHeightMultiple_isViewDefault_belowOldHardcode() {
+        for size in [11, 13, 18, 24] as [CGFloat] {
+            let m = FontPreference.editorLineHeightMultiple(name: nil, size: size)
+            XCTAssertGreaterThan(m, 1.0, "line height exceeds the glyph size (\(size))")
+            XCTAssertLessThan(m, 1.45, "closes the gap vs CM6's old 1.45 (size \(size))")
+            // Independently equals defaultLineHeight/size for the resolved font.
+            let font = FontPreference.resolvedFont(name: nil, size: size)
+            let expected = Double(NSLayoutManager().defaultLineHeight(for: font) / size)
+            XCTAssertEqual(m, expected, accuracy: 0.0001)
+        }
+    }
+
     /// TSK-732: the CSS family fed to CM6 must name the SAME family the AppKit
     /// View resolves through `resolvedFont`, so View and Edit can't diverge onto
     /// different fonts. The raw picker string was shipped before — a face/

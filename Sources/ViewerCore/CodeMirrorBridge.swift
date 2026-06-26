@@ -175,7 +175,11 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// `nil` keeps the JS host's built-in fallback (oneDark / CM default)
     /// — also what a stale pre-palette bundle sees.
     case setTheme(name: String, palette: [String: String]?)
-    case setFontSize(Int)
+    /// TSK-1151: `px` rides as a Double so fractional zoom matches the AppKit
+    /// View exactly (no Int rounding), and `lineHeight` carries the View's
+    /// line-height multiple so the CM6 scroller stops hardcoding 1.45. Old JS
+    /// peers read `px` and ignore `lineHeight` (forward-compatible).
+    case setFontSize(px: Double, lineHeight: Double)
     /// TSK-259 slice 2: the user-selected monospace family for the
     /// editor (nil = the bundle's default stack).
     case setFontFamily(String?)
@@ -539,9 +543,10 @@ public enum CMBridgeCodec {
             if let palette {
                 dict["palette"] = palette
             }
-        case .setFontSize(let px):
+        case .setFontSize(let px, let lineHeight):
             dict["type"] = "setFontSize"
             dict["px"] = px
+            dict["lineHeight"] = lineHeight
         case .setFontFamily(let family):
             dict["type"] = "setFontFamily"
             if let family {

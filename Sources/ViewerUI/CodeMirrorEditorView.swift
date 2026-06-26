@@ -611,7 +611,20 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             }
             if let size = pendingFontSize, size != lastSentFontSize {
                 lastSentFontSize = size
-                dispatch(.setFontSize(Int(size.rounded())), webView: webView)
+                // TSK-1151: send the EXACT size (Double, no Int rounding → matches
+                // the AppKit View at fractional zoom) + the View's line-height
+                // multiple (NSTextView default) so CM6 stops hardcoding 1.45. The
+                // `px` fix takes effect immediately (the JS host already does
+                // `px + "px"`); the JS reading `lineHeight` is the render tail.
+                // `name: nil` uses the system monospace metric — the multiple is
+                // ~font-independent for monospace; exact per-family is render-tail
+                // polish.
+                dispatch(
+                    .setFontSize(
+                        px: Double(size),
+                        lineHeight: FontPreference.editorLineHeightMultiple(
+                            name: nil, size: size)),
+                    webView: webView)
             }
             // TSK-259: double-optional channel — `nil` (outer) = nothing
             // pending; `.some(nil)` = explicit "bundle default" must still

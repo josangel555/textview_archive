@@ -45,4 +45,18 @@ public enum FontPreference {
             return f.isFixedPitch
         }.sorted()
     }
+
+    /// TSK-1151: the line-height MULTIPLE the AppKit source view (NSTextView)
+    /// renders at, so the CM6 editor can match it instead of its hardcoded 1.45
+    /// (~18% taller). NSTextView sets no explicit `lineHeightMultiple`, so its
+    /// effective line height is the layout manager's default for the resolved
+    /// font; dividing by the point size yields the font-relative multiple CM6
+    /// needs (typically ~1.16–1.20 for monospace). Computed off `resolvedFont`
+    /// so a nil/unknown family uses the same SF Mono the views fall back to.
+    public static func editorLineHeightMultiple(name: String?, size: CGFloat) -> Double {
+        let font = resolvedFont(name: name, size: size)
+        let h = NSLayoutManager().defaultLineHeight(for: font)
+        guard size > 0, h > 0 else { return 1.2 }
+        return Double(h / size)
+    }
 }

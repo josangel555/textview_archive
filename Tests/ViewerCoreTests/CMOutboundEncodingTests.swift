@@ -92,9 +92,12 @@ final class CMOutboundEncodingTests: XCTestCase {
     }
 
     func testEncodeSetFontSize() {
-        let d = encodeAndParse(.setFontSize(15))
+        // TSK-1151: px rides as Double (fractional zoom, no Int rounding) and the
+        // line-height multiple is carried for the CM6 scroller.
+        let d = encodeAndParse(.setFontSize(px: 15.5, lineHeight: 1.2))
         XCTAssertEqual(d["type"] as? String, "setFontSize")
-        XCTAssertEqual(d["px"] as? Int, 15)
+        XCTAssertEqual(d["px"] as? Double, 15.5)
+        XCTAssertEqual(d["lineHeight"] as? Double, 1.2)
     }
 
     /// TSK-259 slice 2: the family rides when set; an explicit nil omits
