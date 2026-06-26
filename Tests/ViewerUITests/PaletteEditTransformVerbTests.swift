@@ -125,6 +125,27 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
         XCTAssertEqual(after, "a\nb\nc\n", "TSK-1186: duplicate lines removed (first kept)")
     }
 
+    func test_convertLineEndingsLF_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("le.txt", "a\r\nb\r\n")
+        XCTAssertTrue(apply("convert-line-endings-lf", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "a\nb\n", "TSK-1186: CRLF → LF")
+    }
+
+    func test_convertLineEndingsCRLF_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("le2.txt", "a\nb\n")
+        XCTAssertTrue(apply("convert-line-endings-crlf", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "a\r\nb\r\n", "TSK-1186: LF → CRLF")
+    }
+
+    func test_convertLineEndingsCR_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("le3.txt", "a\nb\n")
+        XCTAssertTrue(apply("convert-line-endings-cr", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "a\rb\r", "TSK-1186: LF → CR")
+    }
+
     /// Every new verb must be RECOGNIZED by the dispatcher (a no-op on a
     /// non-applicable file still returns true — the verb is known). Guards the
     /// registry↔dispatcher vocabulary wiring for every command in the slice.
@@ -139,6 +160,7 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "edit-promote-heading", "edit-demote-heading",
             "edit-sort-lines", "edit-sort-lines-desc",
             "edit-reverse-lines", "edit-remove-duplicate-lines",
+            "convert-line-endings-lf", "convert-line-endings-crlf", "convert-line-endings-cr",
             "toggle-view-only",
         ] {
             XCTAssertTrue(apply(verb, on: model), "\(verb) must be a recognized script verb")

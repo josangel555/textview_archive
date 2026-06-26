@@ -243,6 +243,18 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "edit.removeDuplicateLines", title: "Remove Duplicate Lines", category: .edit,
             scriptVerb: "edit-remove-duplicate-lines"),
+        // TSK-1186: line-ending converters as PARAM-LESS per-target verbs (the
+        // dispatcher carries args, but enumerated targets keep the palette
+        // prompt-free) — convertActiveFileLineEnding is file-write, host-tested.
+        CommandDescriptor(
+            id: "edit.convertLineEndingsLF", title: "Convert Line Endings to LF", category: .edit,
+            scriptVerb: "convert-line-endings-lf"),
+        CommandDescriptor(
+            id: "edit.convertLineEndingsCRLF", title: "Convert Line Endings to CRLF", category: .edit,
+            scriptVerb: "convert-line-endings-crlf"),
+        CommandDescriptor(
+            id: "edit.convertLineEndingsCR", title: "Convert Line Endings to CR", category: .edit,
+            scriptVerb: "convert-line-endings-cr"),
         CommandDescriptor(
             // TSK-904: "Compact" keyword so the palette finds the inverse of
             // Pretty-Print under its common synonym, not just "minify".

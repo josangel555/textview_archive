@@ -145,6 +145,10 @@ public enum ScriptVerb {
         case "edit-sort-lines-desc":       _ = model.sortActiveFileLines(ascending: false)
         case "edit-reverse-lines":         _ = model.reverseActiveFileLines()
         case "edit-remove-duplicate-lines": _ = model.removeDuplicateActiveFileLines()
+        // TSK-1186: line-ending converters (per-target, param-less) — file-write.
+        case "convert-line-endings-lf":    _ = model.convertActiveFileLineEnding(to: .lf)
+        case "convert-line-endings-crlf":  _ = model.convertActiveFileLineEnding(to: .crlf)
+        case "convert-line-endings-cr":    _ = model.convertActiveFileLineEnding(to: .cr)
         // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.
