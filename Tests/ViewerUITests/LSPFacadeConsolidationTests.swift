@@ -127,21 +127,40 @@ final class LSPFacadeConsolidationTests: HeadlessUITestCase {
 
     // MARK: - Completion entry contract (TSK-963 / TSK-463)
 
-    func test_completion_noLSPLanguage_returnsEmpty_withoutDispatch() throws {
+    func test_completion_noLSPLanguage_servesInFileFallback_withoutDispatch() throws {
         let url = try harness.writeFile("plain.txt", "hello world\n")
         let model = harness.model
         model.open(url: url)
         let id = model.tabs.selected!.id
         model._lastCompletionRequest = nil
 
+        // TSK-1127/1268: a non-LSP file now gets the zero-server in-file fallback
+        // (buffer words) instead of empty — prefix "hell" at col 4 → "hello".
         let items = awaitCompletion(
             model, tabID: id, url: url,
             request: CMHoverRequest(line: 1, character: 4, replyId: "r2"))
 
-        XCTAssertEqual(items, [],
-            "a completion request on a non-LSP file returns empty")
+        XCTAssertEqual(items.map(\.label), ["hello"],
+            "a non-LSP file serves in-file buffer-word completions (zero-server fallback)")
+        XCTAssertEqual(items.first?.detail, "in-file")
         XCTAssertNil(model._lastCompletionRequest,
-            "the language gate refuses BEFORE any dispatch — no server spawn")
+            "the fallback does NOT dispatch to an LSP server — no spawn")
+    }
+
+    func test_inFileFallback_ranksByFrequency() throws {
+        let url = try harness.writeFile("notes.txt", "alpha alpha alphabet\nal\n")
+        let model = harness.model
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+
+        // Cursor after "al" on line 2 → prefix "al" → "alpha" (freq 2) ranks
+        // before "alphabet" (freq 1); "al" itself is excluded (== prefix).
+        let items = awaitCompletion(
+            model, tabID: id, url: url,
+            request: CMHoverRequest(line: 2, character: 2, replyId: "r9"))
+
+        XCTAssertEqual(items.map(\.label), ["alpha", "alphabet"],
+            "in-file completions ranked by frequency desc")
     }
 
     func test_completion_lspLanguage_passesGate_recordsRequest() throws {

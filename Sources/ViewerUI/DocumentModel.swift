@@ -3423,9 +3423,20 @@ public final class DocumentModel: ObservableObject {
     public func handleCompletionRequest(
         tabID: UUID, fileURL: URL, request: CMHoverRequest
     ) async -> [EditorCompletionItem] {
-        guard lspLanguageConfigured(for: fileURL) else { return [] }
         let (lspLine, lspChar) = lspPosition(
             line: request.line, character: request.character)
+        // TSK-1127: zero-server fallback. With NO LSP language configured, serve
+        // in-file buffer-word completions from the live editor buffer (the
+        // vim-Ctrl-N class every editor ships) instead of replying empty — and
+        // WITHOUT any server spawn/dispatch. `InFileCompletion` walks back over the
+        // identifier prefix ending at the 0-based column itself. (Was the orphaned
+        // built-but-unwired core flagged in TSK-1268; this is the wiring slice.)
+        guard lspLanguageConfigured(for: fileURL) else {
+            guard let text = editorBuffer(forTabID: tabID)?.text else { return [] }
+            return InFileCompletion
+                .completions(in: text, line: lspLine, column: lspChar)
+                .map { EditorCompletionItem(label: $0, detail: "in-file", insertText: $0) }
+        }
         #if DEBUG
         _lastCompletionRequest = (fileURL, lspLine, lspChar)
         #endif
