@@ -86,6 +86,7 @@ jobs:
             --filter ViewerUITests.PDFExportWebViewTests \
             --filter ViewerUITests.PaneScrollRestoreWebViewTests \
             --filter ViewerUITests.EditorScrollRestoreWebViewTests \
+            --filter ViewerUITests.EditorCursorBlinkWebViewTests \
             --filter ViewerUITests.RenderedFindBarTests
 
       - name: Upload test results
