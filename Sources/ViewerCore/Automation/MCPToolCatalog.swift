@@ -36,6 +36,7 @@ public enum MCPToolCatalog {
         listBookmarksDescriptor,
         snapshotWindowDescriptor,
         listRunnableTasksDescriptor,
+        processMemoryDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -60,6 +61,7 @@ public enum MCPToolCatalog {
         case "list_bookmarks":    return try listBookmarks(args, host)
         case "snapshot_window":   return try snapshotWindow(args, host)
         case "list_runnable_tasks": return try listRunnableTasks(args, host)
+        case "process_memory":    return try processMemory(args, host)
         default:
             throw MCPError.notFound("unknown tool: \(name)")
         }
@@ -531,6 +533,26 @@ public enum MCPToolCatalog {
             "count": .int(tasks.count),
             "tasks": .array(items),
         ])
+    }
+
+    // MARK: - process_memory
+
+    private static let processMemoryDescriptor = MCP.ToolDescriptor(
+        name: "process_memory",
+        description: "Report the app process's OS-level memory: appFootprintBytes = phys_footprint (the CORRECT metric — includes compressed memory; NOT VSZ/RSS) of the main process, plus the summed WebKit helper-process footprint. Read-only; no args.",
+        inputSchema: emptySchema
+    )
+
+    private static func processMemory(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let s = ProcessMemory.sample()
+        var obj: [String: MCP.Value] = [
+            "webKitHelperBytes": .int(Int(s.webKitHelperBytes)),
+            "webKitHelperCount": .int(s.webKitHelperCount),
+            "helpersComplete": .bool(s.helpersComplete),
+        ]
+        // nil only on a kernel-status failure (surfaced as absent, not a fabricated 0).
+        if let app = s.appFootprintBytes { obj["appFootprintBytes"] = .int(Int(app)) }
+        return .object(obj)
     }
 
     // MARK: - Validation

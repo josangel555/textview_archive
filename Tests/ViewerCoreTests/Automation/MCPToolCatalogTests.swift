@@ -71,7 +71,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 13)
+        XCTAssertEqual(names.count, 14)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -80,9 +80,29 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
-            "list_runnable_tasks",
+            "list_runnable_tasks", "process_memory",
         ]
         XCTAssertEqual(names, expected)
+    }
+
+    // MARK: - process_memory
+
+    func test_processMemory_reportsAppFootprint() throws {
+        let result = try MCPToolCatalog.dispatch(
+            name: "process_memory", args: .object([:]), host: host)
+        guard case .object(let obj) = result else {
+            XCTFail("malformed result: \(result)"); return
+        }
+        // The live test process has a real phys_footprint > 0 (teeth: a handler
+        // that didn't read ProcessMemory.sample would miss it / return 0).
+        guard case .int(let footprint)? = obj["appFootprintBytes"] else {
+            XCTFail("missing appFootprintBytes"); return
+        }
+        XCTAssertGreaterThan(footprint, 0)
+        // Full sample shape surfaced.
+        XCTAssertNotNil(obj["webKitHelperBytes"])
+        XCTAssertNotNil(obj["webKitHelperCount"])
+        XCTAssertNotNil(obj["helpersComplete"])
     }
 
     // MARK: - list_runnable_tasks
