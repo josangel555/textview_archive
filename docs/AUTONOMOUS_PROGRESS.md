@@ -1,6 +1,19 @@
 # Autonomous run — progress tracker (2026-06-04)
 
-## DECISIONS NEEDED (owner) — as of 2026-06-22
+## DECISIONS NEEDED (owner) — as of 2026-06-26
+
+**NEW this autonomous run (2026-06-26) — what needs YOU to unblock the bottleneck:**
+- **TSK-1257 — prod-build crash: M5-Pro RETEST (the one real acceptance left).** Fixed (Bundle.resolveResourceBundle + the `--verify-resources` gate); fixed dist vended to `github.com/josangel555/mvd_dist` (`TextView-2026-06-26-packagingfix.zip`) + installed locally. Download on the M5 Pro → `xattr -dr com.apple.quarantine` → launch. Should now start.
+- **TSK-1129 — LSP workspace-binary RCE guard: block-vs-prompt UX (PARKED, pings you).** Decision core + persisted trust store built; the spawn site now WARNS (vector visible). Closing it needs the BLOCK + a one-time confirm prompt: (a) prompt-first then block [rec] · (b) block-by-default now · (c) warn-only.
+- **Rust flips (parity-clean — your soak+flip+twin-delete):** TSK-1215 formula (`MDV_RUST_FORMULA`), TSK-1202 folds (`MDV_RUST_FOLD`). Both ship OFF, parity-proven.
+- **Spike ratifications now at REVIEW (deliverables done → ratify to done):** TSK-787 (Swift Testing hybrid — already adopted/in use), TSK-779 (plugin/core boundary), TSK-788 (audit depth: STANDARD), TSK-775 (migration horizon: engines-only).
+- **DELETE-candidates (TSK-1268 orphaned-cores audit) — confirm to delete:** LSPService (superseded by LSPPool/LSPClient) + other dead/superseded orphans. ~30 cores were built+tested but unconsumed; treemap/LSPBinaryTrust/InFileCompletion/ClipboardTableExtractor now WIRED, the rest triaged (wire-now / wire-when-UI / delete).
+- **THE BOTTLENECK = the REVIEW pile (~220+ render features awaiting your on-screen close).** All host/model-verified this run; remaining is open-it-and-look. Highlights: vim steady caret (TSK-1259, VM-validated), in-file completion (TSK-1127), clipboard-table→CSV paste (TSK-958, user-visible), **image editor (TSK-1048 + 13 tool tickets — model+ViewModel host-verified, ~166 tests)**, audio editor (TSK-529, 108 tests), split-pane fixes (TSK-921/922), folder treemap (TSK-506), rust highlight (TSK-660). Open each feature, confirm on-screen, close.
+- **wave-12 (P1)** awaits P0 drain + your groom (BACKLOG ▸ NEXT WAVE 12).
+
+---
+
+**Earlier owner-gated items (still open) — as of 2026-06-22:**
 
 Five owner-gated items block the highest-value next steps; each is parked with full homework on the board:
 - **TSK-1215 — formula on-screen.** View-wiring (a) now BUILT @ 9983e46d (gated, zero-risk: CSVTableView shows computed formula values when `MDV_RUST_FORMULA` on + file order; off → raw, unchanged). Remaining is just YOUR call: (b) flip `MDV_RUST_FORMULA` ON after a soak (lights up engine + display together) → VM/owner on-screen confirm → (c) delete the Swift twin. THE unlock for the whole formula investment; the agent build is done. **FLIP IS NOW PARITY-CLEAN — all 5 differential-fuzz-found Rust port blockers FIXED + validated:** TSK-1218 (whitespace-only cell → Blank, should be text " "), TSK-1219 (inf/nan textual forms wrongly parsed as numbers), TSK-1220 (the `&` concat operator was missing entirely → parse error), TSK-1221 (numbers formatted at 16 digits vs Swift's `%.10g` 10 sig digits), TSK-1222 (TRUE/FALSE boolean literals → #NAME?, breaking VLOOKUP(...,FALSE) and every bare TRUE/FALSE). Each fixed in `rust-core/.../formula.rs`, host-tested, and guarded by the differential fuzz (Swift==Rust, zero divergences). The fuzz now spans EVERY core eval path — arithmetic/aggregate/text/date/coercion/number-format/concat/comparison/criteria/recalc/logical/lookup — so the migration-target engine matches Swift+Excel comprehensively. The flip soak should pass parity; remaining is the owner's soak + on-screen confirm + Swift-twin deletion.
