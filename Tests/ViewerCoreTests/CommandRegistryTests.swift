@@ -92,6 +92,7 @@ final class CommandRegistryTests: XCTestCase {
             "edit-sort-lines", "edit-sort-lines-desc",
             "edit-reverse-lines", "edit-remove-duplicate-lines",
             "convert-line-endings-lf", "convert-line-endings-crlf", "convert-line-endings-cr",
+            "convert-indentation-to-spaces", "convert-indentation-to-tabs",
             "edit-remove-empty-lines", "edit-collapse-blank-lines",
             "edit-trim-trailing", "edit-ensure-final-newline",
             "edit-minify-json", "edit-insert-toc", "edit-insert-date",

@@ -255,6 +255,13 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "edit.convertLineEndingsCR", title: "Convert Line Endings to CR", category: .edit,
             scriptVerb: "convert-line-endings-cr"),
+        // TSK-1186: indentation converters (per-target, param-less) — file-write.
+        CommandDescriptor(
+            id: "edit.convertIndentationToSpaces", title: "Convert Indentation to Spaces", category: .edit,
+            scriptVerb: "convert-indentation-to-spaces"),
+        CommandDescriptor(
+            id: "edit.convertIndentationToTabs", title: "Convert Indentation to Tabs", category: .edit,
+            scriptVerb: "convert-indentation-to-tabs"),
         CommandDescriptor(
             // TSK-904: "Compact" keyword so the palette finds the inverse of
             // Pretty-Print under its common synonym, not just "minify".

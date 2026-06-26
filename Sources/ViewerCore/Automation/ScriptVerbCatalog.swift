@@ -185,6 +185,8 @@ public enum ScriptVerbCatalog {
         ScriptVerb("convert-line-endings-lf", .editor, .none, "Convert the active file's line endings to LF"),
         ScriptVerb("convert-line-endings-crlf", .editor, .none, "Convert the active file's line endings to CRLF"),
         ScriptVerb("convert-line-endings-cr", .editor, .none, "Convert the active file's line endings to CR"),
+        ScriptVerb("convert-indentation-to-spaces", .editor, .none, "Convert the active file's leading tabs to spaces"),
+        ScriptVerb("convert-indentation-to-tabs", .editor, .none, "Convert the active file's leading spaces to tabs"),
         ScriptVerb("toggle-view-only", .editor, .none, "Toggle View-only (read-only) mode"),
         ScriptVerb("toggle-blame", .editor, .none, "Toggle the editor git-blame gutter"),
         ScriptVerb("fold-all", .editor, .none, "Fold all foldable regions in the active editor"),

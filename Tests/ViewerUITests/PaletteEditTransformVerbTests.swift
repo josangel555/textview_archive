@@ -146,6 +146,22 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
         XCTAssertEqual(after, "a\rb\r", "TSK-1186: LF → CR")
     }
 
+    func test_convertIndentationToSpaces_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("ind.txt", "\tfoo\n")
+        XCTAssertTrue(apply("convert-indentation-to-spaces", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(after.contains("\t"), "TSK-1186: leading tab → spaces")
+        XCTAssertTrue(after.contains("foo"))
+    }
+
+    func test_convertIndentationToTabs_verb_transformsActiveFile() throws {
+        let w = harness.model.editorIndentation.size
+        let (model, url) = try openText("ind2.txt", String(repeating: " ", count: w) + "foo\n")
+        XCTAssertTrue(apply("convert-indentation-to-tabs", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(after.hasPrefix("\t"), "TSK-1186: \(w) leading spaces → a tab")
+    }
+
     /// Every new verb must be RECOGNIZED by the dispatcher (a no-op on a
     /// non-applicable file still returns true — the verb is known). Guards the
     /// registry↔dispatcher vocabulary wiring for every command in the slice.
@@ -161,6 +177,7 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "edit-sort-lines", "edit-sort-lines-desc",
             "edit-reverse-lines", "edit-remove-duplicate-lines",
             "convert-line-endings-lf", "convert-line-endings-crlf", "convert-line-endings-cr",
+            "convert-indentation-to-spaces", "convert-indentation-to-tabs",
             "toggle-view-only",
         ] {
             XCTAssertTrue(apply(verb, on: model), "\(verb) must be a recognized script verb")

@@ -149,6 +149,9 @@ public enum ScriptVerb {
         case "convert-line-endings-lf":    _ = model.convertActiveFileLineEnding(to: .lf)
         case "convert-line-endings-crlf":  _ = model.convertActiveFileLineEnding(to: .crlf)
         case "convert-line-endings-cr":    _ = model.convertActiveFileLineEnding(to: .cr)
+        // TSK-1186: indentation converters (per-target, param-less) — file-write.
+        case "convert-indentation-to-spaces": _ = model.convertActiveFileIndentation(toSpaces: true)
+        case "convert-indentation-to-tabs":   _ = model.convertActiveFileIndentation(toSpaces: false)
         // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.
