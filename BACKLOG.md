@@ -247,12 +247,12 @@ cross-checked via `task_get` + the docs; topics with no dedicated open ticket ar
 
 ### Editor / find (CM6 + find bars)
 
-- **no ticket** — *Tooltip popup fires too soon (open delay should ~2×)* — change `TooltipTiming.appearDelay` `0.3 → 0.6` in `Sources/ViewerUI/FloatingTooltip.swift:34` (+ optional matching `delay:` on the CM6 LSP `hoverTooltip` in `codemirror.html`). **TINY.**
-- **no ticket** — *Blinking cursor width +1px in Editor* — add a `.cm-cursor { border-left-width: 2px }` rule in `Sources/ViewerUI/Resources/codemirror/codemirror.css` (or a base-theme override). Pure CSS, no Swift. **TINY.**
+- **~~no ticket~~ DONE (TSK-1209, verified 2026-06-26)** — *Tooltip popup fires too soon (open delay should ~2×)* — `TooltipTiming.appearDelay` is already `0.6` (`FloatingTooltip.swift:36`, comment cites the owner's "0.3 fired too soon").
+- **~~no ticket~~ DONE (verified 2026-06-26)** — *Blinking cursor width +1px in Editor* — `.cm-cursor, .cm-dropCursor { border-left-width: 2px; }` already present (`codemirror.css:114`).
 - **~~no ticket~~ LIKELY DONE (2026-06-26)** — *Cmd+F "again should keep the prev find text" for Rendered + Source bars* — STALE entry: a draft mechanism already does this — `dismissRenderedBar()`/`dismissSourceBar()` save the query into `renderedQueryDraft`/`sourceQueryDraft` before wiping it, and `showRenderedBar()` (`FindCoordinator.swift:47-48`) restores the draft on re-open. (Rendered/source intentionally WIPE-then-draft rather than the editor's keep-and-gate; both achieve "keep prev text". Verify source `showSourceBar` symmetry before closing.)
-- **no ticket** — *Tab should insert a literal tab, not indent the line* — swap the `indentWithTab` keymap binding (`codemirror.html:979`) for an insert-`\t` command (keep Shift-Tab dedent), behind the existing keymap compartment. **SMALL.**
+- **~~no ticket~~ DONE (verified 2026-06-26)** — *Tab should insert a literal tab, not indent the line* — already implemented (`codemirror.html:817-824`: "Owner ask: a plain Tab at the caret inserts a LITERAL tab character (\t)", ordered before `indentWithTab`, Shift-Tab still dedents).
 - **TSK-1270** — *After dismissing Find bar in Rendered MD view, highlights remain* — DIAGNOSED 2026-06-26: the Swift wiring is CORRECT — `dismissRenderedBar()` wipes `renderedQuery→""` (`FindCoordinator.swift:53-57`), ContentView feeds `""` to the view, and `updateNSView` runs `__mdvFindClear()` (`MarkdownRenderedView.swift:370-378`). So the presented-gate is NOT the bug (rendered wipes the query, unlike the editor which keeps+gates). Residual cause is the JS clear itself (`__mdvFindClear`, `MarkdownRenderedView.swift:871`) likely not removing the ACTIVE/current-match highlight (separate element/style from the plain `<mark>`s), or stale since the Jun-20 wishlist. NEEDS VM repro + JS inspection (render-tier, can't observe host-only). **SMALL (JS).**
-- **no ticket** — *Cmd+F when File-nav is focused opens the tab's finder* — `findInPage()` (`main.swift:3251`) routes by view-mode only, never checks first-responder; add a `firstResponder`-is-sidebar check before routing. **SMALL.**
+- **TSK-1272** — *Cmd+F when File-nav is focused opens the tab's finder* — VERIFIED OPEN 2026-06-26: `findInPage()` (`main.swift:3632`) routes by view-mode only, never checks first-responder; add a `firstResponder`-is-sidebar check before routing. **SMALL (render/first-responder → review).**
 - **TSK-1271** — *In Find mode, can't scroll past the currently-selected match* — JS `scrollIntoView({block:'center'})` exists (`MarkdownRenderedView.swift:847`); needs user-scroll-aware re-centering (or a documented behavior note). **SMALL (UX, no data risk).**
 
 ### Wiring-tail (engine built + tested, needs a menu/UI hook)
@@ -267,5 +267,5 @@ cross-checked via `task_get` + the docs; topics with no dedicated open ticket ar
 
 ### Terminal
 
-- **no ticket** — *Terminal header pane: "Terminal — Name [pwd, pid]"* — tab labels/titles + live cwd (OSC 7) already tracked (`TerminalPaneStore.swift:243`, `TerminalModel.swift:148`); expose `PTYProcess.childPID` up to the model + add a header SwiftUI row. **SMALL.**
+- **TSK-1273** — *Terminal header pane: "Terminal — Name [pwd, pid]"* — VERIFIED OPEN 2026-06-26: tab labels/titles + live cwd (OSC 7) already tracked (`TerminalPaneStore.swift:243`, `TerminalModel.swift:148`) + `PTYProcess.childPID` exists (`PTYProcess.swift:53`) but is NOT surfaced; expose it up to the model + add a header SwiftUI row. **SMALL (render → review).**
 ```
