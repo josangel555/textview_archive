@@ -17,6 +17,26 @@ internal-quality / rust-core / test work).
 
 > **Checkboxes are the at-a-glance progress mirror; the `tasked` board is authoritative for STATE.** Tick `[x]` when the board item reaches `done`/`validated` (render items: when on-screen-confirmed). From the 7-subagent board reconcile (the board is ACCURATE — done work already left the open lanes; no shipped-but-unmarked backlog). The OLD curated Next-50 + lane snapshot below are the prior capture, superseded by this section.
 
+### Low-hanging-fruit sweep (2026-06-25) — outcome + NEXT 10
+
+**Sweep result** (the 2026-06-20 Quick-Wins list, re-verified against current `main`): **5 of 10 already shipped** since the audit — tooltip delay (TSK-1209), find-text-preserve (TSK-1207), View-only toggle (TSK-936 validated), rendered find-highlight clear (`MarkdownRenderedView`), text-transforms menu (TSK-1113 validated). **3 fixed + committed `30a3af2f`**: editor 2px caret + literal-Tab insert (**TSK-1250**, render → `review`) and the `check-bundle-size.sh` 48/26→80/65 doc drift (residual of the validated **TSK-1098**). **2 deferred as tickets** (prereqs missing, not blind-hacked): Cmd+F sidebar routing (**TSK-1248**), terminal header row (**TSK-1249**). LESSON: the Quick-Wins audit is stale — verify each item against `main` before working it.
+
+**NEXT 10** (2026-06-25; verify-before-fix each — last sweep caught 5 already-done):
+
+_Best autonomous picks (host-validatable → can reach `done` without the screen):_
+1. **TSK-1120** — footer file-stats flaky on tab-switch (SwiftUI re-body races imperative state; SAME class as the scroll-reset; model-layer testable).
+2. **TSK-986** — hex search scans the full buffer synchronously per keystroke (add debounce / off-main; host-testable).
+3. **TSK-991** — `SidebarModel.pruneChildrenCacheIfNeeded` can't enforce the cap when expanded dirs exceed it (memory correctness; host-testable).
+4. **TSK-1036** — route `.docx/.rtf/.ods/.xlsx` into the viewer (consume the landed readers; model/wiring).
+5. **TSK-1100** — wire `DependencyGraphView` to a reachable entry point (surface a built-but-unreachable feature).
+6. **TSK-1116** — wire `FocusWorkMode` into a View → Focus Mode menu (model + menu).
+7. **TSK-1132** — `WebViewTestCase` heavy-tier base so the live-WKWebView suites stop escaping `TierGateObserver` (test-discipline; host).
+
+_Render-gated (land at `review` for VM/owner):_
+8. **TSK-1182** — diff multi-line selection, plain-diff mode (triaged + execute-ready: host helper `DiffHunkAttributedString` already landed).
+9. **TSK-1102** — CSV grid cell-cursor wiring (arrow-nav + focus ring + Cmd-C whole-cell; model host-testable, pixels VM).
+10. **TSK-891** — Page Up janky / not smooth in the editor (CM6 scroll hot path; render/VM).
+
 ### A. BUILT user-facing fixes — unmerged on worktree branches; verify → merge (highest leverage)
 - [x] **TSK-921 / 922** — close/open-split race — **FIXED on main** (`17932af8`: wave2 re-applied the worktree fix — `ContentView` observes `tabCoordinator` so `splitURL` re-bodies on open/close). Host teeth green (`SplitObservationTests` 5/5 + `ChromeBodyEvalCount` open/close re-body). At **review** (on-screen pixel = VM/owner). Board was stale (reconcile predated `17932af8`); both → `fixed` 2026-06-23.
 - [x] **TSK-1046** — scroll-reset on session/tab switch (**owner top priority**) — **FIX LANDED + VALIDATED on both surfaces** (`e50e4538` fix; `d1a1c36e` editor validation). RENDERED: on-screen green (`ScrollRestoreUATTests` SCROLL01/02, spawned-app UAT). EDITOR: live-CM6 green **in-process** (`EditorScrollRestoreWebViewTests.test_restoreSeed`, wired into `run_webview_tests` + nightly) — the spawned-app editor UAT is a dead end (CM6 WebContent jetsam in the GUI lane; see LESSONS). MODEL: host-tested (`editorMountSelectionSeed`) + owner manual confirm. At `review` (owner closes to done). Owner CONFIRMED fixed on-screen.
