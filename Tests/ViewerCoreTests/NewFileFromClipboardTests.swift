@@ -23,9 +23,23 @@ final class NewFileFromClipboardTests: XCTestCase {
     func test_detect_malformedJSON_isText() {
         XCTAssertEqual(NewFileType.detect("{not valid json"), .text)
     }
+    // TSK-958/1268: a pasted TSV table → CSV (opens in the table viewer).
+    func test_detect_tsvTable_isCSV() {
+        XCTAssertEqual(NewFileType.detect("name\tage\tcity\nAda\t36\tLondon\nGrace\t40\tNYC"), .csv)
+    }
+    func test_detect_proseWithCommas_isNotCSV() {
+        // Conservative: commas in prose must NOT trip CSV (the reason detect
+        // never guessed comma-CSV) — only tab-delimited grids do.
+        XCTAssertEqual(NewFileType.detect("Hello, world. Foo, bar, and baz."), .text)
+    }
+    func test_detect_singleStrayTab_isText() {
+        // One tab-bearing line among prose is NOT a table (needs ≥2 multi-col rows).
+        XCTAssertEqual(NewFileType.detect("intro line\nname\tvalue\nmore prose here"), .text)
+    }
     func test_pastedBaseName_keepsExtension() {
         XCTAssertEqual(NewFileType.json.pastedBaseName, "Pasted.json")
         XCTAssertEqual(NewFileType.text.pastedBaseName, "Pasted.txt")
+        XCTAssertEqual(NewFileType.csv.pastedBaseName, "Pasted.csv")
     }
 
     // MARK: create-with-contents

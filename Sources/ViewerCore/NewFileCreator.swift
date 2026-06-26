@@ -156,6 +156,16 @@ public enum NewFileType: String, CaseIterable, Sendable {
            (try? JSONSerialization.jsonObject(with: data)) != nil {
             return .json
         }
+        // TSK-958/1268: a TAB-delimited grid is reliably a pasted TABLE (a copied
+        // spreadsheet/web-table range drops TSV on the clipboard) — open it in the
+        // CSV/table viewer. Tabs, unlike commas, don't occur structurally in prose,
+        // so requiring ≥2 rows that EACH have ≥2 tab-separated cells stays
+        // conservative: a single stray tab in a prose line (1 multi-col row) does
+        // NOT trip it. The CSV viewer auto-detects the TSV delimiter.
+        let grid = ClipboardTableExtractor.tsvToRows(content)
+        if grid.count >= 2, grid.filter({ $0.count >= 2 }).count >= 2 {
+            return .csv
+        }
         return .text
     }
 }

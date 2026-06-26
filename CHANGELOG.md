@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ### Changed
 - **Editor caret no longer blinks** — the text cursor is now steady in both vim modes (the NORMAL-mode block cursor and the INSERT-mode line caret).
+- **Paste a copied table → opens as a table** — "New Tab from Clipboard" now detects a copied spreadsheet/web-table range (tab-separated) and opens it in the CSV/table viewer instead of as plain text. Comma-bearing prose is unaffected (only real tab-delimited grids are treated as tables).
 
 ### Fixed
 - **The app now launches on other Macs** — a copy of the app sent to another Mac used to crash instantly on launch; it was secretly loading its editor/highlighting resources from the folder it was *built* in, which doesn't exist anywhere else. The app is now fully self-contained and runs anywhere (Apple Silicon, macOS 15+; clear the download quarantine or right-click → Open the first time, since it isn't notarized yet).
