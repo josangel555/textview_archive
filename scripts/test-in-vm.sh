@@ -342,6 +342,21 @@ case "$MODE" in
     log "quick done in ${SECONDS}s"
     exit $rc
     ;;
+  webview)
+    ensure_tools
+    # Just the gated in-process live-WKWebView lane (run_webview_tests), WITHOUT
+    # the full `all` sweep — for TARGETED render validation. The WebView suites
+    # self-skip without MDV_RUN_WEBVIEW_TESTS=1 (which run_webview_tests arms),
+    # and MDV_* knobs forward via the asuser env bridge in the GUI lane — so e.g.
+    #   MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUST_FOLD=1 \
+    #     bash scripts/test-in-vm.sh webview
+    # confirms the RUST fold gutter renders (FoldGutterWebViewTests) without
+    # re-running the 4000-test `all` sweep just to exercise ~10 fold tests.
+    rc=0
+    run_webview_tests || rc=$?
+    log "webview done in ${SECONDS}s"
+    exit $rc
+    ;;
   all|*)
     ensure_tools
     # The full sweep below re-covers ViewModeMatrixSmokeTests, so skip the
