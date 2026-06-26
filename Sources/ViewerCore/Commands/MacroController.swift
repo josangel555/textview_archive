@@ -14,7 +14,7 @@ import Foundation
 /// dispatch (Slice B); the hotkey / recording-indicator / management UI are the
 /// render/VM tail.
 @MainActor
-public final class MacroController {
+public final class MacroController: ObservableObject {
     private var recorder: MacroRecorder
     /// The most recently finished macro, replayable via `replayLast`.
     public private(set) var lastMacro: Macro?
@@ -26,20 +26,23 @@ public final class MacroController {
         self.recorder = MacroRecorder(registry: registry)
     }
 
-    /// True while actively capturing dispatched verbs.
-    public var isRecording: Bool { recorder.isRecording }
+    /// True while actively capturing dispatched verbs. `@Published` so a UI
+    /// recording indicator (the StatusBar) updates reactively; kept in lock-step
+    /// with the recorder's own flag via the lifecycle methods below.
+    @Published public private(set) var isRecording = false
 
-    public func startRecording() { recorder.startRecording() }
+    public func startRecording() { recorder.startRecording(); isRecording = true }
 
     /// Stop recording, store the captured steps as `lastMacro`, and return it.
     @discardableResult
     public func finishRecording(name: String = "Macro") -> Macro {
         let macro = recorder.finishRecording(name: name)
         lastMacro = macro
+        isRecording = false
         return macro
     }
 
-    public func cancelRecording() { recorder.cancelRecording() }
+    public func cancelRecording() { recorder.cancelRecording(); isRecording = false }
 
     /// Capture one dispatched script-verb into the in-flight recording, mapping
     /// the verb back to its command id via the registry. No-op when not

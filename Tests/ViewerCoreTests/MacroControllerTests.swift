@@ -96,4 +96,18 @@ final class MacroControllerTests: XCTestCase {
         let macro = c.finishRecording()
         XCTAssertTrue(macro.isEmpty, "cancel discards the captured steps")
     }
+
+    func test_isRecording_reflectsLifecycle() {
+        // The @Published isRecording drives the StatusBar recording indicator
+        // (TSK-1162 vm slice) — verify it tracks the record lifecycle.
+        let c = MacroController(registry: registry())
+        XCTAssertFalse(c.isRecording)
+        c.startRecording()
+        XCTAssertTrue(c.isRecording, "true while recording")
+        _ = c.finishRecording()
+        XCTAssertFalse(c.isRecording, "clears when recording stops")
+        c.startRecording()
+        c.cancelRecording()
+        XCTAssertFalse(c.isRecording, "cancel also clears it")
+    }
 }

@@ -63,6 +63,10 @@ struct StatusBar: View {
             // absent) when vim mode is off. Bottom-left, the conventional place.
             vimModeChip
 
+            // TSK-1162: macro recording indicator — empty when not recording,
+            // shows a red "● Recording Macro" while a macro is being captured.
+            MacroRecordingChip(macros: model.macros)
+
             // TSK-933: the footer path is a clickable breadcrumb — each segment
             // reveals that ancestor folder (or the file) in the sidebar. Lowest
             // layout priority so it shrinks before the live metric chips (same
