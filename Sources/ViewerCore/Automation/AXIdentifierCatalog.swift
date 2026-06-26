@@ -54,6 +54,7 @@ public enum AXIdentifierCatalog {
         Entry("mdv.tab.overflowMenu", .chrome, "Tab-strip overflow menu button."),
         // content
         Entry("mdv.content", .content, "The main content region (active document view)."),
+        Entry("mdv.htmlRendered", .content, "The rendered Markdown/HTML document view."),
         // editor
         Entry("mdv.editor", .editor, "The CM6 code editor surface."),
         // find / filter / search
@@ -68,10 +69,12 @@ public enum AXIdentifierCatalog {
         Entry("mdv.hexView", .data, "The hex viewer."),
         Entry("mdv.hex.search.field", .data, "Hex viewer search field."),
         Entry("mdv.diff.findField", .data, "Diff viewer find field."),
+        Entry("mdv.diff.summaryHeader", .data, "Diff viewer summary header (the diff content surface)."),
         // nav
         Entry("mdv.sidebar", .nav, "The file-navigator sidebar surface."),
         Entry("mdv.bookmarks", .nav, "Bookmarks sidebar section."),
         Entry("mdv.archive.browser", .nav, "Archive (zip/tar) browser."),
+        Entry("mdv.lspOutline", .nav, "The LSP code-outline (symbol navigator)."),
         Entry("mdv.emptyState.newFile", .nav, "Empty-state 'New File' action."),
         Entry("mdv.emptyState.recents", .nav, "Empty-state recents list."),
         // tools
@@ -82,6 +85,7 @@ public enum AXIdentifierCatalog {
         Entry("mdv.gitLog.searchField", .tools, "Git log search field."),
         Entry("mdv.terminal.pane", .tools, "Terminal pane (PTY tool window) surface."),
         Entry("mdv.settings.languages", .tools, "Settings: supported syntax-highlighting languages list."),
+        Entry("mdv.review.composer", .tools, "Code-review comment composer."),
         // media
         Entry("mdv.audioEditor", .media, "The audio editor surface."),
         Entry("mdv.imageEditor", .media, "The image editor surface."),
