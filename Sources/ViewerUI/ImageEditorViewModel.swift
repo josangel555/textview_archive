@@ -398,16 +398,53 @@ public final class ImageEditorViewModel: ObservableObject {
         recentColors = recentsStore.colors
     }
 
+    // MARK: - Dirty-rect accumulation (TSK-1052)
+
+    /// Region touched by paint ops since the renderer last consumed it. Lazily
+    /// sized from the active paint canvas; the renderer reads
+    /// `consumeDirtyBounds()` to re-composite only the changed sub-rect instead
+    /// of the whole canvas per dab. Pure model is `DirtyRegion` (host-tested).
+    private var dirtyAccumulator: DirtyRegion?
+
+    private func ensureDirtyAccumulator() {
+        guard let c = paintCanvas else { return }
+        let wanted = CGRect(x: 0, y: 0, width: c.width, height: c.height)
+        if dirtyAccumulator?.canvas != wanted {
+            // New or resized canvas: a stale region can't map onto it — restart.
+            dirtyAccumulator = DirtyRegion(width: c.width, height: c.height)
+        }
+    }
+
+    /// Accumulate a local dirty rect (canvas pixel coords) from a paint op.
+    private func markDirty(_ rect: CGRect) {
+        ensureDirtyAccumulator()
+        dirtyAccumulator?.add(rect)
+    }
+
+    /// Mark the whole canvas dirty (flood fill, geometry change).
+    private func markDirtyAll() {
+        ensureDirtyAccumulator()
+        dirtyAccumulator?.markAll()
+    }
+
+    /// The region touched since the last call, then reset to clean. The renderer
+    /// re-composites only this sub-rect (nil = nothing changed). TSK-1052.
+    public func consumeDirtyBounds() -> CGRect? {
+        dirtyAccumulator?.consume() ?? nil
+    }
+
     /// Brush: stamp a single circular dab of `paintColor` (radius `brushRadius`)
     /// centred on canvas pixel `(x, y)`, then re-render. Returns the pixel count
     /// written (0 if off-canvas or the session couldn't be baked).
     @discardableResult
     public func brushDab(atX x: Int, y: Int) -> Int {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
+        let r = tool.resolvedRadius(base: brushRadius)
         let n = canvas.brushDab(
-            cx: x, cy: y, radius: tool.resolvedRadius(base: brushRadius),
+            cx: x, cy: y, radius: r,
             color: tool.resolvedColor(base: paintColor), square: squareBrush)
         paintCanvas = canvas
+        markDirty(DirtyRegion.dab(cx: x, cy: y, radius: r))
         render()
         return n
     }
@@ -418,9 +455,11 @@ public final class ImageEditorViewModel: ObservableObject {
     public func airbrushDab(atX x: Int, y: Int) -> Int {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
         var rng = SystemRandomNumberGenerator()
-        let n = canvas.spray(cx: x, cy: y, radius: Swift.max(2, brushRadius),
+        let sprayRadius = Swift.max(2, brushRadius)
+        let n = canvas.spray(cx: x, cy: y, radius: sprayRadius,
                              density: airbrushDensity, color: paintColor, using: &rng)
         paintCanvas = canvas
+        markDirty(DirtyRegion.dab(cx: x, cy: y, radius: sprayRadius))
         render()
         return n
     }
@@ -431,10 +470,12 @@ public final class ImageEditorViewModel: ObservableObject {
     @discardableResult
     public func brushStroke(fromX x0: Int, y0: Int, toX x1: Int, y1: Int) -> Int {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
+        let r = tool.resolvedRadius(base: brushRadius)
         let n = canvas.brushStroke(
-            from: (x0, y0), to: (x1, y1), radius: tool.resolvedRadius(base: brushRadius),
+            from: (x0, y0), to: (x1, y1), radius: r,
             color: tool.resolvedColor(base: paintColor), square: squareBrush)
         paintCanvas = canvas
+        markDirty(DirtyRegion.stroke(x0: x0, y0: y0, x1: x1, y1: y1, radius: r))
         render()
         return n
     }
@@ -447,6 +488,7 @@ public final class ImageEditorViewModel: ObservableObject {
         guard beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return 0 }
         let n = canvas.floodFill(x: x, y: y, with: paintColor, tolerance: fillTolerance)
         paintCanvas = canvas
+        markDirtyAll()   // flood fill can touch any contiguous region
         render()
         return n
     }

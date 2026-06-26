@@ -663,6 +663,31 @@ final class ImageEditorPaintTests: XCTestCase {
         }
     }
 
+    // MARK: - dirty-rect accumulation (TSK-1052)
+
+    func test_brushDab_accumulatesDirtyRect_thenConsumeResets() throws {
+        let vm = try makeVM(w: 30, h: 30, r: 1, g: 1, b: 1)
+        _ = vm.brushDab(atX: 15, y: 15)
+        let dirty = try XCTUnwrap(vm.consumeDirtyBounds(), "a dab must mark a dirty rect")
+        XCTAssertTrue(dirty.contains(CGPoint(x: 15.5, y: 15.5)), "dirty rect covers the dab centre")
+        XCTAssertTrue(CGRect(x: 0, y: 0, width: 30, height: 30).contains(dirty), "clamped to canvas")
+        XCTAssertNil(vm.consumeDirtyBounds(), "consume resets to clean")
+    }
+
+    func test_floodFill_marksWholeCanvasDirty() throws {
+        let vm = try makeVM(w: 20, h: 20, r: 1, g: 1, b: 1)
+        _ = vm.floodFill(atX: 5, y: 5)
+        XCTAssertEqual(vm.consumeDirtyBounds(), CGRect(x: 0, y: 0, width: 20, height: 20))
+    }
+
+    func test_brushStroke_dirtyRectSpansBothEndpoints() throws {
+        let vm = try makeVM(w: 40, h: 40, r: 1, g: 1, b: 1)
+        _ = vm.brushStroke(fromX: 5, y0: 5, toX: 30, y1: 5)
+        let dirty = try XCTUnwrap(vm.consumeDirtyBounds())
+        XCTAssertTrue(dirty.contains(CGPoint(x: 5.5, y: 5.5)), "covers start")
+        XCTAssertTrue(dirty.contains(CGPoint(x: 30.5, y: 5.5)), "covers end")
+    }
+
     // MARK: - copy-to-file / paste-from-file (TSK-1067)
 
     func test_copyToFile_andPasteFromFile_roundTrip() throws {
