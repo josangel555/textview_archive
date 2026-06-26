@@ -1,7 +1,12 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — autonomous run: AX foundation + validation-drain wave  (2026-06-26)
 
-**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `6de09c0f`+ (verify `git log -1`; last code commit `9ad14cb5` DirtyRegion).
+**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `33ca95d3` (verify `git log -1`; last code commits: AX-id catalog expansion 22→29, then `9ad14cb5` DirtyRegion).
+
+## POST-COMPACTION UPDATE (latest — read first)
+- **AX-id catalog EXPANDED 22→29 (commits `0e43685d` + `33ca95d3`, both gate-green).** Promoted 7 stable agent-drivable surfaces/controls to the curated AXIdentifierCatalog (the addressing contract for the out-of-process driver + element-refs): `mdv.sidebar`, `mdv.emptyState.recents`, `mdv.gitPanel`, `mdv.imageEditor`, `mdv.terminal.pane`, `mdv.gitLog.searchField`, `mdv.settings.languages`. All existing source ids (no view edits); drift guard verifies presence (AXIdentifierCatalogTests 6/6, teeth-proven a bogus id → RED).
+- **Script-verb action surface SURVEYED — already comprehensive** (ScriptVerbCatalog: edit-*/editor-*/find-*/focus-document|file-nav|git|terminal/git-*/close-tab/… ~60+ verbs). The new AX surfaces have matching focus verbs (focus-git, focus-terminal). The P0a agent-drivable interface (29 AX ids + the verb surface) is BUILT; the only P0a remainder is the out-of-process EXECUTOR (TSK-1261/1263, AX-TCC VM-tail).
+- **CONFIRMED DRAINED:** `task_next` returns TSK-590 — an at-review prio-1 epic (owner-close). The board's top ready item is owner-gated ⇒ the host-completable + clean board-hygiene work is exhausted. Remaining = owner-gated only (review-pile close, parked decisions, AX executor VM, new render features needing design). Don't burn ticks on render-blind builds / orphan cores / over-curation.
 
 ## Mission
 Autonomous cron drain (every 5 min) per BACKLOG **🎯 OWNER PRIORITY ORDER (2026-06-26)**: P0a (eval/AX self-driving + agent-drivable interfaces) and P0b (battle-test the ~215 fixed/review pile to VALIDATED with teeth) — CO-EQUAL, interleaved — then P1 (NEXT WAVE 12). Gaps→tickets: when a gap is found, ensure it has a board ticket.
