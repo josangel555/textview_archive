@@ -65,27 +65,50 @@ final class ScriptVerbCatalogTests: XCTestCase {
 
     // MARK: - Drift detection vs the real dispatch switch (the teeth)
 
-    /// Parse the `case "<verb>":` labels out of `ScriptVerbDispatch.swift`
-    /// and assert the catalog enumerates exactly that set. This is what
-    /// keeps the catalog (and the scripting docs) from rotting against the
-    /// runtime switch.
+    /// Parse the `case "<verb>":` labels out of the dispatch surfaces and
+    /// assert the catalog stays in sync. This is what keeps the catalog (and
+    /// the scripting docs) from rotting against the runtime switches.
+    ///
+    /// There are TWO dispatch surfaces (TSK-1258):
+    /// - `ScriptVerbDispatch.swift` — the in-process keystone switch (`apply`),
+    ///   the DOCUMENTED surface. Every case here MUST have a catalog row.
+    /// - `ScriptRunner.swift` — the VM `--script` runner, which handles the
+    ///   residual window / `NSApp`-coupled verbs that need a live view/window
+    ///   AFTER `apply` returns false (e.g. `wait-editor-line`,
+    ///   `wait-rendered-scroll` — deliberately NOT cased in dispatch so they
+    ///   fall through to the runner's real blocking poll; see
+    ///   `ScriptVerbDispatch.swift:595`).
+    ///
+    /// So the two checks are asymmetric:
+    /// - dispatch case without a catalog row → RED (the documented surface must
+    ///   be fully cataloged).
+    /// - catalog row handled by NEITHER surface → RED (a documented verb that
+    ///   does nothing). Window-only runner verbs (`resize`, `ui-click`, …) are
+    ///   intentionally uncataloged, so being handled-only-in-runner is fine.
     func testCatalogMatchesDispatchSwitch() throws {
-        guard let source = Self.dispatchSwitchSource() else {
+        guard let dispatchSource = Self.dispatchSwitchSource() else {
             throw XCTSkip("ScriptVerbDispatch.swift not reachable from this run")
         }
-        let switchVerbs = Self.topLevelCaseLabels(in: source)
-        XCTAssertFalse(switchVerbs.isEmpty,
+        let dispatchVerbs = Self.topLevelCaseLabels(in: dispatchSource)
+        XCTAssertFalse(dispatchVerbs.isEmpty,
                        "parsed zero verbs from the dispatch switch — parser broke")
+
+        // The runner is the second dispatch surface. If it isn't reachable
+        // (e.g. an installed-bundle run without the source tree), fall back to
+        // dispatch-only so the test self-skips the runner half rather than
+        // false-failing on the runner-only cataloged verbs.
+        let runnerVerbs = Self.runnerSource().map(Self.topLevelCaseLabels(in:)) ?? []
+        let handledVerbs = dispatchVerbs.union(runnerVerbs)
 
         let catalogVerbs = ScriptVerbCatalog.tokens
 
-        let missingFromCatalog = switchVerbs.subtracting(catalogVerbs).sorted()
-        let extraInCatalog = catalogVerbs.subtracting(switchVerbs).sorted()
+        let missingFromCatalog = dispatchVerbs.subtracting(catalogVerbs).sorted()
+        let extraInCatalog = catalogVerbs.subtracting(handledVerbs).sorted()
 
         XCTAssertTrue(missingFromCatalog.isEmpty,
                       "verbs in ScriptVerbDispatch.swift but NOT in ScriptVerbCatalog: \(missingFromCatalog)")
         XCTAssertTrue(extraInCatalog.isEmpty,
-                      "verbs in ScriptVerbCatalog but NOT in ScriptVerbDispatch.swift: \(extraInCatalog)")
+                      "catalog verbs handled by NEITHER ScriptVerbDispatch.swift nor ScriptRunner.swift: \(extraInCatalog)")
     }
 
     // MARK: - Helpers
@@ -106,6 +129,21 @@ final class ScriptVerbCatalogTests: XCTestCase {
         let dispatch = repoRoot
             .appendingPathComponent("Sources/ViewerUI/Automation/ScriptVerbDispatch.swift")
         return try? String(contentsOf: dispatch, encoding: .utf8)
+    }
+
+    /// Read `Sources/MarkdownViewer/ScriptRunner.swift` (the VM `--script`
+    /// runner — the second dispatch surface) relative to this test file.
+    /// Returns nil if absent so the drift test degrades to dispatch-only.
+    private static func runnerSource() -> String? {
+        let here = URL(fileURLWithPath: #filePath)
+        let repoRoot = here
+            .deletingLastPathComponent()   // Automation
+            .deletingLastPathComponent()   // ViewerCoreTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // repo root
+        let runner = repoRoot
+            .appendingPathComponent("Sources/MarkdownViewer/ScriptRunner.swift")
+        return try? String(contentsOf: runner, encoding: .utf8)
     }
 
     /// Extract the verb tokens from the dispatch switch.
