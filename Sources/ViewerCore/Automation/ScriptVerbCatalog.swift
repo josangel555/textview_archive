@@ -176,6 +176,8 @@ public enum ScriptVerbCatalog {
         ScriptVerb("edit-uppercase", .editor, .none, "Make the active file UPPER CASE"),
         ScriptVerb("edit-lowercase", .editor, .none, "Make the active file lower case"),
         ScriptVerb("edit-capitalize", .editor, .none, "Capitalize the active file"),
+        ScriptVerb("edit-promote-heading", .editor, .none, "Promote Markdown headings (decrease level, ## → #)"),
+        ScriptVerb("edit-demote-heading", .editor, .none, "Demote Markdown headings (increase level, # → ##)"),
         ScriptVerb("toggle-view-only", .editor, .none, "Toggle View-only (read-only) mode"),
         ScriptVerb("toggle-blame", .editor, .none, "Toggle the editor git-blame gutter"),
         ScriptVerb("fold-all", .editor, .none, "Fold all foldable regions in the active editor"),

@@ -137,6 +137,9 @@ public enum ScriptVerb {
         case "edit-uppercase":             _ = model.makeActiveFileUpperCase()
         case "edit-lowercase":             _ = model.makeActiveFileLowerCase()
         case "edit-capitalize":            _ = model.capitalizeActiveFile()
+        // TSK-1186: heading promote/demote (MarkdownHeadingShift) — menu-only until now.
+        case "edit-promote-heading":       _ = model.shiftActiveMarkdownHeadings(by: -1)
+        case "edit-demote-heading":        _ = model.shiftActiveMarkdownHeadings(by: 1)
         // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.

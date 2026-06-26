@@ -222,6 +222,14 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "edit.capitalize", title: "Capitalize", category: .edit,
             scriptVerb: "edit-capitalize"),
+        // TSK-1186: heading promote/demote (MarkdownHeadingShift, host-tested
+        // TSK-882) drove from the menu only — now palette- + verb-invokable.
+        CommandDescriptor(
+            id: "edit.promoteHeading", title: "Promote Heading", category: .edit,
+            scriptVerb: "edit-promote-heading"),
+        CommandDescriptor(
+            id: "edit.demoteHeading", title: "Demote Heading", category: .edit,
+            scriptVerb: "edit-demote-heading"),
         CommandDescriptor(
             // TSK-904: "Compact" keyword so the palette finds the inverse of
             // Pretty-Print under its common synonym, not just "minify".

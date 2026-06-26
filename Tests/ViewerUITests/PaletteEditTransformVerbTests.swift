@@ -81,6 +81,22 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
         XCTAssertEqual(after, "Hello World\n", "TSK-1113: each word must be title-cased")
     }
 
+    func test_demoteHeading_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("h.md", "# Title\n\nbody\n")
+        XCTAssertTrue(apply("edit-demote-heading", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "## Title\n\nbody\n",
+            "TSK-1186: demote increases the heading level (# → ##)")
+    }
+
+    func test_promoteHeading_verb_transformsActiveFile() throws {
+        let (model, url) = try openText("h2.md", "## Title\n\nbody\n")
+        XCTAssertTrue(apply("edit-promote-heading", on: model))
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, "# Title\n\nbody\n",
+            "TSK-1186: promote decreases the heading level (## → #)")
+    }
+
     /// Every new verb must be RECOGNIZED by the dispatcher (a no-op on a
     /// non-applicable file still returns true — the verb is known). Guards the
     /// registry↔dispatcher vocabulary wiring for every command in the slice.
@@ -92,6 +108,7 @@ final class PaletteEditTransformVerbTests: HeadlessUITestCase {
             "edit-trim-trailing", "edit-ensure-final-newline",
             "edit-minify-json", "edit-insert-toc", "edit-insert-date",
             "edit-uppercase", "edit-lowercase", "edit-capitalize",
+            "edit-promote-heading", "edit-demote-heading",
             "toggle-view-only",
         ] {
             XCTAssertTrue(apply(verb, on: model), "\(verb) must be a recognized script verb")
