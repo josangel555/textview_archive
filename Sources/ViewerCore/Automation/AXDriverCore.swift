@@ -35,8 +35,8 @@ public protocol AXNode {
 /// A query against the AX tree. A plain string is an EXACT identifier match; a
 /// trailing `*` (or `.*`) makes it a PREFIX match, for the dynamic ids the app
 /// mints per-row (e.g. `mdv.archive.entry.<name>` ← `"mdv.archive.entry.*"`).
-public struct AXQuery: Equatable {
-    public enum Match: Equatable { case exact, prefix }
+public struct AXQuery: Equatable, Sendable {
+    public enum Match: Equatable, Sendable { case exact, prefix }
     public let stem: String
     public let match: Match
 
