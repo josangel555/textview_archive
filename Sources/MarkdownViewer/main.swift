@@ -3902,6 +3902,53 @@ let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio")
 /// interactive and screenshot-validatable.
 let claudeMonitorMode = CommandLine.arguments.contains("--claude-monitor")
 
+/// Resolves every shipped SwiftPM resource bundle from the running app and
+/// returns whether all came from the app's OWN bundle. A resource that is
+/// missing — or that resolves from a `/.build/` path (the SwiftPM `Bundle.module`
+/// dev fallback that crashed the hand-assembled `.app` on clean machines) —
+/// FAILS the check. Backs `--verify-resources` (TSK-1257).
+func runResourceSelfCheck() -> Bool {
+    var ok = true
+    func emit(_ s: String) { FileHandle.standardError.write(Data(s.utf8)) }
+    func check(_ label: String, _ url: URL?) {
+        guard let url else { emit("FAIL  \(label): not found\n"); ok = false; return }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            emit("FAIL  \(label): \(url.path) missing\n"); ok = false; return
+        }
+        if url.path.contains("/.build/") {
+            emit("FAIL  \(label): resolved from .build (packaging bug) — \(url.path)\n")
+            ok = false; return
+        }
+        emit("OK    \(label): \(url.path)\n")
+    }
+    // ViewerUI bundle (CodeMirror host, mermaid runtime, markdown.css).
+    check("codemirror.html", CodeMirrorResources.hostHTMLURL)
+    check("codemirror.js", CodeMirrorResources.jsBundleURL)
+    check("codemirror.css", CodeMirrorResources.hostCSSURL)
+    check("markdown.css",
+          Bundle.viewerUIResources.url(forResource: "markdown", withExtension: "css"))
+    check("mermaid.min.js",
+          Bundle.viewerUIResources.url(forResource: "mermaid.min", withExtension: "js"))
+    // ViewerCore bundle (tree-sitter Queries/*.scm).
+    check("swift-folds.scm",
+          Bundle.viewerCoreResources.url(
+            forResource: "swift-folds", withExtension: "scm", subdirectory: "Queries"))
+    emit(ok ? "OK    all resource bundles resolved from the app bundle\n"
+            : "FAIL  resource self-check failed — app would crash on a clean machine\n")
+    return ok
+}
+
+/// `--verify-resources` is a HOST-SAFE, window-free packaging gate (TSK-1257):
+/// it resolves every shipped SwiftPM resource bundle from the RUNNING app and
+/// exits 0 (all resolved from the app's own bundle) / 1 (any missing OR resolved
+/// from `/.build/`). `build-app.sh` + `verify-app.sh` run it against the
+/// assembled `dist/` app so a hand-assembled `.app` that secretly reads the dev
+/// machine's `.build` (the M5-Pro launch crash) fails the build instead of a
+/// user. Runs BEFORE `NSApplication` is created — no Dock tile, no window.
+if CommandLine.arguments.contains("--verify-resources") {
+    exit(runResourceSelfCheck() ? 0 : 1)
+}
+
 /// Run-scoped artifact directory for the L4/L5 script runner's per-step
 /// dumps (`mdv-step-NN.{json,png}`) and the WindowServer `.windowid`
 /// file.

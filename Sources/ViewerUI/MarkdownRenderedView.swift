@@ -1057,7 +1057,7 @@ public enum MarkdownStylesheet {
     public static func load() -> String { cached }
 
     private static func loadFromBundle() -> String {
-        guard let url = Bundle.module.url(forResource: "markdown", withExtension: "css"),
+        guard let url = Bundle.viewerUIResources.url(forResource: "markdown", withExtension: "css"),
               let data = try? Data(contentsOf: url),
               let s = String(data: data, encoding: .utf8) else {
             return ""

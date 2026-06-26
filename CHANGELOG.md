@@ -9,6 +9,14 @@ went. Detailed per-item narrative lives in `docs/AUTONOMOUS_PROGRESS.md`.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-26
+
+### Fixed
+- **The app now launches on other Macs** — a copy of the app sent to another Mac used to crash instantly on launch; it was secretly loading its editor/highlighting resources from the folder it was *built* in, which doesn't exist anywhere else. The app is now fully self-contained and runs anywhere (Apple Silicon, macOS 15+; clear the download quarantine or right-click → Open the first time, since it isn't notarized yet).
+
+### System work
+- **Build/packaging (TSK-1257)** — root-caused the clean-machine launch crash to the SwiftPM `Bundle.module` accessor resolving resource bundles from a hardcoded dev `.build` path. Added a `Bundle.resolveResourceBundle` resolver (prefers the app's own `Contents/Resources`); stamped a real `Info.plist` into each shipped resource bundle; new host-safe `--verify-resources` packaging self-check wired into `build-app.sh` (post-sign) + `verify-app.sh` (fails the build if any resource resolves from `.build`); `verify-app.sh` strict-codesign now runs on a de-xattr'd copy to dodge the iCloud `FinderInfo` false-failure.
+
 ## 2026-06-22
 
 ### Added

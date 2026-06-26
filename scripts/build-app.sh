@@ -208,10 +208,46 @@ if [[ -f "$ICON_SRC" ]]; then
 fi
 
 # Copy SPM-generated resource bundles (one per target with resources, e.g.
-# MarkdownViewer_ViewerUI.bundle containing markdown.css).
+# MarkdownViewer_ViewerUI.bundle containing markdown.css) into Contents/Resources.
+# This is the canonical, codesign-sealable, notarizable location — and where the
+# Bundle.resolveResourceBundle resolver (TSK-1257) reads them from at runtime.
+# (We deliberately do NOT place them at the .app ROOT, where the raw SwiftPM
+# Bundle.module accessor looks: top-level resources break codesign --strict /
+# notarization. The resolver bridges accessor → Contents/Resources instead.)
 shopt -s nullglob
 for bundle in "$BIN_DIR"/*.bundle; do
   cp -R "$bundle" "$CONTENTS/Resources/"
+done
+shopt -u nullglob
+
+# Each SwiftPM resource bundle ships as a FLAT resource directory with NO
+# Info.plist. Stamp a minimal one so it is a *real* macOS bundle — recognized
+# by Bundle()/CFBundle and signed as a nested bundle by codesign on ANY machine,
+# not merely a loose directory, and notarization-ready. (TSK-1257)
+echo "==> Stamping Info.plist into resource bundles"
+shopt -s nullglob
+for bundle in "$CONTENTS/Resources"/*.bundle; do
+  plist="$bundle/Info.plist"
+  [[ -f "$plist" ]] && continue
+  bname="$(basename "$bundle" .bundle)"
+  # CFBundleIdentifier permits only alphanumerics, '-', '.'; map '_' → '-'.
+  idname="${bname//_/-}"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleIdentifier</key><string>com.markdownviewer.resources.${idname}</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>${bname}</string>
+	<key>CFBundlePackageType</key><string>BNDL</string>
+	<key>CFBundleShortVersionString</key><string>1.0</string>
+	<key>CFBundleVersion</key><string>1</string>
+</dict>
+</plist>
+PLIST
+  plutil -lint "$plist" >/dev/null
 done
 shopt -u nullglob
 
@@ -306,6 +342,22 @@ fi
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -f "$APP_DIR" >/dev/null 2>&1 || true
+fi
+
+# ---- RESOURCE PACKAGING SELF-CHECK (TSK-1257) -------------------------------
+# Prove the assembled, SIGNED app resolves EVERY SwiftPM resource bundle from
+# its OWN Contents/Resources — NOT the dev machine's .build (the hand-assembled
+# .app's Bundle.module fallback that crashed on a clean M5-Pro at launch). This
+# runs the real binary with --verify-resources, which resolves + exits BEFORE
+# NSApplication is created, so it is HOST-SAFE: no window, no Dock tile, no focus
+# theft (same headless contract as --mcp-stdio). It would have caught the M5-Pro
+# crash at build time; a regression to plain Bundle.module fails it here.
+echo "==> Resource packaging self-check (--verify-resources)"
+if ! "$CONTENTS/MacOS/$EXEC_NAME" --verify-resources; then
+  echo "ERROR: resource self-check FAILED — the app would crash on a clean" >&2
+  echo "       machine (resources not resolvable from its own bundle)." >&2
+  echo "       Bundle left at $APP_DIR for triage." >&2
+  exit 8
 fi
 
 # Final size guardrail. Fails the build when the bundle goes past

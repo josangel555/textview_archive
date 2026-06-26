@@ -384,9 +384,10 @@ public final class TreeSitterEngine: @unchecked Sendable {
         }
     }
 
-    /// Returns the URL of our vendored .scm for a language. Lookup is
-    /// `Bundle.module` so it works in both the app bundle and the
-    /// xctest harness.
+    /// Returns the URL of our vendored .scm for a language. Lookup goes through
+    /// `Bundle.viewerCoreResources` (TSK-1257) so it resolves from the packaged
+    /// app's `Contents/Resources` AND the xctest harness — not the dev-only
+    /// `.build` path the raw `Bundle.module` accessor hardcodes.
     private func queryURL(for lang: HighlightLanguage) -> URL? {
         // TSK-854: only the languages with a bundled Swift grammar (see
         // `languageHandle`) have a reachable highlight query. The Swift
@@ -408,7 +409,7 @@ public final class TreeSitterEngine: @unchecked Sendable {
         case .markdown:   stem = "markdown-highlights"
         default:          return nil
         }
-        return Bundle.module.url(
+        return Bundle.viewerCoreResources.url(
             forResource: stem, withExtension: "scm", subdirectory: "Queries"
         )
     }

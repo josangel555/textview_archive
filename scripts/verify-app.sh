@@ -115,8 +115,21 @@ pass "lazy-grammar dylib count $shipped_dylibs matches Package.swift ($declared_
 # default check skips; --deep walks the whole tree. We don't fail on the
 # (local-dev) Authority being self-signed — just report it so a release
 # build's Developer ID authority is visible in the log.
-# ---------------------------------------------------------------------------
-if codesign --verify --deep --strict --verbose=2 "$APP_DIR" 2>/dev/null; then
+#
+# Verify a de-xattr'd copy in a NON-synced tmp dir, never dist/ in place: this
+# repo lives under iCloud-synced ~/Documents, whose file provider re-stamps
+# com.apple.FinderInfo onto dist/ AFTER signing. That xattr does NOT invalidate
+# the signature or block launch (install-app.sh strips it via `ditto
+# --noextattr` on copy to /Applications), but `codesign --verify --strict`
+# rejects it ("Disallowed xattr com.apple.FinderInfo") — a false failure on a
+# perfectly good signature. Mirror the install copy so we verify what actually
+# ships. (TSK-449 / TSK-1257)
+VERIFY_TMP="$(mktemp -d "${TMPDIR:-/private/tmp}/mdv-verify.XXXXXX")"
+trap 'rm -rf "$VERIFY_TMP"' EXIT
+VERIFY_APP="$VERIFY_TMP/$(basename "$APP_DIR")"
+ditto --norsrc --noextattr --noacl --noqtn "$APP_DIR" "$VERIFY_APP"
+xattr -cr "$VERIFY_APP" 2>/dev/null || true
+if codesign --verify --deep --strict --verbose=2 "$VERIFY_APP" 2>/dev/null; then
   pass "codesign --verify --deep --strict clean"
 else
   fail "codesign --verify --deep --strict failed (signature is broken or nested code unsigned)"
@@ -128,6 +141,20 @@ if [[ -n "$authorities" ]]; then
   echo "$authorities" | sed 's/^/    /'
 else
   echo "INFO: no Authority lines (ad-hoc signed; expected for unsigned local builds)"
+fi
+
+# ---------------------------------------------------------------------------
+# SIGN-14 / TSK-1257: resource packaging gate. The app MUST resolve every
+# SwiftPM resource bundle from its OWN Contents/Resources, not a dev-machine
+# .build path. --verify-resources resolves + exits before NSApplication (no
+# window), and FAILS if anything resolves from /.build/ — the exact crash that
+# shipped to the M5-Pro (Bundle.module fell back to the build machine's .build,
+# which a clean machine doesn't have).
+# ---------------------------------------------------------------------------
+if "$APP_DIR/Contents/MacOS/MarkdownViewer" --verify-resources; then
+  pass "resource bundles resolve from the app bundle (--verify-resources)"
+else
+  fail "--verify-resources failed — app would crash on a clean machine (resources resolved from .build or missing)"
 fi
 
 echo

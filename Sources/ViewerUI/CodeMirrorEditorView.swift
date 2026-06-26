@@ -568,7 +568,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
 
         func loadHostHTML() {
             guard let webView = webView else { return }
-            guard let htmlURL = Bundle.module.url(
+            guard let htmlURL = Bundle.viewerUIResources.url(
                 forResource: "codemirror", withExtension: "html"
             ) else {
                 Self.log.error("codemirror.html missing from Resources bundle")
@@ -1256,13 +1256,13 @@ public enum CodeMirrorBridge {
 /// still ship in the SwiftPM bundle after each rebuild.
 public enum CodeMirrorResources {
     public static var hostHTMLURL: URL? {
-        Bundle.module.url(forResource: "codemirror", withExtension: "html")
+        Bundle.viewerUIResources.url(forResource: "codemirror", withExtension: "html")
     }
     public static var jsBundleURL: URL? {
-        Bundle.module.url(forResource: "codemirror", withExtension: "js")
+        Bundle.viewerUIResources.url(forResource: "codemirror", withExtension: "js")
     }
     public static var hostCSSURL: URL? {
-        Bundle.module.url(forResource: "codemirror", withExtension: "css")
+        Bundle.viewerUIResources.url(forResource: "codemirror", withExtension: "css")
     }
 }
 

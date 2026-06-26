@@ -39,7 +39,7 @@ public enum MermaidBundle {
     /// the source layout nests them. We rely on the flattened layout and
     /// keep `mermaid/` only as a source-tree organization choice.
     private static func load(name: String, ext: String) -> String {
-        guard let url = Bundle.module.url(forResource: name, withExtension: ext) else {
+        guard let url = Bundle.viewerUIResources.url(forResource: name, withExtension: ext) else {
             // Resource missing means the SwiftPM build dropped the file
             // — return empty string, the page will still load (mermaid
             // diagrams just won't render).

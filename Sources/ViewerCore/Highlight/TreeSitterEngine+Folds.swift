@@ -371,7 +371,7 @@ extension TreeSitterEngine {
         case .markdown:   stem = "markdown-folds"
         default:          return nil
         }
-        return Bundle.module.url(
+        return Bundle.viewerCoreResources.url(
             forResource: stem, withExtension: "scm", subdirectory: "Queries"
         )
     }
