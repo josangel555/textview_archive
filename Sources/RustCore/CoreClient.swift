@@ -744,6 +744,64 @@ public func mdvCoreApplyCMEdits(
     }
 }
 
+/// One CodeMirror delta-apply changed region (TSK-543) — mirrors the Rust
+/// `ChangedRegionWire`. UTF-16 code-unit offsets (CM6 doc coordinates).
+public struct CMChangedRegion: Equatable, Sendable {
+    public let from: Int
+    public let lenAfter: Int
+    public let removed: Int
+    public init(from: Int, lenAfter: Int, removed: Int) {
+        self.from = from
+        self.lenAfter = lenAfter
+        self.removed = removed
+    }
+}
+
+/// Apply a CodeMirror edit batch via the rust core's DELTA seam (TSK-543):
+/// returns only the CHANGED REGION + the new UTF-16 length, NOT the whole
+/// buffer (the traffic win — the host re-tokenizes just that span). A `nil`
+/// region means the batch was REJECTED (out-of-bounds / overlap) and the
+/// caller must full-resync; `lenUTF16` is 0 on rejection.
+public func mdvCoreApplyCMEditsDelta(
+    base: String,
+    edits: [(from: Int, to: Int, insert: String)]
+) throws -> (changed: CMChangedRegion?, lenUTF16: Int) {
+    let editVals: [MsgPackValue] = edits.map { e in
+        .map([
+            (.string("from"), .int(Int64(e.from))),
+            (.string("to"), .int(Int64(e.to))),
+            (.string("insert"), .string(e.insert)),
+        ])
+    }
+    let request = MsgPackValue.map([
+        (.string("base"), .string(base)),
+        (.string("edits"), .array(editVals)),
+    ])
+    guard let body = try CoreTransportRegistry.current.call("cm_apply_delta", request: request) else {
+        throw CoreError.decode("empty cm_apply_delta response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let lenV = map["len_utf16"] else { throw CoreError.decode("missing 'len_utf16'") }
+        let lenUTF16 = Int(try lenV.u64Value())
+        guard let changedV = map["changed"] else { throw CoreError.decode("missing 'changed'") }
+        if case .nilValue = changedV { return (nil, lenUTF16) }
+        let cmap = try changedV.mapValue()
+        guard let f = cmap["from"], let la = cmap["len_after"], let rm = cmap["removed"] else {
+            throw CoreError.decode("changed region missing a field")
+        }
+        let region = CMChangedRegion(
+            from: Int(try f.u64Value()),
+            lenAfter: Int(try la.u64Value()),
+            removed: Int(try rm.u64Value())
+        )
+        return (region, lenUTF16)
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
 // MARK: - Unified-diff parsing (migration slice #3)
 
 /// One file's parsed diff. Mirrors the Rust `diff::File` wire type; ViewerCore's

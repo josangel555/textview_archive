@@ -72,6 +72,8 @@ public struct InProcessTransport: CoreTransport {
         // Folds (separate crate, like highlight): the FFI intercepts id 15 and
         // routes it to mdvcore-highlight (TSK-1202).
         "fold_regions": UInt16(MDV_METHOD_FOLD_REGIONS),
+        // TSK-543: cm-apply delta — core-routable (impl in core), not intercepted.
+        "cm_apply_delta": UInt16(MDV_METHOD_CM_APPLY_DELTA),
     ]
 
     /// AUX-bearing method ids (TSK-651): the bulk input rides the `aux`

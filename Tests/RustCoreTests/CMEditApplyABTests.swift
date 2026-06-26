@@ -193,4 +193,31 @@ final class CMEditApplyABTests: XCTestCase {
         XCTAssertNil(rust, "Rust rejects the overlapping batch")
         XCTAssertNil(CMEditApplier.apply(bad, to: base), "Swift rejects it too")
     }
+
+    // MARK: - Delta seam round-trip (TSK-543 stage-2a)
+
+    /// The Swift delta wrapper (`mdvCoreApplyCMEditsDelta` → `cm_apply_delta`)
+    /// returns only the CHANGED REGION + new length, NOT the whole buffer —
+    /// proving the FFI delta seam round-trips end-to-end from Swift. Mirrors the
+    /// Rust `apply_delta_wire` wire tests (cm_edit.rs).
+    func test_applyCMEditsDelta_returnsChangedRegion_notBuffer() throws {
+        let (changed, len) = try mdvCoreApplyCMEditsDelta(base: "hello", edits: [(2, 2, "X")])
+        XCTAssertEqual(changed, CMChangedRegion(from: 2, lenAfter: 1, removed: 0))
+        XCTAssertEqual(len, 6, "new UTF-16 length crosses the wire; the buffer does not")
+    }
+
+    func test_applyCMEditsDelta_rejectedBatch_isNilRegion() throws {
+        let (changed, len) = try mdvCoreApplyCMEditsDelta(
+            base: "abcdef", edits: [(1, 3, "x"), (2, 4, "y")])  // overlap
+        XCTAssertNil(changed, "rejected batch → changed:nil (caller full-resyncs)")
+        XCTAssertEqual(len, 0)
+    }
+
+    func test_applyCMEditsDelta_astralChangedRegion() throws {
+        // Replace the emoji [0,2) of "🧠x" with "y": region from=0, len_after=1,
+        // removed=2 (the 2 UTF-16 units of the surrogate pair); new length 2.
+        let (changed, len) = try mdvCoreApplyCMEditsDelta(base: "🧠x", edits: [(0, 2, "y")])
+        XCTAssertEqual(changed, CMChangedRegion(from: 0, lenAfter: 1, removed: 2))
+        XCTAssertEqual(len, 2)
+    }
 }
