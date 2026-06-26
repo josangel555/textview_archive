@@ -52,6 +52,14 @@ public enum AXIdentifierCatalog {
         Entry("mdv.contentToolbar", .chrome, "The main content toolbar host."),
         Entry("mdv.breadcrumb", .chrome, "Path breadcrumb bar above the content."),
         Entry("mdv.tab.overflowMenu", .chrome, "Tab-strip overflow menu button."),
+        // chrome — status bar: the app's observable STATE surface (agents READ
+        // these to assert file/git/mode/recording state in a journey/eval).
+        Entry("mdv.statusBar", .chrome, "The bottom status bar (app state surface)."),
+        Entry("mdv.statusBar.git", .chrome, "Status bar: git repo/branch chip."),
+        Entry("mdv.statusBar.vimMode", .chrome, "Status bar: vim mode indicator (NORMAL/INSERT/VISUAL…)."),
+        Entry("mdv.statusBar.modified", .chrome, "Status bar: unsaved-changes indicator."),
+        Entry("mdv.statusBar.macroRecording", .chrome, "Status bar: macro recording indicator (TSK-1162)."),
+        Entry("mdv.statusBar.memory", .chrome, "Status bar: process memory-usage readout."),
         // content
         Entry("mdv.content", .content, "The main content region (active document view)."),
         Entry("mdv.htmlRendered", .content, "The rendered Markdown/HTML document view."),
