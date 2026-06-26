@@ -17,6 +17,24 @@ internal-quality / rust-core / test work).
 
 > **Checkboxes are the at-a-glance progress mirror; the `tasked` board is authoritative for STATE.** Tick `[x]` when the board item reaches `done`/`validated` (render items: when on-screen-confirmed). From the 7-subagent board reconcile (the board is ACCURATE — done work already left the open lanes; no shipped-but-unmarked backlog). The OLD curated Next-50 + lane snapshot below are the prior capture, superseded by this section.
 
+### 🎯 OWNER PRIORITY ORDER (2026-06-26 — drain in THIS order)
+
+The autonomous cron drains BACKLOG top-down; this is the explicit owner ordering as of 2026-06-26. **P0a and P0b are CO-EQUAL — interleave them** (slice the TSK-1254 AX epic into subtasks so it does NOT monopolize ticks; each tick, pick the highest-value READY item across both). Finish ALL of P0 before P1.
+
+**P0a — Eval / AX self-driving + agent-drivable interfaces (the apex tier).** Build the whole evaluation/UAT stack we scoped, in dependency order:
+1. **TSK-1254 — native-chrome UAT driver** (out-of-process AX find-by-`mdv.*` + AXPress/scroll/read + CGEvent-at-AX-frame fallback + script-bus setup). Deliver BOTH the automated (XCUITest/VM) and the agent-driven form. This is the foundation the rest builds on.
+2. **TSK-1255 — test-pyramid restructure** (add the AX real-interaction tier on top of TSK-1254; write the ONE canonical pyramid doc).
+3. **Agent-drivable interfaces** — expose the addressing + verbs so an AGENT can drive the app deterministically (the structural lane), not just tests: `mdv.*` AX ids on every interactive control, the script-verb bus as the public action surface, `ClickTargetRegistry`/`UIEventSynth` at-rect. (Human-like self-drive stays a SEPARATE, purely-screenshot harness — owner decision 2026-06-26.)
+4. **TSK-1256 — globally-referenceable element refs** (right-click → Copy Reference → share to agent; native chrome AX path + WebView `cmDispatch`/JS path; future Chrome/CDP picker). Shares TSK-1254's addressing foundation.
+
+**P0b — Battle-test → validate the pending pile (with TEETH).** The ~215 `fixed`/`review` "awaiting-close" items are the real bottleneck. For each: prove an automated test exercises the behavior and would fail on regression, then self-validate (`task_validate` + checks artifact) for pure-logic/model/FFI/parser; render/WebView/AX-pixel behavior caps at `review` (owner/VM closes). Use the TSK-1254 AX lane to battle-test native-chrome items as it comes online — that's the leverage of building P0a first. Reclaim the stale-progress pile (**TSK-1253** + tool-side **INT-126**) as part of this drain.
+
+**P1 — The NEXT WAVE 12** (below). Substantial features/epics; verify-state + spike each before committing.
+
+P2+ — the rest of the board (`task_next`/`task_list`), lanes below.
+
+---
+
 ### ⭐ HIGH PRIORITY (owner, 2026-06-26)
 
 1. **Reclaim the ~80 stale-progress / #NNN-corrupted tickets** — **TSK-1253** (+ tool-side **INT-126**). 82 `progress` tickets have dead leases (`fleet.liveLeases:[]`) AND #NNN-corruption (title/report correct, but `understanding`/`commits` were overwritten by an unrelated audit finding), so the board reports 82 phantom in-flight items. Reclaim FROM THE TITLE (ignore the bogus understanding): un-claim, advance shipped-via-child to `fixed`, return the rest to `reported`. The safe BULK pass needs **INT-126** (auto-expire stale leases + flag understanding↔title divergence) — per-item manual mutation of corrupted data is unsafe (the #NNN anti-pattern).
