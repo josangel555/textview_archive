@@ -21,21 +21,19 @@ internal-quality / rust-core / test work).
 
 **Sweep result** (the 2026-06-20 Quick-Wins list, re-verified against current `main`): **5 of 10 already shipped** since the audit — tooltip delay (TSK-1209), find-text-preserve (TSK-1207), View-only toggle (TSK-936 validated), rendered find-highlight clear (`MarkdownRenderedView`), text-transforms menu (TSK-1113 validated). **3 fixed + committed `30a3af2f`**: editor 2px caret + literal-Tab insert (**TSK-1250**, render → `review`) and the `check-bundle-size.sh` 48/26→80/65 doc drift (residual of the validated **TSK-1098**). **2 deferred as tickets** (prereqs missing, not blind-hacked): Cmd+F sidebar routing (**TSK-1248**), terminal header row (**TSK-1249**). LESSON: the Quick-Wins audit is stale — verify each item against `main` before working it.
 
-**NEXT 10** (2026-06-25; verify-before-fix each — last sweep caught 5 already-done):
+**NEXT-10 RECONCILED 2026-06-25 — all 7 "host cluster" picks were ALREADY DONE; the file tags were stale, the BOARD is accurate.**
 
-_Best autonomous picks (host-validatable → can reach `done` without the screen):_
-1. **TSK-1120** — footer file-stats flaky on tab-switch (SwiftUI re-body races imperative state; SAME class as the scroll-reset; model-layer testable).
-2. **TSK-986** — hex search scans the full buffer synchronously per keystroke (add debounce / off-main; host-testable).
-3. **TSK-991** — `SidebarModel.pruneChildrenCacheIfNeeded` can't enforce the cap when expanded dirs exceed it (memory correctness; host-testable).
-4. **TSK-1036** — route `.docx/.rtf/.ods/.xlsx` into the viewer (consume the landed readers; model/wiring).
-5. **TSK-1100** — wire `DependencyGraphView` to a reachable entry point (surface a built-but-unreachable feature).
-6. **TSK-1116** — wire `FocusWorkMode` into a View → Focus Mode menu (model + menu).
-7. **TSK-1132** — `WebViewTestCase` heavy-tier base so the live-WKWebView suites stop escaping `TierGateObserver` (test-discipline; host).
+> ⚠️ **The `[reported]`/`[progress]` tags in the Next-50 + lane snapshot below are the 2026-06-20 capture and are STALE.** The BOARD moved most to `fixed`/`validated`; this file wasn't re-synced. **Derive picks from the live BOARD (`task_next` / `task_list ready=true`), NOT this file.** Two sweeps in a row picked already-done items off these stale tags.
 
-_Render-gated (land at `review` for VM/owner):_
-8. **TSK-1182** — diff multi-line selection, plain-diff mode (triaged + execute-ready: host helper `DiffHunkAttributedString` already landed).
-9. **TSK-1102** — CSV grid cell-cursor wiring (arrow-nav + focus ring + Cmd-C whole-cell; model host-testable, pixels VM).
-10. **TSK-891** — Page Up janky / not smooth in the editor (CM6 scroll hot path; render/VM).
+Verified this sweep (every host pick already shipped): TSK-1120 footer (fixed `41017b83`) · TSK-986 hex debounce (review `50521d04`) · TSK-991 sidebar cap (done, `childrenCacheEvictions`) · TSK-1036 readers (validated) · TSK-1100 deps-graph entry (done) · TSK-1116 focus-mode menu (done) · TSK-1132 webview heavy-tier (done, `isHeavyTier`). Render picks: TSK-1182 triaged/execute-ready · TSK-1102 + TSK-891 still open.
+
+**Actually-open (live board query, markdown_viewer, non-foreign — the host-fixable pool is DRAINED):**
+- **Image-editor epic** (TSK-1048 + P0 perf slices TSK-1049/1052 dirty-rect) — owner-flagged "clunky"; concrete model-testable slices + render tail.
+- **Render-gated perf** — TSK-891 (Page Up jank, CM6/CA-commit class), TSK-839 family.
+- **Owner-gated levers** — rust flips TSK-1215 (formula) / TSK-1202 (folds); deps TSK-399/400; zoom-split TSK-470.
+- **Agent-integration features** — TSK-941–945, TSK-691 (large, net-new).
+
+Next real work = a deliberate epic/perf investment or an owner decision — not a quick host fix.
 
 ### A. BUILT user-facing fixes — unmerged on worktree branches; verify → merge (highest leverage)
 - [x] **TSK-921 / 922** — close/open-split race — **FIXED on main** (`17932af8`: wave2 re-applied the worktree fix — `ContentView` observes `tabCoordinator` so `splitURL` re-bodies on open/close). Host teeth green (`SplitObservationTests` 5/5 + `ChromeBodyEvalCount` open/close re-body). At **review** (on-screen pixel = VM/owner). Board was stale (reconcile predated `17932af8`); both → `fixed` 2026-06-23.
