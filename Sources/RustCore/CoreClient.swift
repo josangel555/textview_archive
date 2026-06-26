@@ -197,6 +197,9 @@ public struct CoreCapabilities: OptionSet, Sendable {
     /// Tree-sitter highlight runs (TSK-660) — an ENGINE bit: present in the
     /// in-process mask AND a remote hello.
     public static let highlight  = CoreCapabilities(rawValue: UInt64(MDV_CAP_HIGHLIGHT))
+    /// CodeMirror delta apply (TSK-543) — an ENGINE bit: present in the
+    /// in-process mask AND a remote hello (core-routable `apply_delta_wire`).
+    public static let cmApplyDelta = CoreCapabilities(rawValue: UInt64(MDV_CAP_CM_APPLY_DELTA))
 
     /// Everything the CURRENT Swift adapters require of the linked core —
     /// the graceful-degradation floor. `assertCompatible` already crash-fasts

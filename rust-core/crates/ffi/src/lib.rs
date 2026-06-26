@@ -207,6 +207,9 @@ pub const MDV_CAP_FS: u64 = 1 << 9;
 /// ticket pre-assigned 1<<9, but the fs family took it first; bits are
 /// append-only, so highlight gets the next free bit.)
 pub const MDV_CAP_HIGHLIGHT: u64 = 1 << 14;
+/// CodeMirror edit-batch DELTA apply (envelope `MDV_METHOD_CM_APPLY_DELTA`) —
+/// TSK-543: returns only the changed region + new length, not the whole buffer.
+pub const MDV_CAP_CM_APPLY_DELTA: u64 = 1 << 15;
 
 /// The capability mask THIS build was compiled with. Reserved bits stay OFF
 /// until their engine's exports actually exist — turning a bit on is part of
@@ -220,7 +223,8 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
     | MDV_CAP_FIND
     | MDV_CAP_TRANSCRIPT
     | MDV_CAP_MARKDOWN
-    | MDV_CAP_HIGHLIGHT;
+    | MDV_CAP_HIGHLIGHT
+    | MDV_CAP_CM_APPLY_DELTA;
 
 /// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
 /// — every gated feature disabled, never UB) if the guard trips. Callers must
@@ -269,6 +273,9 @@ pub const MDV_METHOD_FORMULA_RECALC: u16 = 14;
 /// Code-fold regions (envelope `MDV_METHOD_FOLD_REGIONS`) — TSK-1202. Impl lives
 /// in mdvcore-highlight; routed at the FFI layer like HIGHLIGHT_RUNS.
 pub const MDV_METHOD_FOLD_REGIONS: u16 = 15;
+/// CodeMirror edit-batch DELTA apply (envelope) — TSK-543. Core-routable via
+/// `dispatch::call` (the impl is in core), unlike HIGHLIGHT_RUNS/FOLD_REGIONS.
+pub const MDV_METHOD_CM_APPLY_DELTA: u16 = 16;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore

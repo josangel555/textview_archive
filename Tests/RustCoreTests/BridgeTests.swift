@@ -60,6 +60,9 @@ final class BridgeTests: XCTestCase {
         // TSK-660: highlight is an ENGINE bit — the linked library exports
         // mdvcore_highlight_runs, so the in-process mask advertises it.
         XCTAssertTrue(caps.contains(.highlight))
+        // TSK-543: cm-apply delta is an ENGINE bit (core-routable apply_delta_wire),
+        // present in the in-process mask.
+        XCTAssertTrue(caps.contains(.cmApplyDelta))
         // SERVER-ONLY bit: never in the in-process mask (no fs FFI export);
         // a remote mdv-serve hello sets it when a root is served (TSK-654).
         XCTAssertFalse(caps.contains(.fs))
@@ -88,6 +91,7 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(CoreCapabilities.lspPipe.rawValue, 1 << 12)
         XCTAssertEqual(CoreCapabilities.search.rawValue, 1 << 13)
         XCTAssertEqual(CoreCapabilities.highlight.rawValue, 1 << 14)
+        XCTAssertEqual(CoreCapabilities.cmApplyDelta.rawValue, 1 << 15)
     }
 
     func testCapabilities_unknownBitsAreTolerated() {

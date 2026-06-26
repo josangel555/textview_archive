@@ -131,6 +131,7 @@ fn capability_bits_are_abi_and_never_renumber() {
     assert_eq!(MDV_CAP_LSP_PIPE, 1 << 12);
     assert_eq!(MDV_CAP_SEARCH, 1 << 13);
     assert_eq!(MDV_CAP_HIGHLIGHT, 1 << 14);
+    assert_eq!(MDV_CAP_CM_APPLY_DELTA, 1 << 15);
 }
 
 #[test]
@@ -176,6 +177,7 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
         (MDV_CAP_TRANSCRIPT, "transcript"),
         (MDV_CAP_MARKDOWN, "markdown"),
         (MDV_CAP_HIGHLIGHT, "highlight"),
+        (MDV_CAP_CM_APPLY_DELTA, "cm_apply_delta"),
     ] {
         assert_ne!(
             mask & bit,
@@ -648,6 +650,7 @@ fn method_id_consts_match_the_dispatch_enum() {
     assert_eq!(MDV_METHOD_FORMULA_EVALUATE, Method::FormulaEvaluate as u16);
     assert_eq!(MDV_METHOD_FORMULA_RECALC, Method::FormulaRecalc as u16);
     assert_eq!(MDV_METHOD_FOLD_REGIONS, Method::FoldRegions as u16);
+    assert_eq!(MDV_METHOD_CM_APPLY_DELTA, Method::CmApplyDelta as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
@@ -656,11 +659,11 @@ fn method_id_consts_match_the_dispatch_enum() {
         MDV_METHOD_HIGHLIGHT_RUNS, MDV_METHOD_HEX_SEARCH,
         MDV_METHOD_INDENT_DETECT, MDV_METHOD_HEX_RENDER,
         MDV_METHOD_FORMULA_EVALUATE, MDV_METHOD_FORMULA_RECALC,
-        MDV_METHOD_FOLD_REGIONS,
+        MDV_METHOD_FOLD_REGIONS, MDV_METHOD_CM_APPLY_DELTA,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 16, "15 methods defined; next free id is 16");
+    assert_eq!(Method::NEXT_FREE_ID, 17, "16 methods defined; next free id is 17");
 }
 
 #[test]

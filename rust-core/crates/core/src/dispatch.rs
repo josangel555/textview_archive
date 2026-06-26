@@ -82,12 +82,16 @@ pub enum Method {
     /// `mdvcore-highlight` crate, so this id is registered for the unified id
     /// space but [`call`] does NOT route it — the FFI layer intercepts it.
     FoldRegions = 15,
+    /// CodeMirror edit-batch apply returning only the CHANGED REGION
+    /// (`cm_edit::apply_delta_wire`) — the TSK-543 traffic-reduction seam. Core-
+    /// routable here (the impl lives in core), unlike Highlight/Fold.
+    CmApplyDelta = 16,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 16;
+    pub const NEXT_FREE_ID: u16 = 17;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -110,6 +114,7 @@ impl Method {
             13 => Some(Method::FormulaEvaluate),
             14 => Some(Method::FormulaRecalc),
             15 => Some(Method::FoldRegions),
+            16 => Some(Method::CmApplyDelta),
             _ => None,
         }
     }
@@ -133,6 +138,7 @@ impl Method {
 pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault> {
     match method {
         Method::CmApply => crate::cm_edit::apply_wire(req),
+        Method::CmApplyDelta => crate::cm_edit::apply_delta_wire(req),
         Method::DiffParse => crate::diff::parse_wire(req),
         Method::DiffHunkMarks => crate::diff::hunk_marks_wire(req),
         Method::FuzzyRank => crate::fuzzy::rank_wire(req),
@@ -181,8 +187,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. FoldRegions is the current last id.
-        assert_eq!(Method::FoldRegions as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. CmApplyDelta is the current last id.
+        assert_eq!(Method::CmApplyDelta as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]

@@ -22,6 +22,8 @@ type WireFn = fn(&[u8]) -> Result<Vec<u8>, wire::WireFault>;
 fn method_fn(name: &str) -> Option<WireFn> {
     match name {
         "cm_apply" => Some(cm_edit::apply_wire),
+        // TSK-543: delta apply — returns only the changed region, not the buffer.
+        "cm_apply_delta" => Some(cm_edit::apply_delta_wire),
         "diff_parse" => Some(diff::parse_wire),
         "diff_hunk_marks" => Some(diff::hunk_marks_wire),
         "fuzzy_rank" => Some(fuzzy::rank_wire),
