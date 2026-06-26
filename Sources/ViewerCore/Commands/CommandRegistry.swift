@@ -160,6 +160,9 @@ public struct CommandRegistry: Sendable {
 
     /// Index by id for O(1) lookup + override application.
     private let byID: [String: Int]
+    /// Index by script-verb for O(1) reverse lookup (verb → descriptor), used by
+    /// the macro recorder's record-hook (TSK-1162). Verbs are unique per command.
+    private let byScriptVerb: [String: Int]
 
     public init(commands: [CommandDescriptor]) {
         self.commands = commands
@@ -167,10 +170,20 @@ public struct CommandRegistry: Sendable {
         idx.reserveCapacity(commands.count)
         for (i, c) in commands.enumerated() { idx[c.id] = i }
         self.byID = idx
+        var sv: [String: Int] = [:]
+        for (i, c) in commands.enumerated() where c.scriptVerb != nil { sv[c.scriptVerb!] = i }
+        self.byScriptVerb = sv
     }
 
     public func command(id: String) -> CommandDescriptor? {
         byID[id].map { commands[$0] }
+    }
+
+    /// Reverse lookup: the descriptor whose `scriptVerb` matches `verb`, or nil.
+    /// O(1). Maps a dispatched verb back to its command id for the macro
+    /// recorder's record-hook (TSK-1162).
+    public func descriptor(forScriptVerb verb: String) -> CommandDescriptor? {
+        byScriptVerb[verb].map { commands[$0] }
     }
 
     /// Commands the palette can actually invoke today (have a script
