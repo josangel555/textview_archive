@@ -184,8 +184,7 @@ The non-done content from `docs/CURATED_TASKS_2026-06-19.md`, de-duped against t
 - **Very-large / aspirational:** 689 PinBoard · 694 log-clustering (UI tail TSK-1153) · 695 credential-handling · 700 collaboration · 702 Mac-intelligence · 774 Music · 687/693/699 agent-integrations · 250/256/409 web-port tail (note: TSK-256 markdown rendered web view is **unblocked + triaged**, a ready pick).
 
 ### 🚧 Earlier follow-ups still open
-- **TSK-1023** tmux controller → live PTY + SwiftUI split render wiring (VM-tail / live-validation).
-- **TSK-1018** tmux live PTY+render (VM-tail).
+- **tmux `-CC` (epic TSK-964)** — slices **a/b/c are DONE + host-tested**: control-mode parser, layout-string parser, session/window/pane model + controller-core (`TmuxControlParser`/`TmuxLayoutParser`/`TmuxSession`/`TmuxControllerCore`, 122 host tests; `69aa58e3` + `4db0f360`). **REMAINING — TSK-1023/1018:** slice (d) live `tmux -CC` PTY spawn + pump + (e) SwiftUI split render + input-routing + resize — **VM-tail / render-coupled, NOT host-fan-out-able.** HOST GAP (found 2026-06-26): the **typed OUTBOUND command serializer** (app action → tmux command string: `split-window -h/-v`, `new-window`, `select-pane -t`, `send-keys -t` w/ escaping, `resize-pane`, `refresh-client -C`, `kill-pane`) is **not built** — `TmuxControllerCore.encodeCommand` takes RAW strings. → Ultracode `tmux-cc-harden` run (2026-06-26): build the outbound serializer + adversarially audit/harden the inbound codec vs the full control-mode spec.
 - **897** TreeSitter grammars (dep-approval).
 
 ### New since 06-19 (board additions to be aware of)
