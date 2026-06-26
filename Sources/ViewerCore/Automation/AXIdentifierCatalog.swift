@@ -1,0 +1,98 @@
+import Foundation
+
+// TSK-1254 slice 4 — the agent-drivable ADDRESSING CONTRACT.
+//
+// The app carries ~300 `mdv.*` accessibilityIdentifiers, but most are
+// incidental or dynamic (per-row ids minted from data). This catalog is the
+// CURATED subset of stable, long-lived, top-level controls that the
+// out-of-process AX driver (AXDriverCore) and the element-reference tooling
+// (TSK-1256) address — the surface an agent journey relies on. It is the AX/
+// native-chrome sibling of `ScriptVerbCatalog` (the action-verb surface).
+//
+// A drift guard (AXIdentifierCatalogTests) asserts every catalogued id STILL
+// EXISTS in the ViewerUI source, so renaming or deleting a critical control
+// breaks the contract loudly instead of silently un-addressing it.
+
+public enum AXIdentifierCatalog {
+
+    /// Broad UI surface an addressable control belongs to (for grouping /
+    /// agent affordances).
+    public enum Surface: String, CaseIterable, Comparable, Sendable {
+        case chrome      // window/toolbar/breadcrumb/tabs
+        case content     // the main document view
+        case editor      // CM6 editor surface
+        case find        // find / filter / search bars
+        case data        // csv / diff / hex viewers
+        case nav         // sidebar / bookmarks / archive / empty-state
+        case tools       // command palette, folder-stats, monitors
+        case media       // audio editor
+
+        public static func < (a: Surface, b: Surface) -> Bool {
+            a.rawValue < b.rawValue
+        }
+    }
+
+    public struct Entry: Equatable, Sendable {
+        /// The accessibilityIdentifier literal, e.g. `"mdv.hexView"`.
+        public let id: String
+        public let surface: Surface
+        /// One-line human/agent description of the control.
+        public let summary: String
+        public init(_ id: String, _ surface: Surface, _ summary: String) {
+            self.id = id; self.surface = surface; self.summary = summary
+        }
+    }
+
+    /// The curated contract. Keep entries STABLE — agents and the driver
+    /// address by these. Add a row when a new top-level control becomes part of
+    /// the agent-drivable surface; never silently drop one (the drift guard will
+    /// catch a source removal, but update the catalog deliberately).
+    public static let critical: [Entry] = [
+        // chrome
+        Entry("mdv.contentToolbar", .chrome, "The main content toolbar host."),
+        Entry("mdv.breadcrumb", .chrome, "Path breadcrumb bar above the content."),
+        Entry("mdv.tab.overflowMenu", .chrome, "Tab-strip overflow menu button."),
+        // content
+        Entry("mdv.content", .content, "The main content region (active document view)."),
+        // editor
+        Entry("mdv.editor", .editor, "The CM6 code editor surface."),
+        // find / filter / search
+        Entry("mdv.renderedFindBar", .find, "Find bar over the rendered-markdown view."),
+        Entry("mdv.editorFindBar", .find, "Find bar over the CM6 editor."),
+        Entry("mdv.sourceFindBar", .find, "Find bar over the plain source view."),
+        Entry("mdv.crossSearchPanel", .find, "Cross-file search panel."),
+        // data viewers
+        Entry("mdv.csvTable", .data, "The CSV/sheet table view."),
+        Entry("mdv.csvFind.field", .data, "CSV find query field."),
+        Entry("mdv.csvFilter.global", .data, "CSV global filter field."),
+        Entry("mdv.hexView", .data, "The hex viewer."),
+        Entry("mdv.hex.search.field", .data, "Hex viewer search field."),
+        Entry("mdv.diff.findField", .data, "Diff viewer find field."),
+        // nav
+        Entry("mdv.bookmarks", .nav, "Bookmarks sidebar section."),
+        Entry("mdv.archive.browser", .nav, "Archive (zip/tar) browser."),
+        Entry("mdv.emptyState.newFile", .nav, "Empty-state 'New File' action."),
+        // tools
+        Entry("mdv.commandPaletteButton", .tools, "Command-palette toolbar button."),
+        Entry("mdv.folderStats.showTreemap", .tools, "Folder-stats treemap toggle."),
+        Entry("mdv.claudeMonitor", .tools, "Claude session monitor window."),
+        // media
+        Entry("mdv.audioEditor", .media, "The audio editor surface."),
+    ]
+
+    /// All catalogued ids.
+    public static var ids: Set<String> { Set(critical.map(\.id)) }
+
+    /// Lookup by id.
+    public static func entry(_ id: String) -> Entry? {
+        critical.first { $0.id == id }
+    }
+
+    /// Entries grouped by surface, surfaces in declaration (sorted) order.
+    public static func grouped() -> [(surface: Surface, entries: [Entry])] {
+        Surface.allCases.sorted().compactMap { surface in
+            let entries = critical.filter { $0.surface == surface }
+            return entries.isEmpty ? nil : (surface, entries)
+        }
+    }
+}
