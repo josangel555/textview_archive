@@ -1,5 +1,6 @@
 import XCTest
 @testable import ViewerCore
+import TestSupport
 
 /// Stage 1 (§7): the scope→diff resolver + blob-sha helpers on `GitClient`,
 /// exercised against a REAL temp repo created under `temporaryDirectory`.

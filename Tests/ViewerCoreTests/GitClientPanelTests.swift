@@ -1,5 +1,6 @@
 import XCTest
 @testable import ViewerCore
+import TestSupport
 
 /// Tests covering the new GitClient surfaces added for the multi-tab
 /// Git panel: graphLog, stashList, worktreeList, remoteList, headInfo.

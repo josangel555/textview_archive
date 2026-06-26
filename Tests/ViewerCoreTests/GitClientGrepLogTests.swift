@@ -1,5 +1,6 @@
 import XCTest
 @testable import ViewerCore
+import TestSupport
 
 /// TSK-596 — `GitClient.grepLog`: full-message search (subject + body)
 /// backing the Git Log tab's search field. Fixture-repo pattern from

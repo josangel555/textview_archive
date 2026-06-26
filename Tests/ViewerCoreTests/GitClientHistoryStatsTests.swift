@@ -1,5 +1,6 @@
 import XCTest
 @testable import ViewerCore
+import TestSupport
 
 /// Tests for the File-History + Folder-Stats GitClient surfaces:
 /// `fileHistory(path:)` (full + short SHA, rename-following),

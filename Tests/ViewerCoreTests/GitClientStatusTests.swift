@@ -1,5 +1,6 @@
 import XCTest
 @testable import ViewerCore
+import TestSupport
 
 /// `GitClient.statusEntries()` parsing tests — successor to the retired
 /// `GitServiceTests`. The pure-logic cases (parseStatusEntries) pin

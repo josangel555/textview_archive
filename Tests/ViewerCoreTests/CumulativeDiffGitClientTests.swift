@@ -1,5 +1,6 @@
 import XCTest
 @testable import ViewerCore
+import TestSupport
 
 /// End-to-end teeth for the cumulative-diff feature (TSK-522 slice 2): the pure
 /// `CumulativeDiffSelection` resolver feeding `GitClient.cumulativeDiff(base:tip:)`

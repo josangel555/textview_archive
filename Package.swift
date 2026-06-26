@@ -221,11 +221,16 @@ let package = Package(
             path: "Sources/TreeSitterLazyWrappers/TreeSitterTypeScriptLazy"
         ),
 
+        // Cross-target test fixtures (TSK-1174): a plain test-only library —
+        // never shipped — so both ViewerCoreTests and ViewerUITests can share
+        // one git-repo fixture builder (test targets can't import each other).
+        .target(name: "TestSupport", path: "Tests/TestSupport"),
         .testTarget(name: "ViewerKitTests", dependencies: ["ViewerKit"]),
         .testTarget(
             name: "ViewerCoreTests",
             dependencies: [
                 "ViewerCore",
+                "TestSupport",
                 .product(name: "SwiftTreeSitter", package: "SwiftTreeSitter"),
                 .product(name: "TreeSitterJSON",  package: "tree-sitter-json"),
             ]
@@ -239,7 +244,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ViewerUITests",
-            dependencies: ["ViewerUI", "ViewerCore", "ViewerKit"]
+            dependencies: ["ViewerUI", "ViewerCore", "ViewerKit", "TestSupport"]
         ),
         // Cross-language FFI-boundary tests + the A/B vs the Swift
         // CSVParser/CSVFilter. Headless (no UI / no NSApplication), so
