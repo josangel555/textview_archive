@@ -275,20 +275,23 @@ struct StatusBar: View {
         }
     }
 
-    /// Vim mode chip (TSK-679). A compact uppercased badge in the accent color;
-    /// renders only when the editor reports an active vim mode.
+    /// Vim mode chip (TSK-679). A compact uppercased badge; TSK-679/L861 colors
+    /// it per mode (NORMAL=accent, INSERT=green, VISUAL=orange, REPLACE=red) via
+    /// the host-tested `VimModeKind` classifier. Renders only when the editor
+    /// reports an active vim mode.
     @ViewBuilder
     private var vimModeChip: some View {
         if !model.editorVimMode.isEmpty {
+            let kind = VimModeKind.from(model.editorVimMode)
             Text(model.editorVimMode)
                 .font(.system(size: model.uiSize(10), weight: .semibold, design: .monospaced))
                 .padding(.horizontal, model.uiSize(6))
                 .padding(.vertical, model.uiSize(1))
                 .background(
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.accentColor.opacity(0.18))
+                        .fill(kind.color.opacity(0.18))
                 )
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(kind.color)
                 .fixedSize()
                 .help("Vim mode")
                 .accessibilityIdentifier("mdv.statusBar.vimMode")
