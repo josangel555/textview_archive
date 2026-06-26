@@ -1021,7 +1021,13 @@
       EditorState.allowMultipleSelections.of(true),
       rectangularSelection(),
       crosshairCursor(),
-      drawSelection(),
+      // cursorBlinkRate:0 → a STEADY (non-blinking) caret. Owner request
+      // (TSK-1259): no blink in either vim mode. This single facet drives BOTH
+      // cursors — the standard INSERT line caret (drawSelection's cursorLayer)
+      // AND the vim NORMAL block "fat" cursor: @replit/codemirror-vim's
+      // setBlinkRate() reads this same `cursorBlinkRate` facet, and the facet
+      // combine is Math.min, so 0 wins regardless of any other drawSelection.
+      drawSelection({ cursorBlinkRate: 0 }),
       dropCursor(),
       history(),
       indentOnInput(),

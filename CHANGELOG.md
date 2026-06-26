@@ -11,6 +11,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-26
 
+### Changed
+- **Editor caret no longer blinks** — the text cursor is now steady in both vim modes (the NORMAL-mode block cursor and the INSERT-mode line caret).
+
 ### Fixed
 - **The app now launches on other Macs** — a copy of the app sent to another Mac used to crash instantly on launch; it was secretly loading its editor/highlighting resources from the folder it was *built* in, which doesn't exist anywhere else. The app is now fully self-contained and runs anywhere (Apple Silicon, macOS 15+; clear the download quarantine or right-click → Open the first time, since it isn't notarized yet).
 
