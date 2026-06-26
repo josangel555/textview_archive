@@ -1,30 +1,38 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — prod-build packaging fix shipped; eval/AX prioritized; cron armed  (2026-06-26)
+# Handoff — autonomous run: AX/eval foundation + orphaned-cores drain  (2026-06-26)
 
-**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `0f11e59b` (verify `git log -1`).
+**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `b8df8b84` (verify `git log -1`).
 
 ## Mission
-Fix the prod-build clean-machine crash + ship a working dist, then set the autonomous drain back up with the owner's 2026-06-26 priority order (eval/AX → validate-pending → wave-12).
+Autonomous cron drain (every 5 min, session-only `beafb39c`) per the BACKLOG **🎯 OWNER PRIORITY ORDER (2026-06-26)**: P0a (eval/AX self-driving + agent-drivable interfaces) and P0b (battle-test the fixed/review pile + reclaim) — CO-EQUAL, interleaved — then P1 (NEXT WAVE 12). Owner directive (2026-06-26): **when you find a gap, ensure it has a board ticket; if not, file one.**
 
-## Current state (all on main, headless-gate GREEN)
-- **TSK-1257 (`d810d4c6`, review) — THE packaging fix.** The hand-assembled `.app` crashed at launch on any clean machine: the minimal SwiftPM `Bundle.module` accessor resolves resource bundles from the `.app` ROOT then a hardcoded dev `.build` path — never `Contents/Resources`. Fix = `Bundle.resolveResourceBundle` (ViewerCore) preferring the app's own `Contents/Resources`; per-target `Bundle.viewerCoreResources`/`viewerUIResources` replace the `Bundle.module` call sites; minimal `Info.plist` stamped into each shipped bundle; host-safe `--verify-resources` self-check wired into `build-app.sh` + `verify-app.sh` (fails if any resource resolves from `/.build/`); `verify-app.sh` strict-codesign now runs on a de-xattr'd copy. **Fixed dist uploaded** to `github.com/josangel555/mvd_dist` → `TextView-2026-06-26-packagingfix.zip` (commit `17e1d71`) AND **installed to `/Applications/TextView.app`** (verified self-contained). Owner close = M5-Pro retest (clear quarantine → launch).
-- **TSK-1258 (`206bbbfc`, review) — restored headless gate to green.** `ScriptVerbCatalog` drift test now treats `ScriptRunner.swift` as the 2nd dispatch surface (runner-only `wait-editor-line`/`wait-rendered-scroll` were false-flagging since TSK-1047). main was secretly red before this.
-- **TSK-1259 (`0f11e59b`, review) — steady (non-blinking) caret in vim mode.** `drawSelection({cursorBlinkRate:0})` — one facet drives BOTH the NORMAL block cursor and INSERT line caret (vim `setBlinkRate` reads the same facet; combine=Math.min). In-process WebView guard added (VM/#192 lane). Reinstalled. Owner: relaunch to confirm on-screen.
-- **Docs:** CHANGELOG 2026-06-26 (caret + launches-on-other-Macs + system work); BACKLOG has the new **🎯 OWNER PRIORITY ORDER (2026-06-26)** block at the top; LESSONS has the Bundle.module-clean-machine entry.
-- **Cron ARMED:** session-only `beafb39c`, every 5 min, drains BACKLOG top-down (7-day auto-expire; dies when this session exits).
+## Current state — what this run shipped (all on main, headless-gate-green per item)
+- **Prod-build packaging fix (TSK-1257, review):** `Bundle.resolveResourceBundle` + `--verify-resources` gate; fixed dist vended to `mvd_dist` + installed. (Owner: M5-Pro retest = the close.)
+- **Gate repair (TSK-1258) + vim steady caret (TSK-1259, VM-validated) + folder-treemap drain (TSK-506) + rust-highlight drain (TSK-660)** — all review.
+- **AX/eval host foundation (TSK-1254 epic, progress) — the headline P0a, host-complete:**
+  - `AXDriverCore` (ViewerCore/Automation) — find-by-`mdv.*`-id + press-action resolution over an abstract `AXNode` (slice 1, `0bec4882`, validated via TSK-1262).
+  - `AXIdentifierCatalog` (TSK-1262, **validated**) — curated agent-drivable addressing contract + source drift guard (`cb0110f1`).
+  - `AXUIElementNode` (TSK-1260, review) — the real macOS AXUIElement adapter (`711c8b65`); live traversal AX-TCC-gated.
+  - `ElementRef` (TSK-1256 slice 1, progress) — shareable `mdv://` reference model bridging native AX / WebView / file / tab (`beef2213`).
+  - **Pyramid doc** `docs/TEST_PYRAMID.md` (TSK-1255, review, `df13e11e`) — the canonical tier map.
+  - VM-tail subtasks filed: TSK-1260/1261/1263 (AX driver), TSK-1264-1267 (ElementRef resolver/UI/picker/CDP).
+- **LSP security (TSK-1129, parked):** `LSPTrustStore` + spawn-site warn-wire (`12c88b7f`) — the RCE-guard vector is now visible; the BLOCK + confirm-prompt is **parked** for the owner (block-vs-prompt UX).
+- **Orphaned-cores audit (TSK-1268, triaged):** ~30 ViewerCore cores are built+tested but have ZERO consumers (feature inactive). Triaged: delete-candidates / wire-now / wire-when-UI. **Wired this run:** `InFileCompletion` → `handleCompletionRequest` no-LSP branch (TSK-1127, review, `b8df8b84`; popup display = TSK-463 render slice). **Tracked:** `ExternalEditReconciler` auto-merge (TSK-1269).
+- **VM cross-validation:** the 6-commit batch (incl. the AX C-API) compiles + passes on Swift 6.3.
 
-## Owner priority order (encoded at the top of BACKLOG.md)
-- **P0a — eval/AX self-driving + agent-drivable interfaces:** TSK-1254 (out-of-process AX driver) → TSK-1255 (pyramid restructure + canonical doc) → agent-drivable `mdv.*` + script-bus action surface → TSK-1256 (element refs). Human-like self-drive stays a SEPARATE purely-screenshot harness.
-- **P0b — battle-test the ~215 fixed/review pile to validated WITH TEETH** (task_validate + checks for pure-logic; render/WebView/AX-pixel caps at review). Reclaim stale-progress TSK-1253/INT-126.
-- **P1 — the NEXT WAVE 12** (app lane / perf / agent / leverage / dark-mode / LSP-autocomplete / tmux-finish). Verify-state + spike each first.
+## Key decisions
+- **Cron = inline, one item/tick, host-test the model + leave render/VM at review.** Each item: spike → implement → test → teeth → `test-headless-gate.sh` → commit → board.
+- **Orphan-wiring is P0b-class** (activating built features). Clean wires fill an existing empty branch (InFileCompletion); deep ones (auto-merge apply) get a scoped ticket, not a rushed tick.
+- **AX driver is out-of-process** (in-process AX tree is empty); live traversal needs AX TCC (owner-grant, like the T5 pixel lane).
 
-## Gotchas / lessons (full text in LESSONS.md)
-- **Bundle.module clean-machine trap** (the headline): never hand-assemble resources to a place the minimal accessor doesn't read; keep them in `Contents/Resources` + the resolver. `--verify-resources` is the gate.
-- **Verify-before-build:** "open" board/backlog tags are mostly already DONE — grep main + `task_get` first. The BOARD is the source of truth, not BACKLOG tags.
-- **iCloud FinderInfo** trips `codesign --strict` on `dist/` in place → verify a `ditto --noextattr` /tmp copy.
-- **WebView/AX tests are VM-lane** (`MDV_RUN_WEBVIEW_TESTS=1`), not the host gate; AX is out-of-process only.
+## Gotchas / lessons (also LESSONS.md)
+- **Gate cadence:** each `test-headless-gate.sh` recompiles into `.build-gate` (~few min) — run it in the background, confirm `WRAPPER_EXIT=0` + `headless gate PASSED` before the next item.
+- **#NNN / stale-lease:** several picked tickets were at `reported`/`progress` with expired leases — walk them forward (`task_advance`/`task_record`), `task_get` before acting.
+- **task_record can't do reported→fixed** — walk via `task_advance` to progress first.
+- **Verify-before-build:** orphan/“open” items need `grep main` + `task_get`; most fixed/review items are render → owner-close.
 
 ## How to resume
-1. Read this + BACKLOG.md (the 🎯 priority block) + the cron tick prompt in `docs/TASK_WORKFLOW.md §7`. `git log -1` (expect `0f11e59b`).
-2. The cron `beafb39c` is draining every 5 min. If it's gone (session ended), re-arm from `TASK_WORKFLOW.md §7` (CronCreate `*/5 * * * *`, session-only) with the current session's commit trailer.
-3. Host gate: `bash scripts/test-headless-gate.sh`. Prod build: `bash scripts/build-app.sh release --install` (now runs the `--verify-resources` packaging gate). VM creds: host `macOS15`, user `vm-tester`, sudo `<vm-sudo-password>`. NEVER `killall MarkdownViewer`; UI/live tiers VM-only.
+1. `git log -1` (expect `b8df8b84`); read BACKLOG 🎯 block + this file. The cron `beafb39c` drains every 5 min.
+2. Next code drain: a clean orphan-wire from TSK-1268's **wire-now** set (prefer ones that fill an existing empty branch, like InFileCompletion did) OR a validation-drain (re-run a fixed item's named suite fresh → review). Interleave P0a/P0b.
+3. Owner-pending: M5-Pro retest (TSK-1257), block-vs-prompt decision (TSK-1129), the parked rust flips (TSK-1215/1202), wave-12 groom.
+4. Host gate: `bash scripts/test-headless-gate.sh`. VM: `ssh macOS15` + `scripts/test-in-vm.sh` (creds: vm-tester / sudo <vm-sudo-password>). NEVER `killall MarkdownViewer`; UI/live tiers VM-only.
