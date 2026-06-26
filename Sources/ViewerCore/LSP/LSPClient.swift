@@ -146,6 +146,24 @@ public actor LSPClient {
             throw LSPError.serverBinaryNotFound(config.executable.path)
         }
 
+        // TSK-1129 (security): consult the workspace-local-binary trust guard
+        // before spawning. A repo-local server binary (node_modules/.bin/…, or a
+        // workspace lsp.json `command` override) is an RCE-on-browse vector. For
+        // now this EMITS a warning when an UNTRUSTED workspace-local binary is
+        // about to spawn — the vector is visible (observability) and the persisted
+        // trust-store seam is consulted. The BLOCK + one-time confirm prompt are
+        // the owner-gated UX slice (block-by-default breaks legit local servers
+        // until the prompt ships). Non-blocking: spawn behavior is unchanged.
+        if LSPTrustStore.shared.decision(
+            binary: config.executable, workspaceRoot: config.workspaceRoot) == .needsTrust {
+            Obs.shared.emit(ObsEvent(
+                level: .warn, subsystem: "lsp",
+                message: "spawning UNTRUSTED workspace-local LSP server binary "
+                       + "(potential RCE-on-browse; TSK-1129 confirm-prompt pending)",
+                fields: ["binary": config.executable.path,
+                         "workspace": config.workspaceRoot.path]))
+        }
+
         let p = Process()
         p.executableURL = config.executable
         p.arguments = config.arguments
