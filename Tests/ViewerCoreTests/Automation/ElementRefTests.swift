@@ -99,4 +99,47 @@ struct ElementRefTests {
             #expect(parsed?.resolution == ref.resolution, "resolution drift for \(ref)")
         }
     }
+
+    // TSK-1256 slice 3 — the executor dispatches each ref to exactly one target
+    // action with the right params (a regression to the wrong action fails here),
+    // and forwards the target's success flag.
+    private final class RecordingTarget: ElementRefTarget {
+        var calls: [String] = []
+        let succeed: Bool
+        init(succeed: Bool = true) { self.succeed = succeed }
+        func selectTab(id: String) -> Bool { calls.append("selectTab:\(id)"); return succeed }
+        func openFile(path: String, line: Int?) -> Bool {
+            calls.append("openFile:\(path):\(line.map(String.init) ?? "nil")"); return succeed
+        }
+        func gotoWebLine(docId: String, line: Int) -> Bool {
+            calls.append("gotoWebLine:\(docId):\(line)"); return succeed
+        }
+        func selectWebNode(docId: String, selector: String) -> Bool {
+            calls.append("selectWebNode:\(docId):\(selector)"); return succeed
+        }
+        func activateAX(_ query: AXQuery) -> Bool { calls.append("activateAX:\(query.stem)"); return succeed }
+    }
+
+    @Test func executorDispatchesEachKindToTheRightTargetCall() {
+        let t = RecordingTarget()
+        ElementRefExecutor.execute(.tab(id: "t1"), on: t)
+        ElementRefExecutor.execute(.webLine(docId: "d", line: 5), on: t)
+        ElementRefExecutor.execute(.file(path: "a.md", line: 3), on: t)
+        ElementRefExecutor.execute(.file(path: "b.md", line: nil), on: t)
+        ElementRefExecutor.execute(.ax(identifier: "mdv.hexView"), on: t)
+        ElementRefExecutor.execute(.webSelector(docId: "d", selector: ".cm-line"), on: t)
+        #expect(t.calls == [
+            "selectTab:t1",
+            "gotoWebLine:d:5",
+            "openFile:a.md:3",
+            "openFile:b.md:nil",
+            "activateAX:mdv.hexView",
+            "selectWebNode:d:.cm-line",
+        ])
+    }
+
+    @Test func executorForwardsTargetSuccessFlag() {
+        #expect(ElementRefExecutor.execute(.tab(id: "x"), on: RecordingTarget(succeed: true)) == true)
+        #expect(ElementRefExecutor.execute(.tab(id: "x"), on: RecordingTarget(succeed: false)) == false)
+    }
 }
