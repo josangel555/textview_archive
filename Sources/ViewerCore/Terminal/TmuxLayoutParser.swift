@@ -39,11 +39,23 @@ import Foundation
 ///   the transport.
 public enum TmuxLayoutParser {
 
+    /// Hard cap on split-nesting depth. The recursive-descent parser spends one
+    /// stack frame per `{`/`[` level, so an UNBOUNDED depth on a hostile/garbled
+    /// layout string overflows the thread stack — a hard crash (SIGILL/SIGSEGV),
+    /// not a `nil`. The control stream is parsed on the PTY-pump thread (slice
+    /// d), whose default stack is only ~512 KB, so the crash threshold there is
+    /// ~1-2k levels, not the ~18k a fresh main thread tolerates. Real tmux
+    /// layouts are shallow (a handful of splits); 256 is orders of magnitude
+    /// beyond anything legitimate while keeping recursion bounded. Beyond it
+    /// `parse` returns `nil` (the caller ignores the layout) rather than crash —
+    /// preserving the documented "never crashes on hostile input" contract.
+    private static let maxDepth = 256
+
     /// Parse a tmux layout string into the canonical typed `PaneNode` tree.
     /// Returns `nil` for any malformed input (the caller treats `nil` as
     /// "ignore this layout").
     public static func parse(_ layout: String) -> PaneNode? {
-        var cursor = Cursor(Array(layout))
+        var cursor = Cursor(Array(layout), maxDepth: maxDepth)
 
         // <checksum> ',' <node>
         guard cursor.consumeChecksum() else { return nil }
@@ -74,8 +86,17 @@ public enum TmuxLayoutParser {
     private struct Cursor {
         private let chars: [Character]
         private var i: Int = 0
+        /// Max nesting depth before the parser bails to `nil` (stack-overflow
+        /// guard — see `TmuxLayoutParser.maxDepth`).
+        private let maxDepth: Int
+        /// Current nesting depth; incremented entering a group, decremented on
+        /// exit. A `parseNode` at `depth > maxDepth` returns `nil`.
+        private var depth: Int = 0
 
-        init(_ chars: [Character]) { self.chars = chars }
+        init(_ chars: [Character], maxDepth: Int) {
+            self.chars = chars
+            self.maxDepth = maxDepth
+        }
 
         var isAtEnd: Bool { i >= chars.count }
 
@@ -117,6 +138,9 @@ public enum TmuxLayoutParser {
         /// node := WxH ',' X ',' Y suffix → a `Sized` carrying the typed node
         /// plus its cell geometry (so the parent split can weight it).
         mutating func parseNode() -> Sized? {
+            // Stack-overflow guard: bail on pathologically deep nesting before
+            // the recursion exhausts the (possibly small, off-main) thread stack.
+            guard depth <= maxDepth else { return nil }
             guard let w = parseUInt() else { return nil }
             guard expect("x") else { return nil }
             guard let h = parseUInt() else { return nil }
@@ -147,6 +171,11 @@ public enum TmuxLayoutParser {
         /// children := '<open>' node (',' node)* '<close>' — at least one node.
         mutating func parseGroup(open: Character, close: Character) -> [Sized]? {
             guard expect(open) else { return nil }
+            // Entering a nesting level — count it toward the depth cap so a
+            // long run of `{`s can't recurse without bound. Restored on exit so
+            // sibling groups don't accumulate phantom depth.
+            depth += 1
+            defer { depth -= 1 }
             var nodes: [Sized] = []
             // A group must hold at least one child (empty `{}`/`[]` is malformed).
             guard let first = parseNode() else { return nil }
@@ -185,14 +214,34 @@ public enum TmuxLayoutParser {
         let total = extents.reduce(0, +)
         guard total > 0 else { return nil }
 
-        let n = Double(extents.count)
-        let equalShare = 1.0 / n
-        // tmux cell counts are integers; adjacent panes in an "even" split can
-        // differ by ±1 cell (a divider rounds off), so treat a per-child
-        // deviation under one cell's worth of share as even.
-        let evenEpsilon = (1.0 / Double(total))
+        // tmux cell counts are integers; an "even" split rounds off into the
+        // dividers, so the children differ from each other by AT MOST ONE CELL
+        // (e.g. 88/89 on a 178-cell container). Detect "even" by the SPREAD
+        // between the largest and smallest child cell-extent: ≤1 ⇒ even.
+        //
+        // The old `1/total`-of-the-SHARE epsilon scaled with the container, so
+        // on a SMALL container it permitted a child to deviate by a full 1/total
+        // of the WHOLE — e.g. 1 cell out of 10 = 10% — which flattened a genuine
+        // 40/60 (`4x`/`6x`, spread 2) split to equal, discarding the user's real
+        // proportions. The max-min-spread rule keeps a legitimately divider-
+        // rounded split even (88/89 → spread 1) while preserving a real
+        // small-container resize (4/6 → spread 2, 2/1 → spread 1... see below).
+        //
+        // A 2:1 split (`2x`/`1x`) has spread 1 and WOULD read as even by spread
+        // alone, yet it is a deliberate resize — so ALSO require the spread to be
+        // small RELATIVE to the ideal share (a 1-cell spread is rounding noise on
+        // an 88-cell pane, but a real 2:1 on a 3-cell pane). Even ⇔ spread ≤ 1
+        // AND spread ≤ idealCells/8 won't hold for tiny panes; instead: even ⇔
+        // the spread is ≤1 AND no child is ≤ half the ideal. This keeps clean
+        // halves (5/5, 88/89) even while flagging 2/1 (a child at 1/3 ideal) and
+        // 4/6 (spread 2) as the real resizes they are.
+        let minExtent = extents.min() ?? 0
+        let maxExtent = extents.max() ?? 0
+        let spread = maxExtent - minExtent
+        let idealCells = Double(total) / Double(extents.count)
+        let smallestIsBalanced = Double(minExtent) >= idealCells * 0.75
+        let isEven = spread <= 1 && smallestIsBalanced
         let shares = extents.map { Double($0) / Double(total) }
-        let isEven = shares.allSatisfy { abs($0 - equalShare) <= evenEpsilon }
         return isEven ? nil : shares
     }
 }

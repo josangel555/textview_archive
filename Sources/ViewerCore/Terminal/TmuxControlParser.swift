@@ -20,6 +20,12 @@ public enum ControlModeEvent: Equatable, Sendable {
     case errorReply(cmdNum: Int)
     /// `%output %<pane> <octal-escaped-bytes>` — pane output. `bytes` is
     /// already UN-escaped (octal `\NNN` / `\\` resolved).
+    ///
+    /// Also the decode target for `%extended-output %<pane> <age-ms> : <data>`,
+    /// which tmux emits in place of `%output` once a control client enables
+    /// flow control (`pause-after` / `refresh-client -A`). The age field is
+    /// discarded — the controller only needs the pane id + bytes — so a paused/
+    /// flow-controlled pane demuxes identically to a plain pane.
     case output(paneId: Int, bytes: [UInt8])
     /// `%window-add @<win>` — a new tmux window appeared.
     case windowAdd(Int)
@@ -144,6 +150,8 @@ public struct TmuxControlParser: Sendable {
 
         case "output":
             return parseOutput(line)
+        case "extended-output":
+            return parseExtendedOutput(line)
 
         case "window-add":
             guard let win = sigilInt(args.first) else { return .unknown(name: name, args: args) }
@@ -152,20 +160,27 @@ public struct TmuxControlParser: Sendable {
             guard let win = sigilInt(args.first) else { return .unknown(name: name, args: args) }
             return .windowClose(win)
         case "window-renamed", "unlinked-window-renamed":
-            guard args.count >= 2, let win = sigilInt(args[0]) else {
+            // The name is the REMAINDER OF THE LINE after the window-id token —
+            // NOT space-collapsed tokens — so internal runs of spaces survive
+            // and a rename to an EMPTY name (`@3` alone, or `@3 ` trailing
+            // space) applies as "" instead of falling through to `.unknown`
+            // (which left the stale tab title).
+            guard let win = sigilInt(args.first), let raw = remainderAfterFirstToken(line) else {
                 return .unknown(name: name, args: args)
             }
-            return .windowRenamed(win, args[1...].joined(separator: " "))
+            return .windowRenamed(win, raw)
         case "layout-change":
             guard args.count >= 2, let win = sigilInt(args[0]) else {
                 return .unknown(name: name, args: args)
             }
             return .layoutChange(window: win, layout: args[1])
         case "session-changed":
-            guard args.count >= 2, let sess = sigilInt(args[0]) else {
+            // Same remainder-of-line treatment as %window-renamed: the session
+            // name keeps internal spaces and an empty name is honoured.
+            guard let sess = sigilInt(args.first), let raw = remainderAfterFirstToken(line) else {
                 return .unknown(name: name, args: args)
             }
-            return .sessionChanged(sess, args[1...].joined(separator: " "))
+            return .sessionChanged(sess, raw)
         case "client-session-changed":
             return .clientSessionChanged
         case "sessions-changed":
@@ -210,6 +225,54 @@ public struct TmuxControlParser: Sendable {
         // payload is everything after the second space (which may be empty).
         let payloadStart = (i < n) ? i + 1 : n
         let payload = Array(line[payloadStart..<n])
+        return .output(paneId: pane, bytes: Self.unescapeOctal(payload))
+    }
+
+    /// `%extended-output %<pane> <age-ms> : <octal-escaped-bytes>` — pane output
+    /// under flow control. tmux emits this *instead of* `%output` once a control
+    /// client enables `pause-after` / `refresh-client -A`. The `<age-ms>` field
+    /// is how stale the data is (discarded — the controller only needs pane id +
+    /// bytes); a literal `:` token separates the age from the payload. We decode
+    /// to the SAME `.output(paneId:bytes:)` so a flow-controlled pane demuxes
+    /// identically to a plain one. As with `parseOutput`, the payload is sliced
+    /// from the RAW byte line (not space-tokenised) so binary data is preserved
+    /// verbatim, then octal-unescaped.
+    private func parseExtendedOutput(_ line: [UInt8]) -> ControlModeEvent {
+        // line == "%extended-output %<pane> <age> : <payload>".
+        var i = 0
+        let n = line.count
+        // skip "%extended-output"
+        while i < n && line[i] != 0x20 { i += 1 }    // to first space
+        guard i < n else { return .unknown(name: "extended-output", args: []) }
+        i += 1                                        // past first space
+        let paneStart = i
+        while i < n && line[i] != 0x20 { i += 1 }     // to second space
+        let paneToken = Array(line[paneStart..<i])
+        guard let pane = sigilInt(decodeASCII(paneToken)) else {
+            return .unknown(name: "extended-output", args: [decodeUTF8(paneToken)])
+        }
+        guard i < n else { return .unknown(name: "extended-output", args: [decodeUTF8(paneToken)]) }
+        i += 1                                        // past second space
+        // skip the age token (digits up to the next space)
+        while i < n && line[i] != 0x20 { i += 1 }     // to third space
+        guard i < n else { return .unknown(name: "extended-output", args: [decodeUTF8(paneToken)]) }
+        i += 1                                        // past third space
+        // Expect a literal ':' separator token, then a single space, then the
+        // payload. If the framing isn't exactly that, fall back to .unknown so
+        // we never silently mis-demux a malformed line.
+        guard i < n, line[i] == 0x3A else {           // ':'
+            return .unknown(name: "extended-output", args: [decodeUTF8(paneToken)])
+        }
+        i += 1                                        // past ':'
+        // payload begins after the single space following ':' (if present); a
+        // ':' immediately followed by end-of-line is an empty payload.
+        let payloadStart: Int
+        if i < n && line[i] == 0x20 {
+            payloadStart = i + 1
+        } else {
+            payloadStart = i
+        }
+        let payload = (payloadStart <= n) ? Array(line[payloadStart..<n]) : []
         return .output(paneId: pane, bytes: Self.unescapeOctal(payload))
     }
 
@@ -275,6 +338,37 @@ public struct TmuxControlParser: Sendable {
         let tokens = body.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard let first = tokens.first else { return ("", []) }
         return (first, Array(tokens.dropFirst()))
+    }
+
+    /// The remainder of a `%name <idToken> <rest…>` line AFTER the `%name` and
+    /// the FIRST argument token (the id), preserving every byte verbatim —
+    /// internal spaces included. Used for `%window-renamed` / `%session-changed`
+    /// where the value is a free-form name (the rest-of-line), not space-
+    /// delimited tokens.
+    ///
+    /// Returns:
+    ///   • the substring after the id token + its single trailing space, or
+    ///   • `""` when the id token is the last token (a rename to an empty name:
+    ///     `%window-renamed @3` or `%window-renamed @3 `), or
+    ///   • `nil` only when the line is too short to even contain a `%name` and
+    ///     an id token (so the caller emits `.unknown`).
+    private func remainderAfterFirstToken(_ line: [UInt8]) -> String? {
+        var i = 0
+        let n = line.count
+        // skip "%name"
+        while i < n && line[i] != 0x20 { i += 1 }   // to first space
+        guard i < n else { return nil }             // no args at all → malformed
+        i += 1                                       // past first space
+        guard i < n else { return nil }             // "%name " with no id token
+        // skip the id token (e.g. "@3")
+        let idStart = i
+        while i < n && line[i] != 0x20 { i += 1 }    // to second space (or EOL)
+        guard i > idStart else { return nil }        // empty id token → malformed
+        // No more after the id token → an empty name.
+        guard i < n else { return "" }
+        i += 1                                        // past the single space
+        // Everything from here to EOL is the verbatim name (spaces preserved).
+        return decodeUTF8(Array(line[i..<n]))
     }
 
     /// Strip a tmux sigil (`%` pane, `@` window, `$` session) and parse the

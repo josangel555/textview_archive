@@ -95,10 +95,38 @@ public struct TmuxControllerCore: Sendable {
         public var topologyChanged = false
         /// Resolved command replies, in resolution order.
         public var replies: [Reply] = []
+        /// Commands whose reply was SKIPPED — tmux replied for a LATER command
+        /// while these earlier ones were still in flight, so their replies are
+        /// lost. Surfaced (in FIFO order) so the wrapper can fail any awaiting
+        /// caller rather than strand it forever. (Was silently dropped before
+        /// TSK-1018 hardening.)
+        public var droppedCommands: [String] = []
+        /// Protocol anomalies the core tolerated but a healthy stream never
+        /// produces: a `%begin`/`%end` (or `%error`) cmdNum mismatch, an
+        /// orphan frame terminator, a re-opened frame, etc. Surfaced so the
+        /// wrapper can log/telemetry them instead of the loss being invisible.
+        public var anomalies: [Anomaly] = []
         /// True if `%exit` was seen.
         public var didExit = false
 
         public init() {}
+    }
+
+    /// A tolerated-but-noteworthy protocol deviation. The core never crashes or
+    /// desyncs on these; it records them so the loss/skew isn't invisible.
+    public enum Anomaly: Sendable, Equatable {
+        /// A reply frame opened with `%begin <openCmdNum>` but closed with
+        /// `%end`/`%error <closeCmdNum>` for a DIFFERENT command — the
+        /// accumulated body could not be trusted against the close. `recovered`
+        /// carries the body lines that were accumulated for the open frame (so
+        /// they aren't merely discarded). `succeeded` mirrors the close kind.
+        case replyFrameCmdNumMismatch(openCmdNum: Int, closeCmdNum: Int, body: [String], succeeded: Bool)
+        /// A frame terminator (`%end`/`%error <cmdNum>`) arrived with no open
+        /// `%begin` frame. Any body intended for it is unknowable.
+        case orphanFrameClose(cmdNum: Int, succeeded: Bool)
+        /// A `%begin <newCmdNum>` arrived while a frame for `<abandonedCmdNum>`
+        /// was still open; the prior frame's accumulated `body` was abandoned.
+        case reopenedFrame(abandonedCmdNum: Int, newCmdNum: Int, body: [String])
     }
 
     /// A correlated tmux command reply: the command string we sent, the reply
@@ -127,20 +155,26 @@ public struct TmuxControllerCore: Sendable {
                 fx.updatedPanes.insert(id)
 
             case let .beginReply(cmdNum):
-                // Open a new reply frame (any half-open one is abandoned — the
-                // parser only opens a frame after closing the prior one).
+                // Open a new reply frame. The parser only opens a frame after
+                // closing the prior one, so a still-open frame here means the
+                // batch was hand-built or spanned a parser boundary — abandon
+                // the half-open frame but SURFACE it (its body is lost).
+                if let stale = openReply {
+                    fx.anomalies.append(.reopenedFrame(
+                        abandonedCmdNum: stale.cmdNum, newCmdNum: cmdNum, body: stale.lines))
+                }
                 openReply = (cmdNum: cmdNum, lines: [])
 
             case let .replyLine(line):
                 openReply?.lines.append(line)
 
             case let .endReply(cmdNum):
-                if let reply = resolveReply(cmdNum: cmdNum, succeeded: true) {
+                if let reply = resolveReply(cmdNum: cmdNum, succeeded: true, fx: &fx) {
                     fx.replies.append(reply)
                 }
 
             case let .errorReply(cmdNum):
-                if let reply = resolveReply(cmdNum: cmdNum, succeeded: false) {
+                if let reply = resolveReply(cmdNum: cmdNum, succeeded: false, fx: &fx) {
                     fx.replies.append(reply)
                 }
 
@@ -162,13 +196,50 @@ public struct TmuxControllerCore: Sendable {
 
     /// Close the open reply frame for `cmdNum` and correlate it to the command
     /// we sent. Returns the resolved `Reply`, or `nil` for a spurious frame
-    /// (no open frame, a number mismatch, or an unknown command number).
-    private mutating func resolveReply(cmdNum: Int, succeeded: Bool) -> Reply? {
+    /// (an unknown command number). Surfaces, via `fx`:
+    ///   • `droppedCommands` — earlier in-flight commands skipped by this
+    ///     out-of-order resolution (so their callers can be failed, not
+    ///     stranded);
+    ///   • `.replyFrameCmdNumMismatch` — when `%begin` opened a frame for a
+    ///     DIFFERENT command than this close (the accumulated body can't be
+    ///     trusted against the close, but is carried in the anomaly rather than
+    ///     vanishing);
+    ///   • `.orphanFrameClose` — when no `%begin` ever opened a frame for this
+    ///     close (a body may have been intended; it's unknowable).
+    private mutating func resolveReply(cmdNum: Int, succeeded: Bool, fx: inout Effects) -> Reply? {
+        let open = openReply
         defer { openReply = nil }
-        // The lines we accumulated for this frame (if any were opened).
-        let lines = (openReply?.cmdNum == cmdNum) ? (openReply?.lines ?? []) : []
-        guard let command = commandQueue.resolve(cmdNum) else { return nil }
-        return Reply(command: command, lines: lines, succeeded: succeeded)
+
+        // Correlate against the FIFO; capture any commands skipped ahead of it.
+        let resolution = commandQueue.resolveReporting(cmdNum)
+        fx.droppedCommands.append(contentsOf: resolution.dropped)
+        guard let command = resolution.matched else {
+            // Number isn't in flight — a spurious / already-popped reply. Still
+            // surface a mismatched open frame so its body isn't silently lost.
+            if let open, open.cmdNum != cmdNum {
+                fx.anomalies.append(.replyFrameCmdNumMismatch(
+                    openCmdNum: open.cmdNum, closeCmdNum: cmdNum,
+                    body: open.lines, succeeded: succeeded))
+            }
+            return nil
+        }
+
+        // The lines belong to this reply ONLY when the open frame's cmdNum
+        // matches the close. A mismatch (or no open frame) is surfaced so the
+        // accumulated body — and the skew — isn't invisible.
+        if let open, open.cmdNum == cmdNum {
+            return Reply(command: command, lines: open.lines, succeeded: succeeded)
+        }
+        if let open {
+            // Frame opened for a different command than it closed for.
+            fx.anomalies.append(.replyFrameCmdNumMismatch(
+                openCmdNum: open.cmdNum, closeCmdNum: cmdNum,
+                body: open.lines, succeeded: succeeded))
+        } else {
+            // No %begin ever opened this frame.
+            fx.anomalies.append(.orphanFrameClose(cmdNum: cmdNum, succeeded: succeeded))
+        }
+        return Reply(command: command, lines: [], succeeded: succeeded)
     }
 
     // MARK: - Per-pane snapshots (the demux target)
@@ -319,13 +390,30 @@ public struct TmuxCommandQueue<Tag: Sendable>: Sendable {
     /// reply for `number` means any earlier still-pending command's reply was
     /// missed — drop them rather than desync). Returns the matched tag, or
     /// `nil` if `number` isn't in flight (a spurious / already-popped reply).
+    ///
+    /// NOTE: this convenience drops the SKIPPED earlier entries SILENTLY. When a
+    /// caller needs to fail those abandoned commands (the common case — a
+    /// `list-panes` whose reply was lost ahead of a later command's reply),
+    /// use `resolveReporting(_:)` which returns the dropped tags too.
+    @discardableResult
     public mutating func resolve(_ number: Int) -> Tag? {
+        resolveReporting(number).matched
+    }
+
+    /// Like `resolve(_:)` but ALSO returns the tags of any earlier in-flight
+    /// commands that were skipped (abandoned) by this out-of-order resolution,
+    /// in FIFO order — so the caller can fail their awaiting callers rather than
+    /// stranding them forever. `matched` is the tag for `number` (or `nil` if it
+    /// wasn't in flight); `dropped` is the earlier entries popped ahead of it
+    /// (empty when `number` was the head of the queue or wasn't found).
+    public mutating func resolveReporting(_ number: Int) -> (matched: Tag?, dropped: [Tag]) {
         guard let idx = pending.firstIndex(where: { $0.number == number }) else {
-            return nil
+            return (nil, [])
         }
+        let dropped = pending[0..<idx].map { $0.tag }
         let tag = pending[idx].tag
         pending.removeFirst(idx + 1)
-        return tag
+        return (tag, dropped)
     }
 
     /// Drop all in-flight entries (teardown / detach), returning their tags in
