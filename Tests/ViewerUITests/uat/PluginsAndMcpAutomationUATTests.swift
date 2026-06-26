@@ -96,16 +96,17 @@ final class PluginsAndMcpAutomationUATTests: MultiScenarioTestCase {
         let ping = try mcp.request("ping", params: [:], id: 99)
         XCTAssertNotNil(ping["result"], "[PMA01] server died after 'initialized' notification")
 
-        // Step 4: tools/list → exactly 12 tools, documented order.
-        // (set_zoom + search_files joined the catalog in the backlog-drain wave;
-        // this UAT expectation lagged — the host MCP-count test was updated but
-        // this VM-only UAT wasn't. TSK-1031.)
+        // Step 4: tools/list → the full catalog (13 tools), documented order.
+        // (Tools join over time — set_zoom/search_files in the backlog-drain wave,
+        // list_runnable_tasks under TSK-1154; keep this list in sync with
+        // MCPToolCatalog.all. TSK-1031/1154.)
         let toolsR = try mcp.request("tools/list", params: [:], id: 2)
         let tools = (toolsR["result"] as? [String: Any])?["tools"] as? [[String: Any]] ?? []
         let names = tools.compactMap { $0["name"] as? String }
         let expected = ["open_path", "select_tab", "set_view_mode", "set_zoom", "find",
                         "search_files", "goto_line", "visible_text", "current_state",
-                        "toggle_bookmark", "list_bookmarks", "snapshot_window"]
+                        "toggle_bookmark", "list_bookmarks", "snapshot_window",
+                        "list_runnable_tasks"]
         XCTAssertEqual(names, expected, "[PMA01] tools/list catalog mismatch")
         for t in tools {
             XCTAssertNotNil(t["name"] as? String, "[PMA01] tool missing name")

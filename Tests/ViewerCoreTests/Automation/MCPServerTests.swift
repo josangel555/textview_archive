@@ -131,7 +131,6 @@ final class MCPServerTests: XCTestCase {
         // Pin to the catalog itself rather than a magic literal so adding a
         // tool can't silently drift this expectation out of sync.
         XCTAssertEqual(tools.count, MCPToolCatalog.all.count)
-        XCTAssertEqual(tools.count, 12)
     }
 
     func test_unknownMethod_returnsMethodNotFound() throws {

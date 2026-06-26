@@ -71,7 +71,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 12)
+        XCTAssertEqual(names.count, 13)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -80,8 +80,58 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
+            "list_runnable_tasks",
         ]
         XCTAssertEqual(names, expected)
+    }
+
+    // MARK: - list_runnable_tasks
+
+    func test_listRunnableTasks_returnsDiscoveredTasks() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-mcp-tasks-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let pkg = #"{ "scripts": { "test": "vitest", "build": "tsc" } }"#
+        try pkg.write(to: tmp.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+
+        // The tool must faithfully return RunnableTaskDiscovery's result (teeth:
+        // a broken handler / wrong mapping diverges from the direct discovery).
+        let direct = RunnableTaskDiscovery.discover(
+            projectRoot: tmp.standardizedFileURL.resolvingSymlinksInPath())
+        XCTAssertGreaterThanOrEqual(direct.count, 2, "the 2 package.json scripts at minimum")
+
+        let result = try MCPToolCatalog.dispatch(
+            name: "list_runnable_tasks",
+            args: .object(["path": .string(tmp.path)]),
+            host: host)
+
+        guard case .object(let obj) = result,
+              case .int(let count)? = obj["count"],
+              case .array(let taskVals)? = obj["tasks"] else {
+            XCTFail("malformed result: \(result)"); return
+        }
+        XCTAssertEqual(count, direct.count)
+        XCTAssertEqual(taskVals.count, direct.count)
+        let toolNames = Set(taskVals.compactMap { v -> String? in
+            if case .object(let t) = v, case .string(let n)? = t["name"] { return n }
+            return nil
+        })
+        XCTAssertEqual(toolNames, Set(direct.map(\.name)))
+        XCTAssertTrue(toolNames.contains("test"))
+        XCTAssertTrue(toolNames.contains("build"))
+    }
+
+    func test_listRunnableTasks_pathOutsideHome_throwsPermissionDenied() {
+        XCTAssertThrowsError(
+            try MCPToolCatalog.dispatch(name: "list_runnable_tasks",
+                                        args: .object(["path": .string("/etc")]),
+                                        host: host)
+        ) { error in
+            guard case .permissionDenied = error as? MCPError else {
+                XCTFail("expected .permissionDenied, got \(error)"); return
+            }
+        }
     }
 
     func test_unknownTool_throwsNotFound() {

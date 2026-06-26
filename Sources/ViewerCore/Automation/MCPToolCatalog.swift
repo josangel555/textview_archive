@@ -35,6 +35,7 @@ public enum MCPToolCatalog {
         toggleBookmarkDescriptor,
         listBookmarksDescriptor,
         snapshotWindowDescriptor,
+        listRunnableTasksDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -58,6 +59,7 @@ public enum MCPToolCatalog {
         case "toggle_bookmark":   return try toggleBookmark(args, host)
         case "list_bookmarks":    return try listBookmarks(args, host)
         case "snapshot_window":   return try snapshotWindow(args, host)
+        case "list_runnable_tasks": return try listRunnableTasks(args, host)
         default:
             throw MCPError.notFound("unknown tool: \(name)")
         }
@@ -498,6 +500,36 @@ public enum MCPToolCatalog {
         return .object([
             "pngBase64": .string(png.base64EncodedString()),
             "bytes": .int(png.count),
+        ])
+    }
+
+    // MARK: - list_runnable_tasks
+
+    private static let listRunnableTasksDescriptor = MCP.ToolDescriptor(
+        name: "list_runnable_tasks",
+        description: "List the runnable tasks (package.json scripts, Cargo targets, Makefile targets, common test commands) discovered in a project directory. Read-only — scans manifests, runs nothing.",
+        inputSchema: schema([
+            "path": .object(["type": .string("string"),
+                             "description": .string("Absolute or ~-expanded path to the project root directory to scan")]),
+        ], required: ["path"])
+    )
+
+    private static func listRunnableTasks(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let path = try args.string("path")
+        let root = try validatedExistingURL(from: path)
+        let tasks = RunnableTaskDiscovery.discover(projectRoot: root)
+        let items: [MCP.Value] = tasks.map { t in
+            .object([
+                "id": .string(t.id),
+                "name": .string(t.name),
+                "source": .string(t.source.rawValue),
+                "command": .string(t.command),
+                "arguments": .array(t.arguments.map { MCP.Value.string($0) }),
+            ])
+        }
+        return .object([
+            "count": .int(tasks.count),
+            "tasks": .array(items),
         ])
     }
 
