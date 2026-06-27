@@ -96,4 +96,56 @@ final class FeedReaderViewModelTests: XCTestCase {
         await vm.refresh(now: now.addingTimeInterval(60))
         XCTAssertEqual(vm.lastFetched[u], now, "fresh feed not refetched (due-logic)")
     }
+
+    // MARK: - Subscription management (addFeed / removeFeed / importOPML)
+
+    func test_addFeed_subscribesAndAppearsInSummaries_idempotently() {
+        let store = makeStore()
+        let vm = FeedReaderViewModel(store: store)
+        XCTAssertEqual(vm.summaries.count, 0)
+        let u = URL(string: "https://a.example/feed")!
+        vm.addFeed(url: u, title: "A")
+        XCTAssertEqual(vm.summaries.map(\.subscription.url), [u], "added feed appears in the sidebar")
+        XCTAssertEqual(vm.summaries.first?.subscription.title, "A")
+        vm.addFeed(url: u, title: "A")
+        XCTAssertEqual(vm.summaries.count, 1, "re-adding the same feed URL is a no-op (store dedupes)")
+    }
+
+    func test_addFeed_defaultsTitleToHost() {
+        let store = makeStore()
+        let vm = FeedReaderViewModel(store: store)
+        vm.addFeed(url: URL(string: "https://news.example/rss")!)
+        XCTAssertEqual(vm.summaries.first?.subscription.title, "news.example",
+                       "title defaults to the URL host when omitted")
+    }
+
+    func test_removeFeed_unsubscribesAndClearsSelection() {
+        let store = makeStore()
+        let u = URL(string: "https://a.example/feed")!
+        let vm = FeedReaderViewModel(store: store)
+        vm.addFeed(url: u, title: "A")
+        vm.selectFeed(u)
+        XCTAssertEqual(vm.selectedFeedURL, u)
+        vm.removeFeed(url: u)
+        XCTAssertEqual(vm.summaries.count, 0, "feed removed from the sidebar")
+        XCTAssertNil(vm.selectedFeedURL, "removing the selected feed clears the selection")
+        XCTAssertTrue(vm.items.isEmpty)
+    }
+
+    func test_importOPML_roundTripsFromExport() {
+        // Build guaranteed-valid OPML via the store's own exporter, then import it
+        // into a fresh VM (avoids hand-OPML format fragility).
+        let seed = makeStore()
+        _ = seed.subscribe(url: URL(string: "https://a.example/feed")!, title: "A")
+        _ = seed.subscribe(url: URL(string: "https://b.example/feed")!, title: "B")
+        let opml = seed.exportOPML()
+
+        let store2 = FeedSubscriptionStore(
+            subscriptionsURL: tmp.appendingPathComponent("feeds2.json"),
+            readStateURL: tmp.appendingPathComponent("read2.json"))
+        let vm = FeedReaderViewModel(store: store2)
+        let n = vm.importOPML(opml)
+        XCTAssertEqual(n, 2, "imported both exported feeds")
+        XCTAssertEqual(Set(vm.summaries.map(\.subscription.title)), ["A", "B"])
+    }
 }

@@ -73,6 +73,31 @@ public final class FeedReaderViewModel: ObservableObject {
         }
     }
 
+    /// Subscribe to `url` (title defaults to the host) and recompute the sidebar.
+    /// Idempotent — the store dedupes by URL, so re-adding is a no-op.
+    public func addFeed(url: URL, title: String? = nil) {
+        _ = store.subscribe(url: url, title: title ?? url.host ?? url.absoluteString)
+        recompute()
+    }
+
+    /// Unsubscribe from `url`; clears the selection if it was the selected feed.
+    public func removeFeed(url: URL) {
+        store.unsubscribe(from: url)
+        if selectedFeedURL == url {
+            selectedFeedURL = nil
+        }
+        recompute()
+    }
+
+    /// Import OPML subscriptions into the store; returns the number added, then
+    /// recomputes the sidebar.
+    @discardableResult
+    public func importOPML(_ xml: String) -> Int {
+        let n = store.importOPML(xml)
+        recompute()
+        return n
+    }
+
     private func recompute() {
         summaries = FeedReaderModel.feedSummaries(
             subscriptions: store.allSubscriptions(),
