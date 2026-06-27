@@ -80,6 +80,110 @@ pub struct WorkItem {
     pub updated_seq: i64,
 }
 
+/// The lifecycle state CLASSES the core understands (v2 design §2.2). The visible
+/// labels a UI shows are an open vocabulary layered on top; these fixed classes
+/// are what the state machine enforces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    /// Exists, not yet admitted; scope/intent unconfirmed.
+    Proposed,
+    /// Admitted, fully specified, dispatchable now.
+    Ready,
+    /// An agent/human holds a lease and is working it.
+    Active,
+    /// Durably suspended on a typed ResumeContract (the first-class blocked state).
+    Parked,
+    /// The doer asserts complete — the agent's ceiling (never self-certifies done).
+    ClaimedDone,
+    /// An independent verifier passed.
+    VerifiedDone,
+    /// Integrated/shipped; terminal.
+    Closed,
+    /// Declined at intake; terminal.
+    Rejected,
+    /// Stopped without completion (carries the negative knowledge); terminal.
+    Abandoned,
+    /// Was VerifiedDone; an upstream consumed output changed — routes to re-examine.
+    AssumptionsInvalidated,
+}
+
+impl State {
+    /// The canonical class string persisted in `work_item.state`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            State::Proposed => "proposed",
+            State::Ready => "ready",
+            State::Active => "active",
+            State::Parked => "parked",
+            State::ClaimedDone => "claimed_done",
+            State::VerifiedDone => "verified_done",
+            State::Closed => "closed",
+            State::Rejected => "rejected",
+            State::Abandoned => "abandoned",
+            State::AssumptionsInvalidated => "assumptions_invalidated",
+        }
+    }
+
+    /// Parse a canonical class string (the inverse of [`State::as_str`]).
+    #[must_use]
+    pub fn from_class(s: &str) -> Option<Self> {
+        Some(match s {
+            "proposed" => State::Proposed,
+            "ready" => State::Ready,
+            "active" => State::Active,
+            "parked" => State::Parked,
+            "claimed_done" => State::ClaimedDone,
+            "verified_done" => State::VerifiedDone,
+            "closed" => State::Closed,
+            "rejected" => State::Rejected,
+            "abandoned" => State::Abandoned,
+            "assumptions_invalidated" => State::AssumptionsInvalidated,
+            _ => return None,
+        })
+    }
+
+    /// Terminal states have no outgoing transitions.
+    #[must_use]
+    pub fn is_terminal(self) -> bool {
+        matches!(self, State::Closed | State::Rejected | State::Abandoned)
+    }
+}
+
+/// Whether `from → to` is a legal lifecycle transition (v2 §2.2 table). This is
+/// state-shape validity only; the per-edge ACTOR gating (who may perform each
+/// edge — e.g. `ClaimedDone → VerifiedDone` is never the doer) is a separate
+/// layer (slice 4b).
+#[must_use]
+pub fn can_transition(from: State, to: State) -> bool {
+    use State::{
+        Active, AssumptionsInvalidated, ClaimedDone, Closed, Parked, Proposed, Ready, Rejected,
+        VerifiedDone,
+    };
+    if from.is_terminal() {
+        return false;
+    }
+    if to == State::Abandoned {
+        return true; // `* → Abandoned`: a human can kill in-flight work from any live state.
+    }
+    matches!(
+        (from, to),
+        (Proposed, Ready)
+            | (Proposed, Rejected)
+            | (Ready, Active)
+            | (Active, Parked)
+            | (Active, ClaimedDone)
+            | (Active, Ready)
+            | (Parked, Ready)
+            | (Parked, Active)
+            | (ClaimedDone, VerifiedDone)
+            | (ClaimedDone, Active)
+            | (VerifiedDone, Closed)
+            | (VerifiedDone, AssumptionsInvalidated)
+            | (AssumptionsInvalidated, Active)
+    )
+}
+
 /// Open an in-memory store with the slice-2a schema. (The on-disk path is a later slice.)
 ///
 /// # Errors
@@ -316,5 +420,65 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM event_log", [], |r| r.get(0))?;
         assert_eq!(logged, 1, "the event is logged even when the projection no-ops");
         Ok(())
+    }
+
+    const ALL_STATES: [State; 10] = [
+        State::Proposed,
+        State::Ready,
+        State::Active,
+        State::Parked,
+        State::ClaimedDone,
+        State::VerifiedDone,
+        State::Closed,
+        State::Rejected,
+        State::Abandoned,
+        State::AssumptionsInvalidated,
+    ];
+
+    #[test]
+    fn state_class_string_roundtrips() {
+        for s in ALL_STATES {
+            assert_eq!(State::from_class(s.as_str()), Some(s), "{s:?}");
+        }
+        assert_eq!(State::from_class("bogus"), None);
+    }
+
+    #[test]
+    fn lifecycle_happy_path_is_legal() {
+        assert!(can_transition(State::Proposed, State::Ready));
+        assert!(can_transition(State::Ready, State::Active));
+        assert!(can_transition(State::Active, State::ClaimedDone));
+        assert!(can_transition(State::ClaimedDone, State::VerifiedDone));
+        assert!(can_transition(State::VerifiedDone, State::Closed));
+    }
+
+    #[test]
+    fn lifecycle_rejects_skips_and_terminals() {
+        // Can't skip the Ready admission gate.
+        assert!(!can_transition(State::Proposed, State::Active));
+        // The doer never self-certifies: Active → VerifiedDone is illegal (goes via
+        // ClaimedDone, then an independent verifier).
+        assert!(!can_transition(State::Active, State::VerifiedDone));
+        // Terminal states have no exits — not even to Abandoned.
+        for t in [State::Closed, State::Rejected, State::Abandoned] {
+            assert!(!can_transition(t, State::Active), "{t:?} is terminal");
+            assert!(!can_transition(t, State::Abandoned), "{t:?} is terminal");
+        }
+    }
+
+    #[test]
+    fn any_live_state_can_be_abandoned() {
+        for s in ALL_STATES.into_iter().filter(|s| !s.is_terminal()) {
+            assert!(can_transition(s, State::Abandoned), "{s:?} → Abandoned");
+        }
+    }
+
+    #[test]
+    fn kickback_invalidation_and_requeue_edges() {
+        assert!(can_transition(State::ClaimedDone, State::Active)); // verifier kickback
+        assert!(can_transition(State::VerifiedDone, State::AssumptionsInvalidated));
+        assert!(can_transition(State::AssumptionsInvalidated, State::Active)); // re-examine
+        assert!(can_transition(State::Active, State::Ready)); // lease-expiry requeue
+        assert!(can_transition(State::Parked, State::Active)); // resume
     }
 }
