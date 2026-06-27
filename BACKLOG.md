@@ -33,6 +33,32 @@ The autonomous cron drains BACKLOG top-down; this is the explicit owner ordering
 
 P2+ — the rest of the board (`task_next`/`task_list`), lanes below.
 
+### ✅ STATUS (2026-06-27 — autonomous session) — host-completable work DRAINED
+Every wave-12 model layer host-completed; every lane verified to its agent ceiling:
+- **P0a agent surface — COMPREHENSIVE.** 42 `mdv.*` AX ids (AXIdentifierCatalog) · 19 MCP tools · script-verb bus (+`goto-line`,`copy-reference`) · element-refs + Copy-Reference ×5 (TSK-1256). EXECUTION (out-of-process AX real events) = TCC-gated (TSK-1254/1261/1263, owner grant). Pyramid doc done (TSK-1255, docs/TEST_PYRAMID.md).
+- **P0b validation — owner/VM-bound.** TSK-1253 stale-progress reclaim VALIDATED (fleet 0 progress / liveLeases:[]; INT-126 guards). The ~322 review + 86 fixed = render features w/ host-tested models → owner on-screen close; no pure-logic left to validate.
+- **P1 wave-12 host layers — COMPLETE.** RSS (model+vm+scheduler+refresh) + approve/reject (engine+selection+guarded `applyToFile`, data-corruption risk found & closed) BUILT this run; image-perf/browser/search/local-history/tmux/cm_apply host layers pre-built (verified).
+- **P2 rust-core — drained.** TSK-538 host children all closed; remainder render (TSK-543) or dep-approval (owner).
+- **dark-mode (TSK-1279)** — host-audit CLEAN (every surface adaptive); owner report likely STALE → "confirm-stale VM glance + plugin spot-check".
+
+### 📋 BOARD SCAN — next-50 actionable (2026-06-27), grouped by what unblocks each
+(Board: review 322 · fixed 86 · reported 298 [mostly #NNN phantoms, unsafe to mutate] · ack 32 · triaged 7. Each render item has a host-tested model to bind → its VM session is "purely the view".)
+
+**A. Render-VM passes** (host model DONE + tested; need an on-screen/T5 VM session):
+RSS tool-window view (TSK-1149 sliceB — OCCLUSION-class, compositingGroup) · approve/reject per-hunk UI (TSK-941, +UX-semantics) · image editor canvas (TSK-110/320/285/1048) · agent monitor view (TSK-111/336) · font picker (TSK-259) · session-tab icons (TSK-262) · multi-window (TSK-265) · up/down nav-preview (TSK-272) · FPS meter (TSK-275) · dep-graph (TSK-280) · sidebar fuzzy (TSK-282) · draggable files (TSK-284) · local-history UI (TSK-301) · CSV cell-nav+find (TSK-302/303) · md overview (TSK-305) · bookmarks root view (TSK-307) · archive browser (TSK-311) · walkthrough catalog (TSK-316) · walkthrough deeplink (TSK-317) · dep-explorer (TSK-319) · cmd-palette overlay (TSK-326) · New-File wiring (TSK-329) · bookmark Delete+Undo (TSK-330/333) · treemap render (TSK-334) · tooltip coverage (TSK-324) · editor-line + AX-id Copy-Reference (TSK-1256 tail) · dark-mode T5 confirm (TSK-1279).
+
+**B. Owner DECISIONS / spikes** (design produced; the call/dep is the owner's):
+approve/reject UX-semantics (TSK-941) · web browser (TSK-676) · rich-text/.docx export (TSK-680) · spell/grammar (TSK-685) · app name (TSK-683) · Developer-ID signing+notarization (TSK-686) · deep agent integrations (TSK-687) · debugger/DAP (TSK-276) · encryption tool (TSK-293) · markdown formatter (TSK-296) · project management (TSK-345).
+
+**C. Engine/design-blocked** (need a live engine or sandbox design):
+LSP→MCP bridge (TSK-279) · agent-services MCP: semantic-search/refactor/test-runner[sandbox]/code-review (TSK-1154) · Java formatter ext-tool (TSK-298) · CLI find-instance/socket RPC (TSK-353).
+
+**D. Dep-approval (owner)** — rust hardening: cargo-fuzz (TSK-584) · proptest (TSK-585) · wasm (TSK-587) · cargo-mutants (TSK-1137) · memchr (TSK-399). App: rusqlite (TSK-345).
+
+**E. Owner close / TCC** — the ~400 test-backed review+fixed pile (on-screen close) · TSK-590 epic (20/21 done; close or pending TSK-598) · AX-execution TCC grant (TSK-1254/1261/1263) · formula/fold gate-flips (de-risked; await owner soak+flip).
+
+> The autonomous host-completable surface is DRAINED — the above is owner / focused-VM-session work.
+
 ---
 
 ### ⭐ HIGH PRIORITY (owner, 2026-06-26)
