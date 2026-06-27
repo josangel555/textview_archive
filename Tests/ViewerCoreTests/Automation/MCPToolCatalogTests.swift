@@ -44,6 +44,8 @@ final class FakeAutomationHost: AutomationHost {
         return findResult
     }
     func automationVisibleText() -> String { visibleTextResult }
+    var ranVerb: String?
+    func automationRunVerb(_ verbLine: String) -> Bool { ranVerb = verbLine; return true }
     func automationCurrentState() -> AutomationState { stateResult }
     func automationToggleBookmark(line: Int?) {
         toggleBookmarkLine = (true, line)
@@ -71,7 +73,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 16)
+        XCTAssertEqual(names.count, 17)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -80,7 +82,7 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
-            "list_runnable_tasks", "process_memory", "outline", "git_status",
+            "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -117,6 +119,31 @@ final class MCPToolCatalogTests: XCTestCase {
             XCTFail("malformed: \(result)"); return
         }
         XCTAssertEqual(count, 0)
+    }
+
+    // MARK: - run_verb
+
+    func test_runVerb_dispatchesKnownVerb() throws {
+        let result = try MCPToolCatalog.dispatch(
+            name: "run_verb", args: .object(["verb": .string("convert-indentation-to-tabs")]), host: host)
+        guard case .object(let obj) = result, case .bool(let handled)? = obj["handled"] else {
+            XCTFail("malformed: \(result)"); return
+        }
+        XCTAssertTrue(handled)
+        XCTAssertEqual(host.ranVerb, "convert-indentation-to-tabs", "teeth: the verb reached the host dispatch")
+    }
+
+    func test_runVerb_passesTrailingArg() throws {
+        _ = try MCPToolCatalog.dispatch(
+            name: "run_verb", args: .object(["verb": .string("convert-indentation-to-tabs trailing")]), host: host)
+        XCTAssertEqual(host.ranVerb, "convert-indentation-to-tabs trailing",
+                       "the full verb line (token + arg) is forwarded to the host")
+    }
+
+    func test_runVerb_rejectsUnknownVerb_withoutTouchingHost() {
+        XCTAssertThrowsError(try MCPToolCatalog.dispatch(
+            name: "run_verb", args: .object(["verb": .string("not-a-real-verb")]), host: host))
+        XCTAssertNil(host.ranVerb, "an unknown token is rejected before the host is called")
     }
 
     // MARK: - git_status

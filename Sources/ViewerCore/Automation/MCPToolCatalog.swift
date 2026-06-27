@@ -33,6 +33,7 @@ public enum MCPToolCatalog {
         visibleTextDescriptor,
         outlineDescriptor,
         gitStatusDescriptor,
+        runVerbDescriptor,
         currentStateDescriptor,
         toggleBookmarkDescriptor,
         listBookmarksDescriptor,
@@ -60,6 +61,7 @@ public enum MCPToolCatalog {
         case "visible_text":      return try visibleText(args, host)
         case "outline":           return try outline(args, host)
         case "git_status":        return try gitStatus(args, host)
+        case "run_verb":          return try runVerb(args, host)
         case "current_state":     return try currentState(args, host)
         case "toggle_bookmark":   return try toggleBookmark(args, host)
         case "list_bookmarks":    return try listBookmarks(args, host)
@@ -482,6 +484,34 @@ public enum MCPToolCatalog {
         if let root { obj["root"] = .string(root) }
         if let branch = badge.branch { obj["branch"] = .string(branch) }
         return .object(obj)
+    }
+
+    // MARK: - run_verb
+
+    private static let runVerbDescriptor = MCP.ToolDescriptor(
+        name: "run_verb",
+        description: "Dispatch a script-verb — the public agent ACTION surface (~60 verbs: "
+            + "edit-*, focus-*, view toggles, git/terminal/tab/session actions). `verb` is the "
+            + "token, optionally with a trailing argument (e.g. \"edit-uppercase\" or "
+            + "\"goto-line 42\"). Only catalogued verbs run. Returns { handled, verb }.",
+        inputSchema: schema(["verb": .object([
+            "type": .string("string"),
+            "description": .string("A ScriptVerbCatalog token, optionally with a trailing arg."),
+        ])], required: ["verb"])
+    )
+
+    /// P0a — the script-verb bus as the public agent ACTION surface. Validates the
+    /// token against ScriptVerbCatalog (only known verbs run; an unknown token is
+    /// rejected before the host is ever touched) and dispatches the full line via
+    /// the host (→ ScriptVerb.apply, the same surface the palette / --script use).
+    private static func runVerb(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let line = try args.string("verb")
+        let token = line.split(separator: " ", maxSplits: 1).first.map(String.init) ?? line
+        guard ScriptVerbCatalog.tokens.contains(token) else {
+            throw MCPError.invalidParams("unknown script verb: \(token)")
+        }
+        let handled = host.automationRunVerb(line)
+        return .object(["handled": .bool(handled), "verb": .string(token)])
     }
 
     // MARK: - current_state

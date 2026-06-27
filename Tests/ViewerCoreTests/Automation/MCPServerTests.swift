@@ -25,6 +25,7 @@ private final class StubHost: AutomationHost {
     func automationToggleBookmark(line: Int?) {}
     func automationListBookmarks() -> [BookmarkEntry] { [] }
     func automationSnapshotPNG() throws -> Data { Data() }
+    func automationRunVerb(_ verbLine: String) -> Bool { false }
 }
 
 @MainActor

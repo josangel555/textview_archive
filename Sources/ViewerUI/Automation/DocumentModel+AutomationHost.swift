@@ -56,6 +56,13 @@ extension DocumentModel: AutomationHost {
         scrollSource(toLine: line)
     }
 
+    public func automationRunVerb(_ verbLine: String) -> Bool {
+        // Same dispatch as invokeCommand / --script: ScriptVerb.apply with the
+        // model + sessions coordinator. No coordinator wired (previews) → no-op.
+        guard let sessions = sessionsCoordinator else { return false }
+        return ScriptVerb.apply(verb: verbLine, to: self, sessions: sessions)
+    }
+
     public func automationSetZoom(_ zoom: Double) {
         // The catalog already clamped to [minZoom, maxZoom]; assign
         // verbatim. `zoom`'s didSet persists it through PreferencesStore

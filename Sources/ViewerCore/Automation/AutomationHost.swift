@@ -74,6 +74,21 @@ public protocol AutomationHost: AnyObject {
     /// Render the main window to PNG bytes. Throws if no window is
     /// available (headless mode without window).
     func automationSnapshotPNG() throws -> Data
+
+    // MARK: Script-verb bus
+
+    /// Dispatch a script-verb LINE (verb + optional arg) through the same
+    /// `ScriptVerb.apply` surface the palette / `--script` runner use, returning
+    /// whether it was handled. The caller (`MCPToolCatalog.run_verb`) validates
+    /// the token against `ScriptVerbCatalog` first; this just runs it.
+    func automationRunVerb(_ verbLine: String) -> Bool
+}
+
+public extension AutomationHost {
+    /// Default: this host doesn't support the script-verb bus (minimal test
+    /// doubles). The live host (`DocumentModel`) overrides to dispatch through
+    /// `ScriptVerb.apply`; a recording test host may override to capture.
+    func automationRunVerb(_ verbLine: String) -> Bool { false }
 }
 
 // MARK: - Plain DTOs (ViewerCore, no UI types)
