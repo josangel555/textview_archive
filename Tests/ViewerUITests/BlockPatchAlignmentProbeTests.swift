@@ -62,15 +62,20 @@ final class BlockPatchAlignmentProbeTests: WebViewTestCase {
         return r
     }
 
-    private func waitForWebView(in host: NSView, timeout: TimeInterval = 15) -> WKWebView? {
+    /// ASYNC wait (await Task.sleep, NOT RunLoop.run): the WKWebView mounts only
+    /// after the off-main render fills the cache and republishes on the MAIN actor
+    /// (TSK-611). A sync RunLoop.run here would BLOCK the main actor inside an async
+    /// @MainActor test, so that republish never runs and the WebView never mounts.
+    /// Task.sleep yields the main actor so the fill's continuation can land.
+    private func waitForWebView(in host: NSView, timeout: TimeInterval = 20) async -> WKWebView? {
         let cls: AnyClass = NSClassFromString("WKWebView")!
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
+            host.layoutSubtreeIfNeeded()
             if let wv = allDescendants(of: host).first(where: { $0.isKind(of: cls) }) as? WKWebView {
                 return wv
             }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-            host.layoutSubtreeIfNeeded()
+            try? await Task.sleep(for: .milliseconds(100))
         }
         return nil
     }
@@ -96,7 +101,7 @@ final class BlockPatchAlignmentProbeTests: WebViewTestCase {
         model.open(url: url)
 
         let host = host(ContentView(model: model))
-        guard let wv = waitForWebView(in: host) else {
+        guard let wv = await waitForWebView(in: host) else {
             throw XCTSkip("no WKWebView mounted (rendered tab didn't realize)")
         }
         let tags = await evalStr(wv, """
