@@ -440,6 +440,13 @@ pub fn append(
     )?;
     let seq = tx.last_insert_rowid();
     apply_to_projection(&tx, seq, actor_id, event)?;
+    // §1.7 reverse-ripple: invalidating an item cascades to its VerifiedDone
+    // consumers (logged system events, same tx → replay-deterministic).
+    if let WorkItemEvent::StateChanged { id, state, .. } = event
+        && State::from_class(state) == Some(State::AssumptionsInvalidated)
+    {
+        cascade_invalidation(&tx, id, ts)?;
+    }
     tx.commit()?;
     Ok(seq)
 }
@@ -474,6 +481,52 @@ fn apply_to_projection(
                 )?;
             }
         }
+    }
+    Ok(())
+}
+
+/// §1.7 reverse-ripple: when `root_id`'s output is invalidated, every transitive
+/// VerifiedDone CONSUMER of it auto-transitions to `assumptions_invalidated`. Each
+/// is a SYSTEM-actor event appended to the log IN THE SAME TRANSACTION — so the
+/// cascade is audited and replay-deterministic (replay re-applies these logged
+/// events; it never re-derives the cascade). The affected set is computed once
+/// (a recursive CTE over consumes-edges through VerifiedDone items) before any
+/// update, so the traversal sees pre-cascade states.
+fn cascade_invalidation(
+    tx: &rusqlite::Transaction<'_>,
+    root_id: &str,
+    ts: i64,
+) -> rusqlite::Result<()> {
+    let affected: Vec<String> = {
+        let mut stmt = tx.prepare(
+            "WITH RECURSIVE aff(id) AS (
+                 SELECT e.from_id FROM wi_edge e JOIN work_item w ON w.id = e.from_id
+                  WHERE e.to_id = ?1 AND e.kind = 1 AND w.state = 'verified_done'
+                 UNION
+                 SELECT e.from_id FROM wi_edge e JOIN work_item w ON w.id = e.from_id
+                  JOIN aff a ON e.to_id = a.id
+                  WHERE e.kind = 1 AND w.state = 'verified_done'
+             )
+             SELECT id FROM aff",
+        )?;
+        let rows = stmt.query_map([root_id], |r| r.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for consumer in affected {
+        let ev = WorkItemEvent::StateChanged {
+            id: consumer.clone(),
+            state: State::AssumptionsInvalidated.as_str().to_owned(),
+            reason: "upstream output invalidated".to_owned(),
+        };
+        let payload = rmp_serde::to_vec(&ev)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        tx.execute(
+            "INSERT INTO event_log (ts, actor_id, actor_kind, event_type, subject_id, reason, payload)
+             VALUES (?1, 'system', 2, 'work_item.state_changed', ?2, 'upstream output invalidated', ?3)",
+            rusqlite::params![ts, consumer, payload],
+        )?;
+        let cseq = tx.last_insert_rowid();
+        apply_to_projection(tx, cseq, "system", &ev)?;
     }
     Ok(())
 }
@@ -1091,6 +1144,46 @@ mod tests {
         assert_eq!(consumers_of(&conn, "C")?, vec!["B".to_string()]);
         assert!(dependents_of(&conn, "A")?.is_empty());
         assert!(consumers_of(&conn, "A")?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn invalidation_cascades_to_verified_done_consumers() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created_in("X", State::VerifiedDone))?;
+        append(&mut conn, 2, "h", 0, &created_in("B", State::VerifiedDone))?;
+        append(&mut conn, 3, "h", 0, &created_in("C", State::Ready))?; // consumes B but not finished
+        add_edge(&conn, "B", "X", EdgeKind::Consumes)?; // B consumes X
+        add_edge(&conn, "C", "B", EdgeKind::Consumes)?; // C consumes B
+        // X's output is invalidated (VerifiedDone → AssumptionsInvalidated, System).
+        append(
+            &mut conn,
+            4,
+            "system:ci",
+            2,
+            &WorkItemEvent::StateChanged {
+                id: "X".into(),
+                state: State::AssumptionsInvalidated.as_str().into(),
+                reason: "edited".into(),
+            },
+        )?;
+        // B (a VerifiedDone consumer of X) is cascaded; C (Ready, not finished) is NOT.
+        assert_eq!(
+            get_work_item(&conn, "B")?.map(|w| w.state),
+            Some("assumptions_invalidated".to_string())
+        );
+        assert_eq!(get_work_item(&conn, "C")?.map(|w| w.state), Some("ready".to_string()));
+        // The cascade emitted a logged system event for B.
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM event_log WHERE subject_id = 'B' AND actor_id = 'system'",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(n, 1, "cascade is logged, not a silent projection edit");
+        // Replay reproduces the cascaded state (it's in the log).
+        let before_b = get_work_item(&conn, "B")?;
+        replay(&mut conn)?;
+        assert_eq!(get_work_item(&conn, "B")?, before_b, "cascade survives replay");
         Ok(())
     }
 }
