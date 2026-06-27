@@ -49,4 +49,28 @@ struct AgentDiffApplyTests {
         let h = hunks(base, new)
         #expect(AgentDiffApply.revertingRejectedHunks(in: new, hunks: h, rejected: [99]) == new)
     }
+
+    // MARK: applyToFile — the guarded file-level apply (divergence safety)
+
+    @Test func applyToFile_replacesUniqueEdit() {
+        let file = "alpha\nNEW LINE\nomega"
+        #expect(AgentDiffApply.applyToFile(fileContent: file, newString: "NEW LINE", resolvedNewSide: "OLD LINE")
+                == "alpha\nOLD LINE\nomega", "the unique agent edit is reverted in place")
+    }
+
+    @Test func applyToFile_divergedFile_returnsNil() {
+        let file = "alpha\nSOMETHING ELSE\nomega"   // the agent's new text is gone
+        #expect(AgentDiffApply.applyToFile(fileContent: file, newString: "NEW LINE", resolvedNewSide: "OLD LINE")
+                == nil, "absent edit (diverged file) → nil, never a corrupting write")
+    }
+
+    @Test func applyToFile_ambiguousOccurrences_returnsNil() {
+        let file = "DUP\nmiddle\nDUP"
+        #expect(AgentDiffApply.applyToFile(fileContent: file, newString: "DUP", resolvedNewSide: "X")
+                == nil, "more than one occurrence → ambiguous → nil")
+    }
+
+    @Test func applyToFile_emptyNewString_returnsNil() {
+        #expect(AgentDiffApply.applyToFile(fileContent: "x", newString: "", resolvedNewSide: "y") == nil)
+    }
 }

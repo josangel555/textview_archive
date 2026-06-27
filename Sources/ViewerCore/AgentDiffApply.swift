@@ -45,4 +45,22 @@ public enum AgentDiffApply {
     public static func revertingAll(in newText: String, hunks: [LineDiff.DiffHunk]) -> String {
         revertingRejectedHunks(in: newText, hunks: hunks, rejected: Set(hunks.indices))
     }
+
+    /// File-level apply of an approve/reject decision for a single-Edit diff: in
+    /// `fileContent`, replace the agent's `newString` with `resolvedNewSide` (the
+    /// per-hunk resolved text — e.g. `HunkReviewState.resolvedText` over the
+    /// edit's new side). DIVERGENCE GUARD: returns nil when `newString` is absent
+    /// (the file changed since the agent's edit) OR appears more than once
+    /// (ambiguous) — so reviewing a HISTORICAL diff never silently corrupts a
+    /// file that has since moved on. Exactly one occurrence ⇒ the guarded replace.
+    public static func applyToFile(
+        fileContent: String,
+        newString: String,
+        resolvedNewSide: String
+    ) -> String? {
+        guard !newString.isEmpty else { return nil }
+        let parts = fileContent.components(separatedBy: newString)
+        guard parts.count == 2 else { return nil }   // 0 ⇒ diverged/absent; >2 ⇒ ambiguous
+        return parts[0] + resolvedNewSide + parts[1]
+    }
 }
