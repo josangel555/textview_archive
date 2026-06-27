@@ -1305,12 +1305,32 @@ public final class CodeMirrorEditorRegistry {
         // (which would instantiate the app + open a WindowServer connection in
         // the headless gate).
         let app: NSApplication? = NSApp
-        if let key = app?.keyWindow,
-           let inKey = entries.lazy.compactMap({ $0.value })
-            .first(where: { $0.window === key }) {
-            return inKey
+        if let key = app?.keyWindow {
+            let live = entries.compactMap { $0.value }
+            // Prefer the editor that actually HAS focus (its view is/contains the
+            // key window's first responder). With MountedPanesLRU several editor
+            // panes are mounted per window, so first-in-window isn't necessarily
+            // the focused one — action-targeting (snippet insert, edit-apply)
+            // must hit the FOCUSED pane, not a parked one (TSK-1282). Falls back
+            // to first-in-window (then last) when focus is outside every editor
+            // (e.g. a tool field / a sheet has key — menu-driven undo).
+            if let focused = Self.focusedView(among: live, firstResponder: key.firstResponder) {
+                return focused
+            }
+            if let inKey = live.first(where: { $0.window === key }) {
+                return inKey
+            }
         }
         return entries.last?.value
+    }
+
+    /// The view in `views` that is, or contains, `firstResponder` (i.e. has
+    /// focus), or nil if focus is outside all of them. Pure (no live window) so
+    /// it is host-testable; generic over NSView so tests pass plain NSViews — a
+    /// WKWebView is one. TSK-1282.
+    static func focusedView<V: NSView>(among views: [V], firstResponder: NSResponder?) -> V? {
+        guard let fr = firstResponder as? NSView else { return nil }
+        return views.first(where: { fr === $0 || fr.isDescendant(of: $0) })
     }
 
     private func prune() {
