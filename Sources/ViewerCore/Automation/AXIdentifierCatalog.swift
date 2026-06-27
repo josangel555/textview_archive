@@ -52,6 +52,9 @@ public enum AXIdentifierCatalog {
         Entry("mdv.contentToolbar", .chrome, "The main content toolbar host."),
         Entry("mdv.breadcrumb", .chrome, "Path breadcrumb bar above the content."),
         Entry("mdv.tab.overflowMenu", .chrome, "Tab-strip overflow menu button."),
+        Entry("mdv.tabbar", .chrome, "The document tab strip."),
+        Entry("mdv.sessionTabBar", .chrome, "The session tab bar."),
+        Entry("mdv.split", .chrome, "The split-view container."),
         // chrome — status bar: the app's observable STATE surface (agents READ
         // these to assert file/git/mode/recording state in a journey/eval).
         Entry("mdv.statusBar", .chrome, "The bottom status bar (app state surface)."),
@@ -63,6 +66,7 @@ public enum AXIdentifierCatalog {
         // content
         Entry("mdv.content", .content, "The main content region (active document view)."),
         Entry("mdv.htmlRendered", .content, "The rendered Markdown/HTML document view."),
+        Entry("mdv.markdownOverview", .content, "The Markdown overview / minimap."),
         // editor
         Entry("mdv.editor", .editor, "The CM6 code editor surface."),
         // find / filter / search
@@ -70,6 +74,8 @@ public enum AXIdentifierCatalog {
         Entry("mdv.editorFindBar", .find, "Find bar over the CM6 editor."),
         Entry("mdv.sourceFindBar", .find, "Find bar over the plain source view."),
         Entry("mdv.crossSearchPanel", .find, "Cross-file search panel."),
+        Entry("mdv.searchAnywhere", .find, "The global 'search anywhere' surface."),
+        Entry("mdv.findMatchList", .find, "The find match-list results view."),
         // data viewers
         Entry("mdv.csvTable", .data, "The CSV/sheet table view."),
         Entry("mdv.csvFind.field", .data, "CSV find query field."),
@@ -85,6 +91,7 @@ public enum AXIdentifierCatalog {
         Entry("mdv.lspOutline", .nav, "The LSP code-outline (symbol navigator)."),
         Entry("mdv.emptyState.newFile", .nav, "Empty-state 'New File' action."),
         Entry("mdv.emptyState.recents", .nav, "Empty-state recents list."),
+        Entry("mdv.recentlyOpened", .nav, "The recently-opened tool window."),
         // tools
         Entry("mdv.commandPaletteButton", .tools, "Command-palette toolbar button."),
         Entry("mdv.folderStats.showTreemap", .tools, "Folder-stats treemap toggle."),
@@ -96,6 +103,11 @@ public enum AXIdentifierCatalog {
         Entry("mdv.review.composer", .tools, "Code-review comment composer."),
         Entry("mdv.localHistory.list", .tools, "Local-history (file version timeline) list."),
         Entry("mdv.packageExplorer.list", .tools, "Dependency-package explorer list."),
+        Entry("mdv.walkthrough.player", .tools, "The walkthrough player surface."),
+        Entry("mdv.walkthroughs.browser", .tools, "The walkthrough catalog/browser."),
+        Entry("mdv.actionHistory", .tools, "The action-history (reversible-actions) view."),
+        Entry("mdv.problems", .tools, "The problems / diagnostics panel."),
+        Entry("mdv.claudeTimeline", .tools, "The Claude session timeline view."),
         // media
         Entry("mdv.audioEditor", .media, "The audio editor surface."),
         Entry("mdv.imageEditor", .media, "The image editor surface."),
