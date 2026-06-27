@@ -16,6 +16,7 @@
 
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// Slice-2a schema. The hash-chain + decision-trace columns and the edge/lease
 /// tables land in later slices; this is the minimal log + projection that proves
@@ -85,6 +86,18 @@ pub struct WorkItem {
 /// Propagates any rusqlite open / DDL error.
 pub fn open_in_memory() -> rusqlite::Result<Connection> {
     let conn = Connection::open_in_memory()?;
+    conn.execute_batch(SCHEMA)?;
+    Ok(conn)
+}
+
+/// Open (creating if absent) the on-disk store at `path`, running the idempotent
+/// schema so an existing file is reused as-is and a new one is initialized. The
+/// event log + projection persist across reopen (the store IS a file).
+///
+/// # Errors
+/// Propagates any rusqlite open / DDL error.
+pub fn open(path: &Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
     conn.execute_batch(SCHEMA)?;
     Ok(conn)
 }
@@ -204,6 +217,25 @@ mod tests {
             title: title.into(),
             state: "open".into(),
         }
+    }
+
+    /// On-disk: appended state survives closing + reopening the file (the event
+    /// log + projection are durable). Uses the per-user temp dir (never
+    /// ~/Documents); removes the file at start (clean slate) + end.
+    #[test]
+    fn on_disk_store_persists_across_reopen() -> rusqlite::Result<()> {
+        let path = std::env::temp_dir().join("mdvcore-pm-ondisk-roundtrip.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut conn = open(&path)?;
+            append(&mut conn, 1, "human:jos", 0, &created("P1", "Persisted"))?;
+        } // conn dropped → file closed
+        let reopened = open(&path)?;
+        let wi = get_work_item(&reopened, "P1")?;
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(wi.map(|w| w.state), Some("open".to_string()));
+        Ok(())
     }
 
     /// append() folds an event into the projection atomically; a later
