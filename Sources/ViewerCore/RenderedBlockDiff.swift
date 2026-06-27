@@ -307,6 +307,39 @@ public enum RenderedBlockDiff {
         return out
     }
 
+    // MARK: - JS wire format (TSK-1183 DOM-patch APPLY path)
+
+    /// Serialize a patch set to the JSON payload the WebView's `applyBlockPatch`
+    /// will consume: a JSON array of `{op, index, html?}` (`html` is omitted for
+    /// `remove`). The block HTML carries `"`, `<`, and newlines, so it is
+    /// JSON-escaped (via `JSONEncoder`) and reaches the JS verbatim. This is the
+    /// Swift→JS contract for the DOM-patch apply path that will replace the full
+    /// `loadHTMLString` reload (TSK-1183/838); the diff math itself is
+    /// `diff`/`apply` above (host-tested, round-trip-proven).
+    public static func jsPayload(_ ops: [BlockPatchOp]) -> String {
+        let wire = ops.map { op -> WireOp in
+            switch op {
+            case .insert(let index, let block):
+                return WireOp(op: "insert", index: index, html: block.html)
+            case .replace(let index, let block):
+                return WireOp(op: "replace", index: index, html: block.html)
+            case .remove(let index):
+                return WireOp(op: "remove", index: index, html: nil)
+            }
+        }
+        guard let data = try? JSONEncoder().encode(wire),
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    /// DTO for `jsPayload`. `html` is `encodeIfPresent` (synthesized Codable), so
+    /// a nil (`remove`) omits the key rather than emitting `"html":null`.
+    private struct WireOp: Encodable {
+        let op: String
+        let index: Int
+        let html: String?
+    }
+
     // MARK: - Tag scanning helpers
 
     private struct ScannedTag {

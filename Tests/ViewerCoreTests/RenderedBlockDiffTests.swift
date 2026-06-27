@@ -226,4 +226,32 @@ final class RenderedBlockDiffTests: XCTestCase {
         }
         XCTAssertEqual(RenderedBlockDiff.apply(ops, to: old), new)
     }
+
+    // MARK: - JS wire format (TSK-1183 DOM-patch apply contract)
+
+    func test_jsPayload_encodesOpsAsEscapedJSONArray() throws {
+        let ops: [RenderedBlockDiff.BlockPatchOp] = [
+            .replace(index: 1, block: .init(tag: "p", html: "<p>new \"quoted\" & <b>bold</b></p>\n")),
+            .remove(index: 2),
+            .insert(index: 3, block: .init(tag: "h2", html: "<h2>Hdr</h2>\n")),
+        ]
+        let json = RenderedBlockDiff.jsPayload(ops)
+        // Valid JSON the JS side can JSON.parse, with the correct shape + escaping.
+        let arr = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]])
+        XCTAssertEqual(arr.count, 3)
+        XCTAssertEqual(arr[0]["op"] as? String, "replace")
+        XCTAssertEqual(arr[0]["index"] as? Int, 1)
+        // Block HTML round-trips verbatim through the JSON escaping (quotes/&/tags intact).
+        XCTAssertEqual(arr[0]["html"] as? String, "<p>new \"quoted\" & <b>bold</b></p>\n")
+        XCTAssertEqual(arr[1]["op"] as? String, "remove")
+        XCTAssertNil(arr[1]["html"], "remove omits the html key")
+        XCTAssertEqual(arr[2]["op"] as? String, "insert")
+        XCTAssertEqual(arr[2]["index"] as? Int, 3)
+        XCTAssertEqual(arr[2]["html"] as? String, "<h2>Hdr</h2>\n")
+    }
+
+    func test_jsPayload_emptyOps_isEmptyJSONArray() {
+        XCTAssertEqual(RenderedBlockDiff.jsPayload([]), "[]")
+    }
 }
