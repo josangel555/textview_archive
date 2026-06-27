@@ -132,4 +132,37 @@ final class BlockPatchApplyWebViewTests: WebViewTestCase {
             expect: "p:Same|p:Body",
             "no-op patch leaves the DOM intact")
     }
+
+    // MARK: - The production helper (MarkdownRenderedView.tryApplyDOMPatch) on a live WebView
+
+    func test_tryApplyDOMPatch_smallDiff_patchesLiveBody() async throws {
+        let oldHTML = "<p>Alpha</p>\n<p>Beta</p>\n<p>Gamma</p>\n"
+        try await loadBody(oldHTML)
+        let newHTML = "<p>Alpha</p>\n<p>Beta EDITED</p>\n<p>Gamma</p>\n"
+        // The EXACT production helper the gated updateNSView same-file path calls.
+        let patched = MarkdownRenderedView.tryApplyDOMPatch(
+            oldHTML: oldHTML, newHTML: newHTML, webView: webView)
+        XCTAssertTrue(patched, "a small same-file diff should patch in place")
+        // tryApplyDOMPatch's evaluateJavaScript is async — poll until it lands.
+        var summary = ""
+        for _ in 0..<60 {
+            summary = await bodySummary()
+            if summary == "p:Alpha|p:Beta EDITED|p:Gamma" { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(summary, "p:Alpha|p:Beta EDITED|p:Gamma",
+            "the live body must reflect the patched block; got: \(summary)")
+    }
+
+    func test_tryApplyDOMPatch_largeDiff_returnsFalseForFallback() async throws {
+        let oldHTML = (0..<10).map { "<p>old \($0)</p>\n" }.joined()
+        try await loadBody(oldHTML)
+        let newHTML = (0..<10).map { "<p>new \($0)</p>\n" }.joined()  // all 10 blocks differ
+        // A large rewrite (10/10 blocks) exceeds the eligibility threshold, so the
+        // helper declines (false) and the caller falls back to loadHTMLString.
+        let patched = MarkdownRenderedView.tryApplyDOMPatch(
+            oldHTML: oldHTML, newHTML: newHTML, webView: webView)
+        XCTAssertFalse(patched,
+            "a large diff should NOT patch — caller falls back to a full loadHTMLString reload")
+    }
 }
