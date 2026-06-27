@@ -20,6 +20,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Agent action surface (TSK-1284/1254)** — `goto-line` script-verb (agent line-navigation via run_verb; host-tested, validated); AX-id catalog 40→42 (LocalHistory + PackageExplorer promoted to the agent-facing contract, drift-guard verified).
 - **Wave-12 host layers (TSK-1149/941)** — RSS reader: `FeedRefreshScheduler` (due-feeds model) + `FeedReaderViewModel.refresh()` orchestration (`FeedFetching` seam, scheduler→fetch→ingest) complete the RSS host layer; approve/reject: `HunkReviewState` (per-hunk selection→resolvedText) + `AgentDiffApply.applyToFile` (divergence-guarded write — closes a historical-revert corruption risk: apply only if the agent's edit is still present + unique) complete its host layer with data-safety. Both render tails (tool-window view / per-hunk review UI) deferred to VM sessions (occlusion / data-affecting) with recorded recipes.
 - **Board hygiene (TSK-1253)** — stale-progress reclaim validated (fleet: 0 progress lane / `liveLeases:[]`; INT-126 auto-expire guards recurrence).
+- **rust-core deps (owner-approved 2026-06-27)** — memchr SIMD `memmem` wired into `hex_search_find` (TSK-399; zero new surface — already in-tree via pulldown-cmark; rust-core gate green, hex tests 54/0); proptest/cargo-fuzz/wasm32/rusqlite approved + queued. cargo-mutants rejected on dep hygiene (its full tree compiles on the dev machine) → DIY mutation-testing options recorded.
 
 ## 2026-06-26
 

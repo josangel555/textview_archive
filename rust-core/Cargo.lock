@@ -359,6 +359,7 @@ dependencies = [
 name = "mdvcore-core"
 version = "0.0.0"
 dependencies = [
+ "memchr",
  "pulldown-cmark",
  "regex-lite",
  "rmp-serde",

@@ -19,3 +19,5 @@ pulldown-cmark = { workspace = true }
 # MessagePack codec + length-prefix framing (the "proto" role folded into core
 # for the PoC). rmp-serde is therefore a real dependency, not dev-only.
 rmp-serde = { workspace = true }
+# TSK-399: memmem SIMD substring for hex_search_find (already in-tree, zero new surface).
+memchr = { workspace = true }

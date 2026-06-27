@@ -54,6 +54,12 @@ regex-lite = { version = "=0.1.8", default-features = false, features = ["std", 
 # radius (verified in Cargo.lock): bitflags + memchr + unicase, all three
 # already-vetted ecosystem leaf crates.
 pulldown-cmark = { version = "=0.13.4", default-features = false }
+# Owner-approved 2026-06-27 (TSK-399): SIMD substring (memmem) for the hex_search
+# find-all hot path. ZERO new transitive surface — memchr 2.8.1 is ALREADY in the
+# tree (pulled by pulldown-cmark + regex-lite, verified in Cargo.lock); this only
+# promotes it to a direct dep. Per the owner rider: default features OFF; "alloc"
+# is the one feature memmem::Finder needs (wasm-forward — no "std" required).
+memchr = { version = "=2.8.1", default-features = false, features = ["alloc"] }
 
 # ---------------------------------------------------------------------------
 # Workspace lints. The pure `mdvcore-core` crate inherits these via

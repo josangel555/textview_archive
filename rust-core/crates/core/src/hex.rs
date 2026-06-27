@@ -190,30 +190,21 @@ pub(crate) fn hex_search_find(pattern: &[u8], data: &[u8]) -> Vec<usize> {
     if pattern.is_empty() || pattern.len() > data.len() {
         return Vec::new();
     }
-    let mut hits = Vec::new();
     let m = pattern.len();
-    let limit = data.len() - m;
-    // TSK-562: first-byte skip replaces the per-position subslice compare.
-    // `Iterator::position` over a u8 slice compiles to a vectorized scan
-    // (LLVM memchr-recognition), so the common path skips in SIMD-width
-    // strides and the full compare runs only at candidate positions —
-    // O(n) skip + rare compares instead of O(n·m).
-    let Some(&first) = pattern.first() else {
-        return Vec::new();
-    };
+    // TSK-399: memchr::memmem SIMD substring search (memchr was already in-tree via
+    // pulldown-cmark/regex-lite — promoted to a direct dep, ZERO new surface).
+    // Supersedes the TSK-562 first-byte-skip hand-scan. Non-overlapping: the cursor
+    // advances the full pattern length after each hit (Sublime/VSCode convention).
+    let finder = memchr::memmem::Finder::new(pattern);
+    let mut hits = Vec::new();
     let mut i = 0;
-    while i <= limit {
-        let Some(rel) = data.get(i..=limit).and_then(|w| w.iter().position(|&b| b == first))
-        else {
-            break;
-        };
+    // `.get(i..)` (not `&data[i..]`) is panic-free per clippy::indexing_slicing:
+    // an out-of-range start yields None and ends the loop. (i never exceeds
+    // data.len() here, but `get` keeps it total + lint-clean.)
+    while let Some(rel) = data.get(i..).and_then(|tail| finder.find(tail)) {
         let at = i + rel;
-        if data.get(at..at + m) == Some(pattern) {
-            hits.push(at);
-            i = at + m; // non-overlapping (cursor advances the full pattern)
-        } else {
-            i = at + 1;
-        }
+        hits.push(at);
+        i = at + m;
     }
     hits
 }
