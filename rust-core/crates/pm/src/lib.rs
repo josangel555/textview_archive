@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS work_item (
     title       TEXT NOT NULL,
     state       TEXT NOT NULL,
     created_seq INTEGER NOT NULL,
-    updated_seq INTEGER NOT NULL
+    updated_seq INTEGER NOT NULL,
+    claimed_by  TEXT
 );
 ";
 
@@ -78,6 +79,9 @@ pub struct WorkItem {
     pub created_seq: i64,
     /// `event_log.seq` of the most recent event touching it.
     pub updated_seq: i64,
+    /// The actor that last claimed it (set on entry to `Active`) — the doer, for
+    /// the doer≠verifier guard (v2 §1.4). `None` until first claimed.
+    pub claimed_by: Option<String>,
 }
 
 /// The lifecycle state CLASSES the core understands (v2 design §2.2). The visible
@@ -288,6 +292,14 @@ pub enum PmError {
         /// Attempted target class.
         to: String,
     },
+    /// The verifier of `ClaimedDone → VerifiedDone` is the same actor that claimed
+    /// the item — an actor can never certify its own work (v2 §1.4).
+    SelfVerify {
+        /// The work item.
+        id: String,
+        /// The actor that both claimed and tried to verify.
+        actor: String,
+    },
 }
 
 impl std::fmt::Display for PmError {
@@ -305,6 +317,9 @@ impl std::fmt::Display for PmError {
                 from,
                 to,
             } => write!(f, "actor kind {actor_kind} may not transition {from} -> {to}"),
+            PmError::SelfVerify { id, actor } => {
+                write!(f, "actor {actor} may not verify its own claimed work item {id}")
+            }
         }
     }
 }
@@ -383,6 +398,13 @@ pub fn append(
                     to: to_state.as_str().into(),
                 });
             }
+            // §1.4: the verifier must not be the actor that claimed the item.
+            if to_state == State::VerifiedDone && current.claimed_by.as_deref() == Some(actor_id) {
+                return Err(PmError::SelfVerify {
+                    id: id.clone(),
+                    actor: actor_id.to_owned(),
+                });
+            }
         }
     }
     let payload = rmp_serde::to_vec(event)
@@ -400,7 +422,7 @@ pub fn append(
         rusqlite::params![ts, actor_id, actor_kind, event_type, subject_id, reason, payload],
     )?;
     let seq = tx.last_insert_rowid();
-    apply_to_projection(&tx, seq, event)?;
+    apply_to_projection(&tx, seq, actor_id, event)?;
     tx.commit()?;
     Ok(seq)
 }
@@ -410,6 +432,7 @@ pub fn append(
 fn apply_to_projection(
     tx: &rusqlite::Transaction<'_>,
     seq: i64,
+    actor_id: &str,
     event: &WorkItemEvent,
 ) -> rusqlite::Result<()> {
     match event {
@@ -421,10 +444,18 @@ fn apply_to_projection(
             )?;
         }
         WorkItemEvent::StateChanged { id, state, .. } => {
-            tx.execute(
-                "UPDATE work_item SET state = ?2, updated_seq = ?3 WHERE id = ?1",
-                rusqlite::params![id, state, seq],
-            )?;
+            // Record the claimer on entry to Active (the doer, for the §1.4 guard).
+            if State::from_class(state) == Some(State::Active) {
+                tx.execute(
+                    "UPDATE work_item SET state = ?2, updated_seq = ?3, claimed_by = ?4 WHERE id = ?1",
+                    rusqlite::params![id, state, seq, actor_id],
+                )?;
+            } else {
+                tx.execute(
+                    "UPDATE work_item SET state = ?2, updated_seq = ?3 WHERE id = ?1",
+                    rusqlite::params![id, state, seq],
+                )?;
+            }
         }
     }
     Ok(())
@@ -436,7 +467,7 @@ fn apply_to_projection(
 /// Propagates any rusqlite query error.
 pub fn get_work_item(conn: &Connection, id: &str) -> rusqlite::Result<Option<WorkItem>> {
     conn.query_row(
-        "SELECT id, title, state, created_seq, updated_seq FROM work_item WHERE id = ?1",
+        "SELECT id, title, state, created_seq, updated_seq, claimed_by FROM work_item WHERE id = ?1",
         [id],
         |r| {
             Ok(WorkItem {
@@ -445,6 +476,7 @@ pub fn get_work_item(conn: &Connection, id: &str) -> rusqlite::Result<Option<Wor
                 state: r.get(2)?,
                 created_seq: r.get(3)?,
                 updated_seq: r.get(4)?,
+                claimed_by: r.get(5)?,
             })
         },
     )
@@ -459,18 +491,19 @@ pub fn get_work_item(conn: &Connection, id: &str) -> rusqlite::Result<Option<Wor
 /// Propagates any payload-decode or rusqlite error; runs in a transaction so a
 /// mid-replay failure leaves the prior projection intact.
 pub fn replay(conn: &mut Connection) -> rusqlite::Result<()> {
-    let events: Vec<(i64, Vec<u8>)> = {
-        let mut stmt = conn.prepare("SELECT seq, payload FROM event_log ORDER BY seq")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let events: Vec<(i64, String, Vec<u8>)> = {
+        let mut stmt =
+            conn.prepare("SELECT seq, actor_id, payload FROM event_log ORDER BY seq")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
     let tx = conn.transaction()?;
     tx.execute_batch("DELETE FROM work_item")?;
-    for (seq, payload) in events {
+    for (seq, actor_id, payload) in events {
         let event: WorkItemEvent = rmp_serde::from_slice(&payload).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Blob, Box::new(e))
         })?;
-        apply_to_projection(&tx, seq, &event)?;
+        apply_to_projection(&tx, seq, &actor_id, &event)?;
     }
     tx.commit()?;
     Ok(())
@@ -484,7 +517,7 @@ pub fn replay(conn: &mut Connection) -> rusqlite::Result<()> {
 /// Propagates any rusqlite query error.
 pub fn work_next(conn: &Connection) -> rusqlite::Result<Vec<WorkItem>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, state, created_seq, updated_seq FROM work_item
+        "SELECT id, title, state, created_seq, updated_seq, claimed_by FROM work_item
          WHERE state = ?1 ORDER BY created_seq",
     )?;
     let rows = stmt.query_map([State::Ready.as_str()], |r| {
@@ -494,6 +527,7 @@ pub fn work_next(conn: &Connection) -> rusqlite::Result<Vec<WorkItem>> {
             state: r.get(2)?,
             created_seq: r.get(3)?,
             updated_seq: r.get(4)?,
+            claimed_by: r.get(5)?,
         })
     })?;
     rows.collect()
@@ -569,6 +603,7 @@ mod tests {
                 state: "ready".into(),
                 created_seq: s1,
                 updated_seq: s2,
+                claimed_by: None,
             })
         );
         Ok(())
@@ -786,6 +821,52 @@ mod tests {
             },
         );
         assert!(matches!(err, Err(PmError::Unauthorized { .. })));
+        Ok(())
+    }
+
+    /// The §1.4 capstone: an actor cannot verify its own work. Drive a full
+    /// lifecycle to ClaimedDone (claimed_by recorded on entry to Active), then the
+    /// doer's self-verify is rejected while a DISTINCT verifier succeeds.
+    #[test]
+    fn doer_cannot_self_verify_distinct_verifier_can() -> Result<(), PmError> {
+        fn advance(
+            c: &mut Connection,
+            ts: i64,
+            who: &str,
+            kind: i64,
+            to: State,
+        ) -> Result<i64, PmError> {
+            append(
+                c,
+                ts,
+                who,
+                kind,
+                &WorkItemEvent::StateChanged {
+                    id: "T".into(),
+                    state: to.as_str().into(),
+                    reason: "step".into(),
+                },
+            )
+        }
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "human:jos", 0, &created("T", "t"))?; // Proposed
+        advance(&mut conn, 2, "human:jos", 0, State::Ready)?; // human admits
+        advance(&mut conn, 3, "agent:worker", 1, State::Active)?; // agent claims → claimed_by
+        advance(&mut conn, 4, "agent:worker", 1, State::ClaimedDone)?; // doer proposes done
+        assert_eq!(
+            get_work_item(&conn, "T")?.and_then(|w| w.claimed_by),
+            Some("agent:worker".to_string()),
+            "claimed_by recorded on entry to Active"
+        );
+        // The doer cannot certify its own work (even acting as a System verifier).
+        let self_v = advance(&mut conn, 5, "agent:worker", 2, State::VerifiedDone);
+        assert!(matches!(self_v, Err(PmError::SelfVerify { .. })));
+        // A DISTINCT verifier succeeds.
+        advance(&mut conn, 6, "system:ci", 2, State::VerifiedDone)?;
+        assert_eq!(
+            get_work_item(&conn, "T")?.map(|w| w.state),
+            Some("verified_done".to_string())
+        );
         Ok(())
     }
 }
