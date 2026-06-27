@@ -132,6 +132,7 @@ public enum ScriptVerbCatalog {
         ScriptVerb("toggle-word-wrap", .view, .none, "Toggle source word-wrap"),
         ScriptVerb("toggle-invisibles", .view, .none, "Toggle showing invisible characters"),
         ScriptVerb("toggle-split", .view, .none, "Toggle the split-pane view"),
+        ScriptVerb("close-split", .view, .none, "Close the split-pane view (deterministic; toggle-split is state-dependent)"),
         ScriptVerb("swap-split", .view, .none, "Swap the two split panes"),
         ScriptVerb("set-theme", .view, .string, "Select a theme by id (empty = Follow System)"),
         ScriptVerb("folder-stats", .view, .enumToken, "Folder-stats panel: on|off|<empty toggles>"),

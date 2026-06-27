@@ -38,6 +38,22 @@ final class SplitAndMoveTabVerbTests: HeadlessUITestCase {
         XCTAssertFalse(model.isSplitOpen, "toggle-split again should close it")
     }
 
+    func test_closeSplitVerb_isDeterministicAndIdempotent() throws {
+        let url = try harness.writeFile("cs.txt", "content")
+        let model = harness.model
+        model.open(url: url)
+        // Open a split, then close it DETERMINISTICALLY (unlike toggle-split,
+        // close-split closes regardless of current state — the agent-drive value).
+        XCTAssertTrue(ScriptVerb.apply(verb: "toggle-split", to: model, sessions: harness.sessions))
+        XCTAssertTrue(model.isSplitOpen, "precondition: split open")
+        XCTAssertTrue(ScriptVerb.apply(verb: "close-split", to: model, sessions: harness.sessions))
+        XCTAssertFalse(model.isSplitOpen, "close-split must close the split")
+        // Idempotent: close-split on an already-closed split stays closed (a
+        // toggle here would WRONGLY re-open — this is exactly why the verb exists).
+        XCTAssertTrue(ScriptVerb.apply(verb: "close-split", to: model, sessions: harness.sessions))
+        XCTAssertFalse(model.isSplitOpen, "close-split is idempotent — stays closed")
+    }
+
     func test_swapSplitVerb_isHandled() throws {
         // swap-split's pane state is opaque from here; assert the verb is
         // recognised + applied in-process (returns true) without crashing,

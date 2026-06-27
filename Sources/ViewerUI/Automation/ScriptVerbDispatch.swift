@@ -175,6 +175,7 @@ public enum ScriptVerb {
         // previously had no script verb, so they were menu/⌘\-only). Both wire
         // to existing @MainActor model methods — headless-safe, no window.
         case "toggle-split":    model.toggleSplit()
+        case "close-split":     model.closeSplit()
         case "swap-split":      model.swapSplit()
         // TSK-326 (omni-search coverage): Fold All / Unfold All previously had
         // no script verb (menu/⌥⌘[ ⌥⌘]-only), so they greyed out in the `>`
