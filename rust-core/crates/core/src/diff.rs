@@ -614,6 +614,57 @@ pub fn hunk_marks_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFau
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// TSK-585 (proptest lane): unified-diff PARSER robustness. Generates
+    /// diff-LIKE text (so the parse paths are actually exercised, not just
+    /// rejected) incl. hostile huge `@@` coords, then asserts on every parsed
+    /// hunk/line — coords clamped to `0..=MAX_COORD` (the overflow guard against
+    /// a malicious header), and line numbers resolved per kind (Context→both,
+    /// Added→new-only, Removed→old-only — the `Line` field contract) — plus the
+    /// implicit "never panics on any generated input".
+    fn diff_like_text() -> impl Strategy<Value = String> {
+        let line = prop_oneof![
+            Just("diff --git a/f.txt b/f.txt".to_string()),
+            // full i64 range → some generate huge coords that MUST be clamped.
+            (0i64..=i64::MAX, 0i64..=i64::MAX, 0i64..=i64::MAX, 0i64..=i64::MAX)
+                .prop_map(|(a, b, c, d)| format!("@@ -{a},{b} +{c},{d} @@")),
+            "[a-z ]{0,12}".prop_map(|s| format!("+{s}")),
+            "[a-z ]{0,12}".prop_map(|s| format!("-{s}")),
+            "[a-z ]{0,12}".prop_map(|s| format!(" {s}")),
+            Just("\\ No newline at end of file".to_string()),
+            "[a-z ]{0,12}",
+        ];
+        prop::collection::vec(line, 0..40).prop_map(|lines| lines.join("\n"))
+    }
+
+    proptest! {
+        #[test]
+        fn diff_parse_invariants(text in diff_like_text()) {
+            for file in parse(&text) {
+                for hunk in &file.hunks {
+                    prop_assert!((0..=MAX_COORD).contains(&hunk.old_start));
+                    prop_assert!((0..=MAX_COORD).contains(&hunk.old_count));
+                    prop_assert!((0..=MAX_COORD).contains(&hunk.new_start));
+                    prop_assert!((0..=MAX_COORD).contains(&hunk.new_count));
+                    for line in &hunk.lines {
+                        match line.kind {
+                            LineKind::Context => prop_assert!(
+                                line.old_line_no.is_some() && line.new_line_no.is_some()
+                            ),
+                            LineKind::Added => prop_assert!(
+                                line.old_line_no.is_none() && line.new_line_no.is_some()
+                            ),
+                            LineKind::Removed => prop_assert!(
+                                line.old_line_no.is_some() && line.new_line_no.is_none()
+                            ),
+                            LineKind::NoNewline => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn empty_input_no_files() {
