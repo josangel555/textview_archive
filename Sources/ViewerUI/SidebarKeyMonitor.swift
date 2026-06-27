@@ -54,8 +54,12 @@ struct SidebarKeyMonitor: NSViewRepresentable {
                     let consume: Bool = MainActor.assumeIsolated {
                         guard let self else { return false }
                         let fr = NSApp.keyWindow?.firstResponder
-                        let editor = CodeMirrorEditorRegistry.shared.current()
-                        if Self.shouldYield(modifiers: mods, firstResponder: fr, editorView: editor) {
+                        // ALL mounted editor panes, not just current(): with
+                        // MountedPanesLRU the key window hosts several editor
+                        // webviews and current() can return an inactive one,
+                        // leaking Enter from the focused pane (TSK-1280).
+                        let editors = CodeMirrorEditorRegistry.shared.liveWebViews
+                        if Self.shouldYield(modifiers: mods, firstResponder: fr, editorViews: editors) {
                             return false
                         }
                         guard let key = Self.key(for: keyCode) else { return false }
@@ -96,26 +100,31 @@ struct SidebarKeyMonitor: NSViewRepresentable {
             static let f2:          UInt16 = 120
         }
 
-        /// Pure yield decision (TSK-728/730) — does the sidebar monitor let the
-        /// focused view handle this key instead of stealing it for tree nav?
-        /// Extracted as a pure function of (modifiers, firstResponder, editor
-        /// webview) so it's unit-testable with synthetic inputs. Yields when:
+        /// Pure yield decision (TSK-728/730; multi-pane fix TSK-1280) — does the
+        /// sidebar monitor let the focused view handle this key instead of
+        /// stealing it for tree nav? Extracted as a pure function of (modifiers,
+        /// firstResponder, editor webviews) so it's unit-testable with synthetic
+        /// inputs. Yields when:
         ///   (a) a Command/Option/Control modifier is held — those are editor/
         ///       system commands (⌘←/⌥← word-nav, etc.), never bare sidebar nav;
         ///   (b) a text editor (`NSText` — NSTextView / field editor) or a custom
         ///       raw-key view (the terminal, `SidebarKeyMonitorExempt`) is focused;
-        ///   (c) the CM6 editor webview is the focused responder (or contains it)
-        ///       — a WKWebView is neither `NSText` nor exempt, so before this the
-        ///       monitor stole Enter/arrows from the editor (the bug). We pass the
-        ///       editor as a plain `NSView` (WKWebView is one) so the test needs no
-        ///       live WebView.
+        ///   (c) the focused responder is (or is inside) ANY live CM6 editor
+        ///       webview — a WKWebView is neither `NSText` nor exempt, so before
+        ///       this the monitor stole Enter/arrows from the editor (the bug).
+        ///       With MountedPanesLRU the key window hosts SEVERAL mounted editor
+        ///       panes, so we check ALL registered editors (`liveWebViews`), not
+        ///       just the topmost `current()` — which could be an inactive mounted
+        ///       pane, leaking Enter to the sidebar from the genuinely-focused
+        ///       pane (TSK-1280). Editors are plain `NSView`s (WKWebView is one)
+        ///       so the test needs no live WebView.
         ///
         /// `@MainActor` — `NSView.isDescendant(of:)` / responder are main-actor
         /// isolated under Swift 6.3; the event-monitor caller is on the main thread.
         @MainActor
         static func shouldYield(modifiers: NSEvent.ModifierFlags,
                                 firstResponder: NSResponder?,
-                                editorView: NSView?) -> Bool {
+                                editorViews: [NSView]) -> Bool {
             let m = modifiers.intersection(.deviceIndependentFlagsMask)
             if m.contains(.command) || m.contains(.option) || m.contains(.control) {
                 return true
@@ -123,8 +132,8 @@ struct SidebarKeyMonitor: NSViewRepresentable {
             if firstResponder is NSText || firstResponder is SidebarKeyMonitorExempt {
                 return true
             }
-            if let editor = editorView, let v = firstResponder as? NSView,
-               v === editor || v.isDescendant(of: editor) {
+            if let v = firstResponder as? NSView,
+               editorViews.contains(where: { v === $0 || v.isDescendant(of: $0) }) {
                 return true
             }
             return false
