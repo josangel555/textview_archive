@@ -1,12 +1,16 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — PM store host-complete + autonomous surface drained  (2026-06-27)
+# Handoff — DOM-patch perf-lever done (gated) + TSK-250 validated; surface drained  (2026-06-27)
 
-**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `31691970`+ (verify `git log -1`)
+**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `83e43ba4`+ (verify `git log -1`)
 
 ## Mission
 Autonomous drain loop (5-min cron). Drain BACKLOG.md top-down by the owner priority order: P0a (AX self-driving) + P0b (validation) interleaved, then P1 wave-12, then P2 board. Build inline, one item/tick, gate-green, commit per item.
 
 ## Current state
+- **LATEST LANDINGS (DOM-patch + TSK-250, after `bd8b7b4a`; HEAD now `83e43ba4`):**
+  - **DOM-patch perf lever COMPLETE + VM-validated (TSK-1183/838 → review, gated MDV_DOM_PATCH OFF).** The host+FFI core (TSK-838) got its full apply path: `RenderedBlockDiff.jsPayload` (Swift→JS wire) + `BlockPatchJS.applyFunction` (JS DOM-mutator replaying `apply`'s index semantics) + the gated `MarkdownRenderedView.updateNSView` rewiring (a SAME-FILE re-render block-patches `document.body` instead of a full `loadHTMLString` reload, else falls back). VM-webview-validated end-to-end: BlockPatchApplyWebViewTests (apply on a clean body) + BlockPatchAlignmentProbeTests (live rendered body == splitBlocks grain, prints "h1,p,p,h2,p") + the production `tryApplyDOMPatch` helper (small→patch / large→fallback). Gated default-OFF (production unchanged); **OWNER flips `MDV_DOM_PATCH`** + confirms the on-screen perf win (kills the 2–9s rendered-MD reload storm). Clears the same-file-re-render half of TSK-598 (MD-open-lag).
+  - **TSK-250 (multi-file tabs TUI / back-forward Web) VALIDATED.** `core::nav::NavHistory` model (5 tests) + Web `/back`+`/forward` routes + chrome buttons (100 web tests) + TUI `cycle_tab` teeth (66 tui tests); rust-core-gate-green; agent-validated with the full artifact. (Process note: I'd over-declined the Web half as "browser-native covers it" — caught it as a synthesized-skip of the owner's explicit ask, then built it.)
+  - LESSON added (LESSONS.md, `9abc997f`): async full-view WebViewTestCase must wait with `await Task.sleep`, NOT sync `RunLoop.run` (which blocks the main actor → the off-main WebView mount never lands → the test silently SKIPS; grep the per-test passed/skipped line, never trust the suite-level green).
 - **DONE this run — the owner's 5 dep approvals all built to concrete work:**
   - **memchr** (TSK-399/1285) — `hex_search_find` + `format::find_after` on `memchr::memmem`. Validated.
   - **proptest** (TSK-585) — 5 differential/round-trip suites (filter, diff, csv ×2, formula-arith). **Found + fixed TSK-1286** (CSV single-column trailing-empty-value row drop).
@@ -50,7 +54,7 @@ Autonomous drain loop (5-min cron). Drain BACKLOG.md top-down by the owner prior
 - TSK-1286 — fixed (CSV row-drop), folded into the proptest-suite commit.
 
 ## How to resume
-1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -15` — confirm HEAD `bd8b7b4a` + the PM slice commits.
+1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -15` — confirm HEAD `83e43ba4` (the DOM-patch TSK-1183 slices + TSK-250 + the CHANGELOG catch-up; the PM/hermeticity commits are below them).
 2. Read `BACKLOG.md` lines 20-60 (authoritative priority + the DRAINED status) and the cron prompt.
 3. `rustup target list --installed | grep wasm32` — if now present, the wasm32 build probe (TSK-587) is unblocked → genuine new work.
 4. `mcp__tasked__task_next {agent: claude-mdv, project: tasked}` — if a clean pure-logic/host item appears, build it (spike→implement→test→`bash scripts/rust-core-gate.sh`→commit).
