@@ -104,7 +104,8 @@ extension DocumentModel: AutomationHost {
                 id: t.id.uuidString,
                 path: t.url?.path,
                 title: t.title,
-                viewMode: t.viewMode.rawValue
+                viewMode: t.viewMode.rawValue,
+                isDirty: t.isDirty
             )
         }
         // Emit `selectedTabIndex` 1-based to match the `select_tab` tool,
@@ -119,7 +120,9 @@ extension DocumentModel: AutomationHost {
             viewMode: currentViewMode.rawValue,
             zoom: zoom,
             sidebarRoot: sidebar.rootURL?.path,
-            isPalettePresented: isPalettePresented
+            isPalettePresented: isPalettePresented,
+            isSplitOpen: isSplitOpen,
+            vimModeEnabled: vimModeEnabled
         )
     }
 

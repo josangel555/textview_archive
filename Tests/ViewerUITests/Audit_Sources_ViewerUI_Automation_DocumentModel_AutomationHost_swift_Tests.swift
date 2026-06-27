@@ -58,6 +58,27 @@ final class Audit_Sources_ViewerUI_Automation_DocumentModel_AutomationHost_swift
         return url
     }
 
+    // MARK: - agent-readable journey state (split / vim / dirty)
+
+    /// current_state exposes the journey-critical state an agent asserts on:
+    /// split-open, vim-mode, and per-tab dirty — each reflecting the model.
+    func test_currentState_reflects_split_vim_and_dirty_fields() throws {
+        let model = makeModel()
+        let a = try writeFile("s.md", "# A\n")
+        _ = model.automationOpenPath(a, newTab: false)
+        // Baseline: the new agent-readable fields are present + default-false.
+        let st = model.automationCurrentState()
+        XCTAssertFalse(st.isSplitOpen)
+        XCTAssertFalse(st.vimModeEnabled)
+        XCTAssertEqual(st.tabs.first?.isDirty, false)
+        // Vim mode reflects the model.
+        model.vimModeEnabled = true
+        XCTAssertTrue(model.automationCurrentState().vimModeEnabled, "vimMode reflects the model")
+        // Split state reflects the model.
+        model.openInSplit(a)
+        XCTAssertTrue(model.automationCurrentState().isSplitOpen, "split state reflects the model")
+    }
+
     // MARK: - selectedTabIndex is 1-based (round-trips with select_tab)
 
     /// The first tab is selected; `current_state` must report `1`, not the

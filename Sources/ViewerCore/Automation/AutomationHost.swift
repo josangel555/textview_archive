@@ -102,6 +102,10 @@ public struct AutomationState: Codable, Sendable, Equatable {
     public let zoom: Double
     public let sidebarRoot: String?
     public let isPalettePresented: Bool
+    /// Whether the split-pane view is open — an agent journey-state assertion.
+    public let isSplitOpen: Bool
+    /// Whether the editor's Vim mode is enabled.
+    public let vimModeEnabled: Bool
 
     public init(
         tabs: [TabDescriptor],
@@ -109,7 +113,9 @@ public struct AutomationState: Codable, Sendable, Equatable {
         viewMode: String,
         zoom: Double,
         sidebarRoot: String?,
-        isPalettePresented: Bool
+        isPalettePresented: Bool,
+        isSplitOpen: Bool = false,
+        vimModeEnabled: Bool = false
     ) {
         self.tabs = tabs
         self.selectedTabIndex = selectedTabIndex
@@ -117,6 +123,8 @@ public struct AutomationState: Codable, Sendable, Equatable {
         self.zoom = zoom
         self.sidebarRoot = sidebarRoot
         self.isPalettePresented = isPalettePresented
+        self.isSplitOpen = isSplitOpen
+        self.vimModeEnabled = vimModeEnabled
     }
 
     public struct TabDescriptor: Codable, Sendable, Equatable {
@@ -124,8 +132,11 @@ public struct AutomationState: Codable, Sendable, Equatable {
         public let path: String?
         public let title: String
         public let viewMode: String
-        public init(id: String, path: String?, title: String, viewMode: String) {
+        /// Whether this tab has unsaved edits — the primary agent journey assertion.
+        public let isDirty: Bool
+        public init(id: String, path: String?, title: String, viewMode: String, isDirty: Bool = false) {
             self.id = id; self.path = path; self.title = title; self.viewMode = viewMode
+            self.isDirty = isDirty
         }
     }
 }
