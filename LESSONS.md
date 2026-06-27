@@ -3609,3 +3609,18 @@ Continuation of "the five constraints" above; these three close every remaining 
   hard-exited on the benign run-exit BEFORE measuring — a coverage gate must defer pass/fail to the headless gate and gate
   only on the coverage THRESHOLD. Both classes were invisible to reasoning; only the real run surfaced ARG_MAX + corrupt
   partials.
+
+- **`swift test --parallel --xunit-output` per-test times are CONTENTION wall-clocks, not execution — useless for
+  per-class profiling (2026-06-27, TSK-836).** Under `--parallel` the per-`<testcase> time=` includes time the worker
+  was descheduled under CPU/resource contention. Demonstrated: a trivial enum-loop test (no model, no IO) reported 7.0s
+  == the doc-opening tests in its class. For TRUE per-class timing use a SERIAL run (`swift test`, NO `--parallel`) and
+  parse the LOG text (`Test Case '-[Class test]' passed (T seconds)`). NOTE `--xunit-output` REQUIRES `--parallel`, so a
+  serial run writes no XML — the log text is the only source. A uniform multi-second floor across trivial tests = the
+  contention signal (the suite is CPU/resource-bound under parallelism, so `--num-workers > cores` would WORSEN it; sweep
+  before bumping — re TSK-847).
+- **Adding a DEFAULTED param to a public init/fn breaks the link for stale caller `.o`s (2026-06-27, TSK-836 confirmed
+  the LESSONS entry).** Adding `capBytes:/diffInputCap:` (even defaulted) to `LocalHistoryStore.init` changed the mangled
+  `__allocating_init` symbol; a stale `BinaryFileAffordanceTests.swift.o` still referenced the OLD 2-arg symbol → "Undefined
+  symbols … ld: symbol(s) not found". Touching DIRECT callers can MISS indirect refs (default-arg / `@inlinable` inlining
+  at a call site not in the grep). ROBUST FIX: keep the existing init's signature UNCHANGED (ABI-stable) and add a SEPARATE
+  init with a distinct required-label set for the new params — no symbol churn, no reliance on touching the right files.

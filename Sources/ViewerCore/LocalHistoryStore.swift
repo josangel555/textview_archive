@@ -109,6 +109,16 @@ public final class LocalHistoryStore: Sendable {
     /// `snapshot` so flipping the pref takes effect immediately.
     private let isEnabled: @Sendable () -> Bool
 
+    /// Per-file byte cap for THIS store instance (defaults to the static
+    /// `maxFileHistoryBytes`). Injectable so tests can drive pruning at a small
+    /// cap without writing megabytes (TSK-836: the byteCap tests were ~8-9s each
+    /// writing ~24 MiB to hit the real 20 MiB cap; a small cap makes them ~0.1s).
+    public let capBytes: Int
+    /// Diff-input ceiling for THIS store instance (defaults to the static
+    /// `maxDiffInputBytes`); scaled alongside `capBytes` so the snapshot↔diff
+    /// ratios hold at a small test cap.
+    public let diffInputCap: Int
+
     public static func defaultDirectory() -> URL {
         let fm = FileManager.default
         let support = (try? fm.url(
@@ -127,6 +137,27 @@ public final class LocalHistoryStore: Sendable {
     ) {
         self.directory = directory
         self.isEnabled = isEnabled
+        self.capBytes = Self.maxFileHistoryBytes
+        self.diffInputCap = Self.maxDiffInputBytes
+    }
+
+    /// Init with an explicit byte budget (TSK-836). A SEPARATE label set from the
+    /// 2-arg init (capBytes/diffInputCap are REQUIRED here, not defaulted) so the
+    /// 2-arg init's ABI symbol stays stable — adding defaulted params to the
+    /// EXISTING init instead would break existing call sites (the Swift
+    /// defaulted-param link break: a stale caller .o references the old mangled
+    /// `__allocating_init` and fails to link). Tests drive pruning at a small cap
+    /// via this init; production keeps using the 2-arg form unchanged.
+    public init(
+        directory: URL,
+        isEnabled: @escaping @Sendable () -> Bool = { true },
+        capBytes: Int,
+        diffInputCap: Int
+    ) {
+        self.directory = directory
+        self.isEnabled = isEnabled
+        self.capBytes = capBytes
+        self.diffInputCap = diffInputCap
     }
 
     // MARK: - Public API (stable — sibling agents depend on these signatures)
@@ -146,7 +177,7 @@ public final class LocalHistoryStore: Sendable {
     public func snapshot(path: String, content: String, at date: Date) -> Version? {
         guard isEnabled() else { return nil }
         guard !content.isEmpty else { return nil }
-        guard content.utf8.count <= Self.maxSnapshotBytes else { return nil }
+        guard content.utf8.count <= capBytes else { return nil }
         guard !HistoryContentFilter.isProbablyBinary(content) else { return nil }
         guard !HistoryContentFilter.looksLikeSecret(content) else { return nil }
         // Filename-based secret exclusion (TSK-1103 merge): the viewer's
@@ -188,9 +219,9 @@ public final class LocalHistoryStore: Sendable {
         // inputs (and even on allowed inputs it is O(N) memory). This is the
         // product-layer bound that, with the linear-space algorithm, makes the
         // 77 GB matrix runaway impossible.
-        if contentSize <= Self.maxDiffInputBytes,
+        if contentSize <= diffInputCap,
            let anchor = existing.last(where: { $0.header.kind == .full }),
-           anchor.header.size <= Self.maxDiffInputBytes,
+           anchor.header.size <= diffInputCap,
            let anchorContent = reconstruct(anchor, allRecords: existing) {
             let diffPayload = LineDiff.Patch.between(anchorContent, content).serialized()
             let diffHeader = Header.diff(size: contentSize, hash: contentHash, anchor: anchor.id)
@@ -392,7 +423,7 @@ public final class LocalHistoryStore: Sendable {
         var recs = records(in: dir)                          // ascending
         func total() -> Int { recs.reduce(0) { $0 + $1.onDiskBytes } }
 
-        while total() > Self.maxFileHistoryBytes, recs.count > 1 {
+        while total() > capBytes, recs.count > 1 {
             let victim = recs[0]                             // oldest
 
             if victim.header.kind == .full {
@@ -433,10 +464,10 @@ public final class LocalHistoryStore: Sendable {
         // `maxDiffInputBytes`; otherwise re-base the dependent as its OWN full
         // snapshot (still anchor-free, never orphaned) — so the differ never
         // runs on large inputs even on the prune/re-anchor path.
-        let promoteeFitsDiff = promotee.header.size <= Self.maxDiffInputBytes
+        let promoteeFitsDiff = promotee.header.size <= diffInputCap
         for dep in dependents.dropFirst() {
             guard let depContent = reconstruct(dep, allRecords: recs) else { continue }
-            if promoteeFitsDiff, dep.header.size <= Self.maxDiffInputBytes {
+            if promoteeFitsDiff, dep.header.size <= diffInputCap {
                 let newPatch = LineDiff.Patch.between(promoteeContent, depContent).serialized()
                 let newHeader = Header.diff(size: dep.header.size, hash: dep.header.hash, anchor: promotee.id)
                 _ = writeRecord(header: newHeader, payload: newPatch, to: dep.url)

@@ -149,36 +149,34 @@ final class LocalHistoryStoreTests: XCTestCase {
     // MARK: - 20 MB/file byte cap
 
     func test_byteCap_prunesOldest_keepsNewest_underCap() {
-        // Use a tiny store so the test is fast: 200 KiB cap. Each version is a
-        // distinct ~50 KiB near-rewrite (so each is a full snapshot), forcing
-        // the cap to bite and prune oldest-first.
-        let smallCapStore = LocalHistoryStore(directory: dir)   // same dir
-        _ = smallCapStore
-        // We can't change the static cap; instead write enough genuine data to
-        // exceed the real 20 MiB cap would be huge. So drive the cap via the
-        // helper that lets us assert pruning behaviour at the real cap with
-        // big-but-bounded content: 12 versions × ~2 MiB unique each = ~24 MiB.
-        let blockSize = 2 * 1024 * 1024 / 8     // ~2 MiB of 8-char lines
+        // Drive pruning at a SMALL injected cap (TSK-836): same prune logic as the
+        // 20 MiB default, but ~100x less IO — this test was ~8s writing ~24 MiB to
+        // hit the real cap. Sizes scaled ÷100 consistently (cap 20MiB→200KiB,
+        // diffInputCap 1MiB→10KiB, each version ~20KiB > diffInputCap → full
+        // snapshot), so 14 versions (~280 KiB) overflow the cap and prune oldest-first.
+        let cap = 200 * 1024
+        let capStore = LocalHistoryStore(directory: dir, capBytes: cap, diffInputCap: 10 * 1024)
+        let blockSize = 20 * 1024 / 8     // ~20 KiB of 8-char lines (÷100 of the old 2 MiB)
         var ids: [String] = []
         for i in 0..<14 {
             // Unique content each time (no dedup, near-rewrite → mostly full).
             let body = (0..<blockSize).map { String(format: "%07d%c", $0, Character(UnicodeScalar(65 + (i % 26))!).asciiValue!) }
                 .joined(separator: "\n")
-            if let v = store.snapshot(path: path, content: body, at: date(1_700_000_000 + TimeInterval(i))) {
+            if let v = capStore.snapshot(path: path, content: body, at: date(1_700_000_000 + TimeInterval(i))) {
                 ids.append(v.id)
             }
         }
         XCTAssertGreaterThan(ids.count, 0)
 
         // Under the cap after all writes.
-        XCTAssertLessThanOrEqual(onDiskBytes(for: path), LocalHistoryStore.maxFileHistoryBytes,
+        XCTAssertLessThanOrEqual(onDiskBytes(for: path), cap,
                                  "total history must be pruned under the per-file byte cap")
         // The NEWEST version is always retained and reconstructs.
-        let vs = store.versions(for: path)
+        let vs = capStore.versions(for: path)
         XCTAssertFalse(vs.isEmpty)
         let newest = vs[0]
         XCTAssertEqual(newest.id, ids.last)
-        XCTAssertNotNil(store.contentString(of: newest, for: path))
+        XCTAssertNotNil(capStore.contentString(of: newest, for: path))
         // The OLDEST written id was pruned (cap forced it out).
         XCTAssertFalse(vs.map(\.id).contains(ids.first!), "oldest version pruned by the byte cap")
     }
@@ -187,8 +185,13 @@ final class LocalHistoryStoreTests: XCTestCase {
         // Build an anchor full + several diffs, then push enough new big fulls to
         // force the original anchor out. Surviving diffs that anchored on it must
         // still reconstruct (the store promotes a dependent diff to a full).
-        let base = (0..<4000).map { "base line number \($0)" }.joined(separator: "\n")
-        store.snapshot(path: path, content: base, at: date(1_700_000_000))   // anchor full
+        // SMALL injected cap (TSK-836): same anchor-promotion logic, ~100x less IO
+        // (was ~9s). Sizes scaled ÷100 consistently so the snapshot↔diff↔prune
+        // ratios are preserved (base/edits < diffInputCap → diffs; fulls > it → fulls).
+        let cap = 200 * 1024
+        let capStore = LocalHistoryStore(directory: dir, capBytes: cap, diffInputCap: 10 * 1024)
+        let base = (0..<40).map { "base line number \($0)" }.joined(separator: "\n")
+        capStore.snapshot(path: path, content: base, at: date(1_700_000_000))   // anchor full
         var content = base
         var expected: [String: String] = [:]
         var t: TimeInterval = 1_700_000_100
@@ -196,23 +199,23 @@ final class LocalHistoryStoreTests: XCTestCase {
             var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines[e] = "base line number \(e) edited rev \(e)"
             content = lines.joined(separator: "\n")
-            let v = store.snapshot(path: path, content: content, at: date(t)); t += 100
+            let v = capStore.snapshot(path: path, content: content, at: date(t)); t += 100
             expected[v!.id] = content
         }
-        // Now flood with big unique fulls to evict the original anchor.
-        let blockSize = 2 * 1024 * 1024 / 8
+        // Now flood with big unique fulls (~20 KiB each > diffInputCap) to evict the anchor.
+        let blockSize = 20 * 1024 / 8
         for i in 0..<14 {
             let body = (0..<blockSize).map { String(format: "Z%07d%d", $0, i) }.joined(separator: "\n")
-            store.snapshot(path: path, content: body, at: date(t)); t += 100
+            capStore.snapshot(path: path, content: body, at: date(t)); t += 100
         }
         // Every SURVIVING version that we recorded an expectation for must still
         // reconstruct exactly (anchor promotion kept the chain intact).
-        let surviving = store.versions(for: path)
+        let surviving = capStore.versions(for: path)
         for v in surviving where expected[v.id] != nil {
-            XCTAssertEqual(store.contentString(of: v, for: path), expected[v.id],
+            XCTAssertEqual(capStore.contentString(of: v, for: path), expected[v.id],
                            "a surviving diff must reconstruct after its anchor was pruned+promoted")
         }
-        XCTAssertLessThanOrEqual(onDiskBytes(for: path), LocalHistoryStore.maxFileHistoryBytes)
+        XCTAssertLessThanOrEqual(onDiskBytes(for: path), cap)
     }
 
     // MARK: - Size-guard: large changes route to SNAPSHOT, never run a big diff
