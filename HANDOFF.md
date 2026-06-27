@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — PM store host-complete + autonomous surface drained  (2026-06-27)
 
-**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `bd8b7b4a` (verify `git log -1`)
+**Session:** claude-mdv  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch:** `main` @ `c2a82157` (verify `git log -1`)
 
 ## Mission
 Autonomous drain loop (5-min cron). Drain BACKLOG.md top-down by the owner priority order: P0a (AX self-driving) + P0b (validation) interleaved, then P1 wave-12, then P2 board. Build inline, one item/tick, gate-green, commit per item.
@@ -11,7 +11,8 @@ Autonomous drain loop (5-min cron). Drain BACKLOG.md top-down by the owner prior
   - **memchr** (TSK-399/1285) — `hex_search_find` + `format::find_after` on `memchr::memmem`. Validated.
   - **proptest** (TSK-585) — 5 differential/round-trip suites (filter, diff, csv ×2, formula-arith). **Found + fixed TSK-1286** (CSV single-column trailing-empty-value row drop).
   - **rusqlite / PM store** (TSK-345) — **14 gate-green slices, ~52 host tests, HOST-SIDE COMPLETE.** A full event-sourced project-management store in `rust-core/crates/pm/`: event-sourcing+replay (work_item AND edges rebuild from the log) · §2.2 lifecycle state machine · enforced actor-kind + §1.4 doer≠verifier safety boundary · on-disk persistence · §1.7 dependency graph (cycle-safe edges + finish-to-start dispatch + impact-analysis + consumes-reverse-ripple cascade) · the FFI/remote **wire protocol** (`PmRequest`/`PmResponse`/`dispatch`/`dispatch_bytes`).
-  - **wasm32 (TSK-587) + cargo-fuzz (TSK-584)** — ⛔ rustup-CDN-blocked (re-checked repeatedly, still timing out). Not a code issue.
+  - **wasm32 (TSK-587) + cargo-fuzz (TSK-584)** — ⛔ blocked: the CDN HEAD-responds (200) but the large rust-std-wasm32 tarball + nightly downloads time out (large-download link failure; re-checked repeatedly across ticks). The wasm INVARIANT is guarded host-side instead via the strengthened `wasm_shape` static scan.
+  - **Post-compaction P0b + hardening (all rust, gate-green):** validated **TSK-1106** (session-tab action MODEL behaviors — `SessionsCoordinatorTests` 30/0, teeth) + **TSK-585** (proptest lane named scope) → `validated`; completed TSK-585's wire/session proptests; extended the lane to hex + fuzzy differentials (8 engines now, all 12 fuzz-covered); hardened the `wasm_shape` guard with `std::time`. The 4 rust-core ports + both memchr tickets were ALREADY validated. NOTE: swift host validation works via `swift test --skip-update` (SwiftPM resolution is network-hung; cached deps resolve fine).
 - **Autonomous host-completable surface is DRAINED** — BACKLOG.md (line 60) + my own vetting agree. Remaining everywhere is owner/VM/TCC-gated.
 - **In flight:** nothing half-done. All work committed, `main` headless-green.
 - **Next action:** each tick, genuine fresh check (rustup CDN for wasm; `task_next`); build immediately if a clean host item appears or the owner answers a decision. Do NOT manufacture marginal/speculative work past this vetted boundary.

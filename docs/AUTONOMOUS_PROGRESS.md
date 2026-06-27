@@ -14497,3 +14497,14 @@ The HOST-COMPLETABLE PM core is DONE. Remaining is NOT clean host-slice work:
 - **slice 5** FFI exposure — CROSS-CUTTING: stateful Connection handle across the extern-C boundary + adding mdvcore-pm to the ffi default-members → the Swift app must link libsqlite3 (build-app.sh) → VM/owner-validated. Needs a consumer + the "PM epic direction" answer.
 - **consumes-ripple (4g)** — the §1.7 reverse-ripple (auto-invalidate VerifiedDone consumers when an upstream output changes) — intricate cascade semantics, a focused-design slice.
 Two owner decisions standing: crypto-hash (TSK-1287) + PM epic direction (continue autonomously vs supervised). Otherwise the autonomous host-surface is BACKLOG-confirmed drained.
+
+## LOG (2026-06-27 cont. — post-compaction: P0b validation + proptest/wasm hardening)
+After the PM-store session (14 slices, HEAD bd8b7b4a) compacted, re-oriented + drained the remaining clean autonomous surface:
+- **Corrected the stale HANDOFF.md** (re-injected as AX/RSS @ a7c57904 → rewritten to PM-complete @ bd8b7b4a) — `bf2f6b50`.
+- **P0b validation (with teeth):** TSK-1106 (session-tab action MODEL behaviors — SessionsCoordinatorTests 30/0, host-run offline via `--skip-update`) + TSK-585 (proptest lane named scope) → `validated`. The 4 rust-core ports (TSK-630/631/632/633) + both memchr tickets (TSK-399/1285) were ALREADY validated.
+- **Completed TSK-585's named targets:** wire-laws (decode_frame arbitrary-byte robustness of the length-prefix parser + Table frame round-trip) + session-op-replay (filter replay-determinism + set_filter idempotence) proptests — `dedcaaa7`.
+- **Extended the proptest lane to the bug-prone engines:** hex (memmem find-all == naive non-overlapping scan — verifies the TSK-399 SIMD refactor, `178a58e7`) + fuzzy (match iff CI-subsequence existence, `cc70780d`). Lane now spans 8 engines; all 12 rust-core engines carry fuzz/proptest coverage.
+- **Hardened the wasm_shape guard (TSK-800):** added std::time::Instant/SystemTime to the wasm-breaking set — closed a doc/code gap (the module doc claimed env/TIME coverage; the list omitted time; core verified clock-clean) — `c2a82157`.
+- **ENV:** host swift toolchain network-hung on SwiftPM resolution (use `swift test --skip-update`, cached deps); wasm32 + cargo-fuzz blocked on large CDN downloads (CDN HEAD-responds 200 but the rust-std-wasm32 tarball times out — 4 attempts across ticks) → wasm real-build deferred; the static wasm_shape guard is the host proxy.
+
+BOUNDARY: the autonomous host-completable + network-resilient surface is DRAINED (verified directly this session: P0b clean pool, proptest lane comprehensive, PM host-complete, wasm guard done — not just BACKLOG-claimed). Remaining = render/VM/owner-close pile + the two owner decisions (crypto-hash TSK-1287, PM direction) + network-blocked deps (wasm real-build / cargo-fuzz).
