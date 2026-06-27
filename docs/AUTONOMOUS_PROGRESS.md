@@ -14508,3 +14508,15 @@ After the PM-store session (14 slices, HEAD bd8b7b4a) compacted, re-oriented + d
 - **ENV:** host swift toolchain network-hung on SwiftPM resolution (use `swift test --skip-update`, cached deps); wasm32 + cargo-fuzz blocked on large CDN downloads (CDN HEAD-responds 200 but the rust-std-wasm32 tarball times out — 4 attempts across ticks) → wasm real-build deferred; the static wasm_shape guard is the host proxy.
 
 BOUNDARY: the autonomous host-completable + network-resilient surface is DRAINED (verified directly this session: P0b clean pool, proptest lane comprehensive, PM host-complete, wasm guard done — not just BACKLOG-claimed). Remaining = render/VM/owner-close pile + the two owner decisions (crypto-hash TSK-1287, PM direction) + network-blocked deps (wasm real-build / cargo-fuzz).
+
+## LOG (2026-06-27 cont. — P0a agent-drivable surface + DOM-patch host/FFI)
+Continued the drain (HEAD bf2f6b50 → e673c886), verify-state lens finding real gaps each time:
+- **P0a agent-drivable surface — COMPREHENSIVE:**
+  - AXIdentifierCatalog 42→59: +12 major surfaces — incl. the CORE chrome that was un-addressable (mdv.tabbar / sessionTabBar / split) + walkthrough.player/browser, searchAnywhere, markdownOverview, actionHistory, problems, claudeTimeline, findMatchList, recentlyOpened (6d237905) + 5 secondary (image/audio preview, instrumentation/logs/metrics) (b7c97287).
+  - close-split script verb (638e552e) — split-verb set (toggle/swap/close) complete; toggle was state-dependent so agents couldn't deterministically close.
+  - list_verbs + list_surfaces MCP tools (7486b2e9, 9a864829) — agent SELF-DISCOVERY of the ~134-verb action vocabulary + the 59 addressable surfaces (MCP catalog 18→20). Closed a real hole (run_verb executed but nothing enumerated).
+  - Full headless gate run offline (~9024 tests, 0 fail) confirmed no cross-suite breakage from the shared-catalog changes.
+- **P1 DOM-patch (TSK-838 — the biggest perf lever): HOST+FFI stack COMPLETE** (3 slices, proptested on REAL pulldown-cmark renders): split_top_level_blocks (513c75ff) → block_patch/apply_block_patch (e6b4ae0f) → block_patch_wire + dispatch::Method::HtmlBlockPatch + MDV_METHOD_HTML_BLOCK_PATCH=17 (e673c886, FFI-callable, cbindgen header-staged). Spiked on TSK-838 first. The 2-9s loadHTMLString reload-storm → an O(changed-blocks) DOM patch. RENDER TAIL (the JS DOM applier over WarmHTMLWebViewCache + loadHTMLString→patch swap + perf-validation) is the owner/VM-aligned WebView-architecture change.
+
+ENV: swift host validation via `swift test --skip-update` (SwiftPM net-hung); wasm32 + cargo-fuzz CDN-blocked (large downloads time out, HEAD ok).
+BOUNDARY: clean host-completable threads drained — P0a comprehensive, P0b validated-pool drained (TSK-1106/585 + ports/memchr), PM host-complete (14 slices), proptest lane comprehensive, DOM-patch host+FFI done. Remaining = render-tails (DOM-patch applier, the ~review pile), engine-gated (Agent-Services TSK-1154 needs sandbox/LSP/engine — verified), owner decisions (crypto-hash TSK-1287, PM direction, AX-TCC executor TSK-1261/1263).
