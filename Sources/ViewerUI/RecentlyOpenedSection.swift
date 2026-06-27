@@ -99,6 +99,10 @@ private struct RecentRow: View {
         .helpInfo(title: entry.displayName, description: entry.url.path)
         .contextMenu {
             Button("Copy Path") { Pasteboard.copy(entry.url.path) }
+            // TSK-1256 "Copy Reference": mdv:// agent reference (file form).
+            Button("Copy Reference") {
+                Pasteboard.copy(ElementRef.file(path: entry.url.path, line: nil).serialized)
+            }
             Button("Reveal in Finder") { Finder.reveal(entry.url) }
         }
         .accessibilityIdentifier("mdv.recentlyOpened.row")
