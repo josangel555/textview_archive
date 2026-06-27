@@ -84,7 +84,7 @@ pub enum WorkItemEvent {
 }
 
 /// A materialized work item — one row of the current-state projection.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkItem {
     /// Stable id.
     pub id: String,
@@ -324,6 +324,8 @@ pub enum PmError {
         /// The dependency end of the rejected edge.
         to: String,
     },
+    /// A wire `AddEdge` request carried an unrecognized edge-kind code.
+    UnknownEdgeKind(i64),
 }
 
 impl std::fmt::Display for PmError {
@@ -347,6 +349,7 @@ impl std::fmt::Display for PmError {
             PmError::DependencyCycle { from, to } => {
                 write!(f, "depends_on {from} -> {to} would create a cycle")
             }
+            PmError::UnknownEdgeKind(k) => write!(f, "unknown edge kind: {k}"),
         }
     }
 }
@@ -773,6 +776,114 @@ pub fn consumers_of(conn: &Connection, id: &str) -> rusqlite::Result<Vec<String>
         conn.prepare("SELECT from_id FROM wi_edge WHERE to_id = ?1 AND kind = 1 ORDER BY from_id")?;
     let rows = stmt.query_map([id], |r| r.get(0))?;
     rows.collect()
+}
+
+/// A wire request to the PM store — the FFI / remote protocol (msgpack),
+/// mirroring the typed API. The stateful `Connection` stays the caller's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PmRequest {
+    /// Append a typed event (Created / StateChanged / EdgeAdded) with provenance.
+    Append {
+        ts: i64,
+        actor_id: String,
+        actor_kind: i64,
+        event: WorkItemEvent,
+    },
+    /// Add a relationship edge (a depends_on cycle is rejected).
+    AddEdge {
+        ts: i64,
+        actor_id: String,
+        actor_kind: i64,
+        from: String,
+        to: String,
+        kind: i64,
+    },
+    /// Current projected state of one item.
+    GetWorkItem { id: String },
+    /// The dependency-gated Ready dispatch queue.
+    WorkNext,
+    /// Count of items per state class.
+    StateRollup,
+    /// An item's depends_on prerequisites.
+    DependsOn { id: String },
+    /// Items that depend on an item.
+    DependentsOf { id: String },
+    /// Items that consume an item's output.
+    ConsumersOf { id: String },
+}
+
+/// A wire response from [`dispatch`]; `Error` carries a [`PmError`] display string.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PmResponse {
+    /// An append succeeded; the new event `seq`.
+    Appended { seq: i64 },
+    /// A unit op succeeded.
+    Ok,
+    /// A single (optional) work item.
+    Item(Option<WorkItem>),
+    /// A list of work items.
+    Items(Vec<WorkItem>),
+    /// A state roll-up (class, count).
+    Rollup(Vec<(String, i64)>),
+    /// A list of ids.
+    Ids(Vec<String>),
+    /// The operation failed (a `PmError` display string).
+    Error(String),
+}
+
+/// Execute a [`PmRequest`], mapping any [`PmError`] to [`PmResponse::Error`] so
+/// the wire never surfaces a domain error as a panic.
+#[must_use]
+pub fn dispatch(conn: &mut Connection, req: PmRequest) -> PmResponse {
+    dispatch_inner(conn, req).unwrap_or_else(|e| PmResponse::Error(e.to_string()))
+}
+
+fn dispatch_inner(conn: &mut Connection, req: PmRequest) -> Result<PmResponse, PmError> {
+    Ok(match req {
+        PmRequest::Append {
+            ts,
+            actor_id,
+            actor_kind,
+            event,
+        } => PmResponse::Appended {
+            seq: append(conn, ts, &actor_id, actor_kind, &event)?,
+        },
+        PmRequest::AddEdge {
+            ts,
+            actor_id,
+            actor_kind,
+            from,
+            to,
+            kind,
+        } => {
+            let k = EdgeKind::from_i64(kind).ok_or(PmError::UnknownEdgeKind(kind))?;
+            add_edge(conn, ts, &actor_id, actor_kind, &from, &to, k)?;
+            PmResponse::Ok
+        }
+        PmRequest::GetWorkItem { id } => PmResponse::Item(get_work_item(conn, &id)?),
+        PmRequest::WorkNext => PmResponse::Items(work_next(conn)?),
+        PmRequest::StateRollup => PmResponse::Rollup(state_rollup(conn)?),
+        PmRequest::DependsOn { id } => PmResponse::Ids(depends_on(conn, &id)?),
+        PmRequest::DependentsOf { id } => PmResponse::Ids(dependents_of(conn, &id)?),
+        PmRequest::ConsumersOf { id } => PmResponse::Ids(consumers_of(conn, &id)?),
+    })
+}
+
+/// MessagePack wrapper around [`dispatch`] for the FFI / remote boundary: decode a
+/// `PmRequest` frame, run it, encode the `PmResponse`. A decode failure becomes a
+/// `PmResponse::Error`; the `Result` is only for a hard encode failure.
+///
+/// # Errors
+/// Propagates an rmp-serde ENCODE failure of the response frame.
+pub fn dispatch_bytes(
+    conn: &mut Connection,
+    req_bytes: &[u8],
+) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    let resp = match rmp_serde::from_slice::<PmRequest>(req_bytes) {
+        Ok(req) => dispatch(conn, req),
+        Err(e) => PmResponse::Error(format!("decode: {e}")),
+    };
+    rmp_serde::to_vec(&resp)
 }
 
 #[cfg(test)]
@@ -1241,6 +1352,82 @@ mod tests {
             vec!["B".to_string()],
             "edges are event-sourced — they rebuild from EdgeAdded events"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn wire_dispatch_matches_direct_api() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        let appended = dispatch(
+            &mut conn,
+            PmRequest::Append {
+                ts: 1,
+                actor_id: "h".into(),
+                actor_kind: 0,
+                event: created_in("A", State::Ready),
+            },
+        );
+        assert!(matches!(appended, PmResponse::Appended { seq: 1 }));
+        // The wire WorkNext equals the direct work_next().
+        let wire = dispatch(&mut conn, PmRequest::WorkNext);
+        let direct = work_next(&conn)?;
+        assert_eq!(wire, PmResponse::Items(direct));
+        Ok(())
+    }
+
+    #[test]
+    fn wire_maps_domain_error_to_error_response() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        // A StateChanged on an unknown item → PmError::UnknownItem → Error response.
+        let r = dispatch(
+            &mut conn,
+            PmRequest::Append {
+                ts: 1,
+                actor_id: "h".into(),
+                actor_kind: 0,
+                event: WorkItemEvent::StateChanged {
+                    id: "ghost".into(),
+                    state: State::Ready.as_str().into(),
+                    reason: "x".into(),
+                },
+            },
+        );
+        assert!(matches!(r, PmResponse::Error(_)));
+        // An unknown edge-kind code is mapped too.
+        let bad = dispatch(
+            &mut conn,
+            PmRequest::AddEdge {
+                ts: 1,
+                actor_id: "h".into(),
+                actor_kind: 0,
+                from: "a".into(),
+                to: "b".into(),
+                kind: 99,
+            },
+        );
+        assert!(matches!(bad, PmResponse::Error(_)));
+        Ok(())
+    }
+
+    #[test]
+    fn wire_bytes_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let mut conn = open_in_memory()?;
+        dispatch(
+            &mut conn,
+            PmRequest::Append {
+                ts: 1,
+                actor_id: "h".into(),
+                actor_kind: 0,
+                event: created_in("A", State::Ready),
+            },
+        );
+        let req_bytes = rmp_serde::to_vec(&PmRequest::WorkNext)?;
+        let resp_bytes = dispatch_bytes(&mut conn, &req_bytes)?;
+        let resp: PmResponse = rmp_serde::from_slice(&resp_bytes)?;
+        assert!(matches!(
+            resp,
+            PmResponse::Items(ref v) if v.len() == 1 && v.first().map(|w| w.id.as_str()) == Some("A")
+        ));
         Ok(())
     }
 }
