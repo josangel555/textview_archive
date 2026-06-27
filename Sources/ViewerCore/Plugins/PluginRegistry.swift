@@ -227,11 +227,8 @@ public final class PluginRegistry {
     /// Default plugins root. Matches the bundle id used elsewhere in
     /// the app (TCC-stable per `CLAUDE.md`).
     public static func defaultPluginsDir() -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("com.markdownviewer.MarkdownViewer", isDirectory: true)
+        // TSK-1288: bundleIDDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.bundleIDDir()
             .appendingPathComponent("Plugins", isDirectory: true)
     }
 

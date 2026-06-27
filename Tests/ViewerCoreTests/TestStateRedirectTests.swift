@@ -35,10 +35,13 @@ final class TestStateRedirectTests: XCTestCase {
         let dir = TestStateRedirect.markdownViewerDir(environment: ["MDV_APP_SUPPORT": custom.path])
         XCTAssertEqual(dir, custom.appendingPathComponent("MarkdownViewer", isDirectory: true),
                        "MDV_APP_SUPPORT must override the redirect, got \(dir.path)")
+        let bid = TestStateRedirect.bundleIDDir(environment: ["MDV_APP_SUPPORT": custom.path])
+        XCTAssertEqual(bid, custom.appendingPathComponent("com.markdownviewer.MarkdownViewer", isDirectory: true),
+                       "MDV_APP_SUPPORT must override bundleIDDir too, got \(bid.path)")
     }
 
     // Slice 2: the other confirmed-polluted stores also redirect under XCTest.
-    func test_slice2_stores_redirectUnderXCTest() {
+    @MainActor func test_slice2_stores_redirectUnderXCTest() {
         XCTAssertTrue(ScrollMemoryStore.defaultStoreURL().path.contains("MDVTestState-"),
                       "scroll-memory must redirect, got \(ScrollMemoryStore.defaultStoreURL().path)")
         XCTAssertTrue(BookmarksStore.defaultStoreURL().path.contains("MDVTestState-"),
@@ -53,6 +56,15 @@ final class TestStateRedirectTests: XCTestCase {
                       "lsp-trust must redirect, got \(LSPTrustStore.defaultStoreURL().path)")
         XCTAssertTrue(TerminalFavoritesStore.defaultURL().path.contains("MDVTestState-"),
                       "terminal-favorites must redirect, got \(TerminalFavoritesStore.defaultURL().path)")
+        // Slice 4: bundle-id-dir stores (com.markdownviewer.MarkdownViewer) redirect too.
+        XCTAssertTrue(PluginRegistry.defaultPluginsDir().path.contains("MDVTestState-"),
+                      "plugins must redirect, got \(PluginRegistry.defaultPluginsDir().path)")
+        XCTAssertTrue(PluginGrantStore.defaultURL().path.contains("MDVTestState-"),
+                      "plugin-grants must redirect, got \(PluginGrantStore.defaultURL().path)")
+        XCTAssertTrue(WalkthroughCheckpointStore.defaultDirectory().path.contains("MDVTestState-"),
+                      "walkthrough-checkpoints must redirect, got \(WalkthroughCheckpointStore.defaultDirectory().path)")
+        XCTAssertTrue(WalkthroughDropTransport.defaultDropDirectory().path.contains("MDVTestState-"),
+                      "walkthrough-drop must redirect, got \(WalkthroughDropTransport.defaultDropDirectory().path)")
     }
 
     /// Structural guard (TSK-1288): no NEW ViewerCore store may compute the real app-support
@@ -72,11 +84,10 @@ final class TestStateRedirectTests: XCTestCase {
         // Known not-yet-repointed stores (TSK-1288 follow-on batch). NOT actively polluting.
         let allowed: Set<String> = [
             "AppCacheReset.swift", "CLILauncher.swift", "FeedSubscriptionStore.swift",
-            "InstanceRegistry.swift", "LSPDiscovery.swift", "PluginGrantStore.swift",
-            "PluginRegistry.swift", "ReviewStore.swift", "SessionStore.swift",
-            "SnippetStore.swift", "TerminalCommandHistory.swift", "ThemeStore.swift",
-            "WalkthroughCatalog.swift", "WalkthroughCheckpointStore.swift",
-            "WalkthroughDropTransport.swift", "WalkthroughHistory.swift", "WalkthroughStore.swift",
+            "InstanceRegistry.swift", "LSPDiscovery.swift", "ReviewStore.swift",
+            "SessionStore.swift", "SnippetStore.swift", "TerminalCommandHistory.swift",
+            "ThemeStore.swift", "WalkthroughCatalog.swift", "WalkthroughHistory.swift",
+            "WalkthroughStore.swift",
         ]
         var offenders: [String] = []
         for case let url as URL in en where url.pathExtension == "swift" {

@@ -48,16 +48,8 @@ public struct WalkthroughCheckpointStore: Sendable {
     /// Default checkpoint directory, a sibling of the drop inbox:
     /// `~/Library/Application Support/com.markdownviewer.MarkdownViewer/Walkthroughs/checkpoints/`.
     public static func defaultDirectory() -> URL {
-        let fm = FileManager.default
-        let base = (try? fm.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: false
-        )) ?? URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Application Support")
-        return base
-            .appendingPathComponent("com.markdownviewer.MarkdownViewer", isDirectory: true)
+        // TSK-1288: bundleIDDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.bundleIDDir()
             .appendingPathComponent("Walkthroughs", isDirectory: true)
             .appendingPathComponent("checkpoints", isDirectory: true)
     }

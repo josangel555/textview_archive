@@ -57,18 +57,8 @@ public final class WalkthroughDropTransport: @unchecked Sendable {
     /// `~/Library/Application Support/com.markdownviewer.MarkdownViewer/Walkthroughs/drop/`.
     /// Created on first launch by `init` if absent.
     public static func defaultDropDirectory() -> URL {
-        let fm = FileManager.default
-        // `applicationSupportDirectory` is user-scoped; on a normal
-        // install it resolves to `~/Library/Application Support`.
-        let base = (try? fm.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: false
-        )) ?? URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Application Support")
-        return base
-            .appendingPathComponent("com.markdownviewer.MarkdownViewer", isDirectory: true)
+        // TSK-1288: bundleIDDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.bundleIDDir()
             .appendingPathComponent("Walkthroughs", isDirectory: true)
             .appendingPathComponent("drop", isDirectory: true)
     }

@@ -102,11 +102,8 @@ public final class PluginGrantStore: @unchecked Sendable {
     private let isNewerSchemaOnDisk: Bool
 
     public static func defaultURL() -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("com.markdownviewer.MarkdownViewer", isDirectory: true)
+        // TSK-1288: bundleIDDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.bundleIDDir()
             .appendingPathComponent("PluginGrants", isDirectory: true)
             .appendingPathComponent("grants.json")
     }

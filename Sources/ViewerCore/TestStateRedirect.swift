@@ -35,18 +35,33 @@ public enum TestStateRedirect {
     public static func markdownViewerDir(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {
-        // Precedence: explicit MDV_APP_SUPPORT override (session tests / sandbox — the
-        // pre-existing mechanism AppCacheReset/SessionStore honor) > XCTest auto-redirect
-        // (hermetic tmp) > the real app-support dir (production).
-        let base: URL
+        appSupportSubdir("MarkdownViewer", environment: environment)
+    }
+
+    /// The bundle-id app-support dir (`com.markdownviewer.MarkdownViewer`) — holds
+    /// `Plugins/`, `PluginGrants/`, `Walkthroughs/`, `jdtls-data/`. Same redirect
+    /// precedence as `markdownViewerDir`; the sibling subdir under the same root.
+    public static func bundleIDDir(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        appSupportSubdir("com.markdownviewer.MarkdownViewer", environment: environment)
+    }
+
+    /// The app-support ROOT, honoring the redirect precedence: explicit
+    /// MDV_APP_SUPPORT override (session tests / sandbox — the pre-existing mechanism
+    /// AppCacheReset/SessionStore honor) > XCTest auto-redirect (hermetic tmp) > the
+    /// real `~/Library/Application Support` (production).
+    private static func resolvedRoot(_ environment: [String: String]) -> URL {
         if let override = environment["MDV_APP_SUPPORT"], !override.isEmpty {
-            base = URL(fileURLWithPath: override, isDirectory: true)
-        } else {
-            base = appSupportBase()
-                ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
+            return URL(fileURLWithPath: override, isDirectory: true)
         }
-        let dir = base.appendingPathComponent("MarkdownViewer", isDirectory: true)
+        return appSupportBase()
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+    }
+
+    private static func appSupportSubdir(_ name: String, environment: [String: String]) -> URL {
+        let dir = resolvedRoot(environment).appendingPathComponent(name, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
