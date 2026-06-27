@@ -137,6 +137,89 @@ fn tag_name(bytes: &[u8], from: usize) -> String {
     String::from_utf8_lossy(&name).into_owned()
 }
 
+/// One step of a block-level edit script (the patch the JS DOM applier executes
+/// against the persisted page's top-level children).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlockEdit {
+    /// Keep the next old block (it equals the next new block) — no DOM change.
+    Keep,
+    /// Remove the next old block (`removeChild`).
+    Delete,
+    /// Insert a new block at this position (`insertBefore` the current child).
+    Insert(String),
+}
+
+/// Compute a block-level edit script transforming `old` → `new` (the block lists
+/// from [`split_top_level_blocks`] of two renders). Common leading + trailing
+/// blocks are kept; the differing middle is deleted then inserted. The script is
+/// applied in order against the live DOM children. CORRECT for any input
+/// (`apply_block_patch(old, block_patch(old, new)) == new`); OPTIMAL for the
+/// common case — a localized edit where prefix+suffix match, so only the changed
+/// blocks churn instead of a full-page reload. A minimal-middle LCS refinement
+/// (fewer ops when blocks move) is a documented follow-on (TSK-838).
+#[must_use]
+pub fn block_patch(old: &[String], new: &[String]) -> Vec<BlockEdit> {
+    let on = old.len();
+    let nn = new.len();
+    let mut p = 0usize;
+    while p < on && p < nn && old.get(p) == new.get(p) {
+        p += 1;
+    }
+    let mut s = 0usize;
+    while s < on.saturating_sub(p)
+        && s < nn.saturating_sub(p)
+        && old.get(on.saturating_sub(1).saturating_sub(s))
+            == new.get(nn.saturating_sub(1).saturating_sub(s))
+    {
+        s += 1;
+    }
+    let mut edits = Vec::with_capacity(on.max(nn));
+    for _ in 0..p {
+        edits.push(BlockEdit::Keep);
+    }
+    let old_mid_end = on.saturating_sub(s);
+    let mut k = p;
+    while k < old_mid_end {
+        edits.push(BlockEdit::Delete);
+        k += 1;
+    }
+    let new_mid_end = nn.saturating_sub(s);
+    let mut k = p;
+    while k < new_mid_end {
+        if let Some(b) = new.get(k) {
+            edits.push(BlockEdit::Insert(b.clone()));
+        }
+        k += 1;
+    }
+    for _ in 0..s {
+        edits.push(BlockEdit::Keep);
+    }
+    edits
+}
+
+/// Apply a [`block_patch`] edit script to `old`, producing the new block list —
+/// the host model of the JS DOM applier (mirrors removeChild/insertBefore over the
+/// children array). The round-trip `apply_block_patch(old, block_patch(old, new))
+/// == new` is the differ's correctness contract.
+#[must_use]
+pub fn apply_block_patch(old: &[String], edits: &[BlockEdit]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    for e in edits {
+        match e {
+            BlockEdit::Keep => {
+                if let Some(b) = old.get(i) {
+                    out.push(b.clone());
+                }
+                i += 1;
+            }
+            BlockEdit::Delete => i += 1,
+            BlockEdit::Insert(b) => out.push(b.clone()),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +294,58 @@ mod tests {
             let md = parts.join("\n\n");
             let html = crate::markdown::render(&md).html;
             prop_assert_eq!(split_top_level_blocks(&html).concat(), html);
+        }
+    }
+
+    #[test]
+    fn block_patch_replace_insert_delete() {
+        let abc = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let ac = vec!["A".to_string(), "C".to_string()];
+        let axc = vec!["A".to_string(), "X".to_string(), "C".to_string()];
+        // Replace the middle block: keep A, delete B, insert X, keep C.
+        assert_eq!(
+            block_patch(&abc, &axc),
+            vec![
+                BlockEdit::Keep,
+                BlockEdit::Delete,
+                BlockEdit::Insert("X".to_string()),
+                BlockEdit::Keep
+            ]
+        );
+        // Round-trips for replace / insert / delete.
+        assert_eq!(apply_block_patch(&abc, &block_patch(&abc, &axc)), axc);
+        assert_eq!(apply_block_patch(&ac, &block_patch(&ac, &abc)), abc);
+        assert_eq!(apply_block_patch(&abc, &block_patch(&abc, &ac)), ac);
+    }
+
+    proptest! {
+        /// The differ is CORRECT: applying its patch to `old` yields `new`, for any
+        /// pair of block lists.
+        #[test]
+        fn block_patch_roundtrips(
+            old in prop::collection::vec("[a-d]{1,3}", 0..7),
+            new in prop::collection::vec("[a-d]{1,3}", 0..7),
+        ) {
+            prop_assert_eq!(apply_block_patch(&old, &block_patch(&old, &new)), new);
+        }
+
+        /// End-to-end: split two real renders, diff, apply the patch → the new
+        /// HTML reconstructs exactly (splitter + differ compose correctly over
+        /// pulldown-cmark output).
+        #[test]
+        fn split_then_patch_reconstructs_new_html(
+            a in prop::collection::vec(
+                prop::sample::select(vec!["# H", "text **b**", "- x\n- y", "> q", "---", "`c` here"]),
+                0..6),
+            b in prop::collection::vec(
+                prop::sample::select(vec!["# H2", "other text", "1. n\n2. m", "> quote2", "---", "```\nz\n```"]),
+                0..6),
+        ) {
+            let html_b = crate::markdown::render(&b.join("\n\n")).html;
+            let blocks_a = split_top_level_blocks(&crate::markdown::render(&a.join("\n\n")).html);
+            let blocks_b = split_top_level_blocks(&html_b);
+            let patched = apply_block_patch(&blocks_a, &block_patch(&blocks_a, &blocks_b));
+            prop_assert_eq!(patched.concat(), html_b);
         }
     }
 }
