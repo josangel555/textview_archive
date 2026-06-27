@@ -13,7 +13,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/ffi", "crates/serve", "crates/tui", "crates/web", "crates/highlight"]
+members = ["crates/core", "crates/ffi", "crates/serve", "crates/tui", "crates/web", "crates/highlight", "crates/pm"]
 # The CI gate (scripts/rust-core-gate.sh) and the Swift staticlib build operate
 # on the DEFAULT members only — core + ffi. The front-end bins (`tui`, a ratatui
 # TUI; `web`, a std-only HTTP server) are built explicitly
@@ -64,6 +64,13 @@ memchr = { version = "=2.8.1", default-features = false, features = ["alloc"] }
 # Per the rider, default features OFF drops fork/timeout/bit-set (extra dev-machine deps);
 # "std" is the minimal that gives the test runner + the `proptest!` macro.
 proptest = { version = "=1.9.0", default-features = false, features = ["std"] }
+# Owner-approved 2026-06-27 (TSK-345, the project-management store): ergonomic
+# SQLite bindings. default-features OFF drops cache+hashlink (→ no hashlink/
+# hashbrown) AND keeps the SYSTEM libsqlite3 (libsqlite3-sys, no "bundled") per
+# the v2 design — zero new NATIVE lib (macOS ships libsqlite3); pregenerated
+# bindings (no bindgen). Lives ONLY in the isolated mdvcore-pm crate so
+# mdvcore-core stays sans-IO / wasm-buildable.
+rusqlite = { version = "=0.39.0", default-features = false }
 
 # ---------------------------------------------------------------------------
 # Workspace lints. The pure `mdvcore-core` crate inherits these via

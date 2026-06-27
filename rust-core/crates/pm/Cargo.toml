@@ -1,0 +1,14 @@
+[package]
+name = "mdvcore-pm"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Project-management store (SQLite event-log + projection) for the MarkdownViewer Rust core. Isolated so mdvcore-core stays sans-IO."
+
+[lints]
+workspace = true
+
+[dependencies]
+rusqlite = { workspace = true }
