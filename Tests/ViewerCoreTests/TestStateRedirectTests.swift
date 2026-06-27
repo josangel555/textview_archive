@@ -37,5 +37,11 @@ final class TestStateRedirectTests: XCTestCase {
                       "recent-paths must redirect, got \(GoToPathHistoryStore.defaultStoreURL().path)")
         XCTAssertTrue(AuditLog().logURL.path.contains("MDVTestState-"),
                       "audit.jsonl must redirect, got \(AuditLog().logURL.path)")
+        XCTAssertTrue(ViewModeLockStore.defaultStoreURL().path.contains("MDVTestState-"),
+                      "view-mode-locks must redirect, got \(ViewModeLockStore.defaultStoreURL().path)")
+        XCTAssertTrue(LSPTrustStore.defaultStoreURL().path.contains("MDVTestState-"),
+                      "lsp-trust must redirect, got \(LSPTrustStore.defaultStoreURL().path)")
+        XCTAssertTrue(TerminalFavoritesStore.defaultURL().path.contains("MDVTestState-"),
+                      "terminal-favorites must redirect, got \(TerminalFavoritesStore.defaultURL().path)")
     }
 }

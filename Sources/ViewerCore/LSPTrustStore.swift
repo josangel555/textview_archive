@@ -35,11 +35,8 @@ public final class LSPTrustStore: @unchecked Sendable {
     }
 
     public static func defaultStoreURL() -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
             .appendingPathComponent("lsp-trusted-binaries.json", isDirectory: false)
     }
 

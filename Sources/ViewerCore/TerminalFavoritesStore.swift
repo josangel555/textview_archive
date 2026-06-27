@@ -34,14 +34,9 @@ public final class TerminalFavoritesStore {
     private var items: [Favorite] = []
 
     public static func defaultURL() -> URL {
-        let fm = FileManager.default
-        let support = (try? fm.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true
-        )) ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        let dir = support.appendingPathComponent("MarkdownViewer")
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("terminal-favorites.json")
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
+            .appendingPathComponent("terminal-favorites.json")
     }
 
     public init(storeURL: URL = TerminalFavoritesStore.defaultURL()) {
