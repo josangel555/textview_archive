@@ -2321,10 +2321,44 @@ pub fn recalc_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     /// Assert a formula evaluates to an exact numeric value (no panic! — clippy clean).
     fn num(s: &str, expected: f64) {
         assert_eq!(evaluate(s), Value::Number(expected), "for {s:?}");
+    }
+
+    /// TSK-585 (proptest lane): arithmetic differential — a generated, fully
+    /// parenthesized expr tree over `+ - *` and small integer leaves is parsed +
+    /// evaluated by the engine and compared to the SAME f64 arithmetic computed
+    /// in Rust. Both walk the identical tree in the identical order with f64, so
+    /// the results match EXACTLY (leaves <50, depth <=3 keep every value well
+    /// within f64's exact-integer range, so no rounding). Bounded depth → no
+    /// stack-overflow risk. Catches any parse/precedence/eval divergence.
+    fn arith() -> impl Strategy<Value = (String, f64)> {
+        let leaf = (0i64..50).prop_map(|n| (n.to_string(), n as f64));
+        leaf.prop_recursive(3, 16, 2, |inner| {
+            (inner.clone(), prop::sample::select(vec!['+', '-', '*']), inner).prop_map(
+                |((ls, lv), op, (rs, rv))| {
+                    let v = match op {
+                        '+' => lv + rv,
+                        '-' => lv - rv,
+                        _ => lv * rv,
+                    };
+                    (format!("({ls}{op}{rs})"), v)
+                },
+            )
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn formula_arithmetic_matches_rust((expr, expected) in arith()) {
+            match evaluate(&expr) {
+                Value::Number(v) => prop_assert_eq!(v, expected, "for {}", expr),
+                other => prop_assert!(false, "{} → {:?}, expected Number({})", expr, other, expected),
+            }
+        }
     }
 
     #[test]
