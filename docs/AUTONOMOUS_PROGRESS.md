@@ -14602,3 +14602,6 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 
 ## LOG (2026-06-27 cont. — TSK-250 Web back-forward wiring)
 - Wired core::nav::NavHistory into the Web front-end (TSK-250's "back-forward (Web)", the owner's ask — corrected my earlier over-decline of it as "browser-native covers it", which was synthesizing a skip). web/src/main.rs: main() threads a shared Mutex<NavHistory>; a confined /view pushes its target; /back + /forward routes navigate + replay the resolved /view target via route() (no re-push), serving a "no history" hint at the ends. Pure helpers view_target + back_forward_dir host-tested; 99 web tests green; poison-tolerant locks (gate-required, no unwrap). De-orphans the NavHistory model (cd64964e). Remaining: in-page back/forward BUTTONS in the page chrome (small render follow-up). TSK-250 Web half now functionally wired.
+
+## LOG (2026-06-27 cont. — TSK-250 Web back-forward buttons)
+- Added in-page ◀ Back / Forward ▶ chrome buttons to page() (all Web pages), hitting the /back + /forward routes (9c507ca4). Completes TSK-250's Web back-forward END TO END: NavHistory model (cd64964e) + routes (9c507ca4) + chrome buttons. Host-tested (page_chrome_has_back_forward_nav); 100 web tests green. TSK-250 → review (Web back-forward done; TUI multi-file tabs already built — open/cycle/close/persist).

@@ -2172,7 +2172,7 @@ th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
 fn page(title: &str, nav: &str, main_html: &str) -> String {
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t} · mdv-web</title>\
-<style>{css}</style></head><body><div class=\"app\"><nav><div class=\"reload\"><a href=\"/cmd\">\u{2318} Command</a> \u{00b7} <a href=\"/recent\">\u{2605} Recent</a></div>{nav}</nav><main>{main_html}</main></div></body></html>",
+<style>{css}</style></head><body><div class=\"app\"><nav><div class=\"reload\"><a href=\"/cmd\">\u{2318} Command</a> \u{00b7} <a href=\"/recent\">\u{2605} Recent</a> \u{00b7} <a href=\"/back\">\u{25c0} Back</a> \u{00b7} <a href=\"/forward\">Forward \u{25b6}</a></div>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title),
         css = palette_css(),
     )
@@ -3090,6 +3090,17 @@ mod tests {
             view.contains("@media (prefers-color-scheme: dark)"),
             "dark-mode media query present on the view page too:\n{view}"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn page_chrome_has_back_forward_nav() {
+        // TSK-250: every page's chrome offers the in-app back/forward links that
+        // hit the /back and /forward history routes.
+        let dir = fixture();
+        let browse = render_browse(&dir, SortKey::Name, false, "");
+        assert!(browse.contains("href=\"/back\""), "back link in the chrome:\n{browse}");
+        assert!(browse.contains("href=\"/forward\""), "forward link in the chrome:\n{browse}");
         let _ = fs::remove_dir_all(&dir);
     }
 
