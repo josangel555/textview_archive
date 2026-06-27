@@ -312,6 +312,41 @@ pub fn render_wire_aux(req: &[u8], aux: &[u8]) -> Result<Vec<u8>, crate::wire::W
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// Naive non-overlapping byte-substring scan — the independent reference for
+    /// the memmem-based [`hex_search_find`] (differential property below).
+    fn naive_find(pattern: &[u8], data: &[u8]) -> Vec<usize> {
+        if pattern.is_empty() || pattern.len() > data.len() {
+            return Vec::new();
+        }
+        let m = pattern.len();
+        let mut hits = Vec::new();
+        let mut i = 0;
+        while let Some(window) = data.get(i..i + m) {
+            if window == pattern {
+                hits.push(i);
+                i += m; // non-overlapping: advance the full pattern length
+            } else {
+                i += 1;
+            }
+        }
+        hits
+    }
+
+    proptest! {
+        /// TSK-399/585: the memmem find-all equals a naive non-overlapping byte
+        /// scan for arbitrary (needle, haystack) — verifies the SIMD refactor
+        /// preserved the non-overlapping (i += m) match semantics, incl. the
+        /// empty-needle and needle-longer-than-data edges.
+        #[test]
+        fn hex_search_find_matches_naive(
+            needle in prop::collection::vec(any::<u8>(), 0..6),
+            data in prop::collection::vec(any::<u8>(), 0..40),
+        ) {
+            prop_assert_eq!(hex_search_find(&needle, &data), naive_find(&needle, &data));
+        }
+    }
 
     /// TSK-562 coverage hole found by the teeth run: no prior test had a
     /// first-byte-matches-but-rest-doesn't case, so a search that reported
