@@ -1,6 +1,7 @@
 import XCTest
 import Combine
 import ViewerCore
+import TestSupport
 @testable import ViewerUI
 
 /// Host-safe @MainActor bookkeeping tests for RepoFocusTracker: the
@@ -34,24 +35,10 @@ final class RepoFocusTrackerTests: XCTestCase {
         defaults?.removePersistentDomain(forName: suiteName)
     }
 
-    @discardableResult
-    private func runGit(_ args: [String], in dir: URL) throws -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        p.currentDirectoryURL = dir
-        p.arguments = args
-        let pipe = Pipe(); p.standardOutput = pipe; p.standardError = pipe
-        try p.run(); p.waitUntilExit()
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    }
-
     private func makeRepo(_ name: String) throws -> URL {
-        let dir = tmp.appendingPathComponent(name)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        _ = try runGit(["init", "-q"], in: dir)
-        _ = try runGit(["config", "user.email", "t@e.com"], in: dir)
-        _ = try runGit(["config", "user.name", "T"], in: dir)
-        return dir
+        // Shared fixture (TSK-1174): GitTestRepo does the init + identity config
+        // in one shell call; `at:` keeps the deterministic `<name>` basename.
+        try GitTestRepo.makeRepo(prefix: name, at: tmp.appendingPathComponent(name))
     }
 
     private func makeModel() -> DocumentModel {
