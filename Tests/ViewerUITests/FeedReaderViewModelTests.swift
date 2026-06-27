@@ -148,4 +148,13 @@ final class FeedReaderViewModelTests: XCTestCase {
         XCTAssertEqual(n, 2, "imported both exported feeds")
         XCTAssertEqual(Set(vm.summaries.map(\.subscription.title)), ["A", "B"])
     }
+
+    func test_addFeedBar_isValidFeedURL_gate() {
+        // The add-feed button's enable-gate (pure + static so it's host-testable).
+        XCTAssertTrue(FeedReaderView.isValidFeedURL("https://a.example/feed"))
+        XCTAssertTrue(FeedReaderView.isValidFeedURL("  http://b.example  "), "trims surrounding whitespace")
+        XCTAssertFalse(FeedReaderView.isValidFeedURL(""), "empty is not addable")
+        XCTAssertFalse(FeedReaderView.isValidFeedURL("notaurl"), "no scheme/host")
+        XCTAssertFalse(FeedReaderView.isValidFeedURL("ftp:"), "scheme but no host")
+    }
 }

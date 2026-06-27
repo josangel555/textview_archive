@@ -18,6 +18,8 @@ struct FeedReaderView: View {
     /// The item shown in the reader pane (slice 2). View-local — tapping an item
     /// sets it (and marks it read via the model).
     @State private var selectedItemID: String?
+    /// The add-feed URL field's text (view-local).
+    @State private var newFeedURL = ""
 
     var body: some View {
         HSplitView {
@@ -68,37 +70,70 @@ struct FeedReaderView: View {
     // MARK: - Feed sidebar (summaries + unread rollups)
 
     private var feedSidebar: some View {
-        List {
-            ForEach(model.summaries) { summary in
-                Button {
-                    model.selectFeed(summary.subscription.url)
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(summary.subscription.title.isEmpty
-                             ? summary.subscription.url.absoluteString
-                             : summary.subscription.title)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        if summary.unread > 0 {
-                            Text("\(summary.unread)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            addFeedBar
+            Divider()
+            List {
+                ForEach(model.summaries) { summary in
+                    Button {
+                        model.selectFeed(summary.subscription.url)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(summary.subscription.title.isEmpty
+                                 ? summary.subscription.url.absoluteString
+                                 : summary.subscription.title)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            if summary.unread > 0 {
+                                Text("\(summary.unread)")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .listRowBackground(
+                        summary.subscription.url == model.selectedFeedURL
+                            ? Color.accentColor.opacity(0.15) : Color.clear)
+                    .accessibilityIdentifier("mdv.feedReader.feed")
                 }
-                .buttonStyle(.plain)
-                .listRowBackground(
-                    summary.subscription.url == model.selectedFeedURL
-                        ? Color.accentColor.opacity(0.15) : Color.clear)
-                .accessibilityIdentifier("mdv.feedReader.feed")
+            }
+            .overlay {
+                if model.summaries.isEmpty {
+                    Text("No feeds").foregroundStyle(.secondary)
+                }
             }
         }
-        .overlay {
-            if model.summaries.isEmpty {
-                Text("No feeds").foregroundStyle(.secondary)
-            }
+    }
+
+    /// Add-feed bar: a URL field + button wired to the host-tested `addFeed`.
+    private var addFeedBar: some View {
+        HStack(spacing: 6) {
+            TextField("Add feed URL…", text: $newFeedURL)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(addCurrentFeed)
+                .accessibilityIdentifier("mdv.feedReader.addField")
+            Button("Add", action: addCurrentFeed)
+                .disabled(!Self.isValidFeedURL(newFeedURL))
+                .accessibilityIdentifier("mdv.feedReader.addButton")
         }
+        .padding(6)
+    }
+
+    /// A pasted URL is addable only when it parses with both a scheme and a host
+    /// (so "" / "notaurl" / "ftp:" don't enable the button). Static + pure so the
+    /// validation is host-testable independent of the view.
+    static func isValidFeedURL(_ s: String) -> Bool {
+        guard let url = URL(string: s.trimmingCharacters(in: .whitespaces)) else { return false }
+        return url.scheme != nil && url.host != nil
+    }
+
+    private func addCurrentFeed() {
+        let trimmed = newFeedURL.trimmingCharacters(in: .whitespaces)
+        guard Self.isValidFeedURL(trimmed), let url = URL(string: trimmed) else { return }
+        model.addFeed(url: url)
+        newFeedURL = ""
     }
 
     // MARK: - Item list (the selected feed, newest-first, read-annotated)
