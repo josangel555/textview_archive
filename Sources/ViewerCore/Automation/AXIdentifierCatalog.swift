@@ -94,6 +94,8 @@ public enum AXIdentifierCatalog {
         Entry("mdv.terminal.pane", .tools, "Terminal pane (PTY tool window) surface."),
         Entry("mdv.settings.languages", .tools, "Settings: supported syntax-highlighting languages list."),
         Entry("mdv.review.composer", .tools, "Code-review comment composer."),
+        Entry("mdv.localHistory.list", .tools, "Local-history (file version timeline) list."),
+        Entry("mdv.packageExplorer.list", .tools, "Dependency-package explorer list."),
         // media
         Entry("mdv.audioEditor", .media, "The audio editor surface."),
         Entry("mdv.imageEditor", .media, "The image editor surface."),
