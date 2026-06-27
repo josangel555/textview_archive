@@ -131,6 +131,45 @@ final class ImageEditorPaintTests: XCTestCase {
         XCTAssertLessThanOrEqual(sample(vm.rendered!, x: 10, y: 2).r, 4, "midpoint painted black")
     }
 
+    // MARK: - TSK-1052 dirty-rect / incremental compositing (no full-canvas rebuild per dab)
+
+    func test_dirtyBounds_brushDab_isFootprintNotFullCanvas() throws {
+        let vm = try makeVM(w: 64, h: 64, r: 1, g: 1, b: 1)
+        vm.tool = .brush
+        vm.paintColor = .black
+        vm.brushRadius = 2
+        // First dab opens the paint session (which may mark a baseline dirty);
+        // consume that so the SECOND dab is a clean incremental measurement.
+        _ = vm.brushDab(atX: 30, y: 30)
+        _ = vm.consumeDirtyBounds()
+        let n = vm.brushDab(atX: 30, y: 30)
+        XCTAssertGreaterThan(n, 0, "dab painted pixels")
+        // TSK-1052 CONTRACT: the dab dirties only its ~5x5 footprint (radius 2),
+        // NOT the 64x64 canvas — so the renderer re-composites a sub-rect, not a
+        // full rebuild per dab.
+        let dirty = try XCTUnwrap(vm.consumeDirtyBounds(), "a dab must mark a dirty region")
+        XCTAssertLessThan(dirty.width, 16,
+            "dab dirty width is the brush footprint, not the full 64-wide canvas, got \(dirty.width)")
+        XCTAssertLessThan(dirty.height, 16, "dab dirty height is the footprint, got \(dirty.height)")
+        XCTAssertTrue(dirty.insetBy(dx: -1, dy: -1).contains(CGPoint(x: 30, y: 30)),
+            "dirty region covers the dab centre, got \(dirty)")
+        // consume RESETS — with no further paint the next consume is nil.
+        XCTAssertNil(vm.consumeDirtyBounds(), "consume resets the accumulator")
+    }
+
+    func test_dirtyBounds_floodFill_marksFullCanvas() throws {
+        let vm = try makeVM(w: 16, h: 16, r: 1, g: 1, b: 1)
+        vm.tool = .floodFill
+        vm.paintColor = .blue
+        _ = vm.consumeDirtyBounds()   // clear any baseline
+        _ = vm.applyTool(atX: 8, y: 8)
+        // A flood fill can touch any contiguous region → it marks the FULL canvas
+        // dirty (the incremental path correctly falls back to a full re-composite).
+        let dirty = try XCTUnwrap(vm.consumeDirtyBounds(), "flood fill must mark dirty")
+        XCTAssertEqual(dirty.width, 16, "flood fill dirties the full canvas width, got \(dirty.width)")
+        XCTAssertEqual(dirty.height, 16, "flood fill dirties the full canvas height, got \(dirty.height)")
+    }
+
     // MARK: - flood fill
 
     func test_floodFill_fillsContiguousRegion() throws {
