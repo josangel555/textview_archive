@@ -166,7 +166,15 @@ swift_test() {
     return $?
   fi
   local uid; uid=$(stat -f %u /dev/console)
-  local inner="cd $(printf '%q' "$ROOT_DIR") && ulimit -n 8192"
+  # Match the OUTER shell's open-files limit (line ~53): the asuser GUI session
+  # is a FRESH shell whose default soft limit is low, and the inner used to cap
+  # at 8192 — but the GUI-session MAIN sweep runs the live UI tiers (T4/T5/UAT)
+  # which spawn real apps + WebContent/GPU helpers, each holding many fds. As the
+  # suite grew, 8192 was exceeded → an EMFILE ("Too many open files") cascade of
+  # ~180 FALSE file-IO failures across the later suites (TSK-1283; same class as
+  # TSK-500/1236). Raise to 16384 with graceful fallback so the limit can only go
+  # up, never below the prior 8192.
+  local inner="cd $(printf '%q' "$ROOT_DIR") && { ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null || ulimit -n 4096 2>/dev/null || true; }"
   # NOTE (TSK-953): the live-app UAT cross-user temp problem is fixed in the
   # TEST HARNESS, not here. The asuser bridge runs xctest as ROOT but the app
   # spawns as the console user; root's per-user temp (`/var/folders/.../T`) is
