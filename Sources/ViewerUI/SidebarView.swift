@@ -1111,6 +1111,11 @@ private struct FileRowContextMenu: View {
         }
         Button("Copy Path") { Pasteboard.copy(node.url.path) }
         Button("Copy Relative Path") { Pasteboard.copy(relativePath) }
+        // TSK-1256 / OwnerWishlist "Copy Reference": an mdv:// agent reference an
+        // agent can open/locate via the element-ref pipeline (file form).
+        Button("Copy Reference") {
+            Pasteboard.copy(ElementRef.file(path: node.url.path, line: nil).serialized)
+        }
         Button("Reveal in Finder") { Finder.reveal(node.url) }
         // TSK-355: hand the file to its default external app (Preview, Numbers, …).
         Button("Open in Default App") { Finder.openInDefaultApp(node.url) }
