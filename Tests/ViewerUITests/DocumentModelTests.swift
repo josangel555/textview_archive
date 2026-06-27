@@ -243,10 +243,29 @@ final class DocumentModelTests: XCTestCase {
         let editor = NSView()
         let child = NSView()
         editor.addSubview(child)
-        XCTAssertTrue(EscFocusMonitor.firstResponderIsDocument(editor, editorView: editor),
+        XCTAssertTrue(EscFocusMonitor.firstResponderIsDocument(editor, editorViews: [editor]),
                       "the editor view itself is a document surface")
-        XCTAssertTrue(EscFocusMonitor.firstResponderIsDocument(child, editorView: editor),
+        XCTAssertTrue(EscFocusMonitor.firstResponderIsDocument(child, editorViews: [editor]),
                       "a descendant of the editor is a document surface")
+    }
+
+    /// TSK-1280 (same class as the Enter leak): MountedPanesLRU mounts several
+    /// editor panes; the focused pane may not be the topmost current(). Esc in
+    /// the SECOND (focused) pane must still classify as a document surface.
+    func test_escClassifier_secondMountedEditorIsDocument_multiPane() {
+        let pane1 = NSView()            // inactive mounted pane (old current())
+        let pane2 = NSView()            // focused pane
+        let child2 = NSView()
+        pane2.addSubview(child2)
+        XCTAssertTrue(
+            EscFocusMonitor.firstResponderIsDocument(child2, editorViews: [pane1, pane2]),
+            "focus inside any mounted editor is a document surface (multi-pane)")
+        // Teeth: with only the inactive pane known (the old current() behaviour),
+        // the same responder would be mis-classified as a tool surface → Esc
+        // mis-routed; the all-editors check closes this.
+        XCTAssertFalse(
+            EscFocusMonitor.firstResponderIsDocument(child2, editorViews: [pane1]),
+            "control: responder outside the only known editor is not a document (old bug)")
     }
 
     /// A bare NSView first-responder that is neither the editor, a WKWebView, nor
@@ -255,11 +274,11 @@ final class DocumentModelTests: XCTestCase {
     func test_escClassifier_toolViewIsNotDocument() {
         let editor = NSView()
         let toolView = NSView()   // e.g. the sidebar outline view
-        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(toolView, editorView: editor),
+        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(toolView, editorViews: [editor]),
                        "a non-editor non-webview tool view is not a document surface")
-        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(nil, editorView: editor),
+        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(nil, editorViews: [editor]),
                        "no first responder is not a document surface")
-        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(toolView, editorView: nil),
+        XCTAssertFalse(EscFocusMonitor.firstResponderIsDocument(toolView, editorViews: []),
                        "no editor registered + a tool view is not a document surface")
     }
 
@@ -273,13 +292,13 @@ final class DocumentModelTests: XCTestCase {
         contentRoot.addSubview(sourcePane)
         XCTAssertTrue(
             EscFocusMonitor.firstResponderIsDocument(
-                sourcePane, editorView: editor, contentRoot: contentRoot),
+                sourcePane, editorViews: [editor], contentRoot: contentRoot),
             "an NSText inside the content root is a document surface")
 
         let searchField = NSTextView()          // …vs a tool-surface NSText
         XCTAssertFalse(
             EscFocusMonitor.firstResponderIsDocument(
-                searchField, editorView: editor, contentRoot: contentRoot),
+                searchField, editorViews: [editor], contentRoot: contentRoot),
             "an NSText OUTSIDE the content root is a tool surface, not a document")
     }
 

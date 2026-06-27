@@ -61,12 +61,17 @@ struct EscFocusMonitor: NSViewRepresentable {
     @MainActor
     static func firstResponderIsDocument(
         _ firstResponder: NSResponder?,
-        editorView: NSView?,
+        editorViews: [NSView],
         contentRoot: NSView? = nil
     ) -> Bool {
         guard let fr = firstResponder else { return false }
-        if let editor = editorView, let v = fr as? NSView,
-           v === editor || v.isDescendant(of: editor) {
+        // Check EVERY mounted editor pane, not just one: with MountedPanesLRU the
+        // key window hosts several editor webviews and the focused one may not be
+        // `current()`, so the focused pane's Esc would be mis-classified as a
+        // tool surface — the same multi-pane leak class as SidebarKeyMonitor
+        // (TSK-1280). The caller passes registry.liveWebViews.
+        if let v = fr as? NSView,
+           editorViews.contains(where: { v === $0 || v.isDescendant(of: $0) }) {
             return true
         }
         if fr is WKWebView { return true }
@@ -93,8 +98,10 @@ struct EscFocusMonitor: NSViewRepresentable {
                     let consume: Bool = MainActor.assumeIsolated {
                         guard let self, let onEscape = self.onEscape else { return false }
                         let fr = NSApp.keyWindow?.firstResponder
-                        let editor = CodeMirrorEditorRegistry.shared.current()
-                        let onDoc = EscFocusMonitor.firstResponderIsDocument(fr, editorView: editor)
+                        // ALL mounted editor panes, not just current() — current()
+                        // can be an inactive pane under MountedPanesLRU (TSK-1280).
+                        let editors = CodeMirrorEditorRegistry.shared.liveWebViews
+                        let onDoc = EscFocusMonitor.firstResponderIsDocument(fr, editorViews: editors)
                         return onEscape(onDoc)
                     }
                     // Consume only when the model handled it; otherwise let
