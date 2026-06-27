@@ -184,6 +184,81 @@ pub fn can_transition(from: State, to: State) -> bool {
     )
 }
 
+/// The kind of actor performing a transition (v2 §2.2 ownership). Matches the
+/// `event_log.actor_kind` code: 0 human, 1 agent, 2 system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActorKind {
+    /// A human operator.
+    Human,
+    /// An autonomous agent.
+    Agent,
+    /// The orchestrator / runtime (lease expiry, escalation, routing).
+    System,
+}
+
+impl ActorKind {
+    /// The integer code stored in `event_log.actor_kind`.
+    #[must_use]
+    pub fn as_i64(self) -> i64 {
+        match self {
+            ActorKind::Human => 0,
+            ActorKind::Agent => 1,
+            ActorKind::System => 2,
+        }
+    }
+
+    /// Parse an `event_log.actor_kind` code.
+    #[must_use]
+    pub fn from_i64(n: i64) -> Option<Self> {
+        match n {
+            0 => Some(ActorKind::Human),
+            1 => Some(ActorKind::Agent),
+            2 => Some(ActorKind::System),
+            _ => None,
+        }
+    }
+}
+
+/// Whether `actor` may perform the `from → to` transition (v2 §2.2 ownership
+/// table — the SAFETY boundary, "encoded as data so an autonomous loop cannot
+/// skip a human gate even when instructed to"). Requires the transition be
+/// shape-legal ([`can_transition`]) AND the actor's kind be permitted for that
+/// edge.
+///
+/// Slice-4b scope: gates by actor KIND. Two finer guards are follow-ons (they
+/// need the projection's `claimed_by`/`verified_by` + a policy flag): the
+/// doer≠verifier IDENTITY check on `ClaimedDone → VerifiedDone` (here gated to
+/// System, the orchestrated verifier), and the `Proposed → Ready` auto-admit
+/// policy (here Human-only).
+#[must_use]
+pub fn can_actor_transition(actor: ActorKind, from: State, to: State) -> bool {
+    use ActorKind::{Agent, Human, System};
+    use State::{
+        Abandoned, Active, AssumptionsInvalidated, ClaimedDone, Closed, Parked, Proposed, Ready,
+        Rejected, VerifiedDone,
+    };
+    if !can_transition(from, to) {
+        return false;
+    }
+    let allowed: &[ActorKind] = match (from, to) {
+        (_, Abandoned) => &[Human],        // `* → Abandoned`: a human kill only
+        (Proposed, Ready) => &[Human],     // admission gate (auto-admit policy: follow-on)
+        (Proposed, Rejected) => &[Human],  // decline
+        (Ready, Active) => &[Agent, System],
+        (Active, Parked) => &[Agent, System],
+        (Active, ClaimedDone) => &[Agent], // the doer's ceiling
+        (Active, Ready) => &[System],      // lease-expiry requeue
+        (Parked, Ready) | (Parked, Active) => &[System],
+        (ClaimedDone, VerifiedDone) => &[System], // verifier (never the doer — identity guard follows)
+        (ClaimedDone, Active) => &[Agent, Human], // verifier kickback
+        (VerifiedDone, Closed) => &[Human, System],
+        (VerifiedDone, AssumptionsInvalidated) => &[System],
+        (AssumptionsInvalidated, Active) => &[Agent, System], // re-examine
+        _ => &[],
+    };
+    allowed.contains(&actor)
+}
+
 /// Open an in-memory store with the slice-2a schema. (The on-disk path is a later slice.)
 ///
 /// # Errors
@@ -480,5 +555,37 @@ mod tests {
         assert!(can_transition(State::AssumptionsInvalidated, State::Active)); // re-examine
         assert!(can_transition(State::Active, State::Ready)); // lease-expiry requeue
         assert!(can_transition(State::Parked, State::Active)); // resume
+    }
+
+    #[test]
+    fn actor_gating_doer_ceiling_and_human_gates() {
+        use ActorKind::{Agent, Human, System};
+        // The doer (agent) proposes done — but can NEVER self-certify; the
+        // (orchestrated) verifier does ClaimedDone → VerifiedDone.
+        assert!(can_actor_transition(Agent, State::Active, State::ClaimedDone));
+        assert!(!can_actor_transition(Agent, State::ClaimedDone, State::VerifiedDone));
+        assert!(can_actor_transition(System, State::ClaimedDone, State::VerifiedDone));
+        // Admission + rejection are human gates (an agent can't self-admit).
+        assert!(can_actor_transition(Human, State::Proposed, State::Ready));
+        assert!(!can_actor_transition(Agent, State::Proposed, State::Ready));
+        assert!(!can_actor_transition(Agent, State::Proposed, State::Rejected));
+        // Killing in-flight work is human-only.
+        assert!(can_actor_transition(Human, State::Active, State::Abandoned));
+        assert!(!can_actor_transition(Agent, State::Active, State::Abandoned));
+        assert!(!can_actor_transition(System, State::Active, State::Abandoned));
+    }
+
+    #[test]
+    fn actor_gating_requires_legal_shape() {
+        // Even a human cannot perform a shape-illegal transition.
+        assert!(!can_actor_transition(ActorKind::Human, State::Proposed, State::Active));
+    }
+
+    #[test]
+    fn actor_kind_code_roundtrips() {
+        for k in [ActorKind::Human, ActorKind::Agent, ActorKind::System] {
+            assert_eq!(ActorKind::from_i64(k.as_i64()), Some(k), "{k:?}");
+        }
+        assert_eq!(ActorKind::from_i64(9), None);
     }
 }
