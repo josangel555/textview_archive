@@ -186,6 +186,9 @@ fn main() -> io::Result<()> {
     // Single global recently-opened MRU shared across connection threads
     // (TSK-234) — single-user localhost server, so one list is the right scope.
     let recents: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    // TSK-250: in-app back/forward history shared across connection threads (the
+    // server-side equivalent of the TUI/Swift back-forward, over core::nav).
+    let history: Arc<Mutex<nav::NavHistory>> = Arc::new(Mutex::new(nav::NavHistory::new()));
     let inflight = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming().flatten() {
         // Reserve a slot; if we're already at the cap, answer 503 and drop the
@@ -199,6 +202,7 @@ fn main() -> io::Result<()> {
         }
         let root = Arc::clone(&root);
         let recents = Arc::clone(&recents);
+        let history = Arc::clone(&history);
         thread::spawn(move || {
             // Moving the guard in means a PANICKING handler still releases its
             // slot during unwind (audit TSK-551 — the old post-call decrement
@@ -206,7 +210,7 @@ fn main() -> io::Result<()> {
             // toward all-503). Under a panic=abort profile the process dies
             // loudly instead — explicit failure, never silent degradation.
             let _slot = slot;
-            let _ = handle_conn(stream, &root, &recents);
+            let _ = handle_conn(stream, &root, &recents, &history);
         });
     }
     Ok(())
@@ -254,7 +258,12 @@ fn refuse_overloaded(mut stream: TcpStream) -> io::Result<()> {
     stream.flush()
 }
 
-fn handle_conn(mut stream: TcpStream, root: &Path, recents: &Mutex<Vec<String>>) -> io::Result<()> {
+fn handle_conn(
+    mut stream: TcpStream,
+    root: &Path,
+    recents: &Mutex<Vec<String>>,
+    history: &Mutex<nav::NavHistory>,
+) -> io::Result<()> {
     // Bound stalled reads/writes so a slow-loris / hung client can't park this
     // worker thread (and its two FDs) indefinitely — the read returns an error,
     // the thread unwinds, and both FDs drop (AUDIT S3 DoS hardening).
@@ -269,9 +278,33 @@ fn handle_conn(mut stream: TcpStream, root: &Path, recents: &Mutex<Vec<String>>)
             // either serve the /recent page or fall through to the pure router.
             if let Some(p) = viewed_path(&req_line, root) {
                 record_recent(recents, &p);
+                // TSK-250: a confined /view also pushes its request target onto the
+                // in-app back/forward history so /back + /forward can replay it.
+                if let Some(t) = view_target(&req_line) {
+                    history.lock().unwrap_or_else(|e| e.into_inner()).push(t);
+                }
             }
             if is_recent_route(&req_line) {
                 ("200 OK", "text/html; charset=utf-8", recent_page(recents))
+            } else if let Some(forward) = back_forward_dir(&req_line) {
+                // TSK-250: navigate the in-app history and REPLAY the resolved /view
+                // target through `route` (no re-push — this is a back/forward move,
+                // not a new view). Poison-tolerant lock (the gate denies unwrap).
+                let target = {
+                    let mut h = history.lock().unwrap_or_else(|e| e.into_inner());
+                    if forward { h.forward() } else { h.back() }.map(str::to_owned)
+                };
+                match target {
+                    Some(t) => route(&format!("GET {t} HTTP/1.1"), root),
+                    None => (
+                        "200 OK",
+                        "text/html; charset=utf-8",
+                        format!(
+                            "<p class=\"hint\">No {} history.</p>",
+                            if forward { "forward" } else { "back" }
+                        ),
+                    ),
+                }
             } else {
                 route(&req_line, root)
             }
@@ -489,6 +522,35 @@ fn is_recent_route(req_line: &str) -> bool {
     let target = req_line.split_whitespace().nth(1).unwrap_or("/");
     let (path, _) = target.split_once('?').unwrap_or((target, ""));
     path == "/recent"
+}
+
+/// The request TARGET (e.g. `/view?path=foo`) of a `/view` GET request, recorded
+/// into the back/forward history so `/back` and `/forward` can replay it verbatim
+/// via `route`. `None` for any non-`/view` / non-GET line. (Confinement is
+/// enforced separately by `viewed_path` at the call site, so only confined views
+/// are ever pushed.)
+fn view_target(req_line: &str) -> Option<&str> {
+    let mut parts = req_line.split_whitespace();
+    if parts.next() != Some("GET") {
+        return None;
+    }
+    let target = parts.next()?;
+    let (path, _) = target.split_once('?').unwrap_or((target, ""));
+    (path == "/view").then_some(target)
+}
+
+/// Classify a `/back` / `/forward` request: `Some(true)` = forward, `Some(false)`
+/// = back, `None` = neither. These are the TSK-250 in-app history routes (parity
+/// with the TUI/Swift back-forward over the shared `nav::NavHistory`), distinct
+/// from the browser's own URL history.
+fn back_forward_dir(req_line: &str) -> Option<bool> {
+    let target = req_line.split_whitespace().nth(1).unwrap_or("/");
+    let (path, _) = target.split_once('?').unwrap_or((target, ""));
+    match path {
+        "/forward" => Some(true),
+        "/back" => Some(false),
+        _ => None,
+    }
 }
 
 /// Record a just-viewed file at the front of the shared MRU (de-duped, capped)
@@ -3346,7 +3408,7 @@ mod tests {
         let h = thread::spawn(move || {
             let recents = std::sync::Mutex::new(Vec::new());
             if let Ok((stream, _)) = listener.accept() {
-                let _ = handle_conn(stream, &root, &recents);
+                let _ = handle_conn(stream, &root, &recents, &Mutex::new(nav::NavHistory::new()));
             }
         });
         let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
@@ -3440,7 +3502,7 @@ mod tests {
         let root = dir.clone();
         let h = thread::spawn(move || {
             let recents = std::sync::Mutex::new(Vec::new());
-            if let Ok((stream, _)) = listener.accept() { let _ = handle_conn(stream, &root, &recents); }
+            if let Ok((stream, _)) = listener.accept() { let _ = handle_conn(stream, &root, &recents, &Mutex::new(nav::NavHistory::new())); }
         });
         let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
         conn.write_all(b"GET / HTTP/1.1\r\nHost: rebind.evil.com\r\n\r\n").unwrap();
@@ -3538,6 +3600,26 @@ mod tests {
         assert!(status.starts_with("404"), "unknown route → 404, got {status}");
         assert!(body.contains("not found"), "404 body: {body}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- TSK-250: in-app back/forward history (view_target + back_forward_dir) ---
+
+    #[test]
+    fn view_target_extracts_only_view_get_targets() {
+        assert_eq!(view_target("GET /view?path=foo HTTP/1.1"), Some("/view?path=foo"));
+        assert_eq!(view_target("GET /view HTTP/1.1"), Some("/view"));
+        assert_eq!(view_target("GET /browse?path=/ HTTP/1.1"), None);
+        assert_eq!(view_target("GET /back HTTP/1.1"), None);
+        assert_eq!(view_target("POST /view?path=foo HTTP/1.1"), None); // non-GET
+    }
+
+    #[test]
+    fn back_forward_dir_classifies_routes() {
+        assert_eq!(back_forward_dir("GET /back HTTP/1.1"), Some(false));
+        assert_eq!(back_forward_dir("GET /forward HTTP/1.1"), Some(true));
+        assert_eq!(back_forward_dir("GET /back?x=1 HTTP/1.1"), Some(false)); // query ignored
+        assert_eq!(back_forward_dir("GET /view?path=foo HTTP/1.1"), None);
+        assert_eq!(back_forward_dir("GET / HTTP/1.1"), None);
     }
 
     // --- TSK-234: recently-opened (/recent) ---
@@ -3674,7 +3756,7 @@ mod tests {
         let h = thread::spawn(move || {
             let recents = std::sync::Mutex::new(Vec::new());
             if let Ok((stream, _)) = listener.accept() {
-                let _ = handle_conn(stream, &root, &recents);
+                let _ = handle_conn(stream, &root, &recents, &Mutex::new(nav::NavHistory::new()));
             }
         });
         let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
