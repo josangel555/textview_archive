@@ -108,30 +108,33 @@ final class PaneRetentionMountProbeTests: WebViewTestCase {
         let host = host(ContentView(model: model))
         for u in urls.prefix(4) { model.open(url: u); settle(host) }
 
-        // Mounted set is full (4). Opening the 5th activates it and evicts the
-        // LRU tail → exactly ONE controlled dismantle.
+        // Mounted set is full (4). Opening the 5th activates it and evicts the LRU
+        // tail. Post-TSK-1042 the evicted RENDERED pane is NOT hard-dismantled — its
+        // dismantleNSView PARKS the WebView in the bounded WarmWebViewCache (capacity
+        // 4) for no-reload re-attach, returning before the webViewDismantles probe.
+        // So the eviction registers as exactly ONE STASH, not a dismantle. (TSK-1274:
+        // the old dismantles==1 expectation predated TSK-1042 and was a false "leak"
+        // — the warm cache is bounded, so retention is capped, not leaked.)
         MountProbe.reset()
+        WarmWebViewCache.shared.resetProbes()
         model.open(url: urls[4]); settle(host)
-        // TSK-1274: the evicted pane's dismantleNSView is an ASYNC SwiftUI teardown
-        // (a later re-body + NSView reconciliation), so the single fixed settle()
-        // above can sample BEFORE it fires (the bug repro'd as got 0). Pump until the
-        // dismantle lands (≤ ~6s), then drain two more cycles so an over-eager (>1)
-        // teardown (the TSK-621 class) is still caught. If it STILL reads 0 here, the
-        // dismantle genuinely never fires — a real retained-pane leak, not a timing
-        // artifact — and this assertion correctly fails.
+        // The park is driven by the async ForEach re-body, so pump until it lands
+        // (≤ ~6s) + drain two cycles to still catch an over-eager (>1) eviction.
         var pumps = 0
-        while MountProbe.webViewDismantles < 1 && pumps < 40 { settle(host); pumps += 1 }
+        while WarmWebViewCache.shared.stashes < 1 && pumps < 40 { settle(host); pumps += 1 }
         settle(host); settle(host)
 
         XCTAssertEqual(model.mountedPanes.count, 4, "mounted set exceeded capacity")
-        // TSK-1274 discriminator: the evicting 5th open must MAKE exactly one new pane
-        // (t4). If THIS passes (makes==1) but the dismantle below is 0, the ForEach
-        // added the new child yet RETAINED the evicted one → a real teardown miss
-        // (leak). If THIS also fails with makes==0, the ForEach didn't re-render in
-        // the NSHostingView host at all → a harness limitation, not a product leak.
+        // The evicting 5th open MAKES exactly one new pane (t4)…
         XCTAssertEqual(MountProbe.webViewMakes, 1,
             "5th open should make exactly one new pane, got \(MountProbe.webViewMakes)")
-        XCTAssertEqual(MountProbe.webViewDismantles, 1,
-            "LRU overflow should dismantle exactly the one evicted tail pane, got \(MountProbe.webViewDismantles)")
+        // …and PARKS exactly the one evicted tail pane in the warm cache (not 0 =
+        // under-evict, not >1 = the TSK-621 over-evict class).
+        XCTAssertEqual(WarmWebViewCache.shared.stashes, 1,
+            "LRU overflow should park exactly the one evicted tail pane, got \(WarmWebViewCache.shared.stashes)")
+        // …and does NOT hard-dismantle it: a rendered pane under capacity parks. A
+        // real dismantle only fires when the warm cache ALSO overflows (>8 panes).
+        XCTAssertEqual(MountProbe.webViewDismantles, 0,
+            "under capacity the eviction parks, not hard-dismantles, got \(MountProbe.webViewDismantles)")
     }
 }
