@@ -662,6 +662,63 @@ mod tests {
         }
     }
 
+    /// TSK-585: CSV quoting/escaping round-trip — the tricky path where parsers
+    /// hide bugs. Cells may contain commas, embedded `"`, and newlines; each is
+    /// ALWAYS-quoted (wrap in `"`, double internal `"`, per RFC-4180), so the
+    /// suite exercises the quoted-field DECODE: `""`→`"`, and quoted
+    /// delimiters/newlines stay IN-cell (don't split the field/row).
+    fn quoted_cell() -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop::sample::select(vec!['a', 'b', '1', ',', '"', '\n', ' ']),
+            0..8,
+        )
+        .prop_map(|chars| chars.into_iter().collect())
+    }
+
+    fn csv_encode(cell: &str) -> String {
+        format!("\"{}\"", cell.replace('"', "\"\""))
+    }
+
+    proptest! {
+        #[test]
+        fn csv_quoted_grid_roundtrips(
+            // cols>=2: a lone len==1 empty TERMINAL row hits the TSK-1286
+            // terminal-empty-row drop (it can't see quote-state); cols>=2 keeps
+            // the high-value embedded quote/comma/newline coverage green while
+            // that edge is tracked separately (+ pinned below).
+            grid in (2usize..6, 1usize..4).prop_flat_map(|(cols, rows)| {
+                prop::collection::vec(
+                    prop::collection::vec(quoted_cell(), cols..=cols),
+                    rows..=rows,
+                )
+            })
+        ) {
+            let text = grid
+                .iter()
+                .map(|row| {
+                    row.iter().map(|c| csv_encode(c)).collect::<Vec<_>>().join(",")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let table = parse_with(&text, ',', Limits::default());
+            prop_assert!(!table.truncated);
+            prop_assert_eq!(&table.header, &grid[0]);
+            prop_assert_eq!(table.rows.as_slice(), &grid[1..]);
+        }
+    }
+
+    /// Characterizes the TSK-1286 edge surfaced by the quoting proptest: a lone
+    /// quoted-empty TERMINAL row `""` is dropped by the terminal-empty-row
+    /// heuristic (it can't distinguish a genuine quoted-empty field from the
+    /// phantom row a trailing newline creates). Pins the CURRENT behavior so a
+    /// future fix flips this deliberately.
+    #[test]
+    fn lone_quoted_empty_terminal_row_dropped_tsk1286() {
+        let t = parse_with("\"\"", ',', Limits::default());
+        assert!(t.header.is_empty(), "TSK-1286: lone `\"\"` currently drops to []");
+        assert!(t.rows.is_empty());
+    }
+
     #[test]
     fn basic_comma() {
         let t = parse("a,b,c\n1,2,3\n4,5,6\n");
