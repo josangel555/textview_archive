@@ -27,6 +27,20 @@ public enum TestStateRedirect {
         return dir
     }
 
+    /// The `MarkdownViewer` app-support dir — the per-process tmp under XCTest (so
+    /// HOST tests never touch the dev's real state), else the real
+    /// `~/Library/Application Support/MarkdownViewer`. Stores append their own
+    /// file/subdir (TSK-1288 slice 2 — the shared seam the per-store default-dir
+    /// helpers route through).
+    public static func markdownViewerDir() -> URL {
+        let base = appSupportBase()
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let dir = base.appendingPathComponent("MarkdownViewer", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
     /// True iff running inside a test bundle. `XCTestConfigurationFilePath` is set
     /// only by the Xcode runner (NOT by SwiftPM `swift test`), so the reliable
     /// signal is XCTest LINKAGE: the class resolves in any test bundle (which links

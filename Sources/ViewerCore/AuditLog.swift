@@ -44,10 +44,8 @@ public final class AuditLog: @unchecked Sendable {
         directory: URL? = nil,
         defaults: UserDefaults = .standard
     ) {
-        self.directory = directory ?? FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first.map { $0.appendingPathComponent("MarkdownViewer", isDirectory: true) }
-            ?? FileManager.default.temporaryDirectory
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        self.directory = directory ?? TestStateRedirect.markdownViewerDir()
         self.defaults = defaults
     }
 

@@ -26,4 +26,16 @@ final class TestStateRedirectTests: XCTestCase {
         XCTAssertTrue(lh.hasSuffix("MarkdownViewer/LocalHistory"), "subpath preserved, got \(lh)")
         XCTAssertTrue(hs.hasSuffix("MarkdownViewer/history.json"), "subpath preserved, got \(hs)")
     }
+
+    // Slice 2: the other confirmed-polluted stores also redirect under XCTest.
+    func test_slice2_stores_redirectUnderXCTest() {
+        XCTAssertTrue(ScrollMemoryStore.defaultStoreURL().path.contains("MDVTestState-"),
+                      "scroll-memory must redirect, got \(ScrollMemoryStore.defaultStoreURL().path)")
+        XCTAssertTrue(BookmarksStore.defaultStoreURL().path.contains("MDVTestState-"),
+                      "bookmarks must redirect, got \(BookmarksStore.defaultStoreURL().path)")
+        XCTAssertTrue(GoToPathHistoryStore.defaultStoreURL().path.contains("MDVTestState-"),
+                      "recent-paths must redirect, got \(GoToPathHistoryStore.defaultStoreURL().path)")
+        XCTAssertTrue(AuditLog().logURL.path.contains("MDVTestState-"),
+                      "audit.jsonl must redirect, got \(AuditLog().logURL.path)")
+    }
 }

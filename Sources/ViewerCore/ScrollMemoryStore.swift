@@ -112,11 +112,8 @@ public final class ScrollMemoryStore {
     /// (the NO-bundle-id support dir, per CLAUDE.md), alongside
     /// `bookmarks.json` / `recent-paths.json` / `history.json`.
     public static func defaultStoreURL() -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
             .appendingPathComponent("scroll-memory.json", isDirectory: false)
     }
 
