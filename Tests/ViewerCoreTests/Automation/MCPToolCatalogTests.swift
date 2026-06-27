@@ -71,7 +71,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 14)
+        XCTAssertEqual(names.count, 15)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -80,9 +80,43 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
-            "list_runnable_tasks", "process_memory",
+            "list_runnable_tasks", "process_memory", "outline",
         ]
         XCTAssertEqual(names, expected)
+    }
+
+    // MARK: - outline
+
+    func test_outline_returnsMarkdownHeadings() throws {
+        host.visibleTextResult = "# Title\n\nintro\n\n## Section A\n\ntext\n\n### Sub\n\n## Section B\n"
+        let result = try MCPToolCatalog.dispatch(name: "outline", args: .object([:]), host: host)
+        guard case .object(let obj) = result,
+              case .array(let headings)? = obj["headings"],
+              case .int(let count)? = obj["count"] else {
+            XCTFail("malformed result: \(result)"); return
+        }
+        XCTAssertEqual(count, 4)
+        XCTAssertEqual(headings.count, 4)
+        // First heading: level 1, "Title", line 1 (teeth: a handler that ignored
+        // the text would return 0 headings).
+        guard case .object(let h0) = headings[0],
+              case .string(let title0)? = h0["title"],
+              case .int(let level0)? = h0["level"],
+              case .int(let line0)? = h0["line"] else {
+            XCTFail("malformed heading: \(headings[0])"); return
+        }
+        XCTAssertEqual(title0, "Title")
+        XCTAssertEqual(level0, 1)
+        XCTAssertEqual(line0, 1)
+    }
+
+    func test_outline_emptyForNonMarkdown() throws {
+        host.visibleTextResult = "func main() {}\nlet x = 1\n"
+        let result = try MCPToolCatalog.dispatch(name: "outline", args: .object([:]), host: host)
+        guard case .object(let obj) = result, case .int(let count)? = obj["count"] else {
+            XCTFail("malformed: \(result)"); return
+        }
+        XCTAssertEqual(count, 0)
     }
 
     // MARK: - process_memory

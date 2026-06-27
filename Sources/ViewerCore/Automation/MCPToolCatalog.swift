@@ -31,6 +31,7 @@ public enum MCPToolCatalog {
         searchFilesDescriptor,
         gotoLineDescriptor,
         visibleTextDescriptor,
+        outlineDescriptor,
         currentStateDescriptor,
         toggleBookmarkDescriptor,
         listBookmarksDescriptor,
@@ -56,6 +57,7 @@ public enum MCPToolCatalog {
         case "search_files":      return try searchFiles(args, host)
         case "goto_line":         return try gotoLine(args, host)
         case "visible_text":      return try visibleText(args, host)
+        case "outline":           return try outline(args, host)
         case "current_state":     return try currentState(args, host)
         case "toggle_bookmark":   return try toggleBookmark(args, host)
         case "list_bookmarks":    return try listBookmarks(args, host)
@@ -423,6 +425,38 @@ public enum MCPToolCatalog {
             "text": .string(text),
             "truncated": .bool(false),
             "totalBytes": .int(byteCount),
+        ])
+    }
+
+    // MARK: - outline
+
+    private static let outlineDescriptor = MCP.ToolDescriptor(
+        name: "outline",
+        description: "Return the Markdown heading outline of the currently-selected tab as "
+            + "[{level (1-6), title, line (1-based)}] — for agent navigation / jump-to-heading. "
+            + "Empty for non-Markdown content.",
+        inputSchema: emptySchema
+    )
+
+    /// Surfaces the built-but-unconsumed `MarkdownOutline` parser (TSK-511) as an
+    /// agent-drivable read tool: the document's heading TOC, so an agent can
+    /// `goto_line` to a section instead of full-text scanning. Pure read over the
+    /// active tab's text; output capped so a pathological all-headings document
+    /// can't return an unbounded payload.
+    private static func outline(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let headings = MarkdownOutline.headings(in: host.automationVisibleText())
+        let cap = 5000
+        let items = headings.prefix(cap).map { h in
+            MCP.Value.object([
+                "level": .int(h.level),
+                "title": .string(h.title),
+                "line": .int(h.line),
+            ])
+        }
+        return .object([
+            "headings": .array(Array(items)),
+            "count": .int(headings.count),
+            "truncated": .bool(headings.count > cap),
         ])
     }
 
