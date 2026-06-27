@@ -53,7 +53,7 @@ approve/reject UX-semantics (TSK-941) · web browser (TSK-676) · rich-text/.doc
 **C. Engine/design-blocked** (need a live engine or sandbox design):
 LSP→MCP bridge (TSK-279) · agent-services MCP: semantic-search/refactor/test-runner[sandbox]/code-review (TSK-1154) · Java formatter ext-tool (TSK-298) · CLI find-instance/socket RPC (TSK-353).
 
-**D. Dep-approval (owner)** — rust hardening: cargo-fuzz (TSK-584) · proptest (TSK-585) · wasm (TSK-587) · cargo-mutants (TSK-1137) · memchr (TSK-399). App: rusqlite (TSK-345).
+**D. Deps — ✅ APPROVED 2026-06-27, NOW ACTIONABLE** (build with the `default-features=false` + pinned-version rider): memchr (TSK-399, SIMD substring → filter/hex_search) · proptest (TSK-585, property tests) · cargo-fuzz (TSK-584, fuzz targets, dev-only) · wasm32 target (TSK-587, portable core) · rusqlite (TSK-345, unblocks project-management build). **NOT approved:** cargo-mutants (TSK-1137) — owner not sold on its dep hygiene; DIY decision pending (mutation testing: no maintained lightweight alt [mutagen is dead]; options = run cargo-mutants ad-hoc as an EXTERNAL tool [it's not a project dep] / a small syn-based DIY mutator [3 proc-macro crates] / hand-curated MDVNegativeControl extension [dep-free, manual]).
 
 **E. Owner close / TCC** — the ~400 test-backed review+fixed pile (on-screen close) · TSK-590 epic (20/21 done; close or pending TSK-598) · AX-execution TCC grant (TSK-1254/1261/1263) · formula/fold gate-flips (de-risked; await owner soak+flip).
 
