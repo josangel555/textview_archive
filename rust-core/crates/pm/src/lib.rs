@@ -661,6 +661,31 @@ pub fn depends_on(conn: &Connection, id: &str) -> rusqlite::Result<Vec<String>> 
     rows.collect()
 }
 
+/// The ids that directly depend on `id` (the reverse of [`depends_on`]) — impact
+/// analysis: "what is blocked by this?".
+///
+/// # Errors
+/// Propagates any rusqlite query error.
+pub fn dependents_of(conn: &Connection, id: &str) -> rusqlite::Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT from_id FROM wi_edge WHERE to_id = ?1 AND kind = 0 ORDER BY from_id")?;
+    let rows = stmt.query_map([id], |r| r.get(0))?;
+    rows.collect()
+}
+
+/// The ids that consume `id`'s output (the reverse of a `Consumes` edge). When
+/// `id`'s output changes these are the items whose assumptions may be invalidated
+/// — the §1.7 reverse-ripple set (the auto-cascade transition is a later slice).
+///
+/// # Errors
+/// Propagates any rusqlite query error.
+pub fn consumers_of(conn: &Connection, id: &str) -> rusqlite::Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT from_id FROM wi_edge WHERE to_id = ?1 AND kind = 1 ORDER BY from_id")?;
+    let rows = stmt.query_map([id], |r| r.get(0))?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1051,6 +1076,21 @@ mod tests {
         add_edge(&conn, "A", "B", EdgeKind::DependsOn)?;
         let ids: Vec<String> = work_next(&conn)?.into_iter().map(|w| w.id).collect();
         assert_eq!(ids, vec!["A"], "A unblocks once its only dep is verified_done");
+        Ok(())
+    }
+
+    #[test]
+    fn reverse_edge_queries_for_impact_analysis() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        for id in ["A", "B", "C"] {
+            append(&mut conn, 1, "h", 0, &created(id, id))?;
+        }
+        add_edge(&conn, "A", "C", EdgeKind::DependsOn)?; // A depends on C
+        add_edge(&conn, "B", "C", EdgeKind::Consumes)?; // B consumes C
+        assert_eq!(dependents_of(&conn, "C")?, vec!["A".to_string()]);
+        assert_eq!(consumers_of(&conn, "C")?, vec!["B".to_string()]);
+        assert!(dependents_of(&conn, "A")?.is_empty());
+        assert!(consumers_of(&conn, "A")?.is_empty());
         Ok(())
     }
 }
