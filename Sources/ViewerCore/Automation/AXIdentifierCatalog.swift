@@ -108,9 +108,14 @@ public enum AXIdentifierCatalog {
         Entry("mdv.actionHistory", .tools, "The action-history (reversible-actions) view."),
         Entry("mdv.problems", .tools, "The problems / diagnostics panel."),
         Entry("mdv.claudeTimeline", .tools, "The Claude session timeline view."),
+        Entry("mdv.instrumentation", .tools, "The instrumentation (observability) window."),
+        Entry("mdv.logs", .tools, "The system logs window."),
+        Entry("mdv.metrics", .tools, "The system metrics window."),
         // media
         Entry("mdv.audioEditor", .media, "The audio editor surface."),
         Entry("mdv.imageEditor", .media, "The image editor surface."),
+        Entry("mdv.imagePreview", .media, "The image preview / viewer surface."),
+        Entry("mdv.audioPreview", .media, "The audio preview / player surface."),
     ]
 
     /// All catalogued ids.
