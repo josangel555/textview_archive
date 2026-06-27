@@ -21,3 +21,7 @@ pulldown-cmark = { workspace = true }
 rmp-serde = { workspace = true }
 # TSK-399: memmem SIMD substring for hex_search_find (already in-tree, zero new surface).
 memchr = { workspace = true }
+
+[dev-dependencies]
+# TSK-585: property-test lane (owner-approved 2026-06-27, dev-only).
+proptest = { workspace = true }

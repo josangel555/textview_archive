@@ -174,6 +174,38 @@ pub fn apply_rows(rows: &[Vec<String>], query: &Query) -> (Vec<u32>, Vec<Vec<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// TSK-585 (proptest lane): differential property — `matching_indices_in` must
+    /// equal a naive case-insensitive substring filter for arbitrary rows × query.
+    /// ASCII inputs exercise the no-alloc fast path (`ascii_contains_ignore_case`),
+    /// which must agree with `to_lowercase().contains()`. Built-in strategies (no
+    /// custom Arbitrary); a Unicode-input suite can follow.
+    fn naive_matching(rows: &[Vec<String>], query: &str) -> Vec<u32> {
+        if query.is_empty() {
+            return (0..rows.len())
+                .map(|i| u32::try_from(i).unwrap_or(u32::MAX))
+                .collect();
+        }
+        let q = query.to_lowercase();
+        rows.iter()
+            .enumerate()
+            .filter(|(_, row)| row.iter().any(|c| c.to_lowercase().contains(&q)))
+            .map(|(i, _)| u32::try_from(i).unwrap_or(u32::MAX))
+            .collect()
+    }
+
+    proptest! {
+        #[test]
+        fn matching_indices_equals_naive(
+            rows in prop::collection::vec(
+                prop::collection::vec("[a-zA-Z0-9 ]{0,6}", 0..4), 0..16),
+            query in "[a-zA-Z0-9 ]{0,4}",
+        ) {
+            let q = Query { text: query.clone(), scope: Scope::All };
+            prop_assert_eq!(matching_indices_in(&rows, &q), naive_matching(&rows, &query));
+        }
+    }
 
     fn table() -> Table {
         Table {

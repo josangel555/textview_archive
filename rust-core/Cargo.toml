@@ -60,6 +60,10 @@ pulldown-cmark = { version = "=0.13.4", default-features = false }
 # promotes it to a direct dep. Per the owner rider: default features OFF; "alloc"
 # is the one feature memmem::Finder needs (wasm-forward — no "std" required).
 memchr = { version = "=2.8.1", default-features = false, features = ["alloc"] }
+# Owner-approved 2026-06-27 (TSK-585): the property-test lane. DEV-only (never shipped).
+# Per the rider, default features OFF drops fork/timeout/bit-set (extra dev-machine deps);
+# "std" is the minimal that gives the test runner + the `proptest!` macro.
+proptest = { version = "=1.9.0", default-features = false, features = ["std"] }
 
 # ---------------------------------------------------------------------------
 # Workspace lints. The pure `mdvcore-core` crate inherits these via
