@@ -27,6 +27,16 @@ final class TestStateRedirectTests: XCTestCase {
         XCTAssertTrue(hs.hasSuffix("MarkdownViewer/history.json"), "subpath preserved, got \(hs)")
     }
 
+    // markdownViewerDir honors the pre-existing MDV_APP_SUPPORT override (session
+    // tests / sandbox), taking precedence over the XCTest auto-redirect.
+    func test_markdownViewerDir_honorsAppSupportOverride() {
+        let custom = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MDV-override-\(UUID().uuidString)")
+        let dir = TestStateRedirect.markdownViewerDir(environment: ["MDV_APP_SUPPORT": custom.path])
+        XCTAssertEqual(dir, custom.appendingPathComponent("MarkdownViewer", isDirectory: true),
+                       "MDV_APP_SUPPORT must override the redirect, got \(dir.path)")
+    }
+
     // Slice 2: the other confirmed-polluted stores also redirect under XCTest.
     func test_slice2_stores_redirectUnderXCTest() {
         XCTAssertTrue(ScrollMemoryStore.defaultStoreURL().path.contains("MDVTestState-"),

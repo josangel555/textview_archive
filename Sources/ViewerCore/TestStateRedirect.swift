@@ -32,10 +32,20 @@ public enum TestStateRedirect {
     /// `~/Library/Application Support/MarkdownViewer`. Stores append their own
     /// file/subdir (TSK-1288 slice 2 — the shared seam the per-store default-dir
     /// helpers route through).
-    public static func markdownViewerDir() -> URL {
-        let base = appSupportBase()
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
+    public static func markdownViewerDir(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        // Precedence: explicit MDV_APP_SUPPORT override (session tests / sandbox — the
+        // pre-existing mechanism AppCacheReset/SessionStore honor) > XCTest auto-redirect
+        // (hermetic tmp) > the real app-support dir (production).
+        let base: URL
+        if let override = environment["MDV_APP_SUPPORT"], !override.isEmpty {
+            base = URL(fileURLWithPath: override, isDirectory: true)
+        } else {
+            base = appSupportBase()
+                ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
+        }
         let dir = base.appendingPathComponent("MarkdownViewer", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
