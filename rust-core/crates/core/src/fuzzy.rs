@@ -169,6 +169,43 @@ pub fn rank_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// Independent naive CI-subsequence check (greedy-leftmost — complete for
+    /// subsequence EXISTENCE) using the engine's own [`ci_eq`]; the reference for
+    /// the differential property below.
+    fn naive_ci_subseq(query: &str, target: &str) -> bool {
+        let t: Vec<char> = target.chars().collect();
+        let mut ti = 0;
+        'q: for qc in query.chars() {
+            while let Some(&tc) = t.get(ti) {
+                ti += 1;
+                if ci_eq(qc, tc) {
+                    continue 'q;
+                }
+            }
+            return false; // ran out of target before matching this query char
+        }
+        true
+    }
+
+    proptest! {
+        /// TSK-633/585: `match_query` returns Some IFF `query` is a
+        /// case-insensitive SUBSEQUENCE of `target` (its documented contract) —
+        /// a differential vs an independent naive CI-subsequence scan over
+        /// arbitrary (query, target). Guards the scoring loop's early-exits from
+        /// ever rejecting a real match or accepting a non-match.
+        #[test]
+        fn match_query_is_some_iff_ci_subsequence(
+            query in "[a-zA-Z0-9 ._/-]{0,6}",
+            target in "[a-zA-Z0-9 ._/-]{0,20}",
+        ) {
+            prop_assert_eq!(
+                match_query(&query, &target).is_some(),
+                naive_ci_subseq(&query, &target)
+            );
+        }
+    }
 
     #[test]
     fn empty_query_matches_everything_with_zero() {
