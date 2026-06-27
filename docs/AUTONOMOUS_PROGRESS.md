@@ -14483,3 +14483,17 @@ Owner approved memchr/proptest/cargo-fuzz/wasm32/rusqlite (2026-06-27) + correct
 
 ### BOUNDARY (honest state)
 PM core COMPLETE (slices 1-4c, 6 slices, all host-tested). Remaining PM: 2b (parked, crypto-hash) / 4d enforcement-wiring [wire the state-machine + actor-gating + identity into append - needs a crate-wide PmError model, a focused effort] / 5 FFI exposure [cross-cutting Swift libsqlite3 link - consumer/owner context]. The store has no consumer yet. Two owner decisions outstanding: the crypto-hash (TSK-1287) + the PM epic direction (continue autonomously vs supervised). The autonomous host-completable surface is otherwise BACKLOG-confirmed drained; the deps + PM were the genuine fresh work this run.
+
+## LOG (2026-06-27 cont. — PM store HOST-SIDE CORE COMPLETE, 10 slices)
+
+The mdvcore-pm epic (TSK-345) reached a complete, enforced, event-sourced host-side core — 10 gate-green slices, commits 6719e348..70c0b6d7:
+- 1 crate + system-libsqlite3 · 2a event-sourcing (append-and-project atomically + replay-as-fold) · 3 on-disk persistence · 4a lifecycle state-machine (v2 §2.2, 10 classes) · 4b actor-gating (kind) · 4c work_next/state_rollup · 4d enforcement wired into append (PmError — illegal/unauthorized/unknown rejected before writing) · 4e doer≠verifier identity guard (§1.4 capstone — an agent structurally cannot self-certify) · 4f-i dependency edges (wi_edge + transactional cycle rejection via recursive CTE, §1.7) · 4f-ii dependency-aware work_next (finish-to-start gate).
+
+The store: append-only hash-... (chain DEFERRED to 2b) log + materialized projection, atomic commit, deterministic replay, full enforced state machine + safety boundary (kind + identity), on-disk persistence, the Ready dispatch queue with dependency gating, the dependency graph with cycle-safety. ~40 host tests.
+
+### BOUNDARY (PM epic)
+The HOST-COMPLETABLE PM core is DONE. Remaining is NOT clean host-slice work:
+- **slice 2b** hash-chain — PARKED on the crypto-hash dep (TSK-1287, owner decision sha2/blake3/reject).
+- **slice 5** FFI exposure — CROSS-CUTTING: stateful Connection handle across the extern-C boundary + adding mdvcore-pm to the ffi default-members → the Swift app must link libsqlite3 (build-app.sh) → VM/owner-validated. Needs a consumer + the "PM epic direction" answer.
+- **consumes-ripple (4g)** — the §1.7 reverse-ripple (auto-invalidate VerifiedDone consumers when an upstream output changes) — intricate cascade semantics, a focused-design slice.
+Two owner decisions standing: crypto-hash (TSK-1287) + PM epic direction (continue autonomously vs supervised). Otherwise the autonomous host-surface is BACKLOG-confirmed drained.
