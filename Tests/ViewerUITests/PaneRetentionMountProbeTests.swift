@@ -112,6 +112,16 @@ final class PaneRetentionMountProbeTests: WebViewTestCase {
         // LRU tail → exactly ONE controlled dismantle.
         MountProbe.reset()
         model.open(url: urls[4]); settle(host)
+        // TSK-1274: the evicted pane's dismantleNSView is an ASYNC SwiftUI teardown
+        // (a later re-body + NSView reconciliation), so the single fixed settle()
+        // above can sample BEFORE it fires (the bug repro'd as got 0). Pump until the
+        // dismantle lands (≤ ~6s), then drain two more cycles so an over-eager (>1)
+        // teardown (the TSK-621 class) is still caught. If it STILL reads 0 here, the
+        // dismantle genuinely never fires — a real retained-pane leak, not a timing
+        // artifact — and this assertion correctly fails.
+        var pumps = 0
+        while MountProbe.webViewDismantles < 1 && pumps < 40 { settle(host); pumps += 1 }
+        settle(host); settle(host)
 
         XCTAssertEqual(model.mountedPanes.count, 4, "mounted set exceeded capacity")
         XCTAssertEqual(MountProbe.webViewDismantles, 1,
