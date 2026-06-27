@@ -338,6 +338,38 @@ mod tests {
             let html = crate::markdown::render(&md).html;
             prop_assert_eq!(split_top_level_blocks(&html).concat(), html);
         }
+
+        /// TSK-838: the splitter must be PANIC-FREE and EXACT on ARBITRARY,
+        /// possibly-malformed HTML-ish input — not just well-formed rendered MD.
+        /// The host-available substitute for the CDN-blocked cargo-fuzz lane (a
+        /// new byte-level parser SHOULD get robustness coverage). Mixes text,
+        /// open/close/self-close tags, comments, lone `<`/`>`/`<!--`, and
+        /// multi-byte UTF-8; the split is a PARTITION so concat must equal the
+        /// input for ANY bytes, and no input may panic the scanner (unclosed tag,
+        /// lone bracket, broken comment, UTF-8 boundary).
+        #[test]
+        fn split_arbitrary_htmlish_input_rejoins_and_never_panics(
+            tokens in prop::collection::vec(
+                prop_oneof![
+                    "[a-z .,]{0,6}",
+                    "<[a-z]{1,5}>",
+                    "</[a-z]{1,5}>",
+                    "<[a-z]{1,5}/>",
+                    "<!--[a-z ]{0,6}-->",
+                    Just("<".to_string()),
+                    Just(">".to_string()),
+                    Just("<!--".to_string()),
+                    Just("<br>".to_string()),
+                    "[éñ©€]{0,3}",
+                ],
+                0..30,
+            ),
+        ) {
+            let input = tokens.concat();
+            // Partition invariant on arbitrary input: no byte lost/added/reordered,
+            // and no panic (proptest fails the case if the scanner panics).
+            prop_assert_eq!(split_top_level_blocks(&input).concat(), input);
+        }
     }
 
     #[test]
