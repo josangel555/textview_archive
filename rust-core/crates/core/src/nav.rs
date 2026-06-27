@@ -339,9 +339,151 @@ fn name_cmp(a: &Entry, b: &Entry) -> core::cmp::Ordering {
     a.name.to_lowercase().cmp(&b.name.to_lowercase())
 }
 
+/// Back/forward navigation history (TSK-250) — a linear visited-path stack with a
+/// cursor and standard browser semantics: navigating to a new path after going
+/// `back` truncates the forward tail. Pure + front-end-agnostic (the Web front-end
+/// wires it; the TUI/Swift can reuse the same core). Consecutive duplicate pushes
+/// are coalesced (re-opening the current path doesn't grow the stack).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct NavHistory {
+    entries: Vec<String>,
+    /// Index of the current entry in `entries`; 0 (and meaningless) when empty.
+    cursor: usize,
+}
+
+impl NavHistory {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The path currently navigated to, or `None` when the history is empty.
+    pub fn current(&self) -> Option<&str> {
+        self.entries.get(self.cursor).map(String::as_str)
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Navigate to `path`: drop any forward tail (entries after the cursor), then
+    /// append `path` and point the cursor at it. A no-op when `path` already IS the
+    /// current entry (a refresh / re-open of the current page doesn't grow the stack).
+    pub fn push(&mut self, path: impl Into<String>) {
+        let path = path.into();
+        if self.current() == Some(path.as_str()) {
+            return;
+        }
+        if !self.entries.is_empty() {
+            self.entries.truncate(self.cursor + 1);
+        }
+        self.entries.push(path);
+        self.cursor = self.entries.len() - 1;
+    }
+
+    pub fn can_back(&self) -> bool {
+        self.cursor > 0 && !self.entries.is_empty()
+    }
+
+    pub fn can_forward(&self) -> bool {
+        self.cursor + 1 < self.entries.len()
+    }
+
+    /// Step back one entry and return the now-current path, or `None` at the start.
+    pub fn back(&mut self) -> Option<&str> {
+        if self.can_back() {
+            self.cursor -= 1;
+            self.current()
+        } else {
+            None
+        }
+    }
+
+    /// Step forward one entry and return the now-current path, or `None` at the end.
+    pub fn forward(&mut self) -> Option<&str> {
+        if self.can_forward() {
+            self.cursor += 1;
+            self.current()
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nav_history_empty_has_no_current_and_no_moves() {
+        let mut h = NavHistory::new();
+        assert_eq!(h.current(), None);
+        assert!(!h.can_back());
+        assert!(!h.can_forward());
+        assert_eq!(h.back(), None);
+        assert_eq!(h.forward(), None);
+        assert!(h.is_empty());
+    }
+
+    #[test]
+    fn nav_history_push_advances_current() {
+        let mut h = NavHistory::new();
+        h.push("a");
+        assert_eq!(h.current(), Some("a"));
+        h.push("b");
+        assert_eq!(h.current(), Some("b"));
+        assert!(h.can_back());
+        assert!(!h.can_forward());
+    }
+
+    #[test]
+    fn nav_history_back_forward_round_trip_and_clamps() {
+        let mut h = NavHistory::new();
+        h.push("a");
+        h.push("b");
+        h.push("c");
+        assert_eq!(h.back(), Some("b"));
+        assert_eq!(h.back(), Some("a"));
+        assert!(!h.can_back());
+        assert_eq!(h.back(), None); // clamped at the start
+        assert_eq!(h.forward(), Some("b"));
+        assert_eq!(h.forward(), Some("c"));
+        assert!(!h.can_forward());
+        assert_eq!(h.forward(), None); // clamped at the end
+    }
+
+    #[test]
+    fn nav_history_push_after_back_truncates_forward_tail() {
+        let mut h = NavHistory::new();
+        h.push("a");
+        h.push("b");
+        h.push("c");
+        h.back(); // now at "b"
+        assert_eq!(h.current(), Some("b"));
+        h.push("d"); // truncates "c", appends "d"
+        assert_eq!(h.current(), Some("d"));
+        assert!(!h.can_forward()); // "c" is gone
+        assert_eq!(h.back(), Some("b"));
+        assert_eq!(h.back(), Some("a"));
+        assert_eq!(h.len(), 3); // a, b, d
+    }
+
+    #[test]
+    fn nav_history_consecutive_duplicate_push_is_noop_but_revisit_adds() {
+        let mut h = NavHistory::new();
+        h.push("a");
+        h.push("a"); // re-open the current path = no-op
+        assert_eq!(h.len(), 1);
+        assert!(!h.can_back());
+        // a NON-consecutive revisit DOES add (browser semantics).
+        h.push("b");
+        h.push("a");
+        assert_eq!(h.len(), 3); // a, b, a
+        assert_eq!(h.current(), Some("a"));
+    }
 
     fn entry(name: &str, is_dir: bool, mtime: Option<u64>, size: u64) -> Entry {
         Entry { name: name.into(), is_dir, mtime, size }
