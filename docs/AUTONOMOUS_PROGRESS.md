@@ -14605,3 +14605,6 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 
 ## LOG (2026-06-27 cont. — TSK-250 Web back-forward buttons)
 - Added in-page ◀ Back / Forward ▶ chrome buttons to page() (all Web pages), hitting the /back + /forward routes (9c507ca4). Completes TSK-250's Web back-forward END TO END: NavHistory model (cd64964e) + routes (9c507ca4) + chrome buttons. Host-tested (page_chrome_has_back_forward_nav); 100 web tests green. TSK-250 → review (Web back-forward done; TUI multi-file tabs already built — open/cycle/close/persist).
+
+## LOG (2026-06-27 cont. — TSK-250 cycle_tab teeth)
+- Added cycle_tab host tests (rust-core/tui): three distinct files → three tabs with wrap-around forward/back cycling + single-tab no-op (App::new + fixture pattern). 66 tui tests green. Closes TSK-250's last teeth-gap → BOTH halves now fully host-tested (Web back-forward model/routes/buttons + TUI tab open/switch/persist). TSK-250 → validated.

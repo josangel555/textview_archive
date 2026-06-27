@@ -4549,6 +4549,44 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // TSK-250: multi-file tab switching (cycle_tab / NextTab / PrevTab).
+    #[test]
+    fn cycle_tab_wraps_across_open_tabs() {
+        let dir = fixture_dir();
+        let write = |n: &str| {
+            let p = dir.join(n);
+            fs::write(&p, format!("# {n}\n")).unwrap();
+            p
+        };
+        let (a, b, c) = (write("ct_a.md"), write("ct_b.md"), write("ct_c.md"));
+        let mut app = App::new(dir.clone());
+        app.open_file(&a);
+        app.open_file(&b);
+        app.open_file(&c);
+        assert_eq!(app.tabs.len(), 3, "three distinct files → three tabs");
+        assert_eq!(app.active, 2, "the last-opened tab is active");
+        // Forward past the end wraps to the first.
+        app.cycle_tab(1);
+        assert_eq!(app.active, 0, "forward past the last tab wraps to the first");
+        // Back from the first wraps to the last.
+        app.cycle_tab(-1);
+        assert_eq!(app.active, 2, "back from the first tab wraps to the last");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cycle_tab_is_noop_with_a_single_tab() {
+        let dir = fixture_dir();
+        let p = dir.join("ct_solo.md");
+        fs::write(&p, "# solo\n").unwrap();
+        let mut app = App::new(dir.clone());
+        app.open_file(&p);
+        assert_eq!(app.tabs.len(), 1);
+        app.cycle_tab(1);
+        assert_eq!(app.active, 0, "cycling a single tab is a no-op");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// Write a fixture file with `n` numbered lines and return its dir + path.
     fn many_line_fixture(n: usize) -> (PathBuf, PathBuf) {
         use std::sync::atomic::{AtomicU64, Ordering};
