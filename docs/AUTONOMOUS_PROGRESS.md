@@ -14466,3 +14466,20 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
 
 ### BOUNDARY (honest state at session end)
 The clean host-buildable HEARTBEAT veins are drained — the models were built across the session. Remaining work, none a clean heartbeat slice: (a) OWNER-GATED step-change flips — formula TSK-1215, fold TSK-1202 (engines done + fuzz-proven; need owner soak then VM on-screen confirm then Swift-twin deletion); (b) SCOPED FOCUSED EFFORTS — bundle-size dylib split (1214), code-nav MCP (1192), CoreRuntime FFI (589 slices 4-5), image gestures (1084/85); (c) DECISION — SRP visibility-widening (1110); (d) render-path (review/VM-gated) + standalone agent-devtools MCPs (1193/1194, separate projects). Per-tick posture: genuine fresh board scan + high-value spike, NOT manufacturing marginal/preemptive/risky fill-work.
+
+## LOG (2026-06-27 — owner's 5 dep-approvals BUILT + PM epic core; crypto-hash dep surfaced)
+
+Owner approved memchr/proptest/cargo-fuzz/wasm32/rusqlite (2026-06-27) + corrected that dep-hygiene counts the DEV-MACHINE surface (`cargo install` compiles the tool's full tree) → cargo-mutants REJECTED. This run built the approved deps + the PM epic core.
+
+### Landed (all rust-core-gate-green, verdict-checked per commit)
+- **memchr SIMD `memmem`** — `hex_search_find` (TSK-399, validated, 1c2e4a5d) + `format.rs find_after` (TSK-1285, validated, a6319647). ZERO new surface (already in-tree). filter + find_engine deliberately NOT changed (case-insensitive — memmem doesn't fit).
+- **proptest property-test lane (TSK-585)** — dev-dep (default-features=false+["std"], pinned =1.9.0). 5 our-logic suites: filter differential (e8a684fb), diff-parser robustness (fa3536ac), CSV split (61a26924), CSV quoting (8ae2421f), formula arithmetic differential (be22fdb6). It FOUND + FIXED a real bug — **TSK-1286** (4722e5e1, validated): a lone quoted-empty CSV terminal row `""` was silently dropped (the terminal-empty-row heuristic couldn't see quote-state; TWO paths — the EOF flush guard + the finish() drop — fixed by tracking the terminal field's quote-state, symmetric VecSink+ArenaSink).
+- **Project-management store, slices 1-4c (TSK-345)** — new isolated `mdvcore-pm` crate (rusqlite 0.39 against the SYSTEM libsqlite3, default-features=false, NO bundled — zero new native lib; OUT of sans-IO core + the Swift build). 6 slices: (1) crate+dep 6719e348 / (2a) event-sourcing core [append-and-project atomically + replay-as-fold] 59c0a8a2 / (3) on-disk persistence daedaa16 / (4a) lifecycle state-machine [v2 2.2: 10 classes + can_transition] 9a3c0df6 / (4b) per-edge actor-gating [the SAFETY boundary - doer's ceiling, human gates] 03310faa / (4c) work_next + state_rollup queries 62475889.
+- **Dep-hygiene codified** — CLAUDE.md "Rust-core dev tooling" convention + per-dep use-follow-ups + TEST_PYRAMID notes (09b8cf90, 372af4c0).
+
+### Parked / blocked (surfaced)
+- **TSK-1287 (crypto-hash dep)** — PM slice 2b (the v2 tamper-evident hash-chain row_hash=H(prev||canonical(row))) needs a crypto hash (std has none). PARKED for the owner's sha2 (recommended) / blake3 / reject decision; the PM core (1-4c) built around it.
+- **wasm32 (TSK-587) + cargo-fuzz (TSK-584)** — env-blocked: the rustup CDN times out on the wasm-std / nightly download (4+ attempts). Resume on network recovery; probes ready.
+
+### BOUNDARY (honest state)
+PM core COMPLETE (slices 1-4c, 6 slices, all host-tested). Remaining PM: 2b (parked, crypto-hash) / 4d enforcement-wiring [wire the state-machine + actor-gating + identity into append - needs a crate-wide PmError model, a focused effort] / 5 FFI exposure [cross-cutting Swift libsqlite3 link - consumer/owner context]. The store has no consumer yet. Two owner decisions outstanding: the crypto-hash (TSK-1287) + the PM epic direction (continue autonomously vs supervised). The autonomous host-completable surface is otherwise BACKLOG-confirmed drained; the deps + PM were the genuine fresh work this run.
