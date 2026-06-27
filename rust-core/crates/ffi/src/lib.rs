@@ -276,6 +276,10 @@ pub const MDV_METHOD_FOLD_REGIONS: u16 = 15;
 /// CodeMirror edit-batch DELTA apply (envelope) — TSK-543. Core-routable via
 /// `dispatch::call` (the impl is in core), unlike HIGHLIGHT_RUNS/FOLD_REGIONS.
 pub const MDV_METHOD_CM_APPLY_DELTA: u16 = 16;
+/// Rendered-MD block DOM-patch (envelope) — TSK-838. Core-routable via
+/// `dispatch::call` (impl in core's `html_patch`): diff two renders → a
+/// `[Keep/Delete/Insert]` block patch for the persistent-WebView applier.
+pub const MDV_METHOD_HTML_BLOCK_PATCH: u16 = 17;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore

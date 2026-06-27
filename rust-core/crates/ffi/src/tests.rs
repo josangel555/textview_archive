@@ -651,6 +651,7 @@ fn method_id_consts_match_the_dispatch_enum() {
     assert_eq!(MDV_METHOD_FORMULA_RECALC, Method::FormulaRecalc as u16);
     assert_eq!(MDV_METHOD_FOLD_REGIONS, Method::FoldRegions as u16);
     assert_eq!(MDV_METHOD_CM_APPLY_DELTA, Method::CmApplyDelta as u16);
+    assert_eq!(MDV_METHOD_HTML_BLOCK_PATCH, Method::HtmlBlockPatch as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
@@ -660,10 +661,11 @@ fn method_id_consts_match_the_dispatch_enum() {
         MDV_METHOD_INDENT_DETECT, MDV_METHOD_HEX_RENDER,
         MDV_METHOD_FORMULA_EVALUATE, MDV_METHOD_FORMULA_RECALC,
         MDV_METHOD_FOLD_REGIONS, MDV_METHOD_CM_APPLY_DELTA,
+        MDV_METHOD_HTML_BLOCK_PATCH,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 17, "16 methods defined; next free id is 17");
+    assert_eq!(Method::NEXT_FREE_ID, 18, "17 methods defined; next free id is 18");
 }
 
 #[test]

@@ -86,12 +86,16 @@ pub enum Method {
     /// (`cm_edit::apply_delta_wire`) — the TSK-543 traffic-reduction seam. Core-
     /// routable here (the impl lives in core), unlike Highlight/Fold.
     CmApplyDelta = 16,
+    /// Rendered-MD block DOM-patch (`html_patch::block_patch_wire`) — diff two
+    /// renders into a `[Keep/Delete/Insert]` block patch for the persistent-WebView
+    /// applier instead of a full `loadHTMLString` reload (TSK-838). Core-routable.
+    HtmlBlockPatch = 17,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 17;
+    pub const NEXT_FREE_ID: u16 = 18;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -115,6 +119,7 @@ impl Method {
             14 => Some(Method::FormulaRecalc),
             15 => Some(Method::FoldRegions),
             16 => Some(Method::CmApplyDelta),
+            17 => Some(Method::HtmlBlockPatch),
             _ => None,
         }
     }
@@ -161,6 +166,7 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
         Method::HexRender => crate::hex::render_wire_aux(req, aux),
         Method::FormulaEvaluate => crate::formula::evaluate_wire(req),
         Method::FormulaRecalc => crate::formula::recalc_wire(req),
+        Method::HtmlBlockPatch => crate::html_patch::block_patch_wire(req),
         // Not routable from core (impl in mdvcore-highlight); the FFI layer
         // intercepts this id, same as HighlightRuns.
         Method::FoldRegions => Err(WireFault::Decode(
@@ -187,8 +193,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. CmApplyDelta is the current last id.
-        assert_eq!(Method::CmApplyDelta as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. HtmlBlockPatch is the current last id.
+        assert_eq!(Method::HtmlBlockPatch as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]

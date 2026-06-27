@@ -10,6 +10,8 @@
 //! Scope: robust for the HTML WE emit (pulldown-cmark — escaped content, simple
 //! attributes, no `<`/`>` inside attribute strings). NOT a general HTML parser.
 
+use serde::{Deserialize, Serialize};
+
 /// Void (self-closing-by-spec) HTML elements — they never have a separate close
 /// tag, so they do not open a nesting level.
 const VOID_ELEMENTS: &[&str] = &[
@@ -220,6 +222,47 @@ pub fn apply_block_patch(old: &[String], edits: &[BlockEdit]) -> Vec<String> {
     out
 }
 
+#[derive(Serialize, Deserialize)]
+struct BlockPatchRequest {
+    old_html: String,
+    new_html: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BlockPatchResponse {
+    edits: Vec<WireEdit>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct WireEdit {
+    /// `"keep"` | `"delete"` | `"insert"`.
+    op: String,
+    /// The block HTML for an `"insert"` op (absent otherwise).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    html: Option<String>,
+}
+
+/// Wire entry ([`crate::dispatch::Method::HtmlBlockPatch`]): a `{old_html, new_html}`
+/// request frame → an `{edits:[{op, html?}]}` response frame — the block patch the
+/// persistent-WebView JS applier executes instead of a full `loadHTMLString`.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a frame decode/encode fault.
+pub fn block_patch_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let req: BlockPatchRequest = crate::wire::decode_frame(req_frame)?;
+    let old = split_top_level_blocks(&req.old_html);
+    let new = split_top_level_blocks(&req.new_html);
+    let edits: Vec<WireEdit> = block_patch(&old, &new)
+        .into_iter()
+        .map(|e| match e {
+            BlockEdit::Keep => WireEdit { op: "keep".to_owned(), html: None },
+            BlockEdit::Delete => WireEdit { op: "delete".to_owned(), html: None },
+            BlockEdit::Insert(h) => WireEdit { op: "insert".to_owned(), html: Some(h) },
+        })
+        .collect();
+    crate::wire::encode_frame(&BlockPatchResponse { edits })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +390,34 @@ mod tests {
             let patched = apply_block_patch(&blocks_a, &block_patch(&blocks_a, &blocks_b));
             prop_assert_eq!(patched.concat(), html_b);
         }
+    }
+
+    #[test]
+    fn block_patch_wire_reconstructs_and_routes() -> Result<(), crate::wire::WireFault> {
+        let old_html = crate::markdown::render("# A\n\npara one").html;
+        let new_html = crate::markdown::render("# A\n\npara two\n\nmore").html;
+        let req = crate::wire::encode_frame(&BlockPatchRequest {
+            old_html: old_html.clone(),
+            new_html: new_html.clone(),
+        })?;
+        let resp_bytes = block_patch_wire(&req)?;
+        // dispatch::call routes the method id to byte-identical output.
+        let via_dispatch =
+            crate::dispatch::call(crate::dispatch::Method::HtmlBlockPatch, &req, &[])?;
+        assert_eq!(via_dispatch, resp_bytes, "dispatch routing must match the direct call");
+        // The wire edits reconstruct the new HTML exactly.
+        let resp: BlockPatchResponse = crate::wire::decode_frame(&resp_bytes)?;
+        let edits: Vec<BlockEdit> = resp
+            .edits
+            .into_iter()
+            .map(|w| match w.op.as_str() {
+                "delete" => BlockEdit::Delete,
+                "insert" => BlockEdit::Insert(w.html.unwrap_or_default()),
+                _ => BlockEdit::Keep,
+            })
+            .collect();
+        let reconstructed = apply_block_patch(&split_top_level_blocks(&old_html), &edits);
+        assert_eq!(reconstructed.concat(), new_html);
+        Ok(())
     }
 }
