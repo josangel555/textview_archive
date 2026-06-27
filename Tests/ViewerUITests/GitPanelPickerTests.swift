@@ -1,6 +1,7 @@
 import XCTest
 import Combine
 import ViewerCore
+import TestSupport
 @testable import ViewerUI
 
 /// Host-safe @MainActor tests for the Git-panel multi-repo follow/pick
@@ -195,22 +196,8 @@ final class GitPanelPickerTests: XCTestCase {
         }
     }
 
-    @discardableResult
-    private func runGit(_ args: [String], in dir: URL) throws -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        p.currentDirectoryURL = dir
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe; p.standardError = pipe
-        try p.run(); p.waitUntilExit()
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    }
-
     private func makeRepo(at dir: URL) throws {
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        _ = try runGit(["init", "-q"], in: dir)
-        _ = try runGit(["config", "user.email", "t@e.com"], in: dir)
-        _ = try runGit(["config", "user.name", "T"], in: dir)
+        // Shared fixture (TSK-1174): init + identity config in one shell call.
+        _ = try GitTestRepo.makeRepo(prefix: dir.lastPathComponent, at: dir)
     }
 }

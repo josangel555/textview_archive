@@ -2,6 +2,7 @@ import XCTest
 import Combine
 import ViewerKit
 import ViewerCore
+import TestSupport
 @testable import ViewerUI
 
 /// Observation-chain invariant pin for the multi-repo git registry.
@@ -196,25 +197,11 @@ final class TrackedReposRepublishInvariantTests: XCTestCase {
 
     // MARK: - helpers
 
-    @discardableResult
-    private func runGit(_ args: [String], in dir: URL) throws -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        p.currentDirectoryURL = dir
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe; p.standardError = pipe
-        try p.run(); p.waitUntilExit()
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    }
-
     private func makeRepo(at dir: URL) throws {
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else {
             throw XCTSkip("git not available")
         }
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        _ = try runGit(["init", "-q"], in: dir)
-        _ = try runGit(["config", "user.email", "t@e.com"], in: dir)
-        _ = try runGit(["config", "user.name", "T"], in: dir)
+        // Shared fixture (TSK-1174): init + identity config in one shell call.
+        _ = try GitTestRepo.makeRepo(prefix: dir.lastPathComponent, at: dir)
     }
 }
