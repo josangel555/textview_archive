@@ -526,16 +526,25 @@ pub fn replay(conn: &mut Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// The dispatchable queue: work items in the `Ready` state, FIFO by creation —
-/// the v2 "next ready task" primitive. Priority + dependency ordering is a
-/// follow-on (needs the edge schema); this returns the Ready set in stable order.
+/// The dispatchable queue: `Ready` work items whose depends_on prerequisites are
+/// ALL finished (VerifiedDone or Closed), FIFO by creation — the v2 "next ready
+/// task" primitive with the §1.7 finish-to-start gate. Priority ordering is a
+/// follow-on; this returns the unblocked Ready set in stable order.
 ///
 /// # Errors
 /// Propagates any rusqlite query error.
 pub fn work_next(conn: &Connection) -> rusqlite::Result<Vec<WorkItem>> {
+    // `verified_done`/`closed` are the State::as_str() forms of the finished
+    // classes — a depends_on prerequisite in any other state blocks the dependent.
     let mut stmt = conn.prepare(
-        "SELECT id, title, state, created_seq, updated_seq, claimed_by FROM work_item
-         WHERE state = ?1 ORDER BY created_seq",
+        "SELECT id, title, state, created_seq, updated_seq, claimed_by FROM work_item w
+         WHERE w.state = ?1
+           AND NOT EXISTS (
+             SELECT 1 FROM wi_edge e JOIN work_item dep ON dep.id = e.to_id
+             WHERE e.from_id = w.id AND e.kind = 0
+               AND dep.state NOT IN ('verified_done', 'closed')
+           )
+         ORDER BY w.created_seq",
     )?;
     let rows = stmt.query_map([State::Ready.as_str()], |r| {
         Ok(WorkItem {
@@ -1020,6 +1029,28 @@ mod tests {
             add_edge(&conn, "A", "ghost", EdgeKind::DependsOn),
             Err(PmError::UnknownItem(_))
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn work_next_excludes_items_with_unfinished_deps() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
+        append(&mut conn, 2, "h", 0, &created_in("B", State::Ready))?;
+        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?; // A depends on B (not finished)
+        let ids: Vec<String> = work_next(&conn)?.into_iter().map(|w| w.id).collect();
+        assert_eq!(ids, vec!["B"], "A is blocked by unfinished B; B is dispatchable");
+        Ok(())
+    }
+
+    #[test]
+    fn work_next_includes_items_with_finished_deps() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
+        append(&mut conn, 2, "h", 0, &created_in("B", State::VerifiedDone))?; // dep already finished
+        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?;
+        let ids: Vec<String> = work_next(&conn)?.into_iter().map(|w| w.id).collect();
+        assert_eq!(ids, vec!["A"], "A unblocks once its only dep is verified_done");
         Ok(())
     }
 }
