@@ -15,15 +15,54 @@ import ViewerCore
 /// mount + the refresh wiring are slice 3.
 struct FeedReaderView: View {
     @ObservedObject var model: FeedReaderViewModel
+    /// The item shown in the reader pane (slice 2). View-local — tapping an item
+    /// sets it (and marks it read via the model).
+    @State private var selectedItemID: String?
 
     var body: some View {
         HSplitView {
+            // TSK-488 / CLAUDE.md compositor rule: the SwiftUI list panes share this
+            // container with the opaque WKWebView reader (HTMLRenderedView), so each
+            // gets its OWN layer via .compositingGroup() — else the representable's
+            // CALayer composites OVER the earlier-painted SwiftUI siblings and blanks
+            // them. (The on-screen occlusion check is WindowServer-pixel — owner/VM,
+            // realized when slice 3 mounts this view.)
             feedSidebar
-                .frame(minWidth: 180, idealWidth: 220, maxWidth: 340)
+                .compositingGroup()
+                .frame(minWidth: 180, idealWidth: 220, maxWidth: 320)
             itemList
-                .frame(minWidth: 280, maxWidth: .infinity)
+                .compositingGroup()
+                .frame(minWidth: 240, idealWidth: 300, maxWidth: 460)
+            readerPane
+                .frame(minWidth: 320, maxWidth: .infinity)
         }
         .accessibilityIdentifier("mdv.feedReader")
+    }
+
+    // MARK: - Reader pane (slice 2 — the selected item's content)
+
+    private var selectedItem: FeedReaderModel.DisplayItem? {
+        guard let id = selectedItemID else { return nil }
+        return model.items.first { $0.id == id }
+    }
+
+    @ViewBuilder
+    private var readerPane: some View {
+        if let item = selectedItem {
+            // The feed item's summaryHTML is UNTRUSTED — HTMLRenderedView sanitizes
+            // internally (HTMLDocumentPolicy → HTMLSanitizer) + JS-default-deny, the
+            // same hardened path the main HTML-doc view uses (TSK-1189). The item's
+            // link is the base URL (relative-link resolution), else about:blank.
+            HTMLRenderedView(
+                rawHTML: item.item.summaryHTML,
+                documentURL: item.item.link.flatMap { URL(string: $0) }
+                    ?? URL(string: "about:blank")!)
+                .accessibilityIdentifier("mdv.feedReader.reader")
+        } else {
+            Text("Select an item to read")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     // MARK: - Feed sidebar (summaries + unread rollups)
@@ -68,6 +107,7 @@ struct FeedReaderView: View {
         List {
             ForEach(model.items) { di in
                 Button {
+                    selectedItemID = di.id
                     model.markRead(itemID: di.id)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {

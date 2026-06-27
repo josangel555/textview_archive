@@ -14608,3 +14608,6 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 
 ## LOG (2026-06-27 cont. — TSK-250 cycle_tab teeth)
 - Added cycle_tab host tests (rust-core/tui): three distinct files → three tabs with wrap-around forward/back cycling + single-tab no-op (App::new + fixture pattern). 66 tui tests green. Closes TSK-250's last teeth-gap → BOTH halves now fully host-tested (Web back-forward model/routes/buttons + TUI tab open/switch/persist). TSK-250 → validated.
+
+## LOG (2026-06-27 cont. — TSK-1149 FeedReaderView slice 2: reader-pane)
+- Added the reader-pane (3rd HSplitView pane) to FeedReaderView — the selected item's summaryHTML via HTMLRenderedView (internally-sanitized, TSK-1189 hardened path; item-link base-URL else about:blank) + @State selectedItemID (tap → select + mark-read) + a "Select an item" placeholder. Applied the CLAUDE.md/TSK-488 compositor rule (.compositingGroup() on the SwiftUI list panes — they now share the container with the opaque WKWebView reader). Additive: the view is still UNMOUNTED (slice 3 = DockedToolWindow mount) → zero production impact; the occlusion-pixel-confirm is the owner/VM at mount. Compiles clean; behaviour-teeth = FeedReaderViewModelTests. TSK-1149 slices 1+2 built (shell + reader); slice 3 (mount) remains. Render at review.
