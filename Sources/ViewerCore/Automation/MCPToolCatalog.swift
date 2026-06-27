@@ -34,6 +34,7 @@ public enum MCPToolCatalog {
         outlineDescriptor,
         gitStatusDescriptor,
         runVerbDescriptor,
+        listVerbsDescriptor,
         lintDescriptor,
         currentStateDescriptor,
         toggleBookmarkDescriptor,
@@ -63,6 +64,7 @@ public enum MCPToolCatalog {
         case "outline":           return try outline(args, host)
         case "git_status":        return try gitStatus(args, host)
         case "run_verb":          return try runVerb(args, host)
+        case "list_verbs":        return try listVerbs(args, host)
         case "lint":              return try lint(args, host)
         case "current_state":     return try currentState(args, host)
         case "toggle_bookmark":   return try toggleBookmark(args, host)
@@ -514,6 +516,36 @@ public enum MCPToolCatalog {
         }
         let handled = host.automationRunVerb(line)
         return .object(["handled": .bool(handled), "verb": .string(token)])
+    }
+
+    // MARK: - list_verbs
+
+    private static let listVerbsDescriptor = MCP.ToolDescriptor(
+        name: "list_verbs",
+        description: "List every catalogued script verb — the run_verb ACTION vocabulary — as "
+            + "[{verb, surface, arg, summary}], so an agent can DISCOVER the available actions "
+            + "instead of guessing tokens. `arg` is none|path|int|string|enumToken|structured. "
+            + "Read-only; the companion of run_verb.",
+        inputSchema: emptySchema
+    )
+
+    /// Discoverability for the action surface: run_verb EXECUTES a verb but, until
+    /// now, nothing ENUMERATED them — an agent had to know the tokens. Returns the
+    /// full ScriptVerbCatalog (token + surface + arg shape + summary) so the agent
+    /// can self-describe what it can do. Pure read of the static catalog.
+    private static func listVerbs(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let verbs: [MCP.Value] = ScriptVerbCatalog.all.map { v in
+            .object([
+                "verb": .string(v.token),
+                "surface": .string(v.surface.rawValue),
+                "arg": .string(v.arg.rawValue),
+                "summary": .string(v.summary),
+            ])
+        }
+        return .object([
+            "verbs": .array(verbs),
+            "count": .int(ScriptVerbCatalog.all.count),
+        ])
     }
 
     // MARK: - lint

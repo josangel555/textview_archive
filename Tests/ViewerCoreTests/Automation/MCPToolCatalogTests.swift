@@ -73,7 +73,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 18)
+        XCTAssertEqual(names.count, 19)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -82,9 +82,26 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
-            "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb", "lint",
+            "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb", "list_verbs", "lint",
         ]
         XCTAssertEqual(names, expected)
+    }
+
+    func test_listVerbs_returnsTheCatalog() throws {
+        let result = try MCPToolCatalog.dispatch(name: "list_verbs", args: .object([:]), host: host)
+        guard case .object(let obj) = result,
+              case .array(let verbs)? = obj["verbs"],
+              case .int(let count)? = obj["count"] else {
+            XCTFail("malformed: \(result)"); return
+        }
+        XCTAssertEqual(verbs.count, count, "count must equal the verbs array length")
+        XCTAssertGreaterThan(count, 100, "the verb catalog has 130+ entries")
+        // Teeth: a known verb (close-split, added this run) is enumerated with its fields.
+        let hasCloseSplit = verbs.contains { v in
+            guard case .object(let o) = v, case .string(let token)? = o["verb"] else { return false }
+            return token == "close-split"
+        }
+        XCTAssertTrue(hasCloseSplit, "list_verbs must enumerate the catalog (close-split present)")
     }
 
     // MARK: - outline
