@@ -259,6 +259,64 @@ pub fn can_actor_transition(actor: ActorKind, from: State, to: State) -> bool {
     allowed.contains(&actor)
 }
 
+/// An error from a PM store mutation (slice 4d — lifecycle enforcement). The
+/// `append` write path rejects an illegal/unauthorized transition with one of
+/// these BEFORE touching the log or the projection.
+#[derive(Debug)]
+pub enum PmError {
+    /// An underlying rusqlite/IO error.
+    Sqlite(rusqlite::Error),
+    /// A `StateChanged` targeted an id with no projection row.
+    UnknownItem(String),
+    /// A state string is not a recognized lifecycle class.
+    UnknownState(String),
+    /// `actor_kind` is not a recognized code (0 human / 1 agent / 2 system).
+    UnknownActorKind(i64),
+    /// The `from → to` transition is not a legal shape (v2 §2.2).
+    IllegalTransition {
+        /// Current state class.
+        from: String,
+        /// Attempted target class.
+        to: String,
+    },
+    /// The actor kind may not perform this transition (the §2.2 safety boundary).
+    Unauthorized {
+        /// The rejected actor-kind code.
+        actor_kind: i64,
+        /// Current state class.
+        from: String,
+        /// Attempted target class.
+        to: String,
+    },
+}
+
+impl std::fmt::Display for PmError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PmError::Sqlite(e) => write!(f, "sqlite: {e}"),
+            PmError::UnknownItem(id) => write!(f, "unknown work item: {id}"),
+            PmError::UnknownState(s) => write!(f, "unknown state class: {s}"),
+            PmError::UnknownActorKind(k) => write!(f, "unknown actor kind: {k}"),
+            PmError::IllegalTransition { from, to } => {
+                write!(f, "illegal transition: {from} -> {to}")
+            }
+            PmError::Unauthorized {
+                actor_kind,
+                from,
+                to,
+            } => write!(f, "actor kind {actor_kind} may not transition {from} -> {to}"),
+        }
+    }
+}
+
+impl std::error::Error for PmError {}
+
+impl From<rusqlite::Error> for PmError {
+    fn from(e: rusqlite::Error) -> Self {
+        PmError::Sqlite(e)
+    }
+}
+
 /// Open an in-memory store with the slice-2a schema. (The on-disk path is a later slice.)
 ///
 /// # Errors
@@ -294,7 +352,39 @@ pub fn append(
     actor_id: &str,
     actor_kind: i64,
     event: &WorkItemEvent,
-) -> rusqlite::Result<i64> {
+) -> Result<i64, PmError> {
+    // Slice 4d: ENFORCE the lifecycle before mutating. A Created's initial state
+    // must be a known class; a StateChanged must be a shape-legal transition the
+    // actor's kind is permitted to make (the §2.2 safety boundary). On rejection
+    // nothing is written (the early return precedes the transaction).
+    match event {
+        WorkItemEvent::Created { state, .. } => {
+            State::from_class(state).ok_or_else(|| PmError::UnknownState(state.clone()))?;
+        }
+        WorkItemEvent::StateChanged { id, state: to, .. } => {
+            let current =
+                get_work_item(conn, id)?.ok_or_else(|| PmError::UnknownItem(id.clone()))?;
+            let from = State::from_class(&current.state)
+                .ok_or_else(|| PmError::UnknownState(current.state.clone()))?;
+            let to_state =
+                State::from_class(to).ok_or_else(|| PmError::UnknownState(to.clone()))?;
+            let actor =
+                ActorKind::from_i64(actor_kind).ok_or(PmError::UnknownActorKind(actor_kind))?;
+            if !can_transition(from, to_state) {
+                return Err(PmError::IllegalTransition {
+                    from: from.as_str().into(),
+                    to: to_state.as_str().into(),
+                });
+            }
+            if !can_actor_transition(actor, from, to_state) {
+                return Err(PmError::Unauthorized {
+                    actor_kind,
+                    from: from.as_str().into(),
+                    to: to_state.as_str().into(),
+                });
+            }
+        }
+    }
     let payload = rmp_serde::to_vec(event)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let (event_type, subject_id, reason): (&str, &str, Option<&str>) = match event {
@@ -429,7 +519,7 @@ mod tests {
         WorkItemEvent::Created {
             id: id.into(),
             title: title.into(),
-            state: "open".into(),
+            state: State::Proposed.as_str().into(),
         }
     }
 
@@ -437,7 +527,7 @@ mod tests {
     /// log + projection are durable). Uses the per-user temp dir (never
     /// ~/Documents); removes the file at start (clean slate) + end.
     #[test]
-    fn on_disk_store_persists_across_reopen() -> rusqlite::Result<()> {
+    fn on_disk_store_persists_across_reopen() -> Result<(), PmError> {
         let path = std::env::temp_dir().join("mdvcore-pm-ondisk-roundtrip.db");
         let _ = std::fs::remove_file(&path);
         {
@@ -448,25 +538,26 @@ mod tests {
         let wi = get_work_item(&reopened, "P1")?;
         drop(reopened);
         let _ = std::fs::remove_file(&path);
-        assert_eq!(wi.map(|w| w.state), Some("open".to_string()));
+        assert_eq!(wi.map(|w| w.state), Some("proposed".to_string()));
         Ok(())
     }
 
     /// append() folds an event into the projection atomically; a later
     /// StateChanged updates it (and bumps updated_seq, not created_seq).
     #[test]
-    fn append_projects_create_then_state_change() -> rusqlite::Result<()> {
+    fn append_projects_create_then_state_change() -> Result<(), PmError> {
         let mut conn = open_in_memory()?;
         let s1 = append(&mut conn, 1, "human:jos", 0, &created("T1", "Task one"))?;
+        // Proposed → Ready: the human admission gate.
         let s2 = append(
             &mut conn,
             2,
-            "agent:reviewer",
-            1,
+            "human:jos",
+            0,
             &WorkItemEvent::StateChanged {
                 id: "T1".into(),
-                state: "done".into(),
-                reason: "tests pass".into(),
+                state: State::Ready.as_str().into(),
+                reason: "groomed".into(),
             },
         )?;
         let wi = get_work_item(&conn, "T1")?;
@@ -475,7 +566,7 @@ mod tests {
             Some(WorkItem {
                 id: "T1".into(),
                 title: "Task one".into(),
-                state: "done".into(),
+                state: "ready".into(),
                 created_seq: s1,
                 updated_seq: s2,
             })
@@ -486,19 +577,19 @@ mod tests {
     /// The v2 invariant: replay() rebuilds the projection from the log alone, and
     /// the result is byte-identical to the live-folded projection.
     #[test]
-    fn replay_reproduces_projection_exactly() -> rusqlite::Result<()> {
+    fn replay_reproduces_projection_exactly() -> Result<(), PmError> {
         let mut conn = open_in_memory()?;
         append(&mut conn, 1, "human:jos", 0, &created("A", "Alpha"))?;
         append(&mut conn, 2, "human:jos", 0, &created("B", "Beta"))?;
         append(
             &mut conn,
             3,
-            "agent:x",
-            1,
+            "human:jos",
+            0,
             &WorkItemEvent::StateChanged {
                 id: "A".into(),
-                state: "done".into(),
-                reason: "shipped".into(),
+                state: State::Ready.as_str().into(),
+                reason: "groomed".into(),
             },
         )?;
         let before_a = get_work_item(&conn, "A")?;
@@ -512,23 +603,23 @@ mod tests {
     /// A StateChanged for an unknown id is a no-op on the projection (no row to
     /// update) and does not error — the event is still logged.
     #[test]
-    fn state_change_unknown_id_is_logged_noop() -> rusqlite::Result<()> {
+    fn state_change_unknown_id_is_rejected() -> Result<(), PmError> {
         let mut conn = open_in_memory()?;
-        append(
+        let err = append(
             &mut conn,
             1,
-            "agent:x",
-            1,
+            "human:jos",
+            0,
             &WorkItemEvent::StateChanged {
                 id: "ghost".into(),
-                state: "done".into(),
+                state: State::Ready.as_str().into(),
                 reason: "n/a".into(),
             },
-        )?;
-        assert_eq!(get_work_item(&conn, "ghost")?, None);
-        let logged: i64 =
-            conn.query_row("SELECT COUNT(*) FROM event_log", [], |r| r.get(0))?;
-        assert_eq!(logged, 1, "the event is logged even when the projection no-ops");
+        );
+        assert!(matches!(err, Err(PmError::UnknownItem(ref id)) if id == "ghost"));
+        // Enforcement rejects BEFORE writing — nothing is logged.
+        let logged: i64 = conn.query_row("SELECT COUNT(*) FROM event_log", [], |r| r.get(0))?;
+        assert_eq!(logged, 0, "a rejected event is not logged");
         Ok(())
     }
 
@@ -633,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn work_next_returns_ready_items_in_fifo() -> rusqlite::Result<()> {
+    fn work_next_returns_ready_items_in_fifo() -> Result<(), PmError> {
         let mut conn = open_in_memory()?;
         append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
         append(&mut conn, 2, "h", 0, &created_in("B", State::Active))?;
@@ -644,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn state_rollup_counts_by_class() -> rusqlite::Result<()> {
+    fn state_rollup_counts_by_class() -> Result<(), PmError> {
         let mut conn = open_in_memory()?;
         append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
         append(&mut conn, 2, "h", 0, &created_in("B", State::Ready))?;
@@ -653,6 +744,48 @@ mod tests {
             state_rollup(&conn)?,
             vec![("active".to_string(), 1_i64), ("ready".to_string(), 2_i64)]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn append_rejects_illegal_transition() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "human:jos", 0, &created("T", "t"))?; // Proposed
+        // Proposed → Active skips the Ready admission gate (illegal shape).
+        let err = append(
+            &mut conn,
+            2,
+            "agent:x",
+            1,
+            &WorkItemEvent::StateChanged {
+                id: "T".into(),
+                state: State::Active.as_str().into(),
+                reason: "skip".into(),
+            },
+        );
+        assert!(matches!(err, Err(PmError::IllegalTransition { .. })));
+        // Rejected → state unchanged.
+        assert_eq!(get_work_item(&conn, "T")?.map(|w| w.state), Some("proposed".into()));
+        Ok(())
+    }
+
+    #[test]
+    fn append_rejects_unauthorized_actor() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "human:jos", 0, &created("T", "t"))?; // Proposed
+        // Proposed → Ready is shape-legal but HUMAN-only; an agent (kind 1) is unauthorized.
+        let err = append(
+            &mut conn,
+            2,
+            "agent:x",
+            1,
+            &WorkItemEvent::StateChanged {
+                id: "T".into(),
+                state: State::Ready.as_str().into(),
+                reason: "self-admit".into(),
+            },
+        );
+        assert!(matches!(err, Err(PmError::Unauthorized { .. })));
         Ok(())
     }
 }
