@@ -273,6 +273,37 @@ fn frame_body(frame: &[u8]) -> Result<&[u8], WireFault> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Wire law (TSK-585): `decode_frame` over ARBITRARY bytes never panics —
+        /// the length-prefix parser (`frame_body`) must reject malformed/truncated
+        /// input as a `WireFault`, never via an index/slice panic. (Fixed buffers
+        /// are example-tested below; this fuzzes the framing.)
+        #[test]
+        fn decode_frame_never_panics_on_arbitrary_bytes(
+            bytes in prop::collection::vec(any::<u8>(), 0..512)
+        ) {
+            let _: Result<Table, _> = decode_frame(&bytes);
+            let _: Result<Snapshot, _> = decode_frame(&bytes);
+            let _: Result<String, _> = decode_frame(&bytes);
+        }
+
+        /// Wire law (TSK-585): `encode_frame` → `decode_frame` round-trips any
+        /// `Table` — our 4-byte LE length framing is value-preserving for any body.
+        #[test]
+        fn table_frame_round_trips(
+            delimiter in "[,;|]",
+            header in prop::collection::vec("[a-z ]{0,8}", 0..5),
+            rows in prop::collection::vec(prop::collection::vec("[a-z0-9 ]{0,8}", 0..5), 0..6),
+            truncated in any::<bool>(),
+        ) {
+            let t = Table { delimiter, header, rows, truncated };
+            let frame = encode_frame(&t).expect("encode_frame");
+            let back: Table = decode_frame(&frame).expect("decode_frame");
+            prop_assert_eq!(t, back);
+        }
+    }
 
     fn sample_table() -> Table {
         Table {

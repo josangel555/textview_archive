@@ -342,6 +342,51 @@ impl std::error::Error for OpenError {}
 mod tests {
     use super::*;
     use crate::filter::Scope;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Session op-replay law (TSK-585): a filter is DETERMINISTIC + replayable
+        /// — opening the same CSV and applying the same query yields identical
+        /// surviving indices + totals every time (no hidden state / ordering dep).
+        #[test]
+        fn filter_replay_is_deterministic(
+            text in "[a-z]{0,4}",
+            rows in prop::collection::vec(("[a-z]{1,5}", "[a-z]{1,5}"), 0..8),
+        ) {
+            let mut csv = String::from("a,b\n");
+            for (c0, c1) in &rows {
+                csv.push_str(c0);
+                csv.push(',');
+                csv.push_str(c1);
+                csv.push('\n');
+            }
+            let q = Query { text: text.clone(), scope: Scope::All };
+
+            let mut s1 = CsvSession::open(csv.as_bytes()).expect("open s1");
+            s1.set_filter(q.clone());
+            let snap1 = s1.snapshot();
+
+            let mut s2 = CsvSession::open(csv.as_bytes()).expect("open s2");
+            s2.set_filter(q);
+            let snap2 = s2.snapshot();
+
+            prop_assert_eq!(&snap1.indices, &snap2.indices);
+            prop_assert_eq!(snap1.total_rows, snap2.total_rows);
+        }
+
+        /// Session op-replay law (TSK-585): re-applying the SAME query is a no-op
+        /// the second time — the version stamp is frozen (the hot-reload/replay
+        /// guard `set_filter` documents).
+        #[test]
+        fn set_filter_idempotent_freezes_version(text in "[a-z]{0,4}") {
+            let mut s = CsvSession::open(b"a,b\nxx,yy\nzz,ww\n").expect("open");
+            let q = Query { text, scope: Scope::All };
+            s.set_filter(q.clone());
+            let v = s.version();
+            prop_assert!(!s.set_filter(q));
+            prop_assert_eq!(s.version(), v);
+        }
+    }
 
     const CSV: &str = "name,city\nAlice,Paris\nBob,Parma\nCarol,Berlin\n";
 
