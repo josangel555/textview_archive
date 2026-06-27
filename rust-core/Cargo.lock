@@ -476,7 +476,9 @@ dependencies = [
 name = "mdvcore-pm"
 version = "0.0.0"
 dependencies = [
+ "rmp-serde",
  "rusqlite",
+ "serde",
 ]
 
 [[package]]
