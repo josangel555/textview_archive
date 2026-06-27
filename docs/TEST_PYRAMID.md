@@ -96,3 +96,9 @@ addressing foundation.
 
 - **XCTest** — everything tier-based (the `TierBaseCases` hierarchy + the live tiers) and all existing suites.
 - **Swift Testing** (`import Testing`, `@Test`/`#expect`) — NEW pure-logic suites only; both frameworks run together under one `swift test`. See `docs/TEST_FRAMEWORK_SWIFT_TESTING_VS_XCTEST_2026-06-19.md`.
+
+### rust-core property + fuzz lanes (owner-approved 2026-06-27 — USE them)
+The rust-core has two strengthening lanes beyond example tests — reach for them when you add/touch a rust engine (also in CLAUDE.md "Rust-core dev tooling"):
+- **proptest** (TSK-585) — property/round-trip/differential tests for pure-logic engines (wire codec round-trip, CSV parse invariants, session op-replay, find/diff invariants). New engines SHOULD add a suite, not just examples. Runs under `scripts/rust-core-gate.sh`.
+- **cargo-fuzz** (TSK-584, nightly/ad-hoc) — libfuzzer targets for PARSERS (untrusted-byte decoders). New parsers SHOULD get a target + seed corpus.
+- (memchr `memmem` for substring hot paths + the wasm32 portable-core build are the perf/portability siblings — see CLAUDE.md.)

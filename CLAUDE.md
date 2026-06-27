@@ -287,6 +287,31 @@ ViewerCoreTests is the unambiguous host-safe target).
   are UserDefaults. `File → Reset` (`AppCacheReset`) clears these to a recoverable
   `_reset-backups/` backup.
 
+### Rust-core dev tooling — owner-approved 2026-06-27 (USE as intended; don't let it rot)
+
+These are STANDING capabilities to USE, not one-off adds. When you touch the relevant
+surface, reach for them:
+- **memchr (`memmem`)** — for byte-SUBSTRING hot paths (find-all / find). Wired into
+  `hex_search_find` (TSK-399); already in-tree (zero new surface). USE it for new
+  substring scans instead of a hand-rolled byte loop. NOT for case-insensitive paths
+  (memmem is case-sensitive — the CSV filter stays on the no-alloc `ascii_contains_ignore_case`).
+- **proptest** (dev-dep, `default-features=false` + `["std"]`) — the PROPERTY-TEST lane
+  (TSK-585). New pure-logic engines SHOULD add a proptest suite (round-trips, invariants,
+  differential-vs-naive-reference), not just example tests. Grow it per engine.
+- **cargo-fuzz** (dev-only, nightly, ad-hoc) — the FUZZ lane (TSK-584). Any new PARSER
+  (decodes untrusted bytes) SHOULD get a fuzz target + seed corpus.
+- **wasm32 target** (TSK-587) — the portable/remote-core goal. Core code MUST stay
+  sans-IO (wasm-buildable); cfg-gate any IO. A CI wasm-build check guards it.
+- **rusqlite** (`default-features=false`, bundled) — the project-management store
+  (TSK-345). For structured-persistence features, prefer it over an ad-hoc file format.
+
+**Dep-hygiene rider (these + any future dep):** `default-features=false` + an explicit
+minimal feature list + a pinned exact version. Hygiene counts the **dev-machine** surface
+too — `cargo install <tool>` compiles the tool's FULL transitive tree locally (every
+build.rs + proc-macro runs), so an "external tool" is NOT exempt. Prefer dep-free/minimal
+even for dev tooling. (cargo-mutants was REJECTED on this basis → DIY mutation-testing; see
+`BACKLOG.md`.)
+
 ## Task tracking (use it — don't just do work silently)
 
 From now on, **track work as tasks** instead of doing it ad-hoc. File
