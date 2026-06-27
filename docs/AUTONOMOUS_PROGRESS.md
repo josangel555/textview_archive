@@ -14617,3 +14617,6 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 
 ## LOG (2026-06-27 cont. — TSK-1149 FeedReaderView add-feed bar)
 - Added the add-feed bar to FeedReaderView's sidebar — a URL TextField + Add button (+ onSubmit) wired to the host-tested FeedReaderViewModel.addFeed, gated by a static pure isValidFeedURL (scheme+host, trims whitespace). Makes the reader self-contained (add/browse/read). Host test for the URL gate; 8 FeedReaderViewModelTests green. Completes the FeedReaderView's host-completable render-code (shell + reader + add-feed); the live DockedToolWindow mount (occlusion-pixel + tool-window integration) is the owner/VM slice 3. Unmounted → zero production impact. Render at review.
+
+## LOG (2026-06-27 cont. — audit: FeedDate edge-case teeth)
+- Audited FeedDate.parse (the RSS/Atom date normalizer) — FeedParserTests covered only happy-path (2-digit-day GMT + +0000). Added FeedDateParsingTests (Swift-Testing, @testable): single-digit-day / no-weekday / no-seconds / 2-digit-year RFC822 + Atom ISO8601 (plain/fractional/+offset) + junk-rejection + offset→UTC-instant normalization. All pass — the parser is solid (no bug found); the suite pins the dialects on the HOST gate (was happy-path-only → a dropped rfc822Variant would have silently lost feed dates). Test-only; no source change.
