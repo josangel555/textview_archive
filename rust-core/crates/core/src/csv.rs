@@ -158,8 +158,8 @@ pub fn parse_arena(text: &str) -> TableArena {
 pub fn parse_arena_with(text: &str, delimiter: char, limits: Limits) -> TableArena {
     let _span = trace::Span::enter("csv.parse_arena");
     let mut sink = ArenaSink::new();
-    let truncated = tokenize(text, delimiter, limits, &mut sink);
-    sink.finish(delimiter, truncated)
+    let (truncated, last_field_quoted) = tokenize(text, delimiter, limits, &mut sink);
+    sink.finish(delimiter, truncated, last_field_quoted)
 }
 
 /// Parse with an explicit delimiter and explicit limits, into the wire DTO.
@@ -167,8 +167,8 @@ pub fn parse_arena_with(text: &str, delimiter: char, limits: Limits) -> TableAre
 pub(crate) fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
     let _span = trace::Span::enter("csv.parse");
     let mut sink = VecSink::default();
-    let truncated = tokenize(text, delimiter, limits, &mut sink);
-    sink.finish(delimiter, truncated)
+    let (truncated, last_field_quoted) = tokenize(text, delimiter, limits, &mut sink);
+    sink.finish(delimiter, truncated, last_field_quoted)
 }
 
 /// Receives committed cells + row boundaries from the shared CSV [`tokenize`]
@@ -195,10 +195,15 @@ trait CsvSink {
     clippy::too_many_lines,
     reason = "single tokenizer loop; splitting hurts clarity"
 )]
-fn tokenize<S: CsvSink>(text: &str, delimiter: char, limits: Limits, sink: &mut S) -> bool {
+fn tokenize<S: CsvSink>(text: &str, delimiter: char, limits: Limits, sink: &mut S) -> (bool, bool) {
     let mut field = String::new();
     let mut field_chars = 0usize; // tracked separately to avoid O(n) char counts
     let mut in_quotes = false;
+    // TSK-1286: track whether the CURRENT field used quotes + the LAST committed
+    // field's quote-state, so a genuine quoted-empty terminal field ("") is
+    // distinguished from a blank-line phantom (both produce a [""] row).
+    let mut field_quoted = false;
+    let mut last_field_quoted = false;
 
     let mut truncated = false;
     let mut total_cells = 0usize;
@@ -292,8 +297,10 @@ fn tokenize<S: CsvSink>(text: &str, delimiter: char, limits: Limits, sink: &mut 
                 truncated = true;
                 field.clear();
             }
+            last_field_quoted = field_quoted;
             field_chars = 0;
             field_capped = false;
+            field_quoted = false;
         }};
     }
 
@@ -384,6 +391,7 @@ fn tokenize<S: CsvSink>(text: &str, delimiter: char, limits: Limits, sink: &mut 
             }
             if field.is_empty() && !field_capped {
                 in_quotes = true;
+                field_quoted = true;
             } else {
                 let _ = append_span!("\"");
             }
@@ -422,8 +430,11 @@ fn tokenize<S: CsvSink>(text: &str, delimiter: char, limits: Limits, sink: &mut 
     // Flush trailing field / row. We inline the row-cap check here rather than
     // reuse `commit_field!` so the macro's per-field reset (field_chars /
     // field_capped) — dead at end-of-input — doesn't trip `unused_assignments`.
-    if !field.is_empty() || sink.cur_row_cells() > 0 {
+    // `|| field_quoted` (TSK-1286): a terminal quoted-empty field (`""`) has an
+    // empty `field` and no prior cells, but it IS a real field — flush it.
+    if !field.is_empty() || sink.cur_row_cells() > 0 || field_quoted {
         if sink.cur_row_cells() < limits.max_cells_per_row {
+            last_field_quoted = field_quoted;
             sink.commit_field(&mut field);
         } else {
             truncated = true;
@@ -431,7 +442,10 @@ fn tokenize<S: CsvSink>(text: &str, delimiter: char, limits: Limits, sink: &mut 
         sink.end_row();
     }
 
-    truncated
+    // (truncated, last_committed_field_was_quoted) — the 2nd flag lets finish()
+    // keep a genuine quoted-empty terminal field while still dropping a
+    // blank-line phantom (TSK-1286).
+    (truncated, last_field_quoted)
 }
 
 /// Builds the wire `Vec<Vec<String>>` DTO — the path [`parse`]/[`parse_with`]
@@ -458,12 +472,15 @@ impl CsvSink for VecSink {
 impl VecSink {
     /// Header-extract + body column normalization + terminal-empty-row drop —
     /// the exact post-parse step the pre-TSK-844 `parse_with` did inline.
-    fn finish(self, delimiter: char, truncated: bool) -> Table {
+    fn finish(self, delimiter: char, truncated: bool, last_field_quoted: bool) -> Table {
         let mut rows = self.rows;
-        // Drop a terminal all-empty row caused by a trailing newline.
-        if rows
-            .last()
-            .is_some_and(|last| last.len() == 1 && last.first().is_some_and(String::is_empty))
+        // Drop a terminal all-empty row caused by a trailing BLANK LINE — but NOT
+        // a genuine quoted-empty terminal field `""` (TSK-1286): both produce a
+        // `[""]` row, distinguished only by whether that field was quoted.
+        if !last_field_quoted
+            && rows
+                .last()
+                .is_some_and(|last| last.len() == 1 && last.first().is_some_and(String::is_empty))
         {
             rows.pop();
         }
@@ -542,10 +559,10 @@ impl ArenaSink {
     /// Terminal-empty-row drop + header-arity normalization, then build the
     /// arena. Mirrors `VecSink::finish` + `TableArena::from_table`'s
     /// normalization exactly (refereed by the `parse_arena` parity tests).
-    fn finish(mut self, delimiter: char, truncated: bool) -> TableArena {
+    fn finish(mut self, delimiter: char, truncated: bool, last_field_quoted: bool) -> TableArena {
         // Drop a terminal all-empty row (exactly one empty cell), same rule as
-        // the Vec path. Its single cell is the last fencepost pair.
-        if self.row_lens.last().copied() == Some(1) {
+        // the Vec path — but NOT a genuine quoted-empty terminal field (TSK-1286).
+        if !last_field_quoted && self.row_lens.last().copied() == Some(1) {
             let last_empty = matches!(
                 (self.offsets.iter().nth_back(1), self.offsets.last()),
                 (Some(&s), Some(&e)) if s == e
@@ -682,11 +699,9 @@ mod tests {
     proptest! {
         #[test]
         fn csv_quoted_grid_roundtrips(
-            // cols>=2: a lone len==1 empty TERMINAL row hits the TSK-1286
-            // terminal-empty-row drop (it can't see quote-state); cols>=2 keeps
-            // the high-value embedded quote/comma/newline coverage green while
-            // that edge is tracked separately (+ pinned below).
-            grid in (2usize..6, 1usize..4).prop_flat_map(|(cols, rows)| {
+            // TSK-1286 FIXED: cols>=1 now round-trips (a quoted-empty terminal
+            // field is kept), so single-column grids are back in the coverage.
+            grid in (1usize..6, 1usize..4).prop_flat_map(|(cols, rows)| {
                 prop::collection::vec(
                     prop::collection::vec(quoted_cell(), cols..=cols),
                     rows..=rows,
@@ -707,16 +722,20 @@ mod tests {
         }
     }
 
-    /// Characterizes the TSK-1286 edge surfaced by the quoting proptest: a lone
-    /// quoted-empty TERMINAL row `""` is dropped by the terminal-empty-row
-    /// heuristic (it can't distinguish a genuine quoted-empty field from the
-    /// phantom row a trailing newline creates). Pins the CURRENT behavior so a
-    /// future fix flips this deliberately.
+    /// TSK-1286 FIXED: a lone quoted-empty TERMINAL field `""` is a REAL field
+    /// (→ one row, one empty cell) and is kept; a blank-line phantom (unquoted
+    /// trailing empty row) is still dropped. The terminal field's quote-state is
+    /// what distinguishes them. Teeth: regressing either side flips an assert.
     #[test]
-    fn lone_quoted_empty_terminal_row_dropped_tsk1286() {
+    fn lone_quoted_empty_terminal_row_kept_tsk1286() {
+        // Genuine quoted-empty field → kept as a single empty cell.
         let t = parse_with("\"\"", ',', Limits::default());
-        assert!(t.header.is_empty(), "TSK-1286: lone `\"\"` currently drops to []");
+        assert_eq!(t.header, vec![""], "TSK-1286: lone `\"\"` is a real empty field");
         assert!(t.rows.is_empty());
+        // Blank-line phantom (trailing unquoted empty row) → still dropped.
+        let t2 = parse_with("a,b\n\n", ',', Limits::default());
+        assert_eq!(t2.header, vec!["a", "b"]);
+        assert!(t2.rows.is_empty(), "trailing blank line still dropped");
     }
 
     #[test]
