@@ -121,6 +121,36 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     /// Push the content-scale to the page's `--mdv-content-scale` CSS var (TSK-358)
     /// — live, no reload (mirrors `pageZoom`), so the render cache is untouched.
     /// `markdown.css` reads it via `calc(15px * var(--mdv-content-scale, 1))`.
+    /// TSK-1183: feature gate for the DOM-patch apply path. Default OFF —
+    /// production stays on full `loadHTMLString` reloads until the gated live path
+    /// is VM-validated and the owner flips it on (the rust-flip pattern).
+    static var domPatchEnabled: Bool {
+        ProcessInfo.processInfo.environment["MDV_DOM_PATCH"] == "1"
+    }
+
+    /// TSK-1183: attempt a same-file incremental DOM patch instead of a full reload.
+    /// Computes the block diff (old→new rendered HTML); IF the change is small enough
+    /// to be worth patching, injects `BlockPatchJS` and applies it to `document.body`
+    /// (the live body IS the splitBlocks grain — VM-proven by BlockPatchAlignmentProbe
+    /// Tests). Returns true iff it patched; false (no block-level change / too large)
+    /// tells the caller to fall back to `loadHTMLString`. Correctness does NOT depend
+    /// on the size heuristic — the apply is VM-proven (BlockPatchApplyWebViewTests);
+    /// the heuristic only trades a patch for a reload.
+    static func tryApplyDOMPatch(oldHTML: String, newHTML: String, webView: WKWebView) -> Bool {
+        let oldBlocks = RenderedBlockDiff.splitBlocks(oldHTML)
+        let newBlocks = RenderedBlockDiff.splitBlocks(newHTML)
+        let ops = RenderedBlockDiff.diff(old: oldBlocks, new: newBlocks)
+        // Patch only a SMALL diff; a large rewrite is simpler + safer as a full reload
+        // (the per-keystroke storm this kills is the single-block-edit case).
+        guard !ops.isEmpty, ops.count <= max(4, newBlocks.count / 2) else { return false }
+        let payload = RenderedBlockDiff.jsPayload(ops)
+        webView.evaluateJavaScript(
+            BlockPatchJS.applyFunction
+            + "; window.mdvApplyBlockPatch('body', JSON.stringify(\(payload)));",
+            completionHandler: nil)
+        return true
+    }
+
     static func applyContentScale(_ scale: Double, to webView: WKWebView) {
         let v = String(format: "%.4f", scale)
         webView.evaluateJavaScript(
@@ -284,7 +314,21 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         // @Published mutation, and reloading the page on each tick causes
         // a render storm + a brief blank-content flash that was being
         // perceived as "tabs vanishing".
-        if coord.lastHTML != html {
+        if coord.lastHTML != html,
+           Self.domPatchEnabled,
+           coord.currentURL == fileURL,
+           let patchOldHTML = coord.lastHTML,
+           Self.tryApplyDOMPatch(oldHTML: patchOldHTML, newHTML: html, webView: webView) {
+            // TSK-1183: SAME-FILE re-render DOM-patched IN PLACE (gated MDV_DOM_PATCH,
+            // default OFF). Only the changed top-level blocks are mutated; scroll is
+            // preserved and there is NO full loadHTMLString reload — the whole point
+            // (kills the 2–9s reload storm on every keystroke re-render). The OFF
+            // default + the eligibility gate + the loadHTMLString fallback (the
+            // `else if` below, taken when tryApplyDOMPatch returns false) make this
+            // non-regressing. Alignment (live body.children == splitBlocks grain) and
+            // the apply itself are VM-webview-proven (BlockPatchApply/AlignmentProbe).
+            coord.lastHTML = html
+        } else if coord.lastHTML != html {
             // TSK-821: before this reload (a file switch / re-render into the
             // MountedPanesLRU-retained WebView) resets scroll to the top,
             // capture the OUTGOING file's scrollY so a later return restores it,
