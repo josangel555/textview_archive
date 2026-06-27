@@ -35,6 +35,7 @@ public enum MCPToolCatalog {
         gitStatusDescriptor,
         runVerbDescriptor,
         listVerbsDescriptor,
+        listSurfacesDescriptor,
         lintDescriptor,
         currentStateDescriptor,
         toggleBookmarkDescriptor,
@@ -65,6 +66,7 @@ public enum MCPToolCatalog {
         case "git_status":        return try gitStatus(args, host)
         case "run_verb":          return try runVerb(args, host)
         case "list_verbs":        return try listVerbs(args, host)
+        case "list_surfaces":     return try listSurfaces(args, host)
         case "lint":              return try lint(args, host)
         case "current_state":     return try currentState(args, host)
         case "toggle_bookmark":   return try toggleBookmark(args, host)
@@ -545,6 +547,35 @@ public enum MCPToolCatalog {
         return .object([
             "verbs": .array(verbs),
             "count": .int(ScriptVerbCatalog.all.count),
+        ])
+    }
+
+    // MARK: - list_surfaces
+
+    private static let listSurfacesDescriptor = MCP.ToolDescriptor(
+        name: "list_surfaces",
+        description: "List the agent-addressable UI surfaces — the curated mdv.* AX identifier "
+            + "contract — as [{id, surface, summary}], so an agent can DISCOVER what it can "
+            + "address (for element references / Copy-Reference and the native-chrome driver). "
+            + "Read-only; the addressing companion of list_verbs (actions).",
+        inputSchema: emptySchema
+    )
+
+    /// Discoverability for the ADDRESSING surface — the sibling of list_verbs:
+    /// returns the curated AXIdentifierCatalog (every stable top-level mdv.* id +
+    /// its surface group + summary) so an agent can self-describe what it can
+    /// reference/address. Pure read of the static catalog.
+    private static func listSurfaces(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let surfaces: [MCP.Value] = AXIdentifierCatalog.critical.map { e in
+            .object([
+                "id": .string(e.id),
+                "surface": .string(e.surface.rawValue),
+                "summary": .string(e.summary),
+            ])
+        }
+        return .object([
+            "surfaces": .array(surfaces),
+            "count": .int(AXIdentifierCatalog.critical.count),
         ])
     }
 

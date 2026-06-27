@@ -73,7 +73,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 19)
+        XCTAssertEqual(names.count, 20)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -82,9 +82,26 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
-            "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb", "list_verbs", "lint",
+            "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb", "list_verbs", "list_surfaces", "lint",
         ]
         XCTAssertEqual(names, expected)
+    }
+
+    func test_listSurfaces_returnsTheCatalog() throws {
+        let result = try MCPToolCatalog.dispatch(name: "list_surfaces", args: .object([:]), host: host)
+        guard case .object(let obj) = result,
+              case .array(let surfaces)? = obj["surfaces"],
+              case .int(let count)? = obj["count"] else {
+            XCTFail("malformed: \(result)"); return
+        }
+        XCTAssertEqual(surfaces.count, count, "count must equal the surfaces array length")
+        XCTAssertGreaterThan(count, 50, "the AX-id catalog has 50+ curated surfaces")
+        // Teeth: a core surface (mdv.tabbar, promoted this run) is enumerated.
+        let hasTabbar = surfaces.contains { s in
+            guard case .object(let o) = s, case .string(let id)? = o["id"] else { return false }
+            return id == "mdv.tabbar"
+        }
+        XCTAssertTrue(hasTabbar, "list_surfaces must enumerate the AX catalog (mdv.tabbar present)")
     }
 
     func test_listVerbs_returnsTheCatalog() throws {
