@@ -73,6 +73,10 @@ public enum ScriptVerb {
             // TSK-1256: copy a line-precise mdv:// reference to the current editor
             // line (active tab) to the clipboard.
             if let ref = model.currentLineReference() { Pasteboard.copy(ref) }
+        case "goto-line":
+            // Script-bus nav primitive: scroll the active editor/source to a
+            // 1-based line. Invalid (≤0 / non-numeric) args are a recognized no-op.
+            if let n = Int(arg), n >= 1 { model.sourceView.scrollSource(toLine: n) }
         case "open":           model.openPath(URL(fileURLWithPath: arg))
         case "open-lazy":
             // Append a file as a LAZY (`.empty`) tab without selecting it —

@@ -164,6 +164,7 @@ public enum ScriptVerbCatalog {
         ScriptVerb("editor-set-mode", .editor, .enumToken, "Force the active tab into a view mode"),
         ScriptVerb("editor-focus", .editor, .none, "Hand keyboard first-responder to the active editor"),
         ScriptVerb("copy-reference", .editor, .none, "Copy an mdv:// reference to the current editor line"),
+        ScriptVerb("goto-line", .editor, .int, "Scroll the active editor/source to a 1-based line"),
         ScriptVerb("editor-set-text", .editor, .string, "Replace the active tab's editor buffer text"),
         ScriptVerb("editor-save", .editor, .none, "Save the active editor buffer (⌘S equivalent)"),
         ScriptVerb("editor-format", .editor, .none, "Whole-document LSP format of the active buffer"),
