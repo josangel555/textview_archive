@@ -77,6 +77,12 @@ public final class HistoryStore {
     }
 
     public static func defaultStoreURL() -> URL {
+        // TSK-1288: under XCTest, never touch the dev's real ~/Library state.
+        if let base = TestStateRedirect.appSupportBase() {
+            let dir = base.appendingPathComponent("MarkdownViewer", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir.appendingPathComponent("history.json", isDirectory: false)
+        }
         let support = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first ?? FileManager.default.temporaryDirectory

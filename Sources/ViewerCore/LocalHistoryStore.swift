@@ -121,6 +121,12 @@ public final class LocalHistoryStore: Sendable {
 
     public static func defaultDirectory() -> URL {
         let fm = FileManager.default
+        // TSK-1288: under XCTest, never touch the dev's real ~/Library state.
+        if let base = TestStateRedirect.appSupportBase() {
+            let dir = base.appendingPathComponent("MarkdownViewer/LocalHistory")
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }
         let support = (try? fm.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
