@@ -15,6 +15,13 @@ public struct URLSessionFeedTransport: FeedTransport {
     }
 }
 
+/// TSK-1149 — the higher fetch seam (Feeds, not bytes): refresh many feeds at once.
+/// FeedFetcher conforms; the feed-reader view-model takes this so its refresh
+/// orchestration is host-testable with a canned-Feeds stub (no parse/network).
+public protocol FeedFetching: Sendable {
+    func refreshAll(_ urls: [URL]) async -> [URL: Feed]
+}
+
 /// TSK-1148 — the feed fetch layer: download a subscription's bytes (via the
 /// injected `FeedTransport`) and parse them into a `Feed` (via `FeedParser`).
 /// Pure orchestration over two injectable pieces, so the whole thing is
@@ -52,3 +59,5 @@ public struct FeedFetcher: Sendable {
         }
     }
 }
+
+extension FeedFetcher: FeedFetching {}

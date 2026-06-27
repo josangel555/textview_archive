@@ -2,6 +2,14 @@ import XCTest
 import ViewerCore
 @testable import ViewerUI
 
+/// Canned-Feeds stub for the refresh-orchestration test (no network/parse).
+private struct StubFetcher: FeedFetching {
+    let feeds: [URL: Feed]
+    func refreshAll(_ urls: [URL]) async -> [URL: Feed] {
+        feeds.filter { urls.contains($0.key) }
+    }
+}
+
 /// TSK-1149 — host coverage for the feed-reader view-model's state coordination:
 /// selecting a feed populates its items, ingesting a fetch updates the summaries,
 /// and marking an item read decrements the unread rollup + annotates the item.
@@ -68,5 +76,24 @@ final class FeedReaderViewModelTests: XCTestCase {
         XCTAssertEqual(vm.totalUnread, 1, "a1 read → 1 unread (teeth)")
         XCTAssertEqual(vm.items.first { $0.item.id == "a1" }?.isRead, true)
         XCTAssertEqual(vm.items.first { $0.item.id == "a2" }?.isRead, false)
+    }
+
+    func test_refresh_fetchesDueFeeds_stampsTime_andSkipsFresh() async {
+        let store = makeStore()
+        let u = URL(string: "https://a.example/feed")!
+        _ = store.subscribe(url: u, title: "A")
+        let feed = Feed(title: "A", siteURL: nil, items: [item("a1", daysAgo: 1)])
+        let vm = FeedReaderViewModel(store: store, fetcher: StubFetcher(feeds: [u: feed]))
+        let now = Date(timeIntervalSinceReferenceDate: 2_000_000)
+
+        // Never-fetched → due → refresh fetches, ingests, and stamps the time.
+        await vm.refresh(now: now)
+        XCTAssertEqual(vm.lastFetched[u], now, "fetched feed stamped at now (feeds the scheduler)")
+        XCTAssertTrue(vm.summaries.first?.hasFetched == true, "feed now fetched")
+        XCTAssertEqual(vm.totalUnread, 1)
+
+        // 1 min later (< refreshInterval) → not due → no refetch, stamp unchanged (teeth).
+        await vm.refresh(now: now.addingTimeInterval(60))
+        XCTAssertEqual(vm.lastFetched[u], now, "fresh feed not refetched (due-logic)")
     }
 }

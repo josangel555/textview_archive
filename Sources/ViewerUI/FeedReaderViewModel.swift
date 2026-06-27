@@ -18,18 +18,25 @@ public final class FeedReaderViewModel: ObservableObject {
     @Published public private(set) var items: [FeedReaderModel.DisplayItem] = []
 
     private let store: FeedSubscriptionStore
+    private let fetcher: FeedFetching
     /// Fetched-feed cache (feed URL → last fetched `Feed`).
     private var feeds: [URL: Feed] = [:]
+    /// When each feed was last fetched — feeds the refresh scheduler.
+    public private(set) var lastFetched: [URL: Date] = [:]
+    /// Refresh staleness threshold (seconds): a feed older than this is refetched.
+    public var refreshInterval: TimeInterval = 1800
 
-    public init(store: FeedSubscriptionStore) {
+    public init(store: FeedSubscriptionStore, fetcher: FeedFetching = FeedFetcher()) {
         self.store = store
+        self.fetcher = fetcher
         recompute()
     }
 
     /// Replace the cached `Feed` for `url` (after a `FeedFetcher` fetch) and
     /// recompute the summaries (and the item list if this feed is selected).
-    public func ingestFetched(url: URL, feed: Feed) {
+    public func ingestFetched(url: URL, feed: Feed, at fetchedAt: Date = Date()) {
         feeds[url] = feed
+        lastFetched[url] = fetchedAt
         recompute()
     }
 
@@ -48,6 +55,23 @@ public final class FeedReaderViewModel: ObservableObject {
 
     /// Total unread across all fetched feeds (the badge count).
     public var totalUnread: Int { FeedReaderModel.totalUnread(summaries) }
+
+    /// Refresh the feeds DUE per FeedRefreshScheduler (never-fetched or older than
+    /// `refreshInterval`), fetch them via the injected fetcher, and ingest each
+    /// (stamping its fetch time). Failed feeds keep their old `lastFetched` so they
+    /// retry next pass. `now` is injectable for tests.
+    public func refresh(now: Date = Date()) async {
+        let due = FeedRefreshScheduler.dueForRefresh(
+            subscriptions: store.allSubscriptions().map(\.url),
+            lastFetched: lastFetched,
+            interval: refreshInterval,
+            now: now)
+        guard !due.isEmpty else { return }
+        let fetched = await fetcher.refreshAll(due)
+        for (url, feed) in fetched {
+            ingestFetched(url: url, feed: feed, at: now)
+        }
+    }
 
     private func recompute() {
         summaries = FeedReaderModel.feedSummaries(
