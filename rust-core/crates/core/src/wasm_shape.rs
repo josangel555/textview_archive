@@ -62,6 +62,8 @@ mod tests {
         ("std::thread", "OS threads — unavailable on wasm32-unknown-unknown"),
         ("std::process", "subprocess spawn — unavailable on wasm32-unknown-unknown"),
         ("std::env::", "ambient env — not sans-IO; inject as a parameter"),
+        ("std::time::Instant", "monotonic clock — Instant::now panics on wasm32-unknown-unknown"),
+        ("std::time::SystemTime", "wall clock — SystemTime::now unavailable on wasm32-unknown-unknown"),
     ];
 
     const TEST_ATTR: &[u8] = b"#[cfg(test)]";
@@ -151,6 +153,13 @@ mod tests {
         let bad = "pub fn read() { let _ = std::fs::read(\"/etc/passwd\"); }";
         let hit = WASM_BREAKING.iter().any(|(n, _)| bad.contains(n));
         assert!(hit, "the WASM_BREAKING scan failed to flag an obvious IO call");
+
+        // Time is wasm-breaking too — there is no clock on wasm32-unknown-unknown.
+        let bad_time = "use std::time::Instant;\nfn f() { let _ = Instant::now(); }";
+        assert!(
+            WASM_BREAKING.iter().any(|(n, _)| bad_time.contains(n)),
+            "the WASM_BREAKING scan failed to flag std::time clock usage"
+        );
 
         // …and the test-module stripper must NOT let a test-only use hide a
         // real production violation that sits OUTSIDE the test module.
