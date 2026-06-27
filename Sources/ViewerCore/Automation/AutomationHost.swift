@@ -106,6 +106,9 @@ public struct AutomationState: Codable, Sendable, Equatable {
     public let isSplitOpen: Bool
     /// Whether the editor's Vim mode is enabled.
     public let vimModeEnabled: Bool
+    /// The live session list (app-level) — lets an agent enumerate sessions to
+    /// drive the session-* verbs by id/name instead of a blind 1-based index.
+    public let sessions: [SessionDescriptor]
 
     public init(
         tabs: [TabDescriptor],
@@ -115,7 +118,8 @@ public struct AutomationState: Codable, Sendable, Equatable {
         sidebarRoot: String?,
         isPalettePresented: Bool,
         isSplitOpen: Bool = false,
-        vimModeEnabled: Bool = false
+        vimModeEnabled: Bool = false,
+        sessions: [SessionDescriptor] = []
     ) {
         self.tabs = tabs
         self.selectedTabIndex = selectedTabIndex
@@ -125,6 +129,7 @@ public struct AutomationState: Codable, Sendable, Equatable {
         self.isPalettePresented = isPalettePresented
         self.isSplitOpen = isSplitOpen
         self.vimModeEnabled = vimModeEnabled
+        self.sessions = sessions
     }
 
     public struct TabDescriptor: Codable, Sendable, Equatable {
@@ -137,6 +142,17 @@ public struct AutomationState: Codable, Sendable, Equatable {
         public init(id: String, path: String?, title: String, viewMode: String, isDirty: Bool = false) {
             self.id = id; self.path = path; self.title = title; self.viewMode = viewMode
             self.isDirty = isDirty
+        }
+    }
+
+    /// One live app-level session (the session-tab strip). `isActive` marks the
+    /// focused session; `id` round-trips back to the session-* verbs.
+    public struct SessionDescriptor: Codable, Sendable, Equatable {
+        public let id: String
+        public let displayName: String
+        public let isActive: Bool
+        public init(id: String, displayName: String, isActive: Bool) {
+            self.id = id; self.displayName = displayName; self.isActive = isActive
         }
     }
 }

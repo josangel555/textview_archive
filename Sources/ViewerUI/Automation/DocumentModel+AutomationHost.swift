@@ -114,6 +114,17 @@ extension DocumentModel: AutomationHost {
         // makes the `current_state` -> `select_tab` round-trip an identity
         // (read the index, feed it straight back) instead of off-by-one.
         // `nil` (no selection) is preserved as `nil`.
+        // App-level session list — only when a coordinator is wired (the
+        // main.swift launch path; nil under previews/bare-model tests → empty).
+        let activeSessionID = sessionsCoordinator?.core.activeID
+        let sessionDescriptors: [AutomationState.SessionDescriptor] =
+            sessionsCoordinator?.core.sessions.map { snap in
+                .init(
+                    id: snap.id.uuidString,
+                    displayName: snap.displayName,
+                    isActive: activeSessionID == snap.id
+                )
+            } ?? []
         return AutomationState(
             tabs: descriptors,
             selectedTabIndex: tabs.selectedIndex.map { $0 + 1 },
@@ -122,7 +133,8 @@ extension DocumentModel: AutomationHost {
             sidebarRoot: sidebar.rootURL?.path,
             isPalettePresented: isPalettePresented,
             isSplitOpen: isSplitOpen,
-            vimModeEnabled: vimModeEnabled
+            vimModeEnabled: vimModeEnabled,
+            sessions: sessionDescriptors
         )
     }
 

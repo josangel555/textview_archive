@@ -14520,3 +14520,10 @@ Continued the drain (HEAD bf2f6b50 → e673c886), verify-state lens finding real
 
 ENV: swift host validation via `swift test --skip-update` (SwiftPM net-hung); wasm32 + cargo-fuzz CDN-blocked (large downloads time out, HEAD ok).
 BOUNDARY: clean host-completable threads drained — P0a comprehensive, P0b validated-pool drained (TSK-1106/585 + ports/memchr), PM host-complete (14 slices), proptest lane comprehensive, DOM-patch host+FFI done. Remaining = render-tails (DOM-patch applier, the ~review pile), engine-gated (Agent-Services TSK-1154 needs sandbox/LSP/engine — verified), owner decisions (crypto-hash TSK-1287, PM direction, AX-TCC executor TSK-1261/1263).
+
+## LOG (2026-06-27 cont. — agent READ surface, the 4th drivability axis)
+After addressing/action/discovery, completed the READING axis — what an agent asserts on:
+- **current_state journey state (9cf48e0b):** isSplitOpen + vimModeEnabled (AutomationState) + per-tab isDirty (TabDescriptor) — "is the file modified? / is vim INSERT? / is a split open?". Model-readable, MCP-reachable (NOT AX-TCC-gated). Host test asserts the populate reflects the model; 61 MCP/AutomationHost tests green.
+- **current_state.sessions (this commit):** the live app-level session list (id/displayName/isActive) so an agent enumerates sessions to drive the session-* verbs by id/name instead of a blind 1-based index — the READ half of the session action surface (same action-without-discovery asymmetry as run_verb→list_verbs). Populate reads sessionsCoordinator?.core.sessions/.activeID (the main.swift launch wiring). Teeth: wired-mirrors-coordinator (HeadlessHarness) + unwired-is-empty negative control; 62 tests green.
+
+This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔list_verbs, surfaces↔list_surfaces, sessions↔current_state.sessions. The agent-drivable surface (the non-TCC-gated half of TSK-1254) is comprehensive across all 4 axes (addressing·action·discovery·reading). Only the out-of-process AX EXECUTOR (real events, TSK-1261/1263) is TCC-gated.

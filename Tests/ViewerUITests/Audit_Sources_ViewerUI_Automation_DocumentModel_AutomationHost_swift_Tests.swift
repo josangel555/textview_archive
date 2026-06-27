@@ -79,6 +79,31 @@ final class Audit_Sources_ViewerUI_Automation_DocumentModel_AutomationHost_swift
         XCTAssertTrue(model.automationCurrentState().isSplitOpen, "split state reflects the model")
     }
 
+    /// current_state mirrors the live session list (the app-level session-tab
+    /// strip) so an agent can enumerate sessions to drive the session-* verbs by
+    /// id/name — the READ half of the session action surface. Needs a wired
+    /// coordinator (HeadlessHarness mirrors the main.swift launch wiring; the bare
+    /// makeModel() has none → empty, which is the negative-control teeth).
+    func test_currentState_lists_live_sessions() throws {
+        let harness = HeadlessHarness(label: "AuditAutomationHostSessions")
+        defer { harness.cleanup() }
+        harness.model.sessionsCoordinator = harness.sessions  // mirror main.swift:421
+        let coordinatorSessions = harness.sessions.core.sessions
+        let st = harness.model.automationCurrentState()
+        XCTAssertEqual(st.sessions.count, coordinatorSessions.count,
+                       "current_state mirrors the coordinator's session count")
+        XCTAssertEqual(Set(st.sessions.map { $0.id }),
+                       Set(coordinatorSessions.map { $0.id.uuidString }),
+                       "session ids round-trip to the coordinator")
+        XCTAssertEqual(st.sessions.filter { $0.isActive }.count,
+                       coordinatorSessions.isEmpty ? 0 : 1,
+                       "exactly one active session is flagged when sessions exist")
+        // Negative control: no coordinator wired → empty (the populate genuinely
+        // READS the coordinator; it can't fabricate a list from a bare model).
+        XCTAssertTrue(makeModel().automationCurrentState().sessions.isEmpty,
+                      "no coordinator → empty session list")
+    }
+
     // MARK: - selectedTabIndex is 1-based (round-trips with select_tab)
 
     /// The first tab is selected; `current_state` must report `1`, not the
