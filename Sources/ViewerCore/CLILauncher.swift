@@ -20,10 +20,8 @@ public enum CLILauncher {
     /// Per-user fallback when `/usr/local/bin` isn't writable (no admin needed).
     /// The user adds it to `PATH` (the install alert says so).
     public static func fallbackBinDir() -> URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
             .appendingPathComponent("bin", isDirectory: true)
     }
 

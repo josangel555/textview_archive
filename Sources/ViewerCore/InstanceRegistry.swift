@@ -78,10 +78,8 @@ public enum InstanceRegistry {
     /// no-bundle-id Application Support subtree the rest of the app's session /
     /// bookmark state lives under (see CLAUDE.md "Persisted state").
     public static func defaultDirectory() -> URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
             .appendingPathComponent("Instances", isDirectory: true)
     }
 

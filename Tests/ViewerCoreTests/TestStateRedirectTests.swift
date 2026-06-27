@@ -65,6 +65,21 @@ final class TestStateRedirectTests: XCTestCase {
                       "walkthrough-checkpoints must redirect, got \(WalkthroughCheckpointStore.defaultDirectory().path)")
         XCTAssertTrue(WalkthroughDropTransport.defaultDropDirectory().path.contains("MDVTestState-"),
                       "walkthrough-drop must redirect, got \(WalkthroughDropTransport.defaultDropDirectory().path)")
+        // Slice 5: MarkdownViewer-subdir simple stores redirect too.
+        XCTAssertTrue(CLILauncher.fallbackBinDir().path.contains("MDVTestState-"),
+                      "cli bin must redirect, got \(CLILauncher.fallbackBinDir().path)")
+        XCTAssertTrue(FeedSubscriptionStore.defaultSubscriptionsURL().path.contains("MDVTestState-"),
+                      "feeds must redirect, got \(FeedSubscriptionStore.defaultSubscriptionsURL().path)")
+        XCTAssertTrue(InstanceRegistry.defaultDirectory().path.contains("MDVTestState-"),
+                      "instances must redirect, got \(InstanceRegistry.defaultDirectory().path)")
+        XCTAssertTrue(TerminalCommandHistory.defaultURL().path.contains("MDVTestState-"),
+                      "terminal-history must redirect, got \(TerminalCommandHistory.defaultURL().path)")
+        XCTAssertTrue(SnippetStore.defaultStoreURL().path.contains("MDVTestState-"),
+                      "snippets must redirect, got \(SnippetStore.defaultStoreURL().path)")
+        XCTAssertTrue(WalkthroughHistory.defaultStoreURL().path.contains("MDVTestState-"),
+                      "walkthrough-history must redirect, got \(WalkthroughHistory.defaultStoreURL().path)")
+        XCTAssertTrue(WalkthroughStore.defaultLibraryDirectory().path.contains("MDVTestState-"),
+                      "walkthrough-library must redirect, got \(WalkthroughStore.defaultLibraryDirectory().path)")
     }
 
     /// Structural guard (TSK-1288): no NEW ViewerCore store may compute the real app-support
@@ -83,11 +98,8 @@ final class TestStateRedirectTests: XCTestCase {
         }
         // Known not-yet-repointed stores (TSK-1288 follow-on batch). NOT actively polluting.
         let allowed: Set<String> = [
-            "AppCacheReset.swift", "CLILauncher.swift", "FeedSubscriptionStore.swift",
-            "InstanceRegistry.swift", "LSPDiscovery.swift", "ReviewStore.swift",
-            "SessionStore.swift", "SnippetStore.swift", "TerminalCommandHistory.swift",
-            "ThemeStore.swift", "WalkthroughCatalog.swift", "WalkthroughHistory.swift",
-            "WalkthroughStore.swift",
+            "AppCacheReset.swift", "LSPDiscovery.swift", "ReviewStore.swift",
+            "SessionStore.swift", "ThemeStore.swift", "WalkthroughCatalog.swift",
         ]
         var offenders: [String] = []
         for case let url as URL in en where url.pathExtension == "swift" {

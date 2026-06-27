@@ -54,16 +54,8 @@ public struct WalkthroughStore: Sendable {
     /// un-prefixed Application-Support subdir the rest of the app's
     /// persisted user state lives under (Sessions, bookmarks, history).
     public static func defaultLibraryDirectory() -> URL {
-        let fm = FileManager.default
-        let base = (try? fm.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: false
-        )) ?? URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Application Support")
-        return base
-            .appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
             .appendingPathComponent("Walkthroughs", isDirectory: true)
     }
 

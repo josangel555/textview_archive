@@ -119,10 +119,8 @@ public final class FeedSubscriptionStore {
     }
 
     private static func supportDir() -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return support.appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
     }
 
     // MARK: - Subscriptions

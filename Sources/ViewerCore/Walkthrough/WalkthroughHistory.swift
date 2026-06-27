@@ -115,11 +115,8 @@ public final class WalkthroughHistory {
     /// (The design names `walkthrough-log.jsonl`; we keep the `.json`
     /// array form for store parity — see the type docstring.)
     public static func defaultStoreURL() -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
             .appendingPathComponent("walkthrough-history.json", isDirectory: false)
     }
 
