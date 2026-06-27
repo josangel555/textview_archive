@@ -32,6 +32,7 @@ public enum MCPToolCatalog {
         gotoLineDescriptor,
         visibleTextDescriptor,
         outlineDescriptor,
+        gitStatusDescriptor,
         currentStateDescriptor,
         toggleBookmarkDescriptor,
         listBookmarksDescriptor,
@@ -58,6 +59,7 @@ public enum MCPToolCatalog {
         case "goto_line":         return try gotoLine(args, host)
         case "visible_text":      return try visibleText(args, host)
         case "outline":           return try outline(args, host)
+        case "git_status":        return try gitStatus(args, host)
         case "current_state":     return try currentState(args, host)
         case "toggle_bookmark":   return try toggleBookmark(args, host)
         case "list_bookmarks":    return try listBookmarks(args, host)
@@ -458,6 +460,28 @@ public enum MCPToolCatalog {
             "count": .int(headings.count),
             "truncated": .bool(headings.count > cap),
         ])
+    }
+
+    // MARK: - git_status
+
+    private static let gitStatusDescriptor = MCP.ToolDescriptor(
+        name: "git_status",
+        description: "Return the git context of the open workspace root: { isRepo, root, branch }. "
+            + "Reads .git/HEAD directly (no subprocess, never throws); branch is omitted for a "
+            + "detached HEAD or a non-repo root.",
+        inputSchema: emptySchema
+    )
+
+    /// Wrap-a-host-reader (like outline/process_memory): the open workspace's git
+    /// badge via SessionGitInfo (reads .git/HEAD directly, no subprocess). Gives
+    /// an agent the repo/branch context without spawning git.
+    private static func gitStatus(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let root = host.automationCurrentState().sidebarRoot
+        let badge = SessionGitInfo.badge(forRootPath: root)
+        var obj: [String: MCP.Value] = ["isRepo": .bool(badge.isRepoRoot)]
+        if let root { obj["root"] = .string(root) }
+        if let branch = badge.branch { obj["branch"] = .string(branch) }
+        return .object(obj)
     }
 
     // MARK: - current_state

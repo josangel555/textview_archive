@@ -71,7 +71,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 15)
+        XCTAssertEqual(names.count, 16)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -80,7 +80,7 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
-            "list_runnable_tasks", "process_memory", "outline",
+            "list_runnable_tasks", "process_memory", "outline", "git_status",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -117,6 +117,46 @@ final class MCPToolCatalogTests: XCTestCase {
             XCTFail("malformed: \(result)"); return
         }
         XCTAssertEqual(count, 0)
+    }
+
+    // MARK: - git_status
+
+    func test_gitStatus_readsBranchFromHEAD() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-git-\(UUID().uuidString)", isDirectory: true)
+        let dotGit = tmp.appendingPathComponent(".git")
+        try FileManager.default.createDirectory(at: dotGit, withIntermediateDirectories: true)
+        try "ref: refs/heads/feature-x\n".write(
+            to: dotGit.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        host.stateResult = AutomationState(
+            tabs: [], selectedTabIndex: nil, viewMode: "rendered",
+            zoom: 1.0, sidebarRoot: tmp.path, isPalettePresented: false)
+
+        let result = try MCPToolCatalog.dispatch(name: "git_status", args: .object([:]), host: host)
+        guard case .object(let obj) = result,
+              case .bool(let isRepo)? = obj["isRepo"],
+              case .string(let branch)? = obj["branch"] else {
+            XCTFail("malformed result: \(result)"); return
+        }
+        XCTAssertTrue(isRepo)
+        XCTAssertEqual(branch, "feature-x", "teeth: reads the branch from .git/HEAD")
+    }
+
+    func test_gitStatus_notARepo() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-nogit-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        host.stateResult = AutomationState(
+            tabs: [], selectedTabIndex: nil, viewMode: "rendered",
+            zoom: 1.0, sidebarRoot: tmp.path, isPalettePresented: false)
+
+        let result = try MCPToolCatalog.dispatch(name: "git_status", args: .object([:]), host: host)
+        guard case .object(let obj) = result, case .bool(let isRepo)? = obj["isRepo"] else {
+            XCTFail("malformed: \(result)"); return
+        }
+        XCTAssertFalse(isRepo)
     }
 
     // MARK: - process_memory
