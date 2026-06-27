@@ -3625,12 +3625,20 @@ Continuation of "the five constraints" above; these three close every remaining 
   at a call site not in the grep). ROBUST FIX: keep the existing init's signature UNCHANGED (ABI-stable) and add a SEPARATE
   init with a distinct required-label set for the new params — no symbol churn, no reliance on touching the right files.
 
-- **Inject hermetic deps in @MainActor DocumentModel tests — a bare `DocumentModel()` can hit a slow real-state path
-  (2026-06-27, TSK-836).** ViewModeShortcutTests' 2 bare-`DocumentModel()` + `open(.md)` tests were ~5s EACH (serial);
-  switching to the INJECTED hermetic init (tmp history.json + a test-suite `UserDefaults(suiteName:)`, mirroring
-  DocumentModelTests.makeModel) made the IDENTICAL `open(url:)` 0.06s — 150× (9.6s → 0.064s). The exact root wasn't
-  pinned, and it is NOT uniform: most bare-`DocumentModel()` tests are fast (republish/split siblings ≤1.3s), so it's a
-  bare-init × md-open-path interaction (likely the REAL UserDefaults/HistoryStore steering the markdown open into a slow
-  render/highlight branch), NOT the bare init alone. RULE: inject `DocumentModel(controller:history:sidebar:preferences:)`
-  with tmp / test-suite deps — correct for HERMETICITY regardless (the bare init reads+writes the dev's real app state),
-  and it dodges this pathology.
+- **Serial vs targeted test times are NOT comparable — I made a FALSE 150× perf claim from it (2026-06-27, TSK-836;
+  CORRECTS the earlier ViewModeShortcut entry).** ViewModeShortcutTests' doc-tests showed ~5s EACH in the FULL SERIAL run
+  but 0.014s run TARGETED (alone) — a DIAG proved bare-`DocumentModel()`+`open(.md)` is 0.014s targeted (even against the
+  real 132 MB LocalHistory store), and the real HistoryStore/PreferencesStore reads are each ~0.01s. So the deps are NOT
+  the cost; the serial ~5s is a SERIAL-CONTEXT artifact (per-test serial time inflates for reasons independent of the
+  test's own work — process accumulation / serial attribution). I wrongly committed (58cd0671) a "9.6s→0.064s, 150×"
+  ViewModeShortcut win that compared serial-9.6s to targeted-0.064s — a FALSE comparison. RULE: a perf claim MUST use the
+  SAME run mode for before/after; for true per-test work use a TARGETED run, never the serial/parallel full-suite per-test
+  number. (The LocalHistoryStore byteCap win IS real — the 24 MiB→240 KiB write reduction is run-mode-independent.)
+- **Tests WRITE to the developer's REAL ~/Library app-state — a hermeticity bug (2026-06-27, TSK-1288).** A bare
+  `DocumentModel()` defaults `localHistory` to `LocalHistoryStore(defaultDirectory())` (the real `~/Library/Application
+  Support/MarkdownViewer/LocalHistory`) and `history` to `HistoryStore(defaultStoreURL())` (the real `history.json`), so
+  tests using the bare init (or those default-dir helpers) pollute the dev's real state. CONFIRMED: the real
+  `history.json` carries test markers (`mdv-vmshort`, `ViewModeShortcut`); LocalHistory is 132 MB / 8529 entries (partly
+  test-bloat). CLAUDE.md forbids real-user-state writes from tests. FIX: redirect `defaultDirectory()`/`defaultStoreURL()`
+  to a tmp dir under XCTest (`XCTestConfigurationFilePath` env) — one change covers all tests. NOTE: injecting only
+  history+prefs (as ViewModeShortcut did) is INCOMPLETE — `localHistory` still defaults to the real dir.
