@@ -44,4 +44,43 @@ final class TestStateRedirectTests: XCTestCase {
         XCTAssertTrue(TerminalFavoritesStore.defaultURL().path.contains("MDVTestState-"),
                       "terminal-favorites must redirect, got \(TerminalFavoritesStore.defaultURL().path)")
     }
+
+    /// Structural guard (TSK-1288): no NEW ViewerCore store may compute the real app-support
+    /// MarkdownViewer dir without routing through TestStateRedirect (else it pollutes the dev's
+    /// real ~/Library state under tests — the bug this whole class fixes). The allowlist is the
+    /// KNOWN not-yet-repointed stores; shrink it toward empty as they migrate to
+    /// TestStateRedirect.markdownViewerDir(). A brand-new bypasser fails this.
+    func test_noNewStoreBypassesTheRedirect() {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // ViewerCoreTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // repo root
+        let dir = root.appendingPathComponent("Sources/ViewerCore")
+        guard let en = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else {
+            XCTFail("Sources/ViewerCore not reachable from #filePath — path derivation broke"); return
+        }
+        // Known not-yet-repointed stores (TSK-1288 follow-on batch). NOT actively polluting.
+        let allowed: Set<String> = [
+            "AppCacheReset.swift", "CLILauncher.swift", "FeedSubscriptionStore.swift",
+            "InstanceRegistry.swift", "LSPDiscovery.swift", "PluginGrantStore.swift",
+            "PluginRegistry.swift", "ReviewStore.swift", "SessionStore.swift",
+            "SnippetStore.swift", "TerminalCommandHistory.swift", "ThemeStore.swift",
+            "WalkthroughCatalog.swift", "WalkthroughCheckpointStore.swift",
+            "WalkthroughDropTransport.swift", "WalkthroughHistory.swift", "WalkthroughStore.swift",
+        ]
+        var offenders: [String] = []
+        for case let url as URL in en where url.pathExtension == "swift" {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let usesAppSupport = text.contains("applicationSupportDirectory")
+            let mentionsDir = text.contains("\"MarkdownViewer\"") || text.contains("MarkdownViewer/")
+            let routes = text.contains("TestStateRedirect")
+            if usesAppSupport, mentionsDir, !routes, !allowed.contains(url.lastPathComponent) {
+                offenders.append(url.lastPathComponent)
+            }
+        }
+        XCTAssertTrue(offenders.isEmpty,
+            "NEW app-support store(s) bypass TestStateRedirect — route the default dir through "
+            + "TestStateRedirect.markdownViewerDir() so tests don't pollute the dev's real "
+            + "~/Library state: \(offenders.sorted())")
+    }
 }

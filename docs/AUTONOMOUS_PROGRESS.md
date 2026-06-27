@@ -14548,3 +14548,6 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 
 ## LOG (2026-06-27 cont. — TSK-1288 slice 3 (partial): 3 more stores repointed)
 - Repointed ViewModeLockStore, LSPTrustStore, TerminalFavoritesStore through TestStateRedirect.markdownViewerDir() (+ slice-2 test extended with their teeth). DEFENSIVE completion — these weren't actively polluting (only the 6 slice-1/2 stores were, per the gate-run mtimes), but they bypassed the seam. Full 20-store scope + a structural-guard recommendation recorded on TSK-1288 for a focused batch; ~17 stores remain (uniform pattern → mechanical via the same helper).
+
+## LOG (2026-06-27 cont. — TSK-1288 structural guard, the "stays fixed" keystone)
+- Added test_noNewStoreBypassesTheRedirect: scans Sources/ViewerCore (#filePath→repo-root, recursive) and FAILS if any store computes the real app-support MarkdownViewer dir WITHOUT routing through TestStateRedirect — a regression-lock so the hermeticity class can't silently regrow (CLAUDE.md "fix it so it stays fixed"). The 17 not-yet-repointed stores are an EXPLICIT shrinking known-debt allowlist (vs silent debt; chip it down via the focused batch). 4/4 green. With this, TSK-1288 = active pollution stopped (9 stores) + regression-locked.
