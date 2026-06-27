@@ -270,6 +270,7 @@ run_webview_tests() {
     --filter ViewerUITests.PaneScrollRestoreWebViewTests \
     --filter ViewerUITests.EditorScrollRestoreWebViewTests \
     --filter ViewerUITests.EditorCursorBlinkWebViewTests \
+    --filter ViewerUITests.BlockPatchApplyWebViewTests \
     --filter ViewerUITests.RenderedFindBarTests \
     2>&1 | tee "$WEBVIEW_TXT"
   local rc=${PIPESTATUS[0]}
