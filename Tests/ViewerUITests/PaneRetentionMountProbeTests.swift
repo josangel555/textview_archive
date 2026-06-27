@@ -124,6 +124,13 @@ final class PaneRetentionMountProbeTests: WebViewTestCase {
         settle(host); settle(host)
 
         XCTAssertEqual(model.mountedPanes.count, 4, "mounted set exceeded capacity")
+        // TSK-1274 discriminator: the evicting 5th open must MAKE exactly one new pane
+        // (t4). If THIS passes (makes==1) but the dismantle below is 0, the ForEach
+        // added the new child yet RETAINED the evicted one → a real teardown miss
+        // (leak). If THIS also fails with makes==0, the ForEach didn't re-render in
+        // the NSHostingView host at all → a harness limitation, not a product leak.
+        XCTAssertEqual(MountProbe.webViewMakes, 1,
+            "5th open should make exactly one new pane, got \(MountProbe.webViewMakes)")
         XCTAssertEqual(MountProbe.webViewDismantles, 1,
             "LRU overflow should dismantle exactly the one evicted tail pane, got \(MountProbe.webViewDismantles)")
     }
