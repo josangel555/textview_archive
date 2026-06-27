@@ -289,14 +289,13 @@ pub fn pretty_xml(input: &str) -> Option<String> {
 
 /// Index just past `needle` starting the search at `from`, or `None`.
 fn find_after(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
-    let mut i = from;
-    loop {
-        match haystack.get(i..i + needle.len()) {
-            Some(w) if w == needle => return Some(i + needle.len()),
-            Some(_) => i += 1,
-            None => return None,
-        }
-    }
+    // TSK-1285: memchr::memmem SIMD substring (memchr is a direct dep — TSK-399)
+    // supersedes the byte-at-a-time scan. The XML formatter calls this to skip to
+    // the `-->` / `]]>` / `?>` terminators, which can be far in a large document.
+    // Behavior-identical: the index just past the first `needle` at/after `from`
+    // (empty needle → `from`; out-of-range `from` or no match → `None`).
+    let tail = haystack.get(from..)?;
+    memchr::memmem::find(tail, needle).map(|rel| from + rel + needle.len())
 }
 
 /// From a `<` at `start`, return the index just past the closing `>` of a normal
