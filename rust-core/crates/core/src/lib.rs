@@ -35,6 +35,7 @@ pub mod fuzzy;
 pub mod git;
 pub mod hex;
 pub mod history;
+pub mod html_patch;
 pub mod image;
 pub mod indent;
 pub mod json;
