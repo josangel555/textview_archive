@@ -386,6 +386,41 @@ pub fn replay(conn: &mut Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// The dispatchable queue: work items in the `Ready` state, FIFO by creation —
+/// the v2 "next ready task" primitive. Priority + dependency ordering is a
+/// follow-on (needs the edge schema); this returns the Ready set in stable order.
+///
+/// # Errors
+/// Propagates any rusqlite query error.
+pub fn work_next(conn: &Connection) -> rusqlite::Result<Vec<WorkItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, state, created_seq, updated_seq FROM work_item
+         WHERE state = ?1 ORDER BY created_seq",
+    )?;
+    let rows = stmt.query_map([State::Ready.as_str()], |r| {
+        Ok(WorkItem {
+            id: r.get(0)?,
+            title: r.get(1)?,
+            state: r.get(2)?,
+            created_seq: r.get(3)?,
+            updated_seq: r.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Count of work items per state class — the roll-up for a progress dashboard.
+/// Ordered by state for a stable result.
+///
+/// # Errors
+/// Propagates any rusqlite query error.
+pub fn state_rollup(conn: &Connection) -> rusqlite::Result<Vec<(String, i64)>> {
+    let mut stmt =
+        conn.prepare("SELECT state, COUNT(*) FROM work_item GROUP BY state ORDER BY state")?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -587,5 +622,37 @@ mod tests {
             assert_eq!(ActorKind::from_i64(k.as_i64()), Some(k), "{k:?}");
         }
         assert_eq!(ActorKind::from_i64(9), None);
+    }
+
+    fn created_in(id: &str, state: State) -> WorkItemEvent {
+        WorkItemEvent::Created {
+            id: id.into(),
+            title: id.into(),
+            state: state.as_str().into(),
+        }
+    }
+
+    #[test]
+    fn work_next_returns_ready_items_in_fifo() -> rusqlite::Result<()> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
+        append(&mut conn, 2, "h", 0, &created_in("B", State::Active))?;
+        append(&mut conn, 3, "h", 0, &created_in("C", State::Ready))?;
+        let ids: Vec<String> = work_next(&conn)?.into_iter().map(|w| w.id).collect();
+        assert_eq!(ids, vec!["A", "C"]); // only Ready, FIFO by creation
+        Ok(())
+    }
+
+    #[test]
+    fn state_rollup_counts_by_class() -> rusqlite::Result<()> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
+        append(&mut conn, 2, "h", 0, &created_in("B", State::Ready))?;
+        append(&mut conn, 3, "h", 0, &created_in("C", State::Active))?;
+        assert_eq!(
+            state_rollup(&conn)?,
+            vec![("active".to_string(), 1_i64), ("ready".to_string(), 2_i64)]
+        );
+        Ok(())
     }
 }
