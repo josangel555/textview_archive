@@ -73,7 +73,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 17)
+        XCTAssertEqual(names.count, 18)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -82,7 +82,7 @@ final class MCPToolCatalogTests: XCTestCase {
             "open_path", "select_tab", "set_view_mode", "set_zoom",
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
-            "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb",
+            "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb", "lint",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -115,6 +115,32 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_outline_emptyForNonMarkdown() throws {
         host.visibleTextResult = "func main() {}\nlet x = 1\n"
         let result = try MCPToolCatalog.dispatch(name: "outline", args: .object([:]), host: host)
+        guard case .object(let obj) = result, case .int(let count)? = obj["count"] else {
+            XCTFail("malformed: \(result)"); return
+        }
+        XCTAssertEqual(count, 0)
+    }
+
+    // MARK: - lint
+
+    func test_lint_flagsHeadingSkip() throws {
+        host.visibleTextResult = "# Title\n\n### Skipped\n"   // H1 → H3 skips H2
+        let result = try MCPToolCatalog.dispatch(name: "lint", args: .object([:]), host: host)
+        guard case .object(let obj) = result,
+              case .array(let issues)? = obj["issues"],
+              case .int(let count)? = obj["count"] else {
+            XCTFail("malformed: \(result)"); return
+        }
+        XCTAssertEqual(count, 1)
+        guard case .object(let i0) = issues.first, case .string(let rule)? = i0["rule"] else {
+            XCTFail("no issue"); return
+        }
+        XCTAssertEqual(rule, "heading-skip", "teeth: flags the H1→H3 skip")
+    }
+
+    func test_lint_cleanDocIsEmpty() throws {
+        host.visibleTextResult = "# Title\n\n## Section\n\ntext\n"
+        let result = try MCPToolCatalog.dispatch(name: "lint", args: .object([:]), host: host)
         guard case .object(let obj) = result, case .int(let count)? = obj["count"] else {
             XCTFail("malformed: \(result)"); return
         }

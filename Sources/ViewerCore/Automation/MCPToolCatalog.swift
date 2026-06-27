@@ -34,6 +34,7 @@ public enum MCPToolCatalog {
         outlineDescriptor,
         gitStatusDescriptor,
         runVerbDescriptor,
+        lintDescriptor,
         currentStateDescriptor,
         toggleBookmarkDescriptor,
         listBookmarksDescriptor,
@@ -62,6 +63,7 @@ public enum MCPToolCatalog {
         case "outline":           return try outline(args, host)
         case "git_status":        return try gitStatus(args, host)
         case "run_verb":          return try runVerb(args, host)
+        case "lint":              return try lint(args, host)
         case "current_state":     return try currentState(args, host)
         case "toggle_bookmark":   return try toggleBookmark(args, host)
         case "list_bookmarks":    return try listBookmarks(args, host)
@@ -512,6 +514,36 @@ public enum MCPToolCatalog {
         }
         let handled = host.automationRunVerb(line)
         return .object(["handled": .bool(handled), "verb": .string(token)])
+    }
+
+    // MARK: - lint
+
+    private static let lintDescriptor = MCP.ToolDescriptor(
+        name: "lint",
+        description: "Lint the currently-selected tab as Markdown — returns [{rule, line, message}] "
+            + "for image-alt (missing alt text), heading-skip (H-level jumps, e.g. H1→H3), and "
+            + "dup-anchor (duplicate heading slugs). Empty for clean / non-Markdown content.",
+        inputSchema: emptySchema
+    )
+
+    /// Surfaces the built MarkdownLint engine (image-alt / heading-skip /
+    /// dup-anchor) as an agent read tool — an agent authoring Markdown can check
+    /// its own edits. Output capped defensively.
+    private static func lint(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let issues = MarkdownLint.lint(host.automationVisibleText())
+        let cap = 2000
+        let items = issues.prefix(cap).map { issue in
+            MCP.Value.object([
+                "rule": .string(issue.rule),
+                "line": .int(issue.line),
+                "message": .string(issue.message),
+            ])
+        }
+        return .object([
+            "issues": .array(Array(items)),
+            "count": .int(issues.count),
+            "truncated": .bool(issues.count > cap),
+        ])
     }
 
     // MARK: - current_state
