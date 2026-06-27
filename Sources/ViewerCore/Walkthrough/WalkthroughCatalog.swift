@@ -90,11 +90,8 @@ public enum WalkthroughCatalog {
     /// the bundle-id subtree because it's the untrusted automation
     /// channel; the curated library is the user-facing, durable store.
     public static func defaultLibraryDirectory() -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent("MarkdownViewer", isDirectory: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        return TestStateRedirect.markdownViewerDir()
             .appendingPathComponent("Walkthroughs", isDirectory: true)
     }
 

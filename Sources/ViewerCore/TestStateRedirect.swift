@@ -51,7 +51,14 @@ public enum TestStateRedirect {
     /// MDV_APP_SUPPORT override (session tests / sandbox — the pre-existing mechanism
     /// AppCacheReset/SessionStore honor) > XCTest auto-redirect (hermetic tmp) > the
     /// real `~/Library/Application Support` (production).
-    private static func resolvedRoot(_ environment: [String: String]) -> URL {
+    /// The app-support ROOT, honoring the redirect precedence: explicit
+    /// MDV_APP_SUPPORT override > XCTest auto-redirect (hermetic tmp) > the real
+    /// `~/Library/Application Support`. Public so callers that manage their OWN
+    /// subtree (AppCacheReset's reset domains, SessionStore's MDV_SESSIONS_DIR
+    /// special-case) route through one resolver and auto-redirect under XCTest too.
+    public static func appSupportRoot(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
         if let override = environment["MDV_APP_SUPPORT"], !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
@@ -61,7 +68,7 @@ public enum TestStateRedirect {
     }
 
     private static func appSupportSubdir(_ name: String, environment: [String: String]) -> URL {
-        let dir = resolvedRoot(environment).appendingPathComponent(name, isDirectory: true)
+        let dir = appSupportRoot(environment: environment).appendingPathComponent(name, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

@@ -296,11 +296,8 @@ public enum LSPDiscovery {
     /// Location:
     ///   `~/Library/Application Support/com.markdownviewer.MarkdownViewer/jdtls-data/<hash>/`
     public static func jdtlsDataDirectory(for workspaceRoot: URL) -> URL {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        let base = appSupport
-            .appendingPathComponent("com.markdownviewer.MarkdownViewer", isDirectory: true)
+        // TSK-1288: bundleIDDir() redirects to tmp under XCTest (real dir in prod).
+        let base = TestStateRedirect.bundleIDDir()
             .appendingPathComponent("jdtls-data", isDirectory: true)
         let hash = workspaceHash(for: workspaceRoot)
         let dir = base.appendingPathComponent(hash, isDirectory: true)

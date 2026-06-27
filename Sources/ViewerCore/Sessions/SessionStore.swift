@@ -81,6 +81,10 @@ public final class SessionStore: @unchecked Sendable {
         // already landed on main.)
         let env = environment
         let dir: URL
+        // NOTE (TSK-1288): SessionStore is a DELIBERATE exception to the XCTest
+        // auto-redirect — it stays real-by-default so vm-smoke.sh's pre-launch reset
+        // and the InfraInvariant parity pin agree on the path. Its test hermeticity
+        // comes from the AppLauncher harness setting MDV_SESSIONS_DIR (BUG-027).
         if let override = env["MDV_SESSIONS_DIR"], !override.isEmpty {
             dir = URL(fileURLWithPath: override, isDirectory: true)
         } else if let appSupport = env["MDV_APP_SUPPORT"], !appSupport.isEmpty {

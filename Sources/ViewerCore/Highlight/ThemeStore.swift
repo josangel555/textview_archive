@@ -17,12 +17,9 @@ public final class ThemeStore: @unchecked Sendable {
 
     public init(userDir: URL? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.userDir = userDir ?? FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first.map {
-                $0.appendingPathComponent("MarkdownViewer/Themes", isDirectory: true)
-            }
-            ?? FileManager.default.temporaryDirectory
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        self.userDir = userDir ?? TestStateRedirect.markdownViewerDir()
+            .appendingPathComponent("Themes", isDirectory: true)
     }
 
     /// All available themes: built-ins first, then user themes sorted by id.

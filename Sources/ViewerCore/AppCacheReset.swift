@@ -98,16 +98,10 @@ public enum AppCacheReset {
             "com.markdownviewer.MarkdownViewer", isDirectory: true)
     }
 
+    // TSK-1288: delegate to the shared resolver — honors MDV_APP_SUPPORT AND
+    // auto-redirects to tmp under XCTest, so a reset never touches the real dir.
     private static func appSupportRoot() -> URL {
-        let env = ProcessInfo.processInfo.environment
-        if let appSupport = env["MDV_APP_SUPPORT"], !appSupport.isEmpty {
-            return URL(fileURLWithPath: appSupport, isDirectory: true)
-        }
-        let fm = FileManager.default
-        return (try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                            appropriateFor: nil, create: false))
-            ?? fm.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        TestStateRedirect.appSupportRoot()
     }
 
     /// Resolve the absolute URLs a set of domains would clear, against the given

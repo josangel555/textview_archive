@@ -62,14 +62,9 @@ public final class ReviewStore: Sendable {
     public let directory: URL
 
     public static func defaultDirectory() -> URL {
-        let fm = FileManager.default
-        let support = (try? fm.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true
-        )) ?? fm.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support")
-        let dir = support.appendingPathComponent("MarkdownViewer/Reviews")
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        // TSK-1288: markdownViewerDir() redirects to tmp under XCTest (real dir in prod).
+        let dir = TestStateRedirect.markdownViewerDir().appendingPathComponent("Reviews")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 

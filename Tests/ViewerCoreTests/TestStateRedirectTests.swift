@@ -80,6 +80,15 @@ final class TestStateRedirectTests: XCTestCase {
                       "walkthrough-history must redirect, got \(WalkthroughHistory.defaultStoreURL().path)")
         XCTAssertTrue(WalkthroughStore.defaultLibraryDirectory().path.contains("MDVTestState-"),
                       "walkthrough-library must redirect, got \(WalkthroughStore.defaultLibraryDirectory().path)")
+        // Slice 6: the final stores redirect too — the guard allowlist is now empty.
+        XCTAssertTrue(ReviewStore.defaultDirectory().path.contains("MDVTestState-"),
+                      "reviews must redirect, got \(ReviewStore.defaultDirectory().path)")
+        XCTAssertTrue(WalkthroughCatalog.defaultLibraryDirectory().path.contains("MDVTestState-"),
+                      "walkthrough-catalog must redirect, got \(WalkthroughCatalog.defaultLibraryDirectory().path)")
+        XCTAssertTrue(LSPDiscovery.jdtlsDataDirectory(for: URL(fileURLWithPath: "/tmp/x")).path.contains("MDVTestState-"),
+                      "jdtls-data must redirect, got \(LSPDiscovery.jdtlsDataDirectory(for: URL(fileURLWithPath: "/tmp/x")).path)")
+        XCTAssertTrue(AppCacheReset.markdownViewerSupportDir().path.contains("MDVTestState-"),
+                      "app-cache-reset root must redirect, got \(AppCacheReset.markdownViewerSupportDir().path)")
     }
 
     /// Structural guard (TSK-1288): no NEW ViewerCore store may compute the real app-support
@@ -96,11 +105,12 @@ final class TestStateRedirectTests: XCTestCase {
         guard let en = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else {
             XCTFail("Sources/ViewerCore not reachable from #filePath — path derivation broke"); return
         }
-        // Known not-yet-repointed stores (TSK-1288 follow-on batch). NOT actively polluting.
-        let allowed: Set<String> = [
-            "AppCacheReset.swift", "LSPDiscovery.swift", "ReviewStore.swift",
-            "SessionStore.swift", "ThemeStore.swift", "WalkthroughCatalog.swift",
-        ]
+        // TSK-1288 essentially fully drained — every app-support store routes through
+        // TestStateRedirect EXCEPT SessionStore, a DELIBERATE exception: it stays
+        // real-by-default so vm-smoke.sh + the InfraInvariant parity pin agree on the
+        // path (its hermeticity is the AppLauncher harness's MDV_SESSIONS_DIR, BUG-027).
+        // A NEW bypasser fails this guard — add the redirect; do NOT re-grow this list.
+        let allowed: Set<String> = ["SessionStore.swift"]
         var offenders: [String] = []
         for case let url as URL in en where url.pathExtension == "swift" {
             guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
