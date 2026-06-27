@@ -71,6 +71,16 @@ pub enum WorkItemEvent {
         /// The reason for the transition — the consumer of history is the next agent.
         reason: String,
     },
+    /// A relationship edge was added — so edges are event-sourced + replayable (a
+    /// projection of the log, per v2 §2.4), not a silent direct mutation.
+    EdgeAdded {
+        /// The dependent / source end.
+        from: String,
+        /// The dependency / target end.
+        to: String,
+        /// The `EdgeKind` code (0 depends_on / 1 consumes / 2 touches).
+        kind: i64,
+    },
 }
 
 /// A materialized work item — one row of the current-state projection.
@@ -423,6 +433,8 @@ pub fn append(
                 });
             }
         }
+        // Structural; validated by add_edge's cycle/existence checks before append.
+        WorkItemEvent::EdgeAdded { .. } => {}
     }
     let payload = rmp_serde::to_vec(event)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
@@ -431,6 +443,7 @@ pub fn append(
         WorkItemEvent::StateChanged { id, reason, .. } => {
             ("work_item.state_changed", id, Some(reason))
         }
+        WorkItemEvent::EdgeAdded { from, .. } => ("edge.added", from, None),
     };
     let tx = conn.transaction()?;
     tx.execute(
@@ -480,6 +493,12 @@ fn apply_to_projection(
                     rusqlite::params![id, state, seq],
                 )?;
             }
+        }
+        WorkItemEvent::EdgeAdded { from, to, kind } => {
+            tx.execute(
+                "INSERT OR IGNORE INTO wi_edge (from_id, to_id, kind) VALUES (?1, ?2, ?3)",
+                rusqlite::params![from, to, kind],
+            )?;
         }
     }
     Ok(())
@@ -568,7 +587,7 @@ pub fn replay(conn: &mut Connection) -> rusqlite::Result<()> {
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
     let tx = conn.transaction()?;
-    tx.execute_batch("DELETE FROM work_item")?;
+    tx.execute_batch("DELETE FROM work_item; DELETE FROM wi_edge")?;
     for (seq, actor_id, payload) in events {
         let event: WorkItemEvent = rmp_serde::from_slice(&payload).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Blob, Box::new(e))
@@ -667,7 +686,15 @@ impl EdgeKind {
 /// # Errors
 /// `UnknownItem` (either id absent), `DependencyCycle` (a self-edge or a
 /// closing `DependsOn` cycle), or `Sqlite`.
-pub fn add_edge(conn: &Connection, from: &str, to: &str, kind: EdgeKind) -> Result<(), PmError> {
+pub fn add_edge(
+    conn: &mut Connection,
+    ts: i64,
+    actor_id: &str,
+    actor_kind: i64,
+    from: &str,
+    to: &str,
+    kind: EdgeKind,
+) -> Result<(), PmError> {
     if from == to {
         return Err(PmError::DependencyCycle {
             from: from.to_owned(),
@@ -696,9 +723,18 @@ pub fn add_edge(conn: &Connection, from: &str, to: &str, kind: EdgeKind) -> Resu
             });
         }
     }
-    conn.execute(
-        "INSERT OR IGNORE INTO wi_edge (from_id, to_id, kind) VALUES (?1, ?2, ?3)",
-        rusqlite::params![from, to, kind.as_i64()],
+    // Event-sourced (slice 4h): the edge is a logged EdgeAdded event applied to
+    // the projection — so it rebuilds on replay (was a direct mutation in 4f).
+    append(
+        conn,
+        ts,
+        actor_id,
+        actor_kind,
+        &WorkItemEvent::EdgeAdded {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            kind: kind.as_i64(),
+        },
     )?;
     Ok(())
 }
@@ -952,6 +988,10 @@ mod tests {
         }
     }
 
+    fn edge(conn: &mut Connection, from: &str, to: &str, kind: EdgeKind) -> Result<(), PmError> {
+        add_edge(conn, 0, "tester", 0, from, to, kind)
+    }
+
     #[test]
     fn work_next_returns_ready_items_in_fifo() -> Result<(), PmError> {
         let mut conn = open_in_memory()?;
@@ -1069,7 +1109,7 @@ mod tests {
         let mut conn = open_in_memory()?;
         append(&mut conn, 1, "h", 0, &created("A", "a"))?;
         append(&mut conn, 2, "h", 0, &created("B", "b"))?;
-        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?; // A depends on B
+        edge(&mut conn, "A", "B", EdgeKind::DependsOn)?; // A depends on B
         assert_eq!(depends_on(&conn, "A")?, vec!["B".to_string()]);
         assert!(depends_on(&conn, "B")?.is_empty());
         Ok(())
@@ -1083,19 +1123,19 @@ mod tests {
         }
         // self-dependency rejected
         assert!(matches!(
-            add_edge(&conn, "A", "A", EdgeKind::DependsOn),
+            edge(&mut conn, "A", "A", EdgeKind::DependsOn),
             Err(PmError::DependencyCycle { .. })
         ));
         // a chain A→B→C is fine
-        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?;
-        add_edge(&conn, "B", "C", EdgeKind::DependsOn)?;
+        edge(&mut conn, "A", "B", EdgeKind::DependsOn)?;
+        edge(&mut conn, "B", "C", EdgeKind::DependsOn)?;
         // closing the cycle (C depends_on A) is rejected
         assert!(matches!(
-            add_edge(&conn, "C", "A", EdgeKind::DependsOn),
+            edge(&mut conn, "C", "A", EdgeKind::DependsOn),
             Err(PmError::DependencyCycle { .. })
         ));
         // a non-depends_on edge closing the same shape is allowed (only depends_on is acyclic)
-        add_edge(&conn, "C", "A", EdgeKind::Touches)?;
+        edge(&mut conn, "C", "A", EdgeKind::Touches)?;
         Ok(())
     }
 
@@ -1104,7 +1144,7 @@ mod tests {
         let mut conn = open_in_memory()?;
         append(&mut conn, 1, "h", 0, &created("A", "a"))?;
         assert!(matches!(
-            add_edge(&conn, "A", "ghost", EdgeKind::DependsOn),
+            edge(&mut conn, "A", "ghost", EdgeKind::DependsOn),
             Err(PmError::UnknownItem(_))
         ));
         Ok(())
@@ -1115,7 +1155,7 @@ mod tests {
         let mut conn = open_in_memory()?;
         append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
         append(&mut conn, 2, "h", 0, &created_in("B", State::Ready))?;
-        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?; // A depends on B (not finished)
+        edge(&mut conn, "A", "B", EdgeKind::DependsOn)?; // A depends on B (not finished)
         let ids: Vec<String> = work_next(&conn)?.into_iter().map(|w| w.id).collect();
         assert_eq!(ids, vec!["B"], "A is blocked by unfinished B; B is dispatchable");
         Ok(())
@@ -1126,7 +1166,7 @@ mod tests {
         let mut conn = open_in_memory()?;
         append(&mut conn, 1, "h", 0, &created_in("A", State::Ready))?;
         append(&mut conn, 2, "h", 0, &created_in("B", State::VerifiedDone))?; // dep already finished
-        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?;
+        edge(&mut conn, "A", "B", EdgeKind::DependsOn)?;
         let ids: Vec<String> = work_next(&conn)?.into_iter().map(|w| w.id).collect();
         assert_eq!(ids, vec!["A"], "A unblocks once its only dep is verified_done");
         Ok(())
@@ -1138,8 +1178,8 @@ mod tests {
         for id in ["A", "B", "C"] {
             append(&mut conn, 1, "h", 0, &created(id, id))?;
         }
-        add_edge(&conn, "A", "C", EdgeKind::DependsOn)?; // A depends on C
-        add_edge(&conn, "B", "C", EdgeKind::Consumes)?; // B consumes C
+        edge(&mut conn, "A", "C", EdgeKind::DependsOn)?; // A depends on C
+        edge(&mut conn, "B", "C", EdgeKind::Consumes)?; // B consumes C
         assert_eq!(dependents_of(&conn, "C")?, vec!["A".to_string()]);
         assert_eq!(consumers_of(&conn, "C")?, vec!["B".to_string()]);
         assert!(dependents_of(&conn, "A")?.is_empty());
@@ -1153,8 +1193,8 @@ mod tests {
         append(&mut conn, 1, "h", 0, &created_in("X", State::VerifiedDone))?;
         append(&mut conn, 2, "h", 0, &created_in("B", State::VerifiedDone))?;
         append(&mut conn, 3, "h", 0, &created_in("C", State::Ready))?; // consumes B but not finished
-        add_edge(&conn, "B", "X", EdgeKind::Consumes)?; // B consumes X
-        add_edge(&conn, "C", "B", EdgeKind::Consumes)?; // C consumes B
+        edge(&mut conn, "B", "X", EdgeKind::Consumes)?; // B consumes X
+        edge(&mut conn, "C", "B", EdgeKind::Consumes)?; // C consumes B
         // X's output is invalidated (VerifiedDone → AssumptionsInvalidated, System).
         append(
             &mut conn,
@@ -1184,6 +1224,23 @@ mod tests {
         let before_b = get_work_item(&conn, "B")?;
         replay(&mut conn)?;
         assert_eq!(get_work_item(&conn, "B")?, before_b, "cascade survives replay");
+        Ok(())
+    }
+
+    #[test]
+    fn edges_rebuild_on_replay() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created("A", "a"))?;
+        append(&mut conn, 2, "h", 0, &created("B", "b"))?;
+        edge(&mut conn, "A", "B", EdgeKind::DependsOn)?;
+        assert_eq!(depends_on(&conn, "A")?, vec!["B".to_string()]);
+        // replay wipes work_item AND wi_edge, then rebuilds both from the log.
+        replay(&mut conn)?;
+        assert_eq!(
+            depends_on(&conn, "A")?,
+            vec!["B".to_string()],
+            "edges are event-sourced — they rebuild from EdgeAdded events"
+        );
         Ok(())
     }
 }
