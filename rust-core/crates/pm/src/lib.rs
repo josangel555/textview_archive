@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS work_item (
     updated_seq INTEGER NOT NULL,
     claimed_by  TEXT
 );
+CREATE TABLE IF NOT EXISTS wi_edge (
+    from_id TEXT NOT NULL,
+    to_id   TEXT NOT NULL,
+    kind    INTEGER NOT NULL,
+    PRIMARY KEY (from_id, to_id, kind),
+    CHECK (from_id <> to_id)
+);
 ";
 
 /// A typed work-item event — the delta this log entry applies to the projection.
@@ -300,6 +307,13 @@ pub enum PmError {
         /// The actor that both claimed and tried to verify.
         actor: String,
     },
+    /// A `DependsOn` edge would create a cycle (rejected transactionally, v2 §1.7).
+    DependencyCycle {
+        /// The dependent end of the rejected edge.
+        from: String,
+        /// The dependency end of the rejected edge.
+        to: String,
+    },
 }
 
 impl std::fmt::Display for PmError {
@@ -319,6 +333,9 @@ impl std::fmt::Display for PmError {
             } => write!(f, "actor kind {actor_kind} may not transition {from} -> {to}"),
             PmError::SelfVerify { id, actor } => {
                 write!(f, "actor {actor} may not verify its own claimed work item {id}")
+            }
+            PmError::DependencyCycle { from, to } => {
+                write!(f, "depends_on {from} -> {to} would create a cycle")
             }
         }
     }
@@ -542,6 +559,96 @@ pub fn state_rollup(conn: &Connection) -> rusqlite::Result<Vec<(String, i64)>> {
     let mut stmt =
         conn.prepare("SELECT state, COUNT(*) FROM work_item GROUP BY state ORDER BY state")?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    rows.collect()
+}
+
+/// A relationship edge kind between work items (v2 §2.4). Only `DependsOn` is
+/// kept acyclic; `Consumes`/`Touches` may form any graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeKind {
+    /// Finish-to-start ordering — `from` needs `to` done first.
+    DependsOn,
+    /// `from` consumes `to`'s output (ripples on change, §1.7).
+    Consumes,
+    /// `from` and `to` touch the same surface (contention).
+    Touches,
+}
+
+impl EdgeKind {
+    /// The integer code stored in `wi_edge.kind`.
+    #[must_use]
+    pub fn as_i64(self) -> i64 {
+        match self {
+            EdgeKind::DependsOn => 0,
+            EdgeKind::Consumes => 1,
+            EdgeKind::Touches => 2,
+        }
+    }
+
+    /// Parse a `wi_edge.kind` code.
+    #[must_use]
+    pub fn from_i64(n: i64) -> Option<Self> {
+        match n {
+            0 => Some(EdgeKind::DependsOn),
+            1 => Some(EdgeKind::Consumes),
+            2 => Some(EdgeKind::Touches),
+            _ => None,
+        }
+    }
+}
+
+/// Add a relationship edge `from → to`. For `DependsOn`, rejects an edge that
+/// would create a cycle (the v2 invariant: a dependency cycle is rejected
+/// transactionally, never silently written). Both items must already exist.
+/// Idempotent — a duplicate edge is ignored.
+///
+/// # Errors
+/// `UnknownItem` (either id absent), `DependencyCycle` (a self-edge or a
+/// closing `DependsOn` cycle), or `Sqlite`.
+pub fn add_edge(conn: &Connection, from: &str, to: &str, kind: EdgeKind) -> Result<(), PmError> {
+    if from == to {
+        return Err(PmError::DependencyCycle {
+            from: from.to_owned(),
+            to: to.to_owned(),
+        });
+    }
+    get_work_item(conn, from)?.ok_or_else(|| PmError::UnknownItem(from.to_owned()))?;
+    get_work_item(conn, to)?.ok_or_else(|| PmError::UnknownItem(to.to_owned()))?;
+    if kind == EdgeKind::DependsOn {
+        // Would from→to close a cycle? I.e. can `to` already reach `from` along
+        // existing depends_on edges?
+        let closes_cycle: bool = conn.query_row(
+            "WITH RECURSIVE reach(id) AS (
+                 SELECT to_id FROM wi_edge WHERE from_id = ?1 AND kind = 0
+                 UNION
+                 SELECT e.to_id FROM wi_edge e JOIN reach r ON e.from_id = r.id WHERE e.kind = 0
+             )
+             SELECT EXISTS(SELECT 1 FROM reach WHERE id = ?2)",
+            rusqlite::params![to, from],
+            |r| r.get(0),
+        )?;
+        if closes_cycle {
+            return Err(PmError::DependencyCycle {
+                from: from.to_owned(),
+                to: to.to_owned(),
+            });
+        }
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO wi_edge (from_id, to_id, kind) VALUES (?1, ?2, ?3)",
+        rusqlite::params![from, to, kind.as_i64()],
+    )?;
+    Ok(())
+}
+
+/// The ids `id` directly depends_on (its finish-to-start prerequisites).
+///
+/// # Errors
+/// Propagates any rusqlite query error.
+pub fn depends_on(conn: &Connection, id: &str) -> rusqlite::Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT to_id FROM wi_edge WHERE from_id = ?1 AND kind = 0 ORDER BY to_id")?;
+    let rows = stmt.query_map([id], |r| r.get(0))?;
     rows.collect()
 }
 
@@ -867,6 +974,52 @@ mod tests {
             get_work_item(&conn, "T")?.map(|w| w.state),
             Some("verified_done".to_string())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn add_edge_and_query_depends_on() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created("A", "a"))?;
+        append(&mut conn, 2, "h", 0, &created("B", "b"))?;
+        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?; // A depends on B
+        assert_eq!(depends_on(&conn, "A")?, vec!["B".to_string()]);
+        assert!(depends_on(&conn, "B")?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn add_edge_rejects_self_and_dependency_cycle() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        for id in ["A", "B", "C"] {
+            append(&mut conn, 1, "h", 0, &created(id, id))?;
+        }
+        // self-dependency rejected
+        assert!(matches!(
+            add_edge(&conn, "A", "A", EdgeKind::DependsOn),
+            Err(PmError::DependencyCycle { .. })
+        ));
+        // a chain A→B→C is fine
+        add_edge(&conn, "A", "B", EdgeKind::DependsOn)?;
+        add_edge(&conn, "B", "C", EdgeKind::DependsOn)?;
+        // closing the cycle (C depends_on A) is rejected
+        assert!(matches!(
+            add_edge(&conn, "C", "A", EdgeKind::DependsOn),
+            Err(PmError::DependencyCycle { .. })
+        ));
+        // a non-depends_on edge closing the same shape is allowed (only depends_on is acyclic)
+        add_edge(&conn, "C", "A", EdgeKind::Touches)?;
+        Ok(())
+    }
+
+    #[test]
+    fn add_edge_unknown_item_rejected() -> Result<(), PmError> {
+        let mut conn = open_in_memory()?;
+        append(&mut conn, 1, "h", 0, &created("A", "a"))?;
+        assert!(matches!(
+            add_edge(&conn, "A", "ghost", EdgeKind::DependsOn),
+            Err(PmError::UnknownItem(_))
+        ));
         Ok(())
     }
 }
