@@ -629,6 +629,38 @@ impl CsvSink for ArenaSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// TSK-585 (proptest lane): CSV parser split-correctness. Generates a
+    /// rectangular grid of "safe" cells (alnum only — no delimiter / quote /
+    /// newline, so no quoting/escaping ambiguity), formats it as comma-CSV, and
+    /// asserts `parse_with` reconstructs it exactly (row 0 → header, rest → rows,
+    /// not truncated). Rectangular so there's no ragged-row pad/truncate question;
+    /// explicit `,` delimiter so auto-detection isn't a variable. Built-in
+    /// strategies, no custom Arbitrary. (A quoting/escaping suite can follow.)
+    fn csv_grid() -> impl Strategy<Value = Vec<Vec<String>>> {
+        (1usize..6, 1usize..5).prop_flat_map(|(cols, rows)| {
+            prop::collection::vec(
+                prop::collection::vec("[a-zA-Z0-9]{1,5}", cols..=cols),
+                rows..=rows,
+            )
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn csv_rectangular_grid_roundtrips(grid in csv_grid()) {
+            let text = grid
+                .iter()
+                .map(|row| row.join(","))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let table = parse_with(&text, ',', Limits::default());
+            prop_assert!(!table.truncated);
+            prop_assert_eq!(&table.header, &grid[0]);
+            prop_assert_eq!(table.rows.as_slice(), &grid[1..]);
+        }
+    }
 
     #[test]
     fn basic_comma() {
