@@ -113,6 +113,8 @@ final class CommandRegistryTests: XCTestCase {
             "focus-terminal", "focus-file-nav", "focus-git", "focus-document",
             // omni-search coverage: fold/unfold, repo history, clear recents (TSK-326)
             "fold-all", "unfold-all", "show-repo-history", "clear-recents",
+            // copy a line-precise mdv:// reference to the current editor line (TSK-1256)
+            "copy-reference",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

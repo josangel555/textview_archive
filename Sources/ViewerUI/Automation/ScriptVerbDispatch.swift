@@ -69,6 +69,10 @@ public enum ScriptVerb {
         case "zoom-in":        model.zoomIn()
         case "zoom-out":       model.zoomOut()
         case "zoom-reset":     model.zoomReset()
+        case "copy-reference":
+            // TSK-1256: copy a line-precise mdv:// reference to the current editor
+            // line (active tab) to the clipboard.
+            if let ref = model.currentLineReference() { Pasteboard.copy(ref) }
         case "open":           model.openPath(URL(fileURLWithPath: arg))
         case "open-lazy":
             // Append a file as a LAZY (`.empty`) tab without selecting it —

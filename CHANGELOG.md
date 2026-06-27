@@ -12,10 +12,10 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-27
 
 ### Added
-- **Right-click → Copy Reference** — tabs, sidebar files/folders, and bookmarks now have a "Copy Reference" menu item that copies a shareable `mdv://…` reference to the clipboard, so you (or an agent) can point precisely at that file — and, from a bookmark, the exact line. (The editor current-line and native-element forms follow.)
+- **Copy Reference** — tabs, sidebar files/folders, bookmarks, and Recents have a right-click "Copy Reference" menu item, and the editor has a **Copy Reference (current line)** command (palette / shortcut). Each copies a shareable `mdv://…` reference to the clipboard, so you (or an agent) can point precisely at a file — or an exact line (from a bookmark, or the editor's current line). (The native-chrome-element form follows.)
 
 ### System work
-- **Copy-Reference UI (TSK-1256)** — wired the `mdv://` element-ref pipeline (already host-complete) to three context menus (TabBar / SidebarView / BookmarksSection), each using the host-tested `ElementRef.file(…).serialized`; non-data-affecting (clipboard), on-screen capped at review.
+- **Copy-Reference UI (TSK-1256)** — wired the `mdv://` element-ref pipeline (already host-complete) to four context menus (TabBar / SidebarView / BookmarksSection / RecentlyOpenedSection) plus an editor command + `copy-reference` script-verb (DocumentModel.lineReference pure builder, host-tested 3×; CommandRegistry vocabulary teeth caught the allowlist gap), each using the host-tested `ElementRef.file(…).serialized`; non-data-affecting (clipboard), on-screen capped at review.
 - **VM-harness + board (TSK-1283/1253/1154/1254/941/463/1279)** — fixed the GUI-session `test-in-vm.sh all` EMFILE false-failure flood (asuser ulimit 8192→16384, validated: 182→0); corrected 4 #NNN-corrupted ticket understandings; spiked/verify-stated the remaining wave-12 (each blocked on engine/owner/render, recorded); host-verified dark-mode's major surfaces already adapt (chrome semantic + markdown.css fully adaptive).
 
 ## 2026-06-26

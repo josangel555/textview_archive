@@ -34,6 +34,10 @@ extension CommandRegistry {
             id: "file.newTab", title: "New Tab", category: .file,
             defaultShortcut: Shortcut(key: "t", modifiers: [.command]),
             scriptVerb: "new-tab"),
+        // TSK-1256: copy a line-precise mdv:// reference to the current editor line.
+        CommandDescriptor(
+            id: "edit.copyReference", title: "Copy Reference (current line)", category: .edit,
+            scriptVerb: "copy-reference"),
         CommandDescriptor(
             id: "file.open", title: "Open…", category: .file,
             // ⌘O routes through an NSOpenPanel — no pure verb.
