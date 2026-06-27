@@ -3624,3 +3624,13 @@ Continuation of "the five constraints" above; these three close every remaining 
   symbols … ld: symbol(s) not found". Touching DIRECT callers can MISS indirect refs (default-arg / `@inlinable` inlining
   at a call site not in the grep). ROBUST FIX: keep the existing init's signature UNCHANGED (ABI-stable) and add a SEPARATE
   init with a distinct required-label set for the new params — no symbol churn, no reliance on touching the right files.
+
+- **Inject hermetic deps in @MainActor DocumentModel tests — a bare `DocumentModel()` can hit a slow real-state path
+  (2026-06-27, TSK-836).** ViewModeShortcutTests' 2 bare-`DocumentModel()` + `open(.md)` tests were ~5s EACH (serial);
+  switching to the INJECTED hermetic init (tmp history.json + a test-suite `UserDefaults(suiteName:)`, mirroring
+  DocumentModelTests.makeModel) made the IDENTICAL `open(url:)` 0.06s — 150× (9.6s → 0.064s). The exact root wasn't
+  pinned, and it is NOT uniform: most bare-`DocumentModel()` tests are fast (republish/split siblings ≤1.3s), so it's a
+  bare-init × md-open-path interaction (likely the REAL UserDefaults/HistoryStore steering the markdown open into a slow
+  render/highlight branch), NOT the bare init alone. RULE: inject `DocumentModel(controller:history:sidebar:preferences:)`
+  with tmp / test-suite deps — correct for HERMETICITY regardless (the bare init reads+writes the dev's real app state),
+  and it dodges this pathology.

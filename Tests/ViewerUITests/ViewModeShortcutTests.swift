@@ -1,5 +1,6 @@
 import XCTest
 import ViewerKit
+import ViewerCore
 @testable import ViewerUI
 
 /// TSK-899 — ⌘1/⌘2/⌘3 select the Nth view mode in the current file's bar
@@ -7,11 +8,35 @@ import ViewerKit
 @MainActor
 final class ViewModeShortcutTests: XCTestCase {
 
+    private var tmpDir: URL!
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+
+    override func setUp() async throws {
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ViewModeShortcutTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        suiteName = "ViewModeShortcutTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+
+    override func tearDown() async throws {
+        if let tmpDir { try? FileManager.default.removeItem(at: tmpDir) }
+        if let suiteName, let defaults { defaults.removePersistentDomain(forName: suiteName) }
+    }
+
     private func openMarkdownDoc() throws -> DocumentModel {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mdv-vmshort-\(UUID().uuidString).md")
+        let url = tmpDir.appendingPathComponent("mdv-vmshort-\(UUID().uuidString).md")
         try "# hi\n\ntext".write(to: url, atomically: true, encoding: .utf8)
-        let doc = DocumentModel()
+        // Hermetic injected deps (mirrors DocumentModelTests.makeModel): the bare
+        // DocumentModel() default-constructs the REAL HistoryStore + UserDefaults —
+        // ~5s of real IO per instance (TSK-836). Same open(url:) path, fast deps.
+        let doc = DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: tmpDir.appendingPathComponent("history.json")),
+            sidebar: SidebarModel(),
+            preferences: PreferencesStore(defaults: defaults)
+        )
         doc.open(url: url)
         return doc
     }
