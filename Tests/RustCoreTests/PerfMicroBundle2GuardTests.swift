@@ -149,9 +149,9 @@ final class PerfMicroBundle2GuardTests: XCTestCase {
             rowVals.append(.array(cells))
         }
         return MsgPackValue.map([
-            (.string("header"), .array(header)),
-            (.string("rows"), .array(rowVals)),
-            (.string("totalRows"), .uint(UInt64(rows))),
+            MsgPackPair(.string("header"), .array(header)),
+            MsgPackPair(.string("rows"), .array(rowVals)),
+            MsgPackPair(.string("totalRows"), .uint(UInt64(rows))),
         ]).encode()
     }
 

@@ -62,23 +62,23 @@ final class MessagePackEncoderTests: XCTestCase {
         // The shape a Phase-B command serializes to: a named map (string keys),
         // matching the Rust side's to_vec_named.
         let cmd = MsgPackValue.map([
-            (.string("op"), .string("setFilter")),
-            (.string("scope"), .int(-1)),
-            (.string("query"), .string("needle")),
-            (.string("limit"), .uint(40)),
-            (.string("flags"), .array([.bool(true), .bool(false)])),
+            MsgPackPair(.string("op"), .string("setFilter")),
+            MsgPackPair(.string("scope"), .int(-1)),
+            MsgPackPair(.string("query"), .string("needle")),
+            MsgPackPair(.string("limit"), .uint(40)),
+            MsgPackPair(.string("flags"), .array([.bool(true), .bool(false)])),
         ])
         roundTrip(cmd)
     }
 
     func test_map_largerThanFixmap() {
-        let pairs = (0..<20).map { (MsgPackValue.string("k\($0)"), MsgPackValue.uint(UInt64($0))) }
+        let pairs = (0..<20).map { MsgPackPair(MsgPackValue.string("k\($0)"), MsgPackValue.uint(UInt64($0))) }
         roundTrip(.map(pairs))
     }
 
     func test_nested() {
         roundTrip(.array([
-            .map([(.string("rows"), .array([.array([.string("a"), .string("b")])]))]),
+            .map([MsgPackPair(.string("rows"), .array([.array([.string("a"), .string("b")])]))]),
             .uint(0xdead_beef),
             .int(-70000),
         ]))

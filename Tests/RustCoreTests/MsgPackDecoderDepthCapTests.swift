@@ -120,8 +120,8 @@ final class MsgPackDecoderDepthCapTests: XCTestCase {
         // is only ~depth 3 — far under the cap — and must decode untouched, so
         // the guard never penalizes legitimate core responses.
         let v = MsgPackValue.map([
-            (.string("t"), .string("r")),
-            (.string("rows"), .array([
+            MsgPackPair(.string("t"), .string("r")),
+            MsgPackPair(.string("rows"), .array([
                 .array([.string("a"), .string("b")]),
                 .array([.string("c"), .string("d")]),
             ])),

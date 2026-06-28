@@ -124,7 +124,7 @@ final class MsgPackDecoderNegativeAuditTests: XCTestCase {
 
     func test_missingRequiredKey_throwsMissingKey() {
         // A valid 1-pair map {"a": nil} that lacks the required key "delimiter".
-        let v = MsgPackValue.map([(.string("a"), .nilValue)])
+        let v = MsgPackValue.map([MsgPackPair(.string("a"), .nilValue)])
         var reader = MsgPackReader(v.encode())
         XCTAssertThrowsError(try reader.decode().mapValue().require("delimiter")) { err in
             XCTAssertEqual(err as? MsgPackError, .missingKey("delimiter"))
@@ -155,7 +155,7 @@ final class MsgPackDecoderNegativeAuditTests: XCTestCase {
     // MARK: - finish() end-of-stream check (S4 quality)
 
     func test_finish_afterFullConsumption_succeeds() {
-        let body = MsgPackValue.map([(.string("k"), .uint(1))]).encode()
+        let body = MsgPackValue.map([MsgPackPair(.string("k"), .uint(1))]).encode()
         var reader = MsgPackReader(body)
         XCTAssertNoThrow(try reader.decode())
         XCTAssertNoThrow(try reader.finish(), "fully-consumed body must pass finish()")

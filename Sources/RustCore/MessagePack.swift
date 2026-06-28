@@ -21,7 +21,7 @@ enum MsgPackValue: Equatable {
     case double(Double)
     case string(String)
     case array([MsgPackValue])
-    case map([(MsgPackValue, MsgPackValue)])
+    case map([MsgPackPair])
     /// MessagePack bin family (0xc4/c5/c6) — the remote envelope's opaque
     /// body (TSK-652 stage 2). Additive: nothing in the pre-remote wire
     /// emits bin.
@@ -37,12 +37,28 @@ enum MsgPackValue: Equatable {
         case let (.string(a), .string(b)): return a == b
         case let (.binary(a), .binary(b)): return a == b
         case let (.array(a), .array(b)): return a == b
-        case let (.map(a), .map(b)):
-            guard a.count == b.count else { return false }
-            for i in a.indices where a[i].0 != b[i].0 || a[i].1 != b[i].1 { return false }
-            return true
+        case let (.map(a), .map(b)): return a == b
         default: return false
         }
+    }
+}
+
+/// A key/value pair in a MessagePack `.map`. A NAMED (nominal) struct rather than
+/// a `(MsgPackValue, MsgPackValue)` tuple: Swift 6.1.2's type-checker loops
+/// resolving a recursive TUPLE type nested in the enum's own case (a "circular
+/// reference" build error, TSK-1210), while a nominal struct — like the `array`
+/// case's `[MsgPackValue]` — resolves fine (6.3 handled both). Manual `==` (not
+/// synthesized) to keep the whole MsgPackValue/Pair recursion off the compiler's
+/// Equatable-derivation path.
+struct MsgPackPair: Equatable {
+    let key: MsgPackValue
+    let value: MsgPackValue
+    init(_ key: MsgPackValue, _ value: MsgPackValue) {
+        self.key = key
+        self.value = value
+    }
+    static func == (l: MsgPackPair, r: MsgPackPair) -> Bool {
+        l.key == r.key && l.value == r.value
     }
 }
 
@@ -199,7 +215,7 @@ struct MsgPackReader {
     }
 
     private mutating func map(_ n: Int, depth: Int) throws -> MsgPackValue {
-        var out: [(MsgPackValue, MsgPackValue)] = []
+        var out: [MsgPackPair] = []
         // Same OOM-abort guard as `array`: a map pair is >= 2 bytes, so the
         // remaining byte count bounds the pair count too (clamp is conservative
         // but always >= the real count). See `array` for the rationale.
@@ -207,7 +223,7 @@ struct MsgPackReader {
         for _ in 0..<n {
             let k = try decode(depth: depth + 1)
             let v = try decode(depth: depth + 1)
-            out.append((k, v))
+            out.append(MsgPackPair(k, v))
         }
         return .map(out)
     }
@@ -226,8 +242,8 @@ extension MsgPackValue {
             throw MsgPackError.typeMismatch("expected map")
         }
         var dict: [String: MsgPackValue] = [:]
-        for (k, v) in pairs {
-            if case let .string(key) = k { dict[key] = v }
+        for p in pairs {
+            if case let .string(key) = p.key { dict[key] = p.value }
         }
         return dict
     }
@@ -252,7 +268,7 @@ extension MsgPackValue {
         guard case let .map(pairs) = self else {
             throw MsgPackError.typeMismatch("expected map")
         }
-        for (k, v) in pairs where k == .string(key) { return v }
+        for p in pairs where p.key == .string(key) { return p.value }
         return nil
     }
 
@@ -397,7 +413,7 @@ extension MsgPackValue {
             for e in a { e.encode(into: &out) }
         case .map(let pairs):
             Self.encodeLength(pairs.count, fix: 0x80, tag16: 0xde, tag32: 0xdf, into: &out)
-            for (k, v) in pairs { k.encode(into: &out); v.encode(into: &out) }
+            for p in pairs { p.key.encode(into: &out); p.value.encode(into: &out) }
         }
     }
 

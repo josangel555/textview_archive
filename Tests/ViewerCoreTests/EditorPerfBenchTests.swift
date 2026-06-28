@@ -210,14 +210,14 @@ final class EditorPerfBenchTests: XCTestCase {
     private func realCMApplyFrameByteCount(base: String, edits: [CMEdit]) -> Int {
         let editVals: [MsgPackValue] = edits.map { e in
             .map([
-                (.string("from"), .int(Int64(e.from))),
-                (.string("to"), .int(Int64(e.to))),
-                (.string("insert"), .string(e.insert)),
+                MsgPackPair(.string("from"), .int(Int64(e.from))),
+                MsgPackPair(.string("to"), .int(Int64(e.to))),
+                MsgPackPair(.string("insert"), .string(e.insert)),
             ])
         }
         let request = MsgPackValue.map([
-            (.string("base"), .string(base)),
-            (.string("edits"), .array(editVals)),
+            MsgPackPair(.string("base"), .string(base)),
+            MsgPackPair(.string("edits"), .array(editVals)),
         ])
         return request.frame().count
     }

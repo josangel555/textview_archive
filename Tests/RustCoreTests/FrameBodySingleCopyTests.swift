@@ -80,7 +80,7 @@ final class FrameBodySingleCopyTests: XCTestCase {
         // The aux path (hex search) and the table/snapshot decoders read the
         // body IN PLACE from offset 4, never re-materializing `frame[4...]`.
         let value = MsgPackValue.map([
-            (.string("offsets"), .array([.uint(10), .uint(20), .uint(30)])),
+            MsgPackPair(.string("offsets"), .array([.uint(10), .uint(20), .uint(30)])),
         ])
         let frame = value.frame()
         let offset = try CsvSession.frameBodyStart(frame)
@@ -95,8 +95,8 @@ final class FrameBodySingleCopyTests: XCTestCase {
         // Decoding the whole frame from offset 4 yields the same value tree as
         // decoding the copied body from offset 0.
         let value = MsgPackValue.map([
-            (.string("a"), .string("hello")),
-            (.string("b"), .array([.int(-1), .int(-2)])),
+            MsgPackPair(.string("a"), .string("hello")),
+            MsgPackPair(.string("b"), .array([.int(-1), .int(-2)])),
         ])
         let frame = value.frame()
         let body = try bodyViaCopyFrameBody(frame)
@@ -135,7 +135,7 @@ final class FrameBodySingleCopyTests: XCTestCase {
         // shape of a snapshot/find response — must decode to the same tree via
         // the in-place offset reader and via the single-copied body.
         let rows = (0..<50_000).map { MsgPackValue.string("row-\($0)-payload-padding-bytes") }
-        let value = MsgPackValue.map([(.string("rows"), .array(rows))])
+        let value = MsgPackValue.map([MsgPackPair(.string("rows"), .array(rows))])
         let frame = value.frame()
         XCTAssertGreaterThan(frame.count, 1 << 20)
 

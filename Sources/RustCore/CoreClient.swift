@@ -721,14 +721,14 @@ public func mdvCoreApplyCMEdits(
     // hand-rolled Swift→Rust MessagePack encoder (named maps → rmp-serde structs).
     let editVals: [MsgPackValue] = edits.map { e in
         .map([
-            (.string("from"), .int(Int64(e.from))),
-            (.string("to"), .int(Int64(e.to))),
-            (.string("insert"), .string(e.insert)),
+            MsgPackPair(.string("from"), .int(Int64(e.from))),
+            MsgPackPair(.string("to"), .int(Int64(e.to))),
+            MsgPackPair(.string("insert"), .string(e.insert)),
         ])
     }
     let request = MsgPackValue.map([
-        (.string("base"), .string(base)),
-        (.string("edits"), .array(editVals)),
+        MsgPackPair(.string("base"), .string(base)),
+        MsgPackPair(.string("edits"), .array(editVals)),
     ])
     guard let body = try CoreTransportRegistry.current.call("cm_apply", request: request) else {
         throw CoreError.decode("empty cm_apply response frame")
@@ -768,14 +768,14 @@ public func mdvCoreApplyCMEditsDelta(
 ) throws -> (changed: CMChangedRegion?, lenUTF16: Int) {
     let editVals: [MsgPackValue] = edits.map { e in
         .map([
-            (.string("from"), .int(Int64(e.from))),
-            (.string("to"), .int(Int64(e.to))),
-            (.string("insert"), .string(e.insert)),
+            MsgPackPair(.string("from"), .int(Int64(e.from))),
+            MsgPackPair(.string("to"), .int(Int64(e.to))),
+            MsgPackPair(.string("insert"), .string(e.insert)),
         ])
     }
     let request = MsgPackValue.map([
-        (.string("base"), .string(base)),
-        (.string("edits"), .array(editVals)),
+        MsgPackPair(.string("base"), .string(base)),
+        MsgPackPair(.string("edits"), .array(editVals)),
     ])
     guard let body = try CoreTransportRegistry.current.call("cm_apply_delta", request: request) else {
         throw CoreError.decode("empty cm_apply_delta response frame")
@@ -846,7 +846,7 @@ public struct DiffLine: Equatable, Sendable {
 /// panic) so the adapter can fall back to the Swift `DiffParser`. A diff that
 /// parses to zero files is `[]`, not a throw.
 public func mdvCoreParseDiff(text: String) throws -> [DiffFile] {
-    let request = MsgPackValue.map([(.string("text"), .string(text))])
+    let request = MsgPackValue.map([MsgPackPair(.string("text"), .string(text))])
     guard let body = try CoreTransportRegistry.current.call("diff_parse", request: request) else {
         throw CoreError.decode("empty diff_parse response frame")
     }
@@ -880,10 +880,10 @@ public enum CoreFormulaValue: Sendable, Equatable {
 public func mdvCoreEvaluateFormulas(
     _ formulas: [String], cells: [String: String]
 ) throws -> [CoreFormulaValue] {
-    let cellPairs: [(MsgPackValue, MsgPackValue)] = cells.map { (.string($0.key), .string($0.value)) }
+    let cellPairs: [MsgPackPair] = cells.map { MsgPackPair(.string($0.key), .string($0.value)) }
     let request = MsgPackValue.map([
-        (.string("formulas"), .array(formulas.map { .string($0) })),
-        (.string("cells"), .map(cellPairs)),
+        MsgPackPair(.string("formulas"), .array(formulas.map { .string($0) })),
+        MsgPackPair(.string("cells"), .map(cellPairs)),
     ])
     guard let body = try CoreTransportRegistry.current.call("formula_evaluate", request: request) else {
         throw CoreError.decode("empty formula_evaluate response frame")
@@ -919,8 +919,8 @@ private func decodeFormulaValue(_ v: MsgPackValue) throws -> CoreFormulaValue {
 /// their computed value (cycles → an `error("cycle")`). Throws `CoreError` on a
 /// bridge fault so the adapter can fall back to the Swift engine.
 public func mdvCoreRecalc(cells: [String: String]) throws -> [String: CoreFormulaValue] {
-    let cellPairs: [(MsgPackValue, MsgPackValue)] = cells.map { (.string($0.key), .string($0.value)) }
-    let request = MsgPackValue.map([(.string("cells"), .map(cellPairs))])
+    let cellPairs: [MsgPackPair] = cells.map { MsgPackPair(.string($0.key), .string($0.value)) }
+    let request = MsgPackValue.map([MsgPackPair(.string("cells"), .map(cellPairs))])
     guard let body = try CoreTransportRegistry.current.call("formula_recalc", request: request) else {
         throw CoreError.decode("empty formula_recalc response frame")
     }
@@ -961,8 +961,8 @@ public struct CoreFoldRegion: Sendable, Equatable {
 /// so the adapter falls back to the Swift engine in both cases.
 public func mdvCoreFoldRegions(text: String, lang: String) throws -> [CoreFoldRegion] {
     let request = MsgPackValue.map([
-        (.string("text"), .string(text)),
-        (.string("lang"), .string(lang)),
+        MsgPackPair(.string("text"), .string(text)),
+        MsgPackPair(.string("lang"), .string(lang)),
     ])
     guard let body = try CoreTransportRegistry.current.call("fold_regions", request: request) else {
         throw CoreError.decode("empty fold_regions response frame")
@@ -1047,7 +1047,7 @@ public enum DiffHunkMark: String, Sendable {
 /// `{marks:[{line,mark}]}` frame out). Throws `CoreError` only on a bridge FAULT
 /// so the adapter can fall back to the Swift `DiffHunkParser`.
 public func mdvCoreDiffHunkMarks(text: String) throws -> [Int: DiffHunkMark] {
-    let request = MsgPackValue.map([(.string("text"), .string(text))])
+    let request = MsgPackValue.map([MsgPackPair(.string("text"), .string(text))])
     guard let body = try CoreTransportRegistry.current.call("diff_hunk_marks", request: request) else { return [:] }   // empty response = no marks, not a fault
     var reader = MsgPackReader(body)
     do {
@@ -1115,9 +1115,9 @@ public func mdvCoreHexRender(
     // HexRenderABTests re-verifies the whole corpus vs the Swift engine THROUGH
     // this path.
     let req = MsgPackValue.map([
-        (.string("width"), .uint(UInt64(UInt32(truncatingIfNeeded: width)))),
-        (.string("total_byte_count"), .uint(UInt64(truncatingIfNeeded: totalByteCount))),
-        (.string("is_truncated"), .bool(isTruncated)),
+        MsgPackPair(.string("width"), .uint(UInt64(UInt32(truncatingIfNeeded: width)))),
+        MsgPackPair(.string("total_byte_count"), .uint(UInt64(truncatingIfNeeded: totalByteCount))),
+        MsgPackPair(.string("is_truncated"), .bool(isTruncated)),
     ]).encode()
     let out = try bytes.withUnsafeBytes { raw in
         try mdvEnvelopeCallAux("hex_render", UInt16(MDV_METHOD_HEX_RENDER), body: req, aux: raw)
@@ -1151,8 +1151,8 @@ public func mdvCoreHexSearch(data: Data, query: String, mode: HexSearchKind) thr
     // so unframe it. Byte-identical (FFI envelope_routes_hex_search A/B pin +
     // HexSearchABTests corpus through this path).
     let req = MsgPackValue.map([
-        (.string("query"), .string(query)),
-        (.string("mode"), .uint(UInt64(mode.rawValue))),
+        MsgPackPair(.string("query"), .string(query)),
+        MsgPackPair(.string("mode"), .uint(UInt64(mode.rawValue))),
     ]).encode()
     let frame = try data.withUnsafeBytes { raw in
         try mdvEnvelopeCallAux("hex_search", UInt16(MDV_METHOD_HEX_SEARCH), body: req, aux: raw)
@@ -1191,7 +1191,7 @@ public func mdvCoreIndentDetect(text: String, sampleLines: Int = 50) throws -> S
     // {sample_lines} scalar frame. In-process this lands back on
     // `mdvEnvelopeCallAux` (byte-identical to the prior direct call).
     let req = MsgPackValue.map([
-        (.string("sample_lines"), .uint(UInt64(UInt32(truncatingIfNeeded: sampleLines)))),
+        MsgPackPair(.string("sample_lines"), .uint(UInt64(UInt32(truncatingIfNeeded: sampleLines)))),
     ]).encode()
     let out = try CoreTransportRegistry.current.callAux(
         "indent_detect", requestBody: req, aux: [UInt8](text.utf8))
@@ -1218,8 +1218,8 @@ public struct FuzzyRanked: Equatable, Sendable {
 /// bridge FAULT so an adapter can fall back to the Swift matcher.
 public func mdvCoreFuzzyRank(query: String, candidates: [String]) throws -> [FuzzyRanked] {
     let request = MsgPackValue.map([
-        (.string("query"), .string(query)),
-        (.string("candidates"), .array(candidates.map { .string($0) })),
+        MsgPackPair(.string("query"), .string(query)),
+        MsgPackPair(.string("candidates"), .array(candidates.map { .string($0) })),
     ])
     guard let body = try CoreTransportRegistry.current.call("fuzzy_rank", request: request) else {
         throw CoreError.decode("empty fuzzy_rank response frame")
@@ -1267,11 +1267,11 @@ public func mdvCoreFindSearch(
     wholeWord: Bool
 ) throws -> [CoreFindMatch] {
     let request = MsgPackValue.map([
-        (.string("text"), .string(text)),
-        (.string("pattern"), .string(pattern)),
-        (.string("kind"), .string(kind)),
-        (.string("case_sensitive"), .bool(caseSensitive)),
-        (.string("whole_word"), .bool(wholeWord)),
+        MsgPackPair(.string("text"), .string(text)),
+        MsgPackPair(.string("pattern"), .string(pattern)),
+        MsgPackPair(.string("kind"), .string(kind)),
+        MsgPackPair(.string("case_sensitive"), .bool(caseSensitive)),
+        MsgPackPair(.string("whole_word"), .bool(wholeWord)),
     ])
     guard let body = try CoreTransportRegistry.current.call("find_search", request: request) else {
         throw CoreError.decode("empty find_search response frame")
@@ -1314,8 +1314,8 @@ public struct CoreHighlightRun: Equatable, Sendable {
 /// result. Throws `CoreError` only on a bridge fault.
 public func mdvCoreHighlightRuns(text: String, lang: String) throws -> [CoreHighlightRun]? {
     let request = MsgPackValue.map([
-        (.string("text"), .string(text)),
-        (.string("lang"), .string(lang)),
+        MsgPackPair(.string("text"), .string(text)),
+        MsgPackPair(.string("lang"), .string(lang)),
     ])
     guard let body = try CoreTransportRegistry.current.call("highlight_runs", request: request)
     else {
@@ -1394,12 +1394,12 @@ public func mdvCoreTranscriptParse(
     redacting: Bool,
     maxEvents: Int? = nil
 ) throws -> [CoreTranscriptEvent] {
-    var fields: [(MsgPackValue, MsgPackValue)] = [
-        (.string("text"), .string(text)),
-        (.string("redacting"), .bool(redacting)),
+    var fields: [MsgPackPair] = [
+        MsgPackPair(.string("text"), .string(text)),
+        MsgPackPair(.string("redacting"), .bool(redacting)),
     ]
     if let maxEvents, maxEvents > 0 {
-        fields.append((.string("max_events"), .uint(UInt64(maxEvents))))
+        fields.append(MsgPackPair(.string("max_events"), .uint(UInt64(maxEvents))))
     }
     let request = MsgPackValue.map(fields)
     guard let body = try CoreTransportRegistry.current.call("transcript_parse", request: request) else {
@@ -1500,7 +1500,7 @@ public struct CoreMarkdownRendered: Equatable, Sendable {
 /// adapter can fall back to the Swift `HTMLRenderer`.
 public func mdvCoreMarkdownRender(text: String) throws -> CoreMarkdownRendered {
     let request = MsgPackValue.map([
-        (.string("text"), .string(text)),
+        MsgPackPair(.string("text"), .string(text)),
     ])
     guard let body = try CoreTransportRegistry.current.call("markdown_render", request: request) else {
         throw CoreError.decode("empty markdown_render response frame")

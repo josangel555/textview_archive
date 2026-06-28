@@ -112,9 +112,9 @@ final class RemoteSubscriptionTests: XCTestCase {
 
     private func watchBody(paths: [String], debounceMs: UInt64) -> [UInt8] {
         MsgPackValue.map([
-            (.string("paths"), .array(paths.map { .string($0) })),
-            (.string("recursive"), .bool(false)),
-            (.string("debounce_ms"), .uint(debounceMs)),
+            MsgPackPair(.string("paths"), .array(paths.map { .string($0) })),
+            MsgPackPair(.string("recursive"), .bool(false)),
+            MsgPackPair(.string("debounce_ms"), .uint(debounceMs)),
         ]).encode()
     }
 
@@ -167,9 +167,9 @@ final class RemoteSubscriptionTests: XCTestCase {
         let remote = try requireRemote()
         let sink = Sink()
         let body = MsgPackValue.map([
-            (.string("dir"), .string("proj-a")),
-            (.string("name"), .string("s.jsonl")),
-            (.string("debounce_ms"), .uint(30)),
+            MsgPackPair(.string("dir"), .string("proj-a")),
+            MsgPackPair(.string("name"), .string("s.jsonl")),
+            MsgPackPair(.string("debounce_ms"), .uint(30)),
         ]).encode()
         let sub = try remote.subscribe("transcript.follow", requestBody: body) {
             sink.append($0)

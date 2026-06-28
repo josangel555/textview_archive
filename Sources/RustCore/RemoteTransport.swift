@@ -384,7 +384,7 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     /// `dropHandler`.
     public func unsubscribe(_ sub: UInt64, method: String = "fs.unwatch") throws {
         dropHandler(sub)
-        let body = MsgPackValue.map([(.string("sub"), .uint(sub))]).encode()
+        let body = MsgPackValue.map([MsgPackPair(.string("sub"), .uint(sub))]).encode()
         _ = try call(method, requestBody: body)
     }
 
@@ -587,8 +587,8 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
 
         // --- hello (the reader is not running yet; read inline) ---
         let helloBody = MsgPackValue.map([
-            (.string("wire_version"), .uint(UInt64(CoreABI.compiled))),
-            (.string("client"), .string("mdv-swift/RemoteTransport")),
+            MsgPackPair(.string("wire_version"), .uint(UInt64(CoreABI.compiled))),
+            MsgPackPair(.string("client"), .string("mdv-swift/RemoteTransport")),
         ]).encode()
         do {
             try writeEnvelope(sock, request(id: 0, method: "hello", body: helloBody))
@@ -646,14 +646,14 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
         // The `a` (aux) key is appended ONLY when non-empty so req-only calls
         // stay byte-identical to the pre-aux wire (the server's encoder does
         // the same — see envelope.rs `aux_key_is_omitted_when_empty`).
-        var pairs: [(MsgPackValue, MsgPackValue)] = [
-            (.string("t"), .string("q")),
-            (.string("i"), .uint(id)),
-            (.string("m"), .string(method)),
-            (.string("b"), .binary(body)),
+        var pairs: [MsgPackPair] = [
+            MsgPackPair(.string("t"), .string("q")),
+            MsgPackPair(.string("i"), .uint(id)),
+            MsgPackPair(.string("m"), .string(method)),
+            MsgPackPair(.string("b"), .binary(body)),
         ]
         if !aux.isEmpty {
-            pairs.append((.string("a"), .binary(aux)))
+            pairs.append(MsgPackPair(.string("a"), .binary(aux)))
         }
         return MsgPackValue.map(pairs).encode()
     }

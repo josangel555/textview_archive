@@ -18,11 +18,11 @@ final class MsgPackFieldAccessorTests: XCTestCase {
     // exactly the shape the core emits per find/fuzzy/transcript result element.
     private func row() -> MsgPackValue {
         .map([
-            (.string("location"), .uint(42)),
-            (.string("length"), .uint(7)),
-            (.string("line"), .uint(3)),
-            (.string("column"), .uint(11)),
-            (.string("kind"), .string("user")),
+            MsgPackPair(.string("location"), .uint(42)),
+            MsgPackPair(.string("length"), .uint(7)),
+            MsgPackPair(.string("line"), .uint(3)),
+            MsgPackPair(.string("column"), .uint(11)),
+            MsgPackPair(.string("kind"), .string("user")),
         ])
     }
 
@@ -92,8 +92,8 @@ final class MsgPackFieldAccessorTests: XCTestCase {
 
     func test_field_returnsFirstMatchOnDuplicateKey() throws {
         let dup = MsgPackValue.map([
-            (.string("k"), .uint(1)),
-            (.string("k"), .uint(2)),
+            MsgPackPair(.string("k"), .uint(1)),
+            MsgPackPair(.string("k"), .uint(2)),
         ])
         // field(_:) returns the FIRST occurrence...
         XCTAssertEqual(try dup.field("k"), .uint(1))
@@ -106,8 +106,8 @@ final class MsgPackFieldAccessorTests: XCTestCase {
 
     func test_field_skipsNonStringKeys() throws {
         let mixed = MsgPackValue.map([
-            (.uint(0), .string("int-keyed-ignored")),
-            (.string("real"), .string("kept")),
+            MsgPackPair(.uint(0), .string("int-keyed-ignored")),
+            MsgPackPair(.string("real"), .string("kept")),
         ])
         XCTAssertEqual(try mixed.field("real"), .string("kept"))
         // An int key can't be looked up by string — nil, same as the dict path

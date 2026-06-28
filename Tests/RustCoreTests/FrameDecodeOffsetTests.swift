@@ -10,13 +10,13 @@ final class FrameDecodeOffsetTests: XCTestCase {
 
     private func tableFrame() -> [UInt8] {
         MsgPackValue.map([
-            (.string("delimiter"), .string(",")),
-            (.string("header"), .array([.string("a"), .string("b")])),
-            (.string("rows"), .array([
+            MsgPackPair(.string("delimiter"), .string(",")),
+            MsgPackPair(.string("header"), .array([.string("a"), .string("b")])),
+            MsgPackPair(.string("rows"), .array([
                 .array([.string("1"), .string("2")]),
                 .array([.string("3"), .string("4")]),
             ])),
-            (.string("truncated"), .bool(false)),
+            MsgPackPair(.string("truncated"), .bool(false)),
         ]).frame()
     }
 

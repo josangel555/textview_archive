@@ -56,11 +56,11 @@ final class CoreTransportSeamTests: XCTestCase {
         let cases: [WrapperCase] = [
             WrapperCase(
                 method: "fuzzy_rank",
-                canned: .map([(.string("matches"), emptyArray)]),
+                canned: .map([MsgPackPair(.string("matches"), emptyArray)]),
                 invoke: { _ = try mdvCoreFuzzyRank(query: "q", candidates: ["a"]) }),
             WrapperCase(
                 method: "find_search",
-                canned: .map([(.string("matches"), emptyArray)]),
+                canned: .map([MsgPackPair(.string("matches"), emptyArray)]),
                 invoke: {
                     _ = try mdvCoreFindSearch(
                         text: "t", pattern: "p", kind: "literal",
@@ -68,18 +68,18 @@ final class CoreTransportSeamTests: XCTestCase {
                 }),
             WrapperCase(
                 method: "transcript_parse",
-                canned: .map([(.string("events"), emptyArray)]),
+                canned: .map([MsgPackPair(.string("events"), emptyArray)]),
                 invoke: { _ = try mdvCoreTranscriptParse(text: "", redacting: true) }),
             WrapperCase(
                 method: "markdown_render",
                 canned: .map([
-                    (.string("html"), .string("<h1>x</h1>")),
-                    (.string("chunks"), emptyArray),
+                    MsgPackPair(.string("html"), .string("<h1>x</h1>")),
+                    MsgPackPair(.string("chunks"), emptyArray),
                 ]),
                 invoke: { _ = try mdvCoreMarkdownRender(text: "# x") }),
             WrapperCase(
                 method: "diff_hunk_marks",
-                canned: .map([(.string("marks"), emptyArray)]),
+                canned: .map([MsgPackPair(.string("marks"), emptyArray)]),
                 invoke: { _ = try mdvCoreDiffHunkMarks(text: "") }),
         ]
         for c in cases {

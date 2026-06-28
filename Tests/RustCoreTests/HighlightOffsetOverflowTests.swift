@@ -30,8 +30,8 @@ final class HighlightOffsetOverflowTests: XCTestCase {
     /// Build a `{supported:true, runs:[...]}` frame from positional tuples.
     private func supportedRuns(_ tuples: [(MsgPackValue, MsgPackValue, String)]) -> MsgPackValue {
         .map([
-            (.string("supported"), .bool(true)),
-            (.string("runs"), .array(tuples.map { t in
+            MsgPackPair(.string("supported"), .bool(true)),
+            MsgPackPair(.string("runs"), .array(tuples.map { t in
                 .array([t.0, t.1, .string(t.2)])
             })),
         ])
@@ -106,8 +106,8 @@ final class HighlightOffsetOverflowTests: XCTestCase {
     /// overflow fix must not swallow real type mismatches.
     func test_malformedKind_stillThrows() {
         CoreTransportRegistry.current = HighlightSpy(.map([
-            (.string("supported"), .bool(true)),
-            (.string("runs"), .array([.array([.uint(0), .uint(1), .uint(99)])])),
+            MsgPackPair(.string("supported"), .bool(true)),
+            MsgPackPair(.string("runs"), .array([.array([.uint(0), .uint(1), .uint(99)])])),
         ]))
         XCTAssertThrowsError(try mdvCoreHighlightRuns(text: "x", lang: "rust")) { error in
             guard case CoreError.decode = error else {

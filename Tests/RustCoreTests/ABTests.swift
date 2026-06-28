@@ -185,9 +185,9 @@ final class ABTests: XCTestCase {
     /// data:[["kind", tag]]}); the rust FFI test proves that shape is emitted.
     func testWireErrorDetailDecodesEmittedFrame() throws {
         let frame = MsgPackValue.map([
-            (.string("code"), .int(4)),
-            (.string("message"), .string("wire decode error: boom")),
-            (.string("data"), .array([.array([.string("kind"), .string("decode")])])),
+            MsgPackPair(.string("code"), .int(4)),
+            MsgPackPair(.string("message"), .string("wire decode error: boom")),
+            MsgPackPair(.string("data"), .array([.array([.string("kind"), .string("decode")])])),
         ]).frame()
         let detail = try XCTUnwrap(CsvSession.decodeWireError(frame))
         XCTAssertEqual(detail.code, 4)
@@ -210,7 +210,7 @@ final class ABTests: XCTestCase {
     func testEnvelopeCallFromSwiftRoutesToDiff() throws {
         XCTAssertEqual(MDV_METHOD_DIFF_PARSE, 2, "the header const reaches Swift")
         let diff = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
-        let req = MsgPackValue.map([(.string("text"), .string(diff))]).frame()
+        let req = MsgPackValue.map([MsgPackPair(.string("text"), .string(diff))]).frame()
         let result = try CoreEnvelope.call(method: UInt16(MDV_METHOD_DIFF_PARSE), req: req)
         XCTAssertFalse(result.isEmpty)
         let body = try CsvSession.unframe(result)
