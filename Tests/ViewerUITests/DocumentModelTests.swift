@@ -75,6 +75,26 @@ final class DocumentModelTests: XCTestCase {
             category: .markdown, viewMode: .rendered, editorExceedsSizeCap: true))
     }
 
+    // MARK: Find focus routing (TSK-1248 — ⌘F defers to a focused control field)
+
+    func test_shouldDeferFindToFocusedField_fieldEditorVsDocument() {
+        let model = makeModel()
+        // A field editor (a control's text field — e.g. the sidebar filter) → defer.
+        let fieldEditor = NSTextView()
+        fieldEditor.isFieldEditor = true
+        XCTAssertTrue(model.shouldDeferFindToFocusedField(fieldEditor),
+                      "⌘F in a control's field editor must not open the doc find bar")
+        // A plain (document) text view → don't defer.
+        XCTAssertFalse(model.shouldDeferFindToFocusedField(NSTextView()))
+        // nil first responder → don't defer.
+        XCTAssertFalse(model.shouldDeferFindToFocusedField(nil))
+        // EXCEPTION: a find bar already open → don't defer, so ⌘F still toggles
+        // IT closed (the bar's own input is itself a field editor).
+        model.isSourceFindBarPresented = true
+        XCTAssertFalse(model.shouldDeferFindToFocusedField(fieldEditor),
+                       "with a find bar open, ⌘F must still toggle it (not defer)")
+    }
+
     // MARK: Palette focus (TSK-906 — dismiss refocuses the editor)
 
     func test_dismissPalette_requestsEditorRefocus() {

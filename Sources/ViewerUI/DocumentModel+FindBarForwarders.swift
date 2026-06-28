@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import AppKit
 import ViewerKit
 import ViewerCore
 
@@ -11,6 +12,22 @@ import ViewerCore
 // to the pre-split inline definitions. Covered by FindBarTests /
 // RenderedFindBarModelTests / DocumentModelTabForwarderTests / FindRepublishInvariantTests.
 extension DocumentModel {
+    /// TSK-1248: ⌘F must not steal focus from a CONTROL's text field (the sidebar
+    /// file-nav filter, a rename/goto prompt, the cross-search field) to open the
+    /// document find bar. The window FIELD EDITOR is the canonical "editing a
+    /// control" signal. EXCEPTION: a find bar that's already open has its OWN
+    /// input as a field editor — ⌘F there must still toggle it closed — so only
+    /// defer when NO document find bar is currently open. Pure decision
+    /// (host-tested); main.swift passes `NSApp.keyWindow?.firstResponder`.
+    @MainActor
+    public func shouldDeferFindToFocusedField(_ firstResponder: NSResponder?) -> Bool {
+        let anyFindBarOpen = isRenderedFindBarPresented
+            || isSourceFindBarPresented
+            || isEditorFindBarPresented
+        return !anyFindBarOpen
+            && EscFocusMonitor.firstResponderIsFieldEditor(firstResponder)
+    }
+
     // Rendered mode
     public var isRenderedFindBarPresented: Bool {
         get { find.isRenderedBarPresented }

@@ -3630,6 +3630,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// the source mode uses NSTextView for selection / scrolling but
     /// we still wrap our own bar around it so the UX matches.
     @objc func findInPage(_ sender: Any?) {
+        // TSK-1248: when the user is editing a CONTROL's text field (the sidebar
+        // file-nav filter, a rename/goto prompt), ⌘F belongs to that field — don't
+        // steal focus to open the document find bar over it. (A find bar already
+        // open is exempt so ⌘F still toggles IT closed — see the model method.)
+        if model.shouldDeferFindToFocusedField(NSApp.keyWindow?.firstResponder) { return }
         // TSK-947 / parity B5: ⌘F is a clean no-op in HTML-rendered mode (no
         // find runtime, no hosted bar) — guarding here stops the old flip of an
         // INVISIBLE rendered-find bar, and never falls through to the source bar.

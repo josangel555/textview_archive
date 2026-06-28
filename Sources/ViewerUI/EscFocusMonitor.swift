@@ -81,6 +81,17 @@ struct EscFocusMonitor: NSViewRepresentable {
         return false
     }
 
+    /// True when the first responder is the window FIELD EDITOR — i.e. the user
+    /// is editing a CONTROL's text field (the sidebar file-nav filter, a
+    /// rename/goto prompt, the cross-search field). `NSText.isFieldEditor` is the
+    /// canonical AppKit signal: standalone document text views (Source) have it
+    /// false, and the CM6/rendered surfaces are WKWebViews (not `NSText`). TSK-1248:
+    /// ⌘F must not steal focus from such a field to open the document find bar.
+    @MainActor
+    static func firstResponderIsFieldEditor(_ firstResponder: NSResponder?) -> Bool {
+        (firstResponder as? NSText)?.isFieldEditor == true
+    }
+
     @MainActor
     final class Coordinator {
         var monitor: Any?
