@@ -212,4 +212,26 @@ mod tests {
         assert_eq!(m.chars, 8);
         assert_eq!(m.words, 2);
     }
+
+    // --- Property test (TSK-585 lane): text_metrics --------------------------
+    use proptest::prelude::*;
+
+    proptest! {
+        /// text_metrics.lines matches the stdlib `str::lines().count()` (an
+        /// independent impl of the same trailing-newline rule — byte-filter vs
+        /// iterator), and the counts satisfy basic invariants: empty → all zero;
+        /// words ≤ chars; lines ≤ chars + 1.
+        #[test]
+        fn text_metrics_lines_match_stdlib_and_invariants(text in "[a-c \t\r\n]{0,80}") {
+            let m = text_metrics(&text);
+            prop_assert_eq!(m.lines, text.lines().count());
+            if text.is_empty() {
+                prop_assert_eq!(m.chars, 0);
+                prop_assert_eq!(m.words, 0);
+                prop_assert_eq!(m.lines, 0);
+            }
+            prop_assert!(m.words <= m.chars);
+            prop_assert!(m.lines <= m.chars + 1);
+        }
+    }
 }
