@@ -396,4 +396,112 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         p.waitUntilExit()
         return ShellResult(exit: p.terminationStatus)
     }
+
+    // MARK: - TSK-1279 dark-mode pixel guard
+
+    /// Fraction of sampled window pixels whose Rec.601 luma is "dark" (< 80/255).
+    /// A dark-themed window paints most of its area dark; a light theme does not —
+    /// so this fraction cleanly separates the two.
+    static func darkPixelFraction(in cg: CGImage) -> Double {
+        let bpr = cg.width * 4
+        guard let ctx = CGContext(
+            data: nil, width: cg.width, height: cg.height,
+            bitsPerComponent: 8, bytesPerRow: bpr,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue),
+            let buf = ctx.data else { return 0 }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        let ptr = buf.bindMemory(to: UInt8.self, capacity: cg.height * bpr)
+        var dark = 0, total = 0
+        let xs = stride(from: 0, to: cg.width, by: max(1, cg.width / 100))
+        let ys = stride(from: 0, to: cg.height, by: max(1, cg.height / 100))
+        for y in ys {
+            for x in xs {
+                let i = y * bpr + x * 4
+                let lum = 0.299 * Double(ptr[i]) + 0.587 * Double(ptr[i + 1]) + 0.114 * Double(ptr[i + 2])
+                if lum < 80 { dark += 1 }
+                total += 1
+            }
+        }
+        return total > 0 ? Double(dark) / Double(total) : 0
+    }
+
+    /// TSK-1279: the `theme-dark` UI-scene exists precisely so the VM lane can
+    /// assert the chrome + content actually PAINT dark (high window dark-fraction)
+    /// — the stale-chrome / non-republishing-view risk. This is that guard, which
+    /// was set up (the scene) but never written. Teeth: a default (light) launch
+    /// must be markedly LESS dark, so a regression where a surface fails to
+    /// repaint dark (or the theme doesn't apply) goes red.
+    func test_darkModeScene_chromePaintsDark() throws {
+        if ProcessInfo.processInfo.environment["MDV_HEADLESS_GATE"] == "1" {
+            throw XCTSkip("T5 heavy tier — VM/nightly lane only.")
+        }
+        let appExe = Self.appBundlePath + "/Contents/MacOS/MarkdownViewer"
+        guard FileManager.default.isExecutableFile(atPath: appExe) else {
+            throw XCTSkip("App not built. Run `bash scripts/build-app.sh debug`.")
+        }
+        guard !ProcessInfo.processInfo.environment.keys.contains("MDV_SKIP_VISUAL") else {
+            throw XCTSkip("MDV_SKIP_VISUAL set.")
+        }
+        let darkFrac = try captureDarkFraction(scene: "theme-dark", appExe: appExe)
+        XCTAssertGreaterThan(
+            darkFrac, 0.6,
+            "theme-dark window should be MOSTLY dark pixels (got \(darkFrac)) — chrome/content failed to paint dark")
+        // Teeth: the default (light) launch must be clearly less dark.
+        let lightFrac = try captureDarkFraction(scene: nil, appExe: appExe)
+        XCTAssertLessThan(
+            lightFrac, darkFrac - 0.2,
+            "default (light) launch should be markedly LESS dark than theme-dark (light \(lightFrac) vs dark \(darkFrac))")
+    }
+
+    /// Spawn the app (optionally into a UI scene), capture its window, return the
+    /// dark-pixel fraction. Mirrors the suite's proven spawn/capture path.
+    private func captureDarkFraction(scene: String?, appExe: String) throws -> Double {
+        let fm = FileManager.default
+        let here = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let doc = here.appendingPathComponent("DESIGN.md")
+        try? fm.removeItem(at: Self.windowIDFile)
+        AppLauncher.killTestInstances(named: "MarkdownViewer")
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: appExe)
+        p.arguments = [doc.path]
+        var env = ProcessInfo.processInfo.environment
+        env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
+        env["MDV_TEST_INSTANCE"] = "1"
+        if let scene { env["MDV_UI_SCENE"] = scene }
+        p.environment = env
+        p.standardOutput = FileHandle.standardError
+        p.standardError = FileHandle.standardError
+        try p.run()
+        defer {
+            if p.isRunning {
+                p.terminate(); Thread.sleep(forTimeInterval: 0.2)
+                if p.isRunning { kill(p.processIdentifier, SIGKILL); p.waitUntilExit() }
+            }
+        }
+        let windowID = try waitForWindowID(timeout: 3.0)
+        _ = try? shell([
+            "/usr/bin/osascript", "-e",
+            "tell application \"MarkdownViewer\" to activate"
+        ])
+        // Scene applies after its ~0.6s delay; add paint-settle headroom.
+        Thread.sleep(forTimeInterval: 1.8)
+        let pngURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mdv-darkmode-\(UUID().uuidString).png")
+        defer { try? fm.removeItem(at: pngURL) }
+        let capExit = runDisclaimedShell(
+            "/usr/sbin/screencapture -l\(windowID) -x -o '\(pngURL.path)'")
+        guard capExit == 0,
+              let image = NSImage(contentsOf: pngURL),
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              cg.width > 200 else {
+            throw XCTSkip(
+                "screencapture unavailable / Screen Recording denied. On macOS 15+, "
+                + "grant Screen Recording to both Terminal AND the xctest binary.")
+        }
+        return Self.darkPixelFraction(in: cg)
+    }
 }
