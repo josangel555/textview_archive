@@ -957,4 +957,60 @@ mod tests {
             );
         }
     }
+
+    // --- Property tests (TSK-585 lane): URL-sanitize + HTML-escape security ---
+    use proptest::prelude::*;
+
+    fn url_input_strategy() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("javascript:alert(1)".to_string()),
+            Just("java\tscript:alert(1)".to_string()),
+            Just("java\nscript:x".to_string()),
+            Just("\t\n javascript:x".to_string()),
+            Just("JaVaScRiPt:x".to_string()),
+            Just("vbscript:msgbox".to_string()),
+            Just("vb\tscript:x".to_string()),
+            Just("data:text/html,<script>".to_string()),
+            Just("data:image/png;base64,AAAA".to_string()),
+            Just("DATA:text/html,x".to_string()),
+            Just("http://example.com".to_string()),
+            Just("#fragment".to_string()),
+            Just("/relative".to_string()),
+            Just("mailto:a@b".to_string()),
+            "[a-zA-Z\t\n\r :/#.,]{0,30}",
+        ]
+    }
+
+    proptest! {
+        /// safe_url NEVER yields an executable-scheme URL (javascript:/vbscript:)
+        /// for any input + context — even with the TSK-1000 control-char bypass
+        /// or case tricks; a surviving data: URL is only image/* in Image context.
+        #[test]
+        fn safe_url_never_yields_executable_scheme(
+            raw in url_input_strategy(), is_image in any::<bool>(),
+        ) {
+            let ctx = if is_image { UrlContext::Image } else { UrlContext::Link };
+            let out = safe_url(&raw, ctx);
+            // Re-normalize the way safe_url + the browser would (strip tab/LF/CR).
+            let norm: String = out.chars().filter(|&c| !matches!(c, '\t' | '\n' | '\r')).collect();
+            let lower = norm.trim().to_lowercase();
+            prop_assert!(!lower.starts_with("javascript:"), "leaked javascript: from {:?}", raw);
+            prop_assert!(!lower.starts_with("vbscript:"), "leaked vbscript: from {:?}", raw);
+            if lower.starts_with("data:") {
+                prop_assert!(ctx == UrlContext::Image && lower.starts_with("data:image/"),
+                    "leaked non-image data: URL from {:?}", raw);
+            }
+        }
+
+        /// escape removes every raw markup char that could open a tag/attribute:
+        /// the output contains no <, >, ", or ' (each replaced by its entity).
+        #[test]
+        fn escape_removes_raw_markup_chars(s in "[<>&\"'a-zA-Z0-9 \t]{0,40}") {
+            let out = escape(&s);
+            prop_assert!(!out.contains('<'));
+            prop_assert!(!out.contains('>'));
+            prop_assert!(!out.contains('"'));
+            prop_assert!(!out.contains('\''));
+        }
+    }
 }
