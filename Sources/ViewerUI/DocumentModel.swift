@@ -3399,105 +3399,22 @@ public final class DocumentModel: ObservableObject {
     // fast.
     private static let renderedHTMLCacheMax = 4
 
-    // MARK: - Raw-HTML JavaScript opt-in (PER-TAB, default-OFF)
+    // MARK: - Raw-HTML JavaScript opt-in — state (logic in DocumentModel+HTMLJavaScript.swift)
     //
-    // SECURITY: rendering a raw `.html` file runs JavaScript DEFAULT-DENY
-    // (see `HTMLDocumentPolicy` / `HTMLRenderedView`). The ONLY way JS is
-    // enabled is an explicit per-tab opt-in the user flips in the mode bar.
-    // Storage is a SET of opted-in tab ids: the SECURE DEFAULT is the
-    // ABSENCE of the tab from the set (no entry ⇒ JS off). We never store
-    // "off" — we only ever record an explicit opt-IN — so a fresh tab, a
-    // restored session, or a forgotten dict entry can only ever fail
-    // closed. The set is pruned on tab close via `purgeCaches`.
-    @Published private var htmlJavaScriptOptIn: Set<UUID> = []
-
-    /// PER-TAB JavaScript opt-in state for the raw-HTML renderer.
-    /// `false` unless the user explicitly opted this tab in. This is the
-    /// single read path the view consumes; the default is OFF.
-    public func htmlJavaScriptEnabled(forTabID tabID: UUID) -> Bool {
-        htmlJavaScriptOptIn.contains(tabID)
-    }
-
-    /// Convenience for the currently-selected tab. `false` when there is
-    /// no selected tab (fail-closed).
-    public var currentHTMLJavaScriptEnabled: Bool {
-        guard let id = tabs.selected?.id else { return false }
-        return htmlJavaScriptEnabled(forTabID: id)
-    }
-
-    /// Set the per-tab raw-HTML JS opt-in. The toggle is a deliberate
-    /// user action — flipping it on records the tab id; flipping it off
-    /// removes it (returning to the secure default). Only meaningful when
-    /// the current tab is an `.html` file in rendered mode; harmless
-    /// otherwise (the renderer for non-HTML files never reads it).
-    public func setHTMLJavaScriptEnabled(_ enabled: Bool, forTabID tabID: UUID) {
-        if enabled {
-            htmlJavaScriptOptIn.insert(tabID)
-        } else {
-            htmlJavaScriptOptIn.remove(tabID)
-        }
-    }
-
-    /// Toggle the current tab's raw-HTML JS opt-in.
-    public func toggleCurrentHTMLJavaScript() {
-        guard let id = tabs.selected?.id else { return }
-        setHTMLJavaScriptEnabled(!htmlJavaScriptEnabled(forTabID: id), forTabID: id)
-    }
+    // SECURITY: rendering a raw `.html` file runs JavaScript DEFAULT-DENY (see
+    // `HTMLDocumentPolicy` / `HTMLRenderedView`). The opt-in storage is a SET of
+    // opted-in tab ids — the secure default is ABSENCE (no entry ⇒ JS off); we
+    // never store "off", only an explicit opt-IN, so a fresh/restored/forgotten
+    // tab can only fail closed. The set is pruned on tab close via `purgeCaches`.
+    // The opt-in/trust methods live in DocumentModel+HTMLJavaScript.swift; this
+    // stored state stays on the class (an extension can't declare stored props).
+    // `htmlJavaScriptOptIn` is widened private→internal so those methods mutate it.
+    @Published var htmlJavaScriptOptIn: Set<UUID> = []
 
     /// PER-DOCUMENT "trust this local HTML" store (TSK-1189). Path-keyed +
     /// persisted; `var` so tests can inject a throwaway suite. The trust
     /// decision is fail-closed (`HTMLTrustPolicy.isTrusted`).
     public var htmlTrustStore = HTMLTrustStore()
-
-    /// Effective trust for a tab's raw-HTML doc: a LOCAL, non-quarantined file
-    /// the user explicitly opted in. The single read path the renderer consumes
-    /// to relax sanitize/CSP/JS; default OFF, fail-closed.
-    public func htmlTrusted(forTabID tabID: UUID) -> Bool {
-        guard let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return false }
-        return HTMLTrustPolicy.isTrusted(
-            url: url,
-            isQuarantined: FileQuarantine.isQuarantined(path: url.path),
-            userOptedIn: htmlTrustStore.isOptedIn(url: url))
-    }
-
-    /// Is the tab's HTML doc ELIGIBLE for trust (local + not quarantined)?
-    /// Drives whether the "Trust & Run" affordance is offered (slice 3).
-    public func htmlTrustEligible(forTabID tabID: UUID) -> Bool {
-        guard let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return false }
-        return HTMLTrustPolicy.isTrustEligible(
-            url: url, isQuarantined: FileQuarantine.isQuarantined(path: url.path))
-    }
-
-    /// Set the per-document HTML trust opt-in (a deliberate user action). An
-    /// opt-IN only takes effect for a trust-eligible doc; revocation always
-    /// applies. Fires `objectWillChange` so the renderer re-renders trusted.
-    public func setHTMLTrusted(_ trusted: Bool, forTabID tabID: UUID) {
-        guard let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return }
-        if trusted && !HTMLTrustPolicy.isTrustEligible(
-            url: url, isQuarantined: FileQuarantine.isQuarantined(path: url.path)) { return }
-        htmlTrustStore.setOptedIn(trusted, url: url)
-        objectWillChange.send()
-    }
-
-    /// Should the renderer offer a "Trust & Run" affordance for this tab? True
-    /// when the doc is trust-ELIGIBLE (local + not quarantined), its scripts were
-    /// SUPPRESSED (so it likely renders partially), and it isn't already trusted.
-    /// Pure decision over the tab's content + trust state (host-testable); the
-    /// banner that consumes it is render-path.
-    public func shouldOfferHTMLTrust(forTabID tabID: UUID, contents: String) -> Bool {
-        guard htmlTrustEligible(forTabID: tabID), !htmlTrusted(forTabID: tabID)
-        else { return false }
-        return HTMLDocumentPolicy.dependsOnSuppressedScript(contents)
-    }
-
-    /// True when the current tab is an `.html` file being shown in
-    /// rendered mode — i.e. when the "Enable JavaScript" toggle is
-    /// meaningful. Honors the per-tab "Open As…" override.
-    public var showsHTMLJavaScriptToggle: Bool {
-        guard let url = currentURL else { return false }
-        let cat = currentCategory ?? FileTypeDetector.category(for: url)
-        return cat == .html && currentViewMode == .rendered
-    }
 
     /// Returns the rendered HTML for `contents`, building+caching on
     /// miss. Call from a SwiftUI body — it's main-thread, sync, and the
