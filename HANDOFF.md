@@ -19,12 +19,12 @@ DocumentModel.swift 7692→6889. Moved cohesive method groups to `DocumentModel+
 
 ## Next action (post-compaction — fresh context)
 1. `git log -1` (expect the find_engine proptest commit); rust gate = `bash scripts/rust-core-gate.sh`; host gate = `bash scripts/test-headless-gate.sh`.
-2. The rust-proptest vein is NEAR EXHAUSTION — **`dispatch::call`** (the FFI method router; a no-panic proptest on arbitrary method + frame bytes) is the LAST genuine pure-logic target. After it: whitespace is trivial; git/trace/wasm_shape/bench/lib are IO/wire (not cleanly proptestable). Do dispatch, then the vein is genuinely done.
+2. The rust property-test vein is **DONE** (dispatch::call landed `2df05f10` was the last genuine pure-logic target). rust-core has TWO equivalent property-test styles — the newer `proptest!` macro AND a long-standing DIY xorshift fuzz lane (`*_fuzz_*`, seed 0x9E37…) — and EVERY pure-logic engine now has one or the other. Do NOT add more rust property tests without first grepping for BOTH (a runs_utf16 proptest dup of `highlight_runs_fuzz` was reverted, e604296b). whitespace is trivial; git/trace/wasm_shape/bench/lib are IO/wire.
 3. After the vein: the clean host-completable veins are spent (host features, 7 SRP slices, ~16 rust proptests). Remaining options:
    - **HEX / Opening-files / Tab-management SRP track-2** — entangled core, design-grade (see below); only if the owner wants it.
    - **owner-gated** (already parked, don't re-block): TSK-590, TSK-649, rust flips (1215/1202), TSK-838 DOM-patch flip.
    - **board hygiene**: reconcile the NEXT clear high-value stale `review` head if `task_next` surfaces one (don't churn the ~410 pool).
-   - Re-run the empirical sweep — it has repeatedly found work I thought wasn't there.
+   - Re-run the empirical sweep for OTHER kinds of work — but the rust property-test vein is exhausted (grep both `proptest!` AND `*_fuzz_*` before assuming a gap).
 
 ## SRP split — at its NATURAL PAUSE (track-2 is entangled, design-grade)
 - **Editable HEX (~273L)**: 3 stored vars + DisplayedText struct + the GENERAL displayedText/displayText dispatchers (used widely — they STAY) are interleaved between HEX-edit clusters; saveHexEdits touches watcher/lspPool/repoFocus/tabCoordinator. ~5 error-prone interleaved edits, modest payoff.
