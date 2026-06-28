@@ -292,4 +292,39 @@ mod tests {
         // SVG is text/XML, not a raster image — intentionally not matched.
         assert!(!looks_image("icon.svg"));
     }
+
+    // --- Property tests (TSK-585 lane): identify robustness (no-panic parser) -
+    use proptest::prelude::*;
+
+    proptest! {
+        /// identify never panics (or hangs) on ARBITRARY bytes — image header
+        /// sniffing is a classic crash/DoS surface, and no fuzz target exists.
+        #[test]
+        fn identify_never_panics(bytes in proptest::collection::vec(any::<u8>(), 0..300)) {
+            let _ = identify(&bytes);
+        }
+
+        /// A valid magic prefix + arbitrary (truncated/garbage) tail still never
+        /// panics — the dimension readers handle truncation via Option and the
+        /// JPEG segment walker terminates (checked_add / .get). When it does
+        /// identify, the kind matches the magic family.
+        #[test]
+        fn identify_magic_prefix_never_panics(
+            which in 0usize..5,
+            tail in proptest::collection::vec(any::<u8>(), 0..200),
+        ) {
+            let (magic, expected): (Vec<u8>, ImageKind) = match which {
+                0 => (vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a], ImageKind::Png),
+                1 => (b"GIF89a".to_vec(), ImageKind::Gif),
+                2 => (b"BM".to_vec(), ImageKind::Bmp),
+                3 => (vec![0xFF, 0xD8], ImageKind::Jpeg),
+                _ => (b"RIFF\0\0\0\0WEBP".to_vec(), ImageKind::Webp),
+            };
+            let mut input = magic;
+            input.extend_from_slice(&tail);
+            if let Some(info) = identify(&input) {
+                prop_assert_eq!(info.kind, expected);
+            }
+        }
+    }
 }
