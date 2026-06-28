@@ -9,6 +9,16 @@ went. Detailed per-item narrative lives in `docs/AUTONOMOUS_PROGRESS.md`.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-28
+
+### Fixed
+- **Creating a new file/image from the landing screen (no folder open) no longer hangs.** The "New File"/"New Image" buttons fall back to a temp scratch location when nothing is open — but the app then treated that temp directory as a workspace and enumerated its entire contents (potentially thousands of churny system files), causing a multi-second freeze (and briefly dumping the temp dir into the sidebar). It now skips rooting the temp scratch dir. (TSK-1294)
+
+### System work
+- **Landing New-File temp-dir hang (TSK-1294)** — found via the TSK-836/1181 test-speed work (the DocumentModelTests "slow class" was essentially ONE 12.9s test). Root: `recordOpenedFile` auto-rooted the sidebar to an opened file's parent when no folder was open → enumerated the huge temp dir for the landing scratch fallback; `createNewFile`/`createNewBlankImage` also reloaded the temp dir's children. Fix: skip the auto-root for the temp dir + gate the sidebar reload on a new `SidebarModel.contains(_:)` in-tree check. Test 12.9s→0.012s; host-tested (contains unit test + landing no-enumeration teeth: expanded empty + rootURL nil).
+- **Test-speed capture (TSK-836) validated** — `test-timings.sh`/`.py` (per-class slowest-first table) verified end-to-end (952 classes / 254s serial) + host-tested (TestTimingsTests); data-enabled the split/de-sleep follow-ups. The TSK-1181 split was reverted — the slow class was the TSK-1294 bug, not class size.
+- **rust-core proptest lane grown** — differential proptests added for cm_edit (batch apply == naive splice, TSK-1291), outline (fence suppression, TSK-1292), and json (round-trip, TSK-1293); all gate-green. Concurrency/inlining audit answered (TSK-794: generous Swift concurrency; deliberate rust size-opt).
+
 ## 2026-06-27
 
 ### Added

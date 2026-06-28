@@ -408,6 +408,19 @@ public final class SidebarModel: ObservableObject {
         expanded = snapshot
     }
 
+    /// Whether `url` lies within the current sidebar tree (the `rootURL`
+    /// subtree). Gates sidebar mutations (reload/select) so an out-of-tree path
+    /// — e.g. the temp-scratch dir the landing "New File"/"New Image" falls back
+    /// to when NO folder is open — does NOT trigger a (potentially huge, slow)
+    /// enumeration of an unrelated directory. Returns false when no folder is
+    /// open (`rootURL == nil`). TSK-1294.
+    public func contains(_ url: URL) -> Bool {
+        guard let root = rootURL else { return false }
+        let target = normalize(url).path
+        let rootPath = normalize(root).path
+        return target == rootPath || target.hasPrefix(rootPath + "/")
+    }
+
     /// TSK-916: user-invoked "Refresh" / "Reload from Disk" on a folder. Force a
     /// fresh re-list of `directory` AND every currently-expanded descendant under
     /// it, ignoring the children cache, then republish once. Unlike the FSEvents

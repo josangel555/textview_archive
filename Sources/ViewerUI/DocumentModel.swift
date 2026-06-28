@@ -750,9 +750,14 @@ public final class DocumentModel: ObservableObject {
     public func createNewFile(in directory: URL, baseName: String = "Untitled.txt") -> URL? {
         do {
             let url = try NewFileCreator.create(in: directory, baseName: baseName)
-            // Show it immediately (don't wait for the FSEvents coalesce).
-            sidebar.reloadChildren(of: directory)
-            sidebar.setSelected(url)
+            // Show it immediately (don't wait for the FSEvents coalesce) — but
+            // ONLY when the dir is in the sidebar tree. The landing fallback
+            // creates in the temp-scratch dir (no folder open); enumerating that
+            // (huge /var/folders) would hang + pollute the sidebar (TSK-1294).
+            if sidebar.contains(directory) {
+                sidebar.reloadChildren(of: directory)
+                sidebar.setSelected(url)
+            }
             open(url: url)
             return url
         } catch {
@@ -814,7 +819,12 @@ public final class DocumentModel: ObservableObject {
         }
         do {
             try data.write(to: url)
-            sidebar.reloadChildren(of: directory)
+            // Only refresh the sidebar when the dir is in-tree — the landing
+            // "New Image" falls back to the temp-scratch dir when no folder is
+            // open; enumerating it would hang + pollute the sidebar (TSK-1294).
+            if sidebar.contains(directory) {
+                sidebar.reloadChildren(of: directory)
+            }
             return url
         } catch {
             return nil
@@ -5944,9 +5954,19 @@ public final class DocumentModel: ObservableObject {
             // protected roots — but this path runs in response to a
             // user action, so it's safe to set.)
             if sidebar.rootURL == nil {
-                sidebar.setRoot(resolved.deletingLastPathComponent())
-                sidebar.setSelected(resolved)
-                preferences.lastFolderURL = sidebar.rootURL
+                let parent = resolved.deletingLastPathComponent()
+                // TSK-1294: do NOT auto-root the per-user temp dir. The landing
+                // "New File"/"New Image" fallback creates a scratch file there
+                // when no folder is open; rooting it would enumerate the (huge,
+                // churny) temp dir — a multi-second hang — and dump it into the
+                // sidebar. It's an internal scratch location, not a workspace.
+                let tempDir = FileManager.default.temporaryDirectory
+                    .standardizedFileURL.resolvingSymlinksInPath()
+                if parent.path != tempDir.path {
+                    sidebar.setRoot(parent)
+                    sidebar.setSelected(resolved)
+                    preferences.lastFolderURL = sidebar.rootURL
+                }
             }
         case .empty, .error, .loading, .hostedView:
             break

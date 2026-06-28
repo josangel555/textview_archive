@@ -1622,6 +1622,15 @@ final class DocumentModelTests: XCTestCase {
                                 "landing New File must succeed even with no folder open")
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "created on disk (temp scratch)")
         XCTAssertEqual(model.tabs.selected?.url, url, "the new file opens in a tab")
+        // TSK-1294: with NO folder open, the temp-scratch fallback must NOT
+        // enumerate/expand the (huge) temp dir into the sidebar — that was a
+        // multi-second hang. `createNewFile` now gates the sidebar reload on
+        // `sidebar.contains(dir)`, so nothing gets expanded here. (Pre-fix this
+        // test took ~13s and `expanded` held the temp dir.)
+        XCTAssertTrue(model.sidebar.expanded.isEmpty,
+                      "landing scratch (no folder open) must not expand the temp dir")
+        XCTAssertNil(model.sidebar.rootURL,
+                     "landing scratch must not auto-root the temp dir as a workspace")
         try? FileManager.default.removeItem(at: url)
     }
 }

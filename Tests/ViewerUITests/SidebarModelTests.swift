@@ -54,6 +54,23 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertEqual(model.children(of: dir).map { $0.name }, ["a.md", "b.md"])
     }
 
+    // MARK: contains(_:) — gates out-of-tree paths (TSK-1294)
+
+    func test_contains_gatesByRoot() throws {
+        let model = SidebarModel()
+        let sub = try mkdir("docs/sub")
+        // No folder open → nothing is in-tree (guards the landing temp-scratch
+        // fallback from enumerating an unrelated dir).
+        XCTAssertFalse(model.contains(tmpDir))
+        XCTAssertFalse(model.contains(FileManager.default.temporaryDirectory))
+        // Open a folder → the root + descendants are in-tree; the parent is not.
+        model.setRoot(tmpDir)
+        XCTAssertTrue(model.contains(tmpDir), "the root itself is in-tree")
+        XCTAssertTrue(model.contains(sub), "a descendant is in-tree")
+        XCTAssertFalse(model.contains(tmpDir.deletingLastPathComponent()),
+                       "the parent (the real temp dir) is NOT in-tree")
+    }
+
     func test_setRoot_loadsRootChildrenSynchronously() async throws {
         let model = SidebarModel()
         try touch("a.md")
