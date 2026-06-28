@@ -47,7 +47,13 @@ final class SleepRatchetGuardTests: XCTestCase {
     /// 2026-06-19: 75 → 77 — the ultracode-wave integration folded test files
     /// (from other wave commits) that carry 2 pre-existing fixed sleeps; the
     /// 849 baseline predated them. Follow-up: convert those 2 to polling.
-    private static let baseline = 77
+    /// 2026-06-28: 77 → 79 — TSK-1279's dark-mode T5 pixel guard
+    /// (SourceViewVisualRegressionTests.captureDarkFraction) adds 2 spawn/
+    /// render-settle fixed sleeps, mirroring the suite's 5 existing identical
+    /// ones (terminate-quiesce + post-launch render settle). Polling a SPAWNED
+    /// app's cross-process render-readiness has no clean predicate, so these
+    /// match the established T5-capture pattern rather than introduce polling.
+    private static let baseline = 79
 
     func test_noNewFixedDurationSleeps() throws {
         let fm = FileManager.default
