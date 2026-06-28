@@ -23,6 +23,32 @@ Board (shared `tasked` board, ~all markdown_viewer): **1658 total** · **749 in-
 1. **P0a (AX self-driving) + P0b (validate the pile)** — host work DONE; both now owner-bound (P0a executor = TCC grant; P0b = on-screen close of the ~410 queue). See §"Owner-side unblocks".
 2. **Then the Next-50 below**, user-facing value first.
 
+## ⚡ Actionable now — autonomous drain queue (no owner flip/decision needed)
+The runtick loop pulls from HERE first. Each can be driven to `review`/`validated`
+WITHOUT an owner flip/decision — via the host gate, the agent-runnable WebView lane,
+or a VM UI test I author. Validation is NAMED per item; riskiness is resolved by
+validation, never used to defer or ask.
+
+**User-facing (build/fix → host or WebView/VM-lane test → review):**
+- **TSK-1271** — find can't-scroll-past: DIAGNOSED (real cause = find bar holds first responder, scroll keys never reach the webview; the report's DOM-re-scroll theory is refuted). Fix = forward scroll keys to the rendered webview while find is focused. Validate: VM/T4 key-routing UI test.
+- **TSK-463 / TSK-1136** — wire LSP completion into CM6 (host bridge testable; WebView/VM proof).
+- **TSK-924** — CSV multi-cell select + copy render wiring (model done + tested).
+- **TSK-1139** — CSV viewport paging — wire `CSVRowWindowSource`.
+- **TSK-958 / TSK-1163** — Universal Paste dispatcher (host model) + UI.
+- **TSK-1128** — Settings ▸ LSP panel view (`languageStatuses` model done + tested).
+- **TSK-1119** — walkthrough illustration overlay (SwiftUI view rendering the diagram verb).
+- **TSK-1146** — spell/grammar inline squiggles (model + render).
+
+**Internal / quality (host gate = full confidence → validated):**
+- **TSK-1110** — DocumentModel SRP, remaining clusters (CM6-LSP ~815, Command-registry ~457, Editable-HEX mid-MARK split). Compile + headless gate is COMPLETE confidence for a behavior-preserving move — done as deliberate slices, not deferred.
+- **TSK-538** — rust-core audit follow-ups (host children).
+- **TSK-764 / TSK-1165 / TSK-1166** — git reconciliation + edit-reconcile / disk-conflict wiring (host model).
+- **TSK-698 / TSK-703 / TSK-722 / TSK-723** — host-engine epics (build engine, host-test; render at review).
+- **TSK-382** — DocumentModel memory squeeze (host where measurable).
+- ongoing: coverage backfill + audit-hardening of uncovered pure-logic.
+
+**Excluded — need YOU (not in the autonomous queue):** 838 flip · 1215/1202 rust flips · 1138 ratify · 543/589/810/1045/1129 decisions · the ~417 review/fixed close-queue · TCC grant.
+
 ## 🔥 Next 50 — prioritized work list
 
 ### P0 — user-facing bugs + perf the owner feels (1–12)
