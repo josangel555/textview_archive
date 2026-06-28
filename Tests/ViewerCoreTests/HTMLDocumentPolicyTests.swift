@@ -138,6 +138,47 @@ final class HTMLDocumentPolicyTests: XCTestCase {
         XCTAssertTrue(tag.contains("default-src 'none'"))
     }
 
+    // MARK: - cspMeta(trusted:) — the LIVE parameterized CSP-meta emitter
+    // (consumed by the trusted-document envelope; cspMetaTag above is the
+    // untrusted-only var). These pin the live delivery path directly.
+
+    func test_cspMeta_untrusted_matchesStrictMetaTag_noDrift() {
+        let tag = HTMLDocumentPolicy.cspMeta(trusted: false)
+        XCTAssertTrue(tag.contains("http-equiv=\"Content-Security-Policy\""))
+        XCTAssertTrue(tag.contains("default-src 'none'"))
+        XCTAssertFalse(tag.contains("script-src"),
+                       "untrusted CSP meta must NOT relax script-src")
+        // The two untrusted CSP-meta emitters must not drift apart: a divergence
+        // would deliver a different policy depending on the code path.
+        XCTAssertEqual(tag, HTMLDocumentPolicy.cspMetaTag)
+    }
+
+    func test_cspMeta_trusted_relaxesScriptButKeepsAntiExfilFence() {
+        let tag = HTMLDocumentPolicy.cspMeta(trusted: true)
+        XCTAssertTrue(tag.contains("http-equiv=\"Content-Security-Policy\""))
+        XCTAssertTrue(tag.contains("script-src 'self'"),
+                      "trusted CSP runs the page's OWN scripts")
+        // The anti-exfiltration fence MUST survive the trust relaxation.
+        XCTAssertTrue(tag.contains("connect-src 'none'"),
+                      "trusted CSP must keep connect-src 'none' (no exfil)")
+        XCTAssertTrue(tag.contains("object-src 'none'"))
+        XCTAssertTrue(tag.contains("base-uri 'none'"))
+        XCTAssertTrue(tag.contains("form-action 'none'"))
+    }
+
+    func test_cspMeta_isWellFormed_bothTrustLevels() {
+        for trusted in [false, true] {
+            let tag = HTMLDocumentPolicy.cspMeta(trusted: trusted)
+            XCTAssertTrue(tag.hasPrefix("<meta http-equiv=\"Content-Security-Policy\" content=\""),
+                          "malformed prefix (trusted=\(trusted))")
+            XCTAssertTrue(tag.hasSuffix("\">"), "malformed suffix (trusted=\(trusted))")
+            // Exactly the 4 attribute quotes — a stray double quote in the CSP
+            // value would terminate content="" early and silently void the policy.
+            XCTAssertEqual(tag.filter { $0 == "\"" }.count, 4,
+                           "CSP value leaked a double quote, breaking the attr (trusted=\(trusted))")
+        }
+    }
+
     func test_envelope_injectsCSPAndWrapsBody() {
         let body = "<h1>hello</h1>"
         let doc = HTMLDocumentPolicy.envelope(sanitizedBody: body)
