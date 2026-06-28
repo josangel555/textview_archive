@@ -6422,6 +6422,25 @@ public final class DocumentModel: ObservableObject {
         reload(url: url, at: index)
     }
 
+    /// TSK-1269 slice 1 — the host-testable DECISION half of wiring
+    /// `ExternalEditReconciler` (3-way auto-merge) into the dirty-buffer
+    /// external-change flow. Reconciles the tab's UNSAVED editor buffer against
+    /// the current on-disk content (base = last-saved `originalText`, ours =
+    /// live `text`, theirs = disk) and returns the `Outcome` for the caller to
+    /// apply: `.autoMerged`/`.cleanReload` carry the text to set, `.conflict`
+    /// carries git-style markers, `.noExternalChange` means keep local. Returns
+    /// `nil` when there is no editor buffer for the tab (uses the non-seeding
+    /// `editorBuffers` dict, NOT the seeding `editorBuffer(forTabID:)` getter)
+    /// or the disk read fails — the caller then falls back to the existing
+    /// Keep/Discard prompt. Pure read, no mutation — host-testable. Applying the
+    /// outcome (buffer-replace + CM6 redisplay) and routing `refreshTab`/the
+    /// watcher through it are slices 2/3 (render → review).
+    public func reconcileExternalEdit(forTabID id: UUID, url: URL) -> ExternalEditReconciler.Outcome? {
+        guard let buf = editor.editorBuffers[id] else { return nil }
+        guard let disk = try? String(contentsOf: url, encoding: buf.encoding) else { return nil }
+        return ExternalEditReconciler.reconcile(base: buf.originalText, local: buf.text, disk: disk)
+    }
+
     private func startWatchingCurrentFile() {
         let url = currentURL
         // B9: idempotent — no-op if already watching the same URL.
