@@ -22,6 +22,18 @@ Five owner-gated items block the highest-value next steps; each is parked with f
 - **TSK-1214 — bundle cap target.** Exec ~60MB at cap (caps are 80 MB total / 60 MB exec per `scripts/check-bundle-size.sh`). **TSK-1098 (doc-drift) RESOLVED 2026-06-22** — CLAUDE.md + `docs/MERMAID_IMPL.md` now state the real 80/60 caps (no more stale 25/26/48 policy figures in the active docs; historical log/design figures left as point-in-time record). Remaining owner call is the real BUDGET: grammar lazy-load (meaty, ~30 MB reclaim — TSK-1214 spike) vs accept+keep 80/60. Spike findings on TSK-1214.
 - **TSK-788 — test-audit depth.** Recommend STANDARD (sufficient). `docs/TEST_SUITE_AUDIT_2026-06-21.md`.
 
+## LOG 2026-06-27 — render-test coverage (find ×2 validated), dark-mode pixel guard, rpcd reconcile
+
+Autonomous-cron + owner redirect ("do the VM stuff, finish as much as you can, work around AX"). All on main, host-gate-green per item.
+- **TSK-1270 — rendered-MD find clear → VALIDATED.** Already fixed by TSK-1207 (dismiss empties `renderedQuery` → `__mdvFindClear`; `clearMarks` unwraps both `mdv-find` + the active `mdv-find-current` losslessly); the gap was render-tier TEST coverage. Wrote `RenderedFindClearWebViewTests` (`e88da14a`), wired into the VM WebView lane (`521b0e80`) — caught the false-green trap (a #192 suite absent from `run_webview_tests`' filter list silently skips 100%). VM-validated on a live WKWebView (both tests passed, ~15s each).
+- **TSK-1290 — find RUN-behavior WebView coverage → VALIDATED (`2f7e4a05`).** 4 tests pinning `__mdvFindRun`: count accuracy (total + DOM marks agree), case sensitivity (3 vs 1), next/prev navigation cycling+wrap (0→1→2→0; prev wraps to last), regex-metachar escaping ('a.b' literal = 2, not 3). VM-validated (all 4 passed).
+- **TSK-1279 — dark-mode pixel guard → review (`0da209aa`).** `test_darkModeScene_chromePaintsDark` (in `SourceViewVisualRegressionTests`): spawns `MDV_UI_SCENE=theme-dark`, asserts >60% dark window pixels, light-mode teeth (delta >0.2). The scene APPLIES on the VM (`ui-scene: applied 'theme-dark'`) — the `MDV_UI_SCENE` T5 path needs NO AX/Automation grant. Pixel capture validates in the all-mode/nightly lane.
+- **TSK-400 — mdvcore-rpcd spike → VALIDATED.** Superseded by the implemented `mdv-serve` daemon (compact-binary envelopes over a UNIX socket, ssh-tunnel auth, no server-side FFI hop). Rust-core gate green as the checks artifact.
+- **RTF surrogate-pair fix** (`fd7c1013`) — emoji/astral chars (>U+FFFF) no longer dropped from opened `.rtf` (the hand-rolled extractor now combines the UTF-16 surrogate halves). +4 tests. CHANGELOG'd.
+- **Hex mode-switch UAT load-flake** diagnosed + documented (`2b61d921`) — `ViewModeMatrixSmokeTests` md_rendered→hex false-fails under full-suite VM load (the tight, load-bearing 300ms window); passes isolated. RULE: re-run isolated before believing a full-`all`-run fail of that one case.
+- **Test-tier boundary documented (`884a4905`):** the agent-validatable line — **WebView/DOM render-tests validate clean + fast (`webview` mode, no screencapture); T5-pixel tests need the all-mode/nightly capturing context** (`test`-mode screencapture is TCC-denied — the TSK-1245 `.build` chown context). LESSONS + a `test-in-vm.sh` note.
+- **BACKLOG reconciled + next-50 reprioritized** (`a5f6b70b`/`ad09d628`); full pre-reconcile snapshot → `archive/BACKLOG_archive_2026-06-27.md`. Board: ~410 review+fixed awaiting owner close (the bottleneck); §E owner-unblocks unchanged (DOM-patch flip, AX/Screen-Recording grants, rust-port flips, TSK-590).
+
 ## LOG 2026-06-26 — prod-build packaging fix, gate repair, vim caret, eval/AX kickoff
 
 Owner-interactive + first autonomous-cron ticks. All on main, host-gate-green per item.
