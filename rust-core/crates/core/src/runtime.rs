@@ -484,4 +484,73 @@ mod tests {
         assert_eq!(s.total_bytes, 200);
         assert!(s.over_budget, "pinned docs exceed budget → over_budget flag");
     }
+
+    // --- Property test (TSK-585 lane): eviction_plan invariants --------------
+    use proptest::prelude::*;
+
+    fn docs_strategy() -> impl Strategy<Value = Vec<DocMeta>> {
+        proptest::collection::vec((0usize..2000, 0u64..100, any::<bool>()), 0..10)
+            .prop_map(|specs| {
+                specs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (estimated_bytes, last_touched_ms, pinned))| DocMeta {
+                        id: DocId(u64::try_from(i).unwrap_or(0)),
+                        estimated_bytes,
+                        last_touched_ms,
+                        pinned,
+                    })
+                    .collect()
+            })
+    }
+
+    proptest! {
+        /// eviction_plan: pinned docs are NEVER evicted; victims are distinct
+        /// resident DocIds; after eviction the set is within byte+count budget
+        /// UNLESS only pinned docs remain; and (ttl>0) no expired unpinned doc
+        /// survives the reaper. The core memory-eviction correctness contract.
+        #[test]
+        fn eviction_plan_respects_budget_and_pins(
+            docs in docs_strategy(),
+            max_bytes in 0usize..5000,
+            max_count in 0usize..12,
+            ttl_ms in 0u64..50,
+            now_ms in 50u64..150,
+        ) {
+            let budget = EvictionBudget::new(max_bytes, max_count, ttl_ms);
+            let plan = eviction_plan(&docs, &budget, now_ms);
+            let victims: HashSet<DocId> = plan.iter().copied().collect();
+
+            prop_assert_eq!(victims.len(), plan.len(), "victims must be distinct");
+            let all_ids: HashSet<DocId> = docs.iter().map(|d| d.id).collect();
+            for v in &plan {
+                prop_assert!(all_ids.contains(v), "victim is not a resident doc");
+            }
+            for d in &docs {
+                if d.pinned {
+                    prop_assert!(!victims.contains(&d.id), "a pinned doc was evicted");
+                }
+            }
+
+            let remaining: Vec<&DocMeta> =
+                docs.iter().filter(|d| !victims.contains(&d.id)).collect();
+            let rem_bytes: usize = remaining.iter().map(|d| d.estimated_bytes).sum();
+            if rem_bytes > max_bytes {
+                prop_assert!(remaining.iter().all(|d| d.pinned),
+                    "over byte budget but unpinned docs remain to evict");
+            }
+            if max_count > 0 && remaining.len() > max_count {
+                prop_assert!(remaining.iter().all(|d| d.pinned),
+                    "over count budget but unpinned docs remain to evict");
+            }
+            if ttl_ms > 0 {
+                for d in &remaining {
+                    if !d.pinned {
+                        let idle = now_ms.saturating_sub(d.last_touched_ms);
+                        prop_assert!(idle <= ttl_ms, "an expired unpinned doc escaped the reaper");
+                    }
+                }
+            }
+        }
+    }
 }
