@@ -2536,15 +2536,6 @@ public final class DocumentModel: ObservableObject {
         openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
     }
 
-    /// TSK-1100: open the project's import-dependency graph (DependencyGraphView)
-    /// as a hosted tab — surfaces the built-but-unreachable TSK-280 feature.
-    /// The extraction walks the source tree, so it's built OFF-MAIN; the view
-    /// paints the laid-out result (model + layout are host-tested; the Canvas
-    /// render is the VM/review residue). Clicking a node opens that file.
-    /// No-op when no folder/project root is open.
-    /// The active tab's text + URL (live editor buffer if present, else the
-    /// loaded-from-disk contents), or nil for a non-text tab. Shared by the
-    /// Annotations / Log Patterns panels (TSK-1121/1153).
     /// TSK-1112: merged extensions inventory for the Settings ▸ Extensions list.
     /// Plugins now (from the shared registry); walkthroughs (need an off-main
     /// catalog scan → snapshots) are a tracked follow-on.

@@ -17,6 +17,9 @@ import ViewerCore
 // Behaviour-identical move; no @Published involved → zero render risk.
 extension DocumentModel {
 
+    /// The active tab's text + URL (live editor buffer if present, else the
+    /// loaded-from-disk contents), or nil for a non-text tab — shared by the
+    /// tool-window + export commands below (TSK-1121/1153/1144/…).
     private func activeTextFile() -> (text: String, url: URL)? {
         guard let tab = tabs.selected, let url = tab.url else { return nil }
         if let buf = editor.editorBuffers[tab.id] { return (buf.text, url) }
@@ -139,6 +142,12 @@ extension DocumentModel {
         return versions.count
     }
 
+    /// TSK-1100: open the project's import-dependency graph (DependencyGraphView)
+    /// as a hosted tab — surfaces the built-but-unreachable TSK-280 feature.
+    /// The extraction walks the source tree, so it's built OFF-MAIN; the view
+    /// paints the laid-out result (model + layout are host-tested; the Canvas
+    /// render is the VM/review residue). Clicking a node opens that file.
+    /// No-op when no folder/project root is open.
     public func showDependencyGraph() {
         guard let root = sidebar.rootURL else { return }
         Task { [weak self] in
