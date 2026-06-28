@@ -816,4 +816,54 @@ mod tests {
             _ => unreachable!("expected Table body"),
         }
     }
+
+    // --- Property tests (TSK-585 lane): view pure-fn invariants ---------------
+    use proptest::prelude::*;
+
+    proptest! {
+        /// table_col_widths: one width per header column, each in [4,30], and
+        /// equal to an independent column-wise recompute (max of header + the
+        /// first 200 sampled rows' char-counts, clamped). Catches a sampling /
+        /// clamp / off-by-column regression.
+        #[test]
+        fn table_col_widths_matches_independent_recompute(
+            header in proptest::collection::vec("[a-z]{0,35}", 0..6),
+            rows in proptest::collection::vec(
+                proptest::collection::vec("[a-z]{0,35}", 0..6), 0..250),
+        ) {
+            let w = table_col_widths(&header, &rows);
+            prop_assert_eq!(w.len(), header.len());
+            for x in &w {
+                prop_assert!((4usize..=30).contains(x), "column width out of [4,30]");
+            }
+            let naive: Vec<usize> = header.iter().enumerate().map(|(i, h)| {
+                let mut m = h.chars().count();
+                for row in rows.iter().take(200) {
+                    if let Some(cell) = row.get(i) {
+                        m = m.max(cell.chars().count());
+                    }
+                }
+                m.clamp(4, 30)
+            }).collect();
+            prop_assert_eq!(w, naive);
+        }
+
+        /// gutter_width(n) is the decimal digit count of n (== n.to_string().len(),
+        /// which is 1 for n == 0).
+        #[test]
+        fn gutter_width_is_digit_count(n in any::<usize>()) {
+            prop_assert_eq!(gutter_width(n), n.to_string().len());
+        }
+
+        /// clamp_line yields a 1-based line in [1, max(line_count,1)] and is
+        /// idempotent (clamping an already-clamped value is a no-op).
+        #[test]
+        fn clamp_line_in_range_and_idempotent(
+            target in any::<usize>(), line_count in 0usize..10_000,
+        ) {
+            let c = clamp_line(target, line_count);
+            prop_assert!((1usize..=line_count.max(1)).contains(&c));
+            prop_assert_eq!(clamp_line(c, line_count), c);
+        }
+    }
 }
