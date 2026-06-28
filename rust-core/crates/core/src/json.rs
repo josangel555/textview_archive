@@ -374,6 +374,100 @@ pub fn parse_jsonl(text: &str) -> Vec<JsonlLine> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    // --- Round-trip proptest (parser correctness) ---
+    // Serialize a JsonValue back to JSON text (the test reference), then the
+    // parser must reproduce the SAME value. Strings escaped per spec; unicode
+    // emitted raw (valid UTF-8 JSON). No Float in the strategy — f64 textual
+    // precision is example-tested separately.
+
+    fn ser_str(s: &str, out: &mut String) {
+        out.push('"');
+        for c in s.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                '\u{0008}' => out.push_str("\\b"),
+                '\u{000C}' => out.push_str("\\f"),
+                c if u32::from(c) < 0x20 => {
+                    out.push_str(&format!("\\u{:04x}", u32::from(c)));
+                }
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+    }
+
+    fn ser(v: &JsonValue, out: &mut String) {
+        match v {
+            JsonValue::Null => out.push_str("null"),
+            JsonValue::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            JsonValue::Int(i) => out.push_str(&i.to_string()),
+            JsonValue::Float(f) => out.push_str(&format!("{f}")),
+            JsonValue::Str(s) => ser_str(s, out),
+            JsonValue::Array(items) => {
+                out.push('[');
+                for (i, it) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    ser(it, out);
+                }
+                out.push(']');
+            }
+            JsonValue::Object(pairs) => {
+                out.push('{');
+                for (i, (k, val)) in pairs.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    ser_str(k, out);
+                    out.push(':');
+                    ser(val, out);
+                }
+                out.push('}');
+            }
+        }
+    }
+
+    fn json_strategy() -> impl Strategy<Value = JsonValue> {
+        let leaf = prop_oneof![
+            Just(JsonValue::Null),
+            any::<bool>().prop_map(JsonValue::Bool),
+            any::<i64>().prop_map(JsonValue::Int),
+            prop::collection::vec(
+                prop::sample::select(vec![
+                    '"', '\\', '\n', '\t', '\r', '\u{0}', '\u{1f}', 'a', ' ', 'é', '中', '😀',
+                ]),
+                0..12,
+            )
+            .prop_map(|cs| JsonValue::Str(cs.into_iter().collect())),
+        ];
+        leaf.prop_recursive(4, 40, 5, |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..5).prop_map(JsonValue::Array),
+                prop::collection::vec(("[a-z]{1,5}", inner), 0..5).prop_map(JsonValue::Object),
+            ]
+        })
+    }
+
+    proptest! {
+        /// Round-trip: a JsonValue serialized to JSON text re-parses to the SAME
+        /// value — stressing the hand-rolled parser's escape / unicode (incl.
+        /// astral) / nesting / i64-edge (e.g. i64::MIN) handling that the example
+        /// tests can't enumerate. Complements the never-panics fuzz with a
+        /// SEMANTIC correctness property.
+        #[test]
+        fn parse_round_trips_serialized_value(v in json_strategy()) {
+            let mut text = String::new();
+            ser(&v, &mut text);
+            prop_assert_eq!(parse(&text).ok(), Some(v), "round-trip mismatch for: {}", text);
+        }
+    }
 
     /// Robustness fuzz (TSK-1232, completing the TSK-1223 engine-fuzz coverage):
     /// the hand-rolled recursive-descent parser must NEVER panic on adversarial
