@@ -230,4 +230,48 @@ mod tests {
             Err(crate::wire::WireFault::Decode(_))
         ));
     }
+
+    // --- Property tests (TSK-585 lane): detect oracle correctness -------------
+    // (The fuzz test above pins no-panic + a label; these pin the CLASSIFICATION.)
+    use proptest::prelude::*;
+
+    proptest! {
+        /// A file whose indented lines are ALL tab-led (no space-led line)
+        /// classifies as "Tabs".
+        #[test]
+        fn detect_consistent_tabs_is_tabs(
+            lines in proptest::collection::vec((1usize..4, "[a-z]{1,5}"), 1..6),
+        ) {
+            let text = lines.into_iter()
+                .map(|(t, c)| format!("{}{}", "\t".repeat(t), c))
+                .collect::<Vec<_>>()
+                .join("\n");
+            prop_assert_eq!(detect(&text, 100), "Tabs");
+        }
+
+        /// A file whose indented lines are ALL multiples of 4 spaces (no tab)
+        /// classifies as "Spaces (4)" — 4 wins the divisor vote over 2/8.
+        #[test]
+        fn detect_consistent_4_spaces_is_spaces_4(
+            contents in proptest::collection::vec("[a-z]{1,5}", 1..6),
+        ) {
+            // Exactly 4 spaces per indented line — unambiguous: an all-8-space
+            // file would (correctly) detect as "Spaces (8)", so don't vary the width.
+            let text = contents.into_iter()
+                .map(|c| format!("    {}", c))
+                .collect::<Vec<_>>()
+                .join("\n");
+            prop_assert_eq!(detect(&text, 100), "Spaces (4)");
+        }
+
+        /// A file mixing tab-led AND space-led indented lines classifies "Mixed".
+        #[test]
+        fn detect_tabs_and_spaces_is_mixed(
+            tabc in "[a-z]{1,5}",
+            spc in "[a-z]{1,5}",
+        ) {
+            let text = format!("\t{}\n    {}", tabc, spc);
+            prop_assert_eq!(detect(&text, 100), "Mixed");
+        }
+    }
 }
