@@ -39,8 +39,16 @@ struct AXIdentifierCatalogTests {
             Issue.record("Sources/ViewerUI not reachable from #filePath — path derivation broke")
             return
         }
+        // Collect every quoted `"mdv.…"` literal in the source in ONE linear pass,
+        // then check each catalogued id by O(1) set membership. The prior form
+        // ran `source.contains("\"\(id)\"")` once PER id over a multi-MB blob —
+        // O(ids × source) — which made this the slowest test in the suite (~2s,
+        // the parallel long-pole). The set form is semantically identical (id
+        // present as a complete quoted literal) and keeps the same teeth: a
+        // renamed/removed id is absent from the set → the #expect fires. (TSK-836.)
+        let present = Self.quotedMdvLiterals(in: source)
         for entry in AXIdentifierCatalog.critical {
-            #expect(source.contains("\"\(entry.id)\""),
+            #expect(present.contains(entry.id),
                     """
                     catalogued AX id \(entry.id) (surface: \(entry.surface)) is NOT present \
                     in Sources/ViewerUI — the control was renamed/removed, breaking the \
@@ -48,6 +56,24 @@ struct AXIdentifierCatalogTests {
                     AXIdentifierCatalog.critical deliberately.
                     """)
         }
+    }
+
+    /// Every `"mdv.…"` quoted string literal in `source`, captured WITHOUT the
+    /// surrounding quotes — one linear regex pass, the set the drift guard checks
+    /// catalogued ids against (replacing one `contains` scan per id). Matches the
+    /// prior `source.contains("\"\(id)\"")` semantics: an id counts only when it
+    /// appears as a COMPLETE quoted literal, so `"mdv.foo"` never satisfies a
+    /// lookup for the prefix `mdv.fo`, and a bare (unquoted) mention can't mask a
+    /// removed control.
+    static func quotedMdvLiterals(in source: String) -> Set<String> {
+        let pattern = #""(mdv\.[^"\\]+)""#
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = source as NSString
+        var out: Set<String> = []
+        for m in re.matches(in: source, range: NSRange(location: 0, length: ns.length)) {
+            out.insert(ns.substring(with: m.range(at: 1)))
+        }
+        return out
     }
 
     // MARK: - Self-consistency (pure)
@@ -63,6 +89,29 @@ struct AXIdentifierCatalogTests {
             #expect(!entry.summary.trimmingCharacters(in: .whitespaces).isEmpty,
                     "\(entry.id) has an empty summary")
         }
+    }
+
+    /// Pins the teeth of the `quotedMdvLiterals` scan that backs the drift guard:
+    /// only COMPLETE quoted literals count — a bare (commented/unquoted) mention,
+    /// a prefix of a present literal, and an absent id all stay out of the set, so
+    /// the guard can't be fooled into a false pass.
+    @Test func quotedMdvLiteralsMatchesQuotedFormOnly() {
+        let src = #"""
+        let a = "mdv.present.one"
+        view.accessibilityIdentifier("mdv.present.two")
+        // bare, not a string literal: mdv.bare.unquoted
+        let longer = "mdv.present.two.suffix"
+        """#
+        let found = Self.quotedMdvLiterals(in: src)
+        #expect(found.contains("mdv.present.one"))
+        #expect(found.contains("mdv.present.two"))
+        #expect(found.contains("mdv.present.two.suffix"))
+        // A bare (unquoted) occurrence does NOT count — a comment mention must not
+        // mask a removed control.
+        #expect(!found.contains("mdv.bare.unquoted"))
+        // A prefix of a present literal is NOT itself present (quoted-exact).
+        #expect(!found.contains("mdv.present"))
+        #expect(!found.contains("mdv.absent"))
     }
 
     @Test func idsSetMatchesCritical() {
