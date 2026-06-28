@@ -26,6 +26,9 @@ public enum RtfTextExtractor {
         var i = 0
         var stack = [GroupState()]
         var out = String.UnicodeScalarView()
+        // A high surrogate from a \uN awaiting its low-surrogate partner — RTF emits
+        // astral codepoints (>U+FFFF) as a UTF-16 surrogate PAIR of signed \uN tokens.
+        var pendingHigh: Int? = nil
 
         func isLetter(_ c: Unicode.Scalar) -> Bool { (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") }
         func isDigit(_ c: Unicode.Scalar) -> Bool { c >= "0" && c <= "9" }
@@ -58,7 +61,17 @@ public enum RtfTextExtractor {
                     case "u":
                         var cp = param
                         if cp < 0 { cp += 0x10000 }   // signed 16-bit → code point
-                        if let scalar = Unicode.Scalar(cp) { emit(String(scalar)) }
+                        if (0xD800...0xDBFF).contains(cp) {
+                            pendingHigh = cp                      // hold the high surrogate
+                        } else if (0xDC00...0xDFFF).contains(cp), let hi = pendingHigh {
+                            // combine the surrogate pair into one astral scalar
+                            let astral = 0x10000 + ((hi - 0xD800) << 10) + (cp - 0xDC00)
+                            if let scalar = Unicode.Scalar(astral) { emit(String(scalar)) }
+                            pendingHigh = nil
+                        } else {
+                            pendingHigh = nil                     // a stray pending high is dropped
+                            if let scalar = Unicode.Scalar(cp) { emit(String(scalar)) }
+                        }
                         // skip the \uc fallback tokens that follow \uN. A
                         // fallback is a plain char (TextEdit's "?") OR a \'XX hex
                         // byte (Word's codepage equivalent — e.g. the euro sign

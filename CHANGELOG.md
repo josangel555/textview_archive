@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ### Fixed
 - **CSV: a single-column file ending in an empty value no longer drops that row.** A quoted-empty final cell (`""`) was mistaken for the blank line a trailing newline leaves, and silently dropped; it's now kept as a real empty cell (a genuine trailing blank line is still dropped). Found *and* fixed via the new property-test lane (TSK-1286).
+- **Emoji & other astral characters in opened `.rtf` files no longer vanish.** A `.rtf` stores any codepoint above U+FFFF (emoji, rare CJK, math symbols) as a UTF-16 surrogate pair; the text extractor was discarding each half as an invalid character, so the whole character disappeared. It now reconstructs the full character. Found + fixed via an audit-harden pass on the hand-rolled RTF parser.
 
 ### System work
 - **Copy-Reference UI (TSK-1256)** — wired the `mdv://` element-ref pipeline (already host-complete) to four context menus (TabBar / SidebarView / BookmarksSection / RecentlyOpenedSection) plus an editor command + `copy-reference` script-verb (DocumentModel.lineReference pure builder, host-tested 3×; CommandRegistry vocabulary teeth caught the allowlist gap), each using the host-tested `ElementRef.file(…).serialized`; non-data-affecting (clipboard), on-screen capped at review.

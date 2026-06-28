@@ -54,4 +54,30 @@ final class RtfTextExtractorTests: XCTestCase {
         XCTAssertTrue(RtfTextExtractor.plainText(rtf).contains("Hello world"),
                       "RtfExporter output reads back through RtfTextExtractor")
     }
+
+    // MARK: - Audit-harden: untrusted-RTF edge cases (2026-06-27)
+
+    func test_unicode_surrogatePair_astralChar() {
+        // RTF encodes astral codepoints (>U+FFFF) as a UTF-16 surrogate pair, each a
+        // signed-16-bit \uN. U+1F600 😀 = high 0xD83D (−10179) + low 0xDE00 (−8704),
+        // each with a "?" \uc1 fallback. They must COMBINE into the astral scalar,
+        // not be dropped as invalid lone surrogates.
+        XCTAssertEqual(RtfTextExtractor.plainText(#"{\rtf1 \u-10179?\u-8704?}"#), "😀")
+    }
+
+    func test_unicodeControl_ucSkip_greaterThanOne() {
+        // \uc2 → each \uN's fallback is TWO tokens. \u233 = é, then "??" skipped, X kept.
+        XCTAssertEqual(RtfTextExtractor.plainText(#"{\rtf1 \uc2 \u233??X}"#), "éX")
+    }
+
+    func test_negativeUnicode_bmp() {
+        // \u-4096 → signed-16-bit → U+F000 (private-use). \uc0 = no fallback to skip.
+        XCTAssertEqual(RtfTextExtractor.plainText(#"{\rtf1 \uc0 \u-4096 X}"#), "\u{F000}X")
+    }
+
+    func test_malformed_unbalancedBraces_doesNotCrash() {
+        // Stray closing / unclosed groups must not crash or lose text (untrusted input).
+        XCTAssertEqual(RtfTextExtractor.plainText(#"{\rtf1 A}}}B"#), "AB")
+        XCTAssertEqual(RtfTextExtractor.plainText(#"{\rtf1 {{{C"#), "C")
+    }
 }
