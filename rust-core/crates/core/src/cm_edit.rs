@@ -348,6 +348,50 @@ pub fn apply_delta_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFa
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// The optimized batch `apply` (prefix-sum offset tracking in
+        /// `splice_units`) must equal a NAIVE descending-splice reference for any
+        /// sequence of valid, non-overlapping, in-bounds edits — the golden
+        /// differential contract, but over random multi-edit combinatorics the
+        /// example tests can't cover. ASCII base keeps every offset a char
+        /// boundary (astral/surrogate edges are pinned by the example tests);
+        /// this stresses the cumulative-offset bookkeeping across many edits.
+        #[test]
+        fn apply_matches_naive_reference(
+            base in "[a-z]{0,40}",
+            ops in proptest::collection::vec((0usize..6, 0usize..4, "[A-Z]{0,3}"), 0..8),
+        ) {
+            let len = base.encode_utf16().count();
+            // Build non-overlapping edits (all in original/pre-edit coords) by
+            // walking a cursor forward; cursor = to guarantees no overlap.
+            let mut edits = Vec::new();
+            let mut cursor = 0usize;
+            for (gap, del, ins) in &ops {
+                cursor += *gap;
+                if cursor > len { break; }
+                let to = (cursor + *del).min(len);
+                edits.push(CmEdit::new(
+                    i64::try_from(cursor).unwrap(),
+                    i64::try_from(to).unwrap(),
+                    ins.clone(),
+                ));
+                cursor = to;
+            }
+            let got = apply(&base, &edits);
+            // Naive reference: splice DESCENDING so earlier offsets stay valid.
+            let mut units: Vec<u16> = base.encode_utf16().collect();
+            for e in edits.iter().rev() {
+                let from = usize::try_from(e.from).unwrap();
+                let to = usize::try_from(e.to).unwrap();
+                let ins: Vec<u16> = e.insert.encode_utf16().collect();
+                units.splice(from..to, ins);
+            }
+            let naive = String::from_utf16(&units).ok();
+            prop_assert_eq!(got, naive);
+        }
+    }
 
     #[test]
     fn empty_batch_returns_base() {
