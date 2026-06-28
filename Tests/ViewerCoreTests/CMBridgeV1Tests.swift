@@ -211,6 +211,25 @@ final class CMBridgeV1Tests: XCTestCase {
         ]))
     }
 
+    func testDecodeRequestCompletion() {
+        // TSK-1136: the CM6 autocomplete source posts this on trigger.
+        XCTAssertEqual(
+            CMBridgeCodec.decodeInbound([
+                "v": 1, "type": "requestCompletion",
+                "pos": 42, "line": 3, "character": 5,
+                "replyId": "c-9",
+            ]),
+            .requestCompletion(pos: 42, line: 3, character: 5, replyId: "c-9")
+        )
+    }
+
+    func testDecodeRequestCompletionRejectsMissingReplyId() {
+        // No replyId ⇒ Swift could never route the async reply back; reject.
+        XCTAssertNil(CMBridgeCodec.decodeInbound([
+            "v": 1, "type": "requestCompletion", "pos": 0, "line": 1, "character": 0,
+        ]))
+    }
+
     func testDecodeRequestDefinition() {
         XCTAssertEqual(
             CMBridgeCodec.decodeInbound([

@@ -341,6 +341,34 @@ final class CMOutboundEncodingTests: XCTestCase {
         XCTAssertEqual(d["contents"] as? String, "")
     }
 
+    func testEncodeCompletionResponse() {
+        // TSK-1136: items array with per-item label + optional detail/insertText.
+        let d = encodeAndParse(.completionResponse(replyId: "c-7", items: [
+            CMCompletionItem(label: "append", detail: "func", insertText: "append()"),
+            CMCompletionItem(label: "count"),  // detail/insertText omitted
+        ]))
+        XCTAssertEqual(d["type"] as? String, "completionResponse")
+        XCTAssertEqual(d["replyId"] as? String, "c-7")
+        let items = d["items"] as? [[String: Any]]
+        XCTAssertEqual(items?.count, 2)
+        XCTAssertEqual(items?[0]["label"] as? String, "append")
+        XCTAssertEqual(items?[0]["detail"] as? String, "func")
+        XCTAssertEqual(items?[0]["insertText"] as? String, "append()")
+        XCTAssertEqual(items?[1]["label"] as? String, "count")
+        // Optional fields OMITTED (not null) when nil — the JS source falls back
+        // to `label` for apply when insertText is absent.
+        XCTAssertNil(items?[1]["detail"])
+        XCTAssertNil(items?[1]["insertText"])
+    }
+
+    func testEncodeCompletionResponseEmptyDismisses() {
+        // Empty items = JS dismisses the popup; the encoder still ships a
+        // definite (empty) array so the JS resolve gets [].
+        let d = encodeAndParse(.completionResponse(replyId: "c-8", items: []))
+        XCTAssertEqual(d["type"] as? String, "completionResponse")
+        XCTAssertEqual((d["items"] as? [[String: Any]])?.count, 0)
+    }
+
     func testEncodeSetSaveOnBlur() {
         let d = encodeAndParse(.setSaveOnBlur(enabled: true))
         XCTAssertEqual(d["type"] as? String, "setSaveOnBlur")
@@ -358,6 +386,7 @@ final class CMOutboundEncodingTests: XCTestCase {
             .setIndentation(useTabs: true, size: 4),
             .openSearch(query: nil, replace: false),
             .hoverResponse(replyId: "h-1", contents: "doc", from: 0, to: 3),
+            .completionResponse(replyId: "c-1", items: [CMCompletionItem(label: "x")]),
             .setSaveOnBlur(enabled: false),
         ]
         for m in samples {

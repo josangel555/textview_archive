@@ -120,6 +120,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// when the LSP round-trip finishes. Pass `contents: ""` to
     /// dismiss without showing a popover.
     public let onHoverRequest: ((CMHoverRequest) -> Void)?
+    /// JS → Swift completion request (TSK-1136). Reuses `CMHoverRequest`'s
+    /// position shape (line/character/replyId). The handler resolves async and
+    /// ships items back via `.completionResponse`. nil ⇒ the dispatch replies
+    /// empty so the JS promise resolves instead of timing out.
+    public let onCompletionRequest: ((CMHoverRequest) -> Void)?
     /// JS posted a Cmd-click. Swift opens the target tab via
     /// `LSPPool.definition` → `DocumentController.openTab(...)`.
     /// Handler is fire-and-forget; no JS reply expected.
@@ -176,6 +181,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         onScrollChange: ((CMScrollPosition) -> Void)? = nil,
         onFindResultChange: ((CMFindResult) -> Void)? = nil,
         onHoverRequest: ((CMHoverRequest) -> Void)? = nil,
+        onCompletionRequest: ((CMHoverRequest) -> Void)? = nil,
         onDefinitionRequest: ((CMPositionRequest) -> Void)? = nil,
         onContextMenuRequest: ((CMContextMenuRequest) -> Void)? = nil,
         onBlur: (() -> Void)? = nil,
@@ -219,6 +225,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.onScrollChange = onScrollChange
         self.onFindResultChange = onFindResultChange
         self.onHoverRequest = onHoverRequest
+        self.onCompletionRequest = onCompletionRequest
         self.onDefinitionRequest = onDefinitionRequest
         self.onContextMenuRequest = onContextMenuRequest
         self.onBlur = onBlur
@@ -374,6 +381,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         var onScrollChange: ((CMScrollPosition) -> Void)?
         var onFindResultChange: ((CMFindResult) -> Void)?
         var onHoverRequest: ((CMHoverRequest) -> Void)?
+        var onCompletionRequest: ((CMHoverRequest) -> Void)?
         var onDefinitionRequest: ((CMPositionRequest) -> Void)?
         var onContextMenuRequest: ((CMContextMenuRequest) -> Void)?
         var onBlur: (() -> Void)?
@@ -467,6 +475,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.onScrollChange = view.onScrollChange
             self.onFindResultChange = view.onFindResultChange
             self.onHoverRequest = view.onHoverRequest
+            self.onCompletionRequest = view.onCompletionRequest
             self.onDefinitionRequest = view.onDefinitionRequest
             self.onContextMenuRequest = view.onContextMenuRequest
             self.onBlur = view.onBlur
@@ -894,6 +903,15 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                     // No handler wired — reply with empty so the JS-side
                     // hover promise resolves instead of timing out.
                     dispatch(.hoverResponse(replyId: replyId, contents: "", from: 0, to: 0),
+                             webView: webView)
+                }
+            case .requestCompletion(_, let line, let character, let replyId):
+                if let handler = onCompletionRequest {
+                    handler(CMHoverRequest(line: line, character: character, replyId: replyId))
+                } else if let webView = webView {
+                    // No handler wired — reply empty so the JS completion promise
+                    // resolves instead of timing out (mirrors the hover fallback).
+                    dispatch(.completionResponse(replyId: replyId, items: []),
                              webView: webView)
                 }
             case .requestDefinition(_, let line, let character):

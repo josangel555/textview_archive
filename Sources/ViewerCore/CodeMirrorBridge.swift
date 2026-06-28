@@ -131,6 +131,11 @@ public enum CMInboundMessage: Equatable, Sendable {
     /// markup back via `.hoverResponse(...)`. Triggered by CM6's
     /// `hoverTooltip` callback in `codemirror.html`.
     case requestHover(pos: Int, line: Int, character: Int, replyId: String)
+    /// JS → Swift completion request (TSK-1136). Same coords + replyId shape as
+    /// `requestHover`; Swift resolves it asynchronously (LSP or the in-file
+    /// fallback) and routes the items back via `.completionResponse(...)`.
+    /// Triggered by the CM6 `@codemirror/autocomplete` source in `codemirror.html`.
+    case requestCompletion(pos: Int, line: Int, character: Int, replyId: String)
     /// JS → Swift Cmd-click definition request. Same coords as hover,
     /// no reply needed (Swift opens the target tab natively).
     case requestDefinition(pos: Int, line: Int, character: Int)
@@ -164,6 +169,19 @@ public enum CMInboundMessage: Equatable, Sendable {
 }
 
 // MARK: - Outbound (Swift → JS)
+
+/// One completion candidate carried over the CM6 bridge (TSK-1136). ViewerCore-
+/// level (the outbound enum can't reference ViewerUI's `EditorCompletionItem`);
+/// the ViewerUI dispatch site maps `EditorCompletionItem` → this. The JS source
+/// applies `insertText` when present, else `label`.
+public struct CMCompletionItem: Equatable, Sendable {
+    public let label: String
+    public let detail: String?
+    public let insertText: String?
+    public init(label: String, detail: String? = nil, insertText: String? = nil) {
+        self.label = label; self.detail = detail; self.insertText = insertText
+    }
+}
 
 public enum CMOutboundMessage: Equatable, Sendable {
     case setText(text: String, resetHistory: Bool, preserveSelection: Bool)
@@ -229,6 +247,10 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// renderer — currently we ship it as plain text after stripping
     /// our LSP markdown wrapper). Empty contents → tooltip dismissed.
     case hoverResponse(replyId: String, contents: String, from: Int, to: Int)
+    /// Resolve a pending JS-side completion request (TSK-1136). `items` is the
+    /// ordered candidate list; an empty list dismisses the popup. Mirrors
+    /// `hoverResponse`'s replyId-routed async pattern.
+    case completionResponse(replyId: String, items: [CMCompletionItem])
     /// Enable / disable save-on-blur. JS side already always posts
     /// `editorBlurred`; this gates whether Swift acts on it. Wired here
     /// for symmetry with other compartment toggles.
@@ -457,6 +479,14 @@ public enum CMBridgeCodec {
                 character: dict["character"] as? Int ?? 0,
                 replyId: replyId
             )
+        case "requestCompletion":
+            guard let replyId = dict["replyId"] as? String else { return nil }
+            return .requestCompletion(
+                pos: dict["pos"] as? Int ?? 0,
+                line: dict["line"] as? Int ?? 1,
+                character: dict["character"] as? Int ?? 0,
+                replyId: replyId
+            )
         case "requestDefinition":
             return .requestDefinition(
                 pos: dict["pos"] as? Int ?? 0,
@@ -632,6 +662,15 @@ public enum CMBridgeCodec {
             dict["contents"] = contents
             dict["from"] = from
             dict["to"] = to
+        case .completionResponse(let replyId, let items):
+            dict["type"] = "completionResponse"
+            dict["replyId"] = replyId
+            dict["items"] = items.map { item -> [String: Any] in
+                var d: [String: Any] = ["label": item.label]
+                if let detail = item.detail { d["detail"] = detail }
+                if let insert = item.insertText { d["insertText"] = insert }
+                return d
+            }
         case .setSaveOnBlur(let enabled):
             dict["type"] = "setSaveOnBlur"
             dict["enabled"] = enabled
