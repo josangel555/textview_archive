@@ -509,4 +509,56 @@ mod tests {
         let resp: Resp = crate::wire::decode_frame(&search_wire(&unk).unwrap()).unwrap();
         assert!(resp.error.unwrap().contains("unknown find kind"));
     }
+
+    // --- Property tests (TSK-585 lane): search robustness + position validity -
+    use proptest::prelude::*;
+
+    proptest! {
+        /// search never panics on arbitrary text+pattern (the UTF-16 single-sweep
+        /// position converter is the CORR-6 off-by-one surface); every reported
+        /// match has in-bounds UTF-16 location+length and 1-based line/column.
+        #[test]
+        fn search_positions_valid_and_no_panic(
+            text in "[a-c\n\r\t世🎉]{0,60}",
+            pattern in "[a-c.*+?\\\\()\\[\\]世]{0,8}",
+            is_regex in any::<bool>(),
+            cs in any::<bool>(),
+            ww in any::<bool>(),
+        ) {
+            let kind = if is_regex { QueryKind::Regex } else { QueryKind::Literal };
+            let utf16_len = u32::try_from(text.encode_utf16().count()).unwrap_or(u32::MAX);
+            if let Ok(matches) = search(&text, &pattern, kind, cs, ww) {
+                for m in &matches {
+                    prop_assert!(m.location <= utf16_len, "location past end of text");
+                    prop_assert!(m.location.saturating_add(m.length) <= utf16_len, "match end past end");
+                    prop_assert!(m.line >= 1, "line is 0 (must be 1-based)");
+                    prop_assert!(m.column >= 1, "column is 0 (CORR-6: never 0)");
+                }
+            }
+        }
+
+        /// A non-empty literal search finds exactly the naive non-overlapping
+        /// occurrence count (regex find_iter is non-overlapping, left-to-right).
+        #[test]
+        fn literal_search_count_matches_naive(
+            text in "[ab]{0,40}",
+            pattern in "[ab]{1,4}",
+        ) {
+            if let Ok(matches) = search(&text, &pattern, QueryKind::Literal, true, false) {
+                let bytes = text.as_bytes();
+                let pat = pattern.as_bytes();
+                let mut naive = 0usize;
+                let mut i = 0usize;
+                while i + pat.len() <= bytes.len() {
+                    if bytes.get(i..i + pat.len()) == Some(pat) {
+                        naive += 1;
+                        i += pat.len();
+                    } else {
+                        i += 1;
+                    }
+                }
+                prop_assert_eq!(matches.len(), naive);
+            }
+        }
+    }
 }
