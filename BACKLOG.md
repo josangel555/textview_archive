@@ -7,11 +7,16 @@
 > Gating tags: **[host]** agent-completable now · **[render-VM]** host model done, needs an on-screen/T5 VM session ·
 > **[engine]** needs a live LSP/process · **[owner]** needs an owner decision/flip · **[built→flip]** done, gated off awaiting owner.
 
-## 📊 Current state
+## 📊 Current state (reconciled 2026-06-28)
 
-Board (shared `tasked` board, ~all markdown_viewer): **1652 total** · ~912 closed · **740 in-flight**
-(`review` 324 · `fixed` 86 · `reported` 290 · `ack` 33 · `triaged` 7). **~410 await owner close** (review+fixed).
-0 stale-progress. The host-completable surface is drained — the next-50 below is mostly **render-VM / owner / engine**-gated.
+Board (shared `tasked` board, ~all markdown_viewer): **1658 total** · **749 in-flight**
+(`review` 329 · `fixed` 88 · `reported` 279 · `ack` 32 · `triaged` 9). **~417 await owner close** (review+fixed).
+0 live leases / 0 progress. The host-completable surface is drained — the next-50 below is mostly **render-VM / owner / engine**-gated.
+
+> ⚠️ **The `reported` pool is INFLATED + state-corrupted by the INT-126 stale-lease sweep** — it mass-reset ~70 in-flight
+> tickets progress→reported, #NNN-corrupted their `understanding`, and dropped some owner-decision parks. So a `reported`
+> ticket may actually be mid-flight OR a built→flip awaiting you (e.g. **TSK-838** shows `reported/waiting:agent` but is a
+> built→flip). `task_get` before trusting any state; do NOT hand-mutate the reset tickets (tool-path fix filed: **INT-128**).
 
 ## 🎯 Drain order
 
@@ -33,7 +38,7 @@ Board (shared `tasked` board, ~all markdown_viewer): **1652 total** · ~912 clos
 10. **TSK-1141** — xlsx sheet UI + formula-recalc wiring (model done). **[render-VM]**
 11. **TSK-377** — illustrations (PARTIAL). **[render-VM]**
 12. **TSK-1151** — View↔Edit line-height + size-rounding mismatch (CM6 1.45 / Int-round). **[render-VM]** *(verify still open)*
-13. **TSK-1110** — DocumentModel SRP split, slice 2+ (perf/maintainability of the central model). **[host]**
+13. **TSK-1110** — DocumentModel SRP split — **15 slices landed this session** (~1900 lines / ~25% carved out of the 7692-line monolith into `DocumentModel+X.swift` cross-file extensions); the clean vein is drained. Grab-bag clusters remain. **[host]**
 
 ### P1 — user-facing features (14–37)
 14. **TSK-955** — RSS / Atom feed reader tool window. **[render-VM — host model+VM+view all built; mount tail is occlusion-class]**
@@ -68,10 +73,10 @@ Board (shared `tasked` board, ~all markdown_viewer): **1652 total** · ~912 clos
 41. **TSK-537** — Code Review feature epic (commit diffs, comments, export). **[render-VM + host]**
 42. **TSK-538** — rust-core production-readiness audit follow-ups (epic). **[host]**
 43. **TSK-836** — capture per-class swift-test timings, then split the slowest. **[host / CI]**
-44. **TSK-847** — bump headless-gate `swift test` to `--num-workers 18` (run phase is I/O-bound). **[host / CI]**
+44. ~~**TSK-847**~~ — **✅ DONE 2026-06-28 (88b8f417)**: gate runs `--num-workers 18`, measured +7% (12w=101s → 18w=94s; 32w flakes under 2.7× oversubscription). **[fixed — awaiting owner close]**
 45. **TSK-837** — unprimed-subagent sweep for app latency + test speed (measure-first). **[host / perf]**
 46. **TSK-764** — Git: non-blocking merge-style reconciliation on local↔disk/remote conflict. **[host + render]**
-47. **TSK-1138** — design long-lived interactive (PTY/socket) plugin contract (Tier-D). **[host design]**
+47. **TSK-1138** — Tier-D PTY/socket plugin contract — **design DELIVERED (aa03d6fc · `docs/PLUGINS_TIER_D_DESIGN_2026-06-22.md`); re-parked for your RATIFICATION** (new security surface — persistent raw-bidi-IO process — needs sign-off before impl). **[owner — ratify]**
 48. **TSK-794** — audit: are we using generous multi-threading/async + inlining/specialization. **[host audit]**
 49. **TSK-584** — fuzzing lane (cargo-fuzz over highlight/web/wire). **[blocked — CDN; dep approved]**
 50. **TSK-587** — wasm32 tier-1 shim + execution test (portable core). **[blocked — CDN; dep approved]**
@@ -86,7 +91,7 @@ TSK-687 deep agent integrations · TSK-688 walkthrough-as-presentation · TSK-68
 1. **Flip `MDV_DOM_PATCH`** — the #1/#2 perf win, built + VM-validated, gated off.
 2. **Grant Accessibility + Automation TCC** — unblocks the P0a out-of-process AX executor (TSK-1254/1261/1263).
 3. **Close the ~410 review/fixed queue** (`→ done`; render items by on-screen glance).
-4. **Flip the rust ports** — formula `MDV_RUST_FORMULA` (TSK-1215), folds `MDV_RUST_FOLD` (TSK-1202); parity-proven.
+4. **Flip the rust ports** — formula `MDV_RUST_FORMULA` (TSK-1215, `waiting:human` + pending decision), folds `MDV_RUST_FOLD` (TSK-1202, port now **validated**); both parity-proven + render-safe-confirmed (2026-06-26). Plus **ratify TSK-1138** (Tier-D plugin design).
 5. **Close TSK-590** (owner bug-list epic, 20/21 done; pending TSK-598 → the DOM-patch flip).
 
 ---
