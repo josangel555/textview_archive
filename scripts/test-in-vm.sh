@@ -325,6 +325,13 @@ case "$MODE" in
     # to `swift test`. run_tests already handled a filter list — the
     # dispatch just never passed it, so filters were silently ignored
     # and every `test --filter X` ran the FULL suite (TSK-618 triage).
+    # NOTE (TSK-1279): T5 PIXEL tests (PixelTestCase + screencapture) SKIP in
+    # `test` mode — screencapture comes back TCC-denied here (observed 3/3 T5
+    # skipped, e.g. SourceViewVisualRegressionTests), whereas the `all` mode
+    # CAPTURES them (the build_all root/GUI context; the chown above changes
+    # .build ownership and the screencapture responsible-process context). Use
+    # `all` for T5-PIXEL validation; `test`/`webview` are correct for WebView/DOM
+    # tests (#192 lane, no screencapture) and pure-logic.
     run_tests "${@:2}"
     log "test done in ${SECONDS}s"
     ;;
