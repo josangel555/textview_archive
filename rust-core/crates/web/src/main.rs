@@ -2359,6 +2359,69 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // confined() is the security chokepoint that closes arbitrary file-read,
+    // `..` traversal, and symlink-escape for every route. Pin it directly.
+    #[test]
+    fn confined_allows_root_and_paths_under_it() {
+        let root = fixture().canonicalize().unwrap();
+        assert_eq!(confined(&root, &root), Some(root.clone()), "root itself is confined");
+        let sub = root.join("sub");
+        assert_eq!(confined(&root, &sub), Some(sub.canonicalize().unwrap()),
+                   "a real path under root is confined");
+    }
+
+    #[test]
+    fn confined_blocks_parent_traversal() {
+        let root = fixture().canonicalize().unwrap();
+        assert_eq!(confined(&root, &root.join("..")), None, "../ must not escape root");
+        assert_eq!(confined(&root, &root.join("sub").join("..").join("..")), None,
+                   "nested ../.. must not escape root");
+    }
+
+    #[test]
+    fn confined_blocks_string_prefix_sibling() {
+        // A sibling sharing a STRING prefix with root must be rejected — confined()
+        // compares path COMPONENTS, not string prefixes ("/x/foo" must not contain
+        // "/x/foobar"). Without component-wise starts_with this would wrongly pass.
+        let base = std::env::temp_dir();
+        let pid = std::process::id();
+        let root = base.join(format!("mdv-confine-{}", pid));
+        let sibling = base.join(format!("mdv-confine-{}-sibling", pid));
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&sibling);
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&sibling).unwrap();
+        let rootc = root.canonicalize().unwrap();
+        assert_eq!(confined(&rootc, &sibling), None,
+                   "a string-prefix sibling is NOT under root (component-wise containment)");
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&sibling);
+    }
+
+    #[test]
+    fn confined_refuses_nonexistent_path() {
+        let root = fixture().canonicalize().unwrap();
+        assert_eq!(confined(&root, &root.join("does-not-exist-xyz")), None,
+                   "a non-existent path is refused (canonicalize fail-closed)");
+    }
+
+    #[test]
+    fn confined_blocks_symlink_escape() {
+        use std::os::unix::fs::symlink;
+        let root = fixture().canonicalize().unwrap();
+        let pid = std::process::id();
+        let outside = std::env::temp_dir().join(format!("mdv-confine-out-{}", pid));
+        let _ = fs::remove_dir_all(&outside);
+        fs::create_dir_all(&outside).unwrap();
+        let link = root.join("escape-link");
+        let _ = fs::remove_file(&link);
+        symlink(&outside, &link).unwrap();
+        assert_eq!(confined(&root, &link), None,
+                   "a symlink under root resolving OUTSIDE must be rejected");
+        let _ = fs::remove_file(&link);
+        let _ = fs::remove_dir_all(&outside);
+    }
+
     fn fixture() -> PathBuf {
         // Unique per call (pid + atomic counter) so parallel tests never share
         // — and thus never `remove_dir_all` each other's fixture mid-run.
