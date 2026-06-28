@@ -1193,96 +1193,27 @@ public final class DocumentModel: ObservableObject {
         return ScriptVerb.apply(verb: verb, to: self, sessions: sessions)
     }
 
+    // MARK: - Go-to-path — prompt-intent state (logic in DocumentModel+GoToPath.swift)
+    //
+    // The prompt-intent stored state stays on the class (an extension can't
+    // declare stored props); the show/dismiss/record/commit logic lives in
+    // DocumentModel+GoToPath.swift. Both vars widened private(set)→internal(set)
+    // so the moved methods write them. (isGoToPathPresented + lastGoToError are
+    // @Published public elsewhere; goToPathHistory drives the recents.)
+
     /// True while the visible Go-to-path prompt was invoked as the
     /// empty-session entry point (the SessionTabBar `+` button via the
     /// first-paint gate). A folder confirmed under this intent must
     /// spawn a NEW session — including on the default Return/Open path,
     /// which otherwise mutates the active session (TSK-600: picking `~`
     /// after `+` re-rooted the current tab and created nothing).
-    public private(set) var goToPathNewSessionIntent: Bool = false
+    public internal(set) var goToPathNewSessionIntent: Bool = false
 
     /// TSK-314: initial text for the prompt's path field. "~" for the
     /// new-session flow (the + button) so a bare Enter opens home and a
     /// typed path starts from a sensible anchor; nil (empty, "match
     /// Finder") for the regular in-session Go To.
-    public private(set) var goToPathPrefill: String?
-
-    public func showGoToPath(newSessionIntent: Bool = false) {
-        goToPathNewSessionIntent = newSessionIntent
-        goToPathPrefill = newSessionIntent ? "~" : nil
-        isGoToPathPresented = true
-        // Clear stale error state from a previous attempt so the dump
-        // reflects only the current invocation.
-        lastGoToError = ""
-    }
-    public func dismissGoToPath() {
-        isGoToPathPresented = false
-        goToPathNewSessionIntent = false
-        goToPathPrefill = nil
-        lastGoToError = ""
-    }
-
-    /// Record a successfully-opened path in the Go-to-path history.
-    /// Called by `GoToPathPrompt` after `openPath`. Stored as the raw
-    /// expanded path string (not URL) so the UI can re-display it
-    /// verbatim — including tilde-form if we ever start preserving it.
-    public func recordGoToPath(_ absolutePath: String) {
-        goToPathHistory.record(absolutePath)
-    }
-
-    /// Recents to surface alongside the native Open dialog (TSK-746).
-    /// Merges the two persisted sources — typed Go-to paths
-    /// (`goToPathHistory`, newest-first) ahead of opened files/folders
-    /// (`history`, newest-first) — then de-dups, drops paths that no
-    /// longer exist, and caps. The Go-to paths lead because they're the
-    /// user's most deliberate "open this" intents. Pure derivation lives
-    /// in `OpenPanelRecents` (host-tested); this just supplies the merged
-    /// source list.
-    public func openPanelRecents(
-        limit: Int = OpenPanelRecents.defaultLimit
-    ) -> [OpenPanelRecentEntry] {
-        let merged = goToPathHistory.recent()
-            + history.recent().map { $0.url.path }
-        return OpenPanelRecents.derive(from: merged, limit: limit)
-    }
-
-    /// Headless equivalent of `GoToPathPrompt.submit(newSession:)`. The
-    /// script runner can't drive the prompt's local TextField, so this
-    /// method exposes the same expand → validate → open path so VM UI
-    /// tests can exercise both happy-path and error-path behaviour.
-    ///
-    /// On success: records history, calls `openPath` (or
-    /// `openFolderInNewSession` when `newSession` is true and the path
-    /// is a directory), dismisses the prompt, clears `lastGoToError`.
-    ///
-    /// On failure: populates `lastGoToError` with the user-facing
-    /// message and leaves the prompt visible so the next interaction
-    /// can correct it.
-    public func commitGoToPath(_ rawPath: String, newSession: Bool = false) {
-        switch GoToPathExpansion.resolveExisting(rawPath) {
-        case .failure(let err):
-            lastGoToError = Self.userMessage(for: err)
-        case .success(let url):
-            recordGoToPath(url.path)
-            if newSession || goToPathNewSessionIntent,
-               GoToPathExpansion.isDirectory(url.path),
-               let openInNew = openFolderInNewSession {
-                openInNew(url)
-            } else {
-                openPath(url)
-            }
-            lastGoToError = ""
-            dismissGoToPath()
-        }
-    }
-
-    private static func userMessage(for err: GoToPathExpansion.Error) -> String {
-        switch err {
-        case .empty:    return "Enter an absolute path."
-        case .relative: return "Path must be absolute (start with / or ~)."
-        case .notFound: return "No file or folder at that path."
-        }
-    }
+    public internal(set) var goToPathPrefill: String?
 
     // MARK: Bookmarks — publish + gutter line-cache (commands → DocumentModel+Bookmarks.swift)
 
