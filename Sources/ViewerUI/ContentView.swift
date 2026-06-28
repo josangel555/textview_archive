@@ -813,6 +813,11 @@ public struct ContentView: View {
                             tabID: tid, fileURL: file.url, request: req
                         )
                     },
+                    onCompletionRequest: { req in
+                        model.respondToEditorCompletion(
+                            tabID: tid, fileURL: file.url, request: req
+                        )
+                    },
                     onDefinitionRequest: { req in
                         model.handleEditorDefinition(
                             tabID: tid, fileURL: file.url, request: req

@@ -53,6 +53,8 @@
   // Optional hoverTooltip from @codemirror/view — may not be present on
   // older bundles; fall back to inert when undefined.
   const hoverTooltip = window.CM.hoverTooltip;
+  // TSK-1136: completion popup factory (from @codemirror/autocomplete).
+  const autocompletion = window.CM.autocompletion;
 
   // Protocol version — must match Swift side `CMProtocol.currentVersion`.
   // Phase 4 bumped this to v2 to add:
@@ -1003,6 +1005,65 @@
   }
   const hoverCompartment = new Compartment();
 
+  // ---- completion (LSP / in-file) — TSK-1136 ---------------------------
+  // @codemirror/autocomplete drives the popup; candidates resolve via a Swift
+  // round-trip: post `requestCompletion` with a replyId, hold a promise,
+  // resolve on the matching `completionResponse`. Swift serves LSP completions
+  // (when a server is configured) or an in-file buffer-word fallback — both via
+  // DocumentModel.handleCompletionRequest.
+  const _pendingCompletions = new Map(); // replyId → resolve
+  let _completionSeq = 0;
+  function _newCompletionReplyId() {
+    _completionSeq += 1;
+    return "c" + Date.now().toString(36) + "-" + _completionSeq;
+  }
+  function requestCompletionFromSwift(line, character) {
+    const id = _newCompletionReplyId();
+    const promise = new Promise(function (resolve) {
+      _pendingCompletions.set(id, resolve);
+      // Safety timeout — if Swift never replies, resolve empty so the popup
+      // doesn't hang and the promise doesn't leak.
+      setTimeout(function () {
+        if (_pendingCompletions.has(id)) {
+          _pendingCompletions.delete(id);
+          resolve([]);
+        }
+      }, 2000);
+    });
+    post("requestCompletion", { line: line, character: character, replyId: id });
+    return promise;
+  }
+  function resolveCompletionResponse(msg) {
+    const fn = _pendingCompletions.get(msg.replyId);
+    if (!fn) return;
+    _pendingCompletions.delete(msg.replyId);
+    fn(Array.isArray(msg.items) ? msg.items : []);
+  }
+  function buildCompletionExtension() {
+    if (typeof autocompletion !== "function") return [];
+    return autocompletion({
+      override: [async function (context) {
+        // Complete on an identifier word, or an explicit Ctrl-Space.
+        const word = context.matchBefore(/[\w$]+/);
+        if (!context.explicit && (!word || word.from === word.to)) return null;
+        const line = context.state.doc.lineAt(context.pos);
+        const items = await requestCompletionFromSwift(
+          line.number, context.pos - line.from
+        );
+        if (!items || items.length === 0) return null;
+        return {
+          from: word ? word.from : context.pos,
+          options: items.map(function (it) {
+            const opt = { label: String(it.label || "") };
+            if (it.detail) opt.detail = String(it.detail);
+            if (it.insertText) opt.apply = String(it.insertText);
+            return opt;
+          }),
+        };
+      }],
+    });
+  }
+
   // Base extensions reused across instances. The order matters for
   // keymap priority (search/save before defaults so ⌘S / ⌘F win).
   function baseExtensions(initialLang, initialThemeDark, initialFontPx) {
@@ -1077,6 +1138,8 @@
       // Built once; the bridge response gating handles "no LSP for this
       // file" by returning null contents (popover never appears).
       hoverCompartment.of(buildHoverExtension()),
+      // TSK-1136: LSP / in-file completion popup (async Swift round-trip).
+      buildCompletionExtension(),
       // Phase 4 (v2): LSP-driven fold service. Empty `lspFoldRanges`
       // → service returns null, CM falls back to language defaults.
       foldServiceCompartment.of(buildFoldService()),
@@ -1201,6 +1264,7 @@
           }});
           break;
         case "hoverResponse":      resolveHoverResponse(msg); break;
+        case "completionResponse": resolveCompletionResponse(msg); break;
         case "setSaveOnBlur":      /* Swift owns the policy; JS keeps posting editorBlurred */ break;
         // Phase 4 (v2) handlers
         case "applyEdits":         applyApplyEdits(msg); break;

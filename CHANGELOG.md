@@ -11,6 +11,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-28
 
+### Added
+- **Editor autocomplete — a completion popup in the CM6 editor.** Typing an identifier (or ⌃Space) now offers completions: LSP completions when a language server is configured for the file, and an in-file buffer-word fallback otherwise (the vim-Ctrl-N class every editor ships). (TSK-1136 — closes TSK-463; the render wiring landed, the live popup validates on the VM lane.)
+
 ### Fixed
 - **⌘F no longer hijacks the sidebar file-filter.** Pressing ⌘F while typing in the sidebar's file-nav filter (or a rename / go-to-path prompt) opened the document find bar and yanked focus away mid-type; it now stays in the field. A find bar that's already open still toggles closed with ⌘F. (TSK-1248)
 - **Creating a new file/image from the landing screen (no folder open) no longer hangs.** The "New File"/"New Image" buttons fall back to a temp scratch location when nothing is open — but the app then treated that temp directory as a workspace and enumerated its entire contents (potentially thousands of churny system files), causing a multi-second freeze (and briefly dumping the temp dir into the sidebar). It now skips rooting the temp scratch dir. (TSK-1294)
