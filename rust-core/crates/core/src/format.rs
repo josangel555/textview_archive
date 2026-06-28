@@ -713,4 +713,54 @@ mod tests {
         assert!(pretty_xml("<a><!-- no end").is_none(), "unterminated comment");
         assert!(pretty_xml("<!-- just a comment -->").is_none(), "no element, only comment");
     }
+
+    // --- Property test (TSK-585 lane): pretty_json idempotence ----------------
+    use proptest::prelude::*;
+
+    /// Generate syntactically-valid JSON strings directly (recursive: leaves +
+    /// arrays + de-duplicated-key objects) — the string IS the input, no Value
+    /// type needed. Object keys are de-duped (BTreeMap) so the generator only
+    /// emits JSON any formatter accepts unambiguously.
+    fn json_strategy() -> impl Strategy<Value = String> {
+        let leaf = prop_oneof![
+            Just("null".to_string()),
+            Just("true".to_string()),
+            Just("false".to_string()),
+            (0i64..1000).prop_map(|n| n.to_string()),
+            "[a-z]{0,4}".prop_map(|s| format!("\"{s}\"")),
+        ];
+        leaf.prop_recursive(4, 32, 4, |inner| {
+            prop_oneof![
+                proptest::collection::vec(inner.clone(), 0..4)
+                    .prop_map(|xs| format!("[{}]", xs.join(","))),
+                proptest::collection::vec(("[a-z]{1,3}", inner), 0..4).prop_map(|kvs| {
+                    let mut map = std::collections::BTreeMap::new();
+                    for (k, v) in kvs {
+                        map.insert(k, v);
+                    }
+                    let body = map.iter()
+                        .map(|(k, v)| format!("\"{k}\":{v}"))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("{{{body}}}")
+                }),
+            ]
+        })
+    }
+
+    proptest! {
+        /// `pretty_json` accepts every generated (valid) JSON and is IDEMPOTENT:
+        /// pretty-printing its own output reproduces it byte-for-byte — a stable,
+        /// value-preserving formatter that never drifts on a second pass.
+        #[test]
+        fn pretty_json_accepts_valid_and_is_idempotent(json in json_strategy()) {
+            let once = pretty_json(&json);
+            prop_assert!(once.is_some(), "generated JSON must be accepted: {}", json);
+            if let Some(once) = once {
+                let twice = pretty_json(&once);
+                prop_assert_eq!(twice.as_deref(), Some(once.as_str()),
+                    "pretty_json must be idempotent on its own output");
+            }
+        }
+    }
 }
