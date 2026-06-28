@@ -896,6 +896,21 @@ mod tests {
         c
     }
 
+    #[derive(Clone, Debug)]
+    enum NavOp {
+        Push(String),
+        Back,
+        Forward,
+    }
+
+    fn nav_op_strategy() -> impl Strategy<Value = NavOp> {
+        prop_oneof![
+            "[a-c]{1,3}".prop_map(NavOp::Push),
+            Just(NavOp::Back),
+            Just(NavOp::Forward),
+        ]
+    }
+
     proptest! {
         /// `filter_entries` returns EXACTLY the entries of which `needle` is a
         /// subsequence — soundness + completeness vs the independent oracle —
@@ -964,6 +979,60 @@ mod tests {
                         prop_assert!(!seen_file, "a directory followed a file under dirs_first");
                     }
                 }
+            }
+        }
+
+        /// NavHistory invariants over a random push/back/forward op sequence:
+        /// after every op the bounds + current/can_* flags stay consistent, and
+        /// back↔forward round-trips return to the same entry.
+        #[test]
+        fn navhistory_op_sequence_invariants(
+            ops in proptest::collection::vec(nav_op_strategy(), 0..40),
+        ) {
+            let mut h = NavHistory::new();
+            for op in &ops {
+                match op {
+                    NavOp::Push(p) => h.push(p.clone()),
+                    NavOp::Back => { h.back(); }
+                    NavOp::Forward => { h.forward(); }
+                }
+                prop_assert_eq!(h.current().is_some(), !h.is_empty());
+                if h.is_empty() {
+                    prop_assert!(!h.can_back() && !h.can_forward());
+                }
+            }
+            if h.can_back() {
+                let cur = h.current().map(str::to_owned);
+                h.back();
+                let round = h.forward().map(str::to_owned);
+                prop_assert_eq!(round, cur, "back then forward must return to the same entry");
+            }
+            if h.can_forward() {
+                let cur = h.current().map(str::to_owned);
+                h.forward();
+                let round = h.back().map(str::to_owned);
+                prop_assert_eq!(round, cur, "forward then back must return to the same entry");
+            }
+        }
+
+        /// push always lands on the pushed path with no forward tail; pushing the
+        /// path that is already current coalesces (the stack does not grow).
+        #[test]
+        fn navhistory_push_lands_and_truncates(
+            prefix in proptest::collection::vec("[a-c]{1,3}", 0..10),
+            p in "[a-c]{1,3}",
+        ) {
+            let mut h = NavHistory::new();
+            for x in &prefix {
+                h.push(x.clone());
+            }
+            let before_len = h.len();
+            let was_current = h.current() == Some(p.as_str());
+            h.push(p.clone());
+            prop_assert_eq!(h.current(), Some(p.as_str()), "push must land on the pushed path");
+            prop_assert!(!h.can_forward(), "push must truncate the forward tail");
+            if was_current {
+                prop_assert_eq!(h.len(), before_len, "pushing the current path must coalesce");
             }
         }
     }
