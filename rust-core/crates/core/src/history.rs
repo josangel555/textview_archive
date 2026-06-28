@@ -60,4 +60,32 @@ mod tests {
         let l = push(l, "b".into(), 3);
         assert_eq!(l, vec!["b", "a", "c"], "bump within a full list stays at cap");
     }
+
+    // --- Property test (TSK-585 lane): MRU push ------------------------------
+    use proptest::prelude::*;
+
+    proptest! {
+        /// push == ([item] ++ list-without-item) truncated to cap (an independent
+        /// recompute); the result is len ≤ cap, has item at the front (cap>0),
+        /// and contains item exactly once.
+        #[test]
+        fn push_is_dedup_front_capped(
+            list in proptest::collection::vec(0u8..6, 0..12),
+            item in 0u8..6,
+            cap in 0usize..10,
+        ) {
+            let out = push(list.clone(), item, cap);
+            let mut expected: Vec<u8> = vec![item];
+            expected.extend(list.iter().copied().filter(|x| *x != item));
+            expected.truncate(cap);
+            prop_assert_eq!(&out, &expected);
+            prop_assert!(out.len() <= cap);
+            if cap > 0 {
+                prop_assert_eq!(out.first(), Some(&item));
+                prop_assert_eq!(out.iter().filter(|&&x| x == item).count(), 1);
+            } else {
+                prop_assert!(out.is_empty());
+            }
+        }
+    }
 }
