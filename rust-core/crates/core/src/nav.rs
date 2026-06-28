@@ -878,6 +878,24 @@ mod tests {
         pi == pat.len()
     }
 
+    /// Arbitrary `Entry` values over a small alphabet + tight numeric ranges, so
+    /// name / mtime / size ties are frequent and the comparator's tie-break chain
+    /// is exercised.
+    fn entry_strategy() -> impl Strategy<Value = Entry> {
+        ("[a-cA-C.]{0,6}", any::<bool>(), proptest::option::of(0u64..4), 0u64..4)
+            .prop_map(|(name, is_dir, mtime, size)| Entry { name, is_dir, mtime, size })
+    }
+
+    /// Canonicalize an entry slice to a total order independent of `sort_entries`,
+    /// so two slices compare equal iff they hold the same multiset of entries.
+    fn canon(v: &[Entry]) -> Vec<Entry> {
+        let mut c = v.to_vec();
+        c.sort_by(|a, b| {
+            (&a.name, a.is_dir, a.mtime, a.size).cmp(&(&b.name, b.is_dir, b.mtime, b.size))
+        });
+        c
+    }
+
     proptest! {
         /// `filter_entries` returns EXACTLY the entries of which `needle` is a
         /// subsequence — soundness + completeness vs the independent oracle —
@@ -915,6 +933,37 @@ mod tests {
                     w[0].1 > w[1].1 || (w[0].1 == w[1].1 && w[0].0 < w[1].0),
                     "results must be score-desc then index-asc; got {:?} then {:?}",
                     w[0], w[1]);
+            }
+        }
+
+        /// `sort_entries` is a PERMUTATION (no entry lost or duplicated) and its
+        /// output is ordered by the public `cmp` comparator; under `dirs_first` no
+        /// file precedes a directory. Tight ranges make ties (and the tie-break
+        /// chain) frequent across all three sort keys.
+        #[test]
+        fn sort_is_permutation_and_comparator_ordered(
+            entries in proptest::collection::vec(entry_strategy(), 0..10),
+            key in prop_oneof![Just(SortKey::Name), Just(SortKey::Modified), Just(SortKey::Size)],
+            dirs_first in any::<bool>(),
+        ) {
+            let before = entries.clone();
+            let mut sorted = entries;
+            sort_entries(&mut sorted, key, dirs_first);
+            prop_assert_eq!(canon(&sorted), canon(&before),
+                "sort must be a permutation (no loss / no duplicate)");
+            for w in sorted.windows(2) {
+                prop_assert!(cmp(&w[0], &w[1], key, dirs_first) != core::cmp::Ordering::Greater,
+                    "adjacent entries out of comparator order");
+            }
+            if dirs_first {
+                let mut seen_file = false;
+                for e in &sorted {
+                    if !e.is_dir {
+                        seen_file = true;
+                    } else {
+                        prop_assert!(!seen_file, "a directory followed a file under dirs_first");
+                    }
+                }
             }
         }
     }
