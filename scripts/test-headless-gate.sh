@@ -78,7 +78,7 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   swift build --build-tests --scratch-path "$GATE_SCRATCH" --disable-index-store
 fi
 
-log "MDV_HEADLESS_GATE=1 swift test --parallel --scratch-path .build-gate --disable-index-store  (headless tiers)"
+log "MDV_HEADLESS_GATE=1 swift test --parallel --num-workers 18 --scratch-path .build-gate --disable-index-store  (headless tiers)"
 # --disable-index-store (TSK-832): the CLI gate never reads the SourceKit index
 # store, so skip emitting it — trims the build phase + ~244 MB of disk. The
 # interactive `swift build` keeps the default --auto-index-store for the IDE.
@@ -88,7 +88,12 @@ log "MDV_HEADLESS_GATE=1 swift test --parallel --scratch-path .build-gate --disa
 # the gate never invalidates the interactive `.build`.
 # Don't let a test failure abort the script before we report the tier verdict.
 set +e
-swift test --parallel --scratch-path "$GATE_SCRATCH" --disable-index-store
+# --num-workers 18 (TSK-847): the run phase is I/O/wait-bound (process-spawn LSP/MCP
+# smoke, timeout + fd-leak tests), so oversubscribing the 12 cores fills the idle
+# waits. Measured (warm .build, test phase only): default(12w)=101s, 18w=94s (-7%),
+# 24w=93s, 32w=90s but rc=1 (2.7x oversubscription tips a test into a flake). 18 is
+# the reliable knee — most of the gain, safely below the oversubscription threshold.
+swift test --parallel --num-workers 18 --scratch-path "$GATE_SCRATCH" --disable-index-store
 TEST_RC=$?
 set -e
 
