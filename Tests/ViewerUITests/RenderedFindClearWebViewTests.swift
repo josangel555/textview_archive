@@ -118,4 +118,52 @@ final class RenderedFindClearWebViewTests: WebViewTestCase {
         let textIntact = await evalBool("document.body.textContent === 'one two one'")
         XCTAssertTrue(textIntact, "text intact after empty-query clear")
     }
+
+    // MARK: - __mdvFindRun behavior (count / navigation / case / regex-escape)
+
+    /// The reported total + the DOM mark count agree, and count is accurate.
+    func test_findRun_countAccuracy() async throws {
+        try await loadBody("<p>foo bar foo baz foo qux foo</p>")
+        await dispatch(MarkdownRenderedView.Coordinator.findScript)
+        let total = await evalInt("window.__mdvFindRun('foo', false, 1).total")
+        XCTAssertEqual(total, 4, "four 'foo' occurrences counted")
+        let marks = await markCount()
+        XCTAssertEqual(marks, 4, "DOM mark count agrees with the reported total")
+    }
+
+    /// case-insensitive matches all cases; case-sensitive matches only exact case.
+    func test_findRun_caseSensitivity() async throws {
+        try await loadBody("<p>Foo foo FOO</p>")
+        await dispatch(MarkdownRenderedView.Coordinator.findScript)
+        let insensitive = await evalInt("window.__mdvFindRun('foo', false, 1).total")
+        XCTAssertEqual(insensitive, 3, "case-insensitive matches all three")
+        let sensitive = await evalInt("window.__mdvFindRun('foo', true, 1).total")
+        XCTAssertEqual(sensitive, 1, "case-sensitive matches only the exact-case 'foo'")
+    }
+
+    /// next/prev steps the current match index and wraps at both ends (3 matches).
+    func test_findRun_navigationCyclesAndWraps() async throws {
+        try await loadBody("<p>x y x y x</p>")
+        await dispatch(MarkdownRenderedView.Coordinator.findScript)
+        let first = await evalInt("window.__mdvFindRun('x', false, 1).current")
+        XCTAssertEqual(first, 0, "first run selects match 0")
+        let next1 = await evalInt("window.__mdvFindRun('x', false, 1).current")
+        XCTAssertEqual(next1, 1, "next → match 1")
+        let next2 = await evalInt("window.__mdvFindRun('x', false, 1).current")
+        XCTAssertEqual(next2, 2, "next → match 2")
+        let wrapFwd = await evalInt("window.__mdvFindRun('x', false, 1).current")
+        XCTAssertEqual(wrapFwd, 0, "next from the last wraps to 0 (3 matches)")
+        let wrapBack = await evalInt("window.__mdvFindRun('x', false, -1).current")
+        XCTAssertEqual(wrapBack, 2, "prev from 0 wraps to the last (2)")
+    }
+
+    /// Regex metacharacters in the query are escaped → matched LITERALLY, not as a pattern.
+    func test_findRun_regexMetacharsAreLiteral() async throws {
+        try await loadBody("<p>a.b axb a.b</p>")
+        await dispatch(MarkdownRenderedView.Coordinator.findScript)
+        // Literal "a.b" matches the two "a.b" (2). An UNescaped regex /a.b/ would
+        // also match "axb" → 3. findScript escapes metachars, so the result is 2.
+        let total = await evalInt("window.__mdvFindRun('a.b', false, 1).total")
+        XCTAssertEqual(total, 2, "regex metachars escaped — 'a.b' matches literally, not 'axb'")
+    }
 }
