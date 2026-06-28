@@ -460,4 +460,28 @@ mod tests {
             assert_ne!(p.color(Role::Added), p.color(Role::Removed), "{mode:?}");
         }
     }
+
+    // --- Property tests (TSK-585 lane): color parse/format round-trips --------
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Rgb → css_hex → parse_hex recovers the same color — the documented
+        /// inverse for the canonical 6-digit form (parse_hex(&css_hex(c)) == Some(c)).
+        #[test]
+        fn rgb_css_hex_parse_hex_roundtrips(
+            r in any::<u8>(), g in any::<u8>(), b in any::<u8>(),
+        ) {
+            let c = Rgb::new(r, g, b);
+            prop_assert_eq!(parse_hex(&css_hex(c)), Some(c));
+        }
+
+        /// `#abc` shorthand expands to `#aabbcc` (each nibble doubled): both forms
+        /// parse to the same (valid) color, case-insensitively.
+        #[test]
+        fn parse_hex_shorthand_expands_each_nibble(d in "[0-9a-fA-F]{3}") {
+            let long: String = d.chars().flat_map(|c| [c, c]).collect();
+            prop_assert!(parse_hex(&d).is_some());
+            prop_assert_eq!(parse_hex(&d), parse_hex(&long));
+        }
+    }
 }
