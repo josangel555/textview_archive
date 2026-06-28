@@ -427,4 +427,67 @@ mod tests {
             "TableArena grew beyond {{delimiter, truncated, cols, row_count, bytes, offsets}}"
         );
     }
+
+    // --- Property tests (TSK-585 lane): Table <-> TableArena round-trip -------
+    use proptest::prelude::*;
+
+    /// A rectangular wire Table: header of `cols` columns, each body row exactly
+    /// `cols` wide — the shape `csv::parse` always emits, so from_table is an
+    /// arity no-op and the round-trip is exact.
+    fn rectangular_table_strategy() -> impl Strategy<Value = Table> {
+        (1usize..5).prop_flat_map(|cols| {
+            (
+                proptest::collection::vec("[a-c]{0,4}", cols),
+                proptest::collection::vec(
+                    proptest::collection::vec("[a-c]{0,4}", cols), 0..6),
+                "[,;\t]",
+                any::<bool>(),
+            )
+                .prop_map(|(header, rows, delimiter, truncated)| Table {
+                    delimiter,
+                    header,
+                    rows,
+                    truncated,
+                })
+        })
+    }
+
+    proptest! {
+        /// A rectangular Table round-trips EXACTLY through from_table -> to_table.
+        #[test]
+        fn rectangular_table_roundtrips(t in rectangular_table_strategy()) {
+            let back = TableArena::from_table(t.clone()).to_table();
+            prop_assert_eq!(back, t);
+        }
+
+        /// from_table -> to_table ALWAYS yields a rectangular table (every body
+        /// row == header width) for any (possibly ragged) input; cols/row_count
+        /// agree; cell(r,c) matches the round-tripped table.
+        #[test]
+        fn from_table_normalizes_and_accessors_agree(
+            header in proptest::collection::vec("[a-c]{0,4}", 0..5),
+            rows in proptest::collection::vec(
+                proptest::collection::vec("[a-c]{0,4}", 0..7), 0..6),
+            delim in "[,;\t]",
+        ) {
+            let t = Table {
+                delimiter: delim,
+                header: header.clone(),
+                rows: rows.clone(),
+                truncated: false,
+            };
+            let arena = TableArena::from_table(t);
+            prop_assert_eq!(arena.cols(), header.len());
+            prop_assert_eq!(arena.row_count(), rows.len());
+            let back = arena.to_table();
+            for r in &back.rows {
+                prop_assert_eq!(r.len(), header.len());
+            }
+            for (r, row) in back.rows.iter().enumerate() {
+                for (c, cell) in row.iter().enumerate() {
+                    prop_assert_eq!(arena.cell(r, c), cell.as_str());
+                }
+            }
+        }
+    }
 }
