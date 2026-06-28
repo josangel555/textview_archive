@@ -25,64 +25,66 @@ Board (shared `tasked` board, ~all markdown_viewer): **1658 total** · **749 in-
 
 ## 🔥 Next 50 — prioritized work list
 
-### P0 — user-facing bugs + perf the owner feels (1–13)
+### P0 — user-facing bugs + perf the owner feels (1–12)
 1. **TSK-838** — rendered-MD: persistent WKWebView + DOM-patch vs full `loadHTMLString` reload (kills the 2–9s reload storm). **[built→flip `MDV_DOM_PATCH`]**
-2. **TSK-598** — opening MD files very laggy (re-reported). **[addressed by #1's flip]**
-3. **TSK-1270** — rendered-MD Find: highlights remain after dismissing the bar. **[render-VM / JS]**
+2. **TSK-598** — opening MD files very laggy (re-reported). **[→ #1's flip]**
+3. **TSK-1271** — rendered-MD Find: can't scroll past the currently-selected match. **[render-VM / JS]** *(NEW since last pull)*
 4. **TSK-891** — Page-Up janky / not smooth in the editor. **[render-VM / perf]**
 5. **TSK-910** — commit diff: only one line selectable → enable multi-line. **[render-VM]**
 6. **TSK-1182** — diff multi-line select (plain-diff mode; collapse hunk into one Text). **[render-VM / owner design]**
 7. **TSK-463 + TSK-1136** — LSP completion built but never invoked → wire into CM6. **[render-VM + engine]**
-8. **TSK-1279** — dark-mode genuine breaks (first audit done; needs VM dark-mode pixel survey). **[render-VM]**
-9. **TSK-924** — CSV table: multi-cell (rows+cols) select + copy/paste. **[render-VM]**
-10. **TSK-1141** — xlsx sheet UI + formula-recalc wiring (model done). **[render-VM]**
-11. **TSK-377** — illustrations (PARTIAL). **[render-VM]**
-12. **TSK-1151** — View↔Edit line-height + size-rounding mismatch (CM6 1.45 / Int-round). **[render-VM]** *(verify still open)*
-13. **TSK-1110** — DocumentModel SRP split — **15 slices landed this session** (~1900 lines / ~25% carved out of the 7692-line monolith into `DocumentModel+X.swift` cross-file extensions); the clean vein is drained. Grab-bag clusters remain. **[host]**
+8. **TSK-924** — CSV table: multi-cell (rows+cols) select + copy/paste (model done — `CSVRectSelection`/`CSVCopy` tested). **[render-VM]**
+9. **TSK-1141** — xlsx sheet UI + formula-recalc wiring (model done). **[render-VM]**
+10. **TSK-377** — illustrations (PARTIAL). **[render-VM]**
+11. **TSK-1032** — video-in-HEX-mode byte grid renders blank / doesn't mount. **[VM render bug]**
+12. **TSK-1110** — DocumentModel SRP split — **continuing** (Focus-shortcuts carved `aed6171c`; clusters left: Editable-HEX, View-hosting-tabs, CM6-LSP-bridge, Open-As, view-mode-lock, Command-registry). **[host]**
 
-### P1 — user-facing features (14–37)
-14. **TSK-955** — RSS / Atom feed reader tool window. **[render-VM — host model+VM+view all built; mount tail is occlusion-class]**
+### P1 — user-facing features (13–40)
+13. **TSK-955** — RSS / Atom feed reader tool window. **[render-VM — host model+VM+view built; mount tail occlusion-class]**
+14. **TSK-1149** — feed reader tool-window UI (list + WKWebView reader). **[render-VM]**
 15. **TSK-1048** — Image Editor → MS-Paint parity + perf overhaul (epic; owner flagged "clunky"). **[render-VM]**
-16. **TSK-1049** — image editor: off-main render pipeline + cached CIContext + cancellation (do-first perf). **[host model / render-VM]**
-17. **TSK-1055** — image editor: make paint strokes undoable + unify with the lossless op-list. **[host model / render-VM]**
-18. **TSK-1114** — wire selection UI (marquee/lasso + fill-selection) into the image editor. **[render-VM]**
-19. **TSK-343** — image History / Revert (PARTIAL). **[render-VM + model]**
-20. **TSK-1104** — multi-window: open + mount a real 2nd NSWindow on the MultiWindowRegistry foundation. **[render-VM]**
-21. **TSK-1111** — bookmarks: "open in new view/window" affordance. **[render-VM]**
-22. **TSK-1119** — walkthrough illustration overlay (SwiftUI view that renders the diagram verb). **[render-VM]**
-23. **TSK-1123** — unified tool-window placement UI (Settings matrix, drag-drop render). **[render-VM]**
-24. **TSK-1128** — Settings ▸ LSP panel: discovered-vs-missing servers + install hints + binary picker. **[render-VM]**
-25. **TSK-751** — organize the menu items properly. **[host/render]**
-26. **TSK-283** — Enter-to-rename in the file nav. **[render-VM]**
-27. **TSK-373** — New ▸ Code Review / Agent session / Project view (PARTIAL). **[render-VM]**
-28. **TSK-942** — select lines → right-click → Reference/Comment-to-agent (+ shortcut). **[render-VM]**
-29. **TSK-958** — Universal Paste: multi-type clipboard dispatcher. **[host model + render]**
-30. **TSK-318 / TSK-1108** — call an agent to ask questions about a CR (Q&A UI + transport). **[render-VM + engine]**
-31. **TSK-943** — share LSP/lint/diagnostics with the agent + live runtime access. **[engine]**
-32. **TSK-944** — internal browser automation (MCP). **[engine]**
-33. **TSK-945** — security-audit integration. **[engine]**
-34. **TSK-698** — script command window: JQ-style query/transform over tab contents (epic). **[host engine + render]**
-35. **TSK-703** — unified action history (all actions reversible) + history view (epic). **[host model + render]**
-36. **TSK-722** — task/command runner: run tests & npm/package scripts from the app (epic). **[engine — sandbox design]**
-37. **TSK-723** — structural search (epic). **[host engine + render]**
+16. **TSK-1049** — image: off-main render pipeline + cached CIContext + cancellation (do-first perf). **[host model / render-VM]**
+17. **TSK-1055** — image: make paint strokes undoable + unify with the lossless op-list. **[host model / render-VM]**
+18. **TSK-1114** — image: wire selection UI (marquee/lasso + fill-selection). **[render-VM]**
+19. **TSK-1168** — image: interactive on-canvas vector editing (create/drag/handles for VectorOverlayView). **[render-VM]**
+20. **TSK-343** — image History / Revert (PARTIAL). **[render-VM + model]**
+21. **TSK-1104** — multi-window: open + mount a real 2nd NSWindow on the MultiWindowRegistry foundation. **[render-VM]**
+22. **TSK-1111** — bookmarks: "open in new view/window" affordance. **[render-VM]**
+23. **TSK-1119** — walkthrough illustration overlay (SwiftUI view rendering the diagram verb). **[render-VM]**
+24. **TSK-1123** — unified tool-window placement UI (Settings matrix, drag-drop render). **[render-VM]**
+25. **TSK-1128** — Settings ▸ LSP panel: discovered-vs-missing servers + install hints + binary picker (model `languageStatuses` done+tested). **[render-VM]**
+26. **TSK-751** — organize the menu items properly (spike+audit auto-approved). **[host/render]**
+27. **TSK-283** — Enter-to-rename in the file nav. **[render-VM]**
+28. **TSK-373** — New ▸ Code Review / Agent session / Project view (PARTIAL). **[render-VM]**
+29. **TSK-942** — select lines → right-click → Reference/Comment-to-agent (+ shortcut). **[render-VM]**
+30. **TSK-958 / TSK-1163** — Universal Paste: multi-type clipboard dispatcher + live UI wiring. **[host model + render]**
+31. **TSK-318 / TSK-1108** — call an agent to ask questions about a CR (Q&A UI + transport). **[render-VM + engine]**
+32. **TSK-769 / TSK-1176** — terminal UX bundle (open-in-pwd, tab rename, command history+favorites+search, colors). **[render-VM]**
+33. **TSK-951 / TSK-1186** — ⌘K palette parity: ~40 menu-only / nil-verb commands missing from the palette. **[render-VM]**
+34. **TSK-1139** — CSV viewport paging: wire the rendered table to `CSVRowWindowSource`. **[render-VM]**
+35. **TSK-1146** — spell/grammar inline editor squiggles + LSP-diagnostics surfacing. **[render-VM]**
+36. **TSK-1152** — rethink "View as" affordance — per-filename lock-icon control. **[render-VM]**
+37. **TSK-1091–1096** — audio: AVAudioEngine graph + Audio-Unit browse/insert/host-UI/preset/MIDI (epic). **[render-VM]**
+38. **TSK-1142** — in-app browser tab surface wired to `BrowserNavigationPolicy`. **[render-VM]**
+39. **TSK-1145** — DOCX + multi-format viewer surface + XLSX-in-table rendering. **[render-VM]**
+40. **TSK-1140** — PDF reader surface tail — find/tabs/sessions + PDFView live validation. **[render-VM]**
 
-### P2 — internal / rust-core / build / test (38–50)
-38. **TSK-379 / TSK-1117** — rust-core migration: stateful EditorBuffer + Tabs + DocumentModel projection in Rust. **[host]**
-39. **TSK-400** — `mdvcore-rpcd`: expose core over compact binary RPC (remote SwiftUI/TUI). **[host spike]**
-40. **TSK-382** — squeeze DocumentModel memory to bare-bones (measure-first). **[host / perf]**
-41. **TSK-537** — Code Review feature epic (commit diffs, comments, export). **[render-VM + host]**
-42. **TSK-538** — rust-core production-readiness audit follow-ups (epic). **[host]**
-43. **TSK-836** — capture per-class swift-test timings, then split the slowest. **[host / CI]**
-44. ~~**TSK-847**~~ — **✅ DONE 2026-06-28 (88b8f417)**: gate runs `--num-workers 18`, measured +7% (12w=101s → 18w=94s; 32w flakes under 2.7× oversubscription). **[fixed — awaiting owner close]**
-45. **TSK-837** — unprimed-subagent sweep for app latency + test speed (measure-first). **[host / perf]**
-46. **TSK-764** — Git: non-blocking merge-style reconciliation on local↔disk/remote conflict. **[host + render]**
-47. **TSK-1138** — Tier-D PTY/socket plugin contract — **design DELIVERED (aa03d6fc · `docs/PLUGINS_TIER_D_DESIGN_2026-06-22.md`); re-parked for your RATIFICATION** (new security surface — persistent raw-bidi-IO process — needs sign-off before impl). **[owner — ratify]**
-48. **TSK-794** — audit: are we using generous multi-threading/async + inlining/specialization. **[host audit]**
-49. **TSK-584** — fuzzing lane (cargo-fuzz over highlight/web/wire). **[blocked — CDN; dep approved]**
-50. **TSK-587** — wasm32 tier-1 shim + execution test (portable core). **[blocked — CDN; dep approved]**
+### P2 — internal / rust-core / build / test (41–50)
+41. **TSK-379 / TSK-1117** — rust-core migration: stateful EditorBuffer + Tabs + DocumentModel projection in Rust. **[host / supervised]**
+42. **TSK-543** — cm_apply stateful-delta redesign (kills ~10× doc-size FFI traffic per edit; the real typing-latency fix). **[owner decision]**
+43. **TSK-382** — squeeze DocumentModel memory to bare-bones (measure-first — needs a VM memory profile). **[host / perf]**
+44. **TSK-537** — Code Review feature epic (commit diffs, comments, export). **[render-VM + host]**
+45. **TSK-538** — rust-core production-readiness audit follow-ups (epic; host children drained, deps + render-coupled tail remain). **[host]**
+46. **TSK-764 / TSK-1165 / TSK-1166** — git reconciliation + ExternalEditReconciler / DiskConflict wiring (model done; render+data-safety tail). **[host + render]**
+47. **TSK-1138** — Tier-D PTY/socket plugin contract — **design DELIVERED (aa03d6fc); re-parked for your RATIFICATION**. **[owner — ratify]**
+48. **TSK-441–445** — board/CI infra: tests across v0.2–v0.5, check-validation path, deploy-snapshot footgun, commit-provenance. **[host / infra]**
+49. **TSK-831 / TSK-852 / TSK-835** — CI/build perf: dedup SourceKit index tree (−1.7 GB), `.build` cache, cargo-nextest (dep). **[host / owner-dep]**
+50. **TSK-698 / TSK-703 / TSK-722 / TSK-723** — host-engine epics: script-window (JQ), action-history, task-runner, structural-search. **[host engine + render]**
+
+> **Done since the 2026-06-27 pull** (removed from the list): TSK-847 (gate +7%, `88b8f417`), TSK-1270 (find-highlights, validated), TSK-1151 (line-height, review), TSK-1202 (folds port, validated), TSK-400 (rpcd spike, validated), TSK-836/794 (timings/threading-audit, done). Coverage landed: RichTextSerializer, FileQuarantine, cspMeta, the Focus-shortcuts SRP slice.
 
 ## 🔓 Owner decisions (not "work" — your call unblocks them)
-TSK-470 zoom-split model · TSK-683 app name · TSK-686 Developer-ID signing + notarization · TSK-276 debugger/DAP · TSK-293 encryption · TSK-296 markdown (scope?) · TSK-298 Java formatter ext-tool · TSK-775 rust-migration plan · TSK-781 LSP own-vs-external · TSK-1137 DIY mutation-tester option 1/2/3 · TSK-1287 crypto-hash for PM hash-chain · TSK-1182 diff-selection model.
+TSK-470 zoom-split model · TSK-683 app name · TSK-686 Developer-ID signing + notarization · TSK-276 debugger/DAP · TSK-293 encryption · TSK-296 markdown (scope?) · TSK-298 Java formatter ext-tool · TSK-781 LSP own-vs-external · TSK-1137 DIY mutation-tester option 1/2/3 · TSK-1287 crypto-hash for PM hash-chain · TSK-1182 diff-selection model · **TSK-1129 LSP workspace-binary RCE-guard enforcement (SECURITY)** · TSK-589 multi-doc session-eviction policy · TSK-810 hex/hexSearch Stage-B fallback model · TSK-1045 per-session DocumentModel sign-off · TSK-1138 Tier-D plugin ratification · TSK-508 digraph-render dep. *(TSK-775 rust-migration "do all" — RESOLVED 2026-06-12.)*
 
 ## 🌊 Wishlist epics (P6–P8 — slice when pulled, not yet prioritized)
 TSK-687 deep agent integrations · TSK-688 walkthrough-as-presentation · TSK-689 PinBoard · TSK-690 tmux -CC attach (core done, TSK-1023) · TSK-691 own agent harness · TSK-693 tasks/worktrees/review surface · TSK-695 credential handling · TSK-697/699 Agent Services suite (TSK-1154 = remaining 4 MCP tools) · TSK-700 collaboration · TSK-701 SDLC workflow surface · TSK-702 Mac intelligence · TSK-706 RichText editor · TSK-713 more diagram formats · TSK-714 tab split · TSK-715 profiling/flame charts · TSK-725 inspections/intentions · TSK-772/773/777 plugin expansion + MCP + PDK · TSK-774 music · TSK-1083–1090 image-editor advanced tools (curve/polygon/shapes/brushes/text/layers).
