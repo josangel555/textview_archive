@@ -1084,6 +1084,51 @@ mod tests {
     }
 
     #[test]
+    fn actor_gating_subset_of_shape_legality_exhaustive() {
+        // The §2.2 SAFETY boundary, exhaustively: NO actor may perform a shape-
+        // illegal transition (can_actor_transition ⊆ can_transition over every
+        // actor × from × to). Holds by construction today (the fn early-returns on
+        // !can_transition), so this GUARDS that construction against a future
+        // refactor that drops the shape check — strengthening the single-example
+        // `actor_gating_requires_legal_shape` above to the full space.
+        for actor in [ActorKind::Human, ActorKind::Agent, ActorKind::System] {
+            for from in ALL_STATES {
+                for to in ALL_STATES {
+                    if can_actor_transition(actor, from, to) {
+                        assert!(
+                            can_transition(from, to),
+                            "{actor:?} permitted shape-ILLEGAL {from:?} -> {to:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_legal_transition_has_a_permitted_actor() {
+        // The two §2.2 tables — `can_transition` (shape) and `can_actor_transition`'s
+        // `allowed` set (ownership) — are maintained as SEPARATE matches. A shape-
+        // legal edge whose `allowed` set is empty (the `_ => &[]` fall-through) is a
+        // DEAD edge: the lifecycle can never traverse it. This guards that drift —
+        // every legal transition must have at least one actor who can perform it.
+        for from in ALL_STATES {
+            for to in ALL_STATES {
+                if can_transition(from, to) {
+                    let has_actor = [ActorKind::Human, ActorKind::Agent, ActorKind::System]
+                        .into_iter()
+                        .any(|a| can_actor_transition(a, from, to));
+                    assert!(
+                        has_actor,
+                        "shape-legal {from:?} -> {to:?} has NO permitted actor (dead edge: \
+                         can_transition and the allowed-actor table drifted)"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn actor_kind_code_roundtrips() {
         for k in [ActorKind::Human, ActorKind::Agent, ActorKind::System] {
             assert_eq!(ActorKind::from_i64(k.as_i64()), Some(k), "{k:?}");
