@@ -1,302 +1,66 @@
-# Backlog — the single curated worklist (updated 2026-06-22)
+# Backlog — the single curated worklist (reconciled 2026-06-27)
 
-> **The ONE backlog** (owner directive 2026-06-22): a curated, prioritized list of *what to work on*. The
-> `tasked` board is the **system of record** for task STATE/detail; this file is just the prioritized selector.
-> Stale tracking docs (old handoffs, dated curated lists, WORK_QUEUE, completed archives) → `archive/tracking-2026-06-22/`.
-> A by-kind **disjoint / not-fully-wired** sweep (ports · model · core-seam · wiring-tail · render · design-only) is
-> preserved at the top of `archive/tracking-2026-06-22/BACKLOG_historical_2026-06-22.md`; its items map to the P1
-> wiring-tail + the ports listed below.
+> The ONE prioritized "what to work on" list. The `tasked` board (http://localhost:8787/) is the
+> **system of record** for task STATE/detail; this file is the human-scannable selector.
+> **Verify any `TSK-###` against the live board before working it** — most "open"-looking items are
+> already done (the board moved, this file lags). The full pre-reconcile snapshot (the 06-19/06-20/06-25
+> captures, done-sweeps, Quick-Wins, and verify-state reports) is in
+> `archive/BACKLOG_archive_2026-06-27.md`.
 
-**Goal: drive every task → `done`.** The `tasked` board (`http://localhost:8787/`) is the
-**system of record**; this doc is the human-scannable selector — actionable work up top,
-carried-forward context below. The next-50 list is prioritized by the owner's standing rule:
-**user-facing value first** (app bugs + perf the owner can feel → user-facing features →
-internal-quality / rust-core / test work).
+## 📊 Current state (2026-06-27)
 
-## Current worklist (checkable — updated 2026-06-23)
+Board lanes (the shared `tasked` board; the vast majority is markdown_viewer):
 
-> **Checkboxes are the at-a-glance progress mirror; the `tasked` board is authoritative for STATE.** Tick `[x]` when the board item reaches `done`/`validated` (render items: when on-screen-confirmed). From the 7-subagent board reconcile (the board is ACCURATE — done work already left the open lanes; no shipped-but-unmarked backlog). The OLD curated Next-50 + lane snapshot below are the prior capture, superseded by this section.
+| Lane | Count | |
+|---|---:|---|
+| `review` | 324 | agent-complete, awaiting owner `→ done` |
+| `fixed` | 86 | agent-complete, awaiting validate/close |
+| `reported` | 290 | backlog + ~#NNN phantoms (unsafe to per-item mutate) |
+| `ack` | 33 | acknowledged epics/spikes |
+| `triaged` | 7 | scoped, not started |
+| **in-flight total** | **740** | |
+| **closed** (validated / done / wontdo) | **~912** | total board = 1652 |
 
-### 🎯 OWNER PRIORITY ORDER (2026-06-26 — drain in THIS order)
+- **~410 items await OWNER CLOSE** (324 `review` + 86 `fixed`) — **the real bottleneck.** They're agent-complete; they need the owner's `→ done` (render/WebView/AX-pixel items: a quick on-screen confirm).
+- **0 stale-progress** — INT-126 auto-expiry working (`liveLeases:[]`, progress lane empty).
+- **Host-completable surface is DRAINED** — build / validate-with-teeth / reconcile / audit-harden all worked through this session. Remaining is owner-action or a focused VM session.
 
-The autonomous cron drains BACKLOG top-down; this is the explicit owner ordering as of 2026-06-26. **P0a and P0b are CO-EQUAL — interleave them** (slice the TSK-1254 AX epic into subtasks so it does NOT monopolize ticks; each tick, pick the highest-value READY item across both). Finish ALL of P0 before P1.
+## 🎯 OWNER PRIORITY ORDER (drain in THIS order)
 
-**P0a — Eval / AX self-driving + agent-drivable interfaces (the apex tier).** Build the whole evaluation/UAT stack we scoped, in dependency order:
-1. **TSK-1254 — native-chrome UAT driver** (out-of-process AX find-by-`mdv.*` + AXPress/scroll/read + CGEvent-at-AX-frame fallback + script-bus setup). Deliver BOTH the automated (XCUITest/VM) and the agent-driven form. This is the foundation the rest builds on.
-2. **TSK-1255 — test-pyramid restructure** (add the AX real-interaction tier on top of TSK-1254; write the ONE canonical pyramid doc).
-3. **Agent-drivable interfaces** — expose the addressing + verbs so an AGENT can drive the app deterministically (the structural lane), not just tests: `mdv.*` AX ids on every interactive control, the script-verb bus as the public action surface, `ClickTargetRegistry`/`UIEventSynth` at-rect. (Human-like self-drive stays a SEPARATE, purely-screenshot harness — owner decision 2026-06-26.)
-4. **TSK-1256 — globally-referenceable element refs** (right-click → Copy Reference → share to agent; native chrome AX path + WebView `cmDispatch`/JS path; future Chrome/CDP picker). Shares TSK-1254's addressing foundation.
+P0a and P0b are CO-EQUAL + interleaved; finish ALL of P0 before P1.
 
-**P0b — Battle-test → validate the pending pile (with TEETH).** The ~215 `fixed`/`review` "awaiting-close" items are the real bottleneck. For each: prove an automated test exercises the behavior and would fail on regression, then self-validate (`task_validate` + checks artifact) for pure-logic/model/FFI/parser; render/WebView/AX-pixel behavior caps at `review` (owner/VM closes). Use the TSK-1254 AX lane to battle-test native-chrome items as it comes online — that's the leverage of building P0a first. Reclaim the stale-progress pile (**TSK-1253** + tool-side **INT-126**) as part of this drain.
+- **P0a — Eval / AX self-driving + agent-drivable interfaces.** TSK-1254 native-chrome UAT driver → TSK-1255 test-pyramid doc → `mdv.*` AX ids + script-bus action surface → TSK-1256 element-refs.
+  - *State: host foundation COMPLETE + comprehensive (AXDriverCore + 59-id catalog + AXUIElementNode + ElementRef + AXDrivePlan + ~134-verb `run_verb` + `list_verbs`/`list_surfaces`/`current_state`; pyramid doc done; element-refs host-complete). REMAINING = the out-of-process EXECUTOR (TSK-1261/1263), AX/Automation-TCC-gated → **owner grant.***
+- **P0b — Battle-test → VALIDATE the pending pile with TEETH** (`task_validate` + a checks artifact for pure-logic/model/FFI/parser; render/WebView/AX-pixel cap at `review`).
+  - *State: host-validatable items drained; the ~410 review/fixed are render features with host-tested models → **owner on-screen close**. TSK-1253 stale-progress reclaim done.*
+- **P1 — the wave-12 features.** *State: host layers COMPLETE (RSS reader, approve/reject engine+guard, image-perf/search/local-history/cm_apply/tmux host layers); render/VM tails remain (below).*
+- **P2+ — rest of the board** (`task_next` / `task_list`).
 
-**P1 — The NEXT WAVE 12** (below). Substantial features/epics; verify-state + spike each before committing.
+## Upcoming / open work (grouped by what unblocks each)
 
-P2+ — the rest of the board (`task_next`/`task_list`), lanes below.
+**A. Render-VM passes** (host model done + tested; need an on-screen / T5 VM session):
+RSS tool-window mount (TSK-1149 slice-3, OCCLUSION-class) · approve/reject per-hunk UI (TSK-941) · image-editor canvas + paint gestures (TSK-1048/1052/1101/1102) · agent-monitor view (TSK-111/336) · font picker (TSK-259) · multi-window (TSK-265) · dep-graph entry (TSK-280/1100) · local-history UI (TSK-301/1103) · md-overview (TSK-305) · cmd-palette overlay (TSK-326) · treemap (TSK-334) · LSP completion wiring (TSK-463/1127) · View↔Edit line-height (TSK-1151) · diff multi-line select (TSK-910/1182) · unified search palette (TSK-1143) · dark-mode T5 confirm (TSK-1279) · small render items (find-clear TSK-1270, find-scroll TSK-1271, Cmd-F sidebar route TSK-1272, terminal header TSK-1273).
 
-### ✅ STATUS (2026-06-27 — autonomous session) — host-completable work DRAINED
-Every wave-12 model layer host-completed; every lane verified to its agent ceiling:
-- **P0a agent surface — COMPREHENSIVE.** 42 `mdv.*` AX ids (AXIdentifierCatalog) · 19 MCP tools · script-verb bus (+`goto-line`,`copy-reference`) · element-refs + Copy-Reference ×5 (TSK-1256). EXECUTION (out-of-process AX real events) = TCC-gated (TSK-1254/1261/1263, owner grant). Pyramid doc done (TSK-1255, docs/TEST_PYRAMID.md).
-- **P0b validation — owner/VM-bound.** TSK-1253 stale-progress reclaim VALIDATED (fleet 0 progress / liveLeases:[]; INT-126 guards). The ~322 review + 86 fixed = render features w/ host-tested models → owner on-screen close; no pure-logic left to validate.
-- **P1 wave-12 host layers — COMPLETE.** RSS (model+vm+scheduler+refresh) + approve/reject (engine+selection+guarded `applyToFile`, data-corruption risk found & closed) BUILT this run; image-perf/browser/search/local-history/tmux/cm_apply host layers pre-built (verified).
-- **P2 rust-core — drained.** TSK-538 host children all closed; remainder render (TSK-543) or dep-approval (owner).
-- **dark-mode (TSK-1279)** — host-audit CLEAN (every surface adaptive); owner report likely STALE → "confirm-stale VM glance + plugin spot-check".
+**B. Owner DECISIONS / spikes** (design produced; the call is the owner's):
+approve/reject UX-semantics (TSK-941) · web browser (TSK-676) · spell/grammar (TSK-685) · app name (TSK-683) · Developer-ID signing + notarization (TSK-686) · debugger/DAP (TSK-276) · encryption (TSK-293) · markdown formatter (TSK-296) · zoom-split (TSK-470) · crypto-hash for PM 2b (TSK-1287) · DIY mutation-tester option 1/2/3 (TSK-1137) · diff-selection model (TSK-1182).
 
-### 📋 BOARD SCAN — next-50 actionable (2026-06-27), grouped by what unblocks each
-(Board: review 322 · fixed 86 · reported 298 [mostly #NNN phantoms, unsafe to mutate] · ack 32 · triaged 7. Each render item has a host-tested model to bind → its VM session is "purely the view".)
+**C. Engine / design-blocked** (need a live engine or sandbox design):
+LSP→MCP bridge (TSK-279) · Agent-Services MCP: semantic-search / refactor / test-runner[sandbox] / code-review (TSK-1154) · Java formatter ext-tool (TSK-298) · CLI find-instance / socket RPC (TSK-353).
 
-**A. Render-VM passes** (host model DONE + tested; need an on-screen/T5 VM session):
-RSS tool-window view (TSK-1149 sliceB — OCCLUSION-class, compositingGroup) · approve/reject per-hunk UI (TSK-941, +UX-semantics) · image editor canvas (TSK-110/320/285/1048) · agent monitor view (TSK-111/336) · font picker (TSK-259) · session-tab icons (TSK-262) · multi-window (TSK-265) · up/down nav-preview (TSK-272) · FPS meter (TSK-275) · dep-graph (TSK-280) · sidebar fuzzy (TSK-282) · draggable files (TSK-284) · local-history UI (TSK-301) · CSV cell-nav+find (TSK-302/303) · md overview (TSK-305) · bookmarks root view (TSK-307) · archive browser (TSK-311) · walkthrough catalog (TSK-316) · walkthrough deeplink (TSK-317) · dep-explorer (TSK-319) · cmd-palette overlay (TSK-326) · New-File wiring (TSK-329) · bookmark Delete+Undo (TSK-330/333) · treemap render (TSK-334) · tooltip coverage (TSK-324) · editor-line + AX-id Copy-Reference (TSK-1256 tail) · dark-mode T5 confirm (TSK-1279).
+**D. Deps** (owner-approved 2026-06-27; `default-features=false` + pinned):
+memchr ✅ · proptest ✅ · rusqlite ✅ (PM store) · **cargo-fuzz + wasm32 (TSK-584/587) — CDN-blocked** (rust-std-wasm32 download times out; re-check periodically) · cargo-mutants REJECTED (dep hygiene) → DIY option owner-deciding (TSK-1137).
 
-**B. Owner DECISIONS / spikes** (design produced; the call/dep is the owner's):
-approve/reject UX-semantics (TSK-941) · web browser (TSK-676) · rich-text/.docx export (TSK-680) · spell/grammar (TSK-685) · app name (TSK-683) · Developer-ID signing+notarization (TSK-686) · deep agent integrations (TSK-687) · debugger/DAP (TSK-276) · encryption tool (TSK-293) · markdown formatter (TSK-296) · project management (TSK-345).
+**E. Owner close / TCC / flips** (highest-leverage unblocks):
+1. **Flip `MDV_DOM_PATCH`** — the rendered-MD DOM-patch perf lever (kills the 2–9s reload storm); built + VM-validated, gated OFF (TSK-838/1183, addresses TSK-598).
+2. **Grant Accessibility + Automation TCC** — unblocks the P0a out-of-process executor (TSK-1261/1263).
+3. **Close the ~410 review/fixed queue** (`→ done`; render items by on-screen glance).
+4. **Flip the rust ports** — formula `MDV_RUST_FORMULA` (TSK-1215), folds `MDV_RUST_FOLD` (TSK-1202); parity-proven, await owner soak.
+5. **Close TSK-590** (owner bug-list epic, 20/21 done; pending TSK-598, which the DOM-patch flip addresses).
 
-**C. Engine/design-blocked** (need a live engine or sandbox design):
-LSP→MCP bridge (TSK-279) · agent-services MCP: semantic-search/refactor/test-runner[sandbox]/code-review (TSK-1154) · Java formatter ext-tool (TSK-298) · CLI find-instance/socket RPC (TSK-353).
+## Epics (slice-and-iterate)
 
-**D. Deps — ✅ APPROVED 2026-06-27, NOW ACTIONABLE** (build with the `default-features=false` + pinned-version rider): memchr (TSK-399, SIMD substring → filter/hex_search) · proptest (TSK-585, property tests) · cargo-fuzz (TSK-584, fuzz targets, dev-only) · wasm32 target (TSK-587, portable core) · rusqlite (TSK-345, unblocks project-management build). **NOT approved:** cargo-mutants (TSK-1137) — REJECTED on dep hygiene. `cargo install cargo-mutants` compiles its FULL ~100+ crate transitive tree on the DEV MACHINE (every build.rs + proc-macro runs) — and the owner counts the dev-machine surface, not just shipped deps; so "external tool" does NOT dissolve it. No maintained lightweight alt (mutagen dead). DIY options: (1) **dep-free line/token mutator** [zero deps; operator/literal mutations + skip-non-compiling + cargo-test loop; cruder but auto-exhaustive-ish] — RECOMMENDED · (2) hand-curated MDVNegativeControl extension [zero deps, manual, no auto] · (3) syn-based [precise, but +3 proc-macro-crate surface]. Owner deciding.
-
-**E. Owner close / TCC** — the ~400 test-backed review+fixed pile (on-screen close) · TSK-590 epic (20/21 done; close or pending TSK-598) · AX-execution TCC grant (TSK-1254/1261/1263) · formula/fold gate-flips (de-risked; await owner soak+flip).
-
-> The autonomous host-completable surface is DRAINED — the above is owner / focused-VM-session work.
-
----
-
-### ⭐ HIGH PRIORITY (owner, 2026-06-26)
-
-1. **Reclaim the ~80 stale-progress / #NNN-corrupted tickets** — **TSK-1253** (+ tool-side **INT-126**). 82 `progress` tickets have dead leases (`fleet.liveLeases:[]`) AND #NNN-corruption (title/report correct, but `understanding`/`commits` were overwritten by an unrelated audit finding), so the board reports 82 phantom in-flight items. Reclaim FROM THE TITLE (ignore the bogus understanding): un-claim, advance shipped-via-child to `fixed`, return the rest to `reported`. The safe BULK pass needs **INT-126** (auto-expire stale leases + flag understanding↔title divergence) — per-item manual mutation of corrupted data is unsafe (the #NNN anti-pattern).
-
-2. **Native-chrome UAT driver: AX identifiers + script-bus + CGEvent** — **TSK-1254**. The structural, deterministic self-drive / UAT lane for native AppKit/SwiftUI chrome: find by `mdv.*` accessibilityIdentifier (AXUIElement) → AXPress / scroll / set-value, CGEvent fallback at the element's AX frame, script-bus for setup, assert via AX attributes + screencapture. Deliver BOTH automated (XCUITest-style / VM) and agent-driven forms. **NOTE:** AX must be driven OUT-OF-PROCESS (in-process NSAccessibility doesn't expose the tree — `TerminalAccessibilityTests:78`); build on the existing `ClickTargetRegistry` + `UIEventSynth` (click-at-rect). **DECISION (owner, 2026-06-26): the human-like self-driving lane stays PURELY SCREENSHOT-BASED** (computer-use: capture → vision picks coordinates → synthesize a click at the pixel), pixel-only, NO AX — a SEPARATE harness from this structural AX lane. (WebView content — CM6 editor / rendered markdown — keeps the existing `evaluateJavaScript`/`cmDispatch` CDP-equivalent + in-process WebViewTestCase; AX is the NATIVE-chrome equivalent.)
-
-3. **Test-pyramid health + restructure** — **TSK-1255**. Grounded snapshot: strong base (64 `HeadlessUITestCase` suites, ~8,926 test fns) but a fragile/incomplete apex — the broad UAT layer (22 `MultiScenarioTestCase` script-bus suites) is MODEL-LEVEL (drives `DocumentModel`, not real user events), the native real-interaction tier (AX find-by-id → click/scroll/read) is **~absent** (the lone AX probe found in-process NSAccessibility can't see the tree → needs TSK-1254's out-of-process driver), and everything above headless is VM-locked. Restructure: add the AX tier (TSK-1254) + write ONE canonical pyramid doc (today it's scattered).
-
-> **Filed wishlist (P2): TSK-1256** — globally-referenceable element refs (right-click → *Copy Reference* → share to an agent; spans native chrome AND WebView; future Chrome-devtools-style element picker, incl. a real Chrome/CDP target). Builds on the same addressing foundation as TSK-1254 (mdv.* AX path for native, cmDispatch/JS for WebView).
-
-### 🌊 NEXT WAVE — high-value (12, proposed 2026-06-26)
-
-Owner: "no more low-hanging mandate" → substantial features/epics for next week. **Verify-state + spike each before committing** (the board's "open" tags are stale — see the warning below). Thesis: lean into the AGENT-NATIVE differentiator + clear the loudest felt pain + surface built-but-unwired engines.
-
-> **VERIFY-STATE RECONCILIATION (2026-06-26, autonomous run) — the wave-12 is ~70% ALREADY BUILT, not a week of new work.** Per-item state vs `main`:
-> - **DONE / at review or validated (foundations + UI built; owner on-screen close is what remains):** cm_apply delta seam (TSK-1124 — **VALIDATED**, ships incrementalChange deltas not full doc, 57 tests + Swift↔Rust A/B) · tmux -CC core (TSK-1023 — review, 50 protocol tests; only live-PTY+render VM-tail remains) · Local History (TSK-1103 — review, `LocalHistoryView` + store wired, 61 model tests) · persistent-WebView cache (`WarmWebViewCache` built; DOM-patch is the residual) · unified search palette (`CommandPaletteView` built + `SearchRouter` host-tested) · image editor (TSK-1048 — `ImageEditorView`/ViewModel built, ~17 tool tickets at review, ~166 tests) · diff EXTRACT+DISPLAY (`AgentDiffInlineView`) · the surfaced engines (Feed parser/store, Snippet engine, browser nav-policy, LocalHistory — all host-tested).
-> - **GENUINELY UNBUILT (real new work):** in-app **web browser** (no `*BrowserView` for web — only Archive/SQLite browsers exist; sandboxed-WebView epic) · **RSS reader UI** (engine built, NO reader view) · **approve/reject agent diffs** (TSK-941 — needs UX-semantics DESIGN [revert-vs-stage] + patch-apply engine + review UI; diff display already built) · **image-editor PERF overhaul** (TSK-1052 dirty-rect — perf slices on the built editor) · **Agent-Services MCP tools** (TSK-1154 — 4 of 5 remain; each needs a live engine: LSP process / test-runner process / code-review) · **dark-mode fixes** (`ChromeTheme` exists; specific broken views are render).
-> So the highest-value NEW builds are: web browser, RSS reader UI, approve/reject (design-first), image-perf dirty-rect. The rest awaits the owner's on-screen close (review pile) or is VM-tail.
-
-- **App lane (3):** in-app **web browser** (sandboxed: no `file://`, block 3rd-party cookies; reuse the rendered-MD WebView security; doubles as the future Chrome/CDP element-picker target) · **image-editor overhaul** (TSK-1048 epic; owner flagged "clunky"; model built, perf-first slice = TSK-1052 dirty-rect) · **RSS feed reader** (TSK-1149; foundation built, TSK-955).
-- **Perf (2):** rendered-MD **persistent WebView + DOM-patch** (TSK-838/1183 — "biggest single perf lever", kills the 2–9s MD-open reload) · editor **cm_apply delta seam** (TSK-1124/543 — stop shipping the full doc across FFI per keystroke; the CM6 typing-lag root).
-- **Agent (2):** **diff review/approve** (TSK-941) · **Agent-Services MCP tools** (TSK-1154 — semantic/LSP search, refactor, test-runner, code-review; 1/5 shipped).
-- **Leverage (2):** **Local History UI** (TSK-1103 — engine+policy DONE, just UI) · **unified search palette** (TSK-1143/677 over `SearchRouter`).
-- **Polish (1):** **dark-mode / theme-readiness audit + fix** (owner: "Dark mode is so broken").
-- **Parity (1):** **LSP autocomplete** + own-vs-external decision (TSK-1127/781; owner: "autocomplete: none at all").
-- **Finish (1):** **tmux `-CC` completion** (TSK-1023 — signal-translation DONE this session; only live PTY spawn + SwiftUI split render remain, VM-tail).
-
-_History:_ started at 10; owner dropped element-reference + share-context-to-agent, pulled in the app lane + a 2nd perf item, set count to 12. _Bench (next waves):_ Notebooks (TSK-717) · PDF reader · Dependency-package explorer (TSK-319/692/1147) · DevTools tool window · Audio editor · Rust remote-core (TSK-400/1117). _Perf alt_ (if visibility > speedup): render-FPS jank meter + per-tab memory in the status bar.
-
-### Low-hanging-fruit sweep (2026-06-25) — outcome + NEXT 10
-
-**Sweep result** (the 2026-06-20 Quick-Wins list, re-verified against current `main`): **5 of 10 already shipped** since the audit — tooltip delay (TSK-1209), find-text-preserve (TSK-1207), View-only toggle (TSK-936 validated), rendered find-highlight clear (`MarkdownRenderedView`), text-transforms menu (TSK-1113 validated). **3 fixed + committed `30a3af2f`**: editor 2px caret + literal-Tab insert (**TSK-1250**, render → `review`) and the `check-bundle-size.sh` 48/26→80/65 doc drift (residual of the validated **TSK-1098**). **2 deferred as tickets** (prereqs missing, not blind-hacked): Cmd+F sidebar routing (**TSK-1248**), terminal header row (**TSK-1249**). LESSON: the Quick-Wins audit is stale — verify each item against `main` before working it.
-
-**NEXT-10 RECONCILED 2026-06-25 — all 7 "host cluster" picks were ALREADY DONE; the file tags were stale, the BOARD is accurate.**
-
-> ⚠️ **The `[reported]`/`[progress]` tags in the Next-50 + lane snapshot below are the 2026-06-20 capture and are STALE.** The BOARD moved most to `fixed`/`validated`; this file wasn't re-synced. **Derive picks from the live BOARD (`task_next` / `task_list ready=true`), NOT this file.** Two sweeps in a row picked already-done items off these stale tags.
-
-Verified this sweep (every host pick already shipped): TSK-1120 footer (fixed `41017b83`) · TSK-986 hex debounce (review `50521d04`) · TSK-991 sidebar cap (done, `childrenCacheEvictions`) · TSK-1036 readers (validated) · TSK-1100 deps-graph entry (done) · TSK-1116 focus-mode menu (done) · TSK-1132 webview heavy-tier (done, `isHeavyTier`). Render picks: TSK-1182 triaged/execute-ready · TSK-1102 + TSK-891 still open.
-
-**Actually-open (live board query, markdown_viewer, non-foreign — the host-fixable pool is DRAINED):**
-- **Image-editor epic** (TSK-1048 + P0 perf slices TSK-1049/1052 dirty-rect) — owner-flagged "clunky"; concrete model-testable slices + render tail.
-- **Render-gated perf** — TSK-891 (Page Up jank, CM6/CA-commit class), TSK-839 family.
-- **Owner-gated levers** — rust flips TSK-1215 (formula) / TSK-1202 (folds); deps TSK-399/400; zoom-split TSK-470.
-- **Agent-integration features** — TSK-941–945, TSK-691 (large, net-new).
-
-Next real work = a deliberate epic/perf investment or an owner decision — not a quick host fix.
-
-### A. BUILT user-facing fixes — unmerged on worktree branches; verify → merge (highest leverage)
-- [x] **TSK-921 / 922** — close/open-split race — **FIXED on main** (`17932af8`: wave2 re-applied the worktree fix — `ContentView` observes `tabCoordinator` so `splitURL` re-bodies on open/close). Host teeth green (`SplitObservationTests` 5/5 + `ChromeBodyEvalCount` open/close re-body). At **review** (on-screen pixel = VM/owner). Board was stale (reconcile predated `17932af8`); both → `fixed` 2026-06-23.
-- [x] **TSK-1046** — scroll-reset on session/tab switch (**owner top priority**) — **FIX LANDED + VALIDATED on both surfaces** (`e50e4538` fix; `d1a1c36e` editor validation). RENDERED: on-screen green (`ScrollRestoreUATTests` SCROLL01/02, spawned-app UAT). EDITOR: live-CM6 green **in-process** (`EditorScrollRestoreWebViewTests.test_restoreSeed`, wired into `run_webview_tests` + nightly) — the spawned-app editor UAT is a dead end (CM6 WebContent jetsam in the GUI lane; see LESSONS). MODEL: host-tested (`editorMountSelectionSeed`) + owner manual confirm. At `review` (owner closes to done). Owner CONFIRMED fixed on-screen.
-  - Residual follow-ups (low-pri test-infra; not blocking): (a) `scrollToLine`-puts-line-at-TOP is NOT reliably testable in a headless in-process WKWebView (`applyScrollToLine` needs a measured viewport/rAF cycle that doesn't run headless — same limit BlameGutter works around with a repaintNudge); the restore path uses `scrollIntoView` which works headless, so the sibling guard was dropped. (b) TSK-1243's spawned-app diag scaffolding (`LiveScrollProbe.navLog`, `renderedProbeDiag`/`editorProbeDiag` dump fields, `EditorWarmCacheProbe`) is committed + harmless + useful, but could be tidied once the UAT lane is fully stable.
-- [ ] **TSK-1047** — warm-WebView cache for the CM6 editor pane (PERF: avoid the rebuild entirely on session/tab switch). DISTINCT from TSK-1046: the `editorMountSelectionSeed` SEED-belt (validated by `EditorScrollRestoreWebViewTests`) restores scroll on re-mount; TSK-1047's warm-cache would skip the re-mount. The warm-cache impl (`WarmEditorWebViewCache`, branch `worktree-agent-a7b9fc7b...`, commits `e25fc38f`/`539eb8f0`/`3c80a3c7`) FAILED on the VM (SCROLL03/04 still reset) and is at `progress` with DEBUG probes added — needs the VM `[WARMCACHE-PROBE]` trace to diagnose where park→re-attach breaks.
-
-### B. Render/VM tails — host/model half shipped, render remains (need the screen)
-- [ ] **1049** off-main image pipeline
-- [ ] **1055** paint commit-on-drag-end · [ ] **1101** paint gesture · [ ] **1102** CSV cell-cursor
-- [ ] **1127 / 1129 / 1136 / 463** LSP completion + workspace-binary-trust
-- [ ] **1151** View↔Edit line-height · [ ] **1175 / 1176** terminal color / history UI
-- [ ] **1182** diff multi-line select · [ ] **838 / 1183** WebView DOM-patch · [ ] **1141** xlsx sheet UI
-
-### C. Owner-gated — need a decision/flip
-- [ ] **TSK-1215** formula flip (`MDV_RUST_FORMULA`) — parity-clean; ON → live computed CSV formula values (user-facing)
-- [ ] **TSK-1202** folds flip (`MDV_RUST_FOLD`) — backend swap, parity-proven (no new user-visible feature)
-- [ ] **TSK-1138** Tier-D plugin contract · [ ] **1045** per-session DocumentModel · [ ] **854** kill Swift TS twin (approved) · [ ] dep-gated rust lanes 399/584/585/587/835
-
-### D. Epics (ongoing, slice-and-iterate)
-- [ ] **1048** image · [ ] **537** code-review · [ ] **538** rust-audit · [ ] **379** rust-migration
-- [ ] **694** log-clustering · [ ] **697/703/706/713/715/716/722/723** P7/P8 wish · [ ] **764** git-reconcile · [ ] **955/956/957/958** feeds/AU/macros/paste
-
-Metadata: TSK-589 `blocker=owner-decision` is stale (resolved 2026-06-19) → pure implementation now.
-
-> **Snapshot caveat:** this lane sweep was taken WHILE `board-reconcile-v2` was concurrently
-> refining the OPEN lanes (re-triaging, un-claiming stale leases, merging dupes). A handful of
-> these `TSK-###` ids may have shifted lane / been folded / re-stated since capture. Re-`task_get`
-> before acting on any single id; the board — not this file — is authoritative.
-
-## Lane snapshot (OPEN lanes, observed 2026-06-20)
-
-| Lane | ~Count | Notes |
-|---|---|---|
-| `reported` | ~176 | backlog; includes the large `[IMG]` MS-Paint-parity epic (TSK-1048..1090, ~43 tickets) + the wiring-tail (TSK-1100..1183) spun out of landed foundations |
-| `ack` | ~19 | acknowledged big `[WISH]` epics / spikes / very-large |
-| `triaged` | ~10 | scoped (incl. parked design-Qs + a few unblocked-but-not-started) |
-| `progress` | ~57 | claimed — mostly **stale-lease** (abandoned mid-work, lease long expired), a few genuinely in flight |
-| **= OPEN total** | **~262** | needs implementation (does NOT count `fixed`/`review`/`validated` awaiting-close) |
-
-(The `fixed`/`review`/`validated` "awaiting-close" pile from 06-19 — ~215 — is unchanged and lives
-in `docs/COMPLETED_ARCHIVE_2026-06-19.md` + `docs/AUTONOMOUS_PROGRESS.md`; closing those is the
-owner's `→done` / a VM render-validation pass.)
+image-editor (TSK-1048) · code-review (TSK-537) · rust-audit (TSK-538) · rust-migration (TSK-379) · remote-core (TSK-651, 13/14 children done) · feeds / AU / macros / paste (TSK-955–958) · git-reconcile (TSK-764) · tmux `-CC` live PTY + render (TSK-1023, host done) · PM-store FFI-link tail (TSK-345 slice-5b) · P7/P8 wishlist (TSK-697/703/706/713/715/716/722/723).
 
 ---
 
-## Next 50 — work list
-
-Prioritized; numbered 1–50. `task_next`'s pre-ranked head is **TSK-590** (review-lane epic, already
-agent-done — not an implementation pick). De-duped against the 06-19 carry-forward (those items are
-board tickets too; they are NOT repeated here). **Skip-but-note** owner-blocked items are listed at
-the very end of the tiers, not picked.
-
-### P0 — user-facing bugs + perf the owner can feel (1–14)
-
-1. **TSK-1046** [progress] — Scroll STILL resets on session/tab switch (render-path restore not applying) — live regression the owner sees every switch; model landed but bug persists.
-2. **TSK-598** [progress] — Opening MD files is very laggy (re-reported after the rendered-MD latency fix) — direct owner pain on the app's core action.
-3. **TSK-591** [progress] — Mouse-over on the file nav is very laggy — constant friction in the sidebar; perf the owner feels.
-4. **TSK-891** [reported] — Page Up is janky / not smooth (editor) — visible scroll-jank in the editor hot path.
-5. **TSK-838** [progress] — Rendered-MD WKWebView persistent page + DOM-patch (kill the 2–9s full-reload storm) — biggest single perf lever for the rendered view.
-6. **TSK-1183** [reported] — Wire the JS DOM-patch APPLY path (consume RenderedBlockDiff) — the apply half that actually delivers TSK-838's win to the screen.
-7. **TSK-986** [reported] — Hex search scans the full buffer synchronously on the main thread per keystroke (no debounce) — main-thread stall on every hex-search keypress.
-8. **TSK-1120** [reported] — Footer file-stats flaky between already-loaded tabs (SwiftUI re-body on selection) — visible footer flicker the owner notices on tab switch.
-9. **TSK-910** [progress] — Commit diff: only one line selectable — enable multi-line selection — broken interaction in the git-diff view.
-10. **TSK-1182** [reported] — Diff multi-line selection (collapse hunk into one selectable Text) — the plain-diff-mode half of the same multi-line-select bug.
-11. **TSK-732** [progress] — Font mismatch between View/Edit (and Shoulder); make seamless — jarring font shift the owner flagged.
-12. **TSK-1151** [reported] — View↔Edit line-height + size-rounding mismatch (CM6 hardcodes 1.45 / Int-rounds size) — the concrete root cause behind the View/Edit mismatch.
-13. **TSK-1049** [reported] — Image editor: off-main render pipeline + cached CIContext + render cancellation — image-editor responsiveness (do-first perf foundation).
-14. **TSK-1050** [reported] — Image editor: debounce + coalesce slider re-renders (make the claimed debounce real) — slider lag the owner feels in image editing.
-
-### P1 — user-facing features (15–38)
-
-15. **TSK-1051** [reported] — Image editor: decode-once base CGImage cache (stop re-decoding source per render) — image-editor perf foundation, unblocks the paint tools.
-16. **TSK-1053** [reported] — Image editor: off-main non-blocking save (drop runModal) — removes the save-time UI freeze.
-17. **TSK-1054** [reported] — New blank image creation flow (size + bg color) + File→New Image — net-new user-facing capability.
-18. **TSK-1101** [reported] — Wire tap/drag-to-paint gesture on the image-editor preview (TSK-285 gap) — makes the shipped raster-paint model actually usable on screen.
-19. **TSK-1056** [reported] — Pencil tool (1px free draw) — first concrete paint tool.
-20. **TSK-1057** [reported] — Eraser tool (erase to background color) — core paint tool.
-21. **TSK-1058** [reported] — Real click-drag Line tool (live preview + width) — core paint tool.
-22. **TSK-1059** [reported] — Real click-drag Rectangle tool (outline/fill/both) — core paint tool.
-23. **TSK-1060** [reported] — Ellipse tool (click-drag, outline/fill) — core paint tool.
-24. **TSK-1100** [reported] — Wire DependencyGraphView to a user-reachable entry point (TSK-280 follow-up) — surfaces a built-but-unreachable feature.
-25. **TSK-1102** [reported] — CSV grid: wire CSVCellCursor (arrow-key nav + focus ring + Cmd-C whole-cell copy) — surfaces the shipped cell-cursor model; long-standing CSV ask.
-26. **TSK-1103** [reported] — Local History: wire snapshot-on-save + version-list/restore UI (owner policy: diffs-only, 20MB cap, text-only, exclude secrets, default-on) — owner-resolved feature, store built, needs wiring.
-27. **TSK-1036** [reported] — Route .docx/.rtf/.ods/.xlsx into the viewer (consume the landed readers) — turns four shipped readers into a visible open-these-files capability.
-28. **TSK-1113** [reported] — Wire TextTransform case engine to an editor Transformations menu (Upper/Lower/Capitalize) — small visible TextEdit-parity win.
-29. **TSK-936** [reported] — Shortcut to toggle View-only mode — quick owner-requested shortcut.
-30. **TSK-709** [reported] — Unify Cmd+K, Cmd+G — owner-requested shortcut cleanup.
-31. **TSK-751** [reported] — Organize the menu items properly — owner-requested menu hygiene.
-32. **TSK-747** [progress] — New tab: offer other types (Sheet, Image) — visible new-tab UX.
-33. **TSK-1105** [reported] — Sessions-optional: user-facing Settings toggle for sessionsEnabled — exposes an existing pref the owner wants reachable.
-34. **TSK-1112** [reported] — Settings → Extensions tab: wire ExtensionsInventory into a unified Settings tab — surfaces installed extensions.
-35. **TSK-1107** [reported] — Walkthrough catalog/history/versioning UI — File>Walkthroughs browser (run/rename/delete + resume) — user-facing walkthrough management (TSK-316).
-36. **TSK-1115** [reported] — Render the awaitUser checkpoint reply UI (prompt + choice pills + free-form field) — completes the interactive-walkthrough loop (TSK-378).
-37. **TSK-1116** [reported] — Wire FocusWorkMode into a reachable View → Focus Mode menu — surfaces the focus-mode preset (TSK-381).
-38. **TSK-1143** [reported] — Unified search palette UI over SearchRouter (epic TSK-677 tail) — visible unified-search surface.
-
-### P2 — internal quality / rust-core / build / test (39–50)
-
-39. **TSK-1098** [reported] — Bundle-cap doc drifted AGAIN (docs say 48/26 MB; check-bundle-size.sh defaults 80/60 MB) — quick correctness fix, prevents silent budget drift.
-40. **TSK-543** [progress] — cm_apply ships the FULL document across FFI both ways per edit batch (~10x doc-size memory traffic/tick) — rust-core perf foundation behind editor latency.
-41. **TSK-1124** [reported] — Wire the stateful cm_apply-delta seam end-to-end (FFI method + Swift consumer) — the delivery half of TSK-543; stops shipping the full doc per keystroke.
-42. **TSK-589** [triaged] — CoreRuntime session eviction (owner-resolved: 512MiB/64docs/TTL-off, configurable) — owner-decided, now pure implementation; bounds unbounded handle map.
-43. **TSK-991** [reported] — SidebarModel.pruneChildrenCacheIfNeeded can't enforce the cap when expanded dirs exceed it — memory-bound correctness bug.
-44. **TSK-1110** [reported] — DocumentModel SRP split — continue extraction (slice 2+) — maintainability of the central model (TSK-382 follow-on).
-45. **TSK-847** [progress] — Bump headless-gate swift test to --num-workers 18 (run phase is I/O-bound) — faster CI/test loop (owner wants speed).
-46. **TSK-1181** [reported] — Split the slowest swift test classes (data-enabled follow-up to TSK-836) — test wall-clock reduction.
-47. **TSK-1131** [reported] — Add a non-gating code-coverage step (no coverage measured anywhere today) — test-infra gap from the TSK-788 audit.
-48. **TSK-1132** [reported] — Add a WebViewTestCase heavy-tier base so the 6 live-WKWebView suites stop escaping TierGateObserver — closes a tier-discipline hole.
-49. **TSK-1133** [reported] — pr.yml does NOT run the MDV_RUN_WEBVIEW_TESTS lane though CLAUDE.md/TierBaseCases claim it does — doc/CI truth mismatch.
-50. **TSK-1130** [reported] — Swift Testing hybrid pilot: one pure-logic suite + CLAUDE.md convention (owner-ratified TSK-787) — incremental test-framework modernization.
-
-### Skip-but-note — owner-blocked (do NOT pick autonomously)
-- **TSK-1045** [reported, `owner-decision`, waiting:human] — Per-session DocumentModel (Phase-2 seam): MAJOR refactor needing owner sign-off.
-- **TSK-854 / TSK-810** [reported, `owner-decision`] — Delete the Swift highlight twin / Stage-B hex carve-out fallback model.
-- **TSK-831 / TSK-852 / TSK-835** [reported, `owner-decision`/`dep-approval`] — Duplicate index-build tree reclone / CI .build cache / cargo-nextest.
-- **TSK-399 / TSK-584 / TSK-585 / TSK-587 / TSK-1137** [`dep-approval`] — memchr SIMD / fuzz / property-test / WASM / cargo-mutants lanes.
-- **TSK-508 / TSK-470 / TSK-956→TSK-1097 (VST)** [`owner-decision`] — digraph render approach / zoom split / VST-hosting non-goal.
-
----
-
-## Carried forward (06-19)
-
-The non-done content from `docs/CURATED_TASKS_2026-06-19.md`, de-duped against the Next-50 above
-(items already pulled into the 50 are not repeated). Done/landed items were dropped (archived in
-`docs/COMPLETED_ARCHIVE_2026-06-19.md`).
-
-### 🔓 OPEN — needs owner (decisions / dep-approvals — don't autonomously guess)
-- **Design decisions (spiked + parked):** 787 test-framework→HYBRID (note: TSK-1130 above ships the pilot) · 781 LSP→external+fallback (note: TSK-1126/1127/1128/1129 ship the slices) · 779 plugins/terminal-Tier-D · 775 migration D1/D2/D3 · 788 T5-coverage prioritization.
-- **Dep-approvals:** 897 (TreeSitter grammars + budget) · 399 (memchr SIMD) · 835 (cargo-nextest) · 851 (ccache) · 584/585/587 (fuzz/property/WASM lanes) · 1014 (tree-sitter-swift pin).
-- **Decisions:** 854 (delete Swift highlight twin) · 810 (Stage-B hex carve-out) · 589 (session eviction policy — NOW owner-RESOLVED → implementable, see TSK-589 #42 above) · 470 (zoom split) · 709 (Cmd+K/Cmd+G — picked at #30, owner may still want input on the unification scheme) · 751 (menu organization — picked at #31) · 791 (CM6 direction) · 936 (View-only shortcut keys — picked at #29) · 956 (VST hosting → 1097) · 301 (local history — owner-resolved → TSK-1103 at #26) · 508 (digraph render) · 498/852 (CI policy) · 831 (IDE indexing).
-- **Repro-needed:** 343 (image history/revert) · 733 (save-prompt on session switch).
-
-### 📋 OPEN — backlog not yet pulled (next waves)
-- **Perf (need VM/Instruments trace first):** 889 (JSON warm re-open) · 887/888 (palette/search residuals; follow-ons TSK-1179/1180 spun out) · 382 (DocumentModel memory — SRP-split continues at TSK-1110 #44).
-- **Architectural perf:** 838 (rendered-MD WKWebView persistent page + DOM-patch — biggest lever; **now picked at #5/#6** with the apply-path split out).
-- **Big epics (one-slice-and-iterate):** 711 CSV-editor · 712 3-way merge (UI tail TSK-1171) · 716 worktree-UX (UI tail TSK-1159) · 717 notebooks (UI tail TSK-1172) · 706 richtext (UI tail TSK-1156) · 703 action-history (UI tail TSK-1155) · 722 task-runner (UI tail TSK-1160) · 723 structural-search (UI tail TSK-1161) · 691 agent-harness · 701 SDLC-surface · 697 agent-services (tail TSK-1154) · 725 inspections · 764 git-reconciliation (TSK-1165/1166 wiring) · 772/773/777/782 plugin-expansion · 688 walkthrough-presentation · 680/682 docx/rtf (tails TSK-1144/1145) · 673/674 Excel (tail TSK-1141) · 715 profiling (tail TSK-1158) · 320/380/403-406 paint (now the large `[IMG]` epic TSK-1048..1090 + wiring tails TSK-1114/1118/1168).
-- **Very-large / aspirational:** 689 PinBoard · 694 log-clustering (UI tail TSK-1153) · 695 credential-handling · 700 collaboration · 702 Mac-intelligence · 774 Music · 687/693/699 agent-integrations · 250/256/409 web-port tail (note: TSK-256 markdown rendered web view is **unblocked + triaged**, a ready pick).
-
-### 🚧 Earlier follow-ups still open
-- **tmux `-CC` (epic TSK-964)** — slices **a/b/c are DONE + host-tested**: control-mode parser, layout-string parser, session/window/pane model + controller-core (`TmuxControlParser`/`TmuxLayoutParser`/`TmuxSession`/`TmuxControllerCore`, 122 host tests; `69aa58e3` + `4db0f360`). **REMAINING — TSK-1023/1018:** slice (d) live `tmux -CC` PTY spawn + pump + (e) SwiftUI split render + input-routing + resize — **VM-tail / render-coupled, NOT host-fan-out-able.** HOST GAP (found 2026-06-26): the **typed OUTBOUND command serializer** (app action → tmux command string: `split-window -h/-v`, `new-window`, `select-pane -t`, `send-keys -t` w/ escaping, `resize-pane`, `refresh-client -C`, `kill-pane`) is **not built** — `TmuxControllerCore.encodeCommand` takes RAW strings. → Ultracode `tmux-cc-harden` run (2026-06-26): build the outbound serializer + adversarially audit/harden the inbound codec vs the full control-mode spec.
-- **897** TreeSitter grammars (dep-approval).
-
-### New since 06-19 (board additions to be aware of)
-- **`[IMG]` MS-Paint parity epic** (TSK-1048 + ~43 children TSK-1049..1090): perf foundation (P0/do-first) → tools (pencil/eraser/line/rect/ellipse/brush) → selection → color model → transforms → file formats → advanced. The P0/do-first slices are pulled into the Next-50 (#13–#23); the rest iterate behind them.
-- **`[AU]` Audio Units hosting epic** (TSK-956 + TSK-1091..1097): mostly `live-validation`-gated; TSK-1097 (formalize VST as a non-goal) is host-completable.
-- **`[LSP]` robustness slices** (TSK-1126..1129, TSK-1136) and **`[TEST-INFRA]`** gaps (TSK-1130..1134) spun out of the owner-ratified TSK-781/787/788 spikes.
-- **Wiring-tail cluster** (TSK-1100..1183): each surfaces a built-but-unreachable foundation from the ultracode wave (deps graph, CSV cursor, local history, treemap, focus mode, walkthrough catalog, search palette, feed reader, etc.).
-```
-
----
-
-## Quick Wins — to get OwnerWishlist items fully DONE (2026-06-20)
-
-**Source:** `OwnerWishlist.md` (truth-marked: `x`=done, `>`=partial/near-done, `-`=not-done). Each item below was
-judged against the actual repo (`Sources/`/`Tests/`) by four exploration passes, so "quick" is measured, not assumed.
-Effort buckets: **TINY** = a constant/one-rule change; **SMALL** = ~5–60 lines + a test; bigger items excluded.
-Ordered smallest-effort-first within each area. (Board `q` free-text filter is currently broken — IDs were
-cross-checked via `task_get` + the docs; topics with no dedicated open ticket are marked "no ticket".)
-
-> **Reconciliation note (read before picking):** many wishlist `>` items turned out ALREADY DONE on a fresh repo
-> read and were dropped from this list — multi-cursor (TSK-639 validated), git blame gutter + toggle (TSK-814
-> validated), Cmd+F-toggles-closed (TSK-739 validated), terminal tab rename (TSK-771, model+menu shipped),
-> plain-text-default for renderable-ASCII (TSK-332 validated), markdown outline panel (already wired in
-> `LSPOutlineSection.swift`), LSP rename + code actions (fully wired in `DocumentModel`), and several pure-CSS/markup
-> items already shipped (task-list `[x]` strikethrough `markdown.css:185`, preview-tab italic-not-bold
-> `TabTitleStyle.swift:19`, unsaved blue dot `TabBar.swift:404`, CM6 default keymap arrows/Cmd/Opt/Home/End,
-> sidebar lock/pin, file-nav fuzzy filter, right-click New File, terminal open-in-pwd, window-size persistence).
-
-### Editor / find (CM6 + find bars)
-
-- **~~no ticket~~ DONE (TSK-1209, verified 2026-06-26)** — *Tooltip popup fires too soon (open delay should ~2×)* — `TooltipTiming.appearDelay` is already `0.6` (`FloatingTooltip.swift:36`, comment cites the owner's "0.3 fired too soon").
-- **~~no ticket~~ DONE (verified 2026-06-26)** — *Blinking cursor width +1px in Editor* — `.cm-cursor, .cm-dropCursor { border-left-width: 2px; }` already present (`codemirror.css:114`).
-- **~~no ticket~~ LIKELY DONE (2026-06-26)** — *Cmd+F "again should keep the prev find text" for Rendered + Source bars* — STALE entry: a draft mechanism already does this — `dismissRenderedBar()`/`dismissSourceBar()` save the query into `renderedQueryDraft`/`sourceQueryDraft` before wiping it, and `showRenderedBar()` (`FindCoordinator.swift:47-48`) restores the draft on re-open. (Rendered/source intentionally WIPE-then-draft rather than the editor's keep-and-gate; both achieve "keep prev text". Verify source `showSourceBar` symmetry before closing.)
-- **~~no ticket~~ DONE (verified 2026-06-26)** — *Tab should insert a literal tab, not indent the line* — already implemented (`codemirror.html:817-824`: "Owner ask: a plain Tab at the caret inserts a LITERAL tab character (\t)", ordered before `indentWithTab`, Shift-Tab still dedents).
-- **TSK-1270** — *After dismissing Find bar in Rendered MD view, highlights remain* — DIAGNOSED 2026-06-26: the Swift wiring is CORRECT — `dismissRenderedBar()` wipes `renderedQuery→""` (`FindCoordinator.swift:53-57`), ContentView feeds `""` to the view, and `updateNSView` runs `__mdvFindClear()` (`MarkdownRenderedView.swift:370-378`). So the presented-gate is NOT the bug (rendered wipes the query, unlike the editor which keeps+gates). Residual cause is the JS clear itself (`__mdvFindClear`, `MarkdownRenderedView.swift:871`) likely not removing the ACTIVE/current-match highlight (separate element/style from the plain `<mark>`s), or stale since the Jun-20 wishlist. NEEDS VM repro + JS inspection (render-tier, can't observe host-only). **SMALL (JS).**
-- **TSK-1272** — *Cmd+F when File-nav is focused opens the tab's finder* — VERIFIED OPEN 2026-06-26: `findInPage()` (`main.swift:3632`) routes by view-mode only, never checks first-responder; add a `firstResponder`-is-sidebar check before routing. **SMALL (render/first-responder → review).**
-- **TSK-1271** — *In Find mode, can't scroll past the currently-selected match* — JS `scrollIntoView({block:'center'})` exists (`MarkdownRenderedView.swift:847`); needs user-scroll-aware re-centering (or a documented behavior note). **SMALL (UX, no data risk).**
-
-### Wiring-tail (engine built + tested, needs a menu/UI hook)
-
-- **TSK-936** — *Shortcut to toggle View-only mode* — `readOnly` facet already plumbed into CM6 (`CodeMirrorEditorView.swift:40`); add a `View → Toggle Read-Only` menu item + keybinding + `@Published` toggle. **TINY.**
-- **TSK-1113** — *TextTransform → editor Transformations menu (Upper/Lower/Capitalize)* — `TextTransform.edit(...)` engine done + tested (`ViewerCore/TextTransform.swift`); add 3 DocumentModel methods + an Edit-menu submenu. **SMALL.**
-- **TSK-1103** — *Local History: snapshot-on-save + version-list/restore UI* — `LocalHistoryStore.swift` engine done + tested; owner policy already resolved (diffs-only/20MB/text-only/default-on); build the version-list view + restore action + save hook. **SMALL.**
-
-### Special chars / invisibles
-
-- **TSK-359** — *Special chars appear grey / invisibles too grey* — readable-invisibles infra exists (`SourceInvisiblesView.swift` Canvas overlay); remaining = stop the OS `NSLayoutManager.showsInvisibleCharacters` grey from double-rendering under the overlay. NOTE: ticket is currently `wontdo` (owner park-resolved the NSLayoutManager conflict) — would need a reopen before working. **SMALL.**
-
-### Terminal
-
-- **TSK-1273** — *Terminal header pane: "Terminal — Name [pwd, pid]"* — VERIFIED OPEN 2026-06-26: tab labels/titles + live cwd (OSC 7) already tracked (`TerminalPaneStore.swift:243`, `TerminalModel.swift:148`) + `PTYProcess.childPID` exists (`PTYProcess.swift:53`) but is NOT surfaced; expose it up to the model + add a header SwiftUI row. **SMALL (render → review).**
-```
+*The autonomous loop drains this top-down. When the host-completable surface is drained (as now), it validates / reconciles / audit-hardens and surfaces the owner-unblocks in section E, acting the moment a new board item, env-unblock, or owner decision appears. Priority lives HERE + on the board — issues the agent must know live in CLAUDE.md / docs/TASK_WORKFLOW.md / memory.*
