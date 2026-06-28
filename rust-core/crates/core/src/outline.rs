@@ -233,6 +233,29 @@ fn fence_marker(line: &str) -> Option<(char, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Any content wrapped in a fenced code block yields NO headings — a `#`
+        /// (or any heading-looking line) inside a fence is code, not a heading.
+        /// The generated lines contain no fence markers (charset excludes ` and ~)
+        /// and no setext underlines (excludes = and -), so the wrapping fence stays
+        /// open over all of them; this stresses fence suppression against arbitrary
+        /// indented / length-varied `#` lines the example tests can't enumerate.
+        #[test]
+        fn fenced_content_yields_no_headings(
+            lines in proptest::collection::vec("[ #a-z0-9]{0,30}", 0..15),
+        ) {
+            let mut doc = String::from("```\n");
+            for l in &lines {
+                doc.push_str(l);
+                doc.push('\n');
+            }
+            doc.push_str("```\n");
+            let hs = headings(&doc, "x.md");
+            prop_assert!(hs.is_empty(), "fenced content must yield no headings; got {hs:?}");
+        }
+    }
 
     fn titles(hs: &[Heading]) -> Vec<&str> {
         hs.iter().map(|h| h.title.as_str()).collect()
