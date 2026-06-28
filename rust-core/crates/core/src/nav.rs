@@ -858,4 +858,64 @@ mod tests {
         seen.dedup();
         assert_eq!(seen.len(), hits.len(), "no duplicate indices");
     }
+
+    // --- Property tests (TSK-585 differential lane) ---------------------------
+    use proptest::prelude::*;
+
+    /// Independent subsequence oracle: every byte of `needle` appears in `name`
+    /// in order (ASCII-folded unless case-sensitive). Pre-folds the needle and
+    /// scans with a cursor — structurally different from `score_match`'s inline-
+    /// folded indexed walk, so any divergence is a real bug in one.
+    fn naive_subseq(name: &str, needle: &str, case_sensitive: bool) -> bool {
+        let fold = |b: u8| if case_sensitive { b } else { b.to_ascii_lowercase() };
+        let pat: Vec<u8> = needle.bytes().map(fold).collect();
+        let mut pi = 0usize;
+        for hb in name.bytes() {
+            if pi < pat.len() && fold(hb) == pat[pi] {
+                pi += 1;
+            }
+        }
+        pi == pat.len()
+    }
+
+    proptest! {
+        /// `filter_entries` returns EXACTLY the entries of which `needle` is a
+        /// subsequence — soundness + completeness vs the independent oracle —
+        /// for arbitrary small mixed-case names + needle, both case modes. The
+        /// small alphabet makes matches frequent and exercises ASCII folding.
+        #[test]
+        fn filter_returns_exactly_subsequence_matches(
+            names in proptest::collection::vec("[a-cA-C.]{0,8}", 0..12),
+            needle in "[a-cA-C]{0,4}",
+            case_sensitive in any::<bool>(),
+        ) {
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let hits = filter_entries(&refs, &needle, case_sensitive);
+            let returned: std::collections::HashSet<usize> =
+                hits.iter().map(|&(i, _)| i).collect();
+            for (i, name) in refs.iter().enumerate() {
+                let should = naive_subseq(name, &needle, case_sensitive);
+                prop_assert_eq!(returned.contains(&i), should,
+                    "entry {} ({:?}) subsequence-match mismatch", i, name);
+            }
+        }
+
+        /// Results are ordered best-first: score non-increasing, equal scores
+        /// keep ascending original index (stable + deterministic tie-break).
+        #[test]
+        fn filter_results_ordered_score_desc_then_index_asc(
+            names in proptest::collection::vec("[a-cA-C.]{0,8}", 0..12),
+            needle in "[a-cA-C]{0,4}",
+            case_sensitive in any::<bool>(),
+        ) {
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let hits = filter_entries(&refs, &needle, case_sensitive);
+            for w in hits.windows(2) {
+                prop_assert!(
+                    w[0].1 > w[1].1 || (w[0].1 == w[1].1 && w[0].0 < w[1].0),
+                    "results must be score-desc then index-asc; got {:?} then {:?}",
+                    w[0], w[1]);
+            }
+        }
+    }
 }
