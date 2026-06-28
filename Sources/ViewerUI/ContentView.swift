@@ -1015,6 +1015,10 @@ public struct ContentView: View {
             // TSK-905: only the ACTIVE tab's preview answers the focus nonce
             // (a background sibling must never grab first responder).
             focusRequest: isActive ? model.previewFocusRequest : 0,
+            // TSK-1271: while the find bar holds focus, forward scroll keys to
+            // this ACTIVE pane's webview (background siblings ignore the nonce).
+            findScrollNonce: isActive ? model.renderedFindScrollRequest : 0,
+            findScrollCommand: model.renderedFindScrollCommand,
             // TSK-821: per-file rendered-scroll persistence — capture this
             // file's scrollY before it's swapped out, restore it on return.
             fileURL: file.url,

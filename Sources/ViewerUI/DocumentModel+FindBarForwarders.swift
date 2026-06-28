@@ -61,6 +61,17 @@ extension DocumentModel {
         get { find.renderedFocusRequest }
         set { find.renderedFocusRequest = newValue }
     }
+    /// Find-bar scroll-key forwarding (TSK-1271) — see `FindCoordinator.renderedScroll`.
+    public var renderedFindScrollRequest: Int {
+        get { find.renderedScrollRequest }
+        set { find.renderedScrollRequest = newValue }
+    }
+    public var renderedFindScrollCommand: FindCoordinator.RenderedScrollCommand {
+        find.renderedScrollCommand
+    }
+    public func renderedFindScroll(_ command: FindCoordinator.RenderedScrollCommand) {
+        find.renderedScroll(command)
+    }
 
     public func setRenderedFindMatchSummary(_ s: String) {
         find.setRenderedMatchSummary(s)

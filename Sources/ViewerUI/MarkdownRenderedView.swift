@@ -36,6 +36,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     /// first-responder-by-tab-position by default, so a preview that isn't the
     /// last tab is otherwise dead to arrow keys.
     public let focusRequest: Int
+    /// Find-bar scroll-key forwarding (TSK-1271): a nonce + the scroll command
+    /// the rendered find bar forwards while it holds first responder, so the
+    /// page still scrolls (the keys would otherwise die in the find field).
+    public let findScrollNonce: Int
+    public let findScrollCommand: FindCoordinator.RenderedScrollCommand
     /// TSK-821 (rendered scroll persistence): the file URL this pane shows
     /// (keys the per-file scroll memory) + the bridge to the model's
     /// `renderedScrollByURL`. `onScrollCapture` reports the OUTGOING file's
@@ -77,6 +82,8 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         pdfExportURL: URL? = nil,
         onPDFExportResult: ((Int, Bool, String) -> Void)? = nil,
         focusRequest: Int = 0,
+        findScrollNonce: Int = 0,
+        findScrollCommand: FindCoordinator.RenderedScrollCommand = .pageDown,
         fileURL: URL? = nil,
         restoreScrollY: Double? = nil,
         onScrollCapture: ((URL, Double) -> Void)? = nil
@@ -96,6 +103,8 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.pdfExportURL = pdfExportURL
         self.onPDFExportResult = onPDFExportResult
         self.focusRequest = focusRequest
+        self.findScrollNonce = findScrollNonce
+        self.findScrollCommand = findScrollCommand
         self.fileURL = fileURL
         self.restoreScrollY = restoreScrollY
         self.onScrollCapture = onScrollCapture
@@ -149,6 +158,19 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             + "; window.mdvApplyBlockPatch('body', JSON.stringify(\(payload)));",
             completionHandler: nil)
         return true
+    }
+
+    /// JS to scroll the rendered page for a find-bar-forwarded scroll key
+    /// (TSK-1271). Page keys move ~90% of the viewport (the standard page-scroll
+    /// overlap); line keys move a fixed step. Pure + `internal` so the headless
+    /// model test can assert the mapping without a live WebView.
+    static func scrollJS(_ command: FindCoordinator.RenderedScrollCommand) -> String {
+        switch command {
+        case .pageDown: return "window.scrollBy(0, Math.round(window.innerHeight * 0.9));"
+        case .pageUp:   return "window.scrollBy(0, -Math.round(window.innerHeight * 0.9));"
+        case .lineDown: return "window.scrollBy(0, 40);"
+        case .lineUp:   return "window.scrollBy(0, -40);"
+        }
     }
 
     static func applyContentScale(_ scale: Double, to webView: WKWebView) {
@@ -441,6 +463,14 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             c.lastFocusRequest = focusRequest
             webView.window?.makeFirstResponder(webView)
         }
+        // Find-bar scroll-key forwarding (TSK-1271): while the find bar holds
+        // first responder, document-scroll keys land in its text field, not the
+        // webview. The bar forwards them as scroll commands; scroll the page so
+        // the user isn't pinned at the current match.
+        if c.lastScrollNonce != findScrollNonce {
+            c.lastScrollNonce = findScrollNonce
+            webView.evaluateJavaScript(Self.scrollJS(findScrollCommand), completionHandler: nil)
+        }
         // Print / Export-as-PDF (TSK-638).
         if c.lastPrintNonce != printNonce {
             c.lastPrintNonce = printNonce
@@ -674,6 +704,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         var lastPrintNonce: Int = 0
         var lastPDFExportNonce: Int = 0
         var lastFocusRequest: Int = 0
+        var lastScrollNonce: Int = 0
         /// Reported back via SwiftUI: true/false = last find's matchFound.
         var onFindResult: ((Bool?) -> Void)? = nil
         /// Match count + current index + pre-formatted "n/N" summary,

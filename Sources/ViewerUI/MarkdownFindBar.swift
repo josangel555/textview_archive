@@ -45,10 +45,20 @@ struct FindBar: View {
     /// (rendered / source) — the replace row is then omitted entirely.
     /// Present (editor) → the disclosure + replace row are shown.
     var replace: ReplaceConfig? = nil
+    /// Forward document-scroll keys (PageUp/PageDown/arrows) pressed while the
+    /// find field holds focus, so the underlying document still scrolls instead
+    /// of the keys dying in the text field (TSK-1271). nil on surfaces that
+    /// manage their own scrolling (source NSTextView / CM6); the rendered bar
+    /// sets it. These keys have no useful single-line-field action, so
+    /// repurposing them to scroll is safe.
+    var onScrollKey: ((ScrollKey) -> Void)? = nil
 
     @FocusState private var focusedField: Field?
 
     private enum Field { case find, replace }
+
+    /// Document-scroll keys the find field forwards to `onScrollKey` (TSK-1271).
+    enum ScrollKey { case pageDown, pageUp, lineDown, lineUp }
 
     enum NoResultsMode {
         /// Rendered view: WKWebView returns a bool — we know "no
@@ -171,6 +181,12 @@ struct FindBar: View {
                 .font(.system(size: uiSize(12)))
                 .focused($focusedField, equals: .find)
                 .onSubmit { onNext() }
+                // TSK-1271: scroll keys would otherwise die in the focused find
+                // field; forward them so the document still scrolls.
+                .onKeyPress(.pageDown) { forwardScroll(.pageDown) }
+                .onKeyPress(.pageUp) { forwardScroll(.pageUp) }
+                .onKeyPress(.downArrow) { forwardScroll(.lineDown) }
+                .onKeyPress(.upArrow) { forwardScroll(.lineUp) }
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -337,6 +353,16 @@ struct FindBar: View {
     /// True when the bar is in its visible "No results" state. Mirrors
     /// the rendering condition in `body` so the announcement fires for
     /// exactly the cases that paint the orange label.
+    /// Forward a document-scroll key to `onScrollKey` (TSK-1271). Returns
+    /// `.handled` only when a consumer is wired (the rendered bar); otherwise
+    /// `.ignored`, so the key keeps its normal text-field behavior on surfaces
+    /// that don't forward (source / editor).
+    private func forwardScroll(_ key: ScrollKey) -> KeyPress.Result {
+        guard let onScrollKey else { return .ignored }
+        onScrollKey(key)
+        return .handled
+    }
+
     private var hasNoResults: Bool {
         guard !query.isEmpty else { return false }
         switch noResultsMode {
@@ -374,8 +400,18 @@ struct MarkdownFindBar: View {
             onPrev: { find.renderedPrev() },
             onDismiss: { find.dismissRenderedBar() },
             accessibilityID: "mdv.renderedFindBar",
-            uiSize: uiSize
+            uiSize: uiSize,
             // No `replace`: rendered markdown is read-only.
+            // TSK-1271: forward scroll keys to the rendered webview so the user
+            // can scroll the document while the find bar holds focus.
+            onScrollKey: { key in
+                switch key {
+                case .pageDown: find.renderedScroll(.pageDown)
+                case .pageUp: find.renderedScroll(.pageUp)
+                case .lineDown: find.renderedScroll(.lineDown)
+                case .lineUp: find.renderedScroll(.lineUp)
+                }
+            }
         )
     }
 }

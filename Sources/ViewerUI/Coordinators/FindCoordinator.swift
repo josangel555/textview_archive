@@ -65,6 +65,23 @@ public final class FindCoordinator: ObservableObject {
     public func renderedNext() { renderedNextRequest &+= 1 }
     public func renderedPrev() { renderedPrevRequest &+= 1 }
 
+    /// Document-scroll keys forwarded from the rendered find bar (TSK-1271).
+    /// While the find bar holds first responder, scroll keys (PageUp/PageDown/
+    /// arrows) land in its text field — not the WKWebView — so the bar forwards
+    /// them here and `MarkdownRenderedView` scrolls the page, so the user isn't
+    /// pinned at the current match. Command shape (value + nonce): a repeat
+    /// press of the same key must always re-fire, so the nonce bumps every press
+    /// while the command carries the direction.
+    public enum RenderedScrollCommand: String, Sendable, CaseIterable {
+        case pageDown, pageUp, lineDown, lineUp
+    }
+    @Published public var renderedScrollRequest: Int = 0
+    public private(set) var renderedScrollCommand: RenderedScrollCommand = .pageDown
+    public func renderedScroll(_ command: RenderedScrollCommand) {
+        renderedScrollCommand = command
+        renderedScrollRequest &+= 1
+    }
+
     // MARK: Source (NSTextView)
 
     @Published public var isSourceBarPresented: Bool = false

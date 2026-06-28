@@ -51,6 +51,52 @@ final class FindCoordinatorTests: XCTestCase {
         XCTAssertEqual(f.renderedPrevRequest, p0 &+ 1)
     }
 
+    // MARK: Rendered scroll-key forwarding (TSK-1271)
+
+    func test_rendered_scroll_bumpsRequestAndSetsCommand() {
+        let f = FindCoordinator()
+        let n0 = f.renderedScrollRequest
+        f.renderedScroll(.pageDown)
+        XCTAssertEqual(f.renderedScrollRequest, n0 &+ 1)
+        XCTAssertEqual(f.renderedScrollCommand, .pageDown)
+        f.renderedScroll(.lineUp)
+        XCTAssertEqual(f.renderedScrollRequest, n0 &+ 2)
+        XCTAssertEqual(f.renderedScrollCommand, .lineUp)
+    }
+
+    func test_rendered_scroll_repeatSameCommand_stillBumps() {
+        // Command, not value: a repeat PageDown must re-fire so a held key keeps
+        // scrolling (SwiftUI value-blind dedupe would swallow a plain value).
+        let f = FindCoordinator()
+        f.renderedScroll(.pageDown)
+        let n1 = f.renderedScrollRequest
+        f.renderedScroll(.pageDown)
+        XCTAssertEqual(f.renderedScrollRequest, n1 &+ 1)
+        XCTAssertEqual(f.renderedScrollCommand, .pageDown)
+    }
+
+    func test_rendered_scroll_doesNotTouchOtherBags() {
+        let f = FindCoordinator()
+        let s0 = f.sourceNextRequest, e0 = f.editorNextRequest
+        f.renderedScroll(.pageUp)
+        XCTAssertEqual(f.sourceNextRequest, s0)
+        XCTAssertEqual(f.editorNextRequest, e0)
+    }
+
+    func test_scrollJS_mapsEachCommand_toDirectionalScrollBy() {
+        // The JS each scroll command injects into the rendered WKWebView. Page
+        // keys move ~90% of the viewport (down +, up -); line keys a fixed step.
+        XCTAssertEqual(MarkdownRenderedView.scrollJS(.pageDown),
+                       "window.scrollBy(0, Math.round(window.innerHeight * 0.9));")
+        XCTAssertEqual(MarkdownRenderedView.scrollJS(.pageUp),
+                       "window.scrollBy(0, -Math.round(window.innerHeight * 0.9));")
+        XCTAssertEqual(MarkdownRenderedView.scrollJS(.lineDown), "window.scrollBy(0, 40);")
+        XCTAssertEqual(MarkdownRenderedView.scrollJS(.lineUp), "window.scrollBy(0, -40);")
+        // pageDown vs pageUp differ only by sign — guards a copy-paste direction bug.
+        XCTAssertNotEqual(MarkdownRenderedView.scrollJS(.pageDown),
+                          MarkdownRenderedView.scrollJS(.pageUp))
+    }
+
     func test_rendered_matchSummary_dedupes() async {
         let f = FindCoordinator()
         var count = 0
