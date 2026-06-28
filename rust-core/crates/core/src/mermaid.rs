@@ -311,4 +311,29 @@ mod tests {
             "data-mdv-steps=\"[{&quot;line&quot;:1,&quot;step&quot;:1}]\""
         ));
     }
+
+    // --- Property tests (TSK-585 lane): parse robustness + render_host XSS -----
+    use proptest::prelude::*;
+
+    proptest! {
+        /// parse never panics on arbitrary mermaid source (untrusted input).
+        #[test]
+        fn parse_never_panics(source in "[<>&\"'/a-z0-9 \n=():.-]{0,80}") {
+            let _ = parse(&source);
+        }
+
+        /// render_host is XSS-safe: the source is always HTML-escaped, so the
+        /// output is exactly one <div>…</div> and the source can inject NO tags
+        /// — every raw '<' is one of the two wrapping div tags, for ANY source.
+        #[test]
+        fn render_host_escapes_source_no_tag_injection(
+            source in "[<>&\"'/a-z0-9 \n=():.-]{0,80}",
+        ) {
+            let html = render_host(&source);
+            prop_assert!(html.starts_with("<div "));
+            prop_assert!(html.ends_with("</div>\n"));
+            prop_assert_eq!(html.matches('<').count(), 2);
+            prop_assert!(!html.to_lowercase().contains("<script"));
+        }
+    }
 }
