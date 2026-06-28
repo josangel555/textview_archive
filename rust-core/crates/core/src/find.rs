@@ -585,4 +585,102 @@ mod tests {
         assert_eq!((2 + 1) % n, 0, "forward from last wraps to first");
         assert_eq!((n - 1) % n, 2, "backward from first wraps to last");
     }
+
+    // --- Property tests (TSK-585 differential lane) ---------------------------
+    use proptest::prelude::*;
+
+    /// A second, structurally-DIFFERENT non-overlapping substring scanner: a
+    /// manual byte-window compare per CR-stripped line (vs `find_matches`'s
+    /// `str::find` loop). Same contract — line-split on `\n`, trailing `\r`
+    /// stripped, ASCII fold, non-overlapping, byte offsets — so any divergence
+    /// is a real bug in one of them.
+    fn naive_find(text: &str, query: &str, case: Case) -> Vec<Match> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let needle = fold(query, case);
+        let nb = needle.as_bytes();
+        let mut out = Vec::new();
+        for (idx, raw) in text.split('\n').enumerate() {
+            let line = raw.strip_suffix('\r').unwrap_or(raw);
+            let hay = fold(line, case);
+            let hb = hay.as_bytes();
+            let mut i = 0usize;
+            while i + nb.len() <= hb.len() {
+                if &hb[i..i + nb.len()] == nb {
+                    out.push(Match { line: idx, start: i, end: i + nb.len() });
+                    i += nb.len(); // non-overlapping: resume past the hit
+                } else {
+                    i += 1;
+                }
+            }
+        }
+        out
+    }
+
+    proptest! {
+        /// `find_matches` agrees with the independent naive scanner on arbitrary
+        /// multi-line text. The small mixed-case alphabet (+ CR/LF/space) makes
+        /// matches frequent and exercises ASCII folding + `\r` stripping in both
+        /// case modes — edge cases the example tests can't enumerate.
+        #[test]
+        fn matches_agree_with_naive(
+            text in "[aAbB \r\n]{0,80}",
+            query in "[aAbB]{1,3}",
+            insensitive in any::<bool>(),
+        ) {
+            let case = if insensitive { Case::Insensitive } else { Case::Sensitive };
+            prop_assert_eq!(find_matches(&text, &query, case), naive_find(&text, &query, case));
+        }
+
+        /// Every reported match is VALID — its range lies within the CR-stripped
+        /// line and the folded slice there equals the folded query (no false
+        /// positives) — and matches on one line stay ordered + non-overlapping.
+        #[test]
+        fn matches_are_valid_and_nonoverlapping(
+            text in "[aAbB \r\n]{0,80}",
+            query in "[aAbB]{1,3}",
+            insensitive in any::<bool>(),
+        ) {
+            let case = if insensitive { Case::Insensitive } else { Case::Sensitive };
+            let ms = find_matches(&text, &query, case);
+            let lines: Vec<&str> = text.split('\n').collect();
+            let folded_q = fold(&query, case);
+            let mut prev: Option<(usize, usize)> = None; // (line, end)
+            for m in &ms {
+                let raw = lines[m.line];
+                let line = raw.strip_suffix('\r').unwrap_or(raw);
+                prop_assert!(m.start < m.end && m.end <= line.len());
+                let folded_line = fold(line, case);
+                prop_assert_eq!(&folded_line.as_bytes()[m.start..m.end], folded_q.as_bytes());
+                if let Some((pl, pe)) = prev {
+                    prop_assert!(pl != m.line || m.start >= pe,
+                        "matches on a line must not overlap");
+                }
+                prev = Some((m.line, m.end));
+            }
+        }
+
+        /// `grep_lines` (built on `find_matches`) returns DISTINCT lines in
+        /// ascending document order, each genuinely containing the query.
+        #[test]
+        fn grep_lines_distinct_and_contain_query(
+            text in "[aAbB \r\n]{0,80}",
+            query in "[aAbB]{1,3}",
+            insensitive in any::<bool>(),
+        ) {
+            let case = if insensitive { Case::Insensitive } else { Case::Sensitive };
+            let hits = grep_lines(&text, &query, case, 0);
+            let folded_q = fold(&query, case);
+            let mut last_line: Option<usize> = None;
+            for h in &hits {
+                if let Some(ll) = last_line {
+                    prop_assert!(h.line > ll, "grep lines must be distinct + ascending");
+                }
+                last_line = Some(h.line);
+                prop_assert!(fold(&h.text, case).contains(folded_q.as_ref()),
+                    "a grep hit line must contain the query");
+            }
+        }
+    }
 }
