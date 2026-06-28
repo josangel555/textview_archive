@@ -277,4 +277,28 @@ mod tests {
     struct DiffReq<'a> {
         text: &'a str,
     }
+
+    // --- Property test (TSK-585 lane): dispatch robustness (FFI boundary) -----
+    use proptest::prelude::*;
+
+    proptest! {
+        /// call never panics on ANY method + arbitrary req/aux frame bytes — the
+        /// FFI dispatch boundary decodes untrusted frames, so a malformed frame
+        /// must return Err(WireFault), never crash. No fuzz target for the router.
+        #[test]
+        fn call_never_panics_on_arbitrary_frames(
+            method in proptest::sample::select(vec![
+                Method::CmApply, Method::DiffParse, Method::DiffHunkMarks, Method::FuzzyRank,
+                Method::FindSearch, Method::MarkdownRender, Method::TranscriptParse,
+                Method::TranscriptParseForcedRedaction, Method::HighlightRuns, Method::HexSearch,
+                Method::IndentDetect, Method::HexRender, Method::FormulaEvaluate,
+                Method::FormulaRecalc, Method::FoldRegions, Method::CmApplyDelta,
+                Method::HtmlBlockPatch,
+            ]),
+            req in proptest::collection::vec(any::<u8>(), 0..64),
+            aux in proptest::collection::vec(any::<u8>(), 0..32),
+        ) {
+            let _ = call(method, &req, &aux);
+        }
+    }
 }
