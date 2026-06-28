@@ -219,6 +219,14 @@ final class ViewModeMatrixSmokeTests: MultiScenarioTestCase {
         // One short delay to let the launch open settle into `from`, then
         // the single switch verb. NO delay after the switch — the switch's
         // own 300 ms post-step capture is the unmasked observation point.
+        // LOAD-SENSITIVE BY DESIGN (2026-06-27): this tight window is
+        // load-bearing (proves the SWITCH re-rendered, before any unrelated tick
+        // could mask a missing-republish defect) and MUST NOT be widened. Cost:
+        // the heaviest case `md_rendered-to-hex` (WebView teardown → hex-grid
+        // mount) can exceed 300 ms even when CORRECT under full-suite VM load →
+        // false fail. RE-RUN ISOLATED (`test-in-vm.sh test --filter
+        // ViewModeMatrixSmokeTests`) before treating a full-`all`-run fail of
+        // this case as real — confirmed isolated-pass 2026-06-27. See LESSONS.md.
         let script = """
         delay 0.8
         editor-set-mode \(to)
