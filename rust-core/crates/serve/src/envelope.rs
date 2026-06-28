@@ -462,4 +462,93 @@ mod tests {
         push_uint(&mut bytes, 1);
         assert!(decode(&bytes).is_err());
     }
+
+    // ---- DIY fuzz (no proptest dep — mirrors the core crate's xorshift fuzz
+    // lane, seed 0x9E37…). `decode` is the UNTRUSTED-wire boundary, so its hard
+    // contract is "never panic on arbitrary/truncated bytes" (Ok or Err, never a
+    // crash); `encode` must round-trip. MDV_FUZZ_SEED_BASE overrides the seed for
+    // a nightly seed sweep. The example tests above pin specific shapes; these
+    // sweep the space.
+
+    fn fuzz_seed() -> u64 {
+        std::env::var("MDV_FUZZ_SEED_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0x9E37_79B9_7F4A_7C15)
+    }
+
+    fn xorshift(state: &mut u64) -> u64 {
+        let mut x = *state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        *state = x;
+        x
+    }
+
+    fn rand_bytes(st: &mut u64, max: usize) -> Vec<u8> {
+        let n = usize::try_from(xorshift(st)).unwrap_or(0) % (max + 1);
+        (0..n)
+            .map(|_| u8::try_from(xorshift(st) & 0xff).unwrap_or(0))
+            .collect()
+    }
+
+    fn rand_str(st: &mut u64, max: usize) -> String {
+        let n = usize::try_from(xorshift(st)).unwrap_or(0) % (max + 1);
+        // Printable ASCII: valid UTF-8 (the decoder from_utf8's it) and within
+        // the encoder's ≤255-byte fixstr/str8 domain, so the round-trip is exact.
+        (0..n)
+            .map(|_| char::from(u8::try_from(0x21 + (xorshift(st) % 0x5e)).unwrap_or(b'x')))
+            .collect()
+    }
+
+    fn arbitrary_frame(st: &mut u64) -> Frame {
+        let id = xorshift(st);
+        let body = rand_bytes(st, 40);
+        match xorshift(st) % 3 {
+            0 => Frame::Request {
+                id,
+                method: rand_str(st, 40),
+                body,
+                aux: rand_bytes(st, 40),
+            },
+            1 => {
+                if (xorshift(st) & 1) == 0 {
+                    Frame::Response { id, body: Some(body), error: None }
+                } else {
+                    Frame::Response {
+                        id,
+                        body: None,
+                        error: Some(WireError { code: rand_str(st, 20), text: rand_str(st, 40) }),
+                    }
+                }
+            }
+            _ => Frame::Event {
+                sub: id,
+                seq: xorshift(st),
+                kind: rand_str(st, 20),
+                body,
+            },
+        }
+    }
+
+    #[test]
+    fn envelope_fuzz_decode_never_panics_on_arbitrary_bytes() {
+        let mut st = fuzz_seed();
+        for _ in 0..20_000 {
+            let bytes = rand_bytes(&mut st, 80);
+            // A hostile/truncated frame must yield Ok or Err — never panic.
+            let _ = decode(&bytes);
+        }
+    }
+
+    #[test]
+    fn envelope_fuzz_round_trip_arbitrary_frames() {
+        let mut st = fuzz_seed();
+        for _ in 0..5_000 {
+            let f = arbitrary_frame(&mut st);
+            let got = decode(&encode(&f)).expect("encode output must always decode");
+            assert_eq!(got, f, "round-trip mismatch for {f:?}");
+        }
+    }
 }
