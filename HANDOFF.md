@@ -14,8 +14,8 @@ Suites this stretch (on top of pre-existing cm_edit/csv/diff/filter/hex/fuzzy/fo
 find · nav (filter/sort/history) · format · indent · theme · view · meta · table_arena · markdown (SECURITY: safe_url XSS + escape) · image (no-panic byte parser) · mermaid (parse no-panic + render_host XSS-safe) · history (MRU) · runtime (eviction_plan — MEATY memory-eviction contract) · find_engine (UTF-16 position validity + literal count).
 Recent commits: meta `c7a1b22f` · table_arena `1a08d43c` · markdown `739eb73d` · image `e4109259` · mermaid `842af055` · history `0e2ea84d` · runtime `e12e5f32` · find_engine `<this commit>`.
 
-### B. DocumentModel SRP split (TSK-1110) — 7 clean slices, ~803 lines out (DONE, at natural pause)
-DocumentModel.swift 7692→6889. Moved cohesive method groups to `DocumentModel+X.swift` extensions. KEY PATTERN: move the METHODS to a cross-file extension, LEAVE @Published/stored state on the main class (an extension can read/call members; it can't declare stored props or write a private(set) setter). Three sub-patterns for private state the moved methods touch: (a) VEND a setter for public-API private(set) contracts; (b) WIDEN private→internal for pure impl details; (c) MOVE the private helper with the group when all callers are in-set. All ZERO render risk.
+### B. DocumentModel SRP split (TSK-1110) — 8 clean slices, ~867 lines out (track RE-ENTERED — the "pause" was premature)
+DocumentModel.swift 7692→6825. The slice-8 (code-folding) re-entry DISPROVED the "only HEX/Opening/Tab remain" claim — a fresh MARK scan found several cohesive clusters still cleanly extractable: git-diff-gutter (~299L), scroll-persistence (~428L), CM6-completion-bridge (~638L), view-mode-control (~166L), raw-HTML-JS (~240L). Re-scan, don't assume. Moved cohesive method groups to `DocumentModel+X.swift` extensions. KEY PATTERN: move the METHODS to a cross-file extension, LEAVE @Published/stored state on the main class (an extension can read/call members; it can't declare stored props or write a private(set) setter). Three sub-patterns for private state the moved methods touch: (a) VEND a setter for public-API private(set) contracts; (b) WIDEN private→internal for pure impl details; (c) MOVE the private helper with the group when all callers are in-set. All ZERO render risk.
 
 ## Next action (post-compaction — fresh context)
 1. `git log -1` (expect the find_engine proptest commit); rust gate = `bash scripts/rust-core-gate.sh`; host gate = `bash scripts/test-headless-gate.sh`.
@@ -26,7 +26,7 @@ DocumentModel.swift 7692→6889. Moved cohesive method groups to `DocumentModel+
    - **board hygiene**: reconcile the NEXT clear high-value stale `review` head if `task_next` surfaces one (don't churn the ~410 pool).
    - Re-run the empirical sweep for OTHER kinds of work — but the rust property-test vein is exhausted (grep both `proptest!` AND `*_fuzz_*` before assuming a gap).
 
-## SRP split — at its NATURAL PAUSE (track-2 is entangled, design-grade)
+## SRP split — track ACTIVE (clean clusters remain); the entangled tail (track-2, design-grade)
 - **Editable HEX (~273L)**: 3 stored vars + DisplayedText struct + the GENERAL displayedText/displayText dispatchers (used widely — they STAY) are interleaved between HEX-edit clusters; saveHexEdits touches watcher/lspPool/repoFocus/tabCoordinator. ~5 error-prone interleaved edits, modest payoff.
 - **Opening files (~1000L) / Tab management (~850L)**: huge, core, entangled. Careful-only.
 
