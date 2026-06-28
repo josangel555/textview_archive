@@ -4120,106 +4120,6 @@ public final class DocumentModel: ObservableObject {
         editor.discardEditorBuffer(forTabID: id)
     }
 
-    // MARK: - Save a Copy (TSK-300)
-
-    public enum SaveCopyError: Error, Equatable {
-        case noTab          // index out of range
-        case emptyTab       // nothing to copy (no URL and no editable buffer)
-        case encodingFailed // editor text couldn't be encoded
-    }
-
-    /// Write a COPY of the tab at `index` to `target`, leaving the open tab
-    /// fully untouched (URL, dirty state, editor/HEX buffers, the file
-    /// watcher — a copy is a side write, NOT a save of the active document).
-    ///
-    /// Captures the tab's CURRENT effective content so unsaved edits are
-    /// included, most-specific first:
-    ///   1. editable-HEX dirty bytes (#234), else
-    ///   2. the editor buffer's live text (when dirty), else
-    ///   3. a verbatim copy of the file on disk.
-    ///
-    /// (3) streams via `FileManager.copyItem` (no slurp into memory, preserves
-    /// attributes); the dirty cases write atomically. Overwrite is supported
-    /// (the SavePanel confirms it) without a data-loss window: case (3) copies
-    /// to a temp sibling then `replaceItemAt`, and the dirty cases use atomic
-    /// writes. This is the headless/automation core (`save-copy` verb); the
-    /// menu + `NSSavePanel` that pick `target` are a thin live follow-up.
-    @discardableResult
-    public func saveCopy(ofTabAt index: Int, to target: URL) throws -> Bool {
-        guard tabs.tabs.indices.contains(index) else { throw SaveCopyError.noTab }
-        let tab = tabs.tabs[index]
-
-        // 1. HEX-dirty bytes win (most specific live edit).
-        if let bytes = hexDirtyBytes[tab.id] {
-            try bytes.write(to: target, options: .atomic)
-            return true
-        }
-        // 2. Editor-dirty text, encoded with the buffer's own encoding.
-        // Encode with the buffer's OWN encoding only — do NOT silently fall
-        // back to UTF-8 (the old `?? buf.text.data(using: .utf8)` made
-        // `SaveCopyError.encodingFailed` dead code, since UTF-8 represents
-        // any String). A silent re-encode is data corruption: a "Save a
-        // Copy" of a Shift-JIS / Latin-1 buffer that the user expects to
-        // round-trip would land as UTF-8 with a different byte stream and a
-        // mismatched declared encoding. Mirror `EditorWriter.save`: surface
-        // the failure so the caller can prompt to switch encoding.
-        if let buf = editor.editorBuffer(forTabID: tab.id), buf.isDirty {
-            guard let data = buf.text.data(using: buf.encoding) else {
-                throw SaveCopyError.encodingFailed
-            }
-            try data.write(to: target, options: .atomic)
-            return true
-        }
-        // 3. Verbatim copy of the on-disk file (streamed, attribute-preserving).
-        guard let src = tab.url else { throw SaveCopyError.emptyTab }
-        let tmp = target.deletingLastPathComponent()
-            .appendingPathComponent(".mdv-savecopy-\(UUID().uuidString).tmp")
-        try FileManager.default.copyItem(at: src, to: tmp)
-        do {
-            if FileManager.default.fileExists(atPath: target.path) {
-                _ = try FileManager.default.replaceItemAt(target, withItemAt: tmp)
-            } else {
-                try FileManager.default.moveItem(at: tmp, to: target)
-            }
-        } catch {
-            try? FileManager.default.removeItem(at: tmp)
-            throw error
-        }
-        return true
-    }
-
-    /// Convenience: save a copy of the currently-selected tab. Returns false
-    /// if there is no selection; rethrows write failures.
-    @discardableResult
-    public func saveCopyOfCurrentTab(to target: URL) throws -> Bool {
-        guard let i = tabs.selectedIndex else { return false }
-        return try saveCopy(ofTabAt: i, to: target)
-    }
-
-    /// Whether "Save a Copy…" has anything to write for the current tab —
-    /// drives the File-menu item's `validateMenuItem`. True when a tab is
-    /// selected AND it has on-disk content, a non-empty editor buffer, or
-    /// pending HEX-dirty bytes (the three sources `saveCopy` draws from). A
-    /// blank Untitled tab with no edits has nothing to copy → disabled.
-    public var canSaveCopyOfCurrentTab: Bool {
-        guard let tab = tabs.selected else { return false }
-        if tab.url != nil { return true }
-        if let buf = editor.editorBuffer(forTabID: tab.id), !buf.text.isEmpty { return true }
-        return hexDirtyBytes[tab.id] != nil
-    }
-
-    /// A suggested filename for the Save-a-Copy panel: the current tab's own
-    /// name, else a generic default. Pure so the menu layer doesn't reach
-    /// into tab internals.
-    public var saveCopySuggestedName: String {
-        tabs.selected?.url?.lastPathComponent ?? "Untitled.txt"
-    }
-
-    /// Forwarder. New code should call `editor.confirmCloseIfDirty(at:)`.
-    public func confirmCloseIfDirty(at index: Int) -> DirtyClosePrompt? {
-        editor.confirmCloseIfDirty(at: index)
-    }
-
     // MARK: - Editable HEX (#234)
 
     /// Latest dirty byte buffer per HEX tab. Stashed here (not just in the
@@ -4233,7 +4133,14 @@ public final class DocumentModel: ObservableObject {
     /// headless HEX suite assert leak-freedom (every close path empties
     /// the entry) and Discard/Cancel byte behavior without exposing the
     /// mutable dict. `internal` — reachable only via `@testable import`.
-    func peekHexDirtyBytesForTest(_ id: UUID) -> Data? { hexDirtyBytes[id] }
+    func peekHexDirtyBytesForTest(_ id: UUID) -> Data? { dirtyHexBytes(forTabID: id) }
+
+    /// Read the pending dirty HEX bytes for a tab — the most-specific live
+    /// content source for Save-a-Copy. Vends the private `hexDirtyBytes` stash
+    /// WITHOUT exposing the mutable dict, so the SaveCopy extension (a separate
+    /// file) reads through this rather than reaching the storage directly
+    /// (TSK-1110 SRP split — keeps the HEX state encapsulated).
+    func dirtyHexBytes(forTabID id: UUID) -> Data? { hexDirtyBytes[id] }
 
     /// Mirror the HEX edit buffer's dirty state onto `Tab.isDirty` (the
     /// TabBar dot + the close-confirm gate, both reused unchanged from the

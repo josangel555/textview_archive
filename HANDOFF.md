@@ -15,7 +15,7 @@ Autonomous drain loop (5-min cron). Drain BACKLOG.md top-down by owner priority,
 
 ## Key finding — the host-completable surface is DRAINED
 The clean, low-coupling, forwarder-style SRP slices (Format, FindBar, Editor forwarders) are DONE. The **remaining TSK-1110 slices are coupled to core private state → genuine access-boundary DESIGN, not mechanical verbatim moves** (documented in detail on the TSK-1110 board comment):
-- Save-a-Copy reads `private var hexDirtyBytes` (the HEX section's mutable state) → needs a vended read accessor (e.g. `dirtyHexBytes(forTabID:)`; `hexDirtyBytes(forTabID:)` collides with the property name), NOT a widen (which would leak mutable state). Its MARK section also has a stray `confirmCloseIfDirty` editor-forwarder that belongs in `DocumentModel+EditorForwarders.swift`.
+- Save-a-Copy: DONE — carved into `DocumentModel+SaveCopy.swift` (with the close-dirty forwarder, grouped as file-lifecycle) via a NEW vended `dirtyHexBytes(forTabID:)` accessor that keeps `hexDirtyBytes` private. THIS is the pattern for the remaining coupled slices: define the vended read accessor first, then move (no mutable-state widen).
 - Editable-HEX is ~726 lines (owns hexDirtyBytes); Print/Export-PDF + Open-As… likely couple to rendered-webview/view-mode state (unverified).
 The rest of BACKLOG's Next-50 is **render-VM / owner-gated / engine** (P1 features have host models mostly built; tails need a VM session or owner flip).
 
