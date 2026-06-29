@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — autonomous drain: render-tail (→review) drained → pivoted to the DocumentModel SRP vein (→validated). (2026-06-28)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `140a6a03` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `d2111fd2` (verify `git log -1`)
 
 ## Mission + OWNER DIRECTIVES (read first)
 Autonomous drain loop (cron). Build INLINE, ONE item/firing: spike → implement → test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold LESSONS/AP/CHANGELOG into the item's commit; NEVER idle/stop ("no work" = process failure).
@@ -17,7 +17,7 @@ Autonomous drain loop (cron). Build INLINE, ONE item/firing: spike → implement
 **Render-tail features (→review; render/VM = owner/VM closes pixels):** TSK-1271 find-scroll (`6e9e4efb`) · 1136/463 editor autocomplete (`868b4c74`,`2716669a`) · 924/1187 CSV multi-cell (verified done) · 1139 CSV viewport pager host core (`2830d9e2`) · 1163/958 Universal Paste (`e3438e72`).
 **TSK-1146 editor spell-check — COMPLETE (→review), all 6 layers:** SpellCheckEngine → MarkdownSpellMask code-skip (`925b2481`) → SpellDiagnosticMapping (`a6715db7`) → EditorCoordinator source-tracked spell+LSP merge (`f9649a3f`) → updateEditorText debounced trigger (`eb75cef6`) → CM6 lintGutter render. Prose-gated (md/txt, 200K cap), markdown-aware, churn-guarded; host-tested every layer.
 **rust-core:** `whitespace::reveal` proptest hardening (`f38478c3`, run-fresh per-module sweep found the gap).
-**DocumentModel SRP slices (→validated-grade, behavior-preserving):** Focus-shortcuts (`aed6171c`) · view-hosting `DocumentModel+ViewHosting.swift` (`8e47f361`) · command-registry `+CommandRegistry.swift` (`5061d6bf`) · active-theme `+Theming.swift` (`52d6e72b`) · highlight-cache `+Highlighting.swift` (`140a6a03`). Now 25 `DocumentModel+*.swift` extensions; DocumentModel.swift ~5660 lines.
+**DocumentModel SRP slices (→validated-grade, behavior-preserving) — 14 this session:** focus-shortcuts (`aed6171c`) · view-hosting (`8e47f361`) · command-registry (`5061d6bf`) · theming (`52d6e72b`) · highlighting (`140a6a03`) · print/export (`04037cd3`) · rendered-cache (`7866ffe5`) · display-text (`edebd323`) · terminal-launch (`dfa1f1f4`) · active-file-LSP (`41199958`) · editor-buffer (`4c24a122`) · LSP-shared (`2f2494f6`) · CM6-hover (`9fd59346`) · CM6-completion (`d2111fd2`). Now **34 `DocumentModel+*.swift` extensions; DocumentModel.swift 5835 → ~5150 lines**. KEY learning: the core bridges DO decompose sub-cluster by sub-cluster (the "big-bang-only" worry was wrong — extract the request/response pairs, leave the big resolution method).
 **Gate reliability:** killed the recurring CrossFileSearchBench false-red (`6455a6ae`) — a wall-clock RATIO assert can't measure inside the parallel gate; now skips under `MDV_HEADLESS_GATE` (see LESSONS).
 
 ## Gotchas / lessons (also in LESSONS.md)
@@ -29,7 +29,7 @@ Autonomous drain loop (cron). Build INLINE, ONE item/firing: spike → implement
 ## Next action (post-compaction)
 1. `git log -1`; confirm gate-green at HEAD.
 2. Engagement check: `mcp__tasked__audit {actor_kind:human, since:1782461740655}` (empty = owner hasn't touched the board).
-3. **Continue the TSK-1110 SRP vein** (the flowing lane). Next clean clusters in DocumentModel.swift: **Print/Export-PDF** (contiguous ~3210), **Editable-HEX** (#234, ~2611), **Rendered-markdown-cache** (~2994), **Open-As** (interleaved w/ view-mode-lock — needs care), then the big **Opening-files** + **Tab-management** blocks. Per slice: read the cluster → write `DocumentModel+X.swift` → move methods (stored props stay, widen access as the compiler demands) → `swift build` → host gate → commit + record on TSK-1110 (epic stays open).
+3. **Continue the TSK-1110 SRP vein** (the flowing lane). DONE this session: print/export, rendered-cache, display-text, terminal-launch, active-file-LSP, editor-buffer, LSP-shared, CM6-hover, CM6-completion. REMAINING clusters in DocumentModel.swift: **`handleCompletionRequest`** (~566 lines — ONE cohesive method = a clean single-method move, but reproducing 566 lines verbatim is botch-prone; weigh it), **Editable-HEX** (#234, ~2611 — IO/`saveHexEdits` + NSAlert UI, interleaved stored props), **Open-As** (interleaved w/ view-mode-lock), and the big **Opening-files** (~1144) + **Tab-management** (~846) hot-path blocks (decompose sub-cluster by sub-cluster, don't big-bang). Per slice: read the cluster → write `DocumentModel+X.swift` → move methods (stored props stay, widen access as the compiler demands) → `swift build` → host gate → commit + record on TSK-1110 (epic stays open).
 4. If a NEW signal appears (owner board action / new reported bug), act on it first. Do NOT build occlusion-class render blind; do NOT manufacture marginal sweeps (the coverage/rust per-module veins are drained — re-verify fresh before claiming, but they came up dry).
 
 ## How to resume
