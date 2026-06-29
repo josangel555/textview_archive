@@ -51,4 +51,21 @@ public enum Exporter {
         let image = try Renderer.render(doc)
         return try encode(image, spec)
     }
+
+    /// Convert an existing image FILE to `spec`'s format/quality (TSK-1325 — image
+    /// format/quality change). Decodes the first frame via ImageIO, then re-encodes
+    /// through `encode`. A pure file→bytes transform (no editing ops) — host-testable;
+    /// the convert UI (pick target format + quality) is the ViewerUI tail. Throws
+    /// `sourceNotReadable` (missing/unreadable path), `sourceDecodeFailed` (not an
+    /// image ImageIO can decode), or `encodeFailed` (unsupported write UTI).
+    public static func convert(contentsOf url: URL, to spec: ExportSpec) throws -> Data {
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
+            throw ImageEditError.sourceNotReadable
+        }
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+            throw ImageEditError.sourceDecodeFailed
+        }
+        return try encode(image, spec)
+    }
 }
