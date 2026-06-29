@@ -159,7 +159,7 @@ struct SidebarView: View {
             // FILES sits at the top now and keeps its flex-fill
             // (`maxHeight: .infinity`) behaviour, so it absorbs
             // any leftover vertical space.
-            filesPanel
+            if filesPanelVisible { filesPanel }
             // TSK-440 bug (B): the FILES↔accordion boundary gets a
             // resizable divider whenever FILES is expanded and at least
             // one tool window is visible below it — previously FILES +
@@ -167,7 +167,7 @@ struct SidebarView: View {
             // height key (it's the flex-fill), so the divider drives the
             // FIRST tool window inversely: drag down grows FILES by
             // shrinking the tool below.
-            if let fullPlan = filesBoundaryPlan, fullPlan.drawFilesDivider,
+            if filesPanelVisible, let fullPlan = filesBoundaryPlan, fullPlan.drawFilesDivider,
                let first = fullPlan.entries.first {
                 ResizableSectionDivider(
                     heightAbove: nil,
@@ -541,6 +541,17 @@ struct SidebarView: View {
     // single "No folder open" placeholder line; the sections below
     // (Bookmarks, etc.) still render normally so the user can pick
     // a bookmarked folder without first opening one.
+    /// TSK-1314: the FILES tree must respect its per-panel `.files` override (the
+    /// shoulder toggle), not just `rootURL`. Same class as the bug5 pluginSections
+    /// fix above — a panel mounted on a presence/root check that bypassed
+    /// `panelLayout.isVisible`, so its rail `.hidden` override was computed but never
+    /// read (file-nav stayed visible when only Bookmark was enabled). `.auto`
+    /// resolves to data-presence (rootURL), so the default behaviour is unchanged;
+    /// only an explicit `.hidden` toggle now hides the tree.
+    private var filesPanelVisible: Bool {
+        panelLayout.isVisible(.files, dataPresent: SidebarDataPresence.isPresent(.files, presenceInputs))
+    }
+
     @ViewBuilder
     private var filesPanel: some View {
         if sidebar.rootURL != nil {
