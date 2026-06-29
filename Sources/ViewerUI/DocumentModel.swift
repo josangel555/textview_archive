@@ -275,7 +275,9 @@ public final class DocumentModel: ObservableObject {
     @Published public var isLSPRenamePromptPresented: Bool = false
     /// Initial text for the rename field — empty for now (the user types the
     /// new name); a prepareRename placeholder is a follow-up.
-    public private(set) var lspRenamePrefill: String = ""
+    /// `internal(set)`: the rename-prompt methods in DocumentModel+LSPEditorCommands.swift
+    /// (TSK-1110 SRP slice) seed/clear this cross-file.
+    public internal(set) var lspRenamePrefill: String = ""
 
     /// LSP "Code Actions…" picker (TSK-640). The command/menu opens it; it
     /// fetches actions at the cursor (async), presents the list, and applies the
@@ -1633,136 +1635,13 @@ public final class DocumentModel: ObservableObject {
     var _lastRenameSkippedURIs: [String] = []
     #endif
 
-    /// `editor.rename` (TSK-640 stage 2): rename the symbol at the active
-    /// editor cursor via `textDocument/rename`. Apply policy, deliberate:
-    ///   • the DISPATCHING buffer is snapshot-guarded exactly like
-    ///     `formatActiveEditorViaLSP` — a keystroke racing the server wins;
-    ///   • edits to OTHER OPEN tabs apply against their current buffer
-    ///     text (cross-file rename inside the session);
-    ///   • edits to files NOT open anywhere are SKIPPED, never written to
-    ///     disk behind the user's back (recorded for diagnostics).
-    /// Returns false when there is no selected tab/URL, no LSP language,
-    /// no editor buffer, no cursor, or an empty new name.
-    @discardableResult
-    public func renameActiveEditorSymbolViaLSP(newName: String) -> Bool {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        guard let tab = tabs.selected, let url = tab.url else { return false }
-        guard lspLanguageConfigured(for: url) else { return false }
-        guard let buf = editor.editorBuffers[tab.id] else { return false }
-        guard let cursor = editor.editorCursorByTab[tab.id] else { return false }
-        let tabID = tab.id
-        let snapshot = buf.text
-        #if DEBUG
-        _lastRenameDispatch = (url, trimmed)
-        #endif
-        Task { [weak self] in
-            guard let self = self else { return }
-            do {
-                let workspaceEdit = try await self.lspPool.rename(
-                    fileURL: url, line: cursor.line, character: cursor.column,
-                    newName: trimmed)
-                guard !workspaceEdit.isEmpty else { return }
-                await MainActor.run {
-                    self.applyWorkspaceEditToOpenTabs(
-                        workspaceEdit, dispatchTabID: tabID, dispatchSnapshot: snapshot)
-                }
-            } catch {
-                // Same silent-failure contract as format/go-to: a server
-                // error degrades to "nothing happened".
-            }
-        }
-        return true
-    }
-
-    /// Whether the active editor offers an LSP rename right now: a selected
-    /// tab with an LSP-registered language, a live editor buffer, and a
-    /// recorded cursor. Mirrors `renameActiveEditorSymbolViaLSP`'s guards
-    /// (minus the new-name check, which is submit-time) so the command/menu can
-    /// gate enablement and `showLSPRenamePrompt` can refuse on a non-rename-able
-    /// context. (TSK-640.)
-    public var canRenameActiveEditorSymbol: Bool {
-        guard let tab = tabs.selected, let url = tab.url else { return false }
-        guard lspLanguageConfigured(for: url) else { return false }
-        guard editor.editorBuffers[tab.id] != nil else { return false }
-        guard editor.editorCursorByTab[tab.id] != nil else { return false }
-        return true
-    }
-
-    /// Present the rename prompt IF the active editor is rename-able (else a
-    /// silent no-op — the command's enablement already greys it, this guards
-    /// the script/programmatic path). The prompt's submit calls
-    /// `submitLSPRename`. (TSK-640.)
-    public func showLSPRenamePrompt() {
-        guard canRenameActiveEditorSymbol else { return }
-        lspRenamePrefill = ""
-        isLSPRenamePromptPresented = true
-    }
-
-    public func dismissLSPRenamePrompt() {
-        isLSPRenamePromptPresented = false
-        lspRenamePrefill = ""
-    }
-
-    /// Submit the rename prompt: dispatch the (host-tested) rename and dismiss.
-    /// Returns the dispatch result (false = guards refused / blank name) so the
-    /// view can beep on a no-op. (TSK-640.)
-    @discardableResult
-    public func submitLSPRename(_ newName: String) -> Bool {
-        let dispatched = renameActiveEditorSymbolViaLSP(newName: newName)
-        dismissLSPRenamePrompt()
-        return dispatched
-    }
-
-    /// Apply a decoded WorkspaceEdit to the open tabs (see the policy on
-    /// `renameActiveEditorSymbolViaLSP`; `applyCodeAction` shares it).
-    private func applyWorkspaceEditToOpenTabs(
-        _ workspaceEdit: [String: [LSPTextEdit]],
-        dispatchTabID: UUID,
-        dispatchSnapshot: String
-    ) {
-        #if DEBUG
-        _lastRenameSkippedURIs = []
-        #endif
-        for (uri, edits) in workspaceEdit {
-            guard !edits.isEmpty,
-                  let editURL = URL(string: uri), editURL.isFileURL else { continue }
-            let editPath = editURL.standardizedFileURL.resolvingSymlinksInPath().path
-            let target = tabs.tabs.first { t in
-                guard let u = t.url else { return false }
-                return u.standardizedFileURL.resolvingSymlinksInPath().path == editPath
-            }
-            guard let target, let buffer = editor.editorBuffers[target.id] else {
-                #if DEBUG
-                _lastRenameSkippedURIs.append(uri)
-                #endif
-                continue
-            }
-            if target.id == dispatchTabID {
-                // Snapshot guard: the user typed while the server worked —
-                // their text wins, the stale edits drop.
-                guard buffer.text == dispatchSnapshot else { continue }
-            }
-            let updated = LSPTextEditApplier.apply(edits, to: buffer.text, encoding: .utf16)
-            if updated != buffer.text {
-                updateEditorText(updated, forTabID: target.id)
-            }
-        }
-    }
-
-    #if DEBUG
-    /// Test-only door to the private apply step (the skip policy can't be
-    /// reached through the fake server, whose fixture only ever edits the
-    /// requested file).
-    func _applyRenameWorkspaceEditForTesting(
-        _ workspaceEdit: [String: [LSPTextEdit]],
-        dispatchTabID: UUID,
-        dispatchSnapshot: String
-    ) {
-        applyWorkspaceEditToOpenTabs(
-            workspaceEdit, dispatchTabID: dispatchTabID, dispatchSnapshot: dispatchSnapshot)
-    }
-    #endif
+    // LSP rename (renameActiveEditorSymbolViaLSP / canRenameActiveEditorSymbol /
+    // showLSPRenamePrompt / dismissLSPRenamePrompt / submitLSPRename) + the shared
+    // applyWorkspaceEditToOpenTabs (now internal; the code-action commands below
+    // call it cross-file until they move too) → DocumentModel+LSPEditorCommands.swift
+    // (TSK-1110 SRP slice). The _lastRenameDispatch / _lastRenameSkippedURIs DEBUG
+    // probes above + the lspRenamePrefill / isLSPRenamePromptPresented @Published
+    // prompt state stay here.
 
     /// `editor.codeActions` (TSK-640): actions available at the active
     /// editor cursor (an empty range at the cursor position). Returns []
