@@ -257,6 +257,55 @@ final class EditorCoordinatorTests: XCTestCase {
                       "LSP re-publish must not clobber spell")
     }
 
+    func test_shouldSpellCheckEditor_proseUnderCap_true() {
+        XCTAssertTrue(EditorCoordinator.shouldSpellCheckEditor(
+            url: URL(fileURLWithPath: "/a/b.md"), textLength: 100))
+        XCTAssertTrue(EditorCoordinator.shouldSpellCheckEditor(
+            url: URL(fileURLWithPath: "/a/b.txt"), textLength: 100))
+    }
+
+    func test_shouldSpellCheckEditor_codeOverCapNilEmpty_false() {
+        XCTAssertFalse(EditorCoordinator.shouldSpellCheckEditor(
+            url: URL(fileURLWithPath: "/a/b.swift"), textLength: 100))   // code
+        XCTAssertFalse(EditorCoordinator.shouldSpellCheckEditor(
+            url: URL(fileURLWithPath: "/a/b.md"), textLength: 300_000))  // over cap
+        XCTAssertFalse(EditorCoordinator.shouldSpellCheckEditor(url: nil, textLength: 100))
+        XCTAssertFalse(EditorCoordinator.shouldSpellCheckEditor(
+            url: URL(fileURLWithPath: "/a/b.md"), textLength: 0))        // empty
+    }
+
+    func test_isMarkdownProse() {
+        XCTAssertTrue(EditorCoordinator.isMarkdownProse(url: URL(fileURLWithPath: "/a.md")))
+        XCTAssertFalse(EditorCoordinator.isMarkdownProse(url: URL(fileURLWithPath: "/a.txt")))
+        XCTAssertFalse(EditorCoordinator.isMarkdownProse(url: URL(fileURLWithPath: "/a.swift")))
+    }
+
+    func test_runEditorSpellPass_codeFile_publishesNoSpell() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let id = UUID()
+        // A code file is gated out — no spell layer published even with misspellings.
+        ec.runEditorSpellPass(text: "mispeld wrods everywher",
+                              url: URL(fileURLWithPath: "/a.swift"), forTabID: id)
+        XCTAssertNil(ec.pendingEditorDiagnostics[id])
+    }
+
+    func test_setEditorSpellDiagnostics_unchangedEmpty_noRepublish() async {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let id = UUID()
+        var count = 0
+        let sub = ec.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        // Empty spell on a fresh tab is a no-op — must NOT publish (no churn for
+        // code files that clear the empty layer on every keystroke).
+        ec.setEditorSpellDiagnostics([], forTabID: id)
+        await Task.yield()
+        XCTAssertEqual(count, 0)
+    }
+
     func test_setEditorDiagnostics_unknownURL_isNoOp() throws {
         let tc = TabCoordinator()
         let ec = EditorCoordinator(tabCoordinator: tc)

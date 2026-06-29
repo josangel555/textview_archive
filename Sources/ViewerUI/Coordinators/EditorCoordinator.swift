@@ -494,6 +494,9 @@ public final class EditorCoordinator: ObservableObject {
                 onReplaceTab?(idx, t)
             }
         }
+        // TSK-1146: re-spell-check on change (prose files only; CM6 already
+        // debounces text changes, and the seam dedupes an unchanged result).
+        runEditorSpellPass(text: newText, url: tabs.first { $0.id == id }?.url, forTabID: id)
     }
 
     // MARK: - Cursor / scroll persistence
@@ -627,9 +630,48 @@ public final class EditorCoordinator: ObservableObject {
     /// `issues` clears the spell layer while LSP diagnostics survive.
     public func setEditorSpellDiagnostics(_ issues: [SpellingIssue], forTabID id: UUID) {
         let spell = SpellDiagnosticMapping.cmDiagnostics(from: issues)
+        // Dedupe: an unchanged spell layer must NOT re-publish — else a code file
+        // (which clears the empty spell layer on every keystroke) would re-ship
+        // its LSP diagnostics to CM6 on every edit (churn).
+        guard (spellEditorDiagnostics[id] ?? []) != spell else { return }
         spellEditorDiagnostics[id] = spell
         pendingEditorDiagnostics[id] = Self.mergeEditorDiagnostics(
             lspEditorDiagnostics[id] ?? [], spell)
+    }
+
+    /// Prose file extensions that get editor spell-check; code/CSV/etc. are
+    /// excluded (spell-checking identifiers is noise). `textLength` cap keeps a
+    /// huge file from paying a whole-doc NSSpellChecker pass per (debounced) edit.
+    static func shouldSpellCheckEditor(url: URL?, textLength: Int) -> Bool {
+        guard textLength > 0, textLength <= 200_000 else { return false }
+        return proseExtension(url)
+    }
+    private static func proseExtension(_ url: URL?) -> Bool {
+        guard let ext = url?.pathExtension.lowercased() else { return false }
+        return ["md", "markdown", "mdown", "mkd", "mdwn", "txt", "text"].contains(ext)
+    }
+    /// Markdown (vs plain text) — markdown gets the code-span/fence mask so
+    /// spell-check skips code; plain text is checked whole.
+    static func isMarkdownProse(url: URL?) -> Bool {
+        guard let ext = url?.pathExtension.lowercased() else { return false }
+        return ["md", "markdown", "mdown", "mkd", "mdwn"].contains(ext)
+    }
+
+    /// Run a spell pass over the editor text and publish the results as CM6
+    /// squiggles (TSK-1146), merged with any LSP diagnostics. No-op-clears for
+    /// non-prose / over-cap files. Called from `updateEditorText` (CM6 already
+    /// debounces text changes). Runs on the main actor — fine for the capped
+    /// prose size; an off-main / visible-range pass is a perf follow-on.
+    func runEditorSpellPass(text: String, url: URL?, forTabID id: UUID) {
+        guard Self.shouldSpellCheckEditor(url: url, textLength: text.utf16.count) else {
+            setEditorSpellDiagnostics([], forTabID: id)
+            return
+        }
+        var issues = SpellCheckEngine().misspelledSpans(in: text)
+        if Self.isMarkdownProse(url: url) {
+            issues = MarkdownSpellMask.filterProse(issues, in: text)
+        }
+        setEditorSpellDiagnostics(issues, forTabID: id)
     }
 
     // MARK: - Save path
