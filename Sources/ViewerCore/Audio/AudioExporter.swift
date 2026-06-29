@@ -173,25 +173,42 @@ public enum AudioExporter {
     }
 
     /// Run `ffmpeg` with an explicit args array (NO shell — paths can't inject)
-    /// and a minimal environment, mirroring `GitClient.run`. Throws on spawn
-    /// failure or a non-zero exit.
-    private static func runFFmpeg(_ exe: URL, _ args: [String]) throws {
+    /// and a minimal environment, via the shared `ProcessRunner` (timeout +
+    /// SIGTERM→SIGKILL escalation + concurrent drain) — actually mirroring
+    /// `GitClient.run`, which routes through `ProcessRunner.run(timeout:)`. The
+    /// `timeout` guards against a wedged ffmpeg blocking the calling/export thread
+    /// forever (the prior raw `waitUntilExit()` had no bail). Default 600s is
+    /// generous: an audio re-encode of even a multi-hour file is minutes, so this
+    /// never cuts a legit export but still bails a true hang. Throws on spawn
+    /// failure, timeout, or a non-zero exit.
+    /// `internal` (was private) so AudioExporterFFmpegTests can drive the timeout
+    /// path with a stand-in binary (no real ffmpeg needed).
+    @discardableResult
+    static func runFFmpeg(_ exe: URL, _ args: [String], timeout: TimeInterval = 600) throws -> Int32 {
         let p = Process()
         p.executableURL = exe
         p.arguments = args
         p.standardInput = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
+        // stdout/stderr are drained (and discarded) by ProcessRunner; ffmpeg's
+        // progress goes to stderr, which we don't need.
         // Pass only a tiny env allowlist (don't leak the app's *_TOKEN/_SECRET).
         let src = ProcessInfo.processInfo.environment
         var env: [String: String] = [:]
         for key in ["PATH", "HOME", "TMPDIR", "LANG"] where src[key] != nil { env[key] = src[key] }
         p.environment = env
 
-        do { try p.run() } catch { throw AudioExportError.writeFailed }
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else {
-            throw AudioExportError.ffmpegFailed(p.terminationStatus)
+        let result: ProcessRunner.Result
+        do {
+            result = try ProcessRunner.run(p, timeout: timeout, maxOutputBytes: 16 * 1024 * 1024)
+        } catch {
+            throw AudioExportError.writeFailed
         }
+        // A wedged ffmpeg that hit the wall-clock timeout (SIGTERM→SIGKILL'd) is
+        // surfaced as a failure (sentinel -1) rather than a silent partial file.
+        guard !result.timedOut else { throw AudioExportError.ffmpegFailed(-1) }
+        guard result.terminationStatus == 0 else {
+            throw AudioExportError.ffmpegFailed(result.terminationStatus)
+        }
+        return result.terminationStatus
     }
 }
