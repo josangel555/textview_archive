@@ -675,6 +675,37 @@ fn parse_wire_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        // CONTRACT invariants over arbitrary input — complements the hand-rolled
+        // no-panic LCG fuzz below (which only asserts "never crashes"). These pin
+        // the guarantees a consumer relies on: the event cap is STRICTLY honored,
+        // every projected event carries a non-empty id (uuid/id/`line-<n>`
+        // fallback), and parse is deterministic (pure). A regression that broke
+        // `truncate(max_events)`, emitted an id-less event, or smuggled in
+        // nondeterminism fails here even though the input never panics.
+        #[test]
+        fn parse_upholds_cap_id_and_determinism(
+            s in "[\\s\\S]{0,3000}", redacting in any::<bool>()
+        ) {
+            let events = parse(&s, redacting);
+            prop_assert!(events.len() <= MAX_EVENTS);
+            for e in &events {
+                prop_assert!(!e.id.is_empty(),
+                    "every event must carry an id (uuid/id/line-<n> fallback)");
+            }
+            prop_assert_eq!(&events, &parse(&s, redacting));   // pure → deterministic
+        }
+
+        // The EXPLICIT event cap (including 0) is never exceeded.
+        #[test]
+        fn parse_with_strictly_honors_max_events(
+            s in "[\\s\\S]{0,3000}", cap in 0usize..40
+        ) {
+            prop_assert!(parse_with(&s, false, MAX_LINE_BYTES, cap).len() <= cap);
+        }
+    }
 
     fn user_line(uuid: &str, text: &str) -> String {
         format!(
