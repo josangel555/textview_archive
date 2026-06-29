@@ -35,14 +35,14 @@ extension DocumentModel {
     /// The active CSV rendered as a Markdown pipe table, or nil when no CSV is active.
     public func activeCSVAsMarkdownTable() -> String? {
         guard canConvertActiveCSV, let text = activeFileText else { return nil }
-        let r = CSVParser.parse(text)
+        let r = RustCSVAdapter.parse(text)
         return CsvConvert.toMarkdownTable(header: r.header, rows: r.rows)
     }
 
     /// The active CSV rendered as a JSON array of objects, or nil when no CSV is active.
     public func activeCSVAsJSON() -> String? {
         guard canConvertActiveCSV, let text = activeFileText else { return nil }
-        let r = CSVParser.parse(text)
+        let r = RustCSVAdapter.parse(text)
         return CsvConvert.toJSON(header: r.header, rows: r.rows)
     }
 
@@ -50,7 +50,7 @@ extension DocumentModel {
     /// min/max/mean) of the active CSV, or nil when no CSV is active.
     public func activeCSVSummary() -> String? {
         guard canConvertActiveCSV, let text = activeFileText else { return nil }
-        let r = CSVParser.parse(text)
+        let r = RustCSVAdapter.parse(text)
         return CsvSummary.report(header: r.header, rows: r.rows)
     }
 
