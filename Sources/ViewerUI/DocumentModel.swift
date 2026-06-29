@@ -70,48 +70,10 @@ public final class DocumentModel: ObservableObject {
     /// `tabCoordinator.openTabURLs` directly.
     public var openTabURLs: Set<URL> { tabCoordinator.openTabURLs }
 
-    // MARK: - Per-tab dict forwarders (move-here-only — TabCoordinator
-    //  owns the storage; these keep external call sites unchanged)
-
-    /// Forwarder. New code should call `tabCoordinator.csvFilterStates`.
-    public var csvFilterStates: [UUID: CSVFilterState] {
-        tabCoordinator.csvFilterStates
-    }
-
-    public func csvFilterState(forTabID id: UUID) -> CSVFilterState {
-        tabCoordinator.csvFilterState(forTabID: id)
-    }
-
-    public func setCsvFilterState(_ state: CSVFilterState, forTabID id: UUID) {
-        tabCoordinator.setCsvFilterState(state, forTabID: id)
-    }
-
-    // `clearCsvFilterState(forTabID:)` moved to `DocumentModel+Split.swift`
-    // (TSK-308) — it sits with the split-pane forwarder cluster.
-
-    /// Forwarder. New code should call `tabCoordinator.hexBytesPerRow`.
-    public var hexBytesPerRow: [UUID: Int] { tabCoordinator.hexBytesPerRow }
-
-    public func hexWidth(forTabID id: UUID) -> Int {
-        tabCoordinator.hexWidth(forTabID: id, fallback: preferences.hexBytesPerRow)
-    }
-
-    public func setHexWidth(_ width: Int, forTabID id: UUID) {
-        tabCoordinator.setHexWidth(width, forTabID: id)
-        // Also bump the global default so the next opened binary
-        // remembers what the user picked. Cheap; matches Sublime
-        // "remember last setting" feel. Lives on DocumentModel
-        // because PreferencesStore is a DocumentModel dependency.
-        let clamped = HexLayout.clampWidth(width)
-        if preferences.hexBytesPerRow != clamped {
-            preferences.hexBytesPerRow = clamped
-        }
-    }
-
-    /// Source-compat alias — the type was previously nested on
-    /// DocumentModel; CSVTableView constructs `DocumentModel.CSVFilterState()`.
-    /// Keeps that call site valid without churning view code.
-    public typealias CSVFilterState = TabCoordinator.CSVFilterState
+    // Per-tab dict forwarders (csvFilterStates / csvFilterState / setCsvFilterState /
+    // hexBytesPerRow / hexWidth / setHexWidth) + the CSVFilterState typealias →
+    // DocumentModel+PerTabDicts.swift (TSK-1110 SRP slice). clearCsvFilterState is
+    // in DocumentModel+Split.swift (TSK-308).
     @Published public private(set) var windowTitle: String = "TextView"
 
     /// Perf Fix#1 (TSK-108): the bounded set of tab ids whose content panes
