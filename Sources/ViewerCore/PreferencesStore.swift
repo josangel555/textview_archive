@@ -26,6 +26,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let localHistoryEnabled = "MarkdownViewer.localHistoryEnabled"
         static let editorIndentGuides = "MarkdownViewer.editorIndentGuides"
         static let themeOverride = "MarkdownViewer.themeOverride"
+        static let terminalColorTheme = "MarkdownViewer.terminalColorTheme"
         /// Legacy chrome-scale preference, retired when `uiScale` and
         /// `zoom` were unified onto `zoom`. Still read once for
         /// one-shot migration; never written.
@@ -244,6 +245,16 @@ public final class PreferencesStore: @unchecked Sendable {
                 defaults.removeObject(forKey: Key.themeOverride)
             }
         }
+    }
+
+    /// Terminal ANSI colour theme name (TSK-1312) — selects the 16-colour palette
+    /// (indices 0–15). Default `"Default"` = the muted shipped palette (no change for
+    /// existing users); `"Classic (xterm)"` = standard vivid xterm colours, which read
+    /// closer to what CLI tools (e.g. claude code) expect — the owner's "colors look
+    /// off" report. Persisted like the other pickers so the choice survives relaunch.
+    public var terminalColorThemeName: String {
+        get { defaults.string(forKey: Key.terminalColorTheme) ?? "Default" }
+        set { defaults.set(newValue, forKey: Key.terminalColorTheme) }
     }
 
     /// Whether the multi-session experience is enabled (TSK-264). Default

@@ -42,6 +42,12 @@ public struct AnsiTheme: Sendable, Equatable {
     /// All built-in themes, in display order.
     public static let builtIns: [AnsiTheme] = [.default, .classic]
 
+    /// Look up a built-in theme by `name`; falls back to `.default` for an unknown
+    /// name (e.g. a stale preference value). TSK-1312.
+    public static func named(_ name: String) -> AnsiTheme {
+        builtIns.first { $0.name == name } ?? .default
+    }
+
     private static func c(_ r: Int, _ g: Int, _ b: Int) -> AnsiRGB {
         AnsiRGB(Double(r) / 255, Double(g) / 255, Double(b) / 255)
     }

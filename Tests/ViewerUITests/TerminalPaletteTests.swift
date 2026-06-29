@@ -7,6 +7,7 @@ import ViewerCore
 /// Guards the memoization perf fix (shared `NSColor` per palette index, so
 /// the terminal draw path stops allocating per attribute-run per frame)
 /// AND that the resolved colours still match the original per-call math.
+@MainActor
 final class TerminalPaletteTests: XCTestCase {
 
     private func rgba(_ c: NSColor) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
