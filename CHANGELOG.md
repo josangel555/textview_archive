@@ -21,6 +21,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **DocumentModel SRP slice — source-view scroll-to-line forwarders carved out (TSK-1110)** — `sourceScrollLineTarget` / `sourceScrollLineNonce` / `scrollSource` moved to `DocumentModel+SourceScroll.swift` (thin SourceViewChannel forwarders; zero widening). Behavior-preserving; headless gate green.
 - **DocumentModel SRP slice — file-history/extensions availability helpers carved out (TSK-1110)** — `extensionsInventory` / `canShowLocalHistory` / `repoRelativePath` moved to `DocumentModel+FileHistoryAvailability.swift` (zero widening). Behavior-preserving; headless gate green.
 - **DocumentModel SRP slice — tab close-variants carved out (TSK-1110)** — `closeCurrentTab` / `closeOtherTabs` / `closeTabsToRight` moved to `DocumentModel+TabCloseVariants.swift` (the core `closeTab` + shared helpers stay; `settleSelectionAfterClose` widened private→internal). The first hot-path-core slice — a behavior-preserving exact move, host-validated by the tab-close test suite. Behavior-preserving; headless gate green.
+- **DocumentModel SRP slice — async tab loaders carved out (TSK-1110)** — `loadBinaryAsync` / `loadTextAsync` (the off-main BinaryFile/TextFile reads with the latest-switch-wins guard) moved to `DocumentModel+TabLoading.swift` (made internal so `materializeIfNeeded` calls them; zero other widening). Behavior-preserving; headless gate green.
 
 ## 2026-06-28
 
