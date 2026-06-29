@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ### Added
 - **Editor autocomplete — a completion popup in the CM6 editor.** Typing an identifier (or ⌃Space) now offers completions: LSP completions when a language server is configured for the file, and an in-file buffer-word fallback otherwise (the vim-Ctrl-N class every editor ships). (TSK-1136 — closes TSK-463; the render wiring landed, the live popup validates on the VM lane.)
+- **Paste as New Document (⇧⌘V) — Universal Paste.** Edit ▸ Paste as New Document opens the clipboard's best representation in a new tab: a copied image → the image viewer, a spreadsheet range → the table viewer, rich/plain text → the editor, a copied file → the file itself. When the clipboard carries several representations it picks the richest (file > image > table > rich > plain). Treats the clipboard as data — never executes it. (TSK-1163 / TSK-958 — menu/live action landed, validates on the VM lane.)
 
 ### Fixed
 - **⌘F no longer hijacks the sidebar file-filter.** Pressing ⌘F while typing in the sidebar's file-nav filter (or a rename / go-to-path prompt) opened the document find bar and yanked focus away mid-type; it now stays in the field. A find bar that's already open still toggles closed with ⌘F. (TSK-1248)

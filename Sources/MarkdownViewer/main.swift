@@ -909,6 +909,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.insertDateAndTime()
     }
 
+    /// TSK-1163 — Edit ▸ Paste as New Document (⇧⌘V): Universal Paste. Opens the
+    /// clipboard's best representation (file / image / table / rich / plain) in a
+    /// new tab via `DocumentModel.universalPaste`. Treats the clipboard as data.
+    @objc func universalPasteAsDocument(_ sender: Any?) {
+        model.universalPaste()
+    }
+
     /// TSK-899: ⌘N → select the Nth available view mode (tag = 0-based slot).
     @objc func selectViewModeSlot(_ sender: Any?) {
         let slot = (sender as? NSMenuItem)?.tag ?? 0
@@ -2259,6 +2266,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         editMenu.addItem(NSMenuItem(title: "Paste",
             action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        // TSK-1163 — Universal Paste: open the clipboard's best representation
+        // (image/table/rich/plain/file) in a new tab. ⇧⌘V.
+        let pasteAsDocItem = NSMenuItem(
+            title: "Paste as New Document",
+            action: #selector(universalPasteAsDocument(_:)),
+            keyEquivalent: "v")
+        pasteAsDocItem.keyEquivalentModifierMask = [.command, .shift]
+        pasteAsDocItem.target = self
+        editMenu.addItem(pasteAsDocItem)
         editMenu.addItem(NSMenuItem(title: "Select All",
             action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())

@@ -3688,6 +3688,74 @@ public final class DocumentModel: ObservableObject {
         openResolved(url, forceNewTab: true)
     }
 
+    /// Universal Paste (TSK-1163 / TSK-958): read the clipboard, resolve its best
+    /// viewer kind (`PasteDispatch`), materialize the payload to a per-user temp
+    /// file (`UniversalPastePlan`), and open it in a new tab. The clipboard is
+    /// treated as DATA — never executed. No-op + beep when nothing pasteable is
+    /// present. The pasteboard read + temp write are AppKit (review/VM); the
+    /// type-precedence + materialization DECISION is host-tested
+    /// (PasteDispatchTests / UniversalPastePlanTests).
+    @discardableResult
+    public func universalPaste(from pasteboard: NSPasteboard = .general) -> Bool {
+        let types = (pasteboard.types ?? []).map(\.rawValue)
+        let htmlBody = pasteboard.data(forType: .html)
+            .flatMap { String(data: $0, encoding: .utf8) }
+        guard let target = PasteDispatch.resolve(types: types, htmlBody: htmlBody) else {
+            NSSound.beep()  // nothing recognized on the clipboard
+            return false
+        }
+        let plan = UniversalPastePlan.plan(for: target)
+        let url: URL?
+        switch plan.source {
+        case .fileURL:
+            url = Self.pasteboardFileURL(pasteboard)
+        case .data(let preferred, let fallbacks, let ext):
+            url = Self.materializePasteData(pasteboard, preferred: preferred,
+                                            fallbacks: fallbacks, ext: ext,
+                                            name: plan.suggestedName)
+        case .string(let ext):
+            url = Self.materializePasteString(pasteboard, ext: ext, name: plan.suggestedName)
+        }
+        guard let url else { NSSound.beep(); return false }
+        openInNewTab(url)
+        return true
+    }
+
+    /// The file URL carried on the pasteboard (file-URLs only), or nil.
+    private static func pasteboardFileURL(_ pb: NSPasteboard) -> URL? {
+        let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let urls = pb.readObjects(forClasses: [NSURL.self], options: opts) as? [URL]
+        return urls?.first
+    }
+
+    /// Read the preferred (or a fallback) data representation and write it to a
+    /// temp file. nil if no representation is present or the write fails.
+    private static func materializePasteData(
+        _ pb: NSPasteboard, preferred: String, fallbacks: [String], ext: String, name: String
+    ) -> URL? {
+        for raw in [preferred] + fallbacks {
+            if let data = pb.data(forType: NSPasteboard.PasteboardType(raw)), !data.isEmpty {
+                return writePasteTemp(data, ext: ext, name: name)
+            }
+        }
+        return nil
+    }
+
+    private static func materializePasteString(_ pb: NSPasteboard, ext: String, name: String) -> URL? {
+        guard let s = pb.string(forType: .string), !s.isEmpty,
+              let data = s.data(using: .utf8) else { return nil }
+        return writePasteTemp(data, ext: ext, name: name)
+    }
+
+    /// Write pasted bytes to a uniquely-named per-user temp file (never the
+    /// owner's Documents/Desktop — sanctioned `temporaryDirectory`). nil on failure.
+    private static func writePasteTemp(_ data: Data, ext: String, name: String) -> URL? {
+        let base = name.isEmpty ? "Pasted" : name
+        let unique = "\(base)-\(UUID().uuidString.prefix(8)).\(ext)"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(unique)
+        do { try data.write(to: url); return url } catch { return nil }
+    }
+
     private func openResolved(_ url: URL, forceNewTab: Bool, preview: Bool = false) {
         let openToken = PerfSignpost.begin(.open, "DocumentModel.openResolved")
         defer { PerfSignpost.end(openToken) }
