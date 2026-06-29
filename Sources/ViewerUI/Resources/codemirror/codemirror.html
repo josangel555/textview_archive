@@ -418,15 +418,22 @@
         // a document-level mouseup ends it even if released off the editor.
         this.onDown = () => {
           this.isDragging = true;
-          // Recompute now so the highlight vanishes immediately on press.
-          view.dispatch({});
+          // TSK-1188: defer the recompute off the synchronous mousedown. CM6
+          // registers our ViewPlugin DOM listener BEFORE its own inputState
+          // mousedown handler, so a re-entrant `view.dispatch` here corrupts
+          // CM6's MouseSelection anchor — a plain click then extends a selection
+          // from the stale caret + scrolls the viewport back. queueMicrotask
+          // lets CM6's pointer gesture set its anchor first; the highlight still
+          // clears within the same frame.
+          queueMicrotask(() => view.dispatch({}));
         };
         this.onUp = () => {
           if (!this.isDragging) return;
           this.isDragging = false;
-          // Force a recompute so a collapsed caret re-acquires the highlight
-          // and a stuck last-line decoration is cleared.
-          view.dispatch({});
+          // TSK-1188: defer off the synchronous mouseup (see onDown). Recompute
+          // so a collapsed caret re-acquires the highlight + a stuck last-line
+          // decoration is cleared, without the re-entrant dispatch.
+          queueMicrotask(() => view.dispatch({}));
         };
         view.dom.addEventListener("mousedown", this.onDown);
         document.addEventListener("mouseup", this.onUp);
@@ -1189,12 +1196,17 @@
       // rectangular select also benefits — same primary button.)
       if (e.button !== 0 || dragGateActive) return;
       dragGateActive = true;
-      setSelectionMatchEnabled(false);
+      // TSK-1188: defer the reconfigure off the synchronous mousedown so CM6's
+      // pointer gesture sets its MouseSelection anchor BEFORE our transaction
+      // (a re-entrant dispatch here corrupts the anchor → a plain click extends
+      // a selection from the stale caret + scrolls back).
+      queueMicrotask(() => setSelectionMatchEnabled(false));
     });
     document.addEventListener("mouseup", function () {
       if (!dragGateActive) return;
       dragGateActive = false;
-      setSelectionMatchEnabled(true);
+      // TSK-1188: defer off the synchronous mouseup (see mousedown).
+      queueMicrotask(() => setSelectionMatchEnabled(true));
     });
   }
   installDragSelectionMatchGate();

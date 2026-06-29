@@ -451,6 +451,48 @@ final class CodeMirrorBundleTests: XCTestCase {
                        "invisibles (item I2: should be a subtle-but-readable secondary)")
     }
 
+    // MARK: - TSK-1188: mouse handlers must DEFER their dispatch
+    //
+    // CM6 registers our ViewPlugin DOM mouse listeners BEFORE its own inputState
+    // mousedown handler, so a `view.dispatch` called SYNCHRONOUSLY inside our
+    // mousedown/mouseup handlers fires re-entrantly while CM6 is mid-pointer-
+    // gesture — corrupting CM6's MouseSelection anchor so a plain click extends a
+    // selection from the stale caret and scrolls the viewport back (TSK-1188 —
+    // owner-reported editor bug). The fix defers each such dispatch to a microtask
+    // so CM6's gesture sets its anchor first. Two sites: the TSK-894 active-line
+    // plugin (onDown/onUp) and the TSK-890 selection-match drag-gate
+    // (mousedown/mouseup). This host grep-guard pins the deferral + the
+    // no-synchronous-dispatch contract so a future bundle edit can't silently
+    // re-introduce the re-entrancy; on-screen click behavior is the VM WebView
+    // lane (in-process Editor suites + a click UAT).
+
+    func testMouseHandlersDeferDispatchToAvoidAnchorCorruption() throws {
+        let html = try String(contentsOf: try XCTUnwrap(CodeMirrorResources.hostHTMLURL), encoding: .utf8)
+        // Positive: every mouse-handler dispatch is deferred via queueMicrotask.
+        for needle in [
+            "queueMicrotask(() => view.dispatch({}))",               // active-line onDown + onUp
+            "queueMicrotask(() => setSelectionMatchEnabled(false))", // drag-gate mousedown
+            "queueMicrotask(() => setSelectionMatchEnabled(true))",  // drag-gate mouseup
+        ] {
+            XCTAssertTrue(html.contains(needle),
+                          "codemirror.html missing the TSK-1188 mouse-handler deferral: \(needle)")
+        }
+        XCTAssertTrue(html.contains("TSK-1188"),
+                      "codemirror.html lost the TSK-1188 deferral rationale comment")
+        // Negative — the no-synchronous-dispatch contract: the bare, semicolon-
+        // terminated synchronous forms must be GONE. The deferred form is
+        // `queueMicrotask(() => …(false));` (double paren), so these single-paren
+        // + semicolon needles match ONLY the un-deferred (re-entrant) code.
+        for forbidden in [
+            "view.dispatch({});",
+            "setSelectionMatchEnabled(false);",
+            "setSelectionMatchEnabled(true);",
+        ] {
+            XCTAssertFalse(html.contains(forbidden),
+                           "codemirror.html re-introduced a SYNCHRONOUS mouse-handler dispatch `\(forbidden)` — it must defer to a microtask (TSK-1188 MouseSelection anchor corruption)")
+        }
+    }
+
     // MARK: - Bootstrap symbol-binding contract (regression: WidgetType)
     //
     // The CM6 Phase-4 bug (commit 4ab4c56) was a `class IndentGuideWidget

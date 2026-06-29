@@ -1,7 +1,12 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — VM is available for render work; pivot from maintenance to the render-VM queue (2026-06-29)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `f688feb3` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `56c1a701` (verify `git log -1`)
+
+## ✅ VM RENDER LANE ESTABLISHED + VALIDATED (2026-06-29) — the big update
+- Synced host→VM, hit a **toolchain-skew** (`.build` had 6.1.2-compiled `TestSupport.swiftmodule`; 6.3 can't import it) → fix: `ssh macOS15 'cd markdown_viewer && echo "$MDV_VM_SUDO_PASS" | sudo -S rm -rf .build/arm64-apple-macosx'` (clean per-arch products; KEEP `.build/checkouts`+`repositories` — the safe clean, NOT the forbidden full wipe). My code is **VM-build-green** after.
+- **In-process WebView render lane is GREEN: 78 tests, 0 failures** via `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh webview`. THIS is the agent-validatable render tier — use it, NOT `all` (the `all` run got KILLED ~10-12 min mid-headless-suite; the VM-run kill ceiling is real, per [[feedback_no_special_allmode_for_render]]).
+- **TSK-1247 confirmed + scoped (board comment):** the SPAWNED-APP (`dist/TextView.app` via launchctl-asuser) rendered-preview WebView is blank/unscrollable (probe −1/0) → blocks ScrollRestoreUATTests + all spawned-app UATs. The IN-PROCESS lane renders fine, so TSK-1247 is spawned-app-specific and is the **likely shared root of TSK-1200 (scroll-verb "no-op on the live app") + the SCROLL01/02 failures** — those are harness-false, NOT real feature bugs (scroll-restore passes in-process). TSK-1247 fix = a focused VM session (instrument the spawned-app WebView mount/visibility/load-vs-probe-race under launchctl-asuser-root).
 
 ## Mission
 Autonomous drain loop (cron). Build INLINE, one item/firing: spike → implement → test → gate → commit; land rebase+ff; keep main gate-green; fold docs into the item's commit.
