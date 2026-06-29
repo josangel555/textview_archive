@@ -369,6 +369,46 @@ final class ImageEditorViewModelTests: XCTestCase {
         XCTAssertEqual(vm.overlay.index(of: a), 0)
     }
 
+    // MARK: - Vector-shape selection + edit-after-placement (TSK-1321)
+
+    func test_selectLatestShape_thenMove_translatesOnlyThatShape() throws {
+        let vm = try makeVM()
+        let a = vm.addShape(VectorShape(kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)))
+        let b = vm.addShape(VectorShape(kind: .ellipse, frame: CGRect(x: 0.5, y: 0.5, width: 0.2, height: 0.2)))
+        vm.selectLatestShape()
+        XCTAssertEqual(vm.selectedShapeID, b, "latest = the front-most (most-recently-added)")
+        let before = try XCTUnwrap(vm.selectedShape).frame.origin
+        XCTAssertTrue(vm.moveSelectedShape(byX: 0.1, y: 0.05))
+        let after = try XCTUnwrap(vm.selectedShape).frame.origin
+        XCTAssertEqual(after.x, before.x + 0.1, accuracy: 1e-9)
+        XCTAssertEqual(after.y, before.y + 0.05, accuracy: 1e-9)
+        XCTAssertEqual(vm.overlay.shape(id: a)?.frame.minX ?? -1, 0.1, accuracy: 1e-9, "other shapes untouched")
+    }
+
+    func test_resizeAndRestyleSelected_thenRemoveClearsSelection() throws {
+        let vm = try makeVM()
+        let id = vm.addShape(VectorShape(kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)))
+        vm.selectShape(id: id)
+        XCTAssertTrue(vm.resizeSelectedShape(to: CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)))
+        XCTAssertEqual(vm.selectedShape?.frame, CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4))
+        let red = ShapeStyle(stroke: OverlayColor(r: 1, g: 0, b: 0, a: 1), lineWidth: 5, fill: nil)
+        XCTAssertTrue(vm.restyleSelectedShape(red))
+        XCTAssertEqual(vm.selectedShape?.style.lineWidth, 5)
+        _ = vm.removeShape(id: id)
+        XCTAssertNil(vm.selectedShapeID, "removing the selected shape clears the selection")
+        XCTAssertNil(vm.selectedShape)
+    }
+
+    func test_selectedShapeOps_noopWithoutSelection() throws {
+        let vm = try makeVM()
+        _ = vm.addShape(VectorShape(kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)))
+        vm.deselectShape()
+        XCTAssertFalse(vm.moveSelectedShape(byX: 0.1, y: 0))
+        XCTAssertFalse(vm.resizeSelectedShape(to: .zero))
+        XCTAssertFalse(vm.restyleSelectedShape(
+            ShapeStyle(stroke: OverlayColor(r: 0, g: 0, b: 0, a: 1), lineWidth: 1, fill: nil)))
+    }
+
     /// `ImageEditorView.aspectFitRect` maps the overlay's normalized coords into
     /// the rect the fitted image occupies — the load-bearing geometry the draw
     /// path relies on. Host-test the math (no rendering).

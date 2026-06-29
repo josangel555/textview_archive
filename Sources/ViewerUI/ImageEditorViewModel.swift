@@ -570,7 +570,8 @@ public final class ImageEditorViewModel: ObservableObject {
     /// Remove the shape with `id` (no-op for an unknown id).
     @discardableResult
     public func removeShape(id: UUID) -> Bool {
-        overlay.remove(id: id)
+        if selectedShapeID == id { selectedShapeID = nil }
+        return overlay.remove(id: id)
     }
 
     /// Translate the shape with `id` by a normalized delta (no-op for unknown).
@@ -594,6 +595,54 @@ public final class ImageEditorViewModel: ObservableObject {
     /// Clear every vector annotation.
     public func clearShapes() {
         overlay.removeAll()
+        selectedShapeID = nil
+    }
+
+    // MARK: - Vector-shape selection + edit-after-placement (TSK-1321)
+
+    /// The currently-selected overlay shape — for move / resize / restyle AFTER
+    /// placement. Distinct from the raster `selection` (marquee/lasso). The on-canvas
+    /// selection handles + drag gestures that DRIVE these ops are the render tail; this
+    /// is the host-testable model. First slice = "start with just the latest" (the
+    /// owner's ask); per-shape pick-by-hit-test is a render follow-up.
+    @Published public private(set) var selectedShapeID: UUID?
+
+    /// The selected shape, or nil (also nil if the id is stale).
+    public var selectedShape: VectorShape? { selectedShapeID.flatMap { overlay.shape(id: $0) } }
+
+    /// Select the front-most (most-recently-added) shape — TSK-1321's "start with just
+    /// the latest". Clears the selection when the overlay is empty.
+    public func selectLatestShape() { selectedShapeID = overlay.shapes.last?.id }
+
+    /// Select a specific shape by id (nil clears); ignores an unknown id.
+    public func selectShape(id: UUID?) {
+        if let id, overlay.shape(id: id) == nil { return }
+        selectedShapeID = id
+    }
+
+    /// Clear the shape selection.
+    public func deselectShape() { selectedShapeID = nil }
+
+    /// Move the selected shape by a normalized delta. No-op without a selection.
+    @discardableResult
+    public func moveSelectedShape(byX dx: CGFloat, y dy: CGFloat) -> Bool {
+        guard let id = selectedShapeID else { return false }
+        return overlay.move(id: id, byX: dx, y: dy)
+    }
+
+    /// Set the selected shape's normalized frame (resize / reposition). No-op without one.
+    @discardableResult
+    public func resizeSelectedShape(to frame: CGRect) -> Bool {
+        guard let id = selectedShapeID else { return false }
+        return overlay.setFrame(id: id, frame)
+    }
+
+    /// Replace the selected shape's style (colour / line-width / fill — "change
+    /// properties after the fact"). No-op without a selection.
+    @discardableResult
+    public func restyleSelectedShape(_ style: ShapeStyle) -> Bool {
+        guard let id = selectedShapeID else { return false }
+        return overlay.setStyle(id: id, style)
     }
 
     // MARK: - Selection (TSK-1063 / 1068)
