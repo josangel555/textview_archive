@@ -4102,22 +4102,8 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
-    public func moveTab(from src: Int, to dst: Int) {
-        tabCoordinator.move(from: src, to: dst)
-        updateDerived()
-    }
-
-    public func moveCurrentTabLeft() {
-        guard let i = tabs.selectedIndex else { return }
-        tabCoordinator.swapWithPrevious(at: i)
-        updateDerived()
-    }
-
-    public func moveCurrentTabRight() {
-        guard let i = tabs.selectedIndex else { return }
-        tabCoordinator.swapWithNext(at: i)
-        updateDerived()
-    }
+    // moveTab / moveCurrentTabLeft / moveCurrentTabRight / selectNextTab /
+    // selectPreviousTab → DocumentModel+TabNavigation.swift (TSK-1110 SRP slice).
 
 
     public func selectTab(at index: Int) {
@@ -4371,18 +4357,6 @@ public final class DocumentModel: ObservableObject {
             }
         }
         tabCoordinator.setMaterializeTask(task, forTabID: tabID)
-    }
-
-    public func selectNextTab() {
-        guard !tabs.isEmpty, let cur = tabs.selectedIndex else { return }
-        let next = (cur + 1) % tabs.tabs.count
-        selectTab(at: next)
-    }
-
-    public func selectPreviousTab() {
-        guard !tabs.isEmpty, let cur = tabs.selectedIndex else { return }
-        let prev = (cur - 1 + tabs.tabs.count) % tabs.tabs.count
-        selectTab(at: prev)
     }
 
     public func toggleViewMode() {
