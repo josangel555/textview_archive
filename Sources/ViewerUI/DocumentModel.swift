@@ -2587,30 +2587,9 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
-    /// Returns the text that should be shown in the source view for
-    /// the currently selected tab and `file`: either pretty-printed
-    /// (when toggled and supported) or the raw contents — along with
-    /// its byte length and the source file's mtime so the highlight
-    /// cache key can be formed O(1).
-    ///
-    /// Memoizes the formatter output per tab id. Without this, every
-    /// SwiftUI body re-eval (and there are many — find keystrokes,
-    /// selection changes, scroll) reruns `Formatter.prettyPrint` on
-    /// the full file, which is O(N) text-walk per call.
-    ///
-    /// RWC-2 / TD-09 (2026-05-30): the memo keys on `(sourceLength,
-    /// modifiedTime)` rather than length alone, so a same-byte reload
-    /// (`{"a":1}` → `{"b":2}`) re-runs the formatter instead of
-    /// returning stale output. The not-formatted fast path reports
-    /// `file.byteCount` (already O(1) on `TextFile`) instead of walking
-    /// `file.contents.utf8` (PERF-04).
-    ///
-    /// Large read-only files skip pretty-print entirely: it's an O(N)
-    /// text-walk that allocates a second full copy of the file, which
-    /// for a few-hundred-MB log defeats the raised read ceiling — they
-    /// render raw contents via the no-allocation plain fast path.
     // displayedText(for:) / displayText(for:) → DocumentModel+DisplayText.swift
-    // (TSK-1110 SRP slice).
+    // (TSK-1110 SRP slice). [The DisplayedText struct above stays — it's the
+    // shared return type.]
 
     // `splitPaneText(for:fallback:)` (TSK-806) moved to
     // `DocumentModel+Split.swift` (TSK-308) — split-pane API cluster.
@@ -2858,21 +2837,8 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: - Per-file view-mode lock (TSK-811)
 
-    /// Whether the current file has a view-mode LOCK (the ModeBar lock-icon
-    /// filled/unfilled state). `false` when no file is open.
-    public var currentViewModeIsLocked: Bool {
-        guard let url = currentURL else { return false }
-        return viewModeLocks.isLocked(for: url)
-    }
-
-    /// Toggle the current file's view-mode lock (the lock-icon click): if
-    /// already locked, clear it; otherwise lock the file to the tab's CURRENT
-    /// mode so reopening re-applies it. Publishes so the icon updates at once.
-    public func toggleCurrentViewModeLock() {
-        guard let url = currentURL else { return }
-        viewModeLocks.toggle(url, mode: currentViewMode)
-        objectWillChange.send()
-    }
+    // currentViewModeIsLocked / toggleCurrentViewModeLock() →
+    // DocumentModel+ViewModeLock.swift (TSK-1110 SRP slice).
 
     /// Full file path of the current tab, with `$HOME` shortened to `~`.
     /// Returns nil when no file is loaded.

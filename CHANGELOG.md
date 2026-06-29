@@ -9,6 +9,11 @@ went. Detailed per-item narrative lives in `docs/AUTONOMOUS_PROGRESS.md`.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-29
+
+### System work
+- **DocumentModel SRP split continues (TSK-1110)** — view-mode-lock (`currentViewModeIsLocked` / `toggleCurrentViewModeLock`) carved into `DocumentModel+ViewModeLock.swift`; plus an audit of the 19 prior SRP pointer comments caught + removed one orphaned doc comment (the `displayedText` slice left its `///` dangling). Behavior-preserving; headless gate green.
+
 ## 2026-06-28
 
 ### Added
