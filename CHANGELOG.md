@@ -18,6 +18,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **DocumentModel SRP slice — tab navigation carved out (TSK-1110)** — the tab move/cycle forwarders (`moveTab` / `moveCurrentTabLeft` / `moveCurrentTabRight` / `selectNextTab` / `selectPreviousTab`) moved to `DocumentModel+TabNavigation.swift` (thin forwarders; zero widening). Behavior-preserving; headless gate green.
 - **DocumentModel SRP slice — per-tab dict forwarders carved out (TSK-1110)** — the CSV-filter-state + HEX-byte-width forwarders to TabCoordinator (+ the `CSVFilterState` alias) moved to `DocumentModel+PerTabDicts.swift` (zero widening). Behavior-preserving; headless gate green.
 - **DocumentModel SRP slice — git-panel focus carved out (TSK-1110)** — `showGitPanel` / `canFocusGitPanel` moved to `DocumentModel+GitPanelFocus.swift` (the GitPanelTab enum + nonces stay; zero widening). Behavior-preserving; headless gate green.
+- **DocumentModel SRP slice — source-view scroll-to-line forwarders carved out (TSK-1110)** — `sourceScrollLineTarget` / `sourceScrollLineNonce` / `scrollSource` moved to `DocumentModel+SourceScroll.swift` (thin SourceViewChannel forwarders; zero widening). Behavior-preserving; headless gate green.
 
 ## 2026-06-28
 
