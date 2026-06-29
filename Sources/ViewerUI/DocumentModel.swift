@@ -2876,18 +2876,9 @@ public final class DocumentModel: ObservableObject {
         return tabs.tabs.contains { $0.url?.standardizedFileURL == target }
     }
 
-    /// The active tab's current text (live editor buffer if present, else the
-    /// loaded-from-disk contents), or nil for a non-text tab. Used by
-    /// encoding-convert (TSK-352).
-    private var activeTextForEncodingConvert: (text: String, tabID: UUID, url: URL)? {
-        guard let tab = tabs.selected, let url = tab.url else { return nil }
-        if let buf = editor.editorBuffers[tab.id] { return (buf.text, tab.id, url) }
-        if case .loaded(let f) = tab.state { return (f.contents, tab.id, url) }
-        return nil
-    }
-
-    /// True when "Convert Encoding" can act — there's an active text file.
-    public var canConvertActiveFileEncoding: Bool { activeTextForEncodingConvert != nil }
+    // Active-file FORMAT conversions (encoding / line-ending / indent convert) +
+    // their `can*` flags + the activeTextForEncodingConvert helper →
+    // DocumentModel+ActiveFileFormatConvert.swift (TSK-1110 SRP slice).
 
     /// Active text + its CURRENT encoding (for line-ending conversion, which must
     /// preserve the file's encoding — TSK-675).
@@ -2899,9 +2890,6 @@ public final class DocumentModel: ObservableObject {
         if case .loaded(let f) = tab.state { return (f.contents, tab.id, url, f.encoding) }
         return nil
     }
-
-    /// True when "Convert Line Endings" can act — there's an active text file.
-    public var canConvertActiveFileLineEnding: Bool { activeTextWithEncoding != nil }
 
     /// Apply a pure text transform to the active file (preserving encoding +
     /// folding in unsaved edits): transform → write-through → drop+reload. A
@@ -2952,43 +2940,6 @@ public final class DocumentModel: ObservableObject {
     // / insertTableOfContents → DocumentModel+ActiveFileMarkdownTransform.swift
     // (TSK-1110 SRP slice).
 
-    /// TSK-675 — convert the active file's LEADING indentation between tabs and
-    /// spaces, using the editor's configured indent width. Leading whitespace
-    /// only (alignment after the first non-space is untouched); line endings +
-    /// encoding preserved.
-    @discardableResult
-    public func convertActiveFileIndentation(toSpaces: Bool) -> Bool {
-        let width = editorIndentation.size
-        return applyTextTransformToActiveFile { text in
-            toSpaces
-                ? IndentConverter.tabsToSpaces(text, width: width)
-                : IndentConverter.spacesToTabs(text, width: width)
-        }
-    }
-
-    /// TSK-675 (robust plain-text editing) — normalize the active file's line
-    /// endings to `target` (LF/CRLF/CR), preserving its encoding and any unsaved
-    /// edits. Write-through then drop+reload (same mechanism as
-    /// `convertActiveFileEncoding`). Returns false (no change) when there's no
-    /// active text file or the file already uses `target` — the on-disk file is
-    /// left untouched in that case.
-    @discardableResult
-    public func convertActiveFileLineEnding(to target: LineEnding) -> Bool {
-        guard let ctx = activeTextWithEncoding else { return false }
-        let converted = LineEndingConverter.convert(ctx.text, to: target)
-        guard converted != ctx.text else { return false }
-        do {
-            _ = try EditorWriter.save(converted, to: ctx.url, encoding: ctx.encoding)
-        } catch {
-            Obs.shared.emit(.warn, "files",
-                            "Convert line endings failed: \(String(describing: error))")
-            return false
-        }
-        editor.discardEditorBuffer(forTabID: ctx.tabID)
-        reloadCurrentFile()
-        return true
-    }
-
     /// The active tab's current text — the editor buffer's live text if editing,
     /// else the loaded-from-disk contents; nil when no text file is active.
     /// Backs the palette's `#` in-file search (TSK-727).
@@ -2997,28 +2948,6 @@ public final class DocumentModel: ObservableObject {
         if let buf = editor.editorBuffers[tab.id] { return buf.text }
         if case .loaded(let f) = tab.state { return f.contents }
         return nil
-    }
-
-    /// TSK-352 — re-save the active file's current text (including any unsaved
-    /// edits) in `target` encoding, then reload so the app re-detects it.
-    /// `EditorBuffer.encoding` is immutable, so we write-through then drop +
-    /// reload the buffer (the reload re-seeds it from disk with the new
-    /// encoding). Returns false (no change) when there's no active text file or
-    /// the text isn't representable in `target` (e.g. emoji → Latin-1) — the
-    /// on-disk file is left untouched in that case.
-    @discardableResult
-    public func convertActiveFileEncoding(to target: String.Encoding) -> Bool {
-        guard let ctx = activeTextForEncodingConvert else { return false }
-        do {
-            _ = try EditorWriter.save(ctx.text, to: ctx.url, encoding: target)
-        } catch {
-            Obs.shared.emit(.warn, "files",
-                            "Convert encoding failed: \(String(describing: error))")
-            return false
-        }
-        editor.discardEditorBuffer(forTabID: ctx.tabID)
-        reloadCurrentFile()
-        return true
     }
 
     /// CRIT-4: only reload when the currently-selected tab's URL still
