@@ -1,12 +1,12 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — VM is available for render work; pivot from maintenance to the render-VM queue (2026-06-29)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `56c1a701` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `8646ac07` (verify `git log -1`)
 
 ## ✅ VM RENDER LANE ESTABLISHED + VALIDATED (2026-06-29) — the big update
 - Synced host→VM, hit a **toolchain-skew** (`.build` had 6.1.2-compiled `TestSupport.swiftmodule`; 6.3 can't import it) → fix: `ssh macOS15 'cd markdown_viewer && echo "$MDV_VM_SUDO_PASS" | sudo -S rm -rf .build/arm64-apple-macosx'` (clean per-arch products; KEEP `.build/checkouts`+`repositories` — the safe clean, NOT the forbidden full wipe). My code is **VM-build-green** after.
 - **In-process WebView render lane is GREEN: 78 tests, 0 failures** via `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh webview`. THIS is the agent-validatable render tier — use it, NOT `all` (the `all` run got KILLED ~10-12 min mid-headless-suite; the VM-run kill ceiling is real, per [[feedback_no_special_allmode_for_render]]).
-- **TSK-1247 confirmed + scoped (board comment):** the SPAWNED-APP (`dist/TextView.app` via launchctl-asuser) rendered-preview WebView is blank/unscrollable (probe −1/0) → blocks ScrollRestoreUATTests + all spawned-app UATs. The IN-PROCESS lane renders fine, so TSK-1247 is spawned-app-specific and is the **likely shared root of TSK-1200 (scroll-verb "no-op on the live app") + the SCROLL01/02 failures** — those are harness-false, NOT real feature bugs (scroll-restore passes in-process). TSK-1247 fix = a focused VM session (instrument the spawned-app WebView mount/visibility/load-vs-probe-race under launchctl-asuser-root).
+- **TSK-1247 ROOTED (4 diagnostic rounds) + PARKED for owner decision.** Env-gated `MDV_WINDOW_DIAG` probe (`8646ac07`) shows the spawned app's window is AppKit-HEALTHY (visible/onActiveSpace/non-occluded, real frame) yet `screencapture -x` shows NO window content → **the VM GUI session doesn't framebuffer-composite app-window content** (menu bar composites; window content doesn't), regardless of root-vs-501 (tested both). So the WKWebView never truly lays out → scrollY −1; the T5 lane works only via window-ID/backing-store capture. Shared root of TSK-1200 + the ScrollRestore UATs (harness-false, NOT real feature bugs). Parked a/b/c: (a) VM display-config [owner-domain], (b) UAT window-ID render-forcing refactor [substantial, uncertain], (c) deprioritize [in-process lane covers agent render-validation; you close the review pile by glance].
 
 ## Mission
 Autonomous drain loop (cron). Build INLINE, one item/firing: spike → implement → test → gate → commit; land rebase+ff; keep main gate-green; fold docs into the item's commit.
@@ -23,18 +23,16 @@ Autonomous drain loop (cron). Build INLINE, one item/firing: spike → implement
   - **TSK-1300** (`e24d23fd`, validated) — CSV convert commands routed off the Swift twin onto `RustCSVAdapter` (~2.5× faster, output-preserving). Self-corrected the bad **TSK-1299** flip-rec (CSV already defaults to Rust; dismissed).
   - transcript contract proptest (`24df4a65`); **TSK-1128** lsp.json write-back model (`6a3e6ac0`).
   - Earlier this session: 8 render-tail features + spell-check (→review), 40 DocumentModel SRP slices (5835→3346), 3 validated subprocess-crash fixes (SIGPIPE/ffmpeg), 2 gate-flake fixes.
-- **Diagnosed, ready for the VM fix (host work done):** TSK-1200 (CM6 scroll verb no-op — fix: `view.requestMeasure({read,write})` keeping the raw scrollTop for the scroll-emit; do NOT use scrollIntoView) · TSK-1188 (CM6 click-extends-selection — fix: defer the re-entrant dispatch off the mouse handlers; needs an in-process WebViewTestCase).
+- **TSK-1188 FIXED → review (`c0fd1543`):** CM6 click-extends-selection — deferred the re-entrant mouse-handler dispatch to `queueMicrotask` (active-line plugin + drag-gate); host grep-guard pins it; on-screen click = VM/owner. TSK-1200 = TSK-1247-downstream test-infra (the spawned-app scroll-verb "no-op" is the framebuffer-compositing root, NOT a real editor bug). TSK-1271 (find-scroll) also FIXED→review (`6e9e4efb`).
 - **Decision-ready (homework done, parked for owner):** TSK-1129 (LSP-binary RCE-trust — model+store built, spawn warns; pick a/b/c) · flips formula **TSK-1215** / fold **TSK-1202** (parity-proven, 34 tests) / DOM-patch **TSK-838**.
 - **Coverage** (measured this session): 69.74% region / 64.72% line host; the uncovered is render UI (VM-tested), pure-logic is comprehensively covered.
 
 ## Next action (resume here)
-**The VM is open — work the render-VM queue (no longer hold it).** Priority order:
-1. **TSK-1200 + TSK-1188** — CM6 JS fixes (diagnosed; apply the fix + a WebViewTestCase, validate on the VM).
-2. **TSK-1176 palette UI** — build the SwiftUI command palette over `TerminalCommandSearch.unified` + a trigger + PTY-insert; iterate against the VM render.
-3. **Validate the 8 render features + spell-check** at review on the VM (`test-in-vm.sh all`), advance to validated.
-4. **Flips** (formula/fold) — VM-soak then recommend; **TSK-838** DOM-patch flip needs VM render-parity validation.
-5. **TSK-343 Revert** — the destructive restore UX (data-safety: handle unsaved edits) — VM.
-- IN-FLIGHT THIS TURN (owner asks): (a) reorg BACKLOG.md (done→bottom, reorg active) + status report; (b) scan the board, pull the next-50 actionable.
+**The host-completable autonomous surface is DRAINED** — confirmed 2026-06-29 via ~14 read-first checks: every actionable item's host slice is DONE; the remainders are render-VM / owner-gated / data-safety-careful. The genuine remaining work:
+- **OWNER-GATED (highest value):** flip **TSK-838 `MDV_DOM_PATCH`** — RE-VERIFIED built+wired+gated (`MarkdownRenderedView.swift:136`=flag, `:340`=re-render path with `tryApplyDOMPatch` else `loadHTMLString` fallback; in-process-correctness-tested `BlockPatchApplyWebViewTests`, in the 78-green) → kills the 2-9s reload storm, LOW-RISK to flip. Plus formula **TSK-1215** / fold **TSK-1202** flips. Plus the ~417 review/fixed close-queue (incl this session's TSK-1188/1271). Plus **TSK-1247** a/b/c (parked).
+- **RENDER-VM builds (blind, T5-nightly-at-review — buildable if owner directs):** TSK-1119 walkthrough overlay (additive) · TSK-924 CSV multi-cell · TSK-1141 xlsx · TSK-910 diff multi-line (substantial restructure, regression-risky) · TSK-1186 palette param-prompt cmds. Models done; SwiftUI views remain — modest-value vs the flips.
+- **DATA-SAFETY-careful (NOT blind-buildable — corruption-trap class):** TSK-1269/1165 (ExternalEditReconciler buffer-replace — decision method done `19c251b2`; the buffer-mutating apply needs VM/owner) · TSK-343 Revert.
+- This session LANDED: TSK-1188 (`c0fd1543`) + VM render lane validation (78 in-process green) + TSK-1247 rooting + `MDV_WINDOW_DIAG` probe (`8646ac07`).
 
 ## Gotchas / lessons
 - **Don't host-restrict render work — the VM does it (see the correction above).** Build + iterate render ON the VM.
