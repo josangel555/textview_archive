@@ -2966,34 +2966,11 @@ public final class DocumentModel: ObservableObject {
     // owned HERE, keyed by the hosted-view id, because SwiftUI types must
     // not leak into ViewerCore. The registry is purged on tab close via
     // `purgeCaches`, so a closed File-History tab releases its model.
-    private var hostedViews: [UUID: AnyView] = [:]
-
-    /// The embedded view for `id`, or `nil` if no such hosted tab exists.
-    /// `ContentView` calls this for the `.hostedView` document state.
-    public func hostedView(forID id: UUID) -> AnyView? { hostedViews[id] }
-
-    /// TSK-721 — open the in-app HTTP request tool in a fresh hosted tab.
-    /// The view is self-contained (owns its `HTTPClientViewModel`); all
-    /// request logic lives in the pure, host-tested `HTTPClientCore`.
-    @discardableResult
-    public func openHTTPClient() -> UUID {
-        openHostedView(title: "HTTP Request", rootView: HTTPClientView())
-    }
-
-    /// Open a new tab that hosts an arbitrary SwiftUI `rootView`. Always a
-    /// fresh tab (these aren't file-backed, so there's nothing to reveal /
-    /// dedup against). Returns the tab id so callers can identify it. The
-    /// view is rendered by `ContentView` via `hostedView(forID:)`; closing
-    /// the tab drops the registered view.
-    @discardableResult
-    public func openHostedView<V: View>(title: String, rootView: V) -> UUID {
-        let hostID = UUID()
-        hostedViews[hostID] = AnyView(rootView)
-        let tab = Tab(state: .hostedView(id: hostID, title: title), viewMode: .source)
-        tabCoordinator.append(tab)
-        updateDerived()
-        return hostID
-    }
+    // Internal (not private) so the open/resolve logic can live in the
+    // DocumentModel+ViewHosting.swift SRP slice (TSK-1110).
+    var hostedViews: [UUID: AnyView] = [:]
+    // hostedView(forID:) / openHTTPClient() / openHostedView(_:) →
+    // DocumentModel+ViewHosting.swift.
 
     /// Returns the per-tab cache actor for `tabID`, creating one
     /// lazily on first request. Views that need to observe
@@ -5690,7 +5667,9 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: Internal
 
-    private func updateDerived() {
+    // Internal (not private) so SRP-slice extensions (e.g.
+    // DocumentModel+ViewHosting.swift, TSK-1110) can republish derived state.
+    func updateDerived() {
         #if DEBUG
         updateDerivedCalls += 1   // P2 probe: a bulk drain must fire this ONCE
         #endif
