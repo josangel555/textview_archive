@@ -421,10 +421,10 @@ struct ImageEditorView: View {
                 // above. A full marquee/drag tool is the render-gated remainder.
                 groupLabel("Draw")
                 HStack {
-                    Button { commitCenteredShape() } label: {
-                        Label("Box", systemImage: "rectangle")
-                    }
-                    .accessibilityIdentifier("mdv.imageEditor.drawBox")
+                    // TSK-1309: the one-shot "Box" button was removed — it was
+                    // redundant with the interactive `.drawRect` tool in the tool
+                    // picker (a hardcoded centred red box). The drawRect tool is the
+                    // discoverable, positionable equivalent.
                     Button { commitSampleText() } label: {
                         Label("Text", systemImage: "textformat")
                     }
@@ -493,16 +493,6 @@ struct ImageEditorView: View {
         Text(text.uppercased())
             .font(.caption2).foregroundStyle(.secondary)
             .padding(.top, 4)
-    }
-
-    /// Commit a centered, half-size stroked box onto the current render. Sized
-    /// from the rendered raster's dimensions so it lands sensibly on any image;
-    /// the precise placement/drag tool is the render-gated remainder (TSK-749).
-    private func commitCenteredShape() {
-        guard let image = vm.rendered else { return }
-        let w = CGFloat(image.width), h = CGFloat(image.height)
-        let rect = CGRect(x: w * 0.25, y: h * 0.25, width: w * 0.5, height: h * 0.5)
-        vm.commitDraw(.strokeRect(rect, .red, lineWidth: max(2, w / 100)))
     }
 
     /// Commit a sample text label near the top-left of the current render. A
