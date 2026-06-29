@@ -17,6 +17,17 @@ scripts/test-in-vm.sh all` — `all` rebuilds dist/ first). The ONLY blocked lan
 Board (shared, ~all markdown_viewer): **1658 total** · ~**417 await owner close** (review+fixed). Agent-complete
 items are now in **§✅ DONE (bottom)**. `reported` is still INT-126-inflated (~70 mass-reset; `task_get` before trusting; do NOT hand-mutate — INT-128 tooling fix).
 
+## 🆕 Owner intake 2026-06-29 (filed TSK-1302–1327) — fresh owner-reported bugs + features
+Mostly user-facing render-VM (image-editor / panes / terminal / menus); host-model where applicable, render at review. Grouped:
+- **Image editor (cluster — relates the TSK-1048 overhaul):** TSK-1302 editor pane covered by file-property pane (layout/overflow) · TSK-1303 edit state reset on session-switch · TSK-1304 hide file-property pane · TSK-1305 full Undo for image edits · TSK-1306 New▸Image → blank-canvas editor · TSK-1307 canvas size-adjust (MS-Paint) · TSK-1309 remove the Draw Box button · TSK-1310 edit Draw Text element (text/pos/color/font) · TSK-1320 Annotations: clarify-vs-Shapes/editability · TSK-1321 selectable+editable overlay elements (resize/rotate/move/props; latest-first→all) · TSK-1325 image format+quality convert.
+- **Terminal / layout / panes:** TSK-1312 colors off running claude code in Terminal · TSK-1313 remove ALL H/V size restrictions on every pane (Terminal h-expand cap) · TSK-1317 drag Terminal icon + remove its position Setting.
+- **Nav / shoulder / key-events:** TSK-1314 Side nav shows File-nav even when toggle off · TSK-1315 **key-event routing audit** (keystrokes leaking to wrong recipient) · TSK-1316 empty shoulder bars only-on-drag.
+- **Menus:** TSK-1318 reorganize/group menus (cf TSK-751) · TSK-1319 dynamic content-specific (per-tab) menu.
+- **Session:** TSK-1311 session state independent/persistent/online (umbrella) · TSK-1308 switching session stops music (keep sessions live).
+- **Paste:** TSK-1322 paste is buggy · TSK-1327 smart text-paste formatting (rich→markdown) — cf TSK-958/1163.
+- **Media features:** TSK-1323 extract audio from video · TSK-1324 audio format+quality convert (both via host ffmpeg TSK-528) · (TSK-1325 image convert above).
+- **Walkthrough:** TSK-1326 authoring path + sample walkthroughs.
+
 ## ⚡ ACTIVE — render-VM work queue (NOW workable on the VM). Drain top-down, build + validate on the VM.
 
 ### P0 — bugs + perf the user feels
