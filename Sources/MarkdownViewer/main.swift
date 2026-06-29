@@ -117,6 +117,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // the launch sequence twice.
         if Self.launchSequenceRan { return }
         Self.launchSequenceRan = true
+        // TSK-1247 diagnostic (env-gated, MDV_WINDOW_DIAG=1): dump the
+        // NSApplication window list ~3s after launch to root the spawned-app
+        // "no visible window" issue on the launchctl-asuser-root VM GUI lane —
+        // distinguishes exists-off-Space/occluded from never-created. An
+        // off-Space/occluded window makes the rendered-preview WKWebView suspend
+        // rendering → the script-bus scroll probe reads -1 (TSK-1247 + the
+        // downstream TSK-1200 / ScrollRestore UAT failures). No-op in production.
+        if ProcessInfo.processInfo.environment["MDV_WINDOW_DIAG"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                let wins = NSApplication.shared.windows
+                var out = "MDV_WINDOW_DIAG: \(wins.count) window(s); appActive=\(NSApp.isActive)\n"
+                for (i, w) in wins.enumerated() {
+                    let title = w.title.isEmpty ? "<none>" : w.title
+                    out += "MDV_WINDOW_DIAG[\(i)] title=\(title)"
+                        + " frame=\(NSStringFromRect(w.frame)) visible=\(w.isVisible)"
+                        + " onActiveSpace=\(w.isOnActiveSpace)"
+                        + " occluded=\(!w.occlusionState.contains(.visible))"
+                        + " miniaturized=\(w.isMiniaturized) level=\(w.level.rawValue)\n"
+                }
+                FileHandle.standardError.write(Data(out.utf8))
+            }
+        }
         // TSK-636: core-call auditing at the transport seam. FAILURES only —
         // successes are routine and high-volume (fuzzy ranks per palette
         // keystroke); a failing/panicking core is the security signal.
