@@ -11,6 +11,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-29
 
+### Fixed
+- **No more crash on an invalid `jq` filter (or any fast-failing subprocess).** Running a jq filter the tool rejects could, under load, crash the app with SIGPIPE — the jq process closed its input before the app finished writing to it. The shared subprocess runner now suppresses SIGPIPE on the stdin write (`F_SETNOSIGPIPE`), so an early-exiting jq/tool surfaces its error message cleanly instead of taking the app down. (Fixes a real invalid-filter-under-load crash + a recurring CI flake; covers every subprocess the app drives.)
+
 ### System work
 - **DocumentModel SRP split continues (TSK-1110)** — view-mode-lock (`currentViewModeIsLocked` / `toggleCurrentViewModeLock`) carved into `DocumentModel+ViewModeLock.swift`; plus an audit of the 19 prior SRP pointer comments caught + removed one orphaned doc comment (the `displayedText` slice left its `///` dangling). Behavior-preserving; headless gate green.
 - **DocumentModel SRP slice — Editable HEX (#234) carved out (TSK-1110)** — the per-tab dirty-bytes stash + armed-edit state + disk write-back (`saveHexEdits`, with the symlink/IO NSAlert prompts) moved to `DocumentModel+EditableHex.swift` (the 3 stored props stay; `hexDirtyBytes`/`hexEditArmedTabs`/`watchedURL` widened private→internal). Behavior-preserving; headless gate green.

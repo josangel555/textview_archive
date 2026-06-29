@@ -37,6 +37,27 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertEqual(String(data: r.stdout, encoding: .utf8), payload)
     }
 
+    /// Regression (SIGPIPE-resilience): a child that EXITS before reading all
+    /// of stdin must not kill the PARENT. ProcessRunner writes stdin off-thread;
+    /// when the child (`/bin/sh -c 'exit 0'`, which never reads stdin and exits
+    /// immediately) has closed the read end, our write(2) to the broken pipe
+    /// raises SIGPIPE — fatal by default and UNCATCHABLE by the `try?` around
+    /// the write (a signal isn't a Swift throw). That killed this test process
+    /// under load (the recurring JQRunnerTests flake) and is a real crash on an
+    /// invalid jq filter. `F_SETNOSIGPIPE` on the write fd makes write(2) return
+    /// EPIPE instead. The 1 MB payload (>> the 64 KB pipe buffer) guarantees the
+    /// write is still in flight when the child exits; merely REACHING the assert
+    /// proves no SIGPIPE fired.
+    func test_run_childExitsBeforeReadingStdin_doesNotSIGPIPE() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "exit 0"]   // never reads stdin; exits at once
+        let big = Data(count: 1_024 * 1_024)   // 1 MB >> 64 KB pipe buffer
+        let r = try ProcessRunner.run(p, stdin: big)
+        XCTAssertEqual(r.terminationStatus, 0)
+        XCTAssertFalse(r.timedOut)
+    }
+
     // MARK: stderr drain (would deadlock without concurrent drain)
 
     func test_run_drainsStderrConcurrentlyWithStdout() throws {

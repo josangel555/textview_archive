@@ -248,6 +248,16 @@ public enum ProcessRunner {
         // fill its stdout pipe and stall before consuming our stdin
         // payload).
         if let pipe = stdinPipe, let data = stdin {
+            // Suppress SIGPIPE on the stdin write fd. A child that exits BEFORE
+            // reading all of stdin (e.g. `jq` rejecting an invalid filter, or any
+            // fast-failing tool) closes the read end, so our write(2) would raise
+            // SIGPIPE and kill the PARENT (the app / the test runner) — fatal by
+            // default and NOT catchable by the `try?` below (a signal isn't a Swift
+            // throw). F_SETNOSIGPIPE makes write(2) return -1/EPIPE instead, which
+            // surfaces as a thrown error the `try?` swallows. Mirrors LSPClient's
+            // stdin fd. (Fixes the recurring JQRunner SIGPIPE flake AND a real
+            // invalid-filter-under-load crash for every ProcessRunner consumer.)
+            _ = fcntl(pipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
             DispatchQueue.global(qos: .userInitiated).async {
                 try? pipe.fileHandleForWriting.write(contentsOf: data)
                 try? pipe.fileHandleForWriting.close()
