@@ -340,6 +340,63 @@ public struct LSPWorkspaceOverrides: Sendable, Equatable {
         }
         return merged
     }
+
+    // MARK: - Write-back (TSK-1128: the Settings ▸ LSP binary picker writes lsp.json)
+
+    /// The canonical `servers` key this writer emits for `language` — the plain
+    /// language tag (the most readable of the aliases `languageFor` accepts).
+    public static func canonicalKey(for language: LSPLanguage) -> String {
+        switch language {
+        case .swift: return "swift"
+        case .typescript: return "typescript"
+        case .python: return "python"
+        case .java: return "java"
+        }
+    }
+
+    /// Set (or update) the server `command` — and optionally `args` — for
+    /// `language` in `<workspaceRoot>/lsp.json`, the write-back behind the
+    /// Settings ▸ LSP binary picker (TSK-1128). PRESERVES everything else: other
+    /// languages' entries, an entry's `args`/`env`/`initializationOptions`, and
+    /// any unknown top-level or per-entry keys — we mutate the RAW JSON object,
+    /// never a lossy round-trip through the typed model. If an entry for the
+    /// language already exists under ANY recognised alias (e.g. `sourcekitLSP`),
+    /// it's updated IN PLACE (no duplicate); otherwise a fresh entry is added
+    /// under `canonicalKey`. The file (and its `servers` object) is created if
+    /// absent. Atomic write. Throws if an existing file is unreadable or malformed
+    /// JSON — we refuse to clobber a hand-edited file we can't parse.
+    public static func setServerCommand(
+        _ command: String,
+        args: [String]? = nil,
+        for language: LSPLanguage,
+        workspaceRoot: URL
+    ) throws {
+        let file = workspaceRoot.appendingPathComponent(fileName)
+
+        // Load the existing object VERBATIM (preserve unknown keys) or start fresh.
+        var root: [String: Any] = [:]
+        if FileManager.default.fileExists(atPath: file.path) {
+            let data = try Data(contentsOf: file)
+            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            root = obj
+        }
+        var servers = (root["servers"] as? [String: Any]) ?? [:]
+
+        // Update the existing alias key for this language in place; else add canonical.
+        let existingKey = servers.keys.first { languageFor(key: $0) == language }
+        let key = existingKey ?? canonicalKey(for: language)
+        var entry = (servers[key] as? [String: Any]) ?? [:]
+        entry["command"] = command
+        if let args { entry["args"] = args }
+        servers[key] = entry
+        root["servers"] = servers
+
+        let out = try JSONSerialization.data(
+            withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        try out.write(to: file, options: .atomic)
+    }
 }
 
 /// Minimal logging seam for the LSP override layer. Warnings now flow
