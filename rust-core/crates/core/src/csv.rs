@@ -677,6 +677,25 @@ mod tests {
             prop_assert_eq!(&table.header, &grid[0]);
             prop_assert_eq!(table.rows.as_slice(), &grid[1..]);
         }
+
+        /// Hardening: the PUBLIC `parse`/`parse_arena` must NEVER panic on
+        /// arbitrary input — CSV parses UNTRUSTED files (the user opens any .csv),
+        /// so a parser panic on malformed input (unterminated quotes, stray CR,
+        /// embedded delimiters, ragged rows, lone backslashes) would crash on
+        /// open. The grid round-trips only cover WELL-FORMED CSV; this fuzzes the
+        /// quote / newline / delimiter / escape edge paths. ANY result is a pass;
+        /// the property is TOTAL no-panic.
+        #[test]
+        fn parse_arbitrary_input_never_panics(
+            s in proptest::collection::vec(
+                prop::sample::select(",\"\r\n\\ \tabcAB012".chars().collect::<Vec<char>>()),
+                0..64usize,
+            ).prop_map(|cs| cs.into_iter().collect::<String>())
+        ) {
+            // Both public entry points; any Table/TableArena is fine — never panic.
+            let _ = parse(&s);
+            let _ = parse_arena(&s);
+        }
     }
 
     /// TSK-585: CSV quoting/escaping round-trip — the tricky path where parsers
