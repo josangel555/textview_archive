@@ -14,6 +14,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ### System work
 - **DocumentModel SRP split continues (TSK-1110)** — view-mode-lock (`currentViewModeIsLocked` / `toggleCurrentViewModeLock`) carved into `DocumentModel+ViewModeLock.swift`; plus an audit of the 19 prior SRP pointer comments caught + removed one orphaned doc comment (the `displayedText` slice left its `///` dangling). Behavior-preserving; headless gate green.
 - **DocumentModel SRP slice — Editable HEX (#234) carved out (TSK-1110)** — the per-tab dirty-bytes stash + armed-edit state + disk write-back (`saveHexEdits`, with the symlink/IO NSAlert prompts) moved to `DocumentModel+EditableHex.swift` (the 3 stored props stay; `hexDirtyBytes`/`hexEditArmedTabs`/`watchedURL` widened private→internal). Behavior-preserving; headless gate green.
+- **DocumentModel SRP slice — editor-coordinator state forwarders + CM6 mount-seed carved out (TSK-1110)** — the indentation/cursor/scroll/diagnostics/gutter/fold forwarders + `editorMountSelectionSeed` (the caret-wins-else-restored-scroll-line CM6 seed) moved to `DocumentModel+EditorState.swift` (zero widening). Behavior-preserving; headless gate green.
 
 ## 2026-06-28
 
