@@ -20,7 +20,7 @@ final class TerminalPaneLayoutTests: XCTestCase {
 
     func test_heightClamp_belowMin_andAboveMax() {
         XCTAssertEqual(TerminalPaneLayout(height: 10).height, TerminalPaneLayout.minHeight)
-        XCTAssertEqual(TerminalPaneLayout(height: 99999).height, TerminalPaneLayout.maxHeight)
+        XCTAssertEqual(TerminalPaneLayout(height: 200_000).height, TerminalPaneLayout.maxHeight)
     }
 
     func test_heightClamp_nonFinite_fallsBackToDefault() {
@@ -163,7 +163,7 @@ final class TerminalPaneLayoutTests: XCTestCase {
     func test_sideWidth_defaultAndClamp() {
         XCTAssertEqual(TerminalPaneLayout().sideWidth, TerminalPaneLayout.defaultWidth)
         XCTAssertEqual(TerminalPaneLayout(sideWidth: 10).sideWidth, TerminalPaneLayout.minWidth)
-        XCTAssertEqual(TerminalPaneLayout(sideWidth: 99999).sideWidth, TerminalPaneLayout.maxWidth)
+        XCTAssertEqual(TerminalPaneLayout(sideWidth: 200_000).sideWidth, TerminalPaneLayout.maxWidth)
         XCTAssertEqual(TerminalPaneLayout.clampWidth(.nan), TerminalPaneLayout.defaultWidth)
     }
 

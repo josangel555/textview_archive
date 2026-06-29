@@ -73,14 +73,17 @@ public struct TerminalPaneLayout: Sendable, Equatable {
     /// Persisted tab set (JSON-encoded `TerminalTabSet`). Pinned by test. (TSK-368)
     public static let tabSetKey = "MarkdownViewer.terminal.tabSet"
 
-    /// Sensible bounds so a corrupted / hostile default can't make the
-    /// pane swallow the window or collapse to nothing.
+    /// Bounds so a corrupted / hostile default can't collapse the pane to
+    /// nothing. The MAX is a corruption CEILING (TSK-1313), NOT a UX maximum —
+    /// the window + split layout already bound the usable size, so the user can
+    /// expand the terminal pane freely (the prior 800/900 caps blocked the
+    /// owner's horizontal/vertical growth). Mirrors `PanelDockLayout.maxSize`.
     public static let minHeight: CGFloat = 80
-    public static let maxHeight: CGFloat = 800
+    public static let maxHeight: CGFloat = 100_000
     public static let defaultHeight: CGFloat = 220
     /// Width bounds for the side-docked pane (left/right column).
     public static let minWidth: CGFloat = 160
-    public static let maxWidth: CGFloat = 900
+    public static let maxWidth: CGFloat = 100_000
     public static let defaultWidth: CGFloat = 360
 
     public var isOpen: Bool
