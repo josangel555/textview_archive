@@ -172,6 +172,66 @@ public enum AudioExporter {
         ]
     }
 
+    // MARK: - File→file transcode / audio extraction (TSK-1323 / TSK-1324)
+
+    /// Build the `ffmpeg` argv to transcode `input`'s audio into `output` per `spec`.
+    /// `dropVideo` adds `-vn` to strip the video stream — the extract-audio-from-video
+    /// case (TSK-1323, `input` is a video); `false` is an audio→audio format/quality
+    /// convert (TSK-1324). Like `mp3Args`, the output path is fenced behind a `--`
+    /// end-of-options sentinel so a name beginning with `-` parses as a positional file,
+    /// not an ffmpeg flag (argument-injection guard). Pure — host-testable without spawning.
+    static func transcodeArgs(input: String, output: String, spec: AudioExportSpec, dropVideo: Bool) -> [String] {
+        var args = ["-y", "-hide_banner", "-loglevel", "error", "-i", input]
+        if dropVideo { args.append("-vn") }
+        args.append(contentsOf: codecArgs(for: spec))
+        args.append(contentsOf: ["--", output])
+        return args
+    }
+
+    /// The codec + container flags for `spec` (the encoding half of `transcodeArgs`).
+    /// PCM containers (wav/aiff/caf) carry the bit-depth via the codec name; lossy
+    /// (aac/mp3) carry the bit rate via `-b:a`. ffmpeg preserves the source sample
+    /// rate + channel layout (no `-ar`/`-ac`), so a transcode is encoding-only.
+    static func codecArgs(for spec: AudioExportSpec) -> [String] {
+        let kbps = "\(max(8, spec.bitRate / 1000))k"
+        switch spec.format {
+        case .wav:  return ["-codec:a", pcmCodec(spec.sampleFormat, bigEndian: false), "-f", "wav"]
+        case .aiff: return ["-codec:a", pcmCodec(spec.sampleFormat, bigEndian: true),  "-f", "aiff"]
+        case .caf:  return ["-codec:a", pcmCodec(spec.sampleFormat, bigEndian: false), "-f", "caf"]
+        case .aac:  return ["-codec:a", "aac",        "-b:a", kbps, "-f", "mp4"]
+        case .mp3:  return ["-codec:a", "libmp3lame", "-b:a", kbps, "-f", "mp3"]
+        }
+    }
+
+    /// ffmpeg PCM codec name for a sample format + endianness (aiff is big-endian).
+    static func pcmCodec(_ fmt: AudioExportSpec.SampleFormat, bigEndian: Bool) -> String {
+        let e = bigEndian ? "be" : "le"
+        switch fmt {
+        case .int16:   return "pcm_s16\(e)"
+        case .int24:   return "pcm_s24\(e)"
+        case .int32:   return "pcm_s32\(e)"
+        case .float32: return "pcm_f32\(e)"
+        }
+    }
+
+    /// Transcode `input` → `output` per `spec` via the resolved host `ffmpeg`
+    /// (`dropVideo` = extract-audio-from-video). ffmpeg reads the file directly — no
+    /// in-memory buffer. Throws `mp3FFmpegNotFound` (the generic "ffmpeg unavailable"
+    /// signal — ffmpeg is required for arbitrary-container transcode) when none is found.
+    public static func transcodeFile(
+        input: URL,
+        output: URL,
+        spec: AudioExportSpec,
+        dropVideo: Bool,
+        ffmpegOverride: String? = nil
+    ) throws {
+        guard let ffmpeg = FFmpegLocator.resolve(override: ffmpegOverride) else {
+            throw AudioExportError.mp3FFmpegNotFound
+        }
+        try runFFmpeg(ffmpeg, transcodeArgs(input: input.path, output: output.path,
+                                            spec: spec, dropVideo: dropVideo))
+    }
+
     /// Run `ffmpeg` with an explicit args array (NO shell — paths can't inject)
     /// and a minimal environment, via the shared `ProcessRunner` (timeout +
     /// SIGTERM→SIGKILL escalation + concurrent drain) — actually mirroring
