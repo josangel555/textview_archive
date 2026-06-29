@@ -40,7 +40,7 @@ validation, never used to defer or ask.
 - **TSK-1146** — spell/grammar inline squiggles (model + render).
 
 **Internal / quality (host gate = full confidence → validated):**
-- **TSK-1110** — DocumentModel SRP, remaining clusters (CM6-LSP ~815, Command-registry ~457, Editable-HEX mid-MARK split). Compile + headless gate is COMPLETE confidence for a behavior-preserving move — done as deliberate slices, not deferred.
+- **TSK-1110** — DocumentModel SRP: **cohesive-logic extraction COMPLETE** (5835→3346 lines, ~43%, 57 extensions — verified fresh 2026-06-29; the once-listed clusters CM6-LSP/Command-registry/Editable-HEX/view-mode-lock were all carved). Remaining 3346 = the irreducible open/close/select orchestrators + @Published state (NOT behavior-preserving-movable). **Recommend owner close/de-scope** — no more safe exact-move slices.
 - **TSK-538** — rust-core audit follow-ups (host children).
 - **TSK-764 / TSK-1165 / TSK-1166** — git reconciliation + edit-reconcile / disk-conflict wiring (host model).
 - **TSK-698 / TSK-703 / TSK-722 / TSK-723** — host-engine epics (build engine, host-test; render at review).
@@ -63,7 +63,7 @@ validation, never used to defer or ask.
 9. **TSK-1141** — xlsx sheet UI + formula-recalc wiring (model done). **[render-VM]**
 10. **TSK-377** — illustrations (PARTIAL). **[render-VM]**
 11. **TSK-1032** — video-in-HEX-mode byte grid renders blank / doesn't mount. **[VM render bug]**
-12. **TSK-1110** — DocumentModel SRP split — **continuing** (Focus-shortcuts carved `aed6171c`; clusters left: Editable-HEX, View-hosting-tabs, CM6-LSP-bridge, Open-As, view-mode-lock, Command-registry). **[host]**
+12. **TSK-1110** — DocumentModel SRP split — **cohesive-logic COMPLETE** (5835→3346, ~43%; Editable-HEX/view-mode-lock/CM6-LSP/Command-registry all carved this session). Remaining = irreducible open/close/select orchestrators + state; **recommend owner close/de-scope**. **[host DONE]**
 
 ### P1 — user-facing features (13–40)
 13. **TSK-955** — RSS / Atom feed reader tool window. **[render-VM — host model+VM+view built; mount tail occlusion-class]**
