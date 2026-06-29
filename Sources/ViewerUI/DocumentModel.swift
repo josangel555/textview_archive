@@ -160,6 +160,18 @@ public final class DocumentModel: ObservableObject {
         didSet { preferences.previewMetadataVisible = showPreviewMetadataPanel }
     }
 
+    /// Terminal ANSI colour theme name (TSK-1312) — drives `TerminalPalette`'s
+    /// 16-colour palette. Persisted; default "Default" (the muted shipped palette).
+    /// "Classic (xterm)" gives standard vivid colours (closer to what CLI tools like
+    /// claude code expect). Setting it rebuilds the palette; open terminals pick the new
+    /// colours up on their next redraw. Bound by the Settings "Colour scheme" picker.
+    @Published public var terminalColorThemeName: String {
+        didSet {
+            preferences.terminalColorThemeName = terminalColorThemeName
+            TerminalPalette.activeThemeName = terminalColorThemeName
+        }
+    }
+
     /// When on, NSLayoutManager renders dots for spaces, arrows for
     /// tabs, pilcrows for paragraph breaks. Persisted.
     @Published public var showInvisibleChars: Bool {
@@ -456,6 +468,8 @@ public final class DocumentModel: ObservableObject {
         self.sourceWordWrap = preferences.sourceWordWrap
         self.sessionsEnabled = preferences.sessionsEnabled
         self.showPreviewMetadataPanel = preferences.previewMetadataVisible
+        self.terminalColorThemeName = preferences.terminalColorThemeName
+        TerminalPalette.activeThemeName = preferences.terminalColorThemeName   // apply at launch (didSet doesn't fire in init)
         self.showInvisibleChars = preferences.showInvisibleChars
         self.vimModeEnabled = preferences.vimModeEnabled
         self.showMarkdownOverview = preferences.showMarkdownOverview

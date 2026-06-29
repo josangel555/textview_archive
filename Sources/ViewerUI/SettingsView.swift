@@ -339,6 +339,20 @@ public struct SettingsView: View {
 
     private var terminalSection: some View {
         section("Terminal") {
+            // Colour scheme (TSK-1312): the ANSI 16-colour palette. "Default" is the
+            // muted shipped palette; "Classic (xterm)" is standard vivid xterm colours
+            // (closer to what CLI tools like claude code expect — the "colors look off" fix).
+            row("Colour scheme") {
+                Picker("", selection: $model.terminalColorThemeName) {
+                    ForEach(AnsiTheme.builtIns, id: \.name) { theme in
+                        Text(theme.name).tag(theme.name)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 220)
+                .accessibilityIdentifier("mdv.settings.terminal.colorScheme")
+            }
             // Pane DOCK edge (TSK-491): which shoulder the whole terminal pane
             // lives in. The discoverable control for "move the terminal to the
             // right" — distinct from the tab-strip position INSIDE the pane.

@@ -37,4 +37,22 @@ final class TerminalPaletteThemeTests: XCTestCase {
         prefs.terminalColorThemeName = "Classic (xterm)"
         XCTAssertEqual(prefs.terminalColorThemeName, "Classic (xterm)")
     }
+
+    func test_documentModel_setTerminalColorTheme_persistsAndAppliesToPalette() throws {
+        // The Settings "Colour scheme" picker is bound to $model.terminalColorThemeName;
+        // setting it must persist the pref AND update the live palette (TSK-1312).
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DMTerm-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let prefs = PreferencesStore(defaults: UserDefaults(suiteName: "DMTerm-\(UUID().uuidString)")!)
+        let model = DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: tmp.appendingPathComponent("h.json")),
+            sidebar: SidebarModel(),
+            preferences: prefs)
+        model.terminalColorThemeName = "Classic (xterm)"
+        XCTAssertEqual(prefs.terminalColorThemeName, "Classic (xterm)", "persisted to preferences")
+        XCTAssertEqual(TerminalPalette.activeThemeName, "Classic (xterm)", "applied to the live palette")
+    }
 }
