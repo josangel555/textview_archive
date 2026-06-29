@@ -2359,6 +2359,27 @@ mod tests {
                 other => prop_assert!(false, "{} → {:?}, expected Number({})", expr, other, expected),
             }
         }
+
+        /// TSK-1215 flip-hardening: `evaluate` must NEVER panic, on ANY input — a
+        /// formula-parser crash on a malformed cell expression would take the app
+        /// down. The prior property only checks VALID generated arithmetic; this
+        /// fuzzes the formula alphabet (digits / operators / parens / refs /
+        /// function-ish letters / quotes / comparisons) so the input reaches deep
+        /// parse + precedence paths, not just random unicode. ANY `Value` (incl
+        /// `Error`) is a pass; the property is TOTAL no-panic (catches a parser
+        /// panic / unwrap / arithmetic-overflow on malformed input).
+        #[test]
+        fn formula_arbitrary_input_never_panics(
+            s in proptest::collection::vec(
+                prop::sample::select(
+                    "0123456789+-*/^%(),.:;=<>&\"' ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                        .chars().collect::<Vec<char>>()),
+                0..48usize,
+            ).prop_map(|cs| cs.into_iter().collect::<String>())
+        ) {
+            // Must RETURN (any Value, including Error) — never panic.
+            let _ = evaluate(&s);
+        }
     }
 
     #[test]
