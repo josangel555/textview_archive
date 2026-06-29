@@ -28,6 +28,30 @@ the tracker builder picks up. This doc is the durable consolidated record.
   `task_validate` from `progress` denied, agent ceiling at `validated`). Ask: publish the
   from→to legality matrix (per actor kind) in the tool descriptions, like INT-101 did for artifacts.
 
+## Newly filed (2026-06-29)
+
+From the claude-mdv owner-intake drain (TSK-1302–1327; 14 shipped→review). Filed as **TSK-1329/1330**,
+tagged `[INT]` (the `internal` project key fell back to `tasked` on create — see the process note):
+
+- **TSK-1329** — `task_park` `kind` is {review, approval, decision}; there's no clarification/question
+  kind for an open INFO/REPRO request. Parking a vague "paste is buggy" (TSK-1322) asking
+  which-surface+repro, I had to use `decision` (which implies choosing between options). Ask: a
+  `question`/`clarification` kind (`options` optional).
+- **TSK-1330** — `task_record` artifact `checks` row status is {pass, fail, skip}; no `note`/`info`
+  value for an informational caveat row (e.g. "flake-absence is load-non-deterministic — can't assert
+  deterministically", TSK-1328). Used `skip` as least-wrong. Ask: a `note` status. Complements INT-101.
+- **Process note** — `task_create_many {project:"internal"}` created the tickets in `tasked`
+  (TSK-1329/1330), not the `internal` project: either that project doesn't exist or the key isn't
+  honored on create. (The doc says INT-### lives in `internal`; create didn't route there.)
+
+### What worked well this session (keep)
+
+- `task_advance` auto-walk + the `task_record` evidence packet drove a 14-item intake drain cleanly,
+  one item/firing, each gate-verified.
+- The honesty ceiling (agent caps at `review`; owner closes render on-screen) kept render claims honest
+  — exactly right for the build-render / host-test-the-model / leave-render-at-review pattern.
+- `task_park` unblocked the loop on the one genuine owner-info item (paste repro) without stalling it.
+
 ## What works well (keep)
 
 - **The honesty gate** — evidence-gated `task_validate`, hard agent ceiling, human revoke. It has
