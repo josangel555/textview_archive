@@ -30,6 +30,7 @@ pub fn reveal(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{reveal, SPACE_MARKER, TAB_MARKER};
+    use proptest::prelude::*;
 
     #[test]
     fn spaces_and_tabs_become_markers() {
@@ -55,5 +56,38 @@ mod tests {
         let out = reveal(input);
         assert_eq!(out, format!("café{TAB_MARKER}x{SPACE_MARKER}y"));
         assert_eq!(out.chars().count(), input.chars().count());
+    }
+
+    proptest! {
+        /// Char count is invariant — one marker per whitespace char, everything
+        /// else copied verbatim (the documented guarantee). `.` excludes `\n`,
+        /// matching the "one already-split display line" contract.
+        #[test]
+        fn reveal_preserves_char_count(s in ".*") {
+            prop_assert_eq!(reveal(&s).chars().count(), s.chars().count());
+        }
+
+        /// Idempotent — the markers (·, →) are neither space nor tab, so a second
+        /// pass is a no-op.
+        #[test]
+        fn reveal_is_idempotent(s in ".*") {
+            let once = reveal(&s);
+            let twice = reveal(&once);
+            prop_assert_eq!(twice, once);
+        }
+
+        /// No raw space or tab survives — the whole point of the toggle.
+        #[test]
+        fn reveal_leaves_no_space_or_tab(s in ".*") {
+            let out = reveal(&s);
+            prop_assert!(!out.contains(' '));
+            prop_assert!(!out.contains('\t'));
+        }
+
+        /// A line already free of space/tab is returned unchanged.
+        #[test]
+        fn reveal_is_identity_without_whitespace(s in "[^ \\t]*") {
+            prop_assert_eq!(reveal(&s), s);
+        }
     }
 }
