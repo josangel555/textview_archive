@@ -88,10 +88,27 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
         host?.layoutSubtreeIfNeeded()
     }
 
+    /// Pump until the chrome tree stops re-bodying (quiescent), so no setup /
+    /// async-settle residual leaks into the measured window under machine load
+    /// (TSK-1328 — the parallel-gate flake: a stray initial-render body landed in
+    /// the window when the fixed pre-measure `pump()` was too short under load).
+    /// Uses the probe itself to detect quiescence; bounded, so a genuinely
+    /// never-quiescent tree still falls through and is caught by the real assert.
+    private func settle() {
+        BodyProbe.enabled = true
+        for _ in 0..<12 {
+            BodyProbe.reset()
+            pump()
+            if BodyProbe.counts.isEmpty { break }   // a full pump added nothing → quiescent
+        }
+        BodyProbe.enabled = false
+        BodyProbe.reset()
+    }
+
     /// Run `mutation`, pump, and return the per-view body-eval counts for
     /// just that window.
     private func evals(after mutation: () -> Void) -> [String: Int] {
-        pump()                    // drain anything pending from setup
+        settle()                  // drain setup/async residual to quiescence (TSK-1328)
         BodyProbe.reset()
         BodyProbe.enabled = true
         mutation()
