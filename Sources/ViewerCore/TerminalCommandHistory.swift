@@ -9,6 +9,12 @@ public final class TerminalCommandHistory {
     public static let maxEntries = 500
     public static let maxStoreFileBytes = 256 * 1024
 
+    /// Process-wide shared history (TSK-1176): all terminal tabs record into ONE
+    /// instance so the history is unified + a single writer to the persisted file
+    /// (no per-tab instances racing on the same path). MainActor-isolated because
+    /// the terminal records on the main actor — keeps access serialized without a lock.
+    @MainActor public static let shared = TerminalCommandHistory()
+
     public let storeURL: URL
     private var items: [String] = []   // MRU, newest first
 

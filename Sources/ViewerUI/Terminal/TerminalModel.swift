@@ -131,6 +131,14 @@ public final class TerminalModel: ObservableObject {
 
     private let pty = PTYProcess()
     private let box: TerminalParserBox
+
+    /// TSK-1176: the in-app command history this terminal records into (shared
+    /// across tabs by default). Populated by the input-side line accumulator
+    /// below; the search UI over it is the render follow-on.
+    public let commandHistory: TerminalCommandHistory
+    /// Reconstructs completed command lines from the raw input keystroke stream
+    /// (the PTY has no command boundaries) — see `TerminalInputLineAccumulator`.
+    private var inputLineAccumulator = TerminalInputLineAccumulator()
     /// Leading-edge throttle: first output after an idle gap paints
     /// immediately; subsequent output within a frame is coalesced.
     private var throttle = FrameThrottle()
@@ -158,12 +166,16 @@ public final class TerminalModel: ObservableObject {
     /// report for the same directory doesn't re-fire (avoids needless persist).
     private var lastNotifiedCwd: URL?
 
-    public init(rows: Int = 24, cols: Int = 80) {
+    public init(
+        rows: Int = 24, cols: Int = 80,
+        commandHistory: TerminalCommandHistory = .shared
+    ) {
         let r = max(1, rows)
         let c = max(1, cols)
         self.rows = r
         self.cols = c
         self.box = TerminalParserBox(rows: r, cols: c)
+        self.commandHistory = commandHistory
     }
 
     /// A consistent copy of the current screen for rendering — pulled once
@@ -239,8 +251,24 @@ public final class TerminalModel: ObservableObject {
 
     // MARK: - Input
 
-    public func sendInput(_ data: Data) { pty.write(data) }
-    public func sendString(_ string: String) { pty.writeString(string) }
+    public func sendInput(_ data: Data) {
+        if let s = String(data: data, encoding: .utf8) { recordTypedInput(s) }
+        pty.write(data)
+    }
+    public func sendString(_ string: String) {
+        recordTypedInput(string)
+        pty.writeString(string)
+    }
+
+    /// Feed user input to the command-boundary detector and record any completed
+    /// command lines into `commandHistory` (TSK-1176). Runs on the main actor with
+    /// every keystroke/paste sent to the PTY. Internal so the wiring is host-testable
+    /// without spawning a real shell.
+    func recordTypedInput(_ input: String) {
+        for command in inputLineAccumulator.feed(input) {
+            _ = commandHistory.record(command)
+        }
+    }
 
     // MARK: - Resize
 
