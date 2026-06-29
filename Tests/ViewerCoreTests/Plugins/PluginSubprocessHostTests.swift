@@ -71,6 +71,34 @@ final class PluginSubprocessHostTests: XCTestCase {
         }
     }
 
+    /// Regression (SIGPIPE-resilience, same class as TSK-1295): a plugin that
+    /// EXITS before draining its stdin envelope must not kill the HOST. The host
+    /// writes the envelope off-thread; once the plugin (`exit 0`, never reads
+    /// stdin) has closed the read end, write(2) on a >64 KB payload raises
+    /// SIGPIPE — fatal by default and UNCATCHABLE by the `try?` around the write
+    /// (a signal isn't a Swift throw) — which crashed the host (and this test
+    /// process). `F_SETNOSIGPIPE` on the write fd makes it return EPIPE instead.
+    /// The 200 KB arg (>> the 64 KB pipe buffer) guarantees the write is still
+    /// blocked when the plugin exits; merely REACHING the assert proves no SIGPIPE.
+    func test_plugin_exits_before_reading_envelope_doesNotSIGPIPE() throws {
+        let bin = try writeScript("instant-exit.sh", body: """
+        #!/bin/sh
+        exit 0
+        """)
+        let big = String(repeating: "x", count: 200_000)   // 200 KB >> 64 KB pipe buffer
+        let result = host.call(
+            pluginID: "test.instant-exit", pluginFolder: pluginDir,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
+            request: .init(kind: "listRows", args: ["payload": big])
+        )
+        // Reaching here at all proves the broken-pipe write did not SIGPIPE the
+        // host. The plugin emitted no JSON, so the outcome is a non-.ok failure
+        // (we don't pin which) — but it must have SPAWNED, not failed to spawn.
+        if case .spawnFailed = result.outcome {
+            XCTFail("plugin should have spawned + run; got \(result.outcome)")
+        }
+    }
+
     func test_plugin_receives_envelope_on_stdin() throws {
         // Round-trip the envelope through `jq` would be nice, but we
         // can't assume jq is on the test box. Use a script that copies

@@ -12,7 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-29
 
 ### Fixed
-- **No more crash on an invalid `jq` filter (or any fast-failing subprocess).** Running a jq filter the tool rejects could, under load, crash the app with SIGPIPE — the jq process closed its input before the app finished writing to it. The shared subprocess runner now suppresses SIGPIPE on the stdin write (`F_SETNOSIGPIPE`), so an early-exiting jq/tool surfaces its error message cleanly instead of taking the app down. (Fixes a real invalid-filter-under-load crash + a recurring CI flake; covers every subprocess the app drives.)
+- **No more crash on an invalid `jq` filter, a misbehaving plugin, or any fast-failing subprocess.** A subprocess that exited before reading its input (jq rejecting an invalid filter; a plugin crashing) could, under load, take the whole app down with SIGPIPE — it closed its input before the app finished writing to it. Both the shared subprocess runner **and** the plugin host now suppress SIGPIPE on the stdin write (`F_SETNOSIGPIPE`), so an early-exiting tool surfaces its error cleanly instead. (Fixes a real invalid-filter-under-load crash + a recurring CI flake; the whole subprocess-write class is now covered.)
 
 ### System work
 - **DocumentModel SRP split continues (TSK-1110)** — view-mode-lock (`currentViewModeIsLocked` / `toggleCurrentViewModeLock`) carved into `DocumentModel+ViewModeLock.swift`; plus an audit of the 19 prior SRP pointer comments caught + removed one orphaned doc comment (the `displayedText` slice left its `///` dangling). Behavior-preserving; headless gate green.

@@ -239,6 +239,13 @@ public struct PluginSubprocessHost: Sendable {
         // Write stdin off-thread. Plugins are expected to consume the
         // whole envelope, so a blocking write would deadlock if the
         // plugin doesn't drain. We close on completion to signal EOF.
+        // Suppress SIGPIPE on the write fd: a plugin that exits/crashes
+        // before draining a >64 KB envelope closes the read end, so write(2)
+        // would raise SIGPIPE — fatal by default and UNCATCHABLE by the try?
+        // below (a signal isn't a Swift throw) — killing the HOST. F_SETNOSIGPIPE
+        // makes write(2) return EPIPE instead. Mirrors ProcessRunner / LSPClient;
+        // same SIGPIPE bug class as TSK-1295.
+        _ = fcntl(stdinPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         DispatchQueue.global(qos: .userInitiated).async {
             try? stdinPipe.fileHandleForWriting.write(contentsOf: envelopeData)
             try? stdinPipe.fileHandleForWriting.close()
