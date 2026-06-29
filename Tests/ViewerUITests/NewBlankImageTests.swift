@@ -57,4 +57,13 @@ final class NewBlankImageTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
     }
+
+    func test_newBlankImageForLanding_throughButtonClosure_writesBlankPNG() throws {
+        // TSK-1306: the landing "New Image" button is wired to this exact call
+        // (create blank PNG + open). No folder open ⇒ it lands in the per-user temp.
+        let url = try XCTUnwrap(makeModel().newBlankImageForLanding(width: 64, height: 48))
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(url.pathExtension, "png")
+        XCTAssertEqual(Array(try Data(contentsOf: url).prefix(4)), [0x89, 0x50, 0x4E, 0x47], "valid PNG bytes")
+    }
 }

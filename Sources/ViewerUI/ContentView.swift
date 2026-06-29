@@ -1717,6 +1717,12 @@ struct EmptyStateView: View {
                 }
                 .keyboardShortcut("n", modifiers: [.command])
                 .accessibilityIdentifier("mdv.emptyState.newFile")
+                // TSK-1306: New Image opens the editor with a blank canvas
+                // (BlankImageCreator via newBlankImageForLanding — host-tested).
+                Button("New Image") {
+                    model.newBlankImageForLanding()
+                }
+                .accessibilityIdentifier("mdv.emptyState.newImage")
                 Button("Open File…") {
                     NSApp.sendAction(#selector(AppMenuActions.openDocument(_:)), to: nil, from: nil)
                 }
