@@ -738,20 +738,18 @@ private struct AudioPlayerHost: NSViewRepresentable {
     let url: URL
     func makeNSView(context: Context) -> AVPlayerView {
         let v = AVPlayerView()
-        v.player = AVPlayer(url: url)
+        // TSK-1308: bind to the app-level persistent player so audio survives a
+        // session/tab switch (view teardown) instead of being deallocated here.
+        v.player = AudioPlaybackController.shared.player(for: url)
         v.controlsStyle = .default
         v.showsFullScreenToggleButton = false  // not meaningful for audio
         return v
     }
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        // Replace the player only when URL actually changes — avoids
-        // re-creating a fresh AVPlayer on every SwiftUI update which
-        // would yank playback.
-        if let current = (nsView.player?.currentItem?.asset as? AVURLAsset)?.url,
-           current == url {
-            return
-        }
-        nsView.player = AVPlayer(url: url)
+        // Re-bind to the persistent player; `player(for:)` reuses the live player for
+        // an unchanged URL (no playback yank) and replaces it for a new one.
+        let p = AudioPlaybackController.shared.player(for: url)
+        if nsView.player !== p { nsView.player = p }
     }
 }
 
