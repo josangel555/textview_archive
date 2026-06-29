@@ -241,6 +241,14 @@ public final class EditorCoordinator: ObservableObject {
     /// don't re-ship the same set.
     @Published public internal(set) var pendingEditorDiagnostics: [UUID: [CMDiagnostic]] = [:]
 
+    /// Source-tracked inputs to `pendingEditorDiagnostics` (TSK-1146). The merged
+    /// set CM6 renders is `pendingEditorDiagnostics`; these hold each source
+    /// separately so a re-publish of one (LSP on `publishDiagnostics`, spell on a
+    /// text-change pass) doesn't clobber the other — LSP errors and spell
+    /// underlines coexist. Cleared per-tab on `resetEditorState`.
+    private var lspEditorDiagnostics: [UUID: [CMDiagnostic]] = [:]
+    private var spellEditorDiagnostics: [UUID: [CMDiagnostic]] = [:]
+
     /// Per-tab pending diff/blame gutter markers (added / modified /
     /// removed bars). Fed by `DocumentModel.refreshDiffMarks` (the
     /// off-main `git diff HEAD -- <path>` task) and consumed by the
@@ -371,6 +379,8 @@ public final class EditorCoordinator: ObservableObject {
         editorCursorByTab.removeValue(forKey: id)
         editorScrollByTab.removeValue(forKey: id)
         pendingEditorDiagnostics.removeValue(forKey: id)
+        lspEditorDiagnostics.removeValue(forKey: id)
+        spellEditorDiagnostics.removeValue(forKey: id)
         pendingEditorGutterMarkers.removeValue(forKey: id)
         editorFoldRangesByTab.removeValue(forKey: id)
         editorFoldRegionsByTab.removeValue(forKey: id)
@@ -595,8 +605,31 @@ public final class EditorCoordinator: ObservableObject {
                 documentText: buf.text,
                 encoding: .utf16
             )
-            pendingEditorDiagnostics[tab.id] = cmDiags
+            lspEditorDiagnostics[tab.id] = cmDiags
+            pendingEditorDiagnostics[tab.id] = Self.mergeEditorDiagnostics(
+                cmDiags, spellEditorDiagnostics[tab.id] ?? [])
         }
+    }
+
+    /// Merge LSP + spell editor diagnostics into one CM6 set, ordered by document
+    /// offset (CM6's lint extension renders them positionally). Pure — host-tested.
+    static func mergeEditorDiagnostics(
+        _ lsp: [CMDiagnostic], _ spell: [CMDiagnostic]
+    ) -> [CMDiagnostic] {
+        (lsp + spell).sorted { ($0.from, $0.to) < ($1.from, $1.to) }
+    }
+
+    /// Push spell-check findings for a tab as CM6 squiggles (TSK-1146), MERGED
+    /// with any LSP diagnostics for that tab so neither source clobbers the other
+    /// (re-publishing LSP keeps the spell layer and vice-versa). The debounced
+    /// spell pass that produces `issues` (run `SpellCheckEngine` on the editor
+    /// text) is the editor-surface caller — this is the merge seam. Empty
+    /// `issues` clears the spell layer while LSP diagnostics survive.
+    public func setEditorSpellDiagnostics(_ issues: [SpellingIssue], forTabID id: UUID) {
+        let spell = SpellDiagnosticMapping.cmDiagnostics(from: issues)
+        spellEditorDiagnostics[id] = spell
+        pendingEditorDiagnostics[id] = Self.mergeEditorDiagnostics(
+            lspEditorDiagnostics[id] ?? [], spell)
     }
 
     // MARK: - Save path

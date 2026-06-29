@@ -187,6 +187,76 @@ final class EditorCoordinatorTests: XCTestCase {
         XCTAssertFalse((ec.pendingEditorDiagnostics[id] ?? []).isEmpty)
     }
 
+    // MARK: - Spell + LSP diagnostics merge (TSK-1146)
+
+    func test_mergeEditorDiagnostics_sortsByDocumentOffset() {
+        let lsp = [CMDiagnostic(from: 5, to: 7, severity: .error, message: "e", source: "lsp")]
+        let spell = [
+            CMDiagnostic(from: 1, to: 4, severity: .info, message: "s1", source: "spell"),
+            CMDiagnostic(from: 10, to: 13, severity: .info, message: "s2", source: "spell"),
+        ]
+        XCTAssertEqual(
+            EditorCoordinator.mergeEditorDiagnostics(lsp, spell).map(\.from), [1, 5, 10])
+    }
+
+    func test_setEditorSpellDiagnostics_mapsIssuesAndPublishes() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let id = UUID()
+        ec.setEditorSpellDiagnostics(
+            [SpellingIssue(word: "teh", range: NSRange(location: 3, length: 3), line: 1, column: 4)],
+            forTabID: id)
+        let d = ec.pendingEditorDiagnostics[id]
+        XCTAssertEqual(d?.count, 1)
+        XCTAssertEqual(d?.first?.from, 3)
+        XCTAssertEqual(d?.first?.source, "spell")
+    }
+
+    func test_setEditorSpellDiagnostics_emptyClearsSpellLayer() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let id = UUID()
+        ec.setEditorSpellDiagnostics(
+            [SpellingIssue(word: "x", range: NSRange(location: 0, length: 1), line: 1, column: 1)],
+            forTabID: id)
+        XCTAssertEqual(ec.pendingEditorDiagnostics[id]?.count, 1)
+        ec.setEditorSpellDiagnostics([], forTabID: id)
+        XCTAssertEqual(ec.pendingEditorDiagnostics[id]?.count, 0)
+    }
+
+    func test_lspAndSpell_coexist_neitherClobbers() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let url = try writeFile("a.swift", "let x = 1\n")
+        let file = TextFile(url: url, contents: "let x = 1\n", encoding: .utf8,
+                            byteCount: 10, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = tc.editorBuffer(forTabID: id)
+        let lspDiag = LSPDiagnostic(
+            range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                            end: LSPPosition(line: 0, character: 1)),
+            severity: .error, code: nil, source: nil, message: "boom")
+        ec.setEditorDiagnostics([lspDiag], forURL: url)
+        let lspCount = ec.pendingEditorDiagnostics[id]?.count ?? 0
+        XCTAssertGreaterThan(lspCount, 0)
+        // Adding spell must NOT drop the LSP diags.
+        ec.setEditorSpellDiagnostics(
+            [SpellingIssue(word: "x", range: NSRange(location: 4, length: 1), line: 1, column: 5)],
+            forTabID: id)
+        let combined = ec.pendingEditorDiagnostics[id] ?? []
+        XCTAssertEqual(combined.count, lspCount + 1)
+        XCTAssertTrue(combined.contains { $0.source == "spell" })
+        XCTAssertTrue(combined.contains { $0.source != "spell" }, "LSP diag survived")
+        // Re-publishing LSP must KEEP the spell layer (the source-tracking point).
+        ec.setEditorDiagnostics([lspDiag], forURL: url)
+        XCTAssertTrue((ec.pendingEditorDiagnostics[id] ?? []).contains { $0.source == "spell" },
+                      "LSP re-publish must not clobber spell")
+    }
+
     func test_setEditorDiagnostics_unknownURL_isNoOp() throws {
         let tc = TabCoordinator()
         let ec = EditorCoordinator(tabCoordinator: tc)
