@@ -1771,31 +1771,11 @@ public final class DocumentModel: ObservableObject {
         set { editor.saveEditorOnBlur = newValue }
     }
 
-    // MARK: - Shared LSP gate + position conversion (TSK-963)
+    // MARK: - CM6 LSP request bridges (hover / completion)
     //
-    // Every LSP entry point used to re-derive these two facts inline, three
-    // different ways: some gated on `lspPool.registry.language(for:)`, others
-    // on the GLOBAL `LSPLanguageRegistry.default` (a subtle bug — the pool
-    // routes with its *injected* registry, which a test/workspace can override,
-    // not the default), and each repeated the 1-based→0-based + non-negative
-    // clamp by hand. These two helpers are the single source of truth so the
-    // gate and conversion can never drift between call sites again.
-
-    /// True when the pool has a language server configured for `url`. THE gate
-    /// for every LSP feature (hover, go-to, references, format, rename, code
-    /// actions, completion). Uses the POOL's registry — the one it actually
-    /// routes with — not `LSPLanguageRegistry.default`.
-    func lspLanguageConfigured(for url: URL) -> Bool {
-        lspPool.registry.language(for: url) != nil
-    }
-
-    /// Convert a CM6 editor position (1-based line, 0-based UTF-16 character)
-    /// to the LSP wire position (0-based line + character), clamped non-negative.
-    /// The pool re-encodes the character offset if the server negotiated a
-    /// non-UTF-16 position encoding.
-    func lspPosition(line: Int, character: Int) -> (line: Int, character: Int) {
-        (line: max(0, line - 1), character: max(0, character))
-    }
+    // lspLanguageConfigured(for:) + lspPosition(line:character:) (the shared LSP
+    // gate + CM6→LSP position conversion, TSK-963) → DocumentModel+LSPShared.swift
+    // (TSK-1110 SRP slice).
 
     /// JS posted a hover request. Fire the LSP `hover` round-trip
     /// asynchronously, then reply through the bridge so CM6's
