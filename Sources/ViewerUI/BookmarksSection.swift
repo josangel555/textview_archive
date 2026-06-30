@@ -331,7 +331,7 @@ private struct BookmarkRow: View {
             // TSK-1256 / OwnerWishlist "Copy Reference": LINE-PRECISE mdv:// agent
             // reference (the bookmark's file + line) — an agent opens the exact spot.
             Button("Copy Reference") {
-                Pasteboard.copy(ElementRef.file(path: entry.url.path, line: entry.line).serialized)
+                Pasteboard.copy(ElementRef.file(path: entry.url.path, line: entry.line, endLine: nil).serialized)
             }
         }
         .onAppear { isFolder = Self.statIsFolder(entry.url) }

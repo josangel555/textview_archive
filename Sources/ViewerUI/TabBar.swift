@@ -334,7 +334,7 @@ private struct TabContextMenu: View {
             // an agent can open/locate via the element-ref pipeline. The FILE form
             // is durable across sessions (vs the ephemeral tab id).
             Button("Copy Reference") {
-                Pasteboard.copy(ElementRef.file(path: url.path, line: nil).serialized)
+                Pasteboard.copy(ElementRef.file(path: url.path, line: nil, endLine: nil).serialized)
             }
             Button("Reveal in Finder") { Finder.reveal(url) }
             // TSK-355: open the tab's file in its default external app.

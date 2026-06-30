@@ -49,7 +49,7 @@ final class LiveElementRefTargetTests: HeadlessUITestCase {
 
     func test_openFile_opensViaModel() throws {
         let f = try harness.writeFile("ref-open.txt", "hi\n")
-        let ok = ElementRefExecutor.execute(.file(path: f.path, line: nil), on: makeTarget())
+        let ok = ElementRefExecutor.execute(.file(path: f.path, line: nil, endLine: nil), on: makeTarget())
         XCTAssertTrue(ok)
         XCTAssertTrue(harness.model.tabs.tabs.contains { $0.url?.path == f.path }, "file opened as a tab")
     }

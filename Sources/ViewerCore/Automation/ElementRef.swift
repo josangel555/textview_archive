@@ -25,8 +25,11 @@ public enum ElementRef: Equatable, Sendable {
     case webLine(docId: String, line: Int)
     /// A WebView DOM node by CSS selector.
     case webSelector(docId: String, selector: String)
-    /// A file, deep-loadable when not currently mounted; optional 1-based line.
-    case file(path: String, line: Int?)
+    /// A file, deep-loadable when not currently mounted; optional 1-based line,
+    /// and an optional 1-based `endLine` for a line RANGE (TSK-942: a selected
+    /// span copied as an agent reference). `endLine` is metadata carried for the
+    /// agent reading the reference; resolution still reveals the start `line`.
+    case file(path: String, line: Int?, endLine: Int?)
     /// A tab by its stable id.
     case tab(id: String)
 
@@ -41,9 +44,11 @@ public enum ElementRef: Equatable, Sendable {
             return "mdv://web/\(Self.encode(docId))/line/\(line)"
         case .webSelector(let docId, let selector):
             return "mdv://web/\(Self.encode(docId))/sel/\(Self.encode(selector))"
-        case .file(let path, let line):
+        case .file(let path, let line, let endLine):
             let base = "mdv://file/\(Self.encode(path))"
-            return line.map { "\(base)?line=\($0)" } ?? base
+            guard let line else { return base }
+            let lineQ = "\(base)?line=\(line)"
+            return endLine.map { "\(lineQ)&endLine=\($0)" } ?? lineQ
         case .tab(let id):
             return "mdv://tab/\(Self.encode(id))"
         }
@@ -83,7 +88,9 @@ public enum ElementRef: Equatable, Sendable {
             }
         case "file":
             guard rest.count == 1, !rest[0].isEmpty else { return nil }
-            self = .file(path: Self.decode(rest[0]), line: Self.queryInt(query, key: "line"))
+            self = .file(path: Self.decode(rest[0]),
+                         line: Self.queryInt(query, key: "line"),
+                         endLine: Self.queryInt(query, key: "endLine"))
         case "tab":
             guard rest.count == 1, !rest[0].isEmpty else { return nil }
             self = .tab(id: Self.decode(rest[0]))
@@ -159,7 +166,7 @@ extension ElementRef {
         case .ax(let id):               return .activateAX(AXQuery(id))
         case .webLine(let d, let l):    return .gotoWebLine(docId: d, line: l)
         case .webSelector(let d, let s): return .selectWebNode(docId: d, selector: s)
-        case .file(let p, let l):       return .openFile(path: p, line: l)
+        case .file(let p, let l, _):    return .openFile(path: p, line: l)
         case .tab(let id):              return .selectTab(id: id)
         }
     }

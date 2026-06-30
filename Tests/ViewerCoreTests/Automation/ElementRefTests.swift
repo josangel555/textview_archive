@@ -13,8 +13,9 @@ struct ElementRefTests {
         .ax(identifier: "mdv.csvFind.field"),
         .webLine(docId: "doc-42", line: 137),
         .webSelector(docId: "doc-42", selector: ".cm-line:nth-child(3) > span.tok-keyword"),
-        .file(path: "/Users/me/a b/notes.md", line: 12),
-        .file(path: "relative/no-line.txt", line: nil),
+        .file(path: "/Users/me/a b/notes.md", line: 12, endLine: nil),
+        .file(path: "relative/no-line.txt", line: nil, endLine: nil),
+        .file(path: "span.md", line: 5, endLine: 12),
         .tab(id: "tab-7"),
     ]
 
@@ -29,8 +30,8 @@ struct ElementRefTests {
     @Test func serializedFormsAreStable() {
         #expect(ElementRef.ax(identifier: "mdv.hexView").serialized == "mdv://ax/mdv.hexView")
         #expect(ElementRef.webLine(docId: "d1", line: 9).serialized == "mdv://web/d1/line/9")
-        #expect(ElementRef.file(path: "a.md", line: nil).serialized == "mdv://file/a.md")
-        #expect(ElementRef.file(path: "a.md", line: 3).serialized == "mdv://file/a.md?line=3")
+        #expect(ElementRef.file(path: "a.md", line: nil, endLine: nil).serialized == "mdv://file/a.md")
+        #expect(ElementRef.file(path: "a.md", line: 3, endLine: nil).serialized == "mdv://file/a.md?line=3")
         #expect(ElementRef.tab(id: "t1").serialized == "mdv://tab/t1")
     }
 
@@ -39,7 +40,7 @@ struct ElementRefTests {
         #expect(ElementRef.ax(identifier: "mdv.hex.search.field").serialized
                 == "mdv://ax/mdv.hex.search.field")
         // A path with spaces + slashes encodes so the '/'-split can't be fooled.
-        let ref = ElementRef.file(path: "/a/b c/d.md", line: nil)
+        let ref = ElementRef.file(path: "/a/b c/d.md", line: nil, endLine: nil)
         #expect(!ref.serialized.dropFirst("mdv://file/".count).contains("/"))
         #expect(ElementRef(parsing: ref.serialized) == ref)
     }
@@ -66,14 +67,25 @@ struct ElementRefTests {
         #expect(q?.matches("mdv.tab.dirtyDot") == true)
         // Non-AX refs have no AX query.
         #expect(ElementRef.webLine(docId: "d", line: 1).axQuery == nil)
-        #expect(ElementRef.file(path: "a", line: nil).axQuery == nil)
+        #expect(ElementRef.file(path: "a", line: nil, endLine: nil).axQuery == nil)
     }
 
     @Test func fileLineQueryParses() {
         let ref = ElementRef(parsing: "mdv://file/x.md?line=42")
-        #expect(ref == .file(path: "x.md", line: 42))
+        #expect(ref == .file(path: "x.md", line: 42, endLine: nil))
         // A non-line query is ignored, not fatal.
-        #expect(ElementRef(parsing: "mdv://file/x.md?foo=bar") == .file(path: "x.md", line: nil))
+        #expect(ElementRef(parsing: "mdv://file/x.md?foo=bar") == .file(path: "x.md", line: nil, endLine: nil))
+    }
+
+    // TSK-942: a file LINE-RANGE reference (a selected span) serializes with both
+    // line + endLine, round-trips, and resolves by revealing the START line.
+    @Test func fileLineRangeSerializesRoundTripsAndResolvesToStart() {
+        let ranged = ElementRef.file(path: "x.md", line: 10, endLine: 20)
+        #expect(ranged.serialized == "mdv://file/x.md?line=10&endLine=20")
+        #expect(ElementRef(parsing: ranged.serialized) == ranged)
+        #expect(ranged.resolution == .openFile(path: "x.md", line: 10))
+        // endLine is never emitted without a start line.
+        #expect(ElementRef.file(path: "x.md", line: nil, endLine: 9).serialized == "mdv://file/x.md")
     }
 
     // TSK-1256 slice 2 — the resolver plan: every ref kind maps to exactly one
@@ -86,9 +98,9 @@ struct ElementRefTests {
                 == .gotoWebLine(docId: "d1", line: 9))
         #expect(ElementRef.webSelector(docId: "d1", selector: ".cm-line").resolution
                 == .selectWebNode(docId: "d1", selector: ".cm-line"))
-        #expect(ElementRef.file(path: "a.md", line: 3).resolution
+        #expect(ElementRef.file(path: "a.md", line: 3, endLine: nil).resolution
                 == .openFile(path: "a.md", line: 3))
-        #expect(ElementRef.file(path: "a.md", line: nil).resolution
+        #expect(ElementRef.file(path: "a.md", line: nil, endLine: nil).resolution
                 == .openFile(path: "a.md", line: nil))
         #expect(ElementRef.tab(id: "t1").resolution == .selectTab(id: "t1"))
     }
@@ -124,8 +136,8 @@ struct ElementRefTests {
         let t = RecordingTarget()
         ElementRefExecutor.execute(.tab(id: "t1"), on: t)
         ElementRefExecutor.execute(.webLine(docId: "d", line: 5), on: t)
-        ElementRefExecutor.execute(.file(path: "a.md", line: 3), on: t)
-        ElementRefExecutor.execute(.file(path: "b.md", line: nil), on: t)
+        ElementRefExecutor.execute(.file(path: "a.md", line: 3, endLine: nil), on: t)
+        ElementRefExecutor.execute(.file(path: "b.md", line: nil, endLine: nil), on: t)
         ElementRefExecutor.execute(.ax(identifier: "mdv.hexView"), on: t)
         ElementRefExecutor.execute(.webSelector(docId: "d", selector: ".cm-line"), on: t)
         #expect(t.calls == [

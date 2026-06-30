@@ -2019,7 +2019,17 @@ public final class DocumentModel: ObservableObject {
 
     /// Pure builder: a file reference carrying the 1-based `line`, or nil if no url.
     public static func lineReference(url: URL?, line: Int) -> String? {
-        url.map { ElementRef.file(path: $0.path, line: line).serialized }
+        url.map { ElementRef.file(path: $0.path, line: line, endLine: nil).serialized }
+    }
+
+    /// TSK-942: an `mdv://` reference to a LINE RANGE (a selected span), for
+    /// "copy a reference to these lines for the agent". Collapses to a single-line
+    /// reference when the range is one line.
+    public static func lineRangeReference(url: URL?, startLine: Int, endLine: Int) -> String? {
+        url.map {
+            ElementRef.file(path: $0.path, line: startLine,
+                            endLine: endLine > startLine ? endLine : nil).serialized
+        }
     }
 
     // openTerminalHere() / openTerminalInApp(at:isDirectory:) /

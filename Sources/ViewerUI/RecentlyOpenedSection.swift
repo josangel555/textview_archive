@@ -101,7 +101,7 @@ private struct RecentRow: View {
             Button("Copy Path") { Pasteboard.copy(entry.url.path) }
             // TSK-1256 "Copy Reference": mdv:// agent reference (file form).
             Button("Copy Reference") {
-                Pasteboard.copy(ElementRef.file(path: entry.url.path, line: nil).serialized)
+                Pasteboard.copy(ElementRef.file(path: entry.url.path, line: nil, endLine: nil).serialized)
             }
             Button("Reveal in Finder") { Finder.reveal(entry.url) }
         }
