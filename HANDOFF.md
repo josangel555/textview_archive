@@ -1,36 +1,40 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — owner-intake drained + host-engine slices built; host-seam vein drained (2026-06-29)
+# Handoff — owner-intake drained + host slices built; render/UI work continues ON THE VM (2026-06-29)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `5cf36751` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `41d4220f` (verify `git log -1`)
 
 ## Mission
-Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs (CHANGELOG/AP/LESSONS) into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
+Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
 
-## What shipped this session (all host-tested + gate-verified)
-- **Owner intake TSK-1302–1327: 14 → review**, 5 triaged, **2 parked** (TSK-1200 scroll, TSK-1322 paste — both need owner input), 1 spike (TSK-1320 annotations). Earlier commits; see git log + AUTONOMOUS_PROGRESS.md.
-- **Host-model/engine slices (7):** TSK-1308 audio-persistence (`52d37b7f`) · TSK-1321 overlay-selection model (`7ff73246`) · TSK-723 structural-query grammar (`694a4700`) · **TSK-698 script console — slice 2 off-main exec (`17845599`), slice 4 log-line input (`bfbcf0d9`), slice 3a controller (`1b8d8049`), slice 4b CSV input (`5cf36751`)**.
-- **TSK-698 is now FULLY HOST-COMPLETE**: engine (slice1) → off-main+soft-timeout exec (slice2) → JSON/log/CSV input (slice4/4b) → ScriptConsoleViewModel controller (slice3a). Only the **SwiftUI panel + menu trigger + apply-to-new-tab (slice 3b)** remains = render/VM.
-- **Reconciled** stale-lease-reset (INT-126) host-engine epics to their real state: TSK-722 (task-runner, engine done, UI child 1160), TSK-703 (action-history, coordinator done, UI 1155), TSK-910 (diff multi-line, host core done, render child 1182), TSK-723/698.
-- **Dogfood:** filed TSK-1329 (task_park needs a clarification kind) + TSK-1330 (task_record artifact status needs a note value) → `docs/TRACKER_FEEDBACK.md`.
+## ⚠️ CORRECTION THAT RESET THIS HANDOFF (owner, 2026-06-29) — READ FIRST
+A prior version of this handoff declared a "host-testable-seam vein DRAINED" and routed all render/UI work to a "VM/owner venue." **That framing was WRONG and is now banned.** The owner's standing model: **the VM is UP and the ENTIRE UI/render lane is agent-workable — build AND VM-validate it. The ONLY off-limits tier is AX-driven tests.** There is NO "host-testable vs render" split in what to work; render/UI/VM items are first-class drain targets you BUILD and VALIDATE (on the VM), not hand to the owner. The instructions that caused the misread were hardened this session (CLAUDE.md new 2026-06-29 directive + §4 self-validation; TASK_WORKFLOW §4 + §7 cron; the live cron prompt). The render-confirm directive is satisfied BY VM-validating, not by leaving things at review.
 
-## Current state / honest assessment
-- The **host-testable-seam vein is DRAINED.** Every epic's host model/engine is built; what remains is **render-VM** (the UI children: 698-3b, 722-1160, 703-1155, 723-1161, 910-1182; the intake render remainder 1302/1310/1316/1317/1318/1319/1326; P0 render 891/1032) → VM lane / owner.
-- **Owner-decision-gated:** parked TSK-1200 (scroll: real-bug-vs-harness-false — needs owner's real screen), TSK-1322 (paste repro), TSK-1320 (annotations keep/remove); flips TSK-838/1215/1202.
-- VM/owner-only host work: TSK-382 (DocumentModel memory — measure-first VM profile), TSK-379 (rust EditorBuffer — supervised), CI/infra (835 needs a dep).
+## What shipped this session (host-tested + gate-verified)
+- **Owner intake TSK-1302–1327: 14 → review**, 5 triaged, 2 parked (TSK-1200 scroll, TSK-1322 paste — genuine owner-input items), 1 spike (TSK-1320).
+- **Host slices (7):** TSK-1308 audio-persistence (`52d37b7f`) · TSK-1321 overlay-selection model (`7ff73246`) · TSK-723 structural-query grammar (`694a4700`) · **TSK-698 script console: slice 2 off-main exec (`17845599`), slice 4 log-line input (`bfbcf0d9`), slice 3a controller (`1b8d8049`), slice 4b CSV input (`5cf36751`)** — the console is host-complete; its SwiftUI panel (slice 3b) is the next VM build.
+- **Reconciled** to review (host engines done, render UIs = the next VM build, tracked as children): TSK-722 (→ child TSK-1160), TSK-723 (→ TSK-1161), TSK-343 (history; → revert child TSK-1331), TSK-910 (→ TSK-1182). TSK-703 coordinator done (UI 1155).
+- **Dogfood:** TSK-1329/1330 → `docs/TRACKER_FEEDBACK.md`.
 
-## ⭐ NEXT ACTION
-1. **Re-scan for owner-UNBLOCKED host slices** (the highest-yield pattern this session — TSK-698's exec-safety park was resolved by the owner in a prior session, unblocking 3 host slices). Check epics' parks for owner `resolved` events. (The `audit` tool returned empty even with a wide `since` — read the epic event logs directly via `task_get`.)
-2. The **substantial UIs are the VM render lane** (build + T5/webview-validate) or **owner sessions** — NOT blind inline builds.
-3. Stale-reset reconcile sweep (board-hygiene) when no host slice is available.
+## ⭐ NEXT ACTION — BUILD THE RENDER UIs ON THE VM
+These are NOT "owner's lane" — build each + VM-validate (`scripts/test-in-vm.sh`; webview lane for WebView render, T4/T5 for SwiftUI/AppKit), drive to validated:
+- **TSK-698 slice 3b** — the Script Console SwiftUI panel + menu trigger + apply-to-new-tab (binds to the host-complete `ScriptConsoleViewModel`).
+- The epic UI children: **TSK-1160** (runner panel), **TSK-1161** (structural-search UI), **TSK-1155** (action-history timeline), **TSK-1182** (diff single-Text selection).
+- The intake render remainder (TSK-1302 layout, 1310 vector-text, 1316/1317 drag, 1318/1319 menu, 1326 walkthroughs) — build + VM-validate.
+- **TSK-1331** (history Revert) — data-safety-sensitive (guard unsaved edits); build with a data-safety review + VM-validate.
+
+## Owner-input-gated (the genuine exceptions — task_park, don't block)
+- Parked: TSK-1200 (scroll: real-bug-vs-harness-false — needs owner's real screen), TSK-1322 (paste repro), TSK-1320 (annotations keep/remove). Flips: TSK-838/1215/1202.
+- AX-driven tests = the one off-limits tier.
 
 ## Gotchas / lessons (also LESSONS.md)
-- **Backticks in `git commit -m "..."` trigger shell command-substitution** → mangled message. Use `git commit -F -` with a `<<'EOF'` heredoc (literal), or single-quotes.
-- **TSK-1200 / the CM6 + spawned-app scroll "no-ops" are HARNESS-FALSE** (the VM GUI session doesn't framebuffer-composite the WKWebView; the headless in-process WKWebView has no measure/rAF cycle). Do NOT blind-"fix" owner-sensitive scroll code against these — disambiguate real-vs-harness via the owner's real screen or T5 window-ID capture first. (I drafted a requestMeasure fix, caught the LESSONS contradiction, reverted, parked.)
-- **Build-render boundary that worked all session:** build render features only through a **host-testable seam** (a view-model / engine / model, host-tested) and leave the thin view at review. Do NOT build large blind multi-file UI integrations (panel + menu wiring + DocumentModel apply-back) with no validatable seam — that's the VM/owner venue.
-- **Read-first ALWAYS** — most P0/board items were already fixed→review this session (1188 `c0fd1543`, 1271 `6e9e4efb`) or stale-reset-but-done; don't re-build.
+- **The VM render lanes work — use the RIGHT one.** Webview (in-process WKWebView) for WebView/CM6 render; T5 window-ID capture for SwiftUI/AppKit pixels. The SPAWNED-APP UAT lane has a framebuffer-compositing bug (TSK-1247 — the app window isn't composited so live-WebView reads return -1/0); that's a SPECIFIC broken lane to fix/route-around, NOT a reason to call render "un-workable." Don't grind the full `all`-mode UAT (it gets killed) — use the targeted lane.
+- **Owner-sensitive scroll (TSK-1200):** the editor-scroll "no-op" seen via the spawned-app UAT is harness-false (the framebuffer bug). Disambiguate real-vs-harness on the owner's real screen / T5 window-ID before changing scroll code (parked). Don't blind-fix.
+- **Backticks in `git commit -m "..."` trigger shell command-substitution** → mangled message. Use `git commit -F -` with a `<<'EOF'` heredoc.
+- **Read-first ALWAYS** — most P0/board items were already fixed→review or stale-reset-but-done (1188 `c0fd1543`, 1271 `6e9e4efb`, 343 delta-storage); don't re-build.
+- **The INT-126 lease sweep re-resets long-lived `progress` items to `reported`** — `review` sticks, `progress` doesn't. To permanently drain a host-done/render-tail epic, take it to review (host done) with the render UI tracked as a child to BUILD on the VM.
 
 ## Tracker (tasked / claude-mdv)
-TSK-698 progress (host-complete; 3b render tail) · TSK-722/703/910/723 progress (engines done, UI children) · TSK-1200/1322 parked (owner) · TSK-1329/1330 filed. ~20 commits this run.
+TSK-698 progress (host-complete; 3b = next VM build) · TSK-722/723/343 review (host done; render children to build) · TSK-1160/1161/1155/1182/1331 = render UIs to build on the VM · TSK-1200/1322/1320 parked (owner) · TSK-1329/1330 filed. ~22 commits this run.
 
 ## How to resume
-Read this + `BACKLOG.md` + `git log -1`. Confirm main gate-green (`bash scripts/test-headless-gate.sh`). The host-seam vein is drained — re-scan for owner-unblocked host slices (NEXT ACTION 1); else the render UIs are the VM lane / owner, and the parked items await owner input. Don't blind-build substantial UI integrations or owner-sensitive scroll/render.
+Read this + `BACKLOG.md` + `git log -1`. Confirm main gate-green (`bash scripts/test-headless-gate.sh`). Then BUILD a render UI from NEXT ACTION on the VM (build + VM-validate via `scripts/test-in-vm.sh`, drive to validated) — render is your lane, not the owner's. Only AX tests + the genuine owner-input items are off-limits.

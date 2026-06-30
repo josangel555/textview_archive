@@ -129,8 +129,26 @@ was diagnosed with the wrong tool. Codified so we catch this class early:
     First instance: `MDV_ENABLE_BROKEN_RULER` (TextDisplayView ↔
     SourceViewVisualRegressionTests).
 
+> **OWNER DIRECTIVE (2026-06-29): THE VM IS UP — the ENTIRE UI / render lane is
+> agent-workable, build AND validate. The ONLY off-limits tier is AX-driven tests.**
+> There is NO "host-testable vs render" split in WHAT the agent may work: render-path,
+> WebView, SwiftUI/AppKit, live-app, and pixel behavior are ALL first-class drain
+> targets the agent BUILDS *and* VALIDATES on the VM (`scripts/test-in-vm.sh` — webview
+> / T4 `LiveAppTestCase` / T5 `PixelTestCase`). "Render is the owner's lane", "leave it
+> at review", "host-only is my lane", "the host-testable-seam vein is drained" are ALL
+> WRONG framings the agent must NEVER adopt — they are the exact failure this directive
+> exists to kill. The render-confirm directive (above) is SATISFIED BY VM-validating
+> (build the VM test + run it), NOT by handing render off to the owner. A render/UI item
+> is owner/blocked ONLY when: (a) it's an AX-driven test (the sole off-limits tier),
+> (b) a SPECIFIC VM lane is genuinely broken — then file the blocker + take the next, or
+> (c) it needs a true product decision — then `task_park` it. In every other case:
+> build it, VM-validate it, drive it to `validated`. Do NOT manufacture a "host-only"
+> backlog and declare render someone else's job.
+>
 > **OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — run UI / live-tier
-> tests on the UTM VM only.** Never run T4 `LiveAppTestCase`, T5 `PixelTestCase`,
+> tests on the UTM VM only** (this is the COMPANION to the directive above — the host
+> stays window-free; the VM is where UI/render work is built AND validated). Never run
+> T4 `LiveAppTestCase`, T5 `PixelTestCase`,
 > the in-process WebView suites, or the `build-app.sh` pre-install smoke on the
 > host (they open a window / spawn the app). The pre-install smoke is now opt-in
 > (`MDV_RUN_SMOKE_GATE=1`); the headless gate (`test-headless-gate.sh`) is
@@ -420,11 +438,14 @@ continue", document blockers and move on):
   - **Pure-logic / model / FFI / parser behavior** (host-testable): write the
     behavior test, run it, attach the passing-checks artifact, self-validate.
   - **WebView/AppKit-*rendered* behavior** (CM6 editor pixels, gutter folds,
-    indent-guide lines, caret insert, SwiftUI view wiring): host tests cover only
-    the model layer — the render path has NO host coverage — so do NOT self-validate
-    on host alone. Either add a VM UI test (nightly lane) that covers it, then
-    validate, or leave at `fixed`/`review` for the human/VM gate. Never claim a
-    visual behavior is regression-guarded when only its model is tested.
+    indent-guide lines, caret insert, SwiftUI view wiring): host tests cover only the
+    model layer, so host-green alone is NOT proof. **The VM is UP — so BUILD the VM UI
+    test and run it** (webview / T4 / T5 via `scripts/test-in-vm.sh`), THEN self-validate.
+    This is the DEFAULT, not one option among two: render/UI is the agent's lane
+    end-to-end (build + VM-validate). Leaving at `fixed`/`review` for the human is ONLY
+    for the AX-test exception or a genuinely-broken VM lane (file the blocker) — NOT a
+    default, and NEVER "render isn't my work". Never claim a visual behavior is
+    regression-guarded when only its model is tested.
   - Owner-gated items (dep approval, risky supervised refactor, a genuine product
     decision) → use **`task_park{kind,question,context}`** (pings the owner) rather
     than self-advancing; don't block the loop.

@@ -213,7 +213,11 @@ cheaper can prove the behavior (compositor/occlusion class). Disturb the human o
   commit SHA). **Self-validation policy (owner, 2026-06-07):** the agent MAY close its own work via
   `task_validate` (to `validated`/`done`) — but ONLY with a `checks` artifact proving an automated
   test that exercises the actual behavior and would fail on regression. Host-testable logic →
-  self-validate; rendered-pixels behavior → needs the VM lane evidence first (or hold at `fixed`).
+  self-validate; rendered behavior → GET the VM lane evidence (the VM is UP — build + run the VM
+  UI test via `scripts/test-in-vm.sh`: webview / T4 / T5), THEN self-validate. Holding at
+  `fixed`/`review` is ONLY for a genuinely-broken VM lane (file the blocker) or the AX-test
+  exception — NOT a default, and NOT "render is the owner's to validate". The agent owns the whole
+  UI/render lane end-to-end (build + VM-validate); there is NO host-vs-render split in what to work.
 - **Mark `progress` before starting; `fixed` only when fully done AND validated** (gate green).
   Never `fixed` on a partial/failing change. If blocked mid-way, leave it open and file the blocker.
 - **Commit per item.** One-line subject. Land on `main` as a fast-forward (no merge bubbles).
@@ -238,7 +242,8 @@ cheaper can prove the behavior (compositor/occlusion class). Disturb the human o
     `build-app.sh` hard-fails SwiftPM ("input file modified during build"). Order per item:
     teeth → restore → commit → gate → THEN install (`LESSONS.md` ~2910).
   - **UI render-path teeth are VM-only** (T5 pixel tests; revert→rebuild→confirm FAIL→restore) —
-    consistent with the self-validation policy above: host tests cover the model, not the pixels.
+    so RUN them on the VM (it's up); host tests cover the model, the VM covers the pixels.
+    "VM-only" means run-them-on-the-VM, NOT skip-or-defer-to-owner.
 - **Log the narrative** in `docs/AUTONOMOUS_PROGRESS.md` (survives compaction; the board is live
   state, the doc is the story).
 - **Update `CHANGELOG.md` for USER-FACING changes (owner ask, every firing).** If the item that
@@ -283,4 +288,4 @@ procedure + pointers; it must NOT hard-code tasks, the current priority, or curr
 issues. WHAT to work on lives in `BACKLOG.md` (the cron points there); issues the agent
 must know live in `CLAUDE.md` / this SOP / memory. Don't bake those into the prompt.
 
-> Autonomous drain tick. MANDATORY FIRST STEP every tick — actually read these NOW, do not skip: (1) docs/TASK_WORKFLOW.md IN FULL; (2) the "Automated / autonomous runs (SOP)" section of CLAUDE.md; (3) BACKLOG.md — the SINGLE curated worklist (its top priority block is authoritative for WHAT to work on). Then DRAIN RELENTLESSLY toward done in BACKLOG's priority order → then the rest of the board (mcp__tasked__task_next / task_list). NEVER idle, hold, or stop with "no more work" — that is a PROCESS FAILURE; there is ALWAYS work (build features, fix bugs, validate fixed with teeth, reconcile stale tickets toward the owner-close queue, audit-harden, re-verify, triage). BUILD render-path / VM-tail / perf features TOO — host-test the model, leave render/VM validation at review; do NOT hold for owner on-screen confirmation. Work INLINE, ONE item at a time: spike → implement → test → host-gate → commit per item; land rebase+ff; keep main headless-gate-green. COMMIT HYGIENE: fold LESSONS/HANDOFF/AUTONOMOUS_PROGRESS/CHANGELOG updates INTO the item's code commit — no standalone process-noise commits. If an item is GENUINELY owner-blocked (dep approval / true ambiguity), task_park it and IMMEDIATELY take the next item — never let a block stop the loop. Commit trailer: Claude-Session: &lt;current session URL&gt;
+> Autonomous drain tick. MANDATORY FIRST STEP every tick — actually read these NOW, do not skip: (1) docs/TASK_WORKFLOW.md IN FULL; (2) the "Automated / autonomous runs (SOP)" section of CLAUDE.md; (3) BACKLOG.md — the SINGLE curated worklist (its top priority block is authoritative for WHAT to work on). Then DRAIN RELENTLESSLY toward done in BACKLOG's priority order → then the rest of the board (mcp__tasked__task_next / task_list). NEVER idle, hold, or stop with "no more work" — that is a PROCESS FAILURE; there is ALWAYS work (build features, fix bugs, validate fixed with teeth, reconcile stale tickets toward the owner-close queue, audit-harden, re-verify, triage). BUILD render-path / VM-tail / perf features — the VM is UP and the ENTIRE UI/render lane is yours to build AND validate (webview / T4 LiveApp / T5 pixel lanes via scripts/test-in-vm.sh); the ONLY off-limits tier is AX-driven tests. Render/UI/VM items are FIRST-CLASS drain targets — there is NO host-vs-render split in what you may work, and render is NOT the owner's lane. Build the render, host-test the model AND VM-validate it, then drive it to validated. "Leave at review" is ONLY for a genuinely-broken VM lane (file the blocker) or the AX exception — never a default, never "render isn't my work". do NOT hold for owner on-screen confirmation. Work INLINE, ONE item at a time: spike → implement → test → host-gate → commit per item; land rebase+ff; keep main headless-gate-green. COMMIT HYGIENE: fold LESSONS/HANDOFF/AUTONOMOUS_PROGRESS/CHANGELOG updates INTO the item's code commit — no standalone process-noise commits. If an item is GENUINELY owner-blocked (dep approval / true ambiguity), task_park it and IMMEDIATELY take the next item — never let a block stop the loop. Commit trailer: Claude-Session: &lt;current session URL&gt;
