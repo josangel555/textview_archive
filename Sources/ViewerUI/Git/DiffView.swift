@@ -73,12 +73,13 @@ struct DiffView: View {
     /// window-free/ImageRenderer context. Behavior is otherwise identical.
     internal init(
         text: String, doc: DocumentModel, reviewSession: ReviewSession?,
-        initialFiles: [UnifiedDiff.File]
+        initialFiles: [UnifiedDiff.File], initialSelection: RowSelection? = nil
     ) {
         self.text = text
         self.doc = doc
         self.reviewSession = reviewSession
         self._files = State(initialValue: initialFiles)
+        self._rowSelection = State(initialValue: initialSelection)
     }
 
     var body: some View {
