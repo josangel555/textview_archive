@@ -64,6 +64,14 @@ struct ImageElementPropertiesPanel: View {
                 }
                 .accessibilityIdentifier("mdv.imageEditor.element.width")
 
+                HStack {
+                    Text("Rotation").frame(width: 56, alignment: .leading)
+                    Slider(value: Binding(
+                        get: { shape.rotation ?? 0 },
+                        set: { _ = vm.setSelectedShapeRotation($0) }), in: -180...180)
+                }
+                .accessibilityIdentifier("mdv.imageEditor.element.rotation")
+
                 // Position & size (normalized 0…1) via the form — the non-AX "move it / resize"
                 // path → the host-tested resizeSelectedShape. The on-canvas drag is the AX tier.
                 Text("Position & Size").font(.caption).foregroundStyle(.secondary)

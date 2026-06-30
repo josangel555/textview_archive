@@ -45,6 +45,21 @@ struct VectorOverlayView: View {
     }
 
     private static func draw(_ shape: VectorShape, in ctx: GraphicsContext, imageRect: CGRect) {
+        // TSK-1321: apply the shape's rotation (degrees, about its frame centre) before drawing.
+        guard let deg = shape.rotation, deg != 0 else {
+            drawBody(shape, in: ctx, imageRect: imageRect)
+            return
+        }
+        let r = map(shape.frame, imageRect)
+        let center = CGPoint(x: r.midX, y: r.midY)
+        var rotated = ctx
+        rotated.translateBy(x: center.x, y: center.y)
+        rotated.rotate(by: .degrees(deg))
+        rotated.translateBy(x: -center.x, y: -center.y)
+        drawBody(shape, in: rotated, imageRect: imageRect)
+    }
+
+    private static func drawBody(_ shape: VectorShape, in ctx: GraphicsContext, imageRect: CGRect) {
         let style = shape.style
         let stroke = Color(rgba: style.stroke)
         switch shape.kind {

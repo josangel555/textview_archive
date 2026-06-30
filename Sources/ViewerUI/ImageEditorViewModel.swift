@@ -653,6 +653,14 @@ public final class ImageEditorViewModel: ObservableObject {
         return overlay.setText(id: id, text, fontSize: fontSize)
     }
 
+    /// Set the selected shape's rotation in degrees (clockwise, about its centre — TSK-1321).
+    /// No-op without a selection.
+    @discardableResult
+    public func setSelectedShapeRotation(_ degrees: Double?) -> Bool {
+        guard let id = selectedShapeID else { return false }
+        return overlay.setRotation(id: id, degrees)
+    }
+
     // MARK: - Selection (TSK-1063 / 1068)
 
     /// Set (or clear) the rectangular marquee selection.

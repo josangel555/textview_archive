@@ -131,15 +131,19 @@ public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
     /// `.text` font size as a FRACTION of the image height (e.g. 0.06 = 6%). nil → a default at
     /// draw time. Optional for the same backward-compatible decoding reason.
     public var fontSize: Double?
+    /// Clockwise rotation in DEGREES about the frame centre (TSK-1321). nil/0 = unrotated.
+    /// Optional so existing persisted overlays decode unchanged (a missing key → nil).
+    public var rotation: Double?
 
     public init(id: UUID = UUID(), kind: Kind, frame: CGRect, style: ShapeStyle = ShapeStyle(),
-                text: String? = nil, fontSize: Double? = nil) {
+                text: String? = nil, fontSize: Double? = nil, rotation: Double? = nil) {
         self.id = id
         self.kind = kind
         self.frame = frame
         self.style = style
         self.text = text
         self.fontSize = fontSize
+        self.rotation = rotation
     }
 
     /// Endpoint accessors for the open shapes — `start` is the frame ORIGIN, `end`
@@ -271,6 +275,15 @@ public struct VectorOverlay: Sendable, Codable, Equatable {
         guard let idx = shapes.firstIndex(where: { $0.id == id }) else { return false }
         shapes[idx].text = text
         shapes[idx].fontSize = fontSize
+        return true
+    }
+
+    /// Set the rotation (degrees, clockwise about the frame centre) of the shape with `id`
+    /// (TSK-1321). No-op for an unknown id.
+    @discardableResult
+    public mutating func setRotation(id: UUID, _ degrees: Double?) -> Bool {
+        guard let idx = shapes.firstIndex(where: { $0.id == id }) else { return false }
+        shapes[idx].rotation = degrees
         return true
     }
 

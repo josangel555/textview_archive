@@ -33,4 +33,23 @@ final class VectorShapeTextTests: XCTestCase {
         XCTAssertTrue(VectorShape.Kind.allCases.contains(.text),
             "the .text kind must be enumerable (drives the shape-tool list)")
     }
+
+    func test_rotation_roundTrips_andDefaultsNil_TSK1321() throws {
+        let plain = VectorShape(kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3))
+        XCTAssertNil(plain.rotation, "rotation defaults to nil (unrotated)")
+        let rotated = VectorShape(
+            kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3),
+            rotation: 45)
+        let back = try JSONDecoder().decode(VectorShape.self, from: try JSONEncoder().encode(rotated))
+        XCTAssertEqual(back.rotation, 45)
+        XCTAssertEqual(back, rotated)
+    }
+
+    func test_overlaySetRotation_updatesTheShape_TSK1321() {
+        var overlay = VectorOverlay()
+        let id = overlay.add(VectorShape(kind: .rect, frame: CGRect(x: 0, y: 0, width: 0.5, height: 0.5)))
+        XCTAssertTrue(overlay.setRotation(id: id, 90))
+        XCTAssertEqual(overlay.shapes.first?.rotation, 90)
+        XCTAssertFalse(overlay.setRotation(id: UUID(), 30), "unknown id is a no-op")
+    }
 }
