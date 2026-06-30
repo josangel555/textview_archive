@@ -34,9 +34,12 @@ extension CommandRegistry {
             id: "file.newTab", title: "New Tab", category: .file,
             defaultShortcut: Shortcut(key: "t", modifiers: [.command]),
             scriptVerb: "new-tab"),
-        // TSK-1256: copy a line-precise mdv:// reference to the current editor line.
+        // TSK-1256/942: copy a line-precise mdv:// reference to the current editor
+        // line — or a line-RANGE reference when text is selected (TSK-942). Bound to
+        // ⌘⌥⇧C (IntelliJ's "Copy Reference" chord; `c` is otherwise unbound here).
         CommandDescriptor(
-            id: "edit.copyReference", title: "Copy Reference (current line)", category: .edit,
+            id: "edit.copyReference", title: "Copy Reference", category: .edit,
+            defaultShortcut: Shortcut(key: "c", modifiers: [.command, .option, .shift]),
             scriptVerb: "copy-reference"),
         // TSK-1335 — palette parity for the existing Edit ▸ Convert Encoding submenu
         // (the host work, DocumentModel.convertActiveFileEncoding, already exists).

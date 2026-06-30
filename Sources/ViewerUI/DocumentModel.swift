@@ -2010,9 +2010,10 @@ public final class DocumentModel: ObservableObject {
     public var currentViewMode: ViewMode { tabs.selected?.viewMode ?? .rendered }
 
     /// TSK-1256: a line-precise `mdv://` reference to the current editor line in the
-    /// active tab — what the `copy-reference` verb / "Copy Reference (current line)"
-    /// command copies. The pure shape (url + line) is `Self.lineReference`, so the
-    /// reference form is host-testable without standing up a model.
+    /// active tab — the single-line shape behind the `copy-reference` verb /
+    /// "Copy Reference" command (the range-aware entry point is
+    /// `currentSelectionReference`). The pure shape (url + line) is `Self.lineReference`,
+    /// so the reference form is host-testable without standing up a model.
     public func currentLineReference() -> String? {
         Self.lineReference(url: currentURL, line: sourceView.sourceSelection.line)
     }

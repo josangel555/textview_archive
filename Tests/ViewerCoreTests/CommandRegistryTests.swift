@@ -415,6 +415,21 @@ final class CommandRegistryTests: XCTestCase {
         }
     }
 
+    // MARK: - Copy Reference binding (TSK-942)
+
+    /// ⌘⌥⇧C copies an mdv:// reference (IntelliJ's "Copy Reference" chord), routed
+    /// to edit.copyReference without collision; the title drops the "(current line)"
+    /// qualifier now that the verb also covers a selected line-RANGE (TSK-942).
+    func test_copyReference_cmdOptShiftC_routesToCopyReference_noCollision() {
+        let map = CommandRegistry.builtIn.shortcutMap()
+        let chord = Shortcut(key: "c", modifiers: [.command, .option, .shift])
+        let cmd = CommandRegistry.builtIn.command(id: "edit.copyReference")
+        XCTAssertEqual(cmd?.defaultShortcut, chord, "edit.copyReference must bind ⌘⌥⇧C")
+        XCTAssertEqual(map[chord], "edit.copyReference",
+                       "⌘⌥⇧C must route to Copy Reference (no collision stole it)")
+        XCTAssertEqual(cmd?.title, "Copy Reference")
+    }
+
     // MARK: - Natural tab-switch keybindings (TSK-328)
 
     /// Next/Previous Tab default to the natural macOS combos (⌘⇧] / ⌘⇧[),

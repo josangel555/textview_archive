@@ -2390,6 +2390,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())
 
+        // TSK-942/1256: copy an mdv:// reference to the current editor line — or a
+        // line-RANGE reference when text is selected — for pasting into an agent
+        // chat / comment. Mirrors the `copy-reference` script verb + the ⌘K palette
+        // command; ⌘⌥⇧C binding comes from the registry via applyShortcut.
+        let copyRefItem = NSMenuItem(
+            title: "Copy Reference",
+            action: #selector(copyReference(_:)), keyEquivalent: "")
+        copyRefItem.target = self
+        editMenu.addItem(applyShortcut("edit.copyReference", to: copyRefItem))
+        editMenu.addItem(.separator())
+
         // Insert Date & Time (TSK-299, Notepad's F5). Only enabled in
         // editor mode (validateMenuItem); inserts a locale-formatted
         // stamp at the caret via the CM6 `insertAtCursor` bridge.
@@ -3095,6 +3106,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.formatMarkdownTablesInActiveEditor()
     }
 
+    /// TSK-942/1256 — copy an `mdv://` reference for the current editor line, or a
+    /// line-RANGE reference when text is selected, to the clipboard (for pasting
+    /// into an agent chat / comment). Mirrors the `copy-reference` script verb.
+    @objc func copyReference(_ sender: Any?) {
+        guard let ref = model.currentSelectionReference() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(ref, forType: .string)
+    }
+
     /// TSK-352 — the "Convert Encoding" submenu choices (title + target
     /// encoding). Menu-item `tag` indexes this array. UTF-16 is the BOM-ful
     /// variant so a reopen re-detects it (the explicit-endian forms are
@@ -3438,6 +3458,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(alignMarkdownTables(_:)):
             // TSK-350: only for a markdown tab with a live editor buffer.
             return model.canAlignMarkdownTables
+        case #selector(copyReference(_:)):
+            // TSK-942: needs an active file to build a reference from.
+            return hasFile
         case #selector(convertFileEncoding(_:)):
             // TSK-352: any active text file.
             return model.canConvertActiveFileEncoding
