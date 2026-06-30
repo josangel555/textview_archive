@@ -59,4 +59,27 @@ final class DiffLineSelectionTests: XCTestCase {
         XCTAssertEqual(f.selectedClipboardText(DiffLineSelection(anchor: 0, focus: 1)), " a\n+b",
                        "a selection can span hunk boundaries")
     }
+
+    func test_clicking_plainCollapses_shiftExtendsFromAnchor() {
+        let base = DiffLineSelection(2)
+        XCTAssertEqual(base.clicking(5, extend: false), DiffLineSelection(5),
+                       "a plain click collapses the selection to the clicked row")
+        XCTAssertEqual(base.clicking(5, extend: true).range, 2...5,
+                       "a shift-click extends the anchor down to the clicked row")
+        XCTAssertEqual(base.clicking(0, extend: true).range, 0...2,
+                       "a shift-click above the anchor extends upward")
+    }
+
+    func test_flatIndex_acrossHunks_andOutOfRange() {
+        let h1 = UnifiedDiff.Hunk(oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, header: "",
+                                  lines: [line(.context, "a"), line(.added, "b")])
+        let h2 = UnifiedDiff.Hunk(oldStart: 9, oldCount: 1, newStart: 9, newCount: 1, header: "",
+                                  lines: [line(.removed, "c")])
+        let f = UnifiedDiff.File(oldPath: "a", newPath: "a", hunks: [h1, h2])
+        XCTAssertEqual(f.flatIndex(hunkIndex: 0, lineIndex: 0), 0)
+        XCTAssertEqual(f.flatIndex(hunkIndex: 0, lineIndex: 1), 1)
+        XCTAssertEqual(f.flatIndex(hunkIndex: 1, lineIndex: 0), 2, "the 2nd hunk's first line is flat index 2")
+        XCTAssertNil(f.flatIndex(hunkIndex: 1, lineIndex: 5), "out-of-range line → nil")
+        XCTAssertNil(f.flatIndex(hunkIndex: 9, lineIndex: 0), "out-of-range hunk → nil")
+    }
 }

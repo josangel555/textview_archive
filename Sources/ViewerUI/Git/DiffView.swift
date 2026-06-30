@@ -50,6 +50,18 @@ struct DiffView: View {
         let lineNo: Int
     }
 
+    // TSK-910 — the multi-line row selection (per file): the file it's in plus a
+    // DiffLineSelection over that file's flat (cross-hunk) row indices. Clicking
+    // a line-number gutter sets it; shift-click extends it; the contained rows
+    // highlight and a context-menu copies them. Distinct from the in-place
+    // text-selection on the content column (TSK-594), which still works.
+    @State private var rowSelection: RowSelection?
+
+    struct RowSelection: Equatable {
+        var fileIndex: Int
+        var selection: DiffLineSelection
+    }
+
     init(text: String, doc: DocumentModel, reviewSession: ReviewSession? = nil) {
         self.text = text
         self.doc = doc
@@ -353,6 +365,12 @@ struct DiffView: View {
             }
         }
         .contextMenu {
+            // TSK-910: copy the multi-line row selection (when it's in this file).
+            if let sel = rowSelection, sel.fileIndex == fileIndex {
+                Button("Copy \(sel.selection.count) Selected Line\(sel.selection.count == 1 ? "" : "s")") {
+                    Self.copyToPasteboard(file.selectedClipboardText(sel.selection))
+                }
+            }
             Button("Copy Hunk") {
                 Self.copyToPasteboard(hunk.clipboardText)
             }
@@ -367,6 +385,33 @@ struct DiffView: View {
     ) {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    /// TSK-910: update the per-file row selection from a click on `coordinate`'s
+    /// row. Plain click → that single row; shift-click extends the range from the
+    /// existing anchor (within the same file); a click in another file starts
+    /// fresh. The selection logic itself is host-tested (DiffLineSelection).
+    private func selectRow(_ coordinate: DiffFind.Match) {
+        guard files.indices.contains(coordinate.file),
+              let flat = files[coordinate.file].flatIndex(hunkIndex: coordinate.hunk, lineIndex: coordinate.line)
+        else { return }
+        let extend = NSEvent.modifierFlags.contains(.shift)
+        if extend, let cur = rowSelection, cur.fileIndex == coordinate.file {
+            rowSelection = RowSelection(fileIndex: coordinate.file,
+                                        selection: cur.selection.clicking(flat, extend: true))
+        } else {
+            rowSelection = RowSelection(fileIndex: coordinate.file, selection: DiffLineSelection(flat))
+        }
+    }
+
+    /// TSK-910: whether `coordinate`'s row falls within the current row selection
+    /// (drives the row highlight).
+    private func isRowSelected(_ coordinate: DiffFind.Match) -> Bool {
+        guard let cur = rowSelection, cur.fileIndex == coordinate.file,
+              files.indices.contains(coordinate.file),
+              let flat = files[coordinate.file].flatIndex(hunkIndex: coordinate.hunk, lineIndex: coordinate.line)
+        else { return false }
+        return cur.selection.contains(flat)
     }
 
     /// New-path is what `ReviewComment.filePath` is keyed on (post-change
@@ -510,13 +555,21 @@ struct DiffView: View {
                 // non-anchorable rows in review mode.
                 Color.clear.frame(width: 18)
             }
-            lineNoCell(line.oldLineNo)
-            lineNoCell(line.newLineNo)
-            // Gutter +/- column
-            Text(prefix(for: line.kind))
-                .font(.system(size: prefixFontSize, design: .monospaced))
-                .foregroundStyle(prefixColor(line.kind))
-                .frame(width: 14, alignment: .center)
+            // TSK-910: the line-number + prefix gutter selects the row on click
+            // (shift-click extends the range). Kept OFF the content column so its
+            // in-place text-selection (TSK-594) is undisturbed.
+            HStack(spacing: 0) {
+                lineNoCell(line.oldLineNo)
+                lineNoCell(line.newLineNo)
+                // Gutter +/- column
+                Text(prefix(for: line.kind))
+                    .font(.system(size: prefixFontSize, design: .monospaced))
+                    .foregroundStyle(prefixColor(line.kind))
+                    .frame(width: 14, alignment: .center)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { selectRow(coordinate) }
+            .help("Click to select line · Shift-click to extend the selection")
             // Content. Selectable in place (TSK-594) — per-Text on older
             // macOS; the guaranteed multi-line path is the right-click
             // Copy Hunk / Copy File Diff on the enclosing blocks.
@@ -529,6 +582,13 @@ struct DiffView: View {
         }
         .frame(minHeight: 17)
         .background(rowBackground(line.kind))
+        // TSK-910: row-selection tint — layered UNDER the find tint, never
+        // swallows clicks (the gutter tap drives selection; content keeps
+        // text-selection).
+        .overlay(
+            (isRowSelected(coordinate) ? Color.accentColor.opacity(0.20) : Color.clear)
+                .allowsHitTesting(false)
+        )
         // TSK-597: match tints layer OVER the +/- row color so both read
         // at once; the current match is the stronger tint. The id makes
         // the row a scrollTo target for next/prev.

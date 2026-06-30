@@ -35,6 +35,13 @@ public struct DiffLineSelection: Equatable, Sendable {
 
     /// The number of selected rows.
     public var count: Int { range.count }
+
+    /// The selection produced by clicking row `index`: a plain click collapses
+    /// to that single row; a shift-click keeps the current `anchor` and extends
+    /// `focus` to `index` (so the range grows/shrinks from the original anchor).
+    public func clicking(_ index: Int, extend: Bool) -> DiffLineSelection {
+        extend ? DiffLineSelection(anchor: anchor, focus: index) : DiffLineSelection(index)
+    }
 }
 
 public extension UnifiedDiff.File {
@@ -42,6 +49,17 @@ public extension UnifiedDiff.File {
     /// excluded). The flat index is the shared address the selection model and
     /// the per-row gesture use.
     var flatLines: [UnifiedDiff.Line] { hunks.flatMap(\.lines) }
+
+    /// The flat (cross-hunk) row index of the line at `lineIndex` within hunk
+    /// `hunkIndex` — the address the selection model and the per-row gesture
+    /// share. Sums the line counts of the preceding hunks. Returns nil for an
+    /// out-of-range (hunk, line) coordinate.
+    func flatIndex(hunkIndex: Int, lineIndex: Int) -> Int? {
+        guard hunks.indices.contains(hunkIndex),
+              hunks[hunkIndex].lines.indices.contains(lineIndex) else { return nil }
+        let priorLines = hunks[0..<hunkIndex].reduce(0) { $0 + $1.lines.count }
+        return priorLines + lineIndex
+    }
 
     /// The selected lines as unified-diff text — the per-line prefix (` `/`+`/`-`/`\`)
     /// plus content, one line each — for the clipboard. Mirrors the per-hunk /
