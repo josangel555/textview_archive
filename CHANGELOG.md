@@ -24,6 +24,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Terminal colours look right for CLI tools.** Settings ▸ Terminal ▸ Colour scheme adds a "Classic (xterm)" palette — the vivid standard ANSI colours tools like claude code expect (the old default was muted).
 - **The terminal pane resizes freely** — the artificial 900×800 size cap is gone (the window + split layout still bound it).
 - **New ▸ Image from the New-Tab landing** — the welcome screen now has a "New Image" button (next to New File) that opens a blank canvas in the image editor.
+- **Terminal copy no longer carries trailing whitespace.** Copying a selection from the terminal now trims the cell-grid's trailing-space padding and the bottom blank rows (matching Terminal.app / iTerm), so pasted command output isn't ragged. Interior blank lines are kept.
 
 ## 2026-06-29
 

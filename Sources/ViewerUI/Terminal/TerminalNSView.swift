@@ -559,7 +559,9 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     @objc func copy(_ sender: Any?) {
         guard let text = selection?.selectedText(fromRows: displayRows, cols: screen.cols),
               !text.isEmpty else { return }
-        Pasteboard.copy(text)
+        // TSK-769: trim the cell-grid's trailing-space padding + bottom blank rows on copy
+        // (matches Terminal.app / iTerm) so pasted command output isn't ragged.
+        Pasteboard.copy(TerminalCopyTrim.trim(text))
     }
 
     @objc func paste(_ sender: Any?) {
