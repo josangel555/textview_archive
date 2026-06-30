@@ -134,9 +134,14 @@ public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
     /// Clockwise rotation in DEGREES about the frame centre (TSK-1321). nil/0 = unrotated.
     /// Optional so existing persisted overlays decode unchanged (a missing key → nil).
     public var rotation: Double?
+    /// `.text` font style — bold / italic (TSK-1310's "font style"). nil = regular. Optional for the
+    /// same backward-compatible decoding reason.
+    public var bold: Bool?
+    public var italic: Bool?
 
     public init(id: UUID = UUID(), kind: Kind, frame: CGRect, style: ShapeStyle = ShapeStyle(),
-                text: String? = nil, fontSize: Double? = nil, rotation: Double? = nil) {
+                text: String? = nil, fontSize: Double? = nil, rotation: Double? = nil,
+                bold: Bool? = nil, italic: Bool? = nil) {
         self.id = id
         self.kind = kind
         self.frame = frame
@@ -144,6 +149,8 @@ public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
         self.text = text
         self.fontSize = fontSize
         self.rotation = rotation
+        self.bold = bold
+        self.italic = italic
     }
 
     /// Endpoint accessors for the open shapes — `start` is the frame ORIGIN, `end`
@@ -284,6 +291,15 @@ public struct VectorOverlay: Sendable, Codable, Equatable {
     public mutating func setRotation(id: UUID, _ degrees: Double?) -> Bool {
         guard let idx = shapes.firstIndex(where: { $0.id == id }) else { return false }
         shapes[idx].rotation = degrees
+        return true
+    }
+
+    /// Set the `.text` font style (bold / italic) of the shape with `id` (TSK-1310). No-op for an unknown id.
+    @discardableResult
+    public mutating func setTextStyle(id: UUID, bold: Bool?, italic: Bool?) -> Bool {
+        guard let idx = shapes.firstIndex(where: { $0.id == id }) else { return false }
+        shapes[idx].bold = bold
+        shapes[idx].italic = italic
         return true
     }
 

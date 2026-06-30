@@ -52,4 +52,24 @@ final class VectorShapeTextTests: XCTestCase {
         XCTAssertEqual(overlay.shapes.first?.rotation, 90)
         XCTAssertFalse(overlay.setRotation(id: UUID(), 30), "unknown id is a no-op")
     }
+
+    func test_textStyle_roundTrips_andDefaultsNil_TSK1310() throws {
+        let plain = VectorShape(kind: .text, frame: .zero, text: "x")
+        XCTAssertNil(plain.bold, "font style defaults to nil (regular)")
+        XCTAssertNil(plain.italic)
+        let styled = VectorShape(kind: .text, frame: .zero, text: "x", bold: true, italic: true)
+        let back = try JSONDecoder().decode(VectorShape.self, from: try JSONEncoder().encode(styled))
+        XCTAssertEqual(back.bold, true)
+        XCTAssertEqual(back.italic, true)
+        XCTAssertEqual(back, styled)
+    }
+
+    func test_overlaySetTextStyle_updatesTheShape_TSK1310() {
+        var overlay = VectorOverlay()
+        let id = overlay.add(VectorShape(kind: .text, frame: .zero, text: "x"))
+        XCTAssertTrue(overlay.setTextStyle(id: id, bold: true, italic: false))
+        XCTAssertEqual(overlay.shapes.first?.bold, true)
+        XCTAssertEqual(overlay.shapes.first?.italic, false)
+        XCTAssertFalse(overlay.setTextStyle(id: UUID(), bold: true, italic: true), "unknown id is a no-op")
+    }
 }

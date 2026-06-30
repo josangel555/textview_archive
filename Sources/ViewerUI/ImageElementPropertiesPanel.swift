@@ -41,6 +41,16 @@ struct ImageElementPropertiesPanel: View {
                             in: 0.01...0.3)
                     }
                     .accessibilityIdentifier("mdv.imageEditor.element.fontSize")
+                    HStack {
+                        Toggle("Bold", isOn: Binding(
+                            get: { shape.bold == true },
+                            set: { _ = vm.setSelectedShapeTextStyle(bold: $0, italic: shape.italic) }))
+                        Toggle("Italic", isOn: Binding(
+                            get: { shape.italic == true },
+                            set: { _ = vm.setSelectedShapeTextStyle(bold: shape.bold, italic: $0) }))
+                    }
+                    .toggleStyle(.checkbox)
+                    .accessibilityIdentifier("mdv.imageEditor.element.fontStyle")
                 }
 
                 ColorPicker("Stroke", selection: Binding(

@@ -114,14 +114,14 @@ struct VectorOverlayView: View {
             ctx.stroke(path, with: .color(stroke), lineWidth: style.lineWidth)
         case .text:
             // Retained text label (TSK-1310): draw the string at the frame origin, sized as a
-            // fraction of the displayed image height, in the stroke colour.
+            // fraction of the displayed image height, in the stroke colour, with bold/italic style.
             let r = map(shape.frame, imageRect)
             let size = CGFloat(shape.fontSize ?? 0.06) * imageRect.height
-            let resolved = ctx.resolve(
-                Text(shape.text ?? "")
-                    .font(.system(size: max(1, size)))
-                    .foregroundColor(stroke))
-            ctx.draw(resolved, at: CGPoint(x: r.minX, y: r.minY), anchor: .topLeading)
+            var label = Text(shape.text ?? "")
+                .font(.system(size: max(1, size), weight: (shape.bold == true) ? .bold : .regular))
+                .foregroundColor(stroke)
+            if shape.italic == true { label = label.italic() }
+            ctx.draw(ctx.resolve(label), at: CGPoint(x: r.minX, y: r.minY), anchor: .topLeading)
         }
     }
 }

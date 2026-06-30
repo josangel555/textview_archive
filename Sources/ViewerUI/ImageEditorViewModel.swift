@@ -661,6 +661,13 @@ public final class ImageEditorViewModel: ObservableObject {
         return overlay.setRotation(id: id, degrees)
     }
 
+    /// Set the selected `.text` shape's font style — bold / italic (TSK-1310). No-op without a selection.
+    @discardableResult
+    public func setSelectedShapeTextStyle(bold: Bool?, italic: Bool?) -> Bool {
+        guard let id = selectedShapeID else { return false }
+        return overlay.setTextStyle(id: id, bold: bold, italic: italic)
+    }
+
     // MARK: - Edit-state persistence (TSK-1303)
 
     /// Snapshot the full in-progress edit state for session persistence — the committed op-list, the
