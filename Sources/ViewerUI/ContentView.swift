@@ -451,6 +451,18 @@ public struct ContentView: View {
                     onClose: { model.showConvertImage = false })
             }
         }
+        // TSK-1323/1324 — the Audio Extract/Convert panel (openExtractAudio / openConvertAudio).
+        .sheet(isPresented: $model.showAudioConvert) {
+            if let vm = model.audioConvertVM {
+                AudioConvertView(
+                    vm: vm,
+                    onConverted: { url in
+                        model.openConvertedAudio(url)
+                        model.showAudioConvert = false
+                    },
+                    onClose: { model.showAudioConvert = false })
+            }
+        }
     }
 
     // MARK: - Body row (sidebar accordion + content + split)

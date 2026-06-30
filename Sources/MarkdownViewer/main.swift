@@ -727,6 +727,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openConvertImage()
     }
 
+    // TSK-1323 — View ▸ Extract Audio from Video; TSK-1324 — View ▸ Convert Audio.
+    @objc func openExtractAudio(_ sender: Any?) {
+        model.openExtractAudio()
+    }
+    @objc func openConvertAudio(_ sender: Any?) {
+        model.openConvertAudio()
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1919,6 +1927,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "")
         convertImageItem.target = self
         viewMenu.addItem(convertImageItem)
+
+        // TSK-1323/1324 — View ▸ Extract Audio from Video / Convert Audio.
+        let extractAudioItem = NSMenuItem(
+            title: "Extract Audio from Video…",
+            action: #selector(openExtractAudio(_:)),
+            keyEquivalent: "")
+        extractAudioItem.target = self
+        viewMenu.addItem(extractAudioItem)
+        let convertAudioItem = NSMenuItem(
+            title: "Convert Audio…",
+            action: #selector(openConvertAudio(_:)),
+            keyEquivalent: "")
+        convertAudioItem.target = self
+        viewMenu.addItem(convertAudioItem)
 
         // TSK-1116 — View ▸ Focus Mode: one-click workspace presets that pin the
         // sidebar to an activity's panel set + preferred lens (FocusWorkMode).

@@ -190,6 +190,12 @@ public final class DocumentModel: ObservableObject {
     /// The convert controller, seeded with the active image tab's URL when opened.
     @Published public var convertImageVM: ConvertImageViewModel?
 
+    /// TSK-1323/1324 — the Audio Extract/Convert panel. Transient; driven by
+    /// `openExtractAudio()` (from a video tab) or `openConvertAudio()` (from an audio tab).
+    @Published public var showAudioConvert = false
+    /// The audio extract/convert controller, seeded with the active media tab's URL when opened.
+    @Published public var audioConvertVM: AudioConvertViewModel?
+
     /// Terminal ANSI colour theme name (TSK-1312) — drives `TerminalPalette`'s
     /// 16-colour palette. Persisted; default "Default" (the muted shipped palette).
     /// "Classic (xterm)" gives standard vivid colours (closer to what CLI tools like

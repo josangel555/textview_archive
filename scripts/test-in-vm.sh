@@ -280,6 +280,7 @@ run_webview_tests() {
     --filter ViewerUITests.AudioPlayerHostIntegrationTests \
     --filter ViewerUITests.EmptyStateNewImageHostingTests \
     --filter ViewerUITests.ConvertImageHostingTests \
+    --filter ViewerUITests.AudioConvertHostingTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
