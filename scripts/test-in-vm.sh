@@ -284,6 +284,7 @@ run_webview_tests() {
     --filter ViewerUITests.CM6PlainClickAfterScrollWebViewTests \
     --filter ViewerUITests.WalkthroughMermaidRenderWebViewTests \
     --filter ViewerUITests.WalkthroughDiagramOverlayMountTests \
+    --filter ViewerUITests.FeedReaderViewRenderTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
