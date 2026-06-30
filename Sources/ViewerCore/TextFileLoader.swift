@@ -57,6 +57,15 @@ public struct TextFile: Sendable {
     /// `Equatable` for the same reason as the flags above (derived from the url).
     public let isExtractedReadOnly: Bool
 
+    /// TSK-1141: for a multi-sheet `.xlsx`, ALL sheets retained so the viewer can
+    /// offer sheet navigation. `contents` stays the ACTIVE sheet's TAB-separated
+    /// text (the first sheet at load) so save / find / dirty-tracking / the editor —
+    /// which all key off `contents: String` — are unchanged (the additive, low-blast
+    /// design in docs/SPREADSHEET_MULTISHEET_DESIGN.md). `nil` for non-xlsx /
+    /// single-sheet files. Switch with `withActiveSheet(_:)`. Not part of `Equatable`
+    /// (the url+byteCount+encoding identity already distinguishes files).
+    public let xlsxSheets: [XLSXSheet]?
+
     public init(
         url: URL,
         contents: String,
@@ -64,7 +73,8 @@ public struct TextFile: Sendable {
         byteCount: Int,
         modifiedTime: Date? = nil,
         isLargeReadOnly: Bool = false,
-        isExtractedReadOnly: Bool = false
+        isExtractedReadOnly: Bool = false,
+        xlsxSheets: [XLSXSheet]? = nil
     ) {
         self.url = url
         self.contents = contents
@@ -73,6 +83,25 @@ public struct TextFile: Sendable {
         self.modifiedTime = modifiedTime
         self.isLargeReadOnly = isLargeReadOnly
         self.isExtractedReadOnly = isExtractedReadOnly
+        self.xlsxSheets = xlsxSheets
+    }
+
+    /// TSK-1141: a copy showing sheet `index` — its TAB-separated text becomes
+    /// `contents` (so the existing CSV/table parse path renders it). Pure; returns
+    /// `self` unchanged when there are no retained sheets or `index` is out of range.
+    /// The sheet-tabs view (render-VM tail) calls this on a sheet switch.
+    public func withActiveSheet(_ index: Int) -> TextFile {
+        guard let xlsxSheets, xlsxSheets.indices.contains(index) else { return self }
+        return TextFile(
+            url: url,
+            contents: TextFileLoader.tabSeparated(xlsxSheets[index].rows),
+            encoding: encoding,
+            byteCount: byteCount,
+            modifiedTime: modifiedTime,
+            isLargeReadOnly: isLargeReadOnly,
+            isExtractedReadOnly: isExtractedReadOnly,
+            xlsxSheets: xlsxSheets
+        )
     }
 }
 
@@ -264,7 +293,9 @@ public struct TextFileLoader: Sendable {
             return TextFile(
                 url: url, contents: Self.tabSeparated(workbook.firstSheet?.rows ?? []),
                 encoding: .utf8, byteCount: data.count, modifiedTime: mtime,
-                isExtractedReadOnly: true
+                isExtractedReadOnly: true,
+                // TSK-1141: retain ALL sheets for sheet navigation (contents stays sheet 0).
+                xlsxSheets: workbook.sheets
             )
         }
 

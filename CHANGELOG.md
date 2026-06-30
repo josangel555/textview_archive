@@ -39,6 +39,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Spikes/owner-decisions:** CSV viewport-paging (1139 — windowing conflicts with the table's filter/sort/find feature set) and the ⌘K render-panel commands (1335 pt2 — NSAlert→panel refactor) surfaced as tradeoffs rather than churned.
 - **Lessons:** verify-before-build (caught + reverted a duplicate encoding converter — grep the feature noun broadly, incl. main.swift menus); a bare Swift-6.1.2 VM build poisons `.build` for the 6.3 test lane.
 - **Perf/rust-core:** git porcelain-parser proptest hardening (no-panic + count-bounds); MEASURED the "MD open laggy" regression (TSK-598) on the VM → a ~334ms CoreAnimation commit stall (same class as Page-Up jank), host render-gen + mermaid ruled out; image-editor off-main render landed (above).
+- **Spreadsheet (TSK-1141):** design + host-model foundation for multi-sheet `.xlsx` — `TextFile` now retains all sheets and re-derives the active sheet on switch (String-contract-safe, additive); the sheet-tabs view is the remaining render slice. Not yet user-visible.
 
 ## 2026-06-29
 
