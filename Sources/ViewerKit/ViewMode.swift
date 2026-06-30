@@ -264,7 +264,13 @@ public enum ViewModeOptions {
     ]
 
     private static let tableExtensions: Set<String> = [
-        "csv", "tsv"
+        "csv", "tsv",
+        // TSK-1141/1145: spreadsheet workbooks open as a GRID, not raw TSV text.
+        // The loader retains their sheets + emits TSV content (DocumentModel /
+        // TextFileLoader); offering `.table` here is what makes the grid — and
+        // the multi-sheet SpreadsheetView (ContentView's `.table` branch) —
+        // actually REACHABLE (without this they defaulted to the source view).
+        "xlsx", "ods",
     ]
 
     private static let diffExtensions: Set<String> = [

@@ -29,6 +29,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Copy Reference covers a selection — now with a menu item + shortcut.** Select several lines in the editor and run **Edit ▸ Copy Reference** (⌘⌥⇧C, also in the ⌘K command palette) to copy a line-RANGE `mdv://` reference (`…?line=10&endLine=20`) to paste to an agent — "these are the lines I mean". With no selection it copies the current line as before. (Source-view selections carry the range today.)
 
 ### Fixed
+- **Excel (.xlsx) and OpenDocument (.ods) spreadsheets open as a GRID.** They were opening as raw tab-separated *text* in the source view — the table grid (and the multi-sheet tab strip) was never actually shown. They now default to the Table view, so a workbook reads as a spreadsheet, and a multi-sheet `.xlsx` shows its sheet-tab strip as intended.
 - **Music keeps playing when you switch sessions/tabs.** Audio playback was tied to the media view, so switching away deallocated the player and stopped the music; it now lives at the app level and survives the switch.
 - **The side-nav file tree respects its shoulder toggle.** With the File-nav toggle off (only Bookmarks on) the file tree used to stay visible; it now hides as expected.
 - **Empty shoulder bars no longer clutter the edges.** A shoulder with no docked panels is hidden (it'll reveal as a drop target during a drag once panel-dragging ships) instead of showing a permanent bare strip.
