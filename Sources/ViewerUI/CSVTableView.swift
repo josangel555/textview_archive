@@ -807,8 +807,9 @@ struct CSVTableView: View {
     /// TSK-1187 — is cell `(r, c)` inside the current rectangular selection
     /// (anchor↔cursor, in either direction)?
     private func isInSelectionRect(_ r: Int, _ c: Int) -> Bool {
-        r >= min(selectionAnchorRow, cursorRow) && r <= max(selectionAnchorRow, cursorRow)
-            && c >= min(selectionAnchorCol, cursorCol) && c <= max(selectionAnchorCol, cursorCol)
+        CSVRectSelection(anchorRow: selectionAnchorRow, anchorCol: selectionAnchorCol,
+                         focusRow: cursorRow, focusCol: cursorCol)
+            .contains(row: r, col: c)
     }
 
     /// read-only behaviour is byte-identical to pre-TSK-1019).

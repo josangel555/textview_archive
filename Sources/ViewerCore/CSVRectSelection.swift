@@ -22,6 +22,12 @@ public struct CSVRectSelection: Sendable, Equatable {
     /// True when the selection is a single cell.
     public var isSingleCell: Bool { anchorRow == focusRow && anchorCol == focusCol }
 
+    /// Whether the cell at `(row, col)` falls within the selected rectangle —
+    /// the single source of truth for the grid's selection-highlight gate.
+    public func contains(row: Int, col: Int) -> Bool {
+        rowRange.contains(row) && colRange.contains(col)
+    }
+
     /// Tab/newline-delimited extract of the selected rectangle from `rows`
     /// (spreadsheet clipboard convention): columns joined by `\t`, rows by `\n`.
     /// Out-of-bounds rows/cols are clamped away (a ragged row contributes only
