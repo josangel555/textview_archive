@@ -1,7 +1,16 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — owner-correction render stretch + the WHOLE image-editor intake (TSK-1302–1321) + copy-trimmed shipped + a 5-item VALIDATE-DRAIN; remainder = owner-decisions / render-T5 / data-safety-wiring / perf-measure (2026-06-30)
+# Handoff — image-editor intake DONE + TSK-910 multi-line diff shipped + zoom SRP slice; CONTAINED SAFE QUEUE DRAINED, remainder = careful render-VM/data-safety or owner-gated (2026-06-30)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `8931adbb`+ (the tooltip-timing-test commit; verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `38ce7651`+ (the zoom-SRP-extract commit; verify `git log -1`)
+
+## ⛳ STATE AT THIS CHECKPOINT (tick ~70, ~113 commits) — READ FIRST
+SHIPPED since the last checkpoint: TSK-1310 font-style (text overlay bold/italic) + TSK-1321 shape FILL (both VM-render-validated); TSK-910 multi-line commit-diff selection (slices 1+2 — gutter click/shift-click + highlight + range-copy, host-tested, at review behind the AX gesture); TSK-1209 tooltip-delay test; TSK-1304 validated; TSK-1110 zoom SRP extract + clamp test.
+PARKED on genuine spike-framed decisions: TSK-1139 (CSV viewport paging — windowing CONFLICTS with the whole table feature set [filter/sort/find/edit/widths all need all rows] AND the render is already virtualized by LazyVStack → niche value, recorded a/b/c options, recommend skip); TSK-1269 (data-safety auto-merge — the current flow ALREADY prompts safely so it's a CONVENIENCE not a loss-fix; remainder needs a live CM6 reseed seam = render + the buffer-mutation desync corruption-trap class).
+HONEST DRAIN STATE: the contained, LOW-RISK, agent-completable buildable work is drained down to marginal SRP-extract slices. The valuable remainder is CAREFUL render-VM/data-safety builds (risky to rush in a cron tick — TSK-1269 buffer-reseed, TSK-1318 needs a testable menu-spec first, TSK-1110's coupled core) or owner-gated. Do NOT rush these blind; they want deliberate VM-iterative effort.
+OWNER ACTIONS that unblock real work (highest-leverage first): (1) **TSK-1334** — grant VM Screen-Recording to the xctest runner → reopens ALL T5 pixel/occlusion validation (image-canvas pixels, on-canvas text/fill/rotation, mermaid occlusion TSK-1336). (2) Three product decisions: TSK-1139 (CSV paging a/b/c above), TSK-1305 (image-edit full undo UX), TSK-1320 (Annotations-vs-Shapes consolidation). (3) Close the ~417 review/fixed owner-close queue (validated→done is owner-only).
+
+## ⚠️ CORRECTION (owner 2026-06-29) — STILL IN FORCE
+The VM is UP; the ENTIRE UI/render lane is agent-workable — BUILD + VM-validate. ONLY off-limits tier = AX-driven tests. "host-testable-seam vein drained" is a banned framing. The render-confirm directive is satisfied BY VM-validating, not by handing render to the owner. (Note: a few remainder items above ARE genuinely careful/risky/owner-gated — that's a per-item engineering judgment after a thorough spike, NOT the banned blanket "render isn't my work".)
 
 ## Mission
 Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
