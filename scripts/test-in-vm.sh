@@ -391,6 +391,22 @@ case "$MODE" in
     log "webview done in ${SECONDS}s"
     exit $rc
     ;;
+  pixel)
+    ensure_tools
+    # TSK-1333: TARGETED T5-PIXEL validation — run ONE PixelTestCase (or any
+    # heavy-tier suite) interactively without the full `all` sweep (which is too
+    # slow + gets killed). T5 needs build_all's GUI/root context for screencapture
+    # to work (the `test` mode is TCC-denied — see the `test` note above), so this
+    # mode does build_all + a FILTERED run_tests (not `test`'s stale-dist path).
+    # Needs MDV_VM_GUI_SESSION=1 + MDV_VM_SUDO_PASS. Example:
+    #   MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh \
+    #     pixel --filter ViewerUITests.ClaudeMonitorVisualRegressionTests
+    MDV_SKIP_SMOKE_GATE=1 build_all
+    rc=0
+    run_tests "${@:2}" || rc=$?
+    log "pixel done in ${SECONDS}s"
+    exit $rc
+    ;;
   all|*)
     ensure_tools
     # The full sweep below re-covers ViewModeMatrixSmokeTests, so skip the
