@@ -57,7 +57,7 @@ import {
 // TSK-1136: editor completion popup. Drives an async Swift-backed completion
 // source (LSP or in-file fallback) via the WebView bridge. The package is
 // already a build dep (package.json) — bundling adds no Swift runtime dep.
-import { autocompletion, completionStatus } from "@codemirror/autocomplete";
+import { autocompletion, completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -119,7 +119,7 @@ export {
   foldService,
   StreamLanguage,
   linter, lintGutter, setDiagnostics, forEachDiagnostic,
-  autocompletion, completionStatus,
+  autocompletion, completionStatus, startCompletion,
   markdown, javascript, python, json, oneDark,
   // TSK-1135: official Lezer language packs.
   rust, java, cpp, sql, html, css, xml, go,
