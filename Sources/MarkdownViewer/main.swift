@@ -707,6 +707,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openScriptConsole()
     }
 
+    // TSK-1161 — View ▸ Structural Search: AST/structural query over the active buffer.
+    @objc func openStructuralSearch(_ sender: Any?) {
+        model.openStructuralSearch()
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1867,6 +1872,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "")
         scriptConsoleItem.target = self
         viewMenu.addItem(scriptConsoleItem)
+
+        // TSK-1161 — View ▸ Structural Search: AST/structural query over the active buffer.
+        let structSearchItem = NSMenuItem(
+            title: "Structural Search…",
+            action: #selector(openStructuralSearch(_:)),
+            keyEquivalent: "")
+        structSearchItem.target = self
+        viewMenu.addItem(structSearchItem)
 
         // TSK-1116 — View ▸ Focus Mode: one-click workspace presets that pin the
         // sidebar to an activity's panel set + preferred lens (FocusWorkMode).

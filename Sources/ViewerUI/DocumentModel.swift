@@ -166,6 +166,12 @@ public final class DocumentModel: ObservableObject {
     /// The Script Console's controller, seeded from the active buffer when opened.
     @Published public var scriptConsoleVM: ScriptConsoleViewModel?
 
+    /// TSK-1161 — the Structural Search panel (AST query over the active buffer). Transient;
+    /// driven by `openStructuralSearch()`.
+    @Published public var showStructuralSearch = false
+    /// The Structural Search controller, seeded from the active buffer + language when opened.
+    @Published public var structuralSearchVM: StructuralSearchViewModel?
+
     /// Terminal ANSI colour theme name (TSK-1312) — drives `TerminalPalette`'s
     /// 16-colour palette. Persisted; default "Default" (the muted shipped palette).
     /// "Classic (xterm)" gives standard vivid colours (closer to what CLI tools like

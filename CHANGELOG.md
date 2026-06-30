@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-29
 
 ### Added
+- **Structural Search (View ▸ Structural Search…)** — search the active file by SYNTAX, not text: type a structural query (e.g. `function_declaration name=$X`, `call_expression name="print"`) and get a list of matching AST nodes (each with its kind + source snippet). Far more precise than regex against formatting/comments/strings. (Results list now; click-to-jump is a follow-on.)
 - **Script Console (View ▸ Script Console…)** — a JQ-style query/transform console over the active buffer: run a JavaScript expression over your JSON, log **lines**, or **CSV** (`input` / `$` is the parsed buffer), see the pretty-printed result, and **Apply →** to open it in a new tab. Runs off the main thread with a soft timeout, so a runaway script never hangs the app.
 
 ### Fixed

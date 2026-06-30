@@ -414,6 +414,13 @@ public struct ContentView: View {
                     onClose: { model.showScriptConsole = false })
             }
         }
+        // TSK-1161 — the Structural Search panel (opened via model.openStructuralSearch()).
+        .sheet(isPresented: $model.showStructuralSearch) {
+            if let vm = model.structuralSearchVM {
+                StructuralSearchView(vm: vm, onJump: nil,
+                                     onClose: { model.showStructuralSearch = false })
+            }
+        }
     }
 
     // MARK: - Body row (sidebar accordion + content + split)
