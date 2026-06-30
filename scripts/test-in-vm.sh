@@ -275,6 +275,7 @@ run_webview_tests() {
     --filter ViewerUITests.EditorDiagnosticsWebViewTests \
     --filter ViewerUITests.EditorCompletionWebViewTests \
     --filter ViewerUITests.SettingsTerminalColorSchemeHostingTests \
+    --filter ViewerUITests.SidebarFilesToggleHostingTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
