@@ -1,13 +1,20 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — owner-correction render stretch + the WHOLE image-editor intake cluster (TSK-1302–1321) DRAINED via the non-AX/host paths; remainder = owner-decisions / render-T5 / data-safety-wiring / perf-measure (2026-06-30)
+# Handoff — owner-correction render stretch + the WHOLE image-editor intake (TSK-1302–1321) + copy-trimmed shipped + a 5-item VALIDATE-DRAIN; remainder = owner-decisions / render-T5 / data-safety-wiring / perf-measure (2026-06-30)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `8e1636bb`+ (the edit-state-foundation commit; verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `8931adbb`+ (the tooltip-timing-test commit; verify `git log -1`)
 
 ## Mission
 Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
 
 ## ⚠️ CORRECTION THAT RESET THIS HANDOFF (owner, 2026-06-29) — READ FIRST
 A prior version of this handoff declared a "host-testable-seam vein DRAINED" and routed all render/UI work to a "VM/owner venue." **That framing was WRONG and is now banned.** The owner's standing model: **the VM is UP and the ENTIRE UI/render lane is agent-workable — build AND VM-validate it. The ONLY off-limits tier is AX-driven tests.** There is NO "host-testable vs render" split in what to work; render/UI/VM items are first-class drain targets you BUILD and VALIDATE (on the VM), not hand to the owner. The instructions that caused the misread were hardened this session (CLAUDE.md new 2026-06-29 directive + §4 self-validation; TASK_WORKFLOW §4 + §7 cron; the live cron prompt). The render-confirm directive is satisfied BY VM-validating, not by leaving things at review.
+
+## ★★★ LATEST — copy-trimmed shipped + the VALIDATE-DRAIN stretch (2026-06-30, after the image-editor intake) — READ FIRST
+After the image-editor intake (below), re-challenged my own "owner-gated" drift (the cron: render is NOT owner's lane, "vein drained" is banned) and found genuine HOST work the big render items had masked:
+- **TSK-769 copy-trimmed SHIPPED** (47d63a02) — terminal copy strips the cell-grid trailing-space padding + bottom blank rows (Terminal.app/iTerm parity); TerminalCopyTrim.trim (pure, host-tested) → TerminalNSView.copy(_:). User-facing, CHANGELOG'd. (Rest of TSK-769 — open-in-pwd, favorites, history, palette, tab-rename model — already built; tab-rename UI / colours / shoulder-border are render-VM.)
+- **VALIDATE-DRAIN → 5 items to `validated`** (advancing the ~417 owner-close queue with real proof): TSK-1332 (UAT TK2-blank false-negative — DiagnosticDump textLength + 6 consumers + host test), TSK-1240 (PaneRetention LRU mount-probe — stale, fixed by TSK-1274, VM-confirmed 2/2), TSK-1328 (ChromeBodyEvalCount parallel flake — retry-the-measure + ~15 green parallel gate runs), TSK-1210 (VM Swift 6.1.2 RustCore circular-ref — MsgPackPair, VM 6.1.2 compile clean), TSK-1209 (tooltip appear-delay 0.6 — test-gap backfill).
+- **THE VALIDATE-DRAIN DISCRIMINATOR (use it):** test-infra / build / logic items with REAL teeth and NO T5/AX tail are agent-validatable end-to-end (host test, VM compile, empirical gate runs) → drive fixed/review → `validated`. Render items (image-editor, mermaid) correctly stay at review behind T5/owner; key-routing/focus bugs behind AX. Many "VM bugs" are STALE test expectations already fixed in code — diagnose host-side first, then VM-confirm + reconcile (TSK-1240).
+- **The DELETE-set (TSK-1268 class A: LSPService superseded, EditorPerfBench, CSVRowWindowSource) stays OWNER-gated** — the safety rule (didn't-create-it → surface) applies; don't autonomously delete.
 
 ## ★★ SINCE 16 — THE OWNER-CORRECTION RENDER STRETCH (2026-06-30) — READ FIRST
 The owner corrected the END-STATE below: **"T5-pixel-blocked" was conflated with "render-blocked."**
