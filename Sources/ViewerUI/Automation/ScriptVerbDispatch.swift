@@ -44,6 +44,22 @@ import ViewerKit
 @MainActor
 public enum ScriptVerb {
 
+    /// Maps a `convert-encoding <id>` palette/script arg to a text encoding
+    /// (TSK-1335). Internal so the registry test can assert the descriptor verb
+    /// args round-trip. Mirrors AppDelegate.encodingChoices (the menu source).
+    /// A dictionary (NOT a switch) on purpose: the ScriptVerbCatalog test scans
+    /// this file for `case "<token>":` labels to extract verbs, so a switch here
+    /// would mis-register the encoding ids as bogus verbs.
+    static let convertEncodingMap: [String: String.Encoding] = [
+        "utf-8": .utf8,
+        "utf-16": .utf16,
+        "windows-1252": .windowsCP1252,
+        "iso-latin-1": .isoLatin1,
+    ]
+    static func encodingForConvertID(_ id: String) -> String.Encoding? {
+        convertEncodingMap[id]
+    }
+
     /// Apply one script verb line (`"<cmd> <arg>"`) to `model` / `sessions`.
     ///
     /// - Returns: `true` if the verb was recognised and applied here;
@@ -77,6 +93,14 @@ public enum ScriptVerb {
             // Script-bus nav primitive: scroll the active editor/source to a
             // 1-based line. Invalid (≤0 / non-numeric) args are a recognized no-op.
             if let n = Int(arg), n >= 1 { model.sourceView.scrollSource(toLine: n) }
+        case "convert-encoding":
+            // TSK-1335: palette parity for Edit ▸ Convert Encoding — re-save the
+            // active file in the chosen encoding (reuses the existing host method,
+            // DocumentModel.convertActiveFileEncoding via EditorWriter w/ lossy guard).
+            // Unknown arg is a recognized no-op.
+            if let enc = Self.encodingForConvertID(arg) {
+                _ = model.convertActiveFileEncoding(to: enc)
+            }
         case "open":           model.openPath(URL(fileURLWithPath: arg))
         case "open-lazy":
             // Append a file as a LAZY (`.empty`) tab without selecting it —

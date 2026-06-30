@@ -115,6 +115,8 @@ final class CommandRegistryTests: XCTestCase {
             "fold-all", "unfold-all", "show-repo-history", "clear-recents",
             // copy a line-precise mdv:// reference to the current editor line (TSK-1256)
             "copy-reference",
+            // re-save the active file in a chosen encoding via the ⌘K palette (TSK-1335)
+            "convert-encoding",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

@@ -38,6 +38,24 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "edit.copyReference", title: "Copy Reference (current line)", category: .edit,
             scriptVerb: "copy-reference"),
+        // TSK-1335 — palette parity for the existing Edit ▸ Convert Encoding submenu
+        // (the host work, DocumentModel.convertActiveFileEncoding, already exists).
+        // Re-saves the active file in the chosen encoding; .excluded from macros
+        // (a disk-write keyed on the active file, not a clean headless replay).
+        CommandDescriptor(
+            id: "edit.convertEncoding.utf8", title: "Convert Encoding: UTF-8", category: .edit,
+            scriptVerb: "convert-encoding utf-8", replayability: .excluded),
+        CommandDescriptor(
+            id: "edit.convertEncoding.utf16", title: "Convert Encoding: UTF-16", category: .edit,
+            scriptVerb: "convert-encoding utf-16", replayability: .excluded),
+        CommandDescriptor(
+            id: "edit.convertEncoding.windows1252",
+            title: "Convert Encoding: Western (Windows-1252)", category: .edit,
+            scriptVerb: "convert-encoding windows-1252", replayability: .excluded),
+        CommandDescriptor(
+            id: "edit.convertEncoding.isoLatin1",
+            title: "Convert Encoding: Western (ISO Latin-1)", category: .edit,
+            scriptVerb: "convert-encoding iso-latin-1", replayability: .excluded),
         CommandDescriptor(
             id: "file.open", title: "Open…", category: .file,
             // ⌘O routes through an NSOpenPanel — no pure verb.
