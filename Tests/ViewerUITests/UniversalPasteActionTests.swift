@@ -64,6 +64,23 @@ final class UniversalPasteActionTests: XCTestCase {
                        "image paste routes to the image viewer (a .png temp)")
     }
 
+    /// TSK-1327: a rich-text paste carrying HTML opens as STRUCTURED Markdown
+    /// (headings → "# ", list items → "- "), not a raw .rtf dump.
+    func test_richTextHTML_opensStructuredMarkdownTab() throws {
+        let model = makeModel()
+        let pb = freshPasteboard()
+        let html = "<h1>Title</h1><ul><li>one</li><li>two</li></ul>"
+        pb.setData(Data(html.utf8), forType: .html)
+        XCTAssertTrue(model.universalPaste(from: pb), "HTML rich text should dispatch + open a tab")
+        let url = try XCTUnwrap(model.tabs.selected?.url)
+        XCTAssertEqual(url.pathExtension, "md",
+                       "rich HTML paste opens as Markdown, not raw .rtf")
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(content.contains("# Title"), "heading → '# ' (got: \(content))")
+        XCTAssertTrue(content.contains("- one") && content.contains("- two"),
+                      "list items → '- ' (got: \(content))")
+    }
+
     func test_emptyClipboard_returnsFalse() {
         let model = makeModel()
         let pb = freshPasteboard()   // nothing set

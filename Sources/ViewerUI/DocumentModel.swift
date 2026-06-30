@@ -2151,6 +2151,20 @@ public final class DocumentModel: ObservableObject {
             return false
         }
         let plan = UniversalPastePlan.plan(for: target)
+        // TSK-1327: a rich-text paste that carries an HTML representation becomes
+        // STRUCTURED Markdown (bullets→"- ", headings→"#", bold/links preserved)
+        // via the host-tested RichTextHTMLParser — the owner's "format pasted rich
+        // text appropriately" ask — instead of a raw .rtf dump. Falls through to the
+        // plan (raw RTF) when there's no usable HTML body or the conversion is empty.
+        if target == .richText, let html = htmlBody, !html.isEmpty {
+            let markdown = RichTextHTMLParser.markdown(fromHTML: html)
+            if !markdown.isEmpty,
+               let mdURL = Self.writePasteTemp(Data(markdown.utf8), ext: "md",
+                                               name: plan.suggestedName) {
+                openInNewTab(mdURL)
+                return true
+            }
+        }
         let url: URL?
         switch plan.source {
         case .fileURL:
