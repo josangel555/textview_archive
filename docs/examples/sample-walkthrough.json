@@ -1,0 +1,33 @@
+{
+  "schema": "textview.walkthrough/v1",
+  "id": "getting-started",
+  "title": "Getting Started — a sample walkthrough",
+  "subtitle": "Copy this file and edit it to author your own",
+  "author": "MarkdownViewer",
+  "rootHint": ".",
+  "steps": [
+    {
+      "id": "intro",
+      "narration": "Welcome! A walkthrough is a guided tour: each step shows narration and can drive the app (open a file, highlight code, show a diagram).",
+      "actions": [ { "kind": "narrateOnly" } ]
+    },
+    {
+      "id": "open",
+      "narration": "A step can open a file in the editor. Paths are resolved relative to this script's rootHint (set it to your project root).",
+      "actions": [ { "kind": "openFile", "path": "README.md" } ]
+    },
+    {
+      "id": "highlight",
+      "narration": "It can also highlight a range of lines to draw the reader's eye to the relevant code.",
+      "actions": [ { "kind": "highlightRange", "path": "README.md", "startLine": 1, "endLine": 5 } ]
+    },
+    {
+      "id": "combine",
+      "narration": "A single step may run several actions in order — open a file and highlight within it.",
+      "actions": [
+        { "kind": "openFile", "path": "CHANGELOG.md" },
+        { "kind": "highlightRange", "path": "CHANGELOG.md", "startLine": 1, "endLine": 3 }
+      ]
+    }
+  ]
+}
