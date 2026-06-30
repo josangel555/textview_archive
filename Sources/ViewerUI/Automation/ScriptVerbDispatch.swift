@@ -101,6 +101,10 @@ public enum ScriptVerb {
             if let enc = Self.encodingForConvertID(arg) {
                 _ = model.convertActiveFileEncoding(to: enc)
             }
+        case "align-tables":
+            // TSK-1335: palette parity for Edit ▸ Align Markdown Tables — re-align
+            // GFM pipe tables in the active markdown editor (reuses the host method).
+            _ = model.formatMarkdownTablesInActiveEditor()
         case "open":           model.openPath(URL(fileURLWithPath: arg))
         case "open-lazy":
             // Append a file as a LAZY (`.empty`) tab without selecting it —

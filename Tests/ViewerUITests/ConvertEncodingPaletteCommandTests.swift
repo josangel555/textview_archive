@@ -39,4 +39,12 @@ final class ConvertEncodingPaletteCommandTests: XCTestCase {
         XCTAssertEqual(ScriptVerb.encodingForConvertID("iso-latin-1"), .isoLatin1)
         XCTAssertNil(ScriptVerb.encodingForConvertID("bogus"), "an unknown id is a recognized no-op")
     }
+
+    func test_alignTablesCommand_exists_paletteInvokable() {
+        let cmd = CommandRegistry.builtIn.commands.first { $0.id == "edit.alignTables" }
+        XCTAssertNotNil(cmd, "Align Markdown Tables should be a ⌘K palette command (TSK-1335)")
+        XCTAssertEqual(cmd?.scriptVerb, "align-tables")
+        XCTAssertTrue(cmd?.isPaletteInvokable ?? false)
+        XCTAssertEqual(cmd?.category, .edit)
+    }
 }

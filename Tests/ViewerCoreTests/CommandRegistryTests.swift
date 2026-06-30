@@ -117,6 +117,8 @@ final class CommandRegistryTests: XCTestCase {
             "copy-reference",
             // re-save the active file in a chosen encoding via the ⌘K palette (TSK-1335)
             "convert-encoding",
+            // re-align GFM tables in the active markdown editor via the palette (TSK-1335)
+            "align-tables",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

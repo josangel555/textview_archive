@@ -56,6 +56,12 @@ extension CommandRegistry {
             id: "edit.convertEncoding.isoLatin1",
             title: "Convert Encoding: Western (ISO Latin-1)", category: .edit,
             scriptVerb: "convert-encoding iso-latin-1", replayability: .excluded),
+        // TSK-1335 — palette parity for Edit ▸ Align Markdown Tables (the transform,
+        // Formatter.prettyPrint(.markdown), already exists). Replayable: a deterministic
+        // editor-buffer transform like Pretty-Print.
+        CommandDescriptor(
+            id: "edit.alignTables", title: "Align Markdown Tables", category: .edit,
+            scriptVerb: "align-tables"),
         CommandDescriptor(
             id: "file.open", title: "Open…", category: .file,
             // ⌘O routes through an NSOpenPanel — no pure verb.
