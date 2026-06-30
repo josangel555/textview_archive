@@ -737,16 +737,25 @@ public struct ContentView: View {
                 MediaPreviewView(
                     url: url, category: cat,
                     onOpenSibling: { sibling in model.open(url: sibling) },
-                    uiScale: CGFloat(model.zoom)
+                    uiScale: CGFloat(model.zoom),
+                    onEditingChanged: { model.isEditingImage = $0 }
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // TSK-608: dismissible via the BottomAttributesBar "Info"
-                // toggle — this panel previously rendered unconditionally.
-                if model.showPreviewMetadataPanel {
+                // TSK-608: dismissible via the BottomAttributesBar "Info" toggle.
+                // TSK-1302: also suppressed while the in-place image editor is active, so the
+                // full-width editor isn't crowded by the side file-property pane.
+                if Self.showsPreviewMetadataPanel(
+                    showPreview: model.showPreviewMetadataPanel, isEditingImage: model.isEditingImage) {
                     MetadataPanel(url: url, category: cat, uiScale: CGFloat(model.zoom))
                 }
             }
         }
+    }
+
+    /// TSK-1302/608: the side file-property pane shows only when the "Info" toggle is ON and the
+    /// in-place image editor is NOT active (editing needs the full width). Pure — host-tested.
+    static func showsPreviewMetadataPanel(showPreview: Bool, isEditingImage: Bool) -> Bool {
+        showPreview && !isEditingImage
     }
 
     @ViewBuilder

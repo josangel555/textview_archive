@@ -26,14 +26,19 @@ public struct MediaPreviewView: View {
     /// have their own zoom UX — so it defaults to 1.0 for call sites
     /// (e.g. SplitPaneView) that never reach the `.sqlite` arm.
     public let uiScale: CGFloat
+    /// Called when the user enters/exits the in-place image editor (TSK-1302), so the host can
+    /// suppress the side file-property pane while editing — the full editor needs the width.
+    public var onEditingChanged: ((Bool) -> Void)?
 
     public init(url: URL, category: FileCategory,
                 onOpenSibling: ((URL) -> Void)? = nil,
-                uiScale: CGFloat = 1.0) {
+                uiScale: CGFloat = 1.0,
+                onEditingChanged: ((Bool) -> Void)? = nil) {
         self.url = url
         self.category = category
         self.onOpenSibling = onOpenSibling
         self.uiScale = uiScale
+        self.onEditingChanged = onEditingChanged
     }
 
     /// Point size for preview info chrome (image dimensions, sibling counter,
@@ -54,7 +59,8 @@ public struct MediaPreviewView: View {
         // intrinsic size and end up bottom-left in the parent HStack.
         Group {
             switch category {
-            case .image: ImagePreview(url: url, onOpenSibling: onOpenSibling, uiScale: uiScale)
+            case .image: ImagePreview(url: url, onOpenSibling: onOpenSibling, uiScale: uiScale,
+                                      onEditingChanged: onEditingChanged)
             case .audio: AudioPreview(url: url)
             case .video: VideoPreview(url: url)
             case .pdf:   PDFPreview(url: url)
@@ -86,6 +92,9 @@ struct ImagePreview: View {
     /// Unified UI zoom (`DocumentModel.zoom`); scales the overlay info chrome
     /// (counter / zoom % / dimensions) so it tracks the rest of the app (TSK-271).
     var uiScale: CGFloat = 1.0
+    /// Fired when the in-place editor opens/closes (TSK-1302) so the host suppresses the side
+    /// file-property pane while editing (the full-width editor needs the room).
+    var onEditingChanged: ((Bool) -> Void)?
 
     @State private var magnification: CGFloat = 1.0
     @State private var pixelSize: NSSize = .zero
@@ -152,6 +161,7 @@ struct ImagePreview: View {
                     .transition(.opacity)
             }
         }
+        .onChange(of: editing) { _, newValue in onEditingChanged?(newValue) }
         .focusable()
         .focused($focused)
         .onAppear {

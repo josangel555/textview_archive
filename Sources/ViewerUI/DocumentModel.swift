@@ -159,6 +159,9 @@ public final class DocumentModel: ObservableObject {
     @Published public var showPreviewMetadataPanel: Bool {
         didSet { preferences.previewMetadataVisible = showPreviewMetadataPanel }
     }
+    /// True while the in-place image editor is active (TSK-1302) — ContentView suppresses the side
+    /// file-property pane so the full-width editor isn't crowded by it. Transient (not persisted).
+    @Published public var isEditingImage = false
 
     /// TSK-698 — the Script Console panel (JQ-style query/transform over the active
     /// buffer). Transient (not persisted); driven by `openScriptConsole()`.
