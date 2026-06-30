@@ -46,6 +46,13 @@ final class CM6PlainClickAfterScrollWebViewTests: WebViewTestCase {
         return false
     }
 
+    /// Robust numeric read — WKWebView bridges a JS number to NSNumber, and a plain `as? Int` can
+    /// miss a double-bridged value; go through NSNumber.intValue. Returns -1 on failure.
+    private func evalInt(_ expr: String) async -> Int {
+        let v = try? await webView.evaluateJavaScript(expr)
+        return (v as? NSNumber)?.intValue ?? -1
+    }
+
     func test_plainClickAfterScroll_placesCollapsedCaret_TSK1188() async throws {
         try await loadEditorPage()
         // A tall doc so a scroll moves the first click off-screen.
@@ -74,6 +81,7 @@ final class CM6PlainClickAfterScrollWebViewTests: WebViewTestCase {
           }
           return true;
         };
+        true;
         """
         _ = try await webView.evaluateJavaScript(clickFn)
 
@@ -84,29 +92,41 @@ final class CM6PlainClickAfterScrollWebViewTests: WebViewTestCase {
         // FAITHFULNESS GATE: the synthesized click must actually move CM6's caret to line 3. If it
         // doesn't, the synthesis isn't faithful — skip honestly rather than false-green on a
         // collapsed-by-default selection.
-        let caretLine1 = (try? await webView.evaluateJavaScript(
-            "window.__mdvView.state.doc.lineAt(window.__mdvView.state.selection.main.head).number") as? Int) ?? -1
+        let caretLine1 = await evalInt(
+            "window.__mdvView.state.doc.lineAt(window.__mdvView.state.selection.main.head).number")
         guard did1, caretLine1 == 3 else {
             throw XCTSkip("synthesized click didn't faithfully drive CM6's caret (landed on line \(caretLine1)) — behavioral repro isn't tractable in the webview lane; the host grep-guard + owner/spawned-app UAT cover TSK-1188")
         }
 
         // 2) Scroll down so line 3 leaves the viewport.
-        _ = try await webView.evaluateJavaScript("window.__mdvView.scrollDOM.scrollTop = 600;")
-        try? await Task.sleep(for: .milliseconds(80))
-        // 3) Plain-click line 30.
-        let did2 = (try? await webView.evaluateJavaScript("window.__clickLine(30)") as? Bool) ?? false
+        _ = try await webView.evaluateJavaScript("window.__mdvView.scrollDOM.scrollTop = 600; true;")
         try? await Task.sleep(for: .milliseconds(120))
-        guard did2 else { throw XCTSkip("second synthesized click failed to dispatch") }
+        // 3) Pick a line that's actually VISIBLE at the viewport center — CM6 virtualizes, so an
+        // off-screen line has no coords (that's why a fixed faraway line couldn't be clicked).
+        let targetLine = await evalInt("""
+        (function () {
+          const v = window.__mdvView;
+          const r = v.scrollDOM.getBoundingClientRect();
+          const pos = v.posAtCoords({ x: r.left + 20, y: r.top + r.height / 2 });
+          return pos == null ? -1 : v.state.doc.lineAt(pos).number;
+        })()
+        """)
+        guard targetLine > 5 else {
+            throw XCTSkip("couldn't resolve a visible target line after scroll (got \(targetLine))")
+        }
+        // Plain-click the visible target line.
+        let did2 = (try? await webView.evaluateJavaScript("window.__clickLine(\(targetLine))") as? Bool) ?? false
+        try? await Task.sleep(for: .milliseconds(120))
+        guard did2 else { throw XCTSkip("second synthesized click failed to dispatch at line \(targetLine)") }
 
         let main = "window.__mdvView.state.selection.main"
         let collapsed = (try? await webView.evaluateJavaScript("\(main).empty") as? Bool) ?? false
-        let caretLine2 = (try? await webView.evaluateJavaScript(
-            "window.__mdvView.state.doc.lineAt(\(main).head).number") as? Int) ?? -1
+        let caretLine2 = await evalInt("window.__mdvView.state.doc.lineAt(\(main).head).number")
         // The plain second click must (a) leave a COLLAPSED selection (no range from the stale
         // line-3 anchor) and (b) land at line 30 (proving the click drove CM6, not a default).
         XCTAssertTrue(collapsed,
             "a plain click after scrolling must place a COLLAPSED caret, not extend a selection from the prior anchor (TSK-1188)")
-        XCTAssertEqual(caretLine2, 30,
-            "the collapsed caret must land where the plain click was (line 30), proving the click drove CM6")
+        XCTAssertEqual(caretLine2, targetLine,
+            "the collapsed caret must land where the plain click was (line \(targetLine)), proving the click drove CM6")
     }
 }
