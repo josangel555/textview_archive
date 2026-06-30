@@ -1,46 +1,36 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — owner-intake drain: 11 shipped → review, 4 triaged; remaining = substantial render/session (2026-06-29)
+# Handoff — owner-intake drained + host-engine slices built; host-seam vein drained (2026-06-29)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `a23c1edc` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `5cf36751` (verify `git log -1`)
 
 ## Mission
-Autonomous drain loop (cron). Build INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
+Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs (CHANGELOG/AP/LESSONS) into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
 
-## Current drain state — owner intake TSK-1302–1327
-**Shipped → review (built + host-gate-verified):**
-- Features: TSK-1327 smart-paste HTML→MD formatter (`0c29bfff`) · TSK-1323/1324 audio extract/convert (`f5ca0622`) · TSK-1325 image convert (`5bd739dd`) · TSK-1306 New-Image landing button (`f767a564`) · TSK-1312 terminal colour-scheme picker, full (`667412be`+`7e60fb98`)
-- Render fixes: TSK-1314 sidebar file-tree respects `.files` toggle (`df3572a6`) · TSK-1309 remove redundant Draw-Box button (`8fca0d1f`) · TSK-1313 terminal pane size-cap lift (`a23c1edc`)
-- Infra: TSK-1328 gate body-eval parallel-flake fix (`982e3e01`)
-- Reconcile: TSK-1307 MS-Paint resize — already built (TSK-1073/1076)
+## What shipped this session (all host-tested + gate-verified)
+- **Owner intake TSK-1302–1327: 14 → review**, 5 triaged, **2 parked** (TSK-1200 scroll, TSK-1322 paste — both need owner input), 1 spike (TSK-1320 annotations). Earlier commits; see git log + AUTONOMOUS_PROGRESS.md.
+- **Host-model/engine slices (7):** TSK-1308 audio-persistence (`52d37b7f`) · TSK-1321 overlay-selection model (`7ff73246`) · TSK-723 structural-query grammar (`694a4700`) · **TSK-698 script console — slice 2 off-main exec (`17845599`), slice 4 log-line input (`bfbcf0d9`), slice 3a controller (`1b8d8049`), slice 4b CSV input (`5cf36751`)**.
+- **TSK-698 is now FULLY HOST-COMPLETE**: engine (slice1) → off-main+soft-timeout exec (slice2) → JSON/log/CSV input (slice4/4b) → ScriptConsoleViewModel controller (slice3a). Only the **SwiftUI panel + menu trigger + apply-to-new-tab (slice 3b)** remains = render/VM.
+- **Reconciled** stale-lease-reset (INT-126) host-engine epics to their real state: TSK-722 (task-runner, engine done, UI child 1160), TSK-703 (action-history, coordinator done, UI 1155), TSK-910 (diff multi-line, host core done, render child 1182), TSK-723/698.
+- **Dogfood:** filed TSK-1329 (task_park needs a clarification kind) + TSK-1330 (task_record artifact status needs a note value) → `docs/TRACKER_FEEDBACK.md`.
 
-**Triaged with findings + fix-directions (diagnosed, NOT built — render-VM / data-safety):**
-- TSK-1315 key-event routing — no central focus coordinator (fragmented @FocusState + imperative makeFirstResponder); fix = a focus coordinator. Render-VM.
-- TSK-1304 hide file-property pane — the metadata-panel toggle EXISTS (BottomAttributesBar "Info"); the image-editor sidebar hide is render (batches TSK-1302).
-- TSK-1305 image undo — draw/geometry DONE (TSK-749/1055); tonal-undo (sliders not in the op-list) is the likely gap — a live-slider→committed-op model change.
-- TSK-1303 image edit-state lost on session-switch — ImageEditorViewModel state is in-memory, not in the session snapshot; fix = serialize the op-list+tonal. DATA-SAFETY-sensitive; needs VM.
-
-**Remaining (~9) — substantial render / session / content / spike (no clean blind build):**
-- Substantial render: TSK-1316 (empty-shoulder-only-on-drag — needs NEW global drag-state plumbing) · TSK-1317 (drag Terminal icon — it's a toggle not a draggable panel; + remove the coupled Pane-placement Setting) · TSK-1318/1319 (menu reorg + dynamic per-tab menu — render + subjective grouping) · TSK-1310 (edit Draw Text element — overlay editing) · TSK-1321 (selectable overlay elements — big) · TSK-1302 (image pane covered by property pane — render-layout)
-- Spike → owner decision: TSK-1320 (Annotations vs Shapes — clarify + keep/remove)
-- Session-lifecycle: TSK-1308 (music stops on switch) · TSK-1311 (session-state umbrella)
-- Vague bug (needs owner repro): TSK-1322 (paste is buggy)
-- Content (on-screen-coupled): TSK-1326 (sample walkthroughs)
+## Current state / honest assessment
+- The **host-testable-seam vein is DRAINED.** Every epic's host model/engine is built; what remains is **render-VM** (the UI children: 698-3b, 722-1160, 703-1155, 723-1161, 910-1182; the intake render remainder 1302/1310/1316/1317/1318/1319/1326; P0 render 891/1032) → VM lane / owner.
+- **Owner-decision-gated:** parked TSK-1200 (scroll: real-bug-vs-harness-false — needs owner's real screen), TSK-1322 (paste repro), TSK-1320 (annotations keep/remove); flips TSK-838/1215/1202.
+- VM/owner-only host work: TSK-382 (DocumentModel memory — measure-first VM profile), TSK-379 (rust EditorBuffer — supervised), CI/infra (835 needs a dep).
 
 ## ⭐ NEXT ACTION
-The tractable host + clean-small-render slices are DONE. The remainder is **substantial render** (pure SwiftUI, no host model: drag mechanics, overlay editing, menu reorg) — building these BLIND is low-confidence. Two paths:
-1. **VM render lane** (owner's "VM is open for work") — build + VM-validate the substantial render. SwiftUI/AppKit pixels = T5 window-ID capture; NOTE TSK-1247 (the VM GUI session doesn't framebuffer-composite app-window content → spawned-app UATs read blank; use window-ID capture, or the in-process `webview` lane for WebView render).
-2. **Owner render sessions** — the heaviest (drag/overlay/menu) + the clarification items (TSK-1322 paste specifics, TSK-1320 annotations keep/remove, TSK-1318 grouping preference).
-- If continuing INLINE, the most-tractable next: TSK-1320 (annotations spike → owner decision) · TSK-1308 (read the audio-player lifecycle) · TSK-1318 (read the CommandRegistry / menu structure).
+1. **Re-scan for owner-UNBLOCKED host slices** (the highest-yield pattern this session — TSK-698's exec-safety park was resolved by the owner in a prior session, unblocking 3 host slices). Check epics' parks for owner `resolved` events. (The `audit` tool returned empty even with a wide `since` — read the epic event logs directly via `task_get`.)
+2. The **substantial UIs are the VM render lane** (build + T5/webview-validate) or **owner sessions** — NOT blind inline builds.
+3. Stale-reset reconcile sweep (board-hygiene) when no host slice is available.
 
-## Gotchas / lessons (LESSONS.md §2026-06-29)
-- **Read-first ALWAYS** — the image-editor intake was largely already-built (1306 action, 1307 resize, 1305 undo-mostly); don't re-build.
-- **Mirror established fix patterns** — TSK-1314 mirrored the bug5 pluginSections gate (a panel mounted on presence, bypassing `isVisible`).
-- **Cap-changes break old-cap tests** — TSK-1313 broke 4 tests using `99999` as "above-max"; grep + update the inputs.
-- **@ViewBuilder placement** — a `Bool` computed inserted above a `@ViewBuilder var` steals the attribute (TSK-1314 compile slip; the attribute must sit directly on the `some View` var).
-- **The body-eval gate flake (TSK-1328)** — fixed via settle-to-quiescence; if a `ChromeBodyEvalCount` off-by-one recurs, it's load not a regression.
+## Gotchas / lessons (also LESSONS.md)
+- **Backticks in `git commit -m "..."` trigger shell command-substitution** → mangled message. Use `git commit -F -` with a `<<'EOF'` heredoc (literal), or single-quotes.
+- **TSK-1200 / the CM6 + spawned-app scroll "no-ops" are HARNESS-FALSE** (the VM GUI session doesn't framebuffer-composite the WKWebView; the headless in-process WKWebView has no measure/rAF cycle). Do NOT blind-"fix" owner-sensitive scroll code against these — disambiguate real-vs-harness via the owner's real screen or T5 window-ID capture first. (I drafted a requestMeasure fix, caught the LESSONS contradiction, reverted, parked.)
+- **Build-render boundary that worked all session:** build render features only through a **host-testable seam** (a view-model / engine / model, host-tested) and leave the thin view at review. Do NOT build large blind multi-file UI integrations (panel + menu wiring + DocumentModel apply-back) with no validatable seam — that's the VM/owner venue.
+- **Read-first ALWAYS** — most P0/board items were already fixed→review this session (1188 `c0fd1543`, 1271 `6e9e4efb`) or stale-reset-but-done; don't re-build.
 
 ## Tracker (tasked / claude-mdv)
-Owner intake TSK-1302–1327: **11 → review**, **4 → triaged**, ~9 reported/remaining (substantial render/session/content). TSK-1328 → review. ~14 commits this drain, each gate-verified, docs folded in.
+TSK-698 progress (host-complete; 3b render tail) · TSK-722/703/910/723 progress (engines done, UI children) · TSK-1200/1322 parked (owner) · TSK-1329/1330 filed. ~20 commits this run.
 
 ## How to resume
-Read this + BACKLOG §"Owner intake 2026-06-29". Confirm main gate-green (`bash scripts/test-headless-gate.sh`). The tractable slices are shipped → review (owner closes on-screen). For the substantial-render remainder: prefer the **VM render lane** (build + VM-validate) OR surface to the owner. If continuing inline, the most-tractable are TSK-1320 / TSK-1308 / TSK-1318 — read-first each (`task_get` + grep main).
+Read this + `BACKLOG.md` + `git log -1`. Confirm main gate-green (`bash scripts/test-headless-gate.sh`). The host-seam vein is drained — re-scan for owner-unblocked host slices (NEXT ACTION 1); else the render UIs are the VM lane / owner, and the parked items await owner input. Don't blind-build substantial UI integrations or owner-sensitive scroll/render.
