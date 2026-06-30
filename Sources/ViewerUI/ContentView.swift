@@ -774,7 +774,13 @@ public struct ContentView: View {
         } else if tab.viewMode == .table {
             // Per-tab CSV filter state lives on DocumentModel keyed by tab id;
             // pass THIS pane's id so each retained pane keeps its own filter.
-            CSVTableView(text: file.contents, model: model, tabID: tab.id)
+            // TSK-1141: a multi-sheet .xlsx gets a sheet-tab strip above the grid;
+            // CSV / single-sheet files render the bare grid (unchanged).
+            if let sheets = file.xlsxSheets, sheets.count > 1 {
+                SpreadsheetView(file: file, model: model, tabID: tab.id)
+            } else {
+                CSVTableView(text: file.contents, model: model, tabID: tab.id)
+            }
         } else if tab.viewMode == .editor {
             // Hard cap. Above ~50 MB the WKWebView path becomes a
             // liability (JS-heap pressure + LSP diagnostics push cost);
