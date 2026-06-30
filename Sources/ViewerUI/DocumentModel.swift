@@ -160,6 +160,12 @@ public final class DocumentModel: ObservableObject {
         didSet { preferences.previewMetadataVisible = showPreviewMetadataPanel }
     }
 
+    /// TSK-698 — the Script Console panel (JQ-style query/transform over the active
+    /// buffer). Transient (not persisted); driven by `openScriptConsole()`.
+    @Published public var showScriptConsole = false
+    /// The Script Console's controller, seeded from the active buffer when opened.
+    @Published public var scriptConsoleVM: ScriptConsoleViewModel?
+
     /// Terminal ANSI colour theme name (TSK-1312) — drives `TerminalPalette`'s
     /// 16-colour palette. Persisted; default "Default" (the muted shipped palette).
     /// "Classic (xterm)" gives standard vivid colours (closer to what CLI tools like
