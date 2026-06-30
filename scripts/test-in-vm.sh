@@ -300,6 +300,7 @@ run_webview_tests() {
     --filter ViewerUITests.RenderedFindClearWebViewTests \
     --filter ViewerUITests.ScriptConsoleHostingTests \
     --filter ViewerUITests.StructuralSearchHostingTests \
+    --filter ViewerUITests.SpreadsheetViewHostingTests \
     --filter ViewerUITests.TaskRunnerHostingTests \
     --filter ViewerUITests.TerminalCommandPaletteHostingTests \
     --filter ViewerUITests.WalkthroughDiagramOverlayHostingTests \

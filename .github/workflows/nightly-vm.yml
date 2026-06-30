@@ -69,6 +69,9 @@ jobs:
           # multiply that past the open-files limit → an EMFILE "Too many open files"
           # cascade of FALSE file-IO failures (TSK-1236, fd-exhaustion class of
           # TSK-500). Serial bounds the live WKWebViews to one suite at a time.
+          # Keep this filter list in sync with scripts/test-in-vm.sh's webview lane
+          # (one canonical set of #192-gated suites). A gated suite absent from BOTH
+          # lanes runs nowhere → its green means nothing (the TSK-621 trap).
           MDV_RUN_WEBVIEW_TESTS=1 swift test \
             --filter ViewerUITests.ComponentVisualTests \
             --filter ViewerUITests.ContentViewHostingTests \
@@ -79,6 +82,20 @@ jobs:
             --filter ViewerUITests.FindBarTests \
             --filter ViewerUITests.FormatToggleTests \
             --filter ViewerUITests.FoldGutterWebViewTests \
+            --filter ViewerUITests.EditorDiagnosticsWebViewTests \
+            --filter ViewerUITests.EditorCompletionWebViewTests \
+            --filter ViewerUITests.SettingsTerminalColorSchemeHostingTests \
+            --filter ViewerUITests.SidebarFilesToggleHostingTests \
+            --filter ViewerUITests.ShoulderRailEmptyHidingHostingTests \
+            --filter ViewerUITests.AudioPlayerHostIntegrationTests \
+            --filter ViewerUITests.EmptyStateNewImageHostingTests \
+            --filter ViewerUITests.ConvertImageHostingTests \
+            --filter ViewerUITests.AudioConvertHostingTests \
+            --filter ViewerUITests.CM6PlainClickAfterScrollWebViewTests \
+            --filter ViewerUITests.WalkthroughMermaidRenderWebViewTests \
+            --filter ViewerUITests.WalkthroughDiagramOverlayMountTests \
+            --filter ViewerUITests.FeedReaderViewRenderTests \
+            --filter ViewerUITests.ImageElementPropertiesPanelRenderTests \
             --filter ViewerUITests.MermaidHostingTests \
             --filter ViewerUITests.MermaidRenderProbeTests \
             --filter ViewerUITests.MultiCursorWebViewTests \
@@ -87,7 +104,17 @@ jobs:
             --filter ViewerUITests.PaneScrollRestoreWebViewTests \
             --filter ViewerUITests.EditorScrollRestoreWebViewTests \
             --filter ViewerUITests.EditorCursorBlinkWebViewTests \
-            --filter ViewerUITests.RenderedFindBarTests
+            --filter ViewerUITests.BlockPatchApplyWebViewTests \
+            --filter ViewerUITests.BlockPatchAlignmentProbeTests \
+            --filter ViewerUITests.RenderedFindBarTests \
+            --filter ViewerUITests.RenderedFindClearWebViewTests \
+            --filter ViewerUITests.ScriptConsoleHostingTests \
+            --filter ViewerUITests.StructuralSearchHostingTests \
+            --filter ViewerUITests.SpreadsheetViewHostingTests \
+            --filter ViewerUITests.TaskRunnerHostingTests \
+            --filter ViewerUITests.TerminalCommandPaletteHostingTests \
+            --filter ViewerUITests.WalkthroughDiagramOverlayHostingTests \
+            --filter ViewerUITests.WalkthroughMermaidWebViewHostingTests
 
       - name: Upload test results
         if: always()
