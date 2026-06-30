@@ -94,12 +94,25 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
     /// the window when the fixed pre-measure `pump()` was too short under load).
     /// Uses the probe itself to detect quiescence; bounded, so a genuinely
     /// never-quiescent tree still falls through and is caught by the real assert.
+    ///
+    /// Quiescence requires TWO consecutive empty pumps, not one (TSK-1328 follow-up): under
+    /// the 18-worker gate a slow async residual can land just AFTER a single empty pump, so a
+    /// one-empty break declared false quiescence and the residual leaked into the measured
+    /// window (the recurring `StatusBar=1 ContentView=1` find-typeahead flake). Two empty
+    /// pumps in a row means the tree was idle across a full pump cycle. Iteration bound
+    /// doubled (24) so a genuinely slow settle still completes before the bound.
     private func settle() {
         BodyProbe.enabled = true
-        for _ in 0..<12 {
+        var consecutiveEmpty = 0
+        for _ in 0..<24 {
             BodyProbe.reset()
             pump()
-            if BodyProbe.counts.isEmpty { break }   // a full pump added nothing → quiescent
+            if BodyProbe.counts.isEmpty {
+                consecutiveEmpty += 1
+                if consecutiveEmpty >= 2 { break }   // idle across two full pumps → quiescent
+            } else {
+                consecutiveEmpty = 0
+            }
         }
         BodyProbe.enabled = false
         BodyProbe.reset()
