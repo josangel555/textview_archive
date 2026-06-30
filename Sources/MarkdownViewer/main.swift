@@ -712,6 +712,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openStructuralSearch()
     }
 
+    // TSK-1160 — View ▸ Task Runner: discover + run project tasks with captured output.
+    @objc func openTaskRunner(_ sender: Any?) {
+        model.openTaskRunner()
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1880,6 +1885,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "")
         structSearchItem.target = self
         viewMenu.addItem(structSearchItem)
+
+        // TSK-1160 — View ▸ Task Runner: discover + run project tasks with captured output.
+        let taskRunnerItem = NSMenuItem(
+            title: "Task Runner…",
+            action: #selector(openTaskRunner(_:)),
+            keyEquivalent: "")
+        taskRunnerItem.target = self
+        viewMenu.addItem(taskRunnerItem)
 
         // TSK-1116 — View ▸ Focus Mode: one-click workspace presets that pin the
         // sidebar to an activity's panel set + preferred lens (FocusWorkMode).

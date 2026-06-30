@@ -421,6 +421,12 @@ public struct ContentView: View {
                                      onClose: { model.showStructuralSearch = false })
             }
         }
+        // TSK-1160 — the Task Runner panel (opened via model.openTaskRunner()).
+        .sheet(isPresented: $model.showTaskRunner) {
+            if let vm = model.taskRunnerVM {
+                TaskRunnerView(vm: vm, onClose: { model.showTaskRunner = false })
+            }
+        }
     }
 
     // MARK: - Body row (sidebar accordion + content + split)

@@ -172,6 +172,12 @@ public final class DocumentModel: ObservableObject {
     /// The Structural Search controller, seeded from the active buffer + language when opened.
     @Published public var structuralSearchVM: StructuralSearchViewModel?
 
+    /// TSK-1160 — the Task Runner panel (discover + run-with-captured-output). Transient;
+    /// driven by `openTaskRunner()`.
+    @Published public var showTaskRunner = false
+    /// The Task Runner controller, seeded by discovering tasks from the active project root.
+    @Published public var taskRunnerVM: TaskRunnerViewModel?
+
     /// Terminal ANSI colour theme name (TSK-1312) — drives `TerminalPalette`'s
     /// 16-colour palette. Persisted; default "Default" (the muted shipped palette).
     /// "Classic (xterm)" gives standard vivid colours (closer to what CLI tools like
