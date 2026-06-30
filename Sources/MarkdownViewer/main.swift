@@ -701,6 +701,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    // TSK-698 — View ▸ Script Console: open the JQ-style query/transform console over the
+    // active buffer (seeded from its content; output applies to a new tab).
+    @objc func openScriptConsole(_ sender: Any?) {
+        model.openScriptConsole()
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1852,6 +1858,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         viewOnlyItem.target = self
         applyShortcut("view.toggleViewOnly", to: viewOnlyItem)
         viewMenu.addItem(viewOnlyItem)
+
+        // TSK-698 — View ▸ Script Console: a JQ-style query/transform console over the active
+        // buffer (filter/transform a log / JSON / CSV; apply the output to a new tab).
+        let scriptConsoleItem = NSMenuItem(
+            title: "Script Console…",
+            action: #selector(openScriptConsole(_:)),
+            keyEquivalent: "")
+        scriptConsoleItem.target = self
+        viewMenu.addItem(scriptConsoleItem)
 
         // TSK-1116 — View ▸ Focus Mode: one-click workspace presets that pin the
         // sidebar to an activity's panel set + preferred lens (FocusWorkMode).

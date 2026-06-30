@@ -11,6 +11,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-29
 
+### Added
+- **Script Console (View ▸ Script Console…)** — a JQ-style query/transform console over the active buffer: run a JavaScript expression over your JSON, log **lines**, or **CSV** (`input` / `$` is the parsed buffer), see the pretty-printed result, and **Apply →** to open it in a new tab. Runs off the main thread with a soft timeout, so a runaway script never hangs the app.
+
 ### Fixed
 - **No more crash on an invalid `jq` filter, a misbehaving plugin, or any fast-failing subprocess.** A subprocess that exited before reading its input (jq rejecting an invalid filter; a plugin crashing) could, under load, take the whole app down with SIGPIPE — it closed its input before the app finished writing to it. Both the shared subprocess runner **and** the plugin host now suppress SIGPIPE on the stdin write (`F_SETNOSIGPIPE`), so an early-exiting tool surfaces its error cleanly instead. (Fixes a real invalid-filter-under-load crash + a recurring CI flake; the whole subprocess-write class is now covered.)
 
