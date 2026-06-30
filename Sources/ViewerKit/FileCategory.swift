@@ -32,13 +32,19 @@ public enum FileTypeDetector {
     private static let mermaidExtensions: Set<String> = ["mmd", "mermaid"]
     private static let plainTextExtensions: Set<String> = [
         "txt", "text", "log", "csv", "tsv",
-        // TSK-1036: .rtf/.docx/.ods/.xlsx route to the source view; the loader
-        // substitutes the EXTRACTED content (RtfTextExtractor / DocxTextExtractor
-        // / ODSContentParser / XLSXDocument → TSV) as a READ-ONLY view (TSK-1204),
-        // so the raw `{\rtf1...}` / OOXML/ODF ZIP never shows and a save can't
-        // overwrite the source.
-        "rtf", "docx", "ods", "xlsx",
+        // TSK-1036: .rtf/.ods/.xlsx route to the source view; the loader
+        // substitutes the EXTRACTED content (RtfTextExtractor / ODSContentParser
+        // / XLSXDocument → TSV) as a READ-ONLY view (TSK-1204), so the raw
+        // `{\rtf1...}` / ODF ZIP never shows and a save can't overwrite the source.
+        // TSK-1338: .docx is NOT here — it routes to .markdown (below) so its
+        // extracted structure (headings/lists/bold) RENDERS instead of showing flat.
+        "rtf", "ods", "xlsx",
     ]
+    /// TSK-1338: rich documents whose extracted content is Markdown → route to the
+    /// `.markdown` category so they RENDER (headings/lists/bold), not the raw-text
+    /// source view. The loader substitutes `DocxTextExtractor.markdown` as
+    /// READ-ONLY content; `isExtractedReadOnly` keeps the editor non-writable.
+    private static let markdownDocumentExtensions: Set<String> = ["docx"]
     private static let htmlExtensions: Set<String> = ["html", "htm", "xhtml"]
     private static let codeExtensions: Set<String> = [
         "swift", "py", "js", "ts", "jsx", "tsx", "go", "rs", "c", "cpp", "cc",
@@ -107,6 +113,7 @@ public enum FileTypeDetector {
 
         if mermaidExtensions.contains(ext) { return .mermaid }
         if markdownExtensions.contains(ext) { return .markdown }
+        if markdownDocumentExtensions.contains(ext) { return .markdown }   // TSK-1338: .docx renders as Markdown
         if plainTextExtensions.contains(ext) { return .plainText }
         if configExtensions.contains(ext) { return .plainText }
         if htmlExtensions.contains(ext) { return .html }

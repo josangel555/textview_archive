@@ -263,13 +263,14 @@ public struct TextFileLoader: Sendable {
                 isExtractedReadOnly: true
             )
         }
-        // TSK-1036: .docx is an OOXML ZIP — show its EXTRACTED body paragraphs
-        // (DocxTextExtractor) as a READ-ONLY view (TSK-1204). `try?` so a
-        // malformed/non-docx falls through to the normal binary/HEX handling.
+        // TSK-1036/1338: .docx is an OOXML ZIP — show its EXTRACTED body as
+        // STRUCTURED MARKDOWN (DocxTextExtractor.markdown: headings/lists/bold)
+        // so it RENDERS (FileCategory routes .docx → .markdown), READ-ONLY
+        // (TSK-1204). `try?` so a malformed/non-docx falls through to binary/HEX.
         if url.pathExtension.lowercased() == "docx",
-           let paragraphs = try? DocxTextExtractor.load(url) {
+           let md = try? DocxTextExtractor.loadMarkdown(url) {
             return TextFile(
-                url: url, contents: paragraphs.joined(separator: "\n\n"),
+                url: url, contents: md,
                 encoding: .utf8, byteCount: data.count, modifiedTime: mtime,
                 isExtractedReadOnly: true
             )

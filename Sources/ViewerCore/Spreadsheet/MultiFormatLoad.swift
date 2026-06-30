@@ -30,4 +30,14 @@ public extension DocxTextExtractor {
         }
         return paragraphs(documentXML: xml)
     }
+
+    /// Load + extract a `.docx` as structured Markdown (TSK-1338): headings,
+    /// bullet/numbered lists, and bold/italic preserved (vs. `load`'s flat text).
+    static func loadMarkdown(_ url: URL) throws -> String {
+        guard let data = try? ArchiveCatalog.zipEntryBytes(named: "word/document.xml", fromZipAt: url),
+              let xml = String(data: data, encoding: .utf8) else {
+            throw MultiFormatLoadError.missingContentPart
+        }
+        return markdown(documentXML: xml)
+    }
 }

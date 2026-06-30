@@ -42,10 +42,12 @@ final class RtfViewerRoutingTests: XCTestCase {
         XCTAssertFalse(tf.contents.contains("deff0"))
     }
 
-    func test_docx_categorizedAsPlainText() {
+    func test_docx_categorizedAsMarkdown() {
+        // TSK-1338: .docx now routes to .markdown so its extracted structure
+        // (headings/lists/bold) RENDERS, instead of the flat source/plainText view.
         XCTAssertEqual(
             FileTypeDetector.category(for: tmp.appendingPathComponent("doc.docx")),
-            .plainText, "a .docx routes to the source/plainText view")
+            .markdown, "a .docx renders as Markdown (structure visible)")
     }
 
     func test_docx_load_extractsParagraphs_andIsReadOnly() throws {
