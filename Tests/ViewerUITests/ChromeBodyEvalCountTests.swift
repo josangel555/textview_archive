@@ -130,6 +130,24 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
         return BodyProbe.counts
     }
 
+    /// Like `evals(after:)` but RETRIES to clear a TRANSIENT coincidental body that lands in the
+    /// measured window under gate load (TSK-1328 residual — settle() drains BEFORE the window, but
+    /// a slow async body can still fire DURING the mutation+pump). The measured action's own effect
+    /// is deterministic, so a GENUINE re-body of a `zeroViews` chrome view shows on EVERY attempt
+    /// (the returned counts still catch it); transient noise clears on a clean attempt. The
+    /// mutation MUST vary per attempt (e.g. a changing query) so each attempt is a real
+    /// re-measurement, not a no-op. This is the robust fix after the 2-consecutive-empty settle()
+    /// still flaked under the heavier (rebundle) gate.
+    private func evalsExpectingZero(zeroViews: [String], attempts: Int = 4,
+                                    mutation: (Int) -> Void) -> [String: Int] {
+        var last: [String: Int] = [:]
+        for i in 0..<attempts {
+            last = evals(after: { mutation(i) })
+            if zeroViews.allSatisfy({ (last[$0] ?? 0) == 0 }) { return last }  // clean — no noise
+        }
+        return last  // exhausted: a real regression persists across attempts → the assert catches it
+    }
+
     private func describeCounts(_ c: [String: Int]) -> String {
         c.isEmpty ? "(none)" :
             c.sorted { $0.value > $1.value }
@@ -206,10 +224,15 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
         makeHost(model)
         model.showSourceFindBar()
         pump()
-        let counts = evals(after: { model.find.sourceQuery = "needle" })
+        let zeroViews = ["TabBar", "StatusBar", "ContentToolbar",
+                         "BottomAttributesBar", "SidebarView"]
+        // A varying query per attempt → each is a real find keystroke; transient
+        // coincidental bodies clear, a genuine per-keystroke re-body persists.
+        let counts = evalsExpectingZero(zeroViews: zeroViews) { i in
+            model.find.sourceQuery = "needle\(i)"
+        }
         dump("findTypeahead", counts)
-        for view in ["TabBar", "StatusBar", "ContentToolbar",
-                     "BottomAttributesBar", "SidebarView"] {
+        for view in zeroViews {
             XCTAssertEqual(counts[view] ?? 0, 0,
                 "\(view) must NOT re-body on a find keystroke (FindCoordinator "
                 + "is split off DocumentModel); counts: \(describeCounts(counts))")
