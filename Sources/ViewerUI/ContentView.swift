@@ -401,6 +401,19 @@ public struct ContentView: View {
             }
             .frame(width: 0, height: 0)
         )
+        // TSK-698 — the Script Console panel (opened via model.openScriptConsole();
+        // seeded from the active buffer). Apply → opens the output in a new tab.
+        .sheet(isPresented: $model.showScriptConsole) {
+            if let vm = model.scriptConsoleVM {
+                ScriptConsoleView(
+                    vm: vm,
+                    onApply: { output in
+                        model.applyScriptConsoleOutput(output)
+                        model.showScriptConsole = false
+                    },
+                    onClose: { model.showScriptConsole = false })
+            }
+        }
     }
 
     // MARK: - Body row (sidebar accordion + content + split)
