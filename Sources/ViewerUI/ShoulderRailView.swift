@@ -33,6 +33,14 @@ struct ShoulderRailView: View {
     /// without republishing the content tree.
     @ObservedObject var terminalPane: TerminalPaneStore
 
+    /// TSK-1316: whether a panel icon is currently being dragged. An EMPTY
+    /// shoulder (no docked panels; the left rail always carries the terminal
+    /// toggle, so only the right/bottom rails can be empty) is HIDDEN unless
+    /// this is true — revealing as a drop target only during a drag instead
+    /// of permanently showing a bare strip. Defaults false (the future
+    /// drag-redock wiring sets it); today empty shoulders simply stay hidden.
+    var isDraggingPanel: Bool = false
+
     /// Cross-axis thickness of the rail (width for left/right, height
     /// for bottom). Honors zoom; lands in the 28–32pt activity-bar band.
     private var thickness: CGFloat { model.uiSize(30) }
@@ -61,6 +69,20 @@ struct ShoulderRailView: View {
         let _ = BodyProbe.tick("ShoulderRailView")   // TSK-615 re-eval width probe
         #endif
         let panels = panelLayout.railPanels(on: edge)
+        // TSK-1316: an empty shoulder (no docked panels; the left rail always carries
+        // the terminal toggle so it is never empty) is HIDDEN unless a panel icon is
+        // being dragged — no permanent bare strip. The `if` with no else renders
+        // nothing (and collapses to zero size in its container) when hidden.
+        let hasContent = !panels.isEmpty || edge == .left
+        if hasContent || isDraggingPanel {
+            railContent(panels: panels)
+        }
+    }
+
+    /// The rendered rail (buttons + background + separator). Factored out of `body`
+    /// so an empty, non-dragging shoulder can be dropped entirely (TSK-1316).
+    @ViewBuilder
+    private func railContent(panels: [SidebarPanelKind]) -> some View {
         let pres = presence
         Group {
             switch edge {
