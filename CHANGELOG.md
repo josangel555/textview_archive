@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-30
 
 ### Added
+- **Terminal tab strip has a shoulder divider.** The terminal's tab strip now draws a thin separator on its outer edge (matching the app's side-rail dividers), so the terminal pane reads as a distinct surface. Follows the strip's position (top / left / right).
 - **Paste rich text as Markdown.** "Paste as New Document" (⇧⌘V) of copied rich text that carries HTML (a web page, a doc) now opens it as structured **Markdown** — headings become `#`, bullet/numbered lists become `-`/`1.`, bold/italic/links preserved — instead of a raw RTF dump. (Also fixes HTML-only clipboards that previously just beeped.)
 - **New Walkthrough button.** The Walkthroughs browser (File ▸ Walkthroughs) now has a **New Walkthrough** button that creates a ready-to-edit starter tour (a small 3-step example) in your library and opens it — so building your own walkthrough is discoverable instead of guesswork. Repeated clicks never overwrite an existing one (names auto-increment). Pairs with the new authoring guide (`docs/WALKTHROUGH_AUTHORING.md`).
 - **Drag the Terminal icon to dock the terminal.** The Terminal shoulder icon is now draggable like the other tool icons — drag it onto the left, right, or bottom edge to dock the terminal pane there (it opens if it was closed). The Settings ▸ Terminal pane-placement picker still works too. (Clicking the icon still toggles the terminal as before.)

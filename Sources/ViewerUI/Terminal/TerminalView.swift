@@ -76,6 +76,18 @@ struct TerminalRepresentable: NSViewRepresentable {
 /// The bottom terminal pane: a tab strip (one chip per shell + a "+" to
 /// add) over the selected tab's live terminal surface. Fixed-height; the
 /// height, open state, and tab set are owned by `TerminalPaneStore`.
+/// TSK-1177 — which edge of the terminal tab strip carries the "shoulder" border:
+/// the OUTER edge facing the content, away from the terminal surface. Top strip →
+/// top; left column → leading; right column → trailing. Pure; host-tested so the
+/// placement can't silently drift to the surface-facing (redundant-with-Divider) edge.
+func terminalTabShoulderEdge(for position: TerminalTabPosition) -> Edge {
+    switch position {
+    case .top:   return .top
+    case .left:  return .leading
+    case .right: return .trailing
+    }
+}
+
 struct TerminalPaneView: View {
     @ObservedObject var store: TerminalPaneStore
     let fontSize: CGFloat
@@ -96,16 +108,27 @@ struct TerminalPaneView: View {
             // "I see a gap but no tabs" bug, invisible to ImageRenderer. Force
             // each strip into its OWN compositing layer ordered ABOVE the
             // surface so it can't be occluded. (TSK-488)
+            // TSK-1177: the tab strip carries a "shoulder" separator on its OUTER
+            // edge (facing the content, away from the terminal surface) so the
+            // terminal pane reads as a distinct surface — mirroring the app's
+            // shoulder-rail divider. The edge follows the strip position (pure,
+            // host-tested via terminalTabShoulderEdge). Applied INSIDE the
+            // compositingGroup so it isn't occluded by the surface (TSK-488).
+            let shoulder = terminalTabShoulderEdge(for: store.tabPosition)
             switch store.tabPosition {
             case .top:
                 VStack(spacing: 0) {
-                    horizontalTabStrip.compositingGroup().zIndex(1)
+                    horizontalTabStrip
+                        .overlay(alignment: shoulderAlignment(shoulder)) { shoulderBorder(shoulder) }
+                        .compositingGroup().zIndex(1)
                     Divider()
                     terminalSurface.zIndex(0)
                 }
             case .left:
                 HStack(spacing: 0) {
-                    verticalTabStrip.compositingGroup().zIndex(1)
+                    verticalTabStrip
+                        .overlay(alignment: shoulderAlignment(shoulder)) { shoulderBorder(shoulder) }
+                        .compositingGroup().zIndex(1)
                     Divider()
                     terminalSurface.zIndex(0)
                 }
@@ -113,12 +136,35 @@ struct TerminalPaneView: View {
                 HStack(spacing: 0) {
                     terminalSurface.zIndex(0)
                     Divider()
-                    verticalTabStrip.compositingGroup().zIndex(1)
+                    verticalTabStrip
+                        .overlay(alignment: shoulderAlignment(shoulder)) { shoulderBorder(shoulder) }
+                        .compositingGroup().zIndex(1)
                 }
             }
         }
         .background(Palette.textBackground)
         .accessibilityIdentifier("mdv.terminal.pane")
+    }
+
+    /// TSK-1177 — SwiftUI alignment for the shoulder-border edge.
+    private func shoulderAlignment(_ edge: Edge) -> Alignment {
+        switch edge {
+        case .top:      return .top
+        case .bottom:   return .bottom
+        case .leading:  return .leading
+        case .trailing: return .trailing
+        }
+    }
+
+    /// TSK-1177 — the shoulder separator: a vertical hairline for a left/right
+    /// column strip (leading/trailing edge), a horizontal one for the top strip.
+    @ViewBuilder
+    private func shoulderBorder(_ edge: Edge) -> some View {
+        let vertical = (edge == .leading || edge == .trailing)
+        Rectangle()
+            .fill(Palette.separator)
+            .frame(width: vertical ? 1 : nil, height: vertical ? nil : 1)
+            .accessibilityHidden(true)
     }
 
     /// The live terminal surface for the selected tab. `.id(selectedTabID)`
