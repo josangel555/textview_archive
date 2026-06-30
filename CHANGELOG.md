@@ -9,6 +9,22 @@ went. Detailed per-item narrative lives in `docs/AUTONOMOUS_PROGRESS.md`.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-30
+
+### Added
+- **Convert Image (View ▸ Convert Image…)** — over an open image, pick a target format (PNG / JPEG / HEIC / BMP / GIF / TIFF) and, for lossy formats, a quality level; Convert opens the re-encoded image in a new tab. Runs off the main thread so a large image never freezes the window.
+- **Extract Audio from Video (View ▸ Extract Audio from Video…)** — over a video, pick an audio format (WAV / AIFF / CAF / AAC / MP3) and bit rate; it strips the video and opens just the audio track in a new tab (uses your installed ffmpeg).
+- **Convert Audio (View ▸ Convert Audio…)** — over an audio file, change its format/quality (lossless PCM or lossy AAC/MP3 with a bit-rate choice) → the converted file opens in a new tab. Same panel as Extract Audio.
+- **Editor autocomplete** — the code editor now invokes completion (Ctrl-Space): an LSP server's suggestions when one is configured for the language, otherwise an in-file word fallback — shown in the standard CodeMirror popup. (The completion backend existed but was never wired to the editor.)
+
+### Fixed
+- **Music keeps playing when you switch sessions/tabs.** Audio playback was tied to the media view, so switching away deallocated the player and stopped the music; it now lives at the app level and survives the switch.
+- **The side-nav file tree respects its shoulder toggle.** With the File-nav toggle off (only Bookmarks on) the file tree used to stay visible; it now hides as expected.
+- **Empty shoulder bars no longer clutter the edges.** A shoulder with no docked panels is hidden (it'll reveal as a drop target during a drag once panel-dragging ships) instead of showing a permanent bare strip.
+- **Terminal colours look right for CLI tools.** Settings ▸ Terminal ▸ Colour scheme adds a "Classic (xterm)" palette — the vivid standard ANSI colours tools like claude code expect (the old default was muted).
+- **The terminal pane resizes freely** — the artificial 900×800 size cap is gone (the window + split layout still bound it).
+- **New ▸ Image from the New-Tab landing** — the welcome screen now has a "New Image" button (next to New File) that opens a blank canvas in the image editor.
+
 ## 2026-06-29
 
 ### Added
