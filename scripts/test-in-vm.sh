@@ -278,6 +278,7 @@ run_webview_tests() {
     --filter ViewerUITests.SidebarFilesToggleHostingTests \
     --filter ViewerUITests.ShoulderRailEmptyHidingHostingTests \
     --filter ViewerUITests.AudioPlayerHostIntegrationTests \
+    --filter ViewerUITests.EmptyStateNewImageHostingTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
