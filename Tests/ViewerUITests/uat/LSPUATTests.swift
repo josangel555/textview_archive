@@ -527,16 +527,21 @@ final class LSPUATTests: MultiScenarioTestCase {
             guard let tv = node["nsTextView"] as? [String: Any], !cls.contains("Hex")
             else { return false }
             let glyphs = (tv["numberOfGlyphs"] as? Int) ?? 0
+            // TSK-1332: TK2-safe — numberOfGlyphs stays ~0 for a TextKit-2 view; textLength
+            // (textStorage) is populated regardless, so a TK2 view isn't false-flagged as empty.
+            let textLength = (tv["textLength"] as? Int) ?? 0
             let contrasts = (tv["contrastsWithBackground"] as? Bool) ?? false
-            return glyphs > 0 && contrasts
+            return (glyphs > 0 || textLength > 0) && contrasts
         }
     }
 
-    /// Largest `numberOfGlyphs` across all NSTextView nodes (the document
-    /// view dominates; chrome labels are tiny). Used to catch truncation.
+    /// Largest document size across all NSTextView nodes (the document view dominates; chrome
+    /// labels are tiny). Used to catch truncation. TSK-1332: take max(numberOfGlyphs, textLength)
+    /// so a TextKit-2 view (numberOfGlyphs ~0) reports its real char count via textLength.
     private func maxTextViewGlyphs(_ dump: [String: Any]) -> Int {
         allNodes(in: dump).compactMap { node -> Int? in
-            (node["nsTextView"] as? [String: Any])?["numberOfGlyphs"] as? Int
+            guard let tv = node["nsTextView"] as? [String: Any] else { return nil }
+            return max((tv["numberOfGlyphs"] as? Int) ?? 0, (tv["textLength"] as? Int) ?? 0)
         }.max() ?? 0
     }
 

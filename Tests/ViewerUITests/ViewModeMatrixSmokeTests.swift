@@ -375,8 +375,11 @@ final class ViewModeMatrixSmokeTests: MultiScenarioTestCase {
         allNodes(in: dump).contains { node in
             guard let tv = node["nsTextView"] as? [String: Any] else { return false }
             let glyphs = (tv["numberOfGlyphs"] as? Int) ?? 0
+            // TSK-1332: TK2-safe — numberOfGlyphs stays ~0 for a TextKit-2 view; textLength
+            // (textStorage) is populated regardless, so a TK2 view isn't false-flagged as empty.
+            let textLength = (tv["textLength"] as? Int) ?? 0
             let contrasts = (tv["contrastsWithBackground"] as? Bool) ?? false
-            return glyphs > 0 && contrasts
+            return (glyphs > 0 || textLength > 0) && contrasts
         }
     }
 
@@ -463,9 +466,12 @@ final class ViewModeMatrixSmokeTests: MultiScenarioTestCase {
             guard node["nsTextView"] != nil, !cls.contains("Hex") else { return false }
             let tv = node["nsTextView"] as? [String: Any]
             let glyphs = (tv?["numberOfGlyphs"] as? Int) ?? 0
+            // TSK-1332: TK2-safe — numberOfGlyphs stays ~0 for a TextKit-2 view; textLength
+            // (textStorage) is populated regardless, so a stale TK2 source view is still detected.
+            let textLength = (tv?["textLength"] as? Int) ?? 0
             // A meaningful amount of source text drawn (the document), not a
             // tiny status-bar label.
-            return glyphs > 0 && (tv?["isEditable"] as? Bool) == false
+            return (glyphs > 0 || textLength > 0) && (tv?["isEditable"] as? Bool) == false
         }
         XCTAssertFalse(
             bareSourceTextView,

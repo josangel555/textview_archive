@@ -262,6 +262,11 @@ public enum DiagnosticDump {
             t["glyph_boundingRect"] = rectString(bounding)
             t["numberOfGlyphs"] = lm.numberOfGlyphs
         }
+        // TSK-1332: a TextKit-2-SAFE populated-ness metric. `numberOfGlyphs` is a TK1 layout-manager
+        // count and stays ~0 for a TK2 view (textLayoutManager != nil) even when fully populated, so a
+        // UAT keying "did it render" off numberOfGlyphs false-negatives TK2 views (e.g. the HEX byte
+        // grid). textStorage.length is the character count regardless of TextKit version.
+        t["textLength"] = tv.textStorage?.length ?? 0
         return t
     }
 
