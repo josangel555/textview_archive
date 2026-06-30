@@ -645,6 +645,14 @@ public final class ImageEditorViewModel: ObservableObject {
         return overlay.setStyle(id: id, style)
     }
 
+    /// Set the selected `.text` shape's string + font size (the editable text element — TSK-1310).
+    /// No-op without a selection.
+    @discardableResult
+    public func setSelectedShapeText(_ text: String?, fontSize: Double?) -> Bool {
+        guard let id = selectedShapeID else { return false }
+        return overlay.setText(id: id, text, fontSize: fontSize)
+    }
+
     // MARK: - Selection (TSK-1063 / 1068)
 
     /// Set (or clear) the rectangular marquee selection.

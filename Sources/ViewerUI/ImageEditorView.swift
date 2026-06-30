@@ -429,7 +429,12 @@ struct ImageEditorView: View {
                     // redundant with the interactive `.drawRect` tool in the tool
                     // picker (a hardcoded centred red box). The drawRect tool is the
                     // discoverable, positionable equivalent.
-                    Button { commitSampleText() } label: {
+                    // TSK-1310: add a RETAINED, editable text element (selectable + restyleable +
+                    // retypable via the inspector), replacing the old one-shot raster placeholder.
+                    Button {
+                        vm.addShape(Self.centeredShape(.text))
+                        vm.selectLatestShape()
+                    } label: {
                         Label("Text", systemImage: "textformat")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.drawText")
@@ -500,14 +505,6 @@ struct ImageEditorView: View {
     }
 
     /// Commit a sample text label near the top-left of the current render. A
-    /// placeholder for the (render-gated) text-entry tool; proves the wiring.
-    private func commitSampleText() {
-        guard let image = vm.rendered else { return }
-        let h = CGFloat(image.height)
-        vm.commitDraw(.drawText("Text", origin: CGPoint(x: 12, y: 12),
-                                .black, fontSize: Double(max(16, h / 12))))
-    }
-
     // MARK: - paint tools (TSK-285)
 
     /// Raster paint affordance: tool picker (eyedropper / brush / bucket), color

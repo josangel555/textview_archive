@@ -59,6 +59,22 @@ final class ImageElementPropertiesPanelRenderTests: WebViewTestCase {
         return v.subviews.contains { containsColorWell($0) }
     }
 
+    private func containsEditableField(_ v: NSView) -> Bool {
+        if let tf = v as? NSTextField, tf.isEditable { return true }
+        return v.subviews.contains { containsEditableField($0) }
+    }
+
+    func test_textShape_rendersEditableTextField_TSK1310() async throws {
+        let vm = ImageEditorViewModel(ImageDocument(data: try solidPNG(width: 20, height: 16)))
+        _ = vm.addShape(VectorShape(
+            kind: .text, frame: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.12),
+            style: ShapeStyle(stroke: .red, lineWidth: 1), text: "Hi", fontSize: 0.06))
+        vm.selectLatestShape()
+        XCTAssertEqual(vm.selectedShape?.kind, .text, "precondition: a .text shape is selected")
+        XCTAssertTrue(containsEditableField(host(vm)),
+            "the inspector must render an editable text field for a selected .text shape (TSK-1310)")
+    }
+
     func test_inspector_rendersForSelectedShape_hiddenOtherwise_TSK1321() async throws {
         // With a selected shape → the edit controls (stroke ColorPicker → NSColorWell) render.
         let selected = ImageEditorViewModel(ImageDocument(data: try solidPNG(width: 20, height: 16)))

@@ -26,6 +26,23 @@ struct ImageElementPropertiesPanel: View {
                 Text(shape.kind.rawValue.capitalized)
                     .font(.callout)
 
+                if shape.kind == .text {
+                    // TSK-1310: the editable text + size for a retained .text element.
+                    TextField("Text", text: Binding(
+                        get: { shape.text ?? "" },
+                        set: { _ = vm.setSelectedShapeText($0, fontSize: shape.fontSize) }))
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("mdv.imageEditor.element.text")
+                    HStack {
+                        Text("Size").frame(width: 56, alignment: .leading)
+                        Slider(value: Binding(
+                            get: { shape.fontSize ?? 0.06 },
+                            set: { _ = vm.setSelectedShapeText(shape.text, fontSize: $0) }),
+                            in: 0.01...0.3)
+                    }
+                    .accessibilityIdentifier("mdv.imageEditor.element.fontSize")
+                }
+
                 ColorPicker("Stroke", selection: Binding(
                     get: { shape.style.stroke.swiftUIColor },
                     set: { newColor in

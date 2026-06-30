@@ -265,6 +265,15 @@ public struct VectorOverlay: Sendable, Codable, Equatable {
         return true
     }
 
+    /// Set the text + font size of the `.text` shape with `id` (TSK-1310). No-op for an unknown id.
+    @discardableResult
+    public mutating func setText(id: UUID, _ text: String?, fontSize: Double?) -> Bool {
+        guard let idx = shapes.firstIndex(where: { $0.id == id }) else { return false }
+        shapes[idx].text = text
+        shapes[idx].fontSize = fontSize
+        return true
+    }
+
     // MARK: Z-order / hierarchy
 
     /// Move the shape with `id` ONE step toward the front (higher z). No-op if
