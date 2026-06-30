@@ -71,4 +71,25 @@ final class HexFixedGridFrameTests: XCTestCase {
         XCTAssertGreaterThan(size.height, 1_000_000,
             "container must stay effectively unbounded (lazy layout)")
     }
+
+    /// TSK-1032 — the VM LiveApp UAT (ViewModeMatrixSmokeTests / PreviewsUATTests.PV_02)
+    /// reports the HEX byte grid "did not mount / blank" on a switch to HEX. That is a T4
+    /// spawned-app introspection FALSE-NEGATIVE, not a product bug: the controller mounts the
+    /// HexNSTextView WITH its hex-dump content. (The UAT's `anyTextViewWithGlyphs` reads the
+    /// TK1 `layoutManager.numberOfGlyphs`, which stays ~0 for this TK2 fixed-grid view even
+    /// when populated — so it reads "blank".) This is the authoritative, reliable host guard
+    /// for the byte-grid mount + content — it goes RED on a genuine no-mount regression.
+    func test_byteGrid_mountsWithHexContent_TSK1032() {
+        let c = makeApplied(byteCount: 512)
+        let storage = c.textView.textStorage
+        XCTAssertNotNil(storage, "no text storage — byte grid did not mount")
+        XCTAssertGreaterThan(storage?.length ?? 0, 0,
+            "byte grid mounted but has NO content — genuinely blank (a real regression)")
+        // The hex dump renders two-digit hex (offset gutter + byte columns).
+        let text = storage?.string ?? ""
+        XCTAssertTrue(text.contains("00"),
+            "byte-grid content isn't a hex dump (got: \(text.prefix(48)))")
+        XCTAssertGreaterThan(c.textView.frame.width, 0, "byte grid collapsed to zero width")
+        XCTAssertGreaterThan(c.textView.frame.height, 0, "byte grid collapsed to zero height")
+    }
 }
