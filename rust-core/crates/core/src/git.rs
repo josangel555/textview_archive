@@ -181,6 +181,7 @@ fn bracket_count(seg: &str, key: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn sandbox_args_pin_the_tsk549_hardening_flags() {
@@ -272,5 +273,39 @@ UU conflict.rs
         assert_eq!(st.conflicted, 7);
         assert_eq!(st.staged, 0);
         assert_eq!(st.modified, 0);
+    }
+
+    proptest! {
+        /// parse_status must NEVER panic on arbitrary input — `git status` porcelain
+        /// is external bytes (branch names, paths, locales, truncation, non-UTF-8
+        /// boundaries), so a slice/index bug would crash the status read. git.rs had
+        /// example tests but no property test (TSK-585 proptest lane); this pins the
+        /// robustness contract so a future parser refactor reddens here, not in the wild.
+        #[test]
+        fn parse_status_never_panics_on_arbitrary_input(s in ".*") {
+            let _ = parse_status(&s);
+        }
+
+        /// On porcelain-like lines: still no panic, and each per-line count is bounded
+        /// by the line count (a single line bumps staged/modified at most once each, or
+        /// one of untracked/conflicted; header lines bump none) — guards a counting regression.
+        #[test]
+        fn parse_status_counts_are_bounded_by_line_count(
+            lines in proptest::collection::vec(
+                prop_oneof![
+                    "## [^\n]*",
+                    "[ MADRCU?]{2} [^\n]*",
+                    "\\?\\? [^\n]*",
+                    "[^\n]*",
+                ], 0..40)
+        ) {
+            let input = lines.join("\n");
+            let n = input.lines().count();
+            let st = parse_status(&input);
+            prop_assert!(st.staged <= n);
+            prop_assert!(st.modified <= n);
+            prop_assert!(st.untracked <= n);
+            prop_assert!(st.conflicted <= n);
+        }
     }
 }
