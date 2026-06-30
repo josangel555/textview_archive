@@ -273,7 +273,7 @@ public final class ImageEditorViewModel: ObservableObject {
         renderTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.renderDebounce)
             if Task.isCancelled { return }
-            self?.render()
+            await self?.performRenderOffMain()
         }
     }
 
@@ -304,6 +304,52 @@ public final class ImageEditorViewModel: ObservableObject {
             histogram = try? Renderer.histogram(image)
             lastError = nil
         } catch {
+            lastError = String(describing: error)
+        }
+    }
+
+    /// Off-main variant of `render()` for the debounced slider path (TSK-1049):
+    /// the CoreImage tonal/geometry pipeline + the O(W*H) histogram run on a
+    /// DETACHED task so a large image doesn't freeze the UI during a render;
+    /// results publish back on the main actor. The paint path stays on main (a
+    /// fast buffer read). A newer `scheduleRender()` cancels us, and the stale
+    /// result is dropped after the await. Same semantics as `render()`.
+    func performRenderOffMain() async {
+        #if DEBUG
+        renderCount += 1
+        #endif
+        if let canvas = paintCanvas, let image = canvas.cgImage() {
+            rendered = image
+            histogram = try? Renderer.histogram(image)
+            lastError = nil
+            return
+        }
+        let base: CGImage
+        do {
+            base = try baseImage()
+        } catch {
+            lastError = String(describing: error)
+            return
+        }
+        let doc = document
+        let wrappedBase = UncheckedSendableImage(base)
+        let outcome: Result<(UncheckedSendableImage, Histogram?), Error> =
+            await Task.detached(priority: .userInitiated) {
+                do {
+                    let image = try Renderer.render(doc, base: wrappedBase.image)
+                    return .success((UncheckedSendableImage(image), try? Renderer.histogram(image)))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+        // A newer scheduleRender() cancelled us mid-render — drop the stale result.
+        if Task.isCancelled { return }
+        switch outcome {
+        case .success(let (image, hist)):
+            rendered = image.image
+            histogram = hist
+            lastError = nil
+        case .failure(let error):
             lastError = String(describing: error)
         }
     }
@@ -926,6 +972,15 @@ public final class ImageEditorViewModel: ObservableObject {
             return false
         }
     }
+}
+
+/// `CGImage` is an immutable, thread-safe CoreGraphics value, but is not marked
+/// `Sendable`. This wrapper asserts that documented safety so the off-main render
+/// task (TSK-1049) can carry one across the actor boundary (in for the base, back
+/// out for the result) under strict concurrency.
+private struct UncheckedSendableImage: @unchecked Sendable {
+    let image: CGImage
+    init(_ image: CGImage) { self.image = image }
 }
 
 extension EditOp {

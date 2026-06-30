@@ -29,12 +29,16 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Terminal copy no longer carries trailing whitespace.** Copying a selection from the terminal now trims the cell-grid's trailing-space padding and the bottom blank rows (matching Terminal.app / iTerm), so pasted command output isn't ragged. Interior blank lines are kept.
 - **Commit diffs: select multiple lines.** Click a line's gutter and shift-click another to select a range (highlighted), then right-click → "Copy N Selected Lines". Previously only a single line was selectable (the per-line rendering blocked cross-line text selection).
 
+### Performance
+- **Image editor stays responsive during adjustments.** The tonal sliders (brightness / contrast / exposure / shadows / highlights / sharpness) now render off the main thread, so dragging them on a large image no longer freezes the window — the preview updates when ready instead of stalling the UI.
+
 ### System work
 - **Tests/quality:** DocumentModel SRP slice (zoom controls → `+Zoom` + a clamp test that was a gap); tooltip appear-delay test backfill; UAT TextKit-2 "blank" false-negative fixed (DiagnosticDump reports a TK2-safe `textLength`).
 - **Validate-drain:** drove a batch of fixed/review items to `validated` with real teeth — UAT-TK2 (1332), PaneRetention LRU mount-probe (1240, VM-confirmed), ChromeBodyEvalCount parallel flake (1328), VM Swift-6.1.2 RustCore forward-compat (1210, VM-confirmed), tooltip delay (1209), hide-file-property-pane gate (1304).
 - **Palette/reuse:** the encoding-convert + align-tables ⌘K commands above reuse existing host methods (no new engines).
 - **Spikes/owner-decisions:** CSV viewport-paging (1139 — windowing conflicts with the table's filter/sort/find feature set) and the ⌘K render-panel commands (1335 pt2 — NSAlert→panel refactor) surfaced as tradeoffs rather than churned.
 - **Lessons:** verify-before-build (caught + reverted a duplicate encoding converter — grep the feature noun broadly, incl. main.swift menus); a bare Swift-6.1.2 VM build poisons `.build` for the 6.3 test lane.
+- **Perf/rust-core:** git porcelain-parser proptest hardening (no-panic + count-bounds); MEASURED the "MD open laggy" regression (TSK-598) on the VM → a ~334ms CoreAnimation commit stall (same class as Page-Up jank), host render-gen + mermaid ruled out; image-editor off-main render landed (above).
 
 ## 2026-06-29
 
