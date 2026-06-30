@@ -110,6 +110,10 @@ public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
         case roundedRect
         case line
         case arrow
+        /// A retained, editable text label (TSK-1310): `text` holds the string, `fontSize` the size
+        /// (a fraction of image height). Distinct from the one-shot `.drawText` RASTER op — a `.text`
+        /// shape stays selectable + editable (move / restyle / retype) after placement.
+        case text
     }
 
     /// Stable identity, preserved across move/reorder/serialize so the view's
@@ -121,12 +125,21 @@ public struct VectorShape: Sendable, Codable, Equatable, Identifiable {
     /// carries the two endpoints as opposite corners (see type doc).
     public var frame: CGRect
     public var style: ShapeStyle
+    /// `.text` payload: the rendered string. nil for the geometric kinds. Optional so existing
+    /// persisted shapes (no `text` key) decode unchanged (a missing key → nil).
+    public var text: String?
+    /// `.text` font size as a FRACTION of the image height (e.g. 0.06 = 6%). nil → a default at
+    /// draw time. Optional for the same backward-compatible decoding reason.
+    public var fontSize: Double?
 
-    public init(id: UUID = UUID(), kind: Kind, frame: CGRect, style: ShapeStyle = ShapeStyle()) {
+    public init(id: UUID = UUID(), kind: Kind, frame: CGRect, style: ShapeStyle = ShapeStyle(),
+                text: String? = nil, fontSize: Double? = nil) {
         self.id = id
         self.kind = kind
         self.frame = frame
         self.style = style
+        self.text = text
+        self.fontSize = fontSize
     }
 
     /// Endpoint accessors for the open shapes — `start` is the frame ORIGIN, `end`

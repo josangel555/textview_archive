@@ -698,6 +698,11 @@ struct ImageEditorView: View {
             let frame = VectorShape.openFrame(
                 from: CGPoint(x: 0.3, y: 0.3), to: CGPoint(x: 0.7, y: 0.7))
             return VectorShape(kind: kind, frame: frame, style: style)
+        case .text:
+            // A retained, editable text label (TSK-1310) — default copy + 6%-of-height size.
+            return VectorShape(
+                kind: .text, frame: CGRect(x: 0.3, y: 0.4, width: 0.4, height: 0.12),
+                style: style, text: "Text", fontSize: 0.06)
         }
     }
 
