@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — 16 validated (6 epics + 10 intake) + image/audio CONVERT features + walkthrough authoring guide; the webview-render + intake veins are DRAINED, remainder is AX-tier / T5-owner-blocked / data-safety / parked (2026-06-30)
+# Handoff — owner-correction render stretch: "T5-blocked" ≠ "render-blocked" — re-opened + shipped the render I'd wrongly parked as T5-blocked (mermaid overlay TSK-1333, feed render TSK-1149, element inspector TSK-1321); remainder = T5-occlusion / AX-interaction / owner-decision (2026-06-30)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `1544466f` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `e0383724`+ (the inspector/frame-fields commit; verify `git log -1`)
 
 ## Mission
 Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
@@ -9,12 +9,39 @@ Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → imple
 ## ⚠️ CORRECTION THAT RESET THIS HANDOFF (owner, 2026-06-29) — READ FIRST
 A prior version of this handoff declared a "host-testable-seam vein DRAINED" and routed all render/UI work to a "VM/owner venue." **That framing was WRONG and is now banned.** The owner's standing model: **the VM is UP and the ENTIRE UI/render lane is agent-workable — build AND VM-validate it. The ONLY off-limits tier is AX-driven tests.** There is NO "host-testable vs render" split in what to work; render/UI/VM items are first-class drain targets you BUILD and VALIDATE (on the VM), not hand to the owner. The instructions that caused the misread were hardened this session (CLAUDE.md new 2026-06-29 directive + §4 self-validation; TASK_WORKFLOW §4 + §7 cron; the live cron prompt). The render-confirm directive is satisfied BY VM-validating, not by leaving things at review.
 
+## ★★ SINCE 16 — THE OWNER-CORRECTION RENDER STRETCH (2026-06-30) — READ FIRST
+The owner corrected the END-STATE below: **"T5-pixel-blocked" was conflated with "render-blocked."**
+T5-screencapture (TSK-1334, still owner-blocked) gates ONLY the pixel-exact / occlusion-COMPOSITE check —
+NOT the render BUILD nor its structure/DOM/in-process validation (webview / NSHostingView / T4). I'd
+wrongly parked whole render items on that narrow T5 slice. Re-opened + shipped (all host-gate-green +
+VM-validated via the webview lane):
+- **TSK-1333 rendered Mermaid in the walkthrough overlay** — wired WalkthroughMermaidWebView into the
+  overlay (occlusion-safe compositingGroup); render webview-validated (df0d8c11) + mount in-process-
+  validated (70b118e3) → review. Occlusion-composite = child **TSK-1336** (T5, blocked on TSK-1334).
+- **TSK-1149 FeedReaderView render** in-process-validated (46ef18f7 + ce60dfe8 fixup — the built view
+  renders the add-feed field). The MOUNT is **re-parked (owner-decision)**: surfacing model a/b/c
+  (tool-window vs tab vs window) — a genuine product call, NOT render/T5.
+- **TSK-1321 element-properties inspector** (e0383724 + this commit) — the NON-AX edit-after-placement
+  FORM (stroke colour · line width · x/y/w/h frame → host-tested restyle/resizeSelectedShape),
+  render-guarded (NSColorWell renders for a selection, none otherwise). The canvas vein's on-canvas DRAG
+  is the **AX tier** (off-limits, per TSK-1188), NOT T5 — the inspector is the non-AX path.
+- **TSK-1334 re-verified** still denied; fix surfaced: the VM has no stable signing identity (ad-hoc →
+  TCC re-prompts each rebuild) → `bash scripts/setup-signing.sh` + a one-time owner grant makes it stick.
+
+**THE DURABLE RULE (also LESSONS):** "T5-blocked" ≠ "render-blocked." Split every render item into
+(render build + non-T5 structure/DOM/in-process validation) vs the narrow slice that truly needs T5
+(pixel-exact / occlusion-composite) or AX (faithful pointer/key gesture). Build + validate the former;
+carve the latter into a child. **THREE owner-actions unblock the most remaining work:** TSK-1334 (T5
+re-grant → reopens ALL occlusion/pixel), TSK-1149 (feed surfacing a/b/c), TSK-1305 (tonal-undo UX).
+**NEXT buildable (no owner):** a TEXT-element inspector (TSK-1310 — a separate text-overlay type, not a
+VectorShape) is the remaining non-AX image-edit render path; then frame-field follow-ons.
+
 ## ⭐ SINCE THE LAST REFRESH (11 → 16 validated) + THE END-STATE MAP — READ THIS
 **NEW validated:** TSK-1306 (New-Image landing button) · TSK-1325 (image format/quality CONVERT — View ▸ Convert Image, full primitive→off-main-VM→UI) · TSK-1323 + TSK-1324 (audio extract-from-video + format/quality convert — View ▸ Extract Audio / Convert Audio, shared VM+panel). **NEW at review:** TSK-1326 (walkthrough authoring guide + parse-validated sample — `docs/WALKTHROUGH_AUTHORING.md` + `docs/examples/sample-walkthrough.json`; the in-app "New Walkthrough" affordance is the follow-on). **PARKED (owner decision):** TSK-1305 (image full-undo — tonal-undo overturns the DELIBERATE live-slider design; needs the owner's UX call).
 
 **⚠️ THE P0 WEBVIEW BUGS ARE FIXED-AT-HOST + AT-REVIEW + AX-BLOCKED FOR ON-SCREEN — DO NOT re-attempt webview synthesis.** TSK-1188 (plain-click-after-scroll, fix `c0fd1543` + grep-guard), TSK-1271 (rendered-MD find scroll, fix `6e9e4efb` + FindCoordinatorTests), TSK-910 (commit-diff multi-line, host core `f809e271`; render slice = child TSK-1182). Their on-screen confirm needs a FAITHFUL POINTER/KEY GESTURE, which is **NOT tractable in the in-process webview lane** — VERIFIED across 4 VM rounds on TSK-1188 (synthesized MouseEvents don't drive CM6's MouseSelection; caret introspection returns nil even past a faithfulness gate). That's the AX/spawned-app tier. See LESSONS (headless-webview CM6 gesture synthesis + the `evaluateJavaScript` unsupported-type trap → append `; true;`). **The webview lane is for STATE-driven render assertions (cmDispatch → DOM query — diagnostics/autocomplete/folds/pickers), NOT gestures.**
 
-**END-STATE — what's left + why each isn't a quick win** (verified by traversing the whole intake + P0 list this session): (a) **AX-tier on-screen confirms** — the P0 gesture/key bugs above (fixed; await the AX/spawned-app lane or an owner glance); (b) **T5-pixel render** — image-editor canvas (TSK-1307/1310/1321) + mermaid (TSK-1333) — OWNER-BLOCKED on the **TSK-1334** Screen-Recording re-grant; (c) **data-safety** — TSK-1303 (edit-state persist) + TSK-1311 (session-state) — do NOT build the capture/restore wiring blind; (d) **parked design** — TSK-1305 (tonal-undo), TSK-1318 (menu reorg), TSK-1322 (paste); (e) **large features** — TSK-1319 (dynamic per-tab menu), TSK-1182 (diff single-Text render slice), TSK-1327 (smart-paste wiring — sensitive, overlaps 1322); (f) **P2-host** — TSK-382 (memory, measure-first), TSK-538 (rust-core), TSK-852 (.build cache — owner wants SPEED not storage), TSK-441–445 (CI). **NEXT agent:** prioritize TSK-1334 (the T5 re-grant reopens the whole canvas vein), else a P2-host item, else validate/reconcile toward owner-close. Do NOT re-mine the intake or the P0 webview bugs — they're correctly at-review/blocked.
+**END-STATE — what's left + why each isn't a quick win** (verified by traversing the whole intake + P0 list this session): (a) **AX-tier on-screen confirms** — the P0 gesture/key bugs above (fixed; await the AX/spawned-app lane or an owner glance); (b) **T5-pixel render** — ⚠️ SUPERSEDED by the SINCE-16 section above: the render was non-T5-validatable all along (TSK-1333 mermaid + TSK-1149 feed + TSK-1321 inspector SHIPPED + validated); ONLY the occlusion-COMPOSITE (TSK-1336) needs T5 (blocked on TSK-1334), and the on-canvas drag is AX, not T5; (c) **data-safety** — TSK-1303 (edit-state persist) + TSK-1311 (session-state) — do NOT build the capture/restore wiring blind; (d) **parked design** — TSK-1305 (tonal-undo), TSK-1318 (menu reorg), TSK-1322 (paste); (e) **large features** — TSK-1319 (dynamic per-tab menu), TSK-1182 (diff single-Text render slice), TSK-1327 (smart-paste wiring — sensitive, overlaps 1322); (f) **P2-host** — TSK-382 (memory, measure-first), TSK-538 (rust-core), TSK-852 (.build cache — owner wants SPEED not storage), TSK-441–445 (CI). **NEXT agent:** prioritize TSK-1334 (the T5 re-grant reopens the whole canvas vein), else a P2-host item, else validate/reconcile toward owner-close. Do NOT re-mine the intake or the P0 webview bugs — they're correctly at-review/blocked.
 
 ## What shipped this session (4 render epics validated via the in-process template)
 Render is FIRST-CLASS agent work — built + VM-validated, not handed to the owner. The template —

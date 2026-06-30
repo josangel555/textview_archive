@@ -46,11 +46,38 @@ struct ImageElementPropertiesPanel: View {
                         }), in: 0...20)
                 }
                 .accessibilityIdentifier("mdv.imageEditor.element.width")
+
+                // Position & size (normalized 0…1) via the form — the non-AX "move it / resize"
+                // path → the host-tested resizeSelectedShape. The on-canvas drag is the AX tier.
+                Text("Position & Size").font(.caption).foregroundStyle(.secondary)
+                frameSlider("X", \.origin.x, shape)
+                frameSlider("Y", \.origin.y, shape)
+                frameSlider("W", \.size.width, shape)
+                frameSlider("H", \.size.height, shape)
             }
             .padding(8)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
             .accessibilityIdentifier("mdv.imageEditor.elementProperties")
         }
+    }
+
+    /// A normalized (0…1) slider for one component of the selected shape's frame, committed via the
+    /// host-tested `resizeSelectedShape` (set the whole frame each change — the model is the source
+    /// of truth and re-reads `selectedShape` on the next render).
+    @ViewBuilder private func frameSlider(
+        _ label: String, _ keyPath: WritableKeyPath<CGRect, CGFloat>, _ shape: VectorShape
+    ) -> some View {
+        HStack {
+            Text(label).frame(width: 20, alignment: .leading).font(.caption)
+            Slider(value: Binding(
+                get: { Double(shape.frame[keyPath: keyPath]) },
+                set: { newValue in
+                    var frame = shape.frame
+                    frame[keyPath: keyPath] = CGFloat(newValue)
+                    _ = vm.resizeSelectedShape(to: frame)
+                }), in: 0...1)
+        }
+        .accessibilityIdentifier("mdv.imageEditor.element.frame.\(label)")
     }
 }
 
