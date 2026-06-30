@@ -65,3 +65,16 @@ tagged `[INT]` (the `internal` project key fell back to `tasked` on create — s
 
 - Board `TSK-NNN` ≠ Claude Code TaskList `#NNN` (different systems; always `task_get` first).
 - The board is shared across projects — grep the repo before acting on any board task.
+
+## Newly filed (2026-06-30)
+
+- **INT (file me)** — `task_park` and `task_advance` silently DROP their SECOND string param
+  (`context` on `task_park`; `note` on `task_advance`) when supplied alongside the first long-string
+  param. Symptom: `task_park` rejects with "missing required 'context'" even though `context` WAS
+  passed (re-tried ~3× with varied length + escaped/plain content — all failed); `task_advance to:review`
+  stops at `ack` with "next step ack->triaged needs 'note' (not supplied)" despite `note` being passed.
+  The FIRST string param (`question`/`understanding`) registers; the SECOND doesn't. Hit ~4× this
+  session (TSK-1302 advance, TSK-1320 + TSK-1149 park). WORKAROUND: record the disposition via
+  `task_comment` (single `body` param — always works), or pass the second param in a separate follow-up
+  call. Likely a multi-string-param arg-parsing/coercion issue (server- or client-side). Repro: any
+  `task_park` supplying both `question` and `context` in one call.

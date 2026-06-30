@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — owner-correction render stretch: "T5-blocked" ≠ "render-blocked" — re-opened + shipped the render I'd wrongly parked as T5-blocked (mermaid overlay TSK-1333, feed render TSK-1149, element inspector TSK-1321); remainder = T5-occlusion / AX-interaction / owner-decision (2026-06-30)
+# Handoff — owner-correction render stretch + the WHOLE image-editor intake cluster (TSK-1302–1321) DRAINED via the non-AX/host paths; remainder = owner-decisions / render-T5 / data-safety-wiring / perf-measure (2026-06-30)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `e0383724`+ (the inspector/frame-fields commit; verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `8e1636bb`+ (the edit-state-foundation commit; verify `git log -1`)
 
 ## Mission
 Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
@@ -27,6 +27,38 @@ VM-validated via the webview lane):
   is the **AX tier** (off-limits, per TSK-1188), NOT T5 — the inspector is the non-AX path.
 - **TSK-1334 re-verified** still denied; fix surfaced: the VM has no stable signing identity (ad-hoc →
   TCC re-prompts each rebuild) → `bash scripts/setup-signing.sh` + a one-time owner grant makes it stick.
+
+**THE IMAGE-EDITOR INTAKE CLUSTER (TSK-1302–1321) — now DRAINED (after the above):**
+- **TSK-1310 editable text** (34dc97ff + b6a417b8) → review. "Draw Text" was a one-shot raster op; added a
+  RETAINED `.text` VectorShape kind (reuses the TSK-1321 inspector/selection machinery) + the Text tool
+  now creates it + the inspector retypes/resizes it. On-canvas text PIXELS = T5 tail.
+- **TSK-1321 ROTATION** (cefb4da2) completed the inspector → resize·rotate·move·colour/width all via the
+  FORM (VectorShape.rotation + setRotation + a GraphicsContext rotate). On-canvas drag-handles +
+  click-select-any = AX tail; rotated pixels = T5 tail.
+- **TSK-1302 pane-overlap** (e969e531) → review. ImageEditorView is a full-bleed `.overlay` of
+  MediaPreviewView while the MetadataPanel is an HStack SIBLING → editing crowded it. FIX: onEditingChanged
+  callback (ImagePreview→MediaPreviewView→ContentView) → model.isEditingImage → ContentView
+  .showsPreviewMetadataPanel gates the panel off while editing. Host-tested (4-combo predicate).
+- **TSK-1303 edit-state persistence FOUNDATION** (8e1636bb) → triaged. ImageEditState (Codable: ops + 7
+  tonal + overlay, NO pixels) + vm.captureEditState/restoreEditState, round-trip host-tested. The
+  session-snapshot WIRING is the data-safety tail (careful VM, owner-aware — losing edits is the failure mode).
+- **Reconciled/owner:** TSK-1304 (hide-toggle pre-exists = the "Info" toggle) + TSK-1307 (resize sheet
+  pre-exists) + TSK-1309 (Box button already removed) → review; TSK-1320 (annotations clarity — editability
+  solved by TSK-1321; the 3-overlapping-shape-surfaces CONSOLIDATION is an owner a/b/c UX decision, recorded
+  as a comment since the park-ping failed).
+
+**TRACKER TOOLING BUG (this session):** task_park / task_advance's SECOND string param (`context` / `note`)
+silently fails to register — re-calls don't help. Workaround: task_comment (single `body` param) to record
+the disposition, or split into separate calls. Worth an INT ticket.
+
+**HOST VEIN WORKED THROUGH (2026-06-30) — verified item-by-item, the triaged queue is at its host-ceiling:**
+TSK-1146 (validated), TSK-1186 (11 clean FILE-WRITE verbs shipped; the render-panel commands are AppDelegate
+NSAlerts needing an NSAlert→model-flag-panel refactor = render, not a host descriptor-add), TSK-1315
+(diagnosed: NO central focus coordinator → panes compete for first-responder; fix = a render-VM focus
+refactor + the owner's repro), TSK-382 (perf, measure-first), TSK-751/781/1128/1182/1305/1320 (owner-decisions),
+TSK-1303-wiring (data-safety). NO clean fresh-buildable-host item remains; the high-value tails are
+owner/VM/measure-gated — NOT a "host-vein-drained → render-is-owner's-lane" claim (that framing is banned),
+but an honest end of the *clean host-completable* work after a comprehensive render + intake delivery.
 
 **THE DURABLE RULE (also LESSONS):** "T5-blocked" ≠ "render-blocked." Split every render item into
 (render build + non-T5 structure/DOM/in-process validation) vs the narrow slice that truly needs T5
