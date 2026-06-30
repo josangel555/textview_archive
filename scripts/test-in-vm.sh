@@ -272,6 +272,7 @@ run_webview_tests() {
     --filter ViewerUITests.FindBarTests \
     --filter ViewerUITests.FormatToggleTests \
     --filter ViewerUITests.FoldGutterWebViewTests \
+    --filter ViewerUITests.EditorDiagnosticsWebViewTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
