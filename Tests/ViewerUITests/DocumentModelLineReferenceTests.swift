@@ -46,4 +46,46 @@ final class DocumentModelLineReferenceTests: XCTestCase {
         XCTAssertNil(DocumentModel.lineRangeReference(url: nil, startLine: 1, endLine: 3),
                      "no active file → no reference")
     }
+
+    // --- currentSelectionReference (instance): the copy-reference verb's source ---
+    private var tmpDir: URL!
+    private var defaults: UserDefaults!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LineRef-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defaults = UserDefaults(suiteName: "LineRef-\(UUID().uuidString)")
+    }
+
+    override func tearDown() async throws {
+        if let tmpDir { try? FileManager.default.removeItem(at: tmpDir) }
+        try await super.tearDown()
+    }
+
+    private func makeModel() -> DocumentModel {
+        DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: tmpDir.appendingPathComponent("h.json")),
+            bookmarks: BookmarksStore(storeURL: tmpDir.appendingPathComponent("b.json")),
+            sidebar: SidebarModel(),
+            preferences: PreferencesStore(defaults: defaults))
+    }
+
+    func test_currentSelectionReference_rangeForMultiLineSelection_lineForCaret() throws {
+        let m = makeModel()
+        let url = tmpDir.appendingPathComponent("sel.txt")
+        try "alpha\nbeta\ngamma\n".write(to: url, atomically: true, encoding: .utf8)
+        m.open(url: url)
+        // "alpha\nbeta" = 10 UTF-16 units from line 1 col 1 → the selection ends on line 2.
+        m.sourceSelection = SourceSelection(line: 1, column: 1, length: 10)
+        XCTAssertEqual(m.currentSelectionReference().flatMap { ElementRef(parsing: $0) },
+                       .file(path: url.path, line: 1, endLine: 2),
+                       "a multi-line selection copies a line-RANGE reference")
+        // A caret (length 0) falls back to the single-line reference.
+        m.sourceSelection = SourceSelection(line: 2, column: 1, length: 0)
+        XCTAssertEqual(m.currentSelectionReference(), m.currentLineReference(),
+                       "no selection → the single-line reference")
+    }
 }

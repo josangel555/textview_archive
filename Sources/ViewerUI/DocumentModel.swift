@@ -2017,6 +2017,20 @@ public final class DocumentModel: ObservableObject {
         Self.lineReference(url: currentURL, line: sourceView.sourceSelection.line)
     }
 
+    /// TSK-942: an `mdv://` reference to the current editor SELECTION — a line RANGE
+    /// when a multi-line span is selected, otherwise the single current line. The
+    /// `copy-reference` verb uses this so "copy a reference to these lines" carries
+    /// the whole selection. (The source view populates the selection length from the
+    /// NSTextView selectedRange; the CM6 caret mirror reports length 0, so CM6
+    /// gracefully degrades to the single-line reference.)
+    public func currentSelectionReference() -> String? {
+        let sel = sourceView.sourceSelection
+        guard sel.length > 0, let text = activeFileText else { return currentLineReference() }
+        let endLine = TextLineGeometry.endLine(
+            in: text, startLine: sel.line, startColumn: sel.column, utf16Length: sel.length)
+        return Self.lineRangeReference(url: currentURL, startLine: sel.line, endLine: endLine)
+    }
+
     /// Pure builder: a file reference carrying the 1-based `line`, or nil if no url.
     public static func lineReference(url: URL?, line: Int) -> String? {
         url.map { ElementRef.file(path: $0.path, line: line, endLine: nil).serialized }
