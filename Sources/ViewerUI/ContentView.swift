@@ -439,6 +439,18 @@ public struct ContentView: View {
                     onClose: { model.showTerminalCommandPalette = false })
             }
         }
+        // TSK-1325 — the Image Convert panel (opened via model.openConvertImage()).
+        .sheet(isPresented: $model.showConvertImage) {
+            if let vm = model.convertImageVM {
+                ConvertImageView(
+                    vm: vm,
+                    onConverted: { url in
+                        model.openConvertedImage(url)
+                        model.showConvertImage = false
+                    },
+                    onClose: { model.showConvertImage = false })
+            }
+        }
     }
 
     // MARK: - Body row (sidebar accordion + content + split)

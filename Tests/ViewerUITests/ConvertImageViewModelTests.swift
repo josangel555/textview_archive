@@ -60,4 +60,12 @@ final class ConvertImageViewModelTests: XCTestCase {
         XCTAssertTrue(vm.isQualityMeaningful, "JPEG is lossy — quality applies")
         XCTAssertEqual(vm.availableFormats.count, ExportSpec.Format.allCases.count)
     }
+
+    func test_isConvertibleImage_byExtension() {
+        XCTAssertTrue(DocumentModel.isConvertibleImage(URL(fileURLWithPath: "/a/b.png")))
+        XCTAssertTrue(DocumentModel.isConvertibleImage(URL(fileURLWithPath: "/a/b.JPEG")))
+        XCTAssertTrue(DocumentModel.isConvertibleImage(URL(fileURLWithPath: "/a/b.tiff")))
+        XCTAssertFalse(DocumentModel.isConvertibleImage(URL(fileURLWithPath: "/a/b.txt")))
+        XCTAssertFalse(DocumentModel.isConvertibleImage(URL(fileURLWithPath: "/a/b")))
+    }
 }

@@ -722,6 +722,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openTerminalCommandPalette()
     }
 
+    // TSK-1325 — View ▸ Convert Image: format/quality conversion of the active image → new tab.
+    @objc func openConvertImage(_ sender: Any?) {
+        model.openConvertImage()
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1906,6 +1911,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "")
         termPaletteItem.target = self
         viewMenu.addItem(termPaletteItem)
+
+        // TSK-1325 — View ▸ Convert Image: format/quality conversion of the active image → new tab.
+        let convertImageItem = NSMenuItem(
+            title: "Convert Image…",
+            action: #selector(openConvertImage(_:)),
+            keyEquivalent: "")
+        convertImageItem.target = self
+        viewMenu.addItem(convertImageItem)
 
         // TSK-1116 — View ▸ Focus Mode: one-click workspace presets that pin the
         // sidebar to an activity's panel set + preferred lens (FocusWorkMode).

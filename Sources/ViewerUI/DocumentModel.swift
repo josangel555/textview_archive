@@ -184,6 +184,12 @@ public final class DocumentModel: ObservableObject {
     /// The palette controller, seeded over the live favorites + command history.
     @Published public var terminalCommandPaletteVM: TerminalCommandPaletteViewModel?
 
+    /// TSK-1325 — the Image Convert panel (pick target format + quality → new tab). Transient;
+    /// driven by `openConvertImage()`.
+    @Published public var showConvertImage = false
+    /// The convert controller, seeded with the active image tab's URL when opened.
+    @Published public var convertImageVM: ConvertImageViewModel?
+
     /// Terminal ANSI colour theme name (TSK-1312) — drives `TerminalPalette`'s
     /// 16-colour palette. Persisted; default "Default" (the muted shipped palette).
     /// "Classic (xterm)" gives standard vivid colours (closer to what CLI tools like
