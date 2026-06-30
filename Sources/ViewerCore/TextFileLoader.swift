@@ -276,15 +276,18 @@ public struct TextFileLoader: Sendable {
                 isExtractedReadOnly: true
             )
         }
-        // TSK-1036: .ods is an ODF ZIP — show its first table as TAB-separated
-        // text (read-only, TSK-1204). A grid view is the follow-on; this makes
-        // the sheet readable instead of raw ZIP bytes. `try?` → binary fallback.
+        // TSK-1036/1145: .ods is an ODF ZIP — show its sheets as a GRID (read-only,
+        // TSK-1204), with a sheet-tab strip for MULTI-sheet workbooks (SpreadsheetView,
+        // mirroring .xlsx). contents = first sheet's TSV; all sheets retained so the
+        // viewer can navigate them. `try?` → binary fallback for a malformed/non-ods.
         if url.pathExtension.lowercased() == "ods",
-           let grid = try? ODSContentParser.load(url) {
+           let sheets = try? ODSContentParser.loadAllSheets(url), !sheets.isEmpty {
             return TextFile(
-                url: url, contents: Self.tabSeparated(grid),
+                url: url, contents: Self.tabSeparated(sheets[0].grid),
                 encoding: .utf8, byteCount: data.count, modifiedTime: mtime,
-                isExtractedReadOnly: true
+                isExtractedReadOnly: true,
+                // Reuse the xlsxSheets channel (the SpreadsheetView reads it generically).
+                xlsxSheets: sheets.map { XLSXSheet(name: $0.name, rows: $0.grid) }
             )
         }
         // TSK-1036: .xlsx OOXML workbook — first sheet as TAB-separated text

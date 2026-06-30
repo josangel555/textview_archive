@@ -19,6 +19,16 @@ public extension ODSContentParser {
         }
         return parseFirstTableGrid(contentXML: xml)
     }
+
+    /// Load + parse ALL sheets of a `.ods` file (TSK-1145) — for multi-sheet
+    /// workbooks (mirrors XLSXDocument.load). Single-sheet files return one Sheet.
+    static func loadAllSheets(_ url: URL) throws -> [Sheet] {
+        guard let data = try? ArchiveCatalog.zipEntryBytes(named: "content.xml", fromZipAt: url),
+              let xml = String(data: data, encoding: .utf8) else {
+            throw MultiFormatLoadError.missingContentPart
+        }
+        return parseAllTables(contentXML: xml)
+    }
 }
 
 public extension DocxTextExtractor {

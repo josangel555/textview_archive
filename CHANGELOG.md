@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-30
 
 ### Added
+- **Multi-sheet OpenDocument (.ods) spreadsheets show a sheet-tab strip.** A `.ods` workbook with more than one sheet now shows a tab strip above the grid — click a tab to view that sheet — matching the Excel (.xlsx) behaviour. (Read-only; each sheet's cells are its displayed values.)
 - **Word (.docx) documents open RENDERED with structure.** Opening a `.docx` now shows it as rendered Markdown — **headings, bullet/numbered lists, and bold/italic preserved** — instead of one flat wall of text. (Read-only; toggle to Source to see the extracted Markdown. Dependency-free — reuses the in-app OOXML reader.)
 - **RTF (.rtf) documents render their formatting.** Opening a `.rtf` (e.g. a TextEdit document) now shows **bold and italic** rendered, instead of flat text. (Read-only; toggle to Source for the extracted Markdown.)
 - **Terminal tab strip has a shoulder divider.** The terminal's tab strip now draws a thin separator on its outer edge (matching the app's side-rail dividers), so the terminal pane reads as a distinct surface. Follows the strip's position (top / left / right).

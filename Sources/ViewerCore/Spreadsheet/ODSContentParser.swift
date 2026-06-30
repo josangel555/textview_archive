@@ -13,20 +13,42 @@ import Foundation
 /// non-empty cell/row follows.
 public enum ODSContentParser {
 
+    /// One parsed sheet: its `table:name` + the row-major grid (TSK-1145).
+    public struct Sheet: Equatable, Sendable {
+        public let name: String
+        public let grid: [[String]]
+        public init(name: String, grid: [[String]]) { self.name = name; self.grid = grid }
+    }
+
     /// Parse the first `table:table` into a row-major grid of cell display
     /// strings. `maxCells` is a hard backstop against a pathological file.
     public static func parseFirstTableGrid(contentXML: String, maxCells: Int = 5_000_000) -> [[String]] {
         guard let data = contentXML.data(using: .utf8) else { return [] }
-        let delegate = Delegate(maxCells: maxCells)
+        let delegate = Delegate(maxCells: maxCells, collectAll: false)
         let parser = XMLParser(data: data)
         parser.delegate = delegate
         parser.parse()
         return delegate.grid
     }
 
+    /// Parse ALL `table:table` sheets (name + grid) — for multi-sheet `.ods`
+    /// (TSK-1145), mirroring the multi-sheet `.xlsx` path. Same trailing-empty
+    /// deferral + `maxCells` backstop, applied per sheet.
+    public static func parseAllTables(contentXML: String, maxCells: Int = 5_000_000) -> [Sheet] {
+        guard let data = contentXML.data(using: .utf8) else { return [] }
+        let delegate = Delegate(maxCells: maxCells, collectAll: true)
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.parse()
+        return delegate.sheets
+    }
+
     private final class Delegate: NSObject, XMLParserDelegate {
         let maxCells: Int
+        let collectAll: Bool
         var grid: [[String]] = []
+        var sheets: [Sheet] = []          // collectAll mode: one entry per table:table
+        private var currentTableName = ""
         private var doneFirstTable = false
         private var inTable = false
 
@@ -45,15 +67,16 @@ public enum ODSContentParser {
         private var cellHadContent = false
         private var cellCount = 0
 
-        init(maxCells: Int) { self.maxCells = maxCells }
+        init(maxCells: Int, collectAll: Bool) { self.maxCells = maxCells; self.collectAll = collectAll }
 
         func parser(_ parser: XMLParser, didStartElement element: String,
                     namespaceURI: String?, qualifiedName qName: String?,
                     attributes attrs: [String: String]) {
             switch element {
             case "table:table":
-                if doneFirstTable { break }
+                if !collectAll && doneFirstTable { break }
                 inTable = true
+                currentTableName = attrs["table:name"] ?? ""
             case "table:table-row" where inTable:
                 rowCells = []; deferredEmptyCols = 0
                 rowRepeat = intAttr(attrs["table:number-rows-repeated"]) ?? 1
@@ -107,7 +130,17 @@ public enum ODSContentParser {
                     for _ in 0..<rowRepeat { grid.append(rowCells) }
                 }
             case "table:table":
-                if inTable { inTable = false; doneFirstTable = true }
+                if inTable {
+                    inTable = false
+                    if collectAll {
+                        // Finalize this sheet + reset per-table state for the next one.
+                        sheets.append(Sheet(name: currentTableName, grid: grid))
+                        grid = []; rowCells = []; deferredEmptyCols = 0
+                        deferredEmptyRows = 0; lastRowWidth = 1
+                    } else {
+                        doneFirstTable = true
+                    }
+                }
             default:
                 break
             }
