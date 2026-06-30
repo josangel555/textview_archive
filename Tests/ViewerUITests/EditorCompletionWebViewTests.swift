@@ -58,6 +58,7 @@ final class EditorCompletionWebViewTests: WebViewTestCase {
         window.webkit = window.webkit || {};
         window.webkit.messageHandlers = window.webkit.messageHandlers || {};
         window.webkit.messageHandlers.mdvEditor = { postMessage: function (b) { window.__captured.push(b); } };
+        true;
         """)
         // Seed a doc + put the cursor at the end of an identifier.
         _ = try await webView.evaluateJavaScript("""
@@ -66,7 +67,9 @@ final class EditorCompletionWebViewTests: WebViewTestCase {
         (function () { const v = window.__mdvView; v.dispatch({ selection: { anchor: v.state.doc.length } }); })();
         """)
         // Trigger completion explicitly (the exposed command).
-        _ = try await webView.evaluateJavaScript("window.CM.startCompletion(window.__mdvView);")
+        // Wrap so the eval returns a serializable value — startCompletion's return is not
+        // bridgeable ("unsupported type"), which would throw out of evaluateJavaScript.
+        _ = try await webView.evaluateJavaScript("window.CM.startCompletion(window.__mdvView); true;")
 
         // 1) The editor INVOKED completion — a requestCompletion was posted over the bridge.
         let posted = await evalUntil(
