@@ -16,6 +16,8 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Extract Audio from Video (View ▸ Extract Audio from Video…)** — over a video, pick an audio format (WAV / AIFF / CAF / AAC / MP3) and bit rate; it strips the video and opens just the audio track in a new tab (uses your installed ffmpeg).
 - **Convert Audio (View ▸ Convert Audio…)** — over an audio file, change its format/quality (lossless PCM or lossy AAC/MP3 with a bit-rate choice) → the converted file opens in a new tab. Same panel as Extract Audio.
 - **Editor autocomplete** — the code editor now invokes completion (Ctrl-Space): an LSP server's suggestions when one is configured for the language, otherwise an in-file word fallback — shown in the standard CodeMirror popup. (The completion backend existed but was never wired to the editor.)
+- **Image annotations are fully editable after placement.** Select a shape drawn on an image and adjust its stroke colour, **fill**, line width, **rotation**, and position/size from the inspector panel; for a text annotation, edit its text, size, and **bold/italic**. Previously a placed annotation couldn't be changed.
+- **⌘K command palette: Convert Encoding + Align Markdown Tables.** Re-save the active file as UTF-8 / UTF-16 / Windows-1252 / ISO-Latin-1, and re-align GFM pipe tables — both now reachable from the command palette (previously menu-only).
 
 ### Fixed
 - **Music keeps playing when you switch sessions/tabs.** Audio playback was tied to the media view, so switching away deallocated the player and stopped the music; it now lives at the app level and survives the switch.
@@ -25,6 +27,14 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **The terminal pane resizes freely** — the artificial 900×800 size cap is gone (the window + split layout still bound it).
 - **New ▸ Image from the New-Tab landing** — the welcome screen now has a "New Image" button (next to New File) that opens a blank canvas in the image editor.
 - **Terminal copy no longer carries trailing whitespace.** Copying a selection from the terminal now trims the cell-grid's trailing-space padding and the bottom blank rows (matching Terminal.app / iTerm), so pasted command output isn't ragged. Interior blank lines are kept.
+- **Commit diffs: select multiple lines.** Click a line's gutter and shift-click another to select a range (highlighted), then right-click → "Copy N Selected Lines". Previously only a single line was selectable (the per-line rendering blocked cross-line text selection).
+
+### System work
+- **Tests/quality:** DocumentModel SRP slice (zoom controls → `+Zoom` + a clamp test that was a gap); tooltip appear-delay test backfill; UAT TextKit-2 "blank" false-negative fixed (DiagnosticDump reports a TK2-safe `textLength`).
+- **Validate-drain:** drove a batch of fixed/review items to `validated` with real teeth — UAT-TK2 (1332), PaneRetention LRU mount-probe (1240, VM-confirmed), ChromeBodyEvalCount parallel flake (1328), VM Swift-6.1.2 RustCore forward-compat (1210, VM-confirmed), tooltip delay (1209), hide-file-property-pane gate (1304).
+- **Palette/reuse:** the encoding-convert + align-tables ⌘K commands above reuse existing host methods (no new engines).
+- **Spikes/owner-decisions:** CSV viewport-paging (1139 — windowing conflicts with the table's filter/sort/find feature set) and the ⌘K render-panel commands (1335 pt2 — NSAlert→panel refactor) surfaced as tradeoffs rather than churned.
+- **Lessons:** verify-before-build (caught + reverted a duplicate encoding converter — grep the feature noun broadly, incl. main.swift menus); a bare Swift-6.1.2 VM build poisons `.build` for the 6.3 test lane.
 
 ## 2026-06-29
 
