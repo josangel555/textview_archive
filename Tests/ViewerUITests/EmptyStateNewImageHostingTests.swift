@@ -53,19 +53,14 @@ final class EmptyStateNewImageHostingTests: WebViewTestCase {
         host.layoutSubtreeIfNeeded()
 
         let buttons = Self.descendants(of: host).compactMap { $0 as? NSButton }
-        // The "New Image" Button bridges to an NSButton — find it by title OR its AX id (either
-        // surfacing is sufficient proof it rendered).
-        let hasNewImage = buttons.contains {
-            $0.title == "New Image" || $0.accessibilityIdentifier() == "mdv.emptyState.newImage"
-        }
-        XCTAssertTrue(hasNewImage,
-            "the New-Tab landing must render a 'New Image' button (TSK-1306); found: "
-            + "\(buttons.map { ($0.title, $0.accessibilityIdentifier()) })")
-        // Sanity: the pre-existing "New File" button is still there too (the action row rendered).
-        let hasNewFile = buttons.contains {
-            $0.title == "New File" || $0.accessibilityIdentifier() == "mdv.emptyState.newFile"
-        }
-        XCTAssertTrue(hasNewFile, "the New File button must still render alongside New Image")
+        // SwiftUI Buttons bridge to NSButtons but expose neither their title nor their
+        // .accessibilityIdentifier in the hosted NSView tree (verified on the VM: 4 × ("","")) —
+        // only a `.menu` Picker carries identity (NSPopUpButton). So match by COUNT: the landing
+        // action row is New File · New Image · Open File · Open Folder = 4; before TSK-1306 it was 3
+        // (no New Image). With no recents (→ no recent-row buttons), 4 proves New Image was added.
+        XCTAssertEqual(buttons.count, 4,
+            "the New-Tab landing action row must render 4 buttons incl. the new 'New Image' "
+            + "(TSK-1306; was 3 before the fix). Count: \(buttons.count)")
     }
 
     private static func descendants(of view: NSView) -> [NSView] {
