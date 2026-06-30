@@ -965,6 +965,18 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(after / before, model.zoom, accuracy: 0.001)
     }
 
+    /// TSK-1110: the extracted zoom controls (DocumentModel+Zoom) clamp to the
+    /// PreferencesStore bounds and zoomReset returns the 1.0 baseline.
+    func test_zoomControls_clampToBounds_andReset() {
+        let model = makeModel()
+        for _ in 0..<100 { model.zoomIn() }
+        XCTAssertEqual(model.zoom, PreferencesStore.maxZoom, accuracy: 0.0001, "zoomIn clamps at maxZoom")
+        for _ in 0..<100 { model.zoomOut() }
+        XCTAssertEqual(model.zoom, PreferencesStore.minZoom, accuracy: 0.0001, "zoomOut clamps at minZoom")
+        model.zoomReset()
+        XCTAssertEqual(model.zoom, 1.0, accuracy: 0.0001, "zoomReset returns to 1.0")
+    }
+
     // MARK: - showInvisibleChars (Batch A)
 
     func test_showInvisibleChars_seeds_and_persists() {

@@ -635,17 +635,7 @@ public final class DocumentModel: ObservableObject {
 
     private var cancellables: Set<AnyCancellable> = []
 
-    public func zoomIn() {
-        zoom = min(zoom + PreferencesStore.zoomStep, PreferencesStore.maxZoom)
-    }
-
-    public func zoomOut() {
-        zoom = max(zoom - PreferencesStore.zoomStep, PreferencesStore.minZoom)
-    }
-
-    public func zoomReset() {
-        zoom = 1.0
-    }
+    // zoomIn / zoomOut / zoomReset extracted to DocumentModel+Zoom.swift (TSK-1110).
 
     public func openFolder(_ url: URL) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
