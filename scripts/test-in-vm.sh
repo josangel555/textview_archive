@@ -288,6 +288,7 @@ run_webview_tests() {
     --filter ViewerUITests.StructuralSearchHostingTests \
     --filter ViewerUITests.TaskRunnerHostingTests \
     --filter ViewerUITests.TerminalCommandPaletteHostingTests \
+    --filter ViewerUITests.WalkthroughDiagramOverlayHostingTests \
     2>&1 | tee "$WEBVIEW_TXT"
   local rc=${PIPESTATUS[0]}
   set -e

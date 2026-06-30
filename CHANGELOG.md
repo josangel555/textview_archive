@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-29
 
 ### Added
+- **Walkthrough illustrations now appear on screen** — a walkthrough step's `diagram` verb renders as an overlay: ASCII/Unicode art in a monospace callout, or an image, with an optional caption (Mermaid diagrams show their source for now; rendered Mermaid is coming). Previously the illustration was dispatched but never displayed.
 - **Terminal Command Palette (View ▸ Terminal Command Palette…)** — a searchable picker over your terminal command history + saved favorites: type to filter (favorites first, pinned), pick one, and it's inserted at the terminal prompt ready to run (no surprise auto-execute — you review and press Return). A cross-session searchable recall the shell's up-arrow can't give you.
 - **Task Runner (View ▸ Task Runner…)** — discover and run your project's tasks without leaving the app: it finds package.json scripts, Cargo commands, and Makefile targets, lists them, and runs the one you pick with its output captured inline (bounded — a runaway task can't hang the app). Quick way to fire a build/test/lint and read the result.
 - **Structural Search (View ▸ Structural Search…)** — search the active file by SYNTAX, not text: type a structural query (e.g. `function_declaration name=$X`, `call_expression name="print"`) and get a list of matching AST nodes (each with its kind + source snippet). Far more precise than regex against formatting/comments/strings. (Results list now; click-to-jump is a follow-on.)

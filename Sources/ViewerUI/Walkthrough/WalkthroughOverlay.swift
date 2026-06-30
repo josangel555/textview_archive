@@ -75,6 +75,13 @@ public struct WalkthroughOverlay: View {
             if let p = bridge.popover {
                 popover(for: p)
             }
+            // TSK-1119 — the illustration overlay (the `diagram` verb), centered at the
+            // window root. Re-renders on diagramNonce; dismissed when bridge.diagram → nil.
+            if let d = bridge.diagram {
+                WalkthroughDiagramOverlay(request: d)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .transition(.opacity)
+            }
         }
         .coordinateSpace(name: "walkthroughOverlay")
         .onPreferenceChange(WalkthroughAnchorKey.self) { frames in
@@ -83,7 +90,7 @@ public struct WalkthroughOverlay: View {
         .onChange(of: bridge.flashNonce) { _, nonce in
             triggerFlash(nonce: nonce)
         }
-        .allowsHitTesting(bridge.popover != nil)
+        .allowsHitTesting(bridge.popover != nil || bridge.diagram != nil)
     }
 
     // MARK: - Highlight
