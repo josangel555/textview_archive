@@ -4,11 +4,12 @@ import ViewerCore
 /// TSK-1119 — the walkthrough illustration overlay. Consumes the `diagram` verb's
 /// `DiagramRequest` (model.diagram, bumped via diagramNonce) and renders the illustration by
 /// medium: an ASCII/Unicode block as a monospace callout, an image from the resolved file URL,
-/// and (interim, slice 1) the Mermaid source as a labeled callout. The rendered Mermaid WebView
-/// is slice 2 — it composites a WKWebView beside SwiftUI siblings (the TSK-488 occlusion class),
-/// so it MUST be built occlusion-safe (`compositingGroup().zIndex`) and T5-pixel-verified, NOT
-/// validated via the in-process hosting test (which false-greens occlusion). This slice is
-/// occlusion-free (pure SwiftUI) and fully host/in-process-testable.
+/// and (TSK-1333) the Mermaid source RENDERED in a WKWebView. The Mermaid branch is the TSK-488
+/// occlusion class (the WKWebView composites beside the SwiftUI caption), so the caption is given
+/// its own composited layer ABOVE the surface (`compositingGroup().zIndex` in `body`). The render
+/// itself is webview-validated (WalkthroughMermaidRenderWebViewTests) and the mount is
+/// in-process-validated; the occlusion COMPOSITE is the one slice that needs T5-pixel verification
+/// (TSK-1334) — NOT the in-process hosting test, which false-greens occlusion.
 ///
 /// The view is dismissed automatically when `model.diagram` goes nil (step transition) because
 /// WalkthroughOverlay observes `model` and drops this branch from its ZStack.
@@ -17,11 +18,17 @@ struct WalkthroughDiagramOverlay: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Occlusion-safe layering (TSK-488): the diagram surface (a WKWebView for .mermaid) sits
+            // at zIndex 0; the caption gets its own composited layer above it so the WebView can't
+            // occlude it. Harmless for the pure-SwiftUI branches (ascii/image).
             content
+                .zIndex(0)
             if let caption = request.caption, !caption.isEmpty {
                 Text(caption)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .compositingGroup()
+                    .zIndex(1)
                     .accessibilityIdentifier("mdv.walkthrough.diagram.caption")
             }
         }
@@ -39,17 +46,14 @@ struct WalkthroughDiagramOverlay: View {
                 .textSelection(.enabled)
                 .accessibilityIdentifier("mdv.walkthrough.diagram.ascii")
         case .mermaid(let source):
-            // Interim (slice 1): the Mermaid source in a labeled callout. The rendered
-            // WebView (occlusion-safe + T5-verified) is slice 2.
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Diagram (Mermaid)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(source)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-            }
-            .accessibilityIdentifier("mdv.walkthrough.diagram.mermaid")
+            // Slice 2 (TSK-1333): the rendered Mermaid diagram in a WKWebView. OCCLUSION-CLASS
+            // (TSK-488) — the WebView composites beside the SwiftUI caption sibling, so the caption
+            // is layered above it (compositingGroup().zIndex in `body`). The render itself is
+            // webview-validated (WalkthroughMermaidRenderWebViewTests); the mount is
+            // in-process-validated; only the occlusion COMPOSITE needs T5-pixel verification (TSK-1334).
+            WalkthroughMermaidWebView(source: source)
+                .frame(maxWidth: 500, minHeight: 160, maxHeight: 380)
+                .accessibilityIdentifier("mdv.walkthrough.diagram.mermaid")
         case .image(let url):
             imageView(url)
                 .accessibilityIdentifier("mdv.walkthrough.diagram.image")
