@@ -282,6 +282,7 @@ run_webview_tests() {
     --filter ViewerUITests.ConvertImageHostingTests \
     --filter ViewerUITests.AudioConvertHostingTests \
     --filter ViewerUITests.CM6PlainClickAfterScrollWebViewTests \
+    --filter ViewerUITests.WalkthroughMermaidRenderWebViewTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
