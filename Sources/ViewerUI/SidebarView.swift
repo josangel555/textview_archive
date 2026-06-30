@@ -1282,6 +1282,7 @@ struct FileRowState: Equatable, Sendable {
     let isSelected: Bool
     let isOpenInOtherTab: Bool
     let isBookmarked: Bool
+    let isViewModeLocked: Bool
     let isExpanded: Bool
     let gitStatus: GitStatusEntry.Status?
     let repoRootKind: RepoRootKind
@@ -1309,6 +1310,8 @@ struct FileRowState: Equatable, Sendable {
                 && model.openTabURLs.contains(node.url)
                 && node.url != model.currentURL,
             isBookmarked: model.bookmarksStore.contains(node.url),
+            isViewModeLocked: !node.isDirectory
+                && model.viewModeLocks.isLocked(for: node.url),
             isExpanded: sidebar.isExpanded(node.url),
             gitStatus: trackedRepos.status(for: node.url),
             repoRootKind: kind,
@@ -1478,6 +1481,18 @@ private struct FileRowView: View, Equatable {
                             .foregroundStyle(.yellow)
                             .helpInfo(title: "Bookmarked", description: "This file is bookmarked")
                             .accessibilityLabel("Bookmarked")
+                    }
+                    // TSK-1152: a lock badge when this file's view mode is
+                    // pinned (set via the row's "Lock View As" menu). Mirrors
+                    // the bookmark star; in FileRowState so it re-renders on
+                    // lock-change (the body must not read `model` directly).
+                    if state.isViewModeLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: model.uiSize(8)))
+                            .foregroundStyle(.secondary)
+                            .helpInfo(title: "View locked",
+                                      description: "This file opens in a pinned view mode")
+                            .accessibilityLabel("View-mode locked")
                     }
                     Spacer(minLength: 0)
                     if let status = state.gitStatus {

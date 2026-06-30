@@ -102,6 +102,30 @@ final class FileRowStateTests: XCTestCase {
         XCTAssertTrue(state(fileA).isBookmarked)
     }
 
+    // TSK-1152: the file-nav lock badge — FileRowState must carry the lock so
+    // the indicator re-bodies on lock-change (a body-time model read wouldn't,
+    // FileRowView being .equatable). Both directions of the skip contract.
+    func test_viewModeLockToggle_reflectsInState() {
+        let before = state(fileA)
+        XCTAssertFalse(before.isViewModeLocked)
+        model.lockViewMode(fileA, to: .source)
+        let after = state(fileA)
+        XCTAssertNotEqual(after, before, "the lock badge must re-body the row")
+        XCTAssertTrue(after.isViewModeLocked)
+        model.unlockViewMode(fileA)
+        XCTAssertFalse(state(fileA).isViewModeLocked, "unlock clears the badge")
+    }
+
+    func test_directory_neverCarriesViewModeLock() {
+        // A directory has no view mode, so its row never shows the lock badge
+        // even if an (impossible) lock were keyed to its name.
+        let dir = FileNode(url: tmpDir, name: tmpDir.lastPathComponent, isDirectory: true)
+        let s = FileRowState.make(
+            node: dir, model: model, sidebar: sidebar,
+            trackedRepos: trackedRepos, recencyMode: .modified)
+        XCTAssertFalse(s.isViewModeLocked)
+    }
+
     func test_zoomChange_changesEveryRowState() {
         let before = state(fileC)
         model.zoom = model.zoom + 0.2
