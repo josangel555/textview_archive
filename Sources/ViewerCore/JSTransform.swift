@@ -84,6 +84,47 @@ public enum JSTransform {
             }
         }
     }
+
+    // MARK: - Beyond-JSON input (TSK-698 slice 4)
+
+    /// How to interpret the active buffer's raw text before binding it to `input`/`$`.
+    public enum InputFormat: String, Sendable, CaseIterable {
+        /// The buffer is already JSON (slice 1 behavior).
+        case json
+        /// Split the buffer into an array of LINE strings — the owner's "filter a log"
+        /// use case (`input.filter(l => /ERROR/.test(l))`). A single trailing newline is
+        /// treated as a terminator, not a phantom trailing empty line.
+        case lines
+    }
+
+    /// Convert `content` of `format` into the JSON string that `run`/`runAsync` bind to
+    /// `input`/`$`. `.json` is identity; `.lines` → a JSON array of line strings.
+    public static func prepareInput(_ content: String, as format: InputFormat) -> String {
+        switch format {
+        case .json:
+            return content
+        case .lines:
+            var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            if content.hasSuffix("\n"), lines.last == "" { lines.removeLast() }
+            guard let data = try? JSONSerialization.data(withJSONObject: lines),
+                  let s = String(data: data, encoding: .utf8) else { return "[]" }
+            return s
+        }
+    }
+
+    /// Run `expression` over `content` interpreted as `format` (e.g. `.lines` for a log).
+    public static func run(
+        content: String, as format: InputFormat, expression: String
+    ) -> Result<String, TransformError> {
+        run(json: prepareInput(content, as: format), expression: expression)
+    }
+
+    /// Off-main + soft-timeout variant of `run(content:as:expression:)` (slices 2 + 4).
+    public static func runAsync(
+        content: String, as format: InputFormat, expression: String, timeout: TimeInterval = 2.0
+    ) async -> Result<String, TransformError> {
+        await runAsync(json: prepareInput(content, as: format), expression: expression, timeout: timeout)
+    }
 }
 
 /// Resolves a `CheckedContinuation` EXACTLY ONCE under a lock — the eval thread and the

@@ -94,4 +94,26 @@ final class JSTransformTests: XCTestCase {
         XCTAssertLessThan(elapsed, 5.0,
             "the soft timeout must return promptly, not block on the full script")
     }
+
+    // TSK-698 slice 4 — beyond-JSON input (.lines for logs).
+
+    func test_linesInput_filtersLog() {
+        let log = "INFO start\nERROR boom\nINFO ok\nERROR bad\n"
+        let r = JSTransform.run(content: log, as: .lines,
+                                expression: #"input.filter(l => l.startsWith("ERROR"))"#)
+        XCTAssertEqual(try? r.get(), "[\n  \"ERROR boom\",\n  \"ERROR bad\"\n]")
+    }
+
+    func test_linesInput_dropsTrailingNewlineTerminator() {
+        XCTAssertEqual(try? JSTransform.run(content: "a\nb\nc\n", as: .lines, expression: "input.length").get(), "3")
+        XCTAssertEqual(try? JSTransform.run(content: "a\nb\nc", as: .lines, expression: "input.length").get(), "3")
+    }
+
+    func test_prepareInput_lines_preservesInteriorBlankLines() {
+        XCTAssertEqual(JSTransform.prepareInput("a\n\nb", as: .lines), #"["a","","b"]"#)
+    }
+
+    func test_jsonInputFormat_isIdentity() {
+        XCTAssertEqual(try? JSTransform.run(content: "[10,20,30]", as: .json, expression: "input[1]").get(), "20")
+    }
 }
