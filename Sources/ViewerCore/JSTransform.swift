@@ -95,6 +95,10 @@ public enum JSTransform {
         /// use case (`input.filter(l => /ERROR/.test(l))`). A single trailing newline is
         /// treated as a terminator, not a phantom trailing empty line.
         case lines
+        /// Parse the buffer as CSV/TSV (delimiter auto-detected) into an array of row
+        /// OBJECTS keyed by the header row — the owner's "filter a CSV" use case
+        /// (`input.filter(r => r.status === "ERROR")`). Reuses the quote-aware CSVParser.
+        case csv
     }
 
     /// Convert `content` of `format` into the JSON string that `run`/`runAsync` bind to
@@ -107,6 +111,16 @@ public enum JSTransform {
             var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             if content.hasSuffix("\n"), lines.last == "" { lines.removeLast() }
             guard let data = try? JSONSerialization.data(withJSONObject: lines),
+                  let s = String(data: data, encoding: .utf8) else { return "[]" }
+            return s
+        case .csv:
+            let parsed = CSVParser.parse(content)
+            let objects: [[String: String]] = parsed.rows.map { row in
+                var obj: [String: String] = [:]
+                for (i, key) in parsed.header.enumerated() where i < row.count { obj[key] = row[i] }
+                return obj
+            }
+            guard let data = try? JSONSerialization.data(withJSONObject: objects),
                   let s = String(data: data, encoding: .utf8) else { return "[]" }
             return s
         }

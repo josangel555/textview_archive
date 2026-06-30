@@ -116,4 +116,21 @@ final class JSTransformTests: XCTestCase {
     func test_jsonInputFormat_isIdentity() {
         XCTAssertEqual(try? JSTransform.run(content: "[10,20,30]", as: .json, expression: "input[1]").get(), "20")
     }
+
+    // TSK-698 slice 4b — CSV input (header-keyed row objects, via CSVParser).
+
+    func test_csvInput_filtersRowsByColumn() {
+        let csv = "name,status\nalice,OK\nbob,ERROR\ncarol,ERROR\n"
+        let r = JSTransform.run(content: csv, as: .csv,
+                                expression: #"input.filter(r => r.status === "ERROR").map(r => r.name)"#)
+        XCTAssertEqual(try? r.get(), "[\n  \"bob\",\n  \"carol\"\n]")
+    }
+
+    func test_csvInput_rowCount_excludesHeader() {
+        XCTAssertEqual(try? JSTransform.run(content: "a,b\n1,2\n3,4\n", as: .csv, expression: "input.length").get(), "2")
+    }
+
+    func test_csvInput_objectKeyedByHeader() {
+        XCTAssertEqual(try? JSTransform.run(content: "x,y\n10,20", as: .csv, expression: "input[0].y").get(), "\"20\"")
+    }
 }
