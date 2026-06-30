@@ -277,6 +277,7 @@ run_webview_tests() {
     --filter ViewerUITests.SettingsTerminalColorSchemeHostingTests \
     --filter ViewerUITests.SidebarFilesToggleHostingTests \
     --filter ViewerUITests.ShoulderRailEmptyHidingHostingTests \
+    --filter ViewerUITests.AudioPlayerHostIntegrationTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \

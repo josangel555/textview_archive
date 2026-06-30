@@ -734,7 +734,9 @@ private struct AudioPreview: View {
 
 /// AppKit hosting layer for the system audio transport. Opaque representable —
 /// kept out of the SwiftUI tree while the editor overlay is up (see AudioPreview).
-private struct AudioPlayerHost: NSViewRepresentable {
+/// Internal (not private) so the TSK-1308 integration test can host it and assert it
+/// binds to the app-level persistent controller (music survives session/tab switch).
+struct AudioPlayerHost: NSViewRepresentable {
     let url: URL
     func makeNSView(context: Context) -> AVPlayerView {
         let v = AVPlayerView()
