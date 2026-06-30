@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-30
 
 ### Added
+- **Multi-sheet Excel (.xlsx).** Opening a workbook with more than one sheet now shows a sheet-tab strip above the table — click a tab to view that sheet. Previously only the first sheet was shown. (Read-only viewer; each sheet's cells are its displayed/computed values.)
 - **Convert Image (View ▸ Convert Image…)** — over an open image, pick a target format (PNG / JPEG / HEIC / BMP / GIF / TIFF) and, for lossy formats, a quality level; Convert opens the re-encoded image in a new tab. Runs off the main thread so a large image never freezes the window.
 - **Extract Audio from Video (View ▸ Extract Audio from Video…)** — over a video, pick an audio format (WAV / AIFF / CAF / AAC / MP3) and bit rate; it strips the video and opens just the audio track in a new tab (uses your installed ffmpeg).
 - **Convert Audio (View ▸ Convert Audio…)** — over an audio file, change its format/quality (lossless PCM or lossy AAC/MP3 with a bit-rate choice) → the converted file opens in a new tab. Same panel as Extract Audio.
@@ -39,7 +40,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Spikes/owner-decisions:** CSV viewport-paging (1139 — windowing conflicts with the table's filter/sort/find feature set) and the ⌘K render-panel commands (1335 pt2 — NSAlert→panel refactor) surfaced as tradeoffs rather than churned.
 - **Lessons:** verify-before-build (caught + reverted a duplicate encoding converter — grep the feature noun broadly, incl. main.swift menus); a bare Swift-6.1.2 VM build poisons `.build` for the 6.3 test lane.
 - **Perf/rust-core:** git porcelain-parser proptest hardening (no-panic + count-bounds); MEASURED the "MD open laggy" regression (TSK-598) on the VM → a ~334ms CoreAnimation commit stall (same class as Page-Up jank), host render-gen + mermaid ruled out; image-editor off-main render landed (above).
-- **Spreadsheet (TSK-1141):** design + host-model foundation for multi-sheet `.xlsx` — `TextFile` now retains all sheets and re-derives the active sheet on switch (String-contract-safe, additive); the sheet-tabs view is the remaining render slice. Not yet user-visible.
+- **Spreadsheet (TSK-1141):** multi-sheet `.xlsx` shipped end-to-end (design-first) — `TextFile` retains all sheets + re-derives the active sheet on switch (String-contract-safe, additive, host-tested), and `SpreadsheetView` renders the sheet-tab strip (VM-render-validated via an in-process hosting test). User-facing entry above.
 
 ## 2026-06-29
 
