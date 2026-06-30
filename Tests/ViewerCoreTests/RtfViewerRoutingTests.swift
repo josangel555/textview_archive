@@ -20,10 +20,12 @@ final class RtfViewerRoutingTests: XCTestCase {
         try? FileManager.default.removeItem(at: tmp)
     }
 
-    func test_rtf_categorizedAsPlainText() {
+    func test_rtf_categorizedAsMarkdown() {
+        // TSK-1338: .rtf now routes to .markdown so its extracted formatting
+        // (bold/italic + paragraphs) RENDERS, instead of the flat source view.
         XCTAssertEqual(
             FileTypeDetector.category(for: tmp.appendingPathComponent("doc.rtf")),
-            .plainText, "an .rtf routes to the source/plainText view")
+            .markdown, "an .rtf renders as Markdown (bold/italic visible)")
     }
 
     func test_rtf_load_extractsPlainText_andIsReadOnly() throws {
