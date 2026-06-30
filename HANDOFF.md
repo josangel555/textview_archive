@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — 4 render epics validated + walkthrough illustrations on-screen; T5-pixel render now OWNER-BLOCKED on the VM screencapture TCC re-grant (TSK-1334) (2026-06-30)
+# Handoff — 6 epics/features validated; T5-pixel render owner-blocked (TSK-1334 TCC re-grant), but the WEBVIEW + host lanes remain OPEN — render is NOT exhausted (2026-06-30)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `74796e9f` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `29e4c48b` (verify `git log -1`)
 
 ## Mission
 Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
@@ -27,14 +27,19 @@ Plus:
 - **TSK-1119 walkthrough illustrations ON SCREEN (review, `111bcab3`).** WalkthroughDiagramOverlay renders .ascii/.image + caption (occlusion-free, VM-validated); .mermaid shows source as interim. Slice 2 (rendered Mermaid) = TSK-1333.
 - **TSK-1333 Mermaid-render foundation built; T5 owner-blocked.** WalkthroughMermaidPage (page builder, host-tested, `9482349e`) + WalkthroughMermaidWebView (WebView component, mount-validated on the VM, `62c400c6`). The occlusion verification needs T5-pixel.
 - **NEW `pixel` targeted-T5 mode (`74796e9f`)** — `test-in-vm.sh pixel --filter <PixelSuite>` runs ONE T5 suite in ~50s (no full-`all` kill). BUT discovered the T5 screencapture is **TCC-DENIED** (owner-only re-grant, SIP) → **TSK-1334 filed**; ALL T5-pixel CAPTURE is owner-blocked until re-granted.
+- **★ TSK-958/1163 Universal Paste — VALIDATED (`c32ee925`).** Edit ▸ Paste as New Document (⇧⌘V) → dispatch each clipboard kind to the right viewer (image/table/text/file). Was wrongly held at review-as-VM-only; host-testable via an INJECTABLE NSPasteboard (UniversalPasteActionTests 3/0).
+- **★ TSK-1146 Spell/LSP squiggles — VALIDATED (`29e4c48b`).** Editor spell underlines + LSP diagnostics; logic host-tested at every layer + the RENDER webview-guarded (EditorDiagnosticsWebViewTests: setDiagnostics → `.cm-lintRange` in the live CM6 DOM, VM 2/0). The webview lane is NOT TCC-blocked (≠ T5 screencapture).
+- **TSK-1136/463 LSP autocomplete — BUILT, at review.** Editor invocation wired end-to-end (`868b4c74`+`2716669a`); render-validation = a focused rebundle session (expose `startCompletion` in entry.js + `npm run build` → a webview render guard) + the live-app bridge round-trip (precisely scoped on TSK-1136).
 
-## ⭐ NEXT ACTION — render is currently EXHAUSTED for the agent (drained / owner-blocked / off-limits) → host P2, OR await the TCC re-grant
-NOT the banned framing — render was BUILT + VM-validated ALL session (4 epics + illustrations). The lanes are now genuinely exhausted:
-- **In-process render: DRAINED** (the 4 tool-panel epics + TSK-1119 illustrations — all validated).
-- **T5-pixel render: OWNER-BLOCKED (TSK-1334).** The screencapture grant is TCC-denied (owner-only, SIP — the agent can't INSERT into TCC.db). When the owner re-grants Screen-Recording to the xctest runner on the VM, the T5-pixel vein REOPENS: `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh pixel --filter ViewerUITests.<Suite>` (the new targeted-T5 mode), then land **TSK-1333**'s atomic unit (wire the mermaid WebView occlusion-safe `compositingGroup().zIndex` + an MDV_UI_SCENE + a PixelTestCase mirroring ClaudeMonitorVisualRegressionTests — all scoped on the ticket) + TSK-955/1149.
-- **AX-interaction render: OFF-LIMITS** (the one excepted tier): TSK-924/1187 (CSV rect-select), TSK-1139/1141/1146.
-So the agent-workable vein RIGHT NOW is **host P2 (clean host-gate work):** TSK-382 (DocumentModel memory perf — measure-first), TSK-538 (rust-core audit follow-ups), TSK-764 (git reconciliation), TSK-441–445 (CI infra) — OR re-verify/reconcile toward the owner-close queue.
-**When TSK-1334 (the TCC re-grant) lands, PRIORITIZE the reopened T5-pixel vein — TSK-1333 first** (fully scoped + foundation-built + the `pixel` lane ready).
+## ⭐ NEXT ACTION — render is NOT exhausted: the WEBVIEW + host-completable lanes are OPEN; only T5-SCREENCAPTURE is owner-blocked + AX off-limits
+**CRITICAL — DO NOT re-make the "render exhausted → host P2" mistake.** A prior version of this NEXT said exactly that; it was the SAME premature error the owner banned, and it was DISPROVEN this session by validating TSK-958 (universal paste, host) + TSK-1146 (spell squiggles, webview) AFTER it was written. The lanes:
+- **WEBVIEW lane: OPEN + agent-runnable** — in-process WKWebView + JS DOM introspection (`MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_WEBVIEW_FILTER=ViewerUITests.<Suite> bash scripts/test-in-vm.sh webview`). NOT TCC-blocked (≠ the T5 screencapture lane). Validated TSK-1146's diagnostics render via it (EditorDiagnosticsWebViewTests, the FoldGutter pattern: load codemirror.html → cmDispatch → query the CM6 DOM). Next render = un-drained webview-lane (CM6/rendered) items.
+- **Host-completable feature logic: OPEN** — injectable-seam actions (universal paste was one). "AppKit/pasteboard = VM-only" is OFTEN FALSE — look for an injectable seam (NSPasteboard arg, etc.).
+- **VERIFY-BEFORE-BUILD (recovered 2 epics this session):** several items sit at review wrongly labeled "VM-only" but are actually host/webview-validatable (TSK-1163 was). `task_get` + grep the seam before assuming a render item is un-agent-workable.
+- **T5-SCREENCAPTURE (occlusion/pixel): OWNER-BLOCKED (TSK-1334)** — Screen-Recording grant TCC-denied (owner-only, SIP). When re-granted, `test-in-vm.sh pixel --filter <Suite>` (the new targeted-T5 mode) reopens it → land **TSK-1333** (mermaid occlusion, fully scoped + foundation-built) + TSK-955/1149.
+- **AX-interaction: OFF-LIMITS** (the one excepted tier): TSK-924/1187, TSK-1139/1141.
+- **Focused-session item:** TSK-1136/463 completion render — expose `startCompletion` (entry.js) + `npm run build` rebundle → a webview render guard (scoped on TSK-1136).
+- **Host P2 (legit, but NOT as an escape from render):** TSK-382/538/764. Work the open webview/host RENDER lanes first.
 
 ## Owner-input-gated (the genuine exceptions — task_park, don't block)
 - Parked: TSK-1200 (scroll: real-bug-vs-harness-false — needs owner's real screen), TSK-1322 (paste repro), TSK-1320 (annotations keep/remove). Flips: TSK-838/1215/1202.
@@ -50,7 +55,7 @@ So the agent-workable vein RIGHT NOW is **host P2 (clean host-gate work):** TSK-
 - **The INT-126 lease sweep re-resets long-lived `progress` items to `reported`** — `review` sticks, `progress` doesn't. To permanently drain a host-done/render-tail epic, take it to review (host done) with the render UI tracked as a child to BUILD on the VM.
 
 ## Tracker (tasked / claude-mdv)
-VALIDATED this session: TSK-698 · TSK-1161 · TSK-1160 · TSK-1176 · TSK-1032 (harness-false + guarded). REVIEW: TSK-1119 (illustrations on-screen; mermaid-render = TSK-1333). PARKED: TSK-1155 (architecture) · TSK-1333 (T5-pixel owner-TCC-blocked → TSK-1334) · TSK-1182/1200/1320/1322 + flips 838/1215/1202 (owner). FILED: TSK-1332 (UAT-harness fix) · TSK-1333 (mermaid T5) · **TSK-1334 (VM screencapture TCC re-grant — OWNER ACTION, blocks ALL T5-pixel)**. NEW infra: `pixel` targeted-T5 mode (`74796e9f`). ~57 commits this run.
+VALIDATED this session (6): TSK-698 · TSK-1161 · TSK-1160 · TSK-1176 · TSK-958/1163 (universal paste) · TSK-1146 (spell/LSP squiggles) · + TSK-1032 (harness-false + guarded). REVIEW: TSK-1119 (illustrations on-screen; mermaid-render = TSK-1333) · TSK-1136/463 (LSP autocomplete built; render = focused rebundle session). PARKED: TSK-1155 (architecture) · TSK-1333 (T5-pixel owner-TCC-blocked → TSK-1334) · TSK-1182/1200/1320/1322 + flips 838/1215/1202 (owner). FILED: TSK-1332 (UAT-harness) · TSK-1333 (mermaid T5) · **TSK-1334 (VM screencapture TCC re-grant — OWNER ACTION, blocks ALL T5-pixel)**. NEW infra: `pixel` targeted-T5 mode (`74796e9f`). ~62 commits this run.
 
 ## How to resume
 Read this + `BACKLOG.md` + `git log -1`. Confirm main gate-green (`bash scripts/test-headless-gate.sh` — reliably green now). The clean in-process render template is DONE (4 epics validated). Take the NEXT-ACTION vein: **T5-pixel render** (TSK-1119 overlay = highest value — build occlusion-safe `compositingGroup().zIndex` + T5-validate, NOT in-process [false-green trap]) OR **host P2** (TSK-382/538/764). Render is your lane (build + VM-validate); only AX-interaction tests + owner-gated items are off-limits. Do NOT re-pick the validated epics or blind-build the occlusion/AX items via the in-process test.
