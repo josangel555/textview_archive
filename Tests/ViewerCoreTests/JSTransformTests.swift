@@ -69,4 +69,29 @@ final class JSTransformTests: XCTestCase {
     func test_sandbox_noProcess() {
         XCTAssertEqual(ok("{}", "typeof process"), "\"undefined\"")
     }
+
+    // TSK-698 slice 2 — off-main exec + soft timeout (owner-approved approach B).
+
+    func test_runAsync_normalScript_returnsResult() async {
+        let r = await JSTransform.runAsync(
+            json: "[1,2,3]", expression: "input.map(x => x * 2)", timeout: 2.0)
+        XCTAssertEqual(try? r.get(), "[\n  2,\n  4,\n  6\n]")
+    }
+
+    func test_runAsync_runawayScript_softTimesOut_withoutHanging() async {
+        let start = Date()
+        // A CPU-bound loop that far exceeds the 0.1s deadline (can't be dead-code-
+        // eliminated — `s` is returned) but is BOUNDED, so the test leaks no permanent
+        // thread (it ends in ~1s rather than spinning forever like `while(true){}`).
+        let r = await JSTransform.runAsync(
+            json: "0",
+            expression: "(function(){ let s = 0; for (let i = 0; i < 5e8; i++) { s += i; } return s; })()",
+            timeout: 0.1)
+        let elapsed = Date().timeIntervalSince(start)
+        guard case .failure(.timedOut) = r else {
+            return XCTFail("a runaway script must soft-time-out, got \(r)")
+        }
+        XCTAssertLessThan(elapsed, 5.0,
+            "the soft timeout must return promptly, not block on the full script")
+    }
 }
