@@ -245,6 +245,16 @@ run_tests() {
 run_webview_tests() {
   log "MDV_RUN_WEBVIEW_TESTS=1 swift test (WebView lane, serial)"
   set +e
+  # Targeted single-suite run (MDV_WEBVIEW_FILTER) — validate ONE WebView/hosting suite
+  # without the full ~20-suite serial lane (which can exceed a short CI/agent timeout).
+  if [[ -n "${MDV_WEBVIEW_FILTER:-}" ]]; then
+    log "targeted webview filter: ${MDV_WEBVIEW_FILTER}"
+    MDV_RUN_WEBVIEW_TESTS=1 swift test --filter "${MDV_WEBVIEW_FILTER}" 2>&1 | tee "$WEBVIEW_TXT"
+    local frc=${PIPESTATUS[0]}
+    set -e
+    write_junit "$WEBVIEW_TXT" "$WEBVIEW_XML"
+    return $frc
+  fi
   # SERIAL (no --parallel): each live-WKWebView suite realizes WebContent+GPU+
   # Networking helper processes, each holding many fds. Run in parallel, the
   # concurrent xctest workers multiply that past the open-files limit → an EMFILE
@@ -274,6 +284,7 @@ run_webview_tests() {
     --filter ViewerUITests.BlockPatchAlignmentProbeTests \
     --filter ViewerUITests.RenderedFindBarTests \
     --filter ViewerUITests.RenderedFindClearWebViewTests \
+    --filter ViewerUITests.ScriptConsoleHostingTests \
     2>&1 | tee "$WEBVIEW_TXT"
   local rc=${PIPESTATUS[0]}
   set -e
