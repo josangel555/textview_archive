@@ -1,4 +1,5 @@
 import Foundation
+import ViewerKit
 
 // Per-file view-mode lock (TSK-1110 SRP slice; TSK-811) — the ModeBar lock-icon
 // state + toggle. The `viewModeLocks` store stays on DocumentModel. Behavior-
@@ -19,5 +20,29 @@ extension DocumentModel {
         guard let url = currentURL else { return }
         viewModeLocks.toggle(url, mode: currentViewMode)
         objectWillChange.send()
+    }
+
+    // TSK-1152: the per-FILENAME "Lock View As" affordance in the file-nav —
+    // lock/unlock an ARBITRARY file (by URL, open or not), distinct from the
+    // current-file ModeBar lock above. Reopening the file re-applies the locked
+    // mode (subject to availability, via ViewModeLockStore.resolvedMode). All
+    // three publish so a file-nav lock indicator + the menu state update at once.
+
+    /// Lock `url` to `mode` (the file-nav "Lock View As → <mode>" choice).
+    public func lockViewMode(_ url: URL, to mode: ViewMode) {
+        viewModeLocks.lock(url, to: mode)
+        objectWillChange.send()
+    }
+
+    /// Clear any view-mode lock on `url` (the file-nav "Unlock View As").
+    public func unlockViewMode(_ url: URL) {
+        viewModeLocks.clear(for: url)
+        objectWillChange.send()
+    }
+
+    /// Whether `url` (any file) carries a view-mode lock — drives the file-nav
+    /// lock indicator + the Lock/Unlock menu state.
+    public func viewModeIsLocked(_ url: URL) -> Bool {
+        viewModeLocks.isLocked(for: url)
     }
 }

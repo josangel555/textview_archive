@@ -1,5 +1,6 @@
 import SwiftUI
 import ViewerCore
+import ViewerKit
 
 struct SidebarView: View {
     @ObservedObject var sidebar: SidebarModel
@@ -1072,6 +1073,20 @@ private struct FileRowContextMenu: View {
                 ForEach(model.openAsCategories(for: node.url), id: \.self) { cat in
                     Button(ModeBar.categoryLabel(cat)) {
                         model.openAs(url: node.url, category: cat)
+                    }
+                }
+            }
+            // TSK-1152: per-filename "Lock View As" — PERSIST a view mode for
+            // this file so REOPENING re-applies it (distinct from the one-time
+            // "Open As…" above). "Unlock" shows once a lock is set.
+            if model.viewModeIsLocked(node.url) {
+                Button("Unlock View As") { model.unlockViewMode(node.url) }
+            } else {
+                Menu("Lock View As…") {
+                    ForEach(ViewModeOptions.availableModes(for: node.url), id: \.self) { mode in
+                        Button(mode.displayName) {
+                            model.lockViewMode(node.url, to: mode)
+                        }
                     }
                 }
             }
