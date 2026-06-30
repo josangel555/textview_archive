@@ -328,6 +328,16 @@ public final class ActionHistory: ObservableObject {
         return action.label
     }
 
+    /// Jump the history to `target` applied actions — the live jump-to-step timeline
+    /// (TSK-1155). Undo/redo step-by-step until the cursor reaches `target` (clamped to
+    /// 0...order.count). Each step reuses undo()/redo(), so every action's own revert/apply
+    /// runs — identical safety to stepping one at a time. No-op if already at `target`.
+    public func jump(toCursor target: Int) {
+        let clamped = max(0, min(order.count, target))
+        while cursor > clamped { if undo() == nil { break } }
+        while cursor < clamped { if redo() == nil { break } }
+    }
+
     /// Drop the entire history (e.g. on document close / reset). Does NOT
     /// revert anything — purely clears the record.
     public func clear() {

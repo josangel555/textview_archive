@@ -143,6 +143,34 @@ final class ActionHistoryTests: XCTestCase {
         XCTAssertEqual(history.redoLabel, "Set one")
     }
 
+    // MARK: - jump-to-step (TSK-1155 live timeline)
+
+    func testJumpToCursor_revertsAndReappliesToStep() {
+        let box = Box(0)
+        let history = ActionHistory()
+        history.execute(SetValueAction(box: box, to: 1, label: "1", category: .other))
+        history.execute(SetValueAction(box: box, to: 2, label: "2", category: .other))
+        history.execute(SetValueAction(box: box, to: 3, label: "3", category: .other))
+        XCTAssertEqual(box.value, 3)
+        XCTAssertEqual(history.appliedCount, 3)
+
+        history.jump(toCursor: 1)   // undo 2 → state after action "1"
+        XCTAssertEqual(box.value, 1)
+        XCTAssertEqual(history.appliedCount, 1)
+
+        history.jump(toCursor: 3)   // redo 2 → back to the tip
+        XCTAssertEqual(box.value, 3)
+        XCTAssertEqual(history.appliedCount, 3)
+
+        history.jump(toCursor: 0)   // undo all → baseline
+        XCTAssertEqual(box.value, 0)
+        XCTAssertEqual(history.appliedCount, 0)
+
+        history.jump(toCursor: 99)  // clamps to order.count → all reapplied
+        XCTAssertEqual(box.value, 3)
+        XCTAssertEqual(history.appliedCount, 3)
+    }
+
     // MARK: - coalescing
 
     func testAdjacentSameCategoryCoalesces() {
