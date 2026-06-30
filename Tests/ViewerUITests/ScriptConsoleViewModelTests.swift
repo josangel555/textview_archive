@@ -51,4 +51,13 @@ final class ScriptConsoleViewModelTests: XCTestCase {
         XCTAssertTrue(ScriptConsoleViewModel.describe(.unserializableResult).contains("serialize"))
         XCTAssertTrue(ScriptConsoleViewModel.describe(.timedOut(2)).contains("timed out"))
     }
+
+    func test_defaultInputFormat_fromExtension() {
+        XCTAssertEqual(ScriptConsoleViewModel.defaultInputFormat(forURL: URL(fileURLWithPath: "/x/data.csv")), .csv)
+        XCTAssertEqual(ScriptConsoleViewModel.defaultInputFormat(forURL: URL(fileURLWithPath: "/x/DATA.TSV")), .csv)
+        XCTAssertEqual(ScriptConsoleViewModel.defaultInputFormat(forURL: URL(fileURLWithPath: "/x/app.log")), .lines)
+        XCTAssertEqual(ScriptConsoleViewModel.defaultInputFormat(forURL: URL(fileURLWithPath: "/x/notes.txt")), .lines)
+        XCTAssertEqual(ScriptConsoleViewModel.defaultInputFormat(forURL: URL(fileURLWithPath: "/x/data.json")), .json)
+        XCTAssertEqual(ScriptConsoleViewModel.defaultInputFormat(forURL: nil), .json)
+    }
 }

@@ -64,4 +64,14 @@ public final class ScriptConsoleViewModel: ObservableObject {
             return "Script timed out after \(seconds)s — check for an infinite loop."
         }
     }
+
+    /// Pick a sensible default input format from the active document's file extension
+    /// (so opening the console on a .csv / .log buffer starts in the right mode).
+    public static func defaultInputFormat(forURL url: URL?) -> JSTransform.InputFormat {
+        switch url?.pathExtension.lowercased() {
+        case "csv", "tsv": return .csv
+        case "log", "txt": return .lines
+        default: return .json
+        }
+    }
 }
