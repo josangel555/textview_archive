@@ -427,6 +427,18 @@ public struct ContentView: View {
                 TaskRunnerView(vm: vm, onClose: { model.showTaskRunner = false })
             }
         }
+        // TSK-1176 — the Terminal Command Palette (opened via model.openTerminalCommandPalette()).
+        .sheet(isPresented: $model.showTerminalCommandPalette) {
+            if let vm = model.terminalCommandPaletteVM {
+                TerminalCommandPaletteView(
+                    vm: vm,
+                    onInsert: { command in
+                        model.insertTerminalFavorite(command)
+                        model.showTerminalCommandPalette = false
+                    },
+                    onClose: { model.showTerminalCommandPalette = false })
+            }
+        }
     }
 
     // MARK: - Body row (sidebar accordion + content + split)

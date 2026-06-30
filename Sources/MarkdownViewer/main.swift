@@ -717,6 +717,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openTaskRunner()
     }
 
+    // TSK-1176 — View ▸ Terminal Command Palette: search history + favorites, insert at prompt.
+    @objc func openTerminalCommandPalette(_ sender: Any?) {
+        model.openTerminalCommandPalette()
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1893,6 +1898,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "")
         taskRunnerItem.target = self
         viewMenu.addItem(taskRunnerItem)
+
+        // TSK-1176 — View ▸ Terminal Command Palette: search history + favorites, insert at prompt.
+        let termPaletteItem = NSMenuItem(
+            title: "Terminal Command Palette…",
+            action: #selector(openTerminalCommandPalette(_:)),
+            keyEquivalent: "")
+        termPaletteItem.target = self
+        viewMenu.addItem(termPaletteItem)
 
         // TSK-1116 — View ▸ Focus Mode: one-click workspace presets that pin the
         // sidebar to an activity's panel set + preferred lens (FocusWorkMode).

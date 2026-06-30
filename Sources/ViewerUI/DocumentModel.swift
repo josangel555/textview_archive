@@ -178,6 +178,12 @@ public final class DocumentModel: ObservableObject {
     /// The Task Runner controller, seeded by discovering tasks from the active project root.
     @Published public var taskRunnerVM: TaskRunnerViewModel?
 
+    /// TSK-1176 — the Terminal Command Palette (search history + favorites). Transient;
+    /// driven by `openTerminalCommandPalette()`.
+    @Published public var showTerminalCommandPalette = false
+    /// The palette controller, seeded over the live favorites + command history.
+    @Published public var terminalCommandPaletteVM: TerminalCommandPaletteViewModel?
+
     /// Terminal ANSI colour theme name (TSK-1312) — drives `TerminalPalette`'s
     /// 16-colour palette. Persisted; default "Default" (the muted shipped palette).
     /// "Classic (xterm)" gives standard vivid colours (closer to what CLI tools like
