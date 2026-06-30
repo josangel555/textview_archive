@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — owner-intake drained + host slices built; render/UI work continues ON THE VM (2026-06-29)
+# Handoff — render epics draining via the console template: 698+1161 VALIDATED, 1160 committed, 1155 parked (2026-06-29)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `af1149bb` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `95ed8702` (verify `git log -1`)
 
 ## Mission
 Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → implement → host-test → host-gate (`bash scripts/test-headless-gate.sh`) → commit per item; land rebase+ff; keep main gate-green; fold docs into the item's commit. Cron canonical = `docs/TASK_WORKFLOW.md §7`.
@@ -9,19 +9,21 @@ Autonomous drain loop (cron). Work INLINE, one item/firing: read-first → imple
 ## ⚠️ CORRECTION THAT RESET THIS HANDOFF (owner, 2026-06-29) — READ FIRST
 A prior version of this handoff declared a "host-testable-seam vein DRAINED" and routed all render/UI work to a "VM/owner venue." **That framing was WRONG and is now banned.** The owner's standing model: **the VM is UP and the ENTIRE UI/render lane is agent-workable — build AND VM-validate it. The ONLY off-limits tier is AX-driven tests.** There is NO "host-testable vs render" split in what to work; render/UI/VM items are first-class drain targets you BUILD and VALIDATE (on the VM), not hand to the owner. The instructions that caused the misread were hardened this session (CLAUDE.md new 2026-06-29 directive + §4 self-validation; TASK_WORKFLOW §4 + §7 cron; the live cron prompt). The render-confirm directive is satisfied BY VM-validating, not by leaving things at review.
 
-## What shipped this session (host-tested + gate-verified)
-- **★ TSK-698 Script Console — VALIDATED (the full build→VM-validate→validated flow; THE PROOF the corrected render directive works).** A complete, user-reachable feature (View ▸ Script Console): a JS query/transform console over JSON / log lines / CSV, off-main with a soft timeout, Apply→opens output in a new tab. VM-render-validated (`ScriptConsoleHostingTests` on the VM webview lane — caught a real test bug) + comprehensively host-tested (JSTransform 22 · ViewModel 6 · DocumentModel glue 4); self-validated. ~10 commits `17845599`…`af1149bb`. Two reusable test-infra wins: registered the suite in `run_webview_tests`' nightly list + an `MDV_WEBVIEW_FILTER` override to run ONE WebView suite without the ~20-suite serial lane.
-- **Owner intake TSK-1302–1327: 14 → review**, 5 triaged, 2 parked (TSK-1200 scroll, TSK-1322 paste — genuine owner-input items), 1 spike (TSK-1320).
-- **Host slices (7):** TSK-1308 audio-persistence (`52d37b7f`) · TSK-1321 overlay-selection model (`7ff73246`) · TSK-723 structural-query grammar (`694a4700`) · **TSK-698 script console: slice 2 off-main exec (`17845599`), slice 4 log-line input (`bfbcf0d9`), slice 3a controller (`1b8d8049`), slice 4b CSV input (`5cf36751`)** — the console is host-complete; its SwiftUI panel (slice 3b) is the next VM build.
-- **Reconciled** to review (host engines done, render UIs = the next VM build, tracked as children): TSK-722 (→ child TSK-1160), TSK-723 (→ TSK-1161), TSK-343 (history; → revert child TSK-1331), TSK-910 (→ TSK-1182). TSK-703 coordinator done (UI 1155).
-- **Dogfood:** TSK-1329/1330 → `docs/TRACKER_FEEDBACK.md`.
+## What shipped this session (render-drain via the validated console template)
+Render is FIRST-CLASS agent work — built + VM-validated, not handed to the owner. The console
+template — **view-model (host) → SwiftUI panel → DocumentModel wiring → menu trigger →
+in-process NSHostingView VM-hosting-test → validated** — is now a repeatable rhythm. Epics:
+- **★ TSK-698 Script Console — VALIDATED.** View ▸ Script Console: JS query/transform over JSON/log/CSV, off-main, Apply→new-tab. (`17845599`…`af1149bb`)
+- **★ TSK-1161 Structural Search — VALIDATED.** View ▸ Structural Search: AST query (DSL) over the active buffer → ranged-match list. (`d580b087` + `6eb4e1b0`)
+- **TSK-1160 Task Runner — COMMITTED (`95ed8702`); VM-validation in flight.** View ▸ Task Runner: discover package.json/Cargo/Makefile tasks → Run → captured output (bounded, off-main). View-model `e3c97298`, UI `95ed8702`.
+- **TSK-1155 Action-history timeline — jump-to-step primitive landed (`06d51f11`); PARKED.** The live-timeline UI needs the action-history INTEGRATION (coordinator not wired into the app; unify-vs-separate-undo = parent TSK-703's architecture decision) — owner-design, task_park'd.
+- Earlier this session: owner intake TSK-1302–1327 (14→review), host slices (audio-persistence/overlay-selection/structural grammar), dogfood TSK-1329/1330.
 
-## ⭐ NEXT ACTION — BUILD THE RENDER UIs ON THE VM
-These are NOT "owner's lane" — build each + VM-validate (`scripts/test-in-vm.sh`; webview lane for WebView render, T4/T5 for SwiftUI/AppKit), drive to validated. TSK-698 is the worked template (panel + view-model + DocumentModel wiring + menu trigger + `ScriptConsoleHostingTests` VM-validation). Next:
-- **TSK-1161** (structural-search UI) — the natural next: its engine + StructuralQueryParser grammar were built this session, so most context. A query field + results list binding to `StructuralSearchEngine.structuralSearch` over the active file's tree-sitter tree (the jump-to-match is the extension).
-- The other epic UI children: **TSK-1160** (runner panel), **TSK-1155** (action-history timeline), **TSK-1182** (diff single-Text — OWNER-PARKED on the one-Text-vs-NSTextView design call).
-- The intake render remainder (TSK-1302 layout, 1310 vector-text, 1316/1317 drag, 1318/1319 menu, 1326 walkthroughs) — build + VM-validate.
+## ⭐ NEXT ACTION — continue the render-drain via the console template
+- **Finish TSK-1160:** the VM-validation (`MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_WEBVIEW_FILTER=ViewerUITests.TaskRunnerHostingTests bash scripts/test-in-vm.sh webview`) is in flight — on green, `task_validate` TSK-1160 → validated (committed @`95ed8702`; check `$SP/scratchpad/vm_runner.log`).
+- The intake render remainder (TSK-1302 layout, 1310 vector-text, 1316/1317 drag, 1318/1319 menu, 1326 walkthroughs) — build + VM-validate via the template.
 - **TSK-1331** (history Revert) — data-safety-sensitive (guard unsaved edits); build with a data-safety review + VM-validate.
+- OWNER-PARKED (don't blind-build): TSK-1155 (action-history integration architecture), TSK-1182 (diff single-Text-vs-NSTextView).
 
 ## Owner-input-gated (the genuine exceptions — task_park, don't block)
 - Parked: TSK-1200 (scroll: real-bug-vs-harness-false — needs owner's real screen), TSK-1322 (paste repro), TSK-1320 (annotations keep/remove). Flips: TSK-838/1215/1202.
@@ -37,7 +39,7 @@ These are NOT "owner's lane" — build each + VM-validate (`scripts/test-in-vm.s
 - **The INT-126 lease sweep re-resets long-lived `progress` items to `reported`** — `review` sticks, `progress` doesn't. To permanently drain a host-done/render-tail epic, take it to review (host done) with the render UI tracked as a child to BUILD on the VM.
 
 ## Tracker (tasked / claude-mdv)
-TSK-698 progress (host-complete; 3b = next VM build) · TSK-722/723/343 review (host done; render children to build) · TSK-1160/1161/1155/1182/1331 = render UIs to build on the VM · TSK-1200/1322/1320 parked (owner) · TSK-1329/1330 filed. ~22 commits this run.
+TSK-698 + TSK-1161 VALIDATED · TSK-1160 committed (`95ed8702`; VM-validation in flight → validate) · TSK-1155 jump primitive landed + PARKED (architecture) · TSK-1182/1200/1320/1322 parked (owner) · TSK-722/723/343/703 review (host done; render children built). ~30+ commits this run.
 
 ## How to resume
 Read this + `BACKLOG.md` + `git log -1`. Confirm main gate-green (`bash scripts/test-headless-gate.sh`). Then BUILD a render UI from NEXT ACTION on the VM (build + VM-validate via `scripts/test-in-vm.sh`, drive to validated) — render is your lane, not the owner's. Only AX tests + the genuine owner-input items are off-limits.
