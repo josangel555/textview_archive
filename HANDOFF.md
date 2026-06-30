@@ -1,7 +1,21 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — render-VM lane characterized + drained: 7 validated + TSK-1152 (Lock View As) built + TSK-373 reconciled; hard tail scoped (2026-06-30)
+# Handoff — multi-format viewer ARC complete (docx/rtf/xlsx/ods) + false-green class swept; clean veins drained (2026-06-30)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `b202eb6a`+ (TSK-1152 lock badge; verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `65daa55a` (verify `git log -1`)
+
+## ⛳ LATEST CHECKPOINT (READ FIRST — supersedes the older checkpoint below)
+
+**This stretch shipped 8 features/fixes (all host-tested w/ teeth, gate-green, committed per-item):**
+- `3cb83cc3` TSK-942 Copy Reference Edit-menu item + ⌘⌥⇧C shortcut · `1badd840` TSK-1337 webview-lane drift fix + drift-detector · `60a0f9c4` TSK-1317 drag terminal icon → dock pane · `d62390dd` TSK-1326 "New Walkthrough" seeds an editable starter · `43557177` TSK-1177 terminal tab-strip shoulder border.
+- **MULTI-FORMAT VIEWER ARC (now complete):** `365b5ddf` TSK-1338 .docx renders structured Markdown (headings/lists/bold) · `6cbdd38a` .rtf renders bold/italic · `192ae9f0` TSK-1339 **.xlsx/.ods open as a GRID not raw TSV text** (they were missing from `tableExtensions` → false-green: TSK-1141's sheet-strip was unreachable) · `65daa55a` multi-sheet .ods sheet-tab strip. So docx/rtf/xlsx/ods + csv/tsv all open correctly; TSK-1145 epic → recommend owner-close.
+
+**KEY LESSON this stretch (now in LESSONS.md):** a `*HostingTests` suite validates a view RENDERS, not that the app REACHES it — a "validated" feature can ship UNREACHABLE (xlsx opened as TSV text; the sheet-strip was dead). Always also assert the live trigger/route (menu `#selector`, `ViewModeOptions.defaultMode`, model trigger). Swept all hosting-tested render features → xlsx was the one real false-green (fixed); feed reader is unreachable-but-owner-parked.
+
+**STATE: clean high-value inline-buildable veins are DRAINED.** The owner intake (TSK-1302–1327), the multi-format viewer, the host-engine epics (698/722/723), and the false-green class are all done/validated. The remainder is:
+- **Owner-gated (parked, surfaced):** TSK-1334 (VM Screen-Recording grant — the HIGHEST-leverage unblock; opens the whole T5 occlusion-pixel tier; precise recipe on the board: run `setup-signing.sh` in the VM GUI terminal → grant) · TSK-1149 (feed-reader surfacing a/b/c) · TSK-1139 (CSV viewport-paging skip/degrade/build) · TSK-703 (⌘Z unification) · TSK-1129 (LSP security) · the ~417 review→done close queue.
+- **Focused render-VM / architectural builds (designed, NOT clean inline):** TSK-1303 (image-edits-lost-on-session-switch — DESIGN RECORDED on the ticket: the image VM is a view-local `@StateObject`, so editState must be LIFTED to a model store [DocumentModel.imageEditStateByURL or Tab], then snapshot-persist + declarative seed-on-mount, VM-validate; data-safety/race-prone) · TSK-1146 (CM6 spell squiggles, contested) · TSK-1318/751 (menu reorg, taste).
+
+**NEXT ACTION on resume:** the clean inline veins are drained — do NOT manufacture a low-value build or rush the data-safety TSK-1303. Either (a) execute TSK-1303 on the VM as a focused render-architecture build (design ready), or (b) continue draining: re-verify `fixed`/`review` with teeth, triage `reported`, audit-harden (the false-green sweep was productive). The owner unblocking TSK-1334 (T5 grant) opens the biggest remaining tier.
 
 ## ⛳ STATE AT THIS CHECKPOINT (tick ~281, post-compaction) — READ FIRST
 RENDER-CONFIRM TIERS (the lane, fastest first — full detail in memory `feedback_render_path_review_ceiling`): **(1) HOST ImageRenderer** (`HeadlessUITestCase`, NO VM) for PURE-SwiftUI pixel render-confirm — rasterize + assert a pixel DELTA (`DiffViewLayoutTests` / `DiffViewSelectionRenderTests`). FASTEST; UN-GATED renders only (ImageRenderer has no focus engine → can't render focus-gated tints, and placeholders representables → no occlusion). **(2) VM hosting test** (`NSHostingView` + hierarchy-walk, `WebViewTestCase` #192, `test-in-vm.sh webview`) for SwiftUI bridging to NSViews. **(3) T5 pixel** — ONLY WebView/representable pixels or occlusion (TSK-488). **(4) AX** (off-limits) — ONLY the out-of-process gesture/focus executor. A state-seam (additive `initial*` init param) + tier 1/2 drives most "render at review on the AX exception" items to validated.
