@@ -346,6 +346,10 @@ struct ImageEditorView: View {
                         .accessibilityIdentifier("mdv.imageEditor.done")
                 }
 
+                // TSK-1321: edit-after-placement inspector for the selected overlay shape
+                // (self-hides when nothing is selected).
+                ImageElementPropertiesPanel(vm: vm)
+
                 groupLabel("Tone")
                 slider("Brightness", \.brightness, -1, 1, id: "brightness")
                 slider("Contrast", \.contrast, 0, 2, id: "contrast")
