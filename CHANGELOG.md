@@ -12,6 +12,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-30
 
 ### Added
+- **Drag the Terminal icon to dock the terminal.** The Terminal shoulder icon is now draggable like the other tool icons — drag it onto the left, right, or bottom edge to dock the terminal pane there (it opens if it was closed). The Settings ▸ Terminal pane-placement picker still works too. (Clicking the icon still toggles the terminal as before.)
 - **Multi-sheet Excel (.xlsx).** Opening a workbook with more than one sheet now shows a sheet-tab strip above the table — click a tab to view that sheet. Previously only the first sheet was shown. (Read-only viewer; each sheet's cells are its displayed/computed values.)
 - **Convert Image (View ▸ Convert Image…)** — over an open image, pick a target format (PNG / JPEG / HEIC / BMP / GIF / TIFF) and, for lossy formats, a quality level; Convert opens the re-encoded image in a new tab. Runs off the main thread so a large image never freezes the window.
 - **Extract Audio from Video (View ▸ Extract Audio from Video…)** — over a video, pick an audio format (WAV / AIFF / CAF / AAC / MP3) and bit rate; it strips the video and opens just the audio track in a new tab (uses your installed ffmpeg).

@@ -293,6 +293,18 @@ struct TerminalToggleButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(IconHoverButtonStyle(isSelected: isOn))
+        // TSK-1317: the terminal icon is a drag SOURCE too (like the panel rail
+        // icons, TSK-327) — drag it onto a shoulder to dock the terminal pane to
+        // that edge (TerminalDropZone → setPaneEdge). Click still toggles.
+        .draggable(TerminalDragPayload()) {
+            HStack(spacing: 4) {
+                Image(systemName: "apple.terminal")
+                Text("Terminal")
+            }
+            .font(.system(size: 11, weight: .medium))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Palette.windowBackground)
+        }
         .helpInfo(title: "Terminal",
                   description: isOn
                     ? "Hide the bottom terminal pane"

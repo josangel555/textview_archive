@@ -88,6 +88,83 @@ extension View {
     }
 }
 
+// MARK: - Terminal drag-to-dock (TSK-1317)
+
+/// The transferable payload a TERMINAL shoulder-icon drag carries. The terminal
+/// is NOT a `SidebarPanelKind` — it has its own pane-edge model
+/// (`TerminalPaneEdge`) — so it needs its own payload + UTI; reusing
+/// `PanelDragPayload` would make a shoulder try to redock a non-existent panel.
+/// The payload is identity-only ("the terminal"); the DROP EDGE carries the
+/// destination.
+struct TerminalDragPayload: Codable, Transferable {
+    init() {}
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .mdvTerminalDrag)
+    }
+}
+
+extension UTType {
+    /// Custom UTI for the in-app TERMINAL-icon drag (TSK-1317). MUST be declared
+    /// in the app's Info.plist `UTExportedTypeDeclarations` or the drop silently
+    /// dies (the TSK-327 undeclared-UTI footgun) — guarded by a host test.
+    static let mdvTerminalDrag = UTType(exportedAs: "com.markdownviewer.terminal-drag")
+}
+
+/// Map a shoulder `PanelEdge` to the terminal's `TerminalPaneEdge`. Both share
+/// left/right/bottom; this is the single, host-tested arbiter of "drop the
+/// terminal on edge X → dock the pane to X" (TSK-1317).
+func terminalPaneEdge(forShoulder edge: PanelEdge) -> TerminalPaneEdge {
+    switch edge {
+    case .left:   return .left
+    case .right:  return .right
+    case .bottom: return .bottom
+    }
+}
+
+/// The terminal-drop action, extracted so the exact closure logic is
+/// host-testable (TSK-1317): dock the pane to `edge` and make it visible (a
+/// drop on a closed terminal would otherwise be invisible/confusing).
+@MainActor
+func applyTerminalShoulderDrop(_ edge: PanelEdge, to terminalPane: TerminalPaneStore) {
+    terminalPane.setPaneEdge(terminalPaneEdge(forShoulder: edge))
+    if !terminalPane.isOpen { terminalPane.toggle() }
+}
+
+/// Makes a shoulder rail a SNAP ZONE for a dragged TERMINAL icon. On drop it
+/// docks the terminal pane to `edge` (TSK-1317) — the drag-driven equivalent of
+/// the Settings ▸ Terminal pane-placement picker. Applied ALONGSIDE
+/// `panelDropZone` so the same shoulders accept both a panel and the terminal.
+struct TerminalDropZone: ViewModifier {
+    let edge: PanelEdge
+    @ObservedObject var terminalPane: TerminalPaneStore
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if targeted {
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.22))
+                        .overlay(Rectangle().strokeBorder(Color.accentColor, lineWidth: 2))
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("mdv.terminalDock.snapZone.\(edge.rawValue)")
+                }
+            }
+            .dropDestination(for: TerminalDragPayload.self) { payloads, _ in
+                guard !payloads.isEmpty else { return false }
+                applyTerminalShoulderDrop(edge, to: terminalPane)
+                return true
+            } isTargeted: { targeted = $0 }
+    }
+}
+
+extension View {
+    /// Apply the terminal-icon snap drop-zone for `edge` (TSK-1317).
+    func terminalDropZone(_ edge: PanelEdge, terminalPane: TerminalPaneStore) -> some View {
+        modifier(TerminalDropZone(edge: edge, terminalPane: terminalPane))
+    }
+}
+
 // MARK: - Docked tool windows (UX-E / #227)
 //
 // A "tool window" is a sidebar panel (Git, Problems, Outline, …) that the

@@ -167,6 +167,9 @@ public struct ContentView: View {
                         // SNAP ZONE (UX-E): dropping a dragged tool window on
                         // the left rail redocks it back to the accordion.
                         .panelDropZone(.left, panelLayout: panelLayout)
+                        // TSK-1317: dropping the dragged TERMINAL icon here docks
+                        // the terminal pane to the left.
+                        .terminalDropZone(.left, terminalPane: terminalPane)
                         Divider()
                     }
                     // LEFT-docked terminal column (TSK-491): a fixed-WIDTH
@@ -233,6 +236,9 @@ public struct ContentView: View {
                         // SNAP ZONE (UX-E): drop a dragged tool window here
                         // to redock it to the bottom.
                         .panelDropZone(.bottom, panelLayout: panelLayout)
+                        // TSK-1317: drop the dragged TERMINAL icon here to dock
+                        // the terminal pane to the bottom (its default band).
+                        .terminalDropZone(.bottom, terminalPane: terminalPane)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     // COMPOSITOR (TSK-960): the center column hosts the opaque
@@ -275,6 +281,9 @@ public struct ContentView: View {
                     // SNAP ZONE (UX-E): drop a dragged tool window here to
                     // redock it to the right.
                     .panelDropZone(.right, panelLayout: panelLayout)
+                    // TSK-1317: drop the dragged TERMINAL icon here to dock the
+                    // terminal pane to the right.
+                    .terminalDropZone(.right, terminalPane: terminalPane)
                 }
                 // The center band is the one that yields under shrink:
                 // explicit layoutPriority(0) (the default, stated for intent)

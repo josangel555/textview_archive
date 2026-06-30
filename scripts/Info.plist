@@ -93,6 +93,19 @@
                 <string>public.data</string>
             </array>
         </dict>
+        <!-- TSK-1317: the terminal shoulder-icon drag payload. Dragging the
+             terminal toggle onto a shoulder docks the pane to that edge
+             (setPaneEdge). Same exported-UTI requirement as panel-drag above. -->
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.markdownviewer.terminal-drag</string>
+            <key>UTTypeDescription</key>
+            <string>TextView terminal-pane drag payload</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
     </array>
     <key>CFBundleURLTypes</key>
     <array>
