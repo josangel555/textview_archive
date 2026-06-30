@@ -62,6 +62,31 @@ struct ImageElementPropertiesPanel: View {
                     }))
                     .accessibilityIdentifier("mdv.imageEditor.element.stroke")
 
+                // Fill — closed shapes only (rect/ellipse/roundedRect). Activates the dormant
+                // style.fill capability: the draw path already fills a shape whose fill is non-nil,
+                // but no UI ever set it, so every shape was unfilled. TSK-1321 editable props.
+                if shape.kind == .rect || shape.kind == .ellipse || shape.kind == .roundedRect {
+                    Toggle("Fill", isOn: Binding(
+                        get: { shape.style.fill != nil },
+                        set: { on in
+                            var style = shape.style
+                            style.fill = on ? (style.fill ?? shape.style.stroke) : nil
+                            _ = vm.restyleSelectedShape(style)
+                        }))
+                        .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("mdv.imageEditor.element.fillToggle")
+                    if shape.style.fill != nil {
+                        ColorPicker("Fill color", selection: Binding(
+                            get: { (shape.style.fill ?? shape.style.stroke).swiftUIColor },
+                            set: { newColor in
+                                var style = shape.style
+                                style.fill = OverlayColor(newColor)
+                                _ = vm.restyleSelectedShape(style)
+                            }))
+                            .accessibilityIdentifier("mdv.imageEditor.element.fill")
+                    }
+                }
+
                 HStack {
                     Text("Width").frame(width: 56, alignment: .leading)
                     Slider(value: Binding(

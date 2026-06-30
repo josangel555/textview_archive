@@ -399,6 +399,24 @@ final class ImageEditorViewModelTests: XCTestCase {
         XCTAssertNil(vm.selectedShape)
     }
 
+    func test_restyleSetsAndClearsFill_TSK1321() throws {
+        let vm = try makeVM()
+        let id = vm.addShape(VectorShape(kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)))
+        vm.selectShape(id: id)
+        XCTAssertNil(vm.selectedShape?.style.fill, "a fresh shape is unfilled (the dormant default)")
+        // Activate the fill (the inspector Fill toggle/colour → restyle with a non-nil fill).
+        let blue = OverlayColor(r: 0, g: 0, b: 1, a: 0.5)
+        var filled = vm.selectedShape!.style
+        filled.fill = blue
+        XCTAssertTrue(vm.restyleSelectedShape(filled))
+        XCTAssertEqual(vm.selectedShape?.style.fill, blue, "fill is now editable + persists on the shape")
+        // Clear it (toggle off → restyle with nil fill).
+        var cleared = vm.selectedShape!.style
+        cleared.fill = nil
+        XCTAssertTrue(vm.restyleSelectedShape(cleared))
+        XCTAssertNil(vm.selectedShape?.style.fill, "toggling fill off clears it")
+    }
+
     func test_selectedShapeOps_noopWithoutSelection() throws {
         let vm = try makeVM()
         _ = vm.addShape(VectorShape(kind: .rect, frame: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)))
