@@ -661,6 +661,35 @@ public final class ImageEditorViewModel: ObservableObject {
         return overlay.setRotation(id: id, degrees)
     }
 
+    // MARK: - Edit-state persistence (TSK-1303)
+
+    /// Snapshot the full in-progress edit state for session persistence — the committed op-list, the
+    /// pending tonal sliders, and the vector overlay (annotations). Carries NO pixels (the source
+    /// image is referenced by URL and re-decoded on restore).
+    public func captureEditState() -> ImageEditState {
+        ImageEditState(
+            ops: base.ops,
+            brightness: brightness, contrast: contrast, saturation: saturation,
+            exposureEV: exposureEV, shadow: shadow, highlight: highlight, sharpness: sharpness,
+            overlay: overlay)
+    }
+
+    /// Restore a previously-captured edit state onto this view-model (TSK-1303): replace the op-list
+    /// (rebuilding the base document + undo baseline), the tonal sliders, and the overlay. The source
+    /// image is unchanged — the ops re-apply on top of it.
+    public func restoreEditState(_ state: ImageEditState) {
+        base.ops = state.ops
+        undoStack = EditUndoStack(baseline: state.ops)
+        brightness = state.brightness
+        contrast = state.contrast
+        saturation = state.saturation
+        exposureEV = state.exposureEV
+        shadow = state.shadow
+        highlight = state.highlight
+        sharpness = state.sharpness
+        overlay = state.overlay
+    }
+
     // MARK: - Selection (TSK-1063 / 1068)
 
     /// Set (or clear) the rectangular marquee selection.
