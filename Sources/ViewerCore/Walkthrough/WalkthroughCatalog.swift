@@ -193,6 +193,73 @@ public enum WalkthroughCatalog {
         }
     }
 
+    /// TSK-1326 — a minimal, schema-valid STARTER walkthrough the in-app
+    /// "New Walkthrough" action seeds, so authoring is discoverable (copy-and-edit,
+    /// matching `docs/examples/sample-walkthrough.json` + `WALKTHROUGH_AUTHORING.md`).
+    /// Three steps demonstrating the common action kinds; the narration tells the
+    /// author what to change. Pinned valid by `WalkthroughCatalogCreateTests`.
+    public static let starterTemplateJSON: String = """
+    {
+      "schema": "textview.walkthrough/v1",
+      "id": "my-walkthrough",
+      "title": "My Walkthrough",
+      "subtitle": "Edit this starter to build your own guided tour",
+      "author": "",
+      "rootHint": ".",
+      "steps": [
+        {
+          "id": "step-1",
+          "narration": "This is your first step. Replace this narration, edit the title/id above, then add or remove steps below. See docs/WALKTHROUGH_AUTHORING.md for the full format.",
+          "actions": [ { "kind": "narrateOnly" } ]
+        },
+        {
+          "id": "step-2",
+          "narration": "A step can drive the app — for example, open a file. Set rootHint to your project root; paths resolve relative to it.",
+          "actions": [ { "kind": "openFile", "path": "README.md" } ]
+        },
+        {
+          "id": "step-3",
+          "narration": "It can also highlight lines to focus the reader. Change the path and line range to point at your own code.",
+          "actions": [ { "kind": "highlightRange", "path": "README.md", "startLine": 1, "endLine": 5 } ]
+        }
+      ]
+    }
+    """
+
+    /// TSK-1326 — create a NEW walkthrough file from `template` in `directory`,
+    /// choosing a collision-free name derived from `baseName` ("<base>.json",
+    /// "<base> 2.json", …). Creates the directory if missing. Sanitizes the base
+    /// (no slashes/traversal, falls back to "My Walkthrough"). Returns the new
+    /// file URL, or nil on failure. The browser's "New Walkthrough" wires to this;
+    /// the discoverable copy-and-edit entry point the owner asked for.
+    @discardableResult
+    public static func create(
+        baseName: String = "My Walkthrough",
+        in directory: URL,
+        template: String = starterTemplateJSON,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        let trimmed = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safe = (trimmed.isEmpty || trimmed.contains("/") || trimmed == "." || trimmed == "..")
+            ? "My Walkthrough" : trimmed
+        let base = safe.hasSuffix(".json") ? String(safe.dropLast(5)) : safe
+        guard !base.isEmpty, let data = template.data(using: .utf8) else { return nil }
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Collision-free filename (the file is the library identity, per `rename`).
+        var candidate = directory.appendingPathComponent(base + ".json")
+        var n = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(base) \(n).json")
+            n += 1
+        }
+        do {
+            try data.write(to: candidate, options: .atomic)
+            return candidate
+        } catch {
+            return nil
+        }
+    }
+
     /// Build one `Entry` from a single file, or nil if it can't be
     /// summarized. Exposed (not private) so a caller that already has a
     /// file URL — e.g. "Open Walkthrough File…" — can produce a row
