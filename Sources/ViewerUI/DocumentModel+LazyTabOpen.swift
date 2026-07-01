@@ -20,7 +20,8 @@ extension DocumentModel {
                               renderedScrollY: Double? = nil,
                               unsavedText: String? = nil,
                               unsavedBaseMTime: Date? = nil,
-                              unsavedBaseSize: Int? = nil) {
+                              unsavedBaseSize: Int? = nil,
+                              imageEditState: ImageEditState? = nil) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Dedup invariant (matches `TabsState.openOrReveal`): never create a
         // SECOND tab for a file that's already open. `appendLazyTab` was the
@@ -68,7 +69,11 @@ extension DocumentModel {
             // TSK-1025: carry the hot-exit-time (mtime,size) baseline so restore
             // can seed the buffer fingerprint + detect an external change.
             unsavedBaseMTime: unsavedBaseMTime,
-            unsavedBaseSize: unsavedBaseSize))
+            unsavedBaseSize: unsavedBaseSize,
+            // TSK-1303: carry the persisted image edit state so
+            // `restoreImageEditState` can seed `imageEditStateByURL` for the
+            // recreated image editor view once the tab materializes.
+            imageEditState: imageEditState))
     }
 
     /// Open many URLs at once. Files are appended as lazy tabs (state

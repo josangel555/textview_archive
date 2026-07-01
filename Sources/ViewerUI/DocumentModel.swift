@@ -1426,6 +1426,12 @@ public final class DocumentModel: ObservableObject {
     /// is captured at the reload boundary and restored on `didFinish`. Bounded.
     var renderedScrollByURL: [URL: Double] = [:]
 
+    /// TSK-1303: per-image-URL LIVE edit state, written by the image editor view
+    /// as the user edits + folded onto `Tab.imageEditState` at the session-switch
+    /// snapshot boundary (mirrors `renderedScrollByURL`). In-memory only (dropped
+    /// on the session-switch drain), so the durable copy rides the tab snapshot.
+    var imageEditStateByURL: [URL: ImageEditState] = [:]
+
     // MARK: - Split view
     //
     // The split-pane forwarders (`splitURL`, `isSplitOpen`, `openInSplit`,
@@ -3117,6 +3123,10 @@ public final class DocumentModel: ObservableObject {
         // detach-time capture — the equality guard inside makes a re-capture
         // a no-op.
         captureUnsavedTextForAllTabs()
+        // TSK-1303: fold each image tab's live edit state onto `Tab.imageEditState`
+        // before the drain drops the view-local image VMs, so the snapshot (taken
+        // after the drain, or by the caller's detach) carries the in-flight edits.
+        captureImageEditStateForAllTabs()
         // P2/P3 (TSK-1043/1044): suppress the per-tab settle/materialize/
         // updateDerived/watch storm for the duration of the drain — each
         // outgoing tab triggering `refreshDiffMarks`/`warmLSP`/`repoFocus` +

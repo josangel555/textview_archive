@@ -119,6 +119,20 @@ public struct Tab: Sendable, Identifiable {
     public var unsavedBaseMTime: Date?
     public var unsavedBaseSize: Int?
 
+    /// TSK-1303: the in-progress image-editor edit state (tonal/geometry ops +
+    /// vector overlay) for an image tab, captured so it survives a SESSION
+    /// switch — the view-local `ImageEditorViewModel` otherwise loses it when the
+    /// tab/VM is recreated on switch-back (the SAME session-switch drain class as
+    /// `scrollTopLine` / `renderedScrollY` / `unsavedText`). Persisted per file as
+    /// `TabSnapshot.imageEditState`; `nil` for a non-image or unedited tab.
+    ///
+    /// HOT-PATH NOTE: stamped LAZILY at the session-switch snapshot boundary
+    /// (`DocumentModel.captureImageEditStateForAllTabs`), NEVER on the per-edit
+    /// path — the live state lives on the URL-keyed `imageEditStateByURL` channel.
+    /// EXCLUDED from `Tab`'s Equatable (like the scroll / hot-exit fields): it's
+    /// persistence-only metadata, so writing it must not churn the tab-strip diff.
+    public var imageEditState: ImageEditState?
+
     /// True for an ephemeral "preview" tab (VSCode-style): single-click /
     /// arrow-nav in the sidebar reuses the one preview slot instead of
     /// spawning a tab per file; an explicit commit (double-click / Enter /
@@ -143,6 +157,7 @@ public struct Tab: Sendable, Identifiable {
         unsavedText: String? = nil,
         unsavedBaseMTime: Date? = nil,
         unsavedBaseSize: Int? = nil,
+        imageEditState: ImageEditState? = nil,
         isPreview: Bool = false
     ) {
         self.id = id
@@ -157,6 +172,7 @@ public struct Tab: Sendable, Identifiable {
         self.unsavedText = unsavedText
         self.unsavedBaseMTime = unsavedBaseMTime
         self.unsavedBaseSize = unsavedBaseSize
+        self.imageEditState = imageEditState
         self.isPreview = isPreview
     }
 

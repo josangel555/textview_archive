@@ -76,13 +76,25 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     public let unsavedBaseMTime: Date?
     public let unsavedBaseSize: Int?
 
+    /// TSK-1303: the per-image-tab in-progress edit state (tonal/geometry ops +
+    /// vector overlay), so image edits survive a session switch like the scroll /
+    /// hot-exit fields above. `ImageEditState` carries NO pixels (the source image
+    /// is re-decoded from `path`), so it stays cheap in the per-session JSON.
+    ///
+    /// **Additive-optional** (downgrade-safe): a pre-TSK-1303 reader/file has no
+    /// key and decodes to `nil` (no edits to restore); a newer file with no key
+    /// likewise → `nil`. Written as `nil` (key omitted) for a non-image / unedited
+    /// tab so a fresh snapshot stays byte-compatible with pre-TSK-1303 files.
+    public let imageEditState: ImageEditState?
+
     public init(path: String, viewMode: String,
                 categoryOverride: String? = nil,
                 scrollTopLine: Int? = nil,
                 renderedScrollY: Double? = nil,
                 unsavedText: String? = nil,
                 unsavedBaseMTime: Date? = nil,
-                unsavedBaseSize: Int? = nil) {
+                unsavedBaseSize: Int? = nil,
+                imageEditState: ImageEditState? = nil) {
         self.path = path
         self.viewMode = viewMode
         self.categoryOverride = categoryOverride
@@ -91,6 +103,7 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
         self.unsavedText = unsavedText
         self.unsavedBaseMTime = unsavedBaseMTime
         self.unsavedBaseSize = unsavedBaseSize
+        self.imageEditState = imageEditState
     }
 }
 

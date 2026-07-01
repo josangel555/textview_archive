@@ -82,6 +82,10 @@ extension DocumentModel {
                 // background materializes too (each restored tab gets its edits
                 // back when it first loads, not only the focused one).
                 self.restoreUnsavedTextIfNeeded(forTabAt: idx)
+                // TSK-1303: seed `imageEditStateByURL` from the tab's persisted
+                // image edit state so the recreated image editor view restores the
+                // user's in-flight edits (the session-switch data-loss fix).
+                self.restoreImageEditState(forTabAt: idx)
                 // LOADBUG (2026-06-01): PERF #1 severed the
                 // `tabCoordinator.objectWillChange` → `DocumentModel.
                 // objectWillChange` forwarding, so `replace` alone fires the

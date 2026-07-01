@@ -248,7 +248,11 @@ public final class SessionState: ObservableObject {
                 unsavedText: t.unsavedText,
                 // TSK-1025: persist the (mtime,size) baseline alongside the text.
                 unsavedBaseMTime: t.unsavedBaseMTime,
-                unsavedBaseSize: t.unsavedBaseSize))
+                unsavedBaseSize: t.unsavedBaseSize,
+                // TSK-1303: persist the per-image-tab edit state. Stamped onto the
+                // live tab by `captureImageEditStateForAllTabs` at the session-switch
+                // boundary; nil for a non-image / unedited tab → key omitted.
+                imageEditState: t.imageEditState))
         }
         let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
         return (out, remapped)
@@ -416,6 +420,15 @@ public final class SessionState: ObservableObject {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // TSK-1303: path → persisted image-editor edit state, so image edits
+        // restore on session switch-back. nil / absent → nothing to restore.
+        let imageEditStateByPath: [String: ImageEditState] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, ImageEditState)? in
+                guard let s = snap.imageEditState else { return nil }
+                return (snap.path, s)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -430,7 +443,8 @@ public final class SessionState: ObservableObject {
                                 renderedScrollY: renderedScrollByPath[t.path],
                                 unsavedText: unsavedByPath[t.path],
                                 unsavedBaseMTime: unsavedBaseMTimeByPath[t.path],
-                                unsavedBaseSize: unsavedBaseSizeByPath[t.path])
+                                unsavedBaseSize: unsavedBaseSizeByPath[t.path],
+                                imageEditState: imageEditStateByPath[t.path])
         }
         // Restore the per-session sidebar expansion AFTER `setRoot`
         // (which wipes `expanded` down to just the root). We expand the
