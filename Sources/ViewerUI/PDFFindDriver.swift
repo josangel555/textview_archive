@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import AppKit
 
 /// TSK-1140 — the imperative half of PDF find: reconciles the `pdf` FindCoordinator
 /// bag (query / case / next-prev nonces) against a live `PDFView`, running
@@ -32,6 +33,7 @@ final class PDFFindDriver {
             lastQuery = query
             lastCaseSensitive = caseSensitive
             let st = searcher.search(query, in: doc, caseSensitive: caseSensitive)
+            applyHighlights(searcher.matches, to: pdfView)
             apply(searcher.current, to: pdfView)
             changed = st
         }
@@ -53,5 +55,16 @@ final class PDFFindDriver {
         } else {
             view.setCurrentSelection(nil, animate: false)
         }
+    }
+
+    /// Highlight ALL matches at once (standard find UX — the current match is the
+    /// selection on top). `PDFView.highlightedSelections` is a native property
+    /// PDFView renders as coloured highlights; host-assertable (count == matches),
+    /// so this stays validated without the pixel tier. Cleared on no-match.
+    private func applyHighlights(_ matches: [PDFSelection], to view: PDFView) {
+        guard !matches.isEmpty else { view.highlightedSelections = nil; return }
+        let color = NSColor.systemYellow.withAlphaComponent(0.4)
+        for m in matches { m.color = color }
+        view.highlightedSelections = matches
     }
 }

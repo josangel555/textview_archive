@@ -66,4 +66,23 @@ final class PDFFindDriverTests: XCTestCase {
         XCTAssertNil(d.sync(query: "foo", caseSensitive: false, nextNonce: 0, prevNonce: 0, in: v),
                      "identical inputs → nil (no re-search, cursor untouched)")
     }
+
+    func test_sync_highlightsAllMatches_notJustCurrent() throws {
+        let v = try makePDFView("foo bar foo baz foo")   // three "foo"
+        let d = PDFFindDriver()
+        d.sync(query: "foo", caseSensitive: false, nextNonce: 0, prevNonce: 0, in: v)
+        XCTAssertEqual(v.highlightedSelections?.count, 3,
+                       "all matches highlighted (standard find UX), not only the current selection")
+        XCTAssertEqual(v.currentSelection?.string?.lowercased(), "foo",
+                       "the current match is still the selection, on top of the highlights")
+    }
+
+    func test_sync_noMatch_clearsAllMatchHighlights() throws {
+        let v = try makePDFView("alpha beta gamma")
+        let d = PDFFindDriver()
+        d.sync(query: "alpha", caseSensitive: false, nextNonce: 0, prevNonce: 0, in: v)
+        XCTAssertNotNil(v.highlightedSelections, "precondition: a match is highlighted")
+        d.sync(query: "zzz", caseSensitive: false, nextNonce: 0, prevNonce: 0, in: v)
+        XCTAssertNil(v.highlightedSelections, "a no-match query clears the all-match highlights")
+    }
 }
