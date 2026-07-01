@@ -1,9 +1,25 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — multi-format viewer ARC complete (docx/rtf/xlsx/ods) + false-green class swept; clean veins drained (2026-06-30)
+# Handoff — PDF find shipped + VALIDATED host-side (the native-state render-validation path); image/disk-conflict render at review; board saturated (2026-06-30)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `65daa55a` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `cba43ec1` (verify `git log -1`)
 
-## ⛳ LATEST CHECKPOINT (READ FIRST — supersedes the older checkpoint below)
+## ⛳ LATEST CHECKPOINT (READ FIRST — supersedes the older checkpoints below)
+
+**This stretch (since the last handoff @ 65daa55a) shipped, all host-gate-green, committed per-item:**
+- **TSK-1303 image edit-state session persistence** (`22675ef0` core + `be95778d` view binding): edits survive a session switch. `Tab.imageEditState` + `TabSnapshot` round-trip + `imageEditStateByURL` channel + capture-at-drain/restore-on-materialize (mirrors rendered-scroll TSK-1041); declarative seed at VM construction. Host-tested; **at REVIEW** — the live SwiftUI `@StateObject` view-recreation-seed is framework-driven (not host-assertable); needs a VM hosting test.
+- **TSK-1166 non-modal disk-conflict banner** (`e2e0bd1a`): passive-watcher disk conflict → inline `DiskConflictBanner` (Keep Mine/Take Disk/Merge) instead of the modal NSAlert; shared `applyExternalEditOutcome`; SaveConflictDecision backstop. Host-tested; **at REVIEW** — banner-over-CM6-WebView visibility is the T5 occlusion class (TSK-1334).
+- **TSK-1140 / TSK-1341 Find in PDF (⌘F)** — the arc: `edd71bd7` PDFSearcher engine → `f19adde9` FindCoordinator `pdf` bag + PDFFindBar + ⌘F/⌘G routing + PDFPreview consumer → `1db4f8bc` testable `@MainActor PDFFindDriver` **host-validated against a real PDFView** → `cba43ec1` extracted `FindBarRouting` (host-tested). **TSK-1341 = `validated`** (child of TSK-1140; the find clause). Parent TSK-1140 still open for: PDF scroll/session persistence + zoom/page-nav polish.
+
+**KEY LESSON this stretch (now in LESSONS.md — read it):** **state-based NATIVE AppKit views are HOST-validatable → render reaches `validated` WITHOUT the T5 grant.** `PDFView.currentSelection` is a headless data-op that IS the on-screen highlight (native rendering guarantee). Extract the `updateNSView` body into a plain `@MainActor` driver, host-test it against a REAL NSView (created host-side, no window). TRIAGE render items: native-view STATE (selection/text/value) → host-validate; layout/SwiftUI-occlusion/WebView-pixels/AX-gesture → genuinely T5/VM/AX (TSK-1334/AX).
+
+**STATE: board is SATURATED for clean fresh builds.** Verified ~15+ P0/P1 items done/review/validated/parked this session (TSK-1176/680/1144/1141/1163/1332/910/1032/924/343/1146, HEX find, scrollJS…). Remaining is structurally gated:
+- **Owner unblocks (highest leverage):** TSK-1334 (VM Screen-Recording grant → the whole T5 occlusion-pixel tier; validates TSK-1303/1166) · TSK-838 (one-line DOM-patch flip → kills the 2-9s rendered-MD reload storm, fixes TSK-598) · parked decisions (TSK-1200 editor-scroll real-vs-harness, TSK-283 Enter-rename rebind, TSK-1149 feed surfacing, TSK-1129 LSP security).
+- **Deep perf:** TSK-891 Page-Up jank (diagnosed: NOT scroll-emit — already throttled; it's the CoreAnimation scroll-compositing class, same as TSK-598; needs a VM Page-Up profile, likely a rendering-approach change).
+- **Epics (spike→slice):** Debugger (276), Encryption (293, crypto dep), Java LSP (298), remote-core (651), browser (676, foundation done), agent services (697), action history (703), audio AVAudioEngine (1091-96).
+
+**NEXT ACTION on resume:** apply the native-state triage to find the NEXT host-validatable render feature; else VM-validate a review item (TSK-1303 hosting test, or the webview lane for a rendered-MD item) to drive it to validated; else take an epic's first host-completable slice. Do NOT re-scan the saturated board tick after tick — pick from the gated list above or an epic.
+
+## ⛳ PRIOR CHECKPOINT (multi-format viewer arc — superseded above)
 
 **This stretch shipped 8 features/fixes (all host-tested w/ teeth, gate-green, committed per-item):**
 - `3cb83cc3` TSK-942 Copy Reference Edit-menu item + ⌘⌥⇧C shortcut · `1badd840` TSK-1337 webview-lane drift fix + drift-detector · `60a0f9c4` TSK-1317 drag terminal icon → dock pane · `d62390dd` TSK-1326 "New Walkthrough" seeds an editable starter · `43557177` TSK-1177 terminal tab-strip shoulder border.
