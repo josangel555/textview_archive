@@ -821,12 +821,8 @@ private struct PDFPreview: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator {
-        let searcher = PDFSearcher()
-        var lastQuery: String? = nil   // nil = not yet searched (forces first search)
-        var lastCaseSensitive = false
-        var lastNext = 0
-        var lastPrev = 0
+    @MainActor final class Coordinator {
+        let driver = PDFFindDriver()
     }
 
     func makeNSView(context: Context) -> PDFView {
@@ -842,38 +838,17 @@ private struct PDFPreview: NSViewRepresentable {
     func updateNSView(_ nsView: PDFView, context: Context) {
         if nsView.document?.documentURL != url {
             nsView.document = PDFDocument(url: url)
-            context.coordinator.lastQuery = nil   // new doc → re-run the current search
+            context.coordinator.driver.resetForNewDocument()
         }
-        guard let doc = nsView.document else { return }
-        let c = context.coordinator
-
-        // A new query (or a case-sensitivity change) → run a fresh search + apply.
-        if c.lastQuery != query || c.lastCaseSensitive != caseSensitive {
-            c.lastQuery = query
-            c.lastCaseSensitive = caseSensitive
-            let st = c.searcher.search(query, in: doc, caseSensitive: caseSensitive)
-            apply(c.searcher.current, to: nsView)
+        // The driver reconciles query/nonces against the live PDFView (search +
+        // setCurrentSelection); host-tested in PDFFindDriverTests.
+        if let st = context.coordinator.driver.sync(
+            query: query, caseSensitive: caseSensitive,
+            nextNonce: nextNonce, prevNonce: prevNonce, in: nsView) {
             report(st)
         }
-        // Next / prev command nonces → step the cursor (⌘G / find-bar arrows).
-        if nextNonce != c.lastNext {
-            c.lastNext = nextNonce
-            if let sel = c.searcher.next() { apply(sel, to: nsView); report(c.searcher.state) }
-        }
-        if prevNonce != c.lastPrev {
-            c.lastPrev = prevNonce
-            if let sel = c.searcher.prev() { apply(sel, to: nsView); report(c.searcher.state) }
-        }
     }
 
-    private func apply(_ sel: PDFSelection?, to view: PDFView) {
-        if let sel {
-            view.setCurrentSelection(sel, animate: true)
-            view.scrollSelectionToVisible(nil)
-        } else {
-            view.setCurrentSelection(nil, animate: false)
-        }
-    }
     /// Report the match summary/state back to the find bar. Deferred to the next
     /// runloop tick so we never mutate `@Published` find state during `updateNSView`.
     private func report(_ st: PDFSearcher.State) {
