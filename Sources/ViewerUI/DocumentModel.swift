@@ -187,6 +187,12 @@ public final class DocumentModel: ObservableObject {
     /// The palette controller, seeded over the live favorites + command history.
     @Published public var terminalCommandPaletteVM: TerminalCommandPaletteViewModel?
 
+    /// TSK-1166 — the active passive-watcher disk-conflict, surfaced as a non-modal
+    /// `DiskConflictBanner` above the editor (vs the blocking NSAlert the deliberate
+    /// `refreshTab` path still uses). `nil` = no conflict. Set by the file-watcher
+    /// tick when a dirty buffer's file changed on disk; cleared by `resolveDiskConflict`.
+    @Published public var activeDiskConflict: DiskConflictBannerInfo?
+
     /// TSK-1325 — the Image Convert panel (pick target format + quality → new tab). Transient;
     /// driven by `openConvertImage()`.
     @Published public var showConvertImage = false
@@ -2713,12 +2719,16 @@ public final class DocumentModel: ObservableObject {
             let mtime = attrs?[.modificationDate] as? Date
             let size = attrs?[.size] as? Int
             if buf.hasExternalEdit(currentMTime: mtime, currentSize: size) {
-                // Coordinator runs the NSAlert + drives the chosen
-                // outcome (discard + reload via the `onReloadFromDisk`
-                // closure we wired at init, or refresh-fingerprint).
-                editor.presentExternalEditConflict(
-                    forTabID: tab.id, at: i, url: watchedURL
-                )
+                // TSK-1166: a PASSIVE watcher conflict (the user didn't ask to
+                // reload) now surfaces as a non-modal `DiskConflictBanner` above
+                // the editor rather than a blocking NSAlert — the deliberate
+                // `refreshTab` path keeps its modal (a modal confirm is right for
+                // an explicit destructive reload). Idempotent: a duplicate watcher
+                // event for the same tab just re-sets the (Equatable-equal) info.
+                // Backstop: even if the banner is somehow missed, the write-time
+                // `SaveConflictDecision` still catches the conflict on save.
+                activeDiskConflict = DiskConflictBannerInfo(
+                    tabID: tab.id, index: i, url: watchedURL)
                 return
             }
         }

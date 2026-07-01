@@ -719,7 +719,22 @@ public struct ContentView: View {
         case .loading(let url):
             LoadingStateView(url: url)
         case .loaded(let file):
-            loadedView(for: file, tab: tab, isActive: isActive)
+            VStack(spacing: 0) {
+                // TSK-1166: non-modal disk-conflict banner above the editor for the
+                // ACTIVE tab whose file changed on disk while it had unsaved edits
+                // (the passive-watcher case; the deliberate refreshTab still uses a
+                // modal). The banner's own compositingGroup + zIndex(1) keeps it
+                // above the CM6 WebView surface below it (the LESSONS compositor-
+                // occlusion rule: order the SwiftUI sibling above the representable).
+                if isActive, let conflict = model.activeDiskConflict, conflict.id == tab.id {
+                    DiskConflictBanner(fileName: conflict.fileName) { intent in
+                        model.resolveDiskConflict(intent)
+                    }
+                    .zIndex(1)
+                }
+                loadedView(for: file, tab: tab, isActive: isActive)
+                    .zIndex(0)
+            }
         case .binary(let binary):
             // For binaries (HEX mode) we always show the byte grid;
             // the metadata panel pairs naturally with .preview state

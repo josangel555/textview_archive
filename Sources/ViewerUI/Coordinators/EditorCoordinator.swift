@@ -1076,7 +1076,18 @@ public final class EditorCoordinator: ObservableObject {
             let response = alert.runModal()
             outcome = (response == .alertSecondButtonReturn) ? .discardAndReload : .keepEdits
         }
+        applyExternalEditOutcome(outcome, forTabID: id, at: index, url: url)
+        return outcome
+    }
 
+    /// Apply a resolved external-edit outcome to the buffer/tab — the shared
+    /// side-effect for BOTH the modal prompt (`presentExternalEditConflict`, the
+    /// deliberate `refreshTab` path) and the non-modal `DiskConflictBanner` the
+    /// passive watcher raises (TSK-1166). Extracted so the two surfaces can't
+    /// drift on the data-safety-critical resolution logic.
+    public func applyExternalEditOutcome(
+        _ outcome: ExternalEditPrompt, forTabID id: UUID, at index: Int, url: URL
+    ) {
         switch outcome {
         case .discardAndReload:
             discardEditorBuffer(forTabID: id)
@@ -1096,7 +1107,6 @@ public final class EditorCoordinator: ObservableObject {
                 tabCoordinator.setEditorBuffer(buf, forTabID: id)
             }
         }
-        return outcome
     }
 
     /// TSK-1025: seed a just-restored buffer's saved-fingerprint to the
