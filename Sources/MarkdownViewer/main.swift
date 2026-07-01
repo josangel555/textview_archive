@@ -3793,25 +3793,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // press closes it. Each branch routes to the matching bar's toggle.
         // Rendered markdown — only meaningful when the file is markdown
         // and the user is viewing the rendered side.
-        if model.supportsViewModeToggle, model.currentViewMode == .rendered {
-            model.toggleRenderedFindBar()
-            return
+        // Route ⌘F to the matching bar for the active surface. Pure decision
+        // (FindBarRouting, host-tested) so the branch order can't silently regress
+        // — the PDF branch (TSK-1140) is what stops ⌘F falling through to the
+        // useless source bar on a .pdf tab.
+        switch FindBarRouting.target(
+            viewMode: model.currentViewMode,
+            category: model.currentCategory,
+            supportsViewModeToggle: model.supportsViewModeToggle) {
+        case .rendered: model.toggleRenderedFindBar()
+        case .editor:   model.toggleEditorFindBar()
+        case .pdf:      model.togglePdfFindBar()
+        case .source:   model.toggleSourceFindBar()
         }
-        // Editor mode (CM6) — route to the new editor find bar that
-        // drives CodeMirror via the v1 bridge.
-        if model.currentViewMode == .editor {
-            model.toggleEditorFindBar()
-            return
-        }
-        // PDF reader (TSK-1140) — route ⌘F to the PDF find bar (drives the
-        // PDFView selection via PDFSearcher), not the text/source bar.
-        if model.currentCategory == .pdf {
-            model.togglePdfFindBar()
-            return
-        }
-        // Otherwise the user is on the source/text side: open the
-        // source find bar (works for source view, plaintext, code, etc.).
-        model.toggleSourceFindBar()
     }
 
     /// Cmd+Option+F — Find & Replace. Replace only works on the editable CM6
