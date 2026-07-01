@@ -35,13 +35,17 @@ public struct MediaPreviewView: View {
     /// `nil` disables persistence (e.g. the `SplitPaneView` call site).
     public var initialImageEditState: ImageEditState?
     public var onImageEditStateChanged: ((ImageEditState) -> Void)?
+    /// TSK-1140: the find coordinator, so a `.pdf` preview can drive its PDFView
+    /// selection from the `pdf` find bag. `nil` (e.g. SplitPane) → no PDF find.
+    public var find: FindCoordinator?
 
     public init(url: URL, category: FileCategory,
                 onOpenSibling: ((URL) -> Void)? = nil,
                 uiScale: CGFloat = 1.0,
                 onEditingChanged: ((Bool) -> Void)? = nil,
                 initialImageEditState: ImageEditState? = nil,
-                onImageEditStateChanged: ((ImageEditState) -> Void)? = nil) {
+                onImageEditStateChanged: ((ImageEditState) -> Void)? = nil,
+                find: FindCoordinator? = nil) {
         self.url = url
         self.category = category
         self.onOpenSibling = onOpenSibling
@@ -49,6 +53,7 @@ public struct MediaPreviewView: View {
         self.onEditingChanged = onEditingChanged
         self.initialImageEditState = initialImageEditState
         self.onImageEditStateChanged = onImageEditStateChanged
+        self.find = find
     }
 
     /// Point size for preview info chrome (image dimensions, sibling counter,
@@ -75,7 +80,9 @@ public struct MediaPreviewView: View {
                                       onImageEditStateChanged: onImageEditStateChanged)
             case .audio: AudioPreview(url: url)
             case .video: VideoPreview(url: url)
-            case .pdf:   PDFPreview(url: url)
+            case .pdf:
+                if let find { PDFPreviewFindable(url: url, find: find) }
+                else { PDFPreview(url: url) }
             case .sqlite:
                 SQLiteBrowserView(url: url, uiScale: uiScale)
             case .archive:
@@ -803,6 +810,25 @@ private struct VideoPreview: NSViewRepresentable {
 
 private struct PDFPreview: NSViewRepresentable {
     let url: URL
+    // TSK-1140 find inputs — default to "no find" (e.g. the SplitPane call site,
+    // which passes no FindCoordinator). The `*Nonce` values are command counters
+    // (bump = step); `updateNSView` reacts when the observing wrapper re-renders.
+    var query: String = ""
+    var nextNonce: Int = 0
+    var prevNonce: Int = 0
+    var caseSensitive: Bool = false
+    var onResult: ((_ summary: String, _ matched: Bool?) -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        let searcher = PDFSearcher()
+        var lastQuery: String? = nil   // nil = not yet searched (forces first search)
+        var lastCaseSensitive = false
+        var lastNext = 0
+        var lastPrev = 0
+    }
+
     func makeNSView(context: Context) -> PDFView {
         let v = PDFView()
         v.autoScales = true
@@ -812,9 +838,69 @@ private struct PDFPreview: NSViewRepresentable {
         v.backgroundColor = .windowBackgroundColor
         return v
     }
+
     func updateNSView(_ nsView: PDFView, context: Context) {
-        if nsView.document?.documentURL == url { return }
-        nsView.document = PDFDocument(url: url)
+        if nsView.document?.documentURL != url {
+            nsView.document = PDFDocument(url: url)
+            context.coordinator.lastQuery = nil   // new doc → re-run the current search
+        }
+        guard let doc = nsView.document else { return }
+        let c = context.coordinator
+
+        // A new query (or a case-sensitivity change) → run a fresh search + apply.
+        if c.lastQuery != query || c.lastCaseSensitive != caseSensitive {
+            c.lastQuery = query
+            c.lastCaseSensitive = caseSensitive
+            let st = c.searcher.search(query, in: doc, caseSensitive: caseSensitive)
+            apply(c.searcher.current, to: nsView)
+            report(st)
+        }
+        // Next / prev command nonces → step the cursor (⌘G / find-bar arrows).
+        if nextNonce != c.lastNext {
+            c.lastNext = nextNonce
+            if let sel = c.searcher.next() { apply(sel, to: nsView); report(c.searcher.state) }
+        }
+        if prevNonce != c.lastPrev {
+            c.lastPrev = prevNonce
+            if let sel = c.searcher.prev() { apply(sel, to: nsView); report(c.searcher.state) }
+        }
+    }
+
+    private func apply(_ sel: PDFSelection?, to view: PDFView) {
+        if let sel {
+            view.setCurrentSelection(sel, animate: true)
+            view.scrollSelectionToVisible(nil)
+        } else {
+            view.setCurrentSelection(nil, animate: false)
+        }
+    }
+    /// Report the match summary/state back to the find bar. Deferred to the next
+    /// runloop tick so we never mutate `@Published` find state during `updateNSView`.
+    private func report(_ st: PDFSearcher.State) {
+        guard let onResult else { return }
+        DispatchQueue.main.async { onResult(st.summary, st.matched) }
+    }
+}
+
+/// TSK-1140 — observes the `pdf` FindCoordinator bag and feeds its query/nonces
+/// into `PDFPreview` (which drives PDFSearcher + the live PDFView selection).
+/// Split out so the NSViewRepresentable stays value-driven while this wrapper is
+/// what actually re-renders on find-state changes.
+private struct PDFPreviewFindable: View {
+    let url: URL
+    @ObservedObject var find: FindCoordinator
+
+    var body: some View {
+        PDFPreview(
+            url: url,
+            query: find.pdfQuery,
+            nextNonce: find.pdfNextRequest,
+            prevNonce: find.pdfPrevRequest,
+            caseSensitive: find.pdfCaseSensitive,
+            onResult: { summary, matched in
+                find.setPdfMatchSummary(summary)
+                find.pdfMatched = matched
+            })
     }
 }
 

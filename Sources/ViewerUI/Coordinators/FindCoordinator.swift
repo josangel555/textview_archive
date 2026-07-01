@@ -65,6 +65,41 @@ public final class FindCoordinator: ObservableObject {
     public func renderedNext() { renderedNextRequest &+= 1 }
     public func renderedPrev() { renderedPrevRequest &+= 1 }
 
+    // MARK: PDF (PDFView selection) — TSK-1140
+    //
+    // A fourth bag mirroring the rendered one, for the PDFView reader. The
+    // PDFPreview's Coordinator owns a `PDFSearcher` and drives it off this bag
+    // (query → search, next/prev nonces → step), applying `setCurrentSelection`
+    // to the live PDFView. No regex (PDFKit `findString` is literal).
+    @Published public var isPdfBarPresented: Bool = false
+    @Published public var pdfQuery: String = ""
+    @Published public var pdfCaseSensitive: Bool = false
+    @Published public var pdfMatched: Bool? = nil
+    @Published public var pdfMatchSummary: String = ""
+    @Published public var pdfNextRequest: Int = 0
+    @Published public var pdfPrevRequest: Int = 0
+    @Published public var pdfFocusRequest: Int = 0
+    private var pdfQueryDraft = ""
+
+    public func setPdfMatchSummary(_ s: String) {
+        guard s != pdfMatchSummary else { return }
+        pdfMatchSummary = s
+    }
+    public func showPdfBar() {
+        isPdfBarPresented = true
+        if pdfQuery.isEmpty, !pdfQueryDraft.isEmpty { pdfQuery = pdfQueryDraft }
+        pdfFocusRequest &+= 1
+    }
+    public func dismissPdfBar() {
+        isPdfBarPresented = false
+        if !pdfQuery.isEmpty { pdfQueryDraft = pdfQuery }
+        pdfQuery = ""
+        pdfMatched = nil
+    }
+    public func togglePdfBar() { if isPdfBarPresented { dismissPdfBar() } else { showPdfBar() } }
+    public func pdfNext() { pdfNextRequest &+= 1 }
+    public func pdfPrev() { pdfPrevRequest &+= 1 }
+
     /// Document-scroll keys forwarded from the rendered find bar (TSK-1271).
     /// While the find bar holds first responder, scroll keys (PageUp/PageDown/
     /// arrows) land in its text field — not the WKWebView — so the bar forwards
@@ -225,7 +260,7 @@ public final class FindCoordinator: ObservableObject {
     /// True when ANY find bar is open — gates the Find Next/Previous menu
     /// items so ⌘G/⌥⌘G grey out when there's no active search surface.
     public var isAnyBarPresented: Bool {
-        isEditorBarPresented || isRenderedBarPresented || isSourceBarPresented
+        isEditorBarPresented || isRenderedBarPresented || isSourceBarPresented || isPdfBarPresented
     }
 
     /// Advance to the next match on whichever find bar is currently open.
@@ -236,6 +271,7 @@ public final class FindCoordinator: ObservableObject {
         if isEditorBarPresented { editorNext() }
         else if isRenderedBarPresented { renderedNext() }
         else if isSourceBarPresented { sourceNext() }
+        else if isPdfBarPresented { pdfNext() }
     }
 
     /// Step to the previous match on whichever find bar is open (⌥⌘G).
@@ -243,5 +279,6 @@ public final class FindCoordinator: ObservableObject {
         if isEditorBarPresented { editorPrev() }
         else if isRenderedBarPresented { renderedPrev() }
         else if isSourceBarPresented { sourcePrev() }
+        else if isPdfBarPresented { pdfPrev() }
     }
 }

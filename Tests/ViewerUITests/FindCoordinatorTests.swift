@@ -51,6 +51,66 @@ final class FindCoordinatorTests: XCTestCase {
         XCTAssertEqual(f.renderedPrevRequest, p0 &+ 1)
     }
 
+    // MARK: PDF (TSK-1140)
+
+    func test_pdf_show_setsPresentedAndBumpsFocus() {
+        let f = FindCoordinator()
+        let n0 = f.pdfFocusRequest
+        f.showPdfBar()
+        XCTAssertTrue(f.isPdfBarPresented)
+        XCTAssertEqual(f.pdfFocusRequest, n0 &+ 1)
+    }
+
+    func test_pdf_dismiss_clearsQuery_thenReopenRestoresDraft() {
+        let f = FindCoordinator()
+        f.showPdfBar()
+        f.pdfQuery = "needle"
+        f.pdfMatched = true
+        f.dismissPdfBar()
+        XCTAssertFalse(f.isPdfBarPresented)
+        XCTAssertEqual(f.pdfQuery, "", "cleared on dismiss so PDF highlights drop")
+        XCTAssertNil(f.pdfMatched)
+        f.showPdfBar()
+        XCTAssertEqual(f.pdfQuery, "needle", "reopening restores the previous find text")
+    }
+
+    func test_pdf_toggle() {
+        let f = FindCoordinator()
+        f.togglePdfBar(); XCTAssertTrue(f.isPdfBarPresented)
+        f.togglePdfBar(); XCTAssertFalse(f.isPdfBarPresented)
+    }
+
+    func test_pdf_next_prev_bumpRequests() {
+        let f = FindCoordinator()
+        let n0 = f.pdfNextRequest, p0 = f.pdfPrevRequest
+        f.pdfNext(); f.pdfNext(); f.pdfPrev()
+        XCTAssertEqual(f.pdfNextRequest, n0 &+ 2)
+        XCTAssertEqual(f.pdfPrevRequest, p0 &+ 1)
+    }
+
+    /// TEETH: the shared next()/prev() dispatch steps the PDF bag when it's the
+    /// open bar — the routing the ⌘G menu action relies on for a PDF tab.
+    func test_dispatch_next_prev_routeToPdf_whenOnlyPdfBarOpen() {
+        let f = FindCoordinator()
+        f.isPdfBarPresented = true
+        let n0 = f.pdfNextRequest, p0 = f.pdfPrevRequest
+        f.next(); f.prev()
+        XCTAssertEqual(f.pdfNextRequest, n0 &+ 1, "next() dispatches to the pdf bag")
+        XCTAssertEqual(f.pdfPrevRequest, p0 &+ 1, "prev() dispatches to the pdf bag")
+    }
+
+    /// The dispatch order keeps the text bars ahead of PDF — if a text bar is
+    /// somehow also open, PDF is NOT stepped (the else-if chain).
+    func test_dispatch_next_prefersTextBars_overPdf() {
+        let f = FindCoordinator()
+        f.isRenderedBarPresented = true
+        f.isPdfBarPresented = true
+        let pdf0 = f.pdfNextRequest, r0 = f.renderedNextRequest
+        f.next()
+        XCTAssertEqual(f.pdfNextRequest, pdf0, "pdf not stepped when a text bar is also open")
+        XCTAssertEqual(f.renderedNextRequest, r0 &+ 1)
+    }
+
     // MARK: Rendered scroll-key forwarding (TSK-1271)
 
     func test_rendered_scroll_bumpsRequestAndSetsCommand() {

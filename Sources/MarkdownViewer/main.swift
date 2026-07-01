@@ -3803,6 +3803,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             model.toggleEditorFindBar()
             return
         }
+        // PDF reader (TSK-1140) — route ⌘F to the PDF find bar (drives the
+        // PDFView selection via PDFSearcher), not the text/source bar.
+        if model.currentCategory == .pdf {
+            model.togglePdfFindBar()
+            return
+        }
         // Otherwise the user is on the source/text side: open the
         // source find bar (works for source view, plaintext, code, etc.).
         model.toggleSourceFindBar()

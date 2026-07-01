@@ -757,7 +757,13 @@ public struct ContentView: View {
                 EmptyStateView(model: model)
             }
         case .preview(let url, let cat):
-            HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                // TSK-1140: the PDF reader find bar (drives the PDFView selection)
+                // above the preview for the active PDF tab when ⌘F is open.
+                if isActive, cat == .pdf, model.isPdfFindBarPresented {
+                    PDFFindBar(find: model.find, uiSize: model.uiSize)
+                }
+                HStack(spacing: 0) {
                 MediaPreviewView(
                     url: url, category: cat,
                     onOpenSibling: { sibling in model.open(url: sibling) },
@@ -767,7 +773,9 @@ public struct ContentView: View {
                     // edit state + persist changes back, so edits survive a session
                     // switch (the recreated view reads/writes the model's channel).
                     initialImageEditState: model.imageEditState(for: url),
-                    onImageEditStateChanged: { model.rememberImageEditState($0, for: url) }
+                    onImageEditStateChanged: { model.rememberImageEditState($0, for: url) },
+                    // TSK-1140: drive the PDF find bar's PDFView selection.
+                    find: model.find
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // TSK-608: dismissible via the BottomAttributesBar "Info" toggle.
@@ -776,6 +784,7 @@ public struct ContentView: View {
                 if Self.showsPreviewMetadataPanel(
                     showPreview: model.showPreviewMetadataPanel, isEditingImage: model.isEditingImage) {
                     MetadataPanel(url: url, category: cat, uiScale: CGFloat(model.zoom))
+                }
                 }
             }
         }

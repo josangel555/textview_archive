@@ -474,3 +474,29 @@ struct SourceFindBar: View {
         )
     }
 }
+
+/// TSK-1140 — the PDF reader find bar (mirrors `SourceFindBar`). No regex toggle
+/// (PDFKit `findString` is literal) and no replace (the PDF viewer is read-only);
+/// drives the `PDFView` selection via the `pdf` FindCoordinator bag + PDFSearcher.
+struct PDFFindBar: View {
+    @ObservedObject var find: FindCoordinator
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
+
+    var body: some View {
+        FindBar(
+            placeholder: "Find in PDF…",
+            query: $find.pdfQuery,
+            caseSensitive: $find.pdfCaseSensitive,
+            isRegex: .constant(false),
+            showsRegexToggle: false,
+            matchSummary: $find.pdfMatchSummary,
+            noResultsMode: .countOnly,
+            focusRequest: find.pdfFocusRequest,
+            onNext: { find.pdfNext() },
+            onPrev: { find.pdfPrev() },
+            onDismiss: { find.dismissPdfBar() },
+            accessibilityID: "mdv.pdfFindBar",
+            uiSize: uiSize
+        )
+    }
+}

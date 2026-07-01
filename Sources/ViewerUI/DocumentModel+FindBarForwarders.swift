@@ -24,6 +24,7 @@ extension DocumentModel {
         let anyFindBarOpen = isRenderedFindBarPresented
             || isSourceFindBarPresented
             || isEditorFindBarPresented
+            || isPdfFindBarPresented
         return !anyFindBarOpen
             && EscFocusMonitor.firstResponderIsFieldEditor(firstResponder)
     }
@@ -79,6 +80,36 @@ extension DocumentModel {
     public func showRenderedFindBar() { find.showRenderedBar() }
     public func dismissRenderedFindBar() { find.dismissRenderedBar() }
     public func toggleRenderedFindBar() { find.toggleRenderedBar() }
+
+    // PDF mode (TSK-1140) — the PDFView reader find bar
+    public var isPdfFindBarPresented: Bool {
+        get { find.isPdfBarPresented }
+        set { find.isPdfBarPresented = newValue }
+    }
+    public var pdfFindQuery: String {
+        get { find.pdfQuery }
+        set { find.pdfQuery = newValue }
+    }
+    public var pdfFindNextRequest: Int {
+        get { find.pdfNextRequest }
+        set { find.pdfNextRequest = newValue }
+    }
+    public var pdfFindPrevRequest: Int {
+        get { find.pdfPrevRequest }
+        set { find.pdfPrevRequest = newValue }
+    }
+    public var pdfFindCaseSensitive: Bool {
+        get { find.pdfCaseSensitive }
+        set { find.pdfCaseSensitive = newValue }
+    }
+    public var pdfFindMatchSummary: String {
+        get { find.pdfMatchSummary }
+        set { find.pdfMatchSummary = newValue }
+    }
+    public func setPdfFindMatchSummary(_ s: String) { find.setPdfMatchSummary(s) }
+    public func showPdfFindBar() { find.showPdfBar() }
+    public func dismissPdfFindBar() { find.dismissPdfBar() }
+    public func togglePdfFindBar() { find.togglePdfBar() }
 
     // Source mode
     public var isSourceFindBarPresented: Bool {
