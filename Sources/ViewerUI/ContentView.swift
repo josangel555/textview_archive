@@ -747,7 +747,12 @@ public struct ContentView: View {
                     url: url, category: cat,
                     onOpenSibling: { sibling in model.open(url: sibling) },
                     uiScale: CGFloat(model.zoom),
-                    onEditingChanged: { model.isEditingImage = $0 }
+                    onEditingChanged: { model.isEditingImage = $0 },
+                    // TSK-1303: seed the in-place image editor from the persisted
+                    // edit state + persist changes back, so edits survive a session
+                    // switch (the recreated view reads/writes the model's channel).
+                    initialImageEditState: model.imageEditState(for: url),
+                    onImageEditStateChanged: { model.rememberImageEditState($0, for: url) }
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // TSK-608: dismissible via the BottomAttributesBar "Info" toggle.

@@ -188,6 +188,15 @@ public final class ImageEditorViewModel: ObservableObject {
         render()
     }
 
+    /// TSK-1303: construct with a persisted edit state applied at init — the
+    /// DECLARATIVE seed the image editor view uses on session restore, so the
+    /// edits are present the instant the recreated view first renders (no
+    /// post-mount imperative seed to race the first paint). `nil` → pristine.
+    public convenience init(_ document: ImageDocument, initialEditState: ImageEditState?) {
+        self.init(document)
+        if let initialEditState { restoreEditState(initialEditState) }
+    }
+
     /// `true` when there is a committed edit to undo (delegates to the stack).
     public var canUndo: Bool { undoStack.canUndo }
     /// `true` when there is a previously-undone edit to redo.
@@ -741,6 +750,10 @@ public final class ImageEditorViewModel: ObservableObject {
         highlight = state.highlight
         sharpness = state.sharpness
         overlay = state.overlay
+        // Sliders/overlay changes don't auto-render (only the debounced
+        // `scheduleRender` on the live UI path does) — paint the restored state now
+        // so a session-restore seed shows the edits on first appear, not blank.
+        render()
     }
 
     // MARK: - Selection (TSK-1063 / 1068)

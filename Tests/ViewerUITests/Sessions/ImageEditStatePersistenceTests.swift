@@ -120,6 +120,27 @@ final class ImageEditStatePersistenceTests: XCTestCase {
         XCTAssertNil(makeModel().imageEditState(for: nil))
     }
 
+    // MARK: - 4b. the coordinator sequence: capture → snapshot-serialize
+
+    /// The exact pre-`makeSnapshot` sequence `SessionsAppCoordinator` runs on
+    /// detach / autosave / quit: `captureImageEditStateForAllTabs()` then the
+    /// snapshot serialize (`dedupedSnapshotTabs`, which `makeSnapshot` uses). This
+    /// is what the slice-1 capture-placement bug broke: capture MUST run before the
+    /// serialize, else the snapshot carries no edit state (the edits are lost on a
+    /// cold session restore / relaunch).
+    func test_capture_thenSnapshotSerialize_carriesEditState() {
+        let url = URL(fileURLWithPath: "/a/pic.png")
+        let model = makeModel()
+        _ = appendImageTab(url, in: model)
+        model.rememberImageEditState(sampleState(), for: url)
+        model.captureImageEditStateForAllTabs()                       // coordinator step 1
+        let (snaps, _) = SessionState.dedupedSnapshotTabs(            // makeSnapshot's serialize core
+            from: model.tabs.tabs, selectedIndex: nil)
+        let snap = snaps.first(where: { $0.path == url.path })
+        XCTAssertEqual(snap?.imageEditState, sampleState(),
+                       "capture-before-serialize carries the edit state into the snapshot")
+    }
+
     // MARK: - 5. round-trip: capture → (fresh session tab carries it) → restore
 
     func test_roundTrip_captureThenRestore_preservesEdit() {

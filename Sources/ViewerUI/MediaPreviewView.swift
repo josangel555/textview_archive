@@ -29,16 +29,26 @@ public struct MediaPreviewView: View {
     /// Called when the user enters/exits the in-place image editor (TSK-1302), so the host can
     /// suppress the side file-property pane while editing — the full editor needs the width.
     public var onEditingChanged: ((Bool) -> Void)?
+    /// TSK-1303: the persisted image edit state to SEED the in-place editor with on
+    /// session restore, and a sink to persist edits back so they survive a session
+    /// switch. Supplied by the host (`ContentView`, which has the `DocumentModel`);
+    /// `nil` disables persistence (e.g. the `SplitPaneView` call site).
+    public var initialImageEditState: ImageEditState?
+    public var onImageEditStateChanged: ((ImageEditState) -> Void)?
 
     public init(url: URL, category: FileCategory,
                 onOpenSibling: ((URL) -> Void)? = nil,
                 uiScale: CGFloat = 1.0,
-                onEditingChanged: ((Bool) -> Void)? = nil) {
+                onEditingChanged: ((Bool) -> Void)? = nil,
+                initialImageEditState: ImageEditState? = nil,
+                onImageEditStateChanged: ((ImageEditState) -> Void)? = nil) {
         self.url = url
         self.category = category
         self.onOpenSibling = onOpenSibling
         self.uiScale = uiScale
         self.onEditingChanged = onEditingChanged
+        self.initialImageEditState = initialImageEditState
+        self.onImageEditStateChanged = onImageEditStateChanged
     }
 
     /// Point size for preview info chrome (image dimensions, sibling counter,
@@ -60,7 +70,9 @@ public struct MediaPreviewView: View {
         Group {
             switch category {
             case .image: ImagePreview(url: url, onOpenSibling: onOpenSibling, uiScale: uiScale,
-                                      onEditingChanged: onEditingChanged)
+                                      onEditingChanged: onEditingChanged,
+                                      initialImageEditState: initialImageEditState,
+                                      onImageEditStateChanged: onImageEditStateChanged)
             case .audio: AudioPreview(url: url)
             case .video: VideoPreview(url: url)
             case .pdf:   PDFPreview(url: url)
@@ -95,6 +107,10 @@ struct ImagePreview: View {
     /// Fired when the in-place editor opens/closes (TSK-1302) so the host suppresses the side
     /// file-property pane while editing (the full-width editor needs the room).
     var onEditingChanged: ((Bool) -> Void)?
+    /// TSK-1303: persisted image edit state to SEED the in-place editor with (session
+    /// restore) + a sink to persist edits back, threaded from the host `DocumentModel`.
+    var initialImageEditState: ImageEditState?
+    var onImageEditStateChanged: ((ImageEditState) -> Void)?
 
     @State private var magnification: CGFloat = 1.0
     @State private var pixelSize: NSSize = .zero
@@ -157,7 +173,9 @@ struct ImagePreview: View {
         }
         .overlay {
             if editing {
-                ImageEditorView(url: url) { editing = false }
+                ImageEditorView(url: url,
+                                initialEditState: initialImageEditState,
+                                onEditStateChanged: onImageEditStateChanged) { editing = false }
                     .transition(.opacity)
             }
         }

@@ -57,4 +57,27 @@ final class ImageEditStateTests: XCTestCase {
         XCTAssertEqual(fresh.overlay.shapes.count, 1, "the annotation overlay must restore")
         XCTAssertEqual(fresh.overlay.shapes.first?.kind, .rect)
     }
+
+    // MARK: - TSK-1303 slice 2: the view's declarative SEED init
+
+    /// The convenience init the image editor view uses to seed a recreated VM from
+    /// the persisted state (session restore) applies the edits AT CONSTRUCTION —
+    /// so the edits are present on first render, no post-mount imperative seed.
+    func test_init_withInitialEditState_seedsVMAtConstruction() throws {
+        let seed = ImageEditState(brightness: 0.4, contrast: 1.3, saturation: 0.7,
+                                  exposureEV: 0.2, shadow: 0.1, highlight: 0.8, sharpness: 0.3)
+        let vm = ImageEditorViewModel(ImageDocument(data: try solidPNG()), initialEditState: seed)
+        XCTAssertEqual(vm.captureEditState(), seed,
+                       "the VM is seeded with the persisted edit state at construction")
+        XCTAssertNotNil(vm.rendered,
+                        "restoreEditState renders, so the seeded edits paint on first appear")
+    }
+
+    /// A nil seed → a pristine editor (the non-image / never-edited path): no edits
+    /// applied, so the untouched source renders byte-for-byte.
+    func test_init_withNilInitialEditState_isPristine() throws {
+        let vm = ImageEditorViewModel(ImageDocument(data: try solidPNG()), initialEditState: nil)
+        XCTAssertEqual(vm.captureEditState(), ImageEditState(),
+                       "nil seed → a pristine editor (no edits applied)")
+    }
 }

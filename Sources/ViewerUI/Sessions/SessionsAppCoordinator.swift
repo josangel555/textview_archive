@@ -428,6 +428,10 @@ public final class SessionsAppCoordinator: ObservableObject {
             // TSK-718 hot exit: capture unsaved buffers so a quit restores
             // in-flight edits on relaunch.
             active.model.captureUnsavedTextForAllTabs()
+            // TSK-1303: capture in-progress image-editor edits onto their tabs
+            // before this snapshot, so image edits survive a session switch /
+            // detach / quit — exactly like unsaved text + scroll above.
+            active.model.captureImageEditStateForAllTabs()
             let snap = active.makeSnapshot()
             lastPersistedContent[active.id] = snap
             core.replaceSnapshot(id: active.id, with: snap)
@@ -746,6 +750,10 @@ public final class SessionsAppCoordinator: ObservableObject {
             // TSK-718 hot exit: capture unsaved buffers on detach so switching
             // sessions (and back) preserves in-flight edits.
             active.model.captureUnsavedTextForAllTabs()
+            // TSK-1303: capture in-progress image-editor edits onto their tabs
+            // before this snapshot, so image edits survive a session switch /
+            // detach / quit — exactly like unsaved text + scroll above.
+            active.model.captureImageEditStateForAllTabs()
             let snap = active.makeSnapshot()
             owner.lastPersistedContent[active.id] = snap
             owner.core.replaceSnapshot(id: active.id, with: snap)

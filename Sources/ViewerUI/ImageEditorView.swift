@@ -35,9 +35,20 @@ struct ImageEditorView: View {
     @State private var skewV = "0"
     /// Called when the user dismisses the editor (returns to the plain viewer).
     let onClose: () -> Void
+    /// TSK-1303: fired whenever the edit state changes, so the host can persist it
+    /// for session-switch survival. Wired by `MediaPreviewView` → the model's
+    /// `rememberImageEditState`; `nil` disables persistence.
+    let onEditStateChanged: ((ImageEditState) -> Void)?
 
-    init(url: URL, onClose: @escaping () -> Void) {
-        _vm = StateObject(wrappedValue: ImageEditorViewModel(ImageDocument(contentsOf: url)))
+    init(url: URL,
+         initialEditState: ImageEditState? = nil,
+         onEditStateChanged: ((ImageEditState) -> Void)? = nil,
+         onClose: @escaping () -> Void) {
+        // Declaratively SEED the VM with the persisted edit state at construction
+        // (TSK-1303) so a session restore shows the edits on first paint.
+        _vm = StateObject(wrappedValue:
+            ImageEditorViewModel(ImageDocument(contentsOf: url), initialEditState: initialEditState))
+        self.onEditStateChanged = onEditStateChanged
         self.onClose = onClose
     }
 
@@ -58,6 +69,14 @@ struct ImageEditorView: View {
         }
         .ignoresSafeArea()
         .accessibilityIdentifier("mdv.imageEditor")
+        // TSK-1303: publish the live edit state to the host on every change so it's
+        // captured into the session snapshot (survives a session switch). The dict
+        // sink is a plain (non-@Published) store, so this write is cheap + doesn't
+        // churn any view. Does NOT fire on the initial seed (onChange skips the
+        // first value), so seeding never writes back over itself.
+        .onChange(of: vm.captureEditState()) { _, newState in
+            onEditStateChanged?(newState)
+        }
     }
 
     /// TSK-1073 — the Resize/Stretch dialog (by percent or pixels, aspect lock).
