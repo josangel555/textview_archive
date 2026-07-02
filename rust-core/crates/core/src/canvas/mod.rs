@@ -16,6 +16,7 @@
 
 pub mod lower;
 pub mod ops;
+pub mod patch;
 pub mod props;
 pub mod registry;
 pub mod store;

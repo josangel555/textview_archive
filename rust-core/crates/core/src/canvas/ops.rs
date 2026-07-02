@@ -79,6 +79,20 @@ impl From<StoreError> for ApplyError {
     }
 }
 
+/// What one op actually did (parallel to the batch — the patch planner's
+/// input; an idempotent replay is `Noop` and must yield zero patches).
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppliedEffect {
+    Noop,
+    /// The RESOLVED id (supplied or minted) + the DOM anchor (next sibling)
+    /// captured AT APPLY TIME — a later op in the same batch may invalidate
+    /// final-state anchors, so the planner must not recompute them.
+    Inserted { id: Id, before: Option<Id> },
+    Updated(Id),
+    Moved { id: Id, before: Option<Id> },
+    Removed(Id),
+}
+
 /// A successfully applied batch.
 #[derive(Debug)]
 pub struct Applied {
@@ -88,6 +102,8 @@ pub struct Applied {
     pub inverses: Vec<UndoOp>,
     /// Ids minted for `Insert { id: None }` ops, in op order.
     pub minted: Vec<Id>,
+    /// Per-op outcomes, parallel to the input batch.
+    pub effects: Vec<AppliedEffect>,
     /// True when every op was an idempotent replay (rev did NOT bump).
     pub noop: bool,
 }
@@ -117,14 +133,16 @@ impl DocState {
         }
         let mut inverses: Vec<UndoOp> = Vec::new();
         let mut minted: Vec<Id> = Vec::new();
+        let mut effects: Vec<AppliedEffect> = Vec::new();
         let mut mutated = false;
         for op in ops {
             match self.apply_one(op, &mut minted) {
-                Ok(Some(undo)) => {
+                Ok(Some((undo, effect))) => {
                     mutated = true;
                     inverses.push(undo);
+                    effects.push(effect);
                 }
-                Ok(None) => {} // idempotent replay — no state change
+                Ok(None) => effects.push(AppliedEffect::Noop), // idempotent replay
                 Err(e) => {
                     // Roll back everything this batch already applied.
                     while let Some(undo) = inverses.pop() {
@@ -142,6 +160,7 @@ impl DocState {
             rev: self.rev,
             inverses,
             minted,
+            effects,
             noop: !mutated,
         })
     }
@@ -163,7 +182,7 @@ impl DocState {
         &mut self,
         op: &CanvasOp,
         minted: &mut Vec<Id>,
-    ) -> Result<Option<UndoOp>, ApplyError> {
+    ) -> Result<Option<(UndoOp, AppliedEffect)>, ApplyError> {
         match op {
             CanvasOp::Insert {
                 id,
@@ -211,7 +230,11 @@ impl DocState {
                 for (k, v) in props {
                     bag.set(*k, v.clone());
                 }
-                Ok(Some(UndoOp::RemoveInserted(new_id)))
+                let before = self.next_sibling(parent, &new_id);
+                Ok(Some((
+                    UndoOp::RemoveInserted(new_id.clone()),
+                    AppliedEffect::Inserted { id: new_id, before },
+                )))
             }
             CanvasOp::Update { id, set, unset } => {
                 let Some(rec) = self.store.get(id) else {
@@ -248,11 +271,14 @@ impl DocState {
                 for k in unset {
                     bag.unset(*k);
                 }
-                Ok(Some(UndoOp::RestoreProps {
-                    id: id.clone(),
-                    set: inv_set,
-                    unset: inv_unset,
-                }))
+                Ok(Some((
+                    UndoOp::RestoreProps {
+                        id: id.clone(),
+                        set: inv_set,
+                        unset: inv_unset,
+                    },
+                    AppliedEffect::Updated(id.clone()),
+                )))
             }
             CanvasOp::Move { id, parent, pos } => {
                 let Some(rec) = self.store.get(id) else {
@@ -260,16 +286,30 @@ impl DocState {
                 };
                 let old_place = rec.place.clone();
                 self.store.move_to(id, parent, pos)?;
-                Ok(Some(UndoOp::RestorePlace {
-                    id: id.clone(),
-                    place: old_place,
-                }))
+                Ok(Some((
+                    UndoOp::RestorePlace {
+                        id: id.clone(),
+                        place: old_place,
+                    },
+                    AppliedEffect::Moved {
+                        id: id.clone(),
+                        before: self.next_sibling(parent, id),
+                    },
+                )))
             }
             CanvasOp::Remove { id } => {
                 let removed = self.store.remove(id)?;
-                Ok(Some(UndoOp::Resurrect(removed)))
+                Ok(Some((UndoOp::Resurrect(removed), AppliedEffect::Removed(id.clone()))))
             }
         }
+    }
+
+    /// The sibling immediately after `id` under `parent` RIGHT NOW (the
+    /// `insertBefore` anchor at this point in the batch; None = append).
+    fn next_sibling(&self, parent: &Id, id: &Id) -> Option<Id> {
+        let kids = self.store.children(parent);
+        let idx = kids.iter().position(|k| k == id)?;
+        kids.get(idx + 1).cloned()
     }
 
     fn run_undo(&mut self, undo: UndoOp) {
