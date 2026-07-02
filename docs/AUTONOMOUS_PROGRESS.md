@@ -14973,3 +14973,15 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - New general capabilities banked: #anchor as a prop VALUE (nd:id); token css_var_pairs
   forward map; CanvasComponentIndex. Bars: kit-strip + linkTo-flash PIXELS pinned to
   TSK-1334 (owner Screen-Recording grant); behavior all host/webview-validated.
+
+## 2026-07-02 — M6 COMPLETE: Presentation mode, all 7 slices (TSK-1395..1401) — THE EPIC CHAIN IS DONE
+- Deck mode infra + slides; the step model (deck.rs timeline_state, pure+proptest);
+  timeline_state FFI + canvas_timeline tool; the JS player (reveal == timeline_state,
+  two-consumers law proven); identity-morph (morph_pairs diff + FLIP); offline deck export
+  (self-contained, plays with zero network); UAT-M6 the deck journey.
+- Thin-mode law HELD across BOTH modes (M5 UI-Design + M6 Presentation): the TIME model rides
+  as props (step/morphId) + engine queries, zero new record kinds, zero engine branches on mode.
+- Milestone chain M0→M6 all at fixed/validated. Standing bars unchanged: TSK-1334 (owner
+  Screen-Recording grant → T5 morph/transition PIXELS), TSK-1365 (VM webview residual), owner
+  Q-review. Findings for later: PDF deck export, richer morphs (path/cross-kind), walkthrough
+  dogfood (P7).

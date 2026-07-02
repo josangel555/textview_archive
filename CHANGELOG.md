@@ -3,6 +3,11 @@
 ## 2026-07-02
 
 ### Added
+- **Canvas Presentation mode:** build a themed slide deck entirely through the
+  agent tools — stepped reveals, identity-morph transitions (a shared element
+  glides between slides), a keyboard-driven player, and one-file offline HTML
+  export that plays with no network. The step timeline is verifiable before any
+  screenshot.
 - **Canvas design system:** reusable components (edit a definition once, every
   copy updates), a starter kit of six building blocks, instant whole-document
   retheming, charts/tables/code/diagrams as first-class content, data-driven
