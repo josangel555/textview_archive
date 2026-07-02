@@ -102,6 +102,10 @@
       } else if (p.op === "removeNode") {
         el.parentNode && el.parentNode.removeChild(el);
         applied += 1;
+      } else if (p.op === "replaceNode") {
+        // Definition-edit re-render (M4.S1c): outerHTML swap in place.
+        el.outerHTML = p.html;
+        applied += 1;
       } else if (p.op === "moveNode") {
         var m = parentAndAnchor(p);
         if (!m) { missing.push(p.parent); continue; }

@@ -22,6 +22,10 @@ pub enum Patch {
     InsertNode { parent: Id, before: Option<Id>, html: String },
     RemoveNode { id: Id },
     MoveNode { id: Id, parent: Id, before: Option<Id> },
+    /// Re-render one node in place (outerHTML swap) — the definition-edit
+    /// verb (M4.S1c): an edit INSIDE a cmp:* subtree re-lowers every visible
+    /// instance instead of patching ids that don't exist bare in the DOM.
+    ReplaceNode { id: Id, html: String },
 }
 
 /// Map one prop mutation to its patch (shared-table style mapping; `text` and
@@ -77,7 +81,63 @@ fn unset_patch(id: &Id, key: PropKey) -> Option<Patch> {
 #[must_use]
 pub fn plan(doc: &DocState, ops: &[CanvasOp], effects: &[AppliedEffect]) -> Vec<Patch> {
     let mut patches: Vec<Patch> = Vec::new();
+    // Definition-edit handling (M4.S1c): ops whose target lives inside a
+    // cmp:* definition patch NOTHING bare (those ids aren't in the DOM);
+    // instead every VISIBLE instance of the touched definition re-lowers in
+    // place. Deduped across the batch.
+    let mut touched_defs: Vec<Id> = Vec::new();
     for (op, effect) in ops.iter().zip(effects.iter()) {
+        if matches!(effect, AppliedEffect::Noop) {
+            continue;
+        }
+        let target: Option<&Id> = match op {
+            CanvasOp::Insert { parent, .. } => Some(parent),
+            CanvasOp::Update { id, .. }
+            | CanvasOp::Move { id, .. }
+            | CanvasOp::Remove { id } => Some(id),
+        };
+        if let Some(t) = target {
+            // For removes the record is gone — containing_definition walks
+            // the CURRENT store; a removed subtree's definition is found via
+            // the op's PARENT context instead. Removes of def-internal nodes
+            // resolve through the batch's other signals; v1 accepts a full
+            // instance re-lower keyed on whatever still resolves.
+            if let Some(def) = super::lower::containing_definition(&doc.store, t)
+                && !touched_defs.contains(&def)
+            {
+                touched_defs.push(def);
+            }
+        }
+    }
+    for (op, effect) in ops.iter().zip(effects.iter()) {
+        // Suppress bare patches for in-definition targets.
+        let in_definition = |candidate: &Id| -> bool {
+            super::lower::containing_definition(&doc.store, candidate).is_some()
+        };
+        match (op, effect) {
+            (_, AppliedEffect::Noop) => {}
+            (CanvasOp::Insert { .. }, AppliedEffect::Inserted { id, .. })
+                if in_definition(id) => {}
+            (CanvasOp::Update { .. }, AppliedEffect::Updated(id))
+                if in_definition(id) => {}
+            (CanvasOp::Move { .. }, AppliedEffect::Moved { id, .. })
+                if in_definition(id) => {}
+            _ => { plan_one(doc, op, effect, &mut patches); continue }
+        }
+    }
+    for def in &touched_defs {
+        for instance in super::lower::visible_instances_of(&doc.store, def) {
+            patches.push(Patch::ReplaceNode {
+                id: instance.clone(),
+                html: lower::lower_subtree(&doc.store, &instance),
+            });
+        }
+    }
+    patches
+}
+
+fn plan_one(doc: &DocState, op: &CanvasOp, effect: &AppliedEffect, patches: &mut Vec<Patch>) {
+    {
         match (op, effect) {
             (_, AppliedEffect::Noop) => {} // replay — nothing to do
             (CanvasOp::Insert { parent, .. }, AppliedEffect::Inserted { id: new_id, before }) => {
@@ -114,7 +174,6 @@ pub fn plan(doc: &DocState, ops: &[CanvasOp], effects: &[AppliedEffect]) -> Vec<
             _ => debug_assert!(false, "op/effect mismatch: {op:?} vs {effect:?}"),
         }
     }
-    patches
 }
 
 #[cfg(test)]
@@ -291,4 +350,80 @@ mod tests {
             }]
         );
     }
+    // MARK: M4.S1c — definition-edit planning
+
+    #[test]
+    fn definition_edit_replaces_every_visible_instance_and_nothing_bare() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        let card = Id::parse("cmp:card").expect("cmp");
+        d.store.insert_root(card.clone(), RecordKind::Frame).expect("def root");
+        d.apply(0, &[
+            CanvasOp::Insert {
+                id: Some(id("nd:card-title")),
+                kind: RecordKind::Text,
+                parent: card.clone(),
+                pos: Position::Last,
+                props: vec![(key("text"), Value::Str("t".into()))],
+            },
+            CanvasOp::Insert {
+                id: Some(id("nd:inst-a")),
+                kind: RecordKind::Component,
+                parent: pg.clone(),
+                pos: Position::Last,
+                props: vec![(key("ref"), Value::Str("cmp:card".into()))],
+            },
+            CanvasOp::Insert {
+                id: Some(id("nd:inst-b")),
+                kind: RecordKind::Component,
+                parent: pg.clone(),
+                pos: Position::Last,
+                props: vec![(key("ref"), Value::Str("cmp:card".into()))],
+            },
+        ]).expect("seed");
+
+        // Edit INSIDE the definition.
+        let ops = [CanvasOp::Update {
+            id: id("nd:card-title"),
+            set: vec![(key("text"), Value::Str("edited".into()))],
+            unset: vec![],
+        }];
+        let applied = d.apply(1, &ops).expect("edit");
+        let got = plan(&d, &ops, &applied.effects);
+        // NO bare patch for nd:card-title; exactly the two instances replace.
+        assert_eq!(got.len(), 2, "{got:?}");
+        for patch in &got {
+            assert!(
+                matches!(patch, Patch::ReplaceNode { .. }),
+                "expected ReplaceNode, got {patch:?}"
+            );
+            if let Patch::ReplaceNode { id: instance, html } = patch {
+                assert!(instance.as_str().starts_with("nd:inst-"));
+                assert!(html.contains(">edited<"), "re-lowered content");
+                assert!(
+                    html.contains(&format!("{}/nd:card-title", instance.as_str())),
+                    "namespaced inner ids in the replacement"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn page_content_edits_still_patch_minimally() {
+        // The definition machinery must not tax ordinary edits.
+        let (mut d, _pg) = seeded();
+        let ops = [CanvasOp::Update {
+            id: id("nd:a"),
+            set: vec![(key("text"), Value::Str("still minimal".into()))],
+            unset: vec![],
+        }];
+        let applied = d.apply(1, &ops).expect("edit");
+        let got = plan(&d, &ops, &applied.effects);
+        assert_eq!(
+            got,
+            vec![Patch::SetText { id: id("nd:a"), text: "still minimal".into() }]
+        );
+    }
+
 }

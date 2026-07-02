@@ -180,6 +180,8 @@ public final class CanvasDocAdapter {
         case let .removeNode(id): return .removeNode(id: id)
         case let .moveNode(id, parent, before):
             return .moveNode(id: id, parent: parent, before: before)
+        case let .replaceNode(id, html):
+            return .replaceNode(id: id, html: html)
         }
     }
 }

@@ -22,6 +22,7 @@ public enum CVPatchInstruction: Equatable, Sendable {
     case insertNode(parent: String, before: String?, html: String)
     case removeNode(id: String)
     case moveNode(id: String, parent: String, before: String?)
+    case replaceNode(id: String, html: String)
 
     /// The JSON dictionary the JS applier consumes.
     var jsonObject: [String: Any] {
@@ -44,6 +45,8 @@ public enum CVPatchInstruction: Equatable, Sendable {
             var d: [String: Any] = ["op": "moveNode", "id": id, "parent": parent]
             if let before { d["before"] = before }
             return d
+        case let .replaceNode(id, html):
+            return ["op": "replaceNode", "id": id, "html": html]
         }
     }
 }

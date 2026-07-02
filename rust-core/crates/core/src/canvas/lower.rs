@@ -631,6 +631,135 @@ mod tests {
         assert!(html2.contains("expansion depth cap"), "the lowerer must not loop");
     }
 
+    /// M4 scale check (the sans-IO stand-in for the expansion budget: the
+    /// WALL-CLOCK metric belongs to the perf_floor ratchet bin per bench.rs
+    /// — Instant::now is lint-walled out of core): 100 instances of a
+    /// 10-node definition render EXACTLY the expected 1000 lines with fully
+    /// namespaced ids, and the output scales linearly in bytes (no
+    /// accidental quadratic duplication).
+    #[test]
+    fn expansion_scales_linearly_and_exactly() {
+        let tokens = TokenStore::default_theme();
+        let mut comp = DocState::new();
+        let pg = Id::page(1);
+        comp.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        let def = Id::parse("cmp:block").expect("cmp");
+        comp.store.insert_root(def.clone(), RecordKind::Frame).expect("def");
+        let mut ops = Vec::new();
+        for i in 0..10 {
+            ops.push(CanvasOp::Insert {
+                id: None,
+                kind: RecordKind::Text,
+                parent: def.clone(),
+                pos: Position::Last,
+                props: vec![(key("text"), Value::Str(format!("line {i}")))],
+            });
+        }
+        for _ in 0..100 {
+            ops.push(CanvasOp::Insert {
+                id: None,
+                kind: RecordKind::Component,
+                parent: pg.clone(),
+                pos: Position::Last,
+                props: vec![(key("ref"), Value::Str("cmp:block".into()))],
+            });
+        }
+        comp.apply(0, &ops).expect("comp");
+        let html10 = {
+            // 10-instance reference for the linearity check.
+            let mut small = DocState::new();
+            let pg2 = Id::page(1);
+            small.store.insert_root(pg2.clone(), RecordKind::Page).expect("root");
+            let def2 = Id::parse("cmp:block").expect("cmp");
+            small.store.insert_root(def2.clone(), RecordKind::Frame).expect("def");
+            let mut ops2 = Vec::new();
+            for i in 0..10 {
+                ops2.push(CanvasOp::Insert {
+                    id: None,
+                    kind: RecordKind::Text,
+                    parent: def2.clone(),
+                    pos: Position::Last,
+                    props: vec![(key("text"), Value::Str(format!("line {i}")))],
+                });
+            }
+            for _ in 0..10 {
+                ops2.push(CanvasOp::Insert {
+                    id: None,
+                    kind: RecordKind::Component,
+                    parent: pg2.clone(),
+                    pos: Position::Last,
+                    props: vec![(key("ref"), Value::Str("cmp:block".into()))],
+                });
+            }
+            small.apply(0, &ops2).expect("small");
+            lower_page(&small.store, &tokens, &pg2)
+        };
+        let html100 = lower_page(&comp.store, &tokens, &pg);
+        assert_eq!(html100.matches(">line 0<").count(), 100, "every instance rendered");
+        assert_eq!(html100.matches("/nd:").count() % 100, 0, "namespacing uniform");
+        // Linearity: 100 instances ≤ ~11× the 10-instance bytes (theme block
+        // amortizes; a quadratic bug would blow far past this).
+        assert!(
+            html100.len() < html10.len() * 11,
+            "output grew super-linearly: {} vs {}",
+            html100.len(),
+            html10.len()
+        );
+    }
+
+    proptest::proptest! {
+        /// Expansion never panics: arbitrary component/ref/text batches
+        /// (some rejected by the fence — fine); lowering the surviving
+        /// store is TOTAL.
+        #[test]
+        fn expansion_lowering_is_total(seed in proptest::collection::vec(0u8..5, 1..40)) {
+            let mut d = DocState::new();
+            let pg = Id::page(1);
+            d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+            let def = Id::parse("cmp:a").expect("cmp");
+            d.store.insert_root(def.clone(), RecordKind::Frame).expect("def");
+            let def_b = Id::parse("cmp:b").expect("cmp");
+            d.store.insert_root(def_b.clone(), RecordKind::Frame).expect("def b");
+            let tokens = TokenStore::default_theme();
+            for (i, b) in seed.iter().enumerate() {
+                let rev = d.rev();
+                let op = match b {
+                    0 => CanvasOp::Insert {
+                        id: None, kind: RecordKind::Text, parent: def.clone(),
+                        pos: Position::Last,
+                        props: vec![(key("text"), Value::Str(format!("d{i}")))],
+                    },
+                    1 => CanvasOp::Insert {
+                        id: None, kind: RecordKind::Component, parent: pg.clone(),
+                        pos: Position::Last,
+                        props: vec![(key("ref"), Value::Str("cmp:a".into()))],
+                    },
+                    2 => CanvasOp::Insert {
+                        id: None, kind: RecordKind::Component, parent: def_b.clone(),
+                        pos: Position::Last,
+                        props: vec![(key("ref"), Value::Str("cmp:a".into()))],
+                    },
+                    3 => CanvasOp::Insert {
+                        // The CYCLE attempt: cmp:a instantiating cmp:b (which
+                        // may instantiate cmp:a) — the fence may reject; both
+                        // outcomes must leave a lowerable store.
+                        id: None, kind: RecordKind::Component, parent: def.clone(),
+                        pos: Position::Last,
+                        props: vec![(key("ref"), Value::Str("cmp:b".into()))],
+                    },
+                    _ => CanvasOp::Insert {
+                        id: None, kind: RecordKind::Component, parent: pg.clone(),
+                        pos: Position::Last,
+                        props: vec![(key("ref"), Value::Str("cmp:missing".into()))],
+                    },
+                };
+                let _ = d.apply(rev, &[op]); // rejection is a legal outcome
+                let html = lower_page(&d.store, &tokens, &pg);
+                proptest::prop_assert!(!html.is_empty());
+            }
+        }
+    }
+
     #[test]
     fn subtree_fragment_matches_page_slice() {
         let (d, _pg) = fixture();

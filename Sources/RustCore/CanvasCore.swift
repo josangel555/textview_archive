@@ -108,6 +108,7 @@ public enum CanvasPatch: Equatable, Sendable {
     case insertNode(parent: String, before: String?, html: String)
     case removeNode(id: String)
     case moveNode(id: String, parent: String, before: String?)
+    case replaceNode(id: String, html: String)
 }
 
 /// One advisory lint finding (S6 — rides every apply).
@@ -416,6 +417,8 @@ public final class CanvasDocSession {
             return .removeNode(id: try s("id"))
         case "moveNode":
             return .moveNode(id: try s("id"), parent: try s("parent"), before: opt("before"))
+        case "replaceNode":
+            return .replaceNode(id: try s("id"), html: try s("html"))
         default:
             throw CoreError.decode("unknown patch op '\(op)'")
         }

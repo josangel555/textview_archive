@@ -118,6 +118,8 @@ enum WirePatch {
         #[serde(skip_serializing_if = "Option::is_none")]
         before: Option<String>,
     },
+    #[serde(rename_all = "camelCase")]
+    ReplaceNode { id: String, html: String },
 }
 
 impl WirePatch {
@@ -153,6 +155,10 @@ impl WirePatch {
                 id: id.as_str().to_owned(),
                 parent: parent.as_str().to_owned(),
                 before: before.as_ref().map(|b| b.as_str().to_owned()),
+            },
+            Patch::ReplaceNode { id, html } => WirePatch::ReplaceNode {
+                id: id.as_str().to_owned(),
+                html: html.clone(),
             },
         }
     }
