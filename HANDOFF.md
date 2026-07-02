@@ -9,6 +9,13 @@
   frame-wipe → fence rule; WebContent termination on the VM lane → **TSK-1365** hardening
   ticket, consumer deadline M1.S5's parity test). M0's demo engine lives in
   `rust-core/crates/core/src/canvas/mod.rs` + FFI `mdvcore_canvas_*` + `canvas.js` applier.
+- **M4 COMPLETE (2026-07-02 late): milestone TSK-1347 at FIXED — all 9 slices validated.**
+  Components/overrides/DSL/tokens+zero-op-retheme/kit(drift-blocks)/table+code+chart+diagram/
+  each-blocks/measured-lint — and THE GAUNTLET: 10/10 pre-committed briefs, 0% ESCAPE RATE
+  (the owner's 30% pivot criterion, passed decisively). Commits 5f3eea2b..5d66fa0b. M5-feeding
+  findings on the tickets (inputs, grid, standalone-if/expressions, live mermaid). **NEXT: M5
+  planning pass (UI-Design mode, TSK-1351).** Validation bars unchanged (TSK-1365 residual;
+  TSK-1334 owner grant; owner Q-review pending).
 - **M3 WYSIWYG COMPLETE on the local lane (2026-07-02): milestone TSK-1346 at FIXED.**
   All 8 slices landed (fd25bad3..fd417b7b): rendered lens = DEFAULT for .canvas; selection
   overlay glued through reflow; inline text edit (IME-safe); drag-reorder; ⌘Z; inspector +
