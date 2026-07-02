@@ -13,6 +13,14 @@
   step up from isolated host tests). Features whose action isn't a script-verb (e.g. a canvas paint
   DRAG) can't be user-driven without AX/CGEvent → report "behavior host-tested; user-gesture drive
   needs AX/pixel grant."
+- **PRECISE VEHICLE (mapped 2026-07-02):** the concrete "act like a user on the real app + assert"
+  mechanism is a **T4 `LiveAppTestCase`** (Tests/ViewerUITests, `TierBaseCases`) on the VM GUI lane
+  (`MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh all` — `all` rebuilds dist).
+  It spawns the REAL app in-process, drives via the real action path, and asserts model-state/geometry
+  in ONE process (behavior; pixels still need TSK-1334). A headed dist app driven over ssh via
+  `textview://` URL-scheme verbs DRIVES but can't self-verify (no interactive readback verb — the
+  `snapshot` verb defers to the caller). NEXT CONCRETE STEP: write a T4 LiveAppTestCase that
+  user-drives a recent fix (CSV empty-state / image New-Image) + asserts state; run it on the VM.
 - **Biggest unlock:** the owner granting **TSK-1334** (Screen-Recording on the VM xctest/app) turns
   on real pixel confirmation for the whole render surface. Until then, per-feature validation ceiling
   = real-app script-verb drive + model-state assert.
