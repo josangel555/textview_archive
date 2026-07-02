@@ -1,8 +1,8 @@
 <!-- Provenance: independent Canvas design pass (second claude-mdv session), filed as
      CANVAS-0001 in markdown because the tasked board was down 2026-07-01. Preserved
      VERBATIM (only this header added; one known path nit: HTMLDocumentPolicy.swift is in
-     Sources/ViewerCore/, not ViewerUI/). Reconciled with docs/CANVAS_DESIGN.md (TSK-1342)
-     — see that doc's §0 for the adopted unified design + merged decision list. -->
+     Sources/ViewerCore/, not ViewerUI/). Reconciled with docs/CANVAS_DESIGN.md (TSK-1342).
+     ⛔ SUPERSEDED (2026-07-01) by the v2 doc set at docs/canvas/ — kept for history. -->
 
 # Canvas — agent-first WYSIWYG surface (spike + detailed design)
 

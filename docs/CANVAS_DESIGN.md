@@ -1,5 +1,10 @@
 # Canvas — unified design (TSK-1342, reconciles CANVAS-0001)
 
+> ⛔ **SUPERSEDED (2026-07-01) by the v2 doc set at `docs/canvas/`** (README → 01-RESEARCH-ANALYSIS
+> → 02-CORE-ENGINE → 03-SHELLS → 04-MODES-AND-USES → 05-ROADMAP). That set absorbs this doc,
+> CANVAS-0001, and the full salvage-research analysis; its `05-ROADMAP.md` Q1–Q12 replaces every
+> decision list below. Kept for history.
+
 > **Status: DESIGN — awaiting owner review. Nothing implemented.**
 > Owner ask (2026-07-01): a WYSIWYG editor for **agents** (and humans) to build UIs,
 > infographics, explainers, and presentations. Underlying tech is HTML/CSS/JS, but with
