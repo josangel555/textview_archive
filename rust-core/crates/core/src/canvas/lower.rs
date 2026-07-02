@@ -143,19 +143,30 @@ pub fn lower_subtree(store: &Store, id: &Id) -> String {
 struct ExpandCtx {
     prefix: String,
     depth: u8,
+    /// Text overrides active for THIS expansion (anchor id string → text) —
+    /// parsed once from the instance's `overrides` JSON (M4.S2). Innermost
+    /// instance wins for nested expansions.
+    text_overrides: Vec<(String, String)>,
 }
 
 const MAX_EXPANSION_DEPTH: u8 = 8;
 
 impl ExpandCtx {
     fn root() -> ExpandCtx {
-        ExpandCtx { prefix: String::new(), depth: 0 }
+        ExpandCtx { prefix: String::new(), depth: 0, text_overrides: Vec::new() }
     }
-    fn enter(&self, instance_id: &Id) -> ExpandCtx {
+    fn enter(&self, instance_id: &Id, overrides: Vec<(String, String)>) -> ExpandCtx {
         ExpandCtx {
             prefix: format!("{}{}/", self.prefix, instance_id.as_str()),
             depth: self.depth.saturating_add(1),
+            text_overrides: overrides,
         }
+    }
+    fn override_for(&self, id: &Id) -> Option<&str> {
+        self.text_overrides
+            .iter()
+            .find(|(anchor, _)| anchor == id.as_str())
+            .map(|(_, text)| text.as_str())
     }
     /// The DOM id for `id` in this context (namespaced inside expansions).
     fn dom_id(&self, id: &Id) -> String {
@@ -194,7 +205,14 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
         if ctx.depth >= MAX_EXPANSION_DEPTH {
             out.push_str("<!-- expansion depth cap -->");
         } else if let Some(def) = target.filter(|t| store.get(t).is_some()) {
-            let inner = ctx.enter(id);
+            let overrides = PropKey::by_name("overrides")
+                .and_then(|k| rec.props.get(k))
+                .and_then(|v| match v {
+                    Value::Str(json) => parse_overrides(json),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let inner = ctx.enter(id, overrides);
             for kid in store.children(&def) {
                 emit(store, &kid, &inner, out);
             }
@@ -241,7 +259,9 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
             out.push('>');
             match rec.kind {
                 RecordKind::Text => {
-                    if let Some(Value::Str(text)) = get("text") {
+                    if let Some(replacement) = ctx.override_for(id) {
+                        escape_text(replacement, out);
+                    } else if let Some(Value::Str(text)) = get("text") {
                         escape_text(text, out);
                     }
                 }
@@ -260,6 +280,79 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
             out.push_str("</div>");
         }
     }
+}
+
+/// Parse the instance `overrides` JSON (a flat object of anchor-id →
+/// replacement text) via the in-house parser. None on any malformed shape
+/// (the fence rejects at apply; lowering stays lenient/total).
+fn parse_overrides(json: &str) -> Option<Vec<(String, String)>> {
+    let parsed = crate::json::parse(json).ok()?;
+    let crate::json::JsonValue::Object(pairs) = parsed else {
+        return None;
+    };
+    Some(
+        pairs
+            .into_iter()
+            .filter_map(|(k, v)| match v {
+                crate::json::JsonValue::Str(s) => Some((k, s)),
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
+/// Validate every instance's `overrides` table (M4.S2 fence): must be a
+/// flat JSON object of string→string whose anchor keys NAME NODES INSIDE
+/// the referenced definition. Returns a teaching description on failure.
+#[must_use]
+pub fn find_invalid_override(store: &Store) -> Option<String> {
+    let mut ids: Vec<&Id> = store.ids().collect();
+    ids.sort();
+    for id in ids {
+        let Some(rec) = store.get(id) else { continue };
+        if rec.kind != RecordKind::Component {
+            continue;
+        }
+        let Some(Value::Str(json)) = PropKey::by_name("overrides")
+            .and_then(|k| rec.props.get(k))
+        else {
+            continue;
+        };
+        let Some(table) = parse_overrides(json) else {
+            return Some(format!(
+                "instance '{}': overrides must be a flat JSON object of \
+                 \"anchor-id\": \"text\"",
+                id.as_str()
+            ));
+        };
+        let def = PropKey::by_name("ref")
+            .and_then(|k| rec.props.get(k))
+            .and_then(|v| match v {
+                Value::Str(s) => Id::parse(s).ok(),
+                _ => None,
+            });
+        let Some(def) = def.filter(|d| store.get(d).is_some()) else {
+            // Dangling refs are lint's domain; overrides on them wait.
+            continue;
+        };
+        for (anchor, _) in &table {
+            let Ok(anchor_id) = Id::parse(anchor) else {
+                return Some(format!(
+                    "instance '{}': override anchor '{anchor}' is not a valid id",
+                    id.as_str()
+                ));
+            };
+            if containing_definition(store, &anchor_id).as_ref() != Some(&def) {
+                return Some(format!(
+                    "instance '{}': override anchor '{anchor}' names no node \
+                     inside definition '{}'",
+                    id.as_str(),
+                    def.as_str()
+                ));
+            }
+        }
+    }
+    None
 }
 
 /// Detect an expansion cycle: a `cmp:*` definition that transitively
@@ -758,6 +851,87 @@ mod tests {
                 proptest::prop_assert!(!html.is_empty());
             }
         }
+    }
+
+    // MARK: M4.S2 — instance overrides
+
+    #[test]
+    fn instance_root_props_and_text_overrides_apply() {
+        let (mut d, pg) = component_fixture();
+        let tokens = TokenStore::default_theme();
+        // Root-prop override + a text override on inst-a only.
+        d.apply(
+            1,
+            &[CanvasOp::Update {
+                id: id("nd:inst-a"),
+                set: vec![
+                    (key("fill"), Value::Token("color.accent".into())),
+                    (key("overrides"),
+                     Value::Str("{\"nd:card-title\": \"Overridden A\"}".into())),
+                ],
+                unset: vec![],
+            }],
+        )
+        .expect("override");
+        let html = lower_page(&d.store, &tokens, &pg);
+        // The instance wrapper carries the root override.
+        assert!(html.contains("background:var(--cv-color-accent)"));
+        // inst-a shows the override; inst-b keeps the definition text.
+        assert_eq!(html.matches(">Overridden A<").count(), 1, "{html}");
+        assert_eq!(html.matches(">Card title<").count(), 1);
+    }
+
+    #[test]
+    fn override_fence_rejects_bad_anchors_and_malformed_tables() {
+        let (mut d, _pg) = component_fixture();
+        // Anchor outside the definition.
+        let bad_anchor = d.apply(
+            1,
+            &[CanvasOp::Update {
+                id: id("nd:inst-a"),
+                set: vec![(key("overrides"),
+                           Value::Str("{\"nd:nope\": \"x\"}".into()))],
+                unset: vec![],
+            }],
+        );
+        assert!(bad_anchor.is_err(), "unknown anchor must be fenced");
+        // Malformed JSON.
+        let malformed = d.apply(
+            1,
+            &[CanvasOp::Update {
+                id: id("nd:inst-a"),
+                set: vec![(key("overrides"), Value::Str("not json".into()))],
+                unset: vec![],
+            }],
+        );
+        assert!(malformed.is_err(), "malformed table must be fenced");
+        // Both rejected ATOMICALLY: the instance carries no overrides prop.
+        let rec = d.store.get(&id("nd:inst-a")).expect("rec");
+        assert!(PropKey::by_name("overrides")
+            .and_then(|k| rec.props.get(k))
+            .is_none());
+    }
+
+    #[test]
+    fn overrides_survive_the_io_round_trip() {
+        let (mut d, pg) = component_fixture();
+        d.apply(
+            1,
+            &[CanvasOp::Update {
+                id: id("nd:inst-a"),
+                set: vec![(key("overrides"),
+                           Value::Str("{\"nd:card-title\": \"Persisted\"}".into()))],
+                unset: vec![],
+            }],
+        )
+        .expect("override");
+        let tokens = TokenStore::default_theme();
+        let doc = crate::canvas::doc::CanvasDoc::from_parts(
+            // Rebuild a CanvasDoc around this state for io (root = the page).
+            core::mem::take(&mut d), tokens.clone(), pg.clone());
+        let saved = crate::canvas::io::save(&doc);
+        let loaded = crate::canvas::io::load(&saved).expect("load");
+        assert!(loaded.html().contains(">Persisted<"), "override survives save/load");
     }
 
     #[test]

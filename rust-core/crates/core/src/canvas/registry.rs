@@ -33,6 +33,10 @@ pub enum FenceError {
     KindMismatch { kind: &'static str, why: &'static str },
     /// A resource cap fired.
     CapExceeded(&'static str),
+    /// Store-dependent fence failures whose teaching message needs runtime
+    /// detail (M4.S2: override anchors; anything the static variants can't
+    /// carry).
+    Detail(String),
 }
 
 /// Kind names for error messages.
@@ -75,7 +79,14 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
         "shape", "fill", "stroke", "radius", "opacity", "grow", "shrink", "span", "minW", "maxW",
         "minH", "maxH",
     ];
-    const COMPONENT: &[&str] = &["ref", "grow", "shrink", "span"];
+    const COMPONENT: &[&str] = &[
+        // M4.S2: instance props override the expansion ROOT (fill/spacing/
+        // sizing — the wrapper IS the box); `overrides` carries the
+        // text-by-anchor table (compact JSON, fence-validated).
+        "ref", "overrides", "fill", "stroke", "radius", "shadow", "opacity",
+        "gap", "padding", "minW", "maxW", "minH", "maxH",
+        "grow", "shrink", "span",
+    ];
     const EMBED: &[&str] = &["html", "minW", "maxW", "minH", "maxH", "grow", "shrink", "span"];
     const HOLE: &[&str] = &["note", "minW", "maxW", "minH", "maxH"];
     match kind {
@@ -121,7 +132,8 @@ pub fn check_value(key: PropKey, value: &Value) -> Result<(), FenceError> {
             Ok(())
         }
         ("html" | "src" | "ref" | "note" | "role" | "font" | "fill" | "stroke" | "color"
-            | "shadow" | "shape" | "fit" | "align" | "justify" | "direction", Value::Str(s)) => {
+            | "shadow" | "shape" | "fit" | "align" | "justify" | "direction"
+            | "overrides", Value::Str(s)) => {
             if s.len() > MAX_STRING_LEN {
                 return Err(FenceError::CapExceeded("string length"));
             }

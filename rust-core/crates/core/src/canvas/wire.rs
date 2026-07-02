@@ -376,6 +376,7 @@ fn describe_fence(f: &FenceError) -> String {
         FenceError::BadValue { prop, why } => format!("bad value for '{prop}': {why}"),
         FenceError::KindMismatch { kind, why } => format!("kind '{kind}': {why}"),
         FenceError::CapExceeded(what) => format!("cap exceeded: {what}"),
+        FenceError::Detail(why) => why.clone(),
     }
 }
 

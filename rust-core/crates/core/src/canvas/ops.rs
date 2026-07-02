@@ -185,6 +185,15 @@ impl DocState {
                       itself (expansion cycle) — break the ref chain",
             }));
         }
+        // Override fence (M4.S2): every instance's overrides table must be
+        // well-formed and anchor into ITS definition — rejected atomically
+        // with the store's teaching description in the detail channel.
+        if mutated && let Some(why) = super::lower::find_invalid_override(&self.store) {
+            while let Some(undo) = inverses.pop() {
+                self.run_undo(undo);
+            }
+            return Err(ApplyError::Fence(super::registry::FenceError::Detail(why)));
+        }
         if mutated {
             self.rev = self.rev.saturating_add(1);
         }

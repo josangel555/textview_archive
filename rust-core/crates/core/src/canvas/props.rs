@@ -43,6 +43,8 @@ const KEY_TABLE: &[(u16, &str)] = &[
     (26, "html"),
     (27, "note"),
     (28, "role"),
+    // M4.S2: the instance text-override table (compact JSON, component-only).
+    (29, "overrides"),
 ];
 
 impl PropKey {
