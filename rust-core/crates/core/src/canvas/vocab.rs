@@ -83,6 +83,9 @@ pub fn emit_text(tokens: &TokenStore) -> String {
     out.push_str("TOKENS:  token set <path> <value> | token alias <path> <target> |\n");
     out.push_str("  token rename <old> <new>  (renames keep old refs resolving; a token\n");
     out.push_str("  edit rethemes the whole document live — zero record ops).\n");
+    out.push_str("REPETITION:  each data=\"[{…},…]\" [where=field] { …template… }\n");
+    out.push_str("  expands per item AT APPLY; use {{i}} (index) in anchors and\n");
+    out.push_str("  {{item.field}} in values; where= skips falsy-field items.\n");
     out.push_str("COMPONENTS:  component #name { …children… }  defines a reusable\n");
     out.push_str("  block; use #name #instance [prop=…] [override text #anchor \"…\"]\n");
     out.push_str("  instantiates it (editing the definition updates every instance).\n");

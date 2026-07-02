@@ -270,8 +270,11 @@ pub fn parse_fragment_full(
     let mut stack: Vec<Id> = vec![parent.clone()];
     let mut seen_anchors: Vec<String> = Vec::new();
 
-    for (idx, raw_line) in source.lines().enumerate() {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut idx = 0;
+    while let Some(raw_line) = lines.get(idx).copied() {
         let line_no = idx + 1;
+        idx += 1;
         let toks = lex_line(raw_line, line_no)?;
         if toks.is_empty() {
             continue;
@@ -312,6 +315,104 @@ pub fn parse_fragment_full(
                 return err(line_no, "trailing input after token statement");
             }
             token_statements.push(statement);
+            continue;
+        }
+
+        // `each data="[…]" [where=field] {` — AUTHOR-TIME repetition
+        // (M4.S8, the B3 tier): the block's lines expand PER DATUM at parse
+        // time with {{i}} (index) and {{item.<field>}} substituted; `where`
+        // filters on a truthy field. The doc stores the EXPANDED records —
+        // no runtime JS (02 §7).
+        if head == "each" {
+            let mut data_json: Option<String> = None;
+            let mut where_field: Option<String> = None;
+            let mut opens = false;
+            for tok in iter.by_ref() {
+                match tok {
+                    Tok::Prop(name, value) => match name.as_str() {
+                        "data" => {
+                            if let Tok::Quoted(s) = *value {
+                                data_json = Some(s);
+                            } else {
+                                return err(line_no, "each: data must be a quoted JSON array");
+                            }
+                        }
+                        "where" => {
+                            if let Tok::Word(w) = *value {
+                                where_field = Some(w);
+                            } else {
+                                return err(line_no, "each: where takes a field name");
+                            }
+                        }
+                        other => return err(line_no, format!("each: unknown arg '{other}'")),
+                    },
+                    Tok::Open => {
+                        opens = true;
+                        break;
+                    }
+                    other => return err(line_no, format!("unexpected {other:?} in each")),
+                }
+            }
+            if !opens {
+                return err(line_no, "each needs a '{' block");
+            }
+            let Some(json) = data_json else {
+                return err(line_no, "each needs data=\"[…]\" (a JSON array of objects)");
+            };
+            // Scan the block (brace balance over following lines).
+            let mut depth = 1usize;
+            let mut end = idx;
+            while let Some(scan_line) = lines.get(end) {
+                let trimmed = scan_line.trim();
+                if trimmed.ends_with('{') {
+                    depth += 1;
+                } else if trimmed == "}" {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                end += 1;
+            }
+            if depth != 0 {
+                return err(line_no, "each block is missing its closing '}'");
+            }
+            let template = lines
+                .get(idx..end)
+                .unwrap_or_default()
+                .join("\n");
+            idx = end + 1; // consume the block + its close
+
+            let data = parse_each_data(&json)
+                .ok_or_else(|| DslError {
+                    line: line_no,
+                    message: "each data must be a JSON array of flat objects \
+                              (1..=500 items)"
+                        .to_owned(),
+                })?;
+            let Some(current_parent) = stack.last().cloned() else {
+                return err(line_no, "internal: empty parent stack");
+            };
+            for (i, datum) in data.iter().enumerate() {
+                if let Some(field) = &where_field
+                    && !datum_truthy(datum, field)
+                {
+                    continue;
+                }
+                let substituted = substitute(&template, i, datum);
+                let (sub_ops, sub_tokens) =
+                    parse_fragment_full(&substituted, &current_parent).map_err(|e| DslError {
+                        line: line_no,
+                        message: format!(
+                            "each item {i}: line {} of the template: {}",
+                            e.line, e.message
+                        ),
+                    })?;
+                if !sub_tokens.is_empty() {
+                    return err(line_no, "token statements cannot live inside each blocks");
+                }
+                ops.extend(sub_ops);
+            }
             continue;
         }
 
@@ -519,6 +620,50 @@ pub fn parse_fragment_full(
         return err(source.lines().count(), "unclosed '{' (missing '}')");
     }
     Ok((ops, token_statements))
+}
+
+/// each data: a JSON array (1..=500) of FLAT objects.
+fn parse_each_data(json: &str) -> Option<Vec<Vec<(String, String)>>> {
+    let crate::json::JsonValue::Array(items) = crate::json::parse(json).ok()? else {
+        return None;
+    };
+    if items.is_empty() || items.len() > 500 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let crate::json::JsonValue::Object(pairs) = item else { return None };
+        let mut fields = Vec::with_capacity(pairs.len());
+        for (k, v) in pairs {
+            let display = match v {
+                crate::json::JsonValue::Str(s) => s,
+                crate::json::JsonValue::Int(n) => n.to_string(),
+                crate::json::JsonValue::Float(f) => f.to_string(),
+                crate::json::JsonValue::Bool(b) => b.to_string(),
+                _ => return None, // flat objects only
+            };
+            fields.push((k, display));
+        }
+        out.push(fields);
+    }
+    Some(out)
+}
+
+fn datum_truthy(datum: &[(String, String)], field: &str) -> bool {
+    datum
+        .iter()
+        .find(|(k, _)| k == field)
+        .is_some_and(|(_, v)| !v.is_empty() && v != "false" && v != "0")
+}
+
+/// Substitute `{{i}}` and `{{item.<field>}}` in the template text (raw text
+/// pass BEFORE lexing, so quoted strings substitute naturally).
+fn substitute(template: &str, index: usize, datum: &[(String, String)]) -> String {
+    let mut out = template.replace("{{i}}", &index.to_string());
+    for (field, value) in datum {
+        out = out.replace(&format!("{{{{item.{field}}}}}"), value);
+    }
+    out
 }
 
 fn parse_token_statement(iter: &mut TokIter, line_no: usize) -> Result<TokenStatement, DslError> {
@@ -1052,6 +1197,52 @@ frame #page-col gap=8 {
         assert!(e.message.contains("instance '#name'"), "{e:?}");
         let e = parse_fragment("use #card #a override text #t", &pg).expect_err("ov");
         assert!(e.message.contains("override syntax"), "{e:?}");
+    }
+
+    // MARK: M4.S8 — each blocks (author-time repetition)
+
+    #[test]
+    fn each_expands_per_datum_with_index_and_field_substitution() {
+        let (mut d, pg) = page();
+        let src_dsl = "frame #list gap=4 {\n\
+            each data=\"[{\\\"name\\\":\\\"Ada\\\",\\\"role\\\":\\\"eng\\\"},{\\\"name\\\":\\\"Lin\\\",\\\"role\\\":\\\"design\\\"}]\" {\n\
+              text #person-{{i}} \"{{item.name}} — {{item.role}}\"\n\
+            }\n\
+          }";
+        let ops = parse_fragment(src_dsl, &pg).expect("parse");
+        d.apply(0, &ops).expect("apply");
+        let tokens = crate::canvas::tokens::TokenStore::default_theme();
+        let html = crate::canvas::lower::lower_page(&d.store, &tokens, &pg);
+        assert!(html.contains(">Ada — eng<"), "{html}");
+        assert!(html.contains(">Lin — design<"));
+        assert!(html.contains("data-cv-id=\"nd:person-0\""));
+        assert!(html.contains("data-cv-id=\"nd:person-1\""));
+        // The doc stores EXPANDED records (author-time, no runtime JS).
+        let list_id = Id::parse("nd:list").expect("id");
+        assert_eq!(d.store.children(&list_id).len(), 2);
+    }
+
+    #[test]
+    fn each_where_filters_falsy_and_errors_teach() {
+        let (mut d, pg) = page();
+        let src_dsl = "each data=\"[{\\\"n\\\":\\\"keep\\\",\\\"ok\\\":true},{\\\"n\\\":\\\"drop\\\",\\\"ok\\\":false}]\" where=ok {\n\
+          text #kept-{{i}} \"{{item.n}}\"\n\
+        }";
+        let ops = parse_fragment(src_dsl, &pg).expect("parse");
+        d.apply(0, &ops).expect("apply");
+        assert_eq!(ops.len(), 1, "the falsy item filtered out");
+        // Teaching errors.
+        let e = parse_fragment("each {\n}", &pg).expect_err("no data");
+        assert!(e.message.contains("needs data"), "{e:?}");
+        let e = parse_fragment("each data=\"nope\" {\n}", &pg).expect_err("bad data");
+        assert!(e.message.contains("JSON array of flat objects"), "{e:?}");
+        let e = parse_fragment("each data=\"[{}]\"", &pg).expect_err("no block");
+        assert!(e.message.contains("'{' block"), "{e:?}");
+        // Template errors carry BOTH the each line and the template line.
+        let bad_template = "each data=\"[{\\\"x\\\":1}]\" {\n  wormhole #w\n}";
+        let e = parse_fragment(bad_template, &pg).expect_err("template");
+        assert!(e.message.contains("each item 0"), "{e:?}");
+        assert!(e.message.contains("unknown element"), "{e:?}");
     }
 
     #[test]
