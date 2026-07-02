@@ -268,3 +268,5 @@ Owner-decision items stay in § Owner decision queue above (1334, 838, 1418, 142
 788/1215, Canvas review) — referenced by the epics, never duplicated.
 
 This document is the hierarchy + the production-grade path; the board tracks execution state.
+**Wishlist reconciliation:** `docs/WISHLIST_RECONCILE_2026-07-02.md` maps every open
+`OwnerWishlist.md` item to its coverage; its 15 gap tickets are TSK-1483..1497.
