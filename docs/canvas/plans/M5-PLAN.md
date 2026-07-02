@@ -64,6 +64,25 @@ branches on mode — if a slice needs one, the design is wrong (kill).
   the fixture) → export standalone + fragment → reopen → identical.
 - Host + local webview lanes (the standing contingency).
 
+### S6 — prototype navigation (title clause)
+- A `linkTo` prop (new interned key; any kind): in the RENDERED lens a
+  click on a linked node scrolls/flashes the target artboard (canvas.js
+  intercepts before hit-test selection when the mode token says ui-design?
+  NO — thin-mode law: the nav behavior keys on the PROP's presence, not the
+  mode). Author form: `linkTo=#artboard-mobile`.
+- The fence validates targets exist (the dangling-ref lint class); vocab
+  teaches; projection round-trips (generic prop path).
+- Tests: click on a linked node navigates (scroll position moves toward the
+  target — geometry-verified); unlinked clicks still select; dangling
+  linkTo lints.
+
+## Scope boundary (title rider): NO code export
+The title's "NO code export" = no framework component-code generation
+(React/Vue/etc.). The S3 flavors stay HTML-ONLY (the B0 static tier that
+has existed since M2); anything code-shaped waits for an owner decision.
+"Shared style rules" = the token tiers + kit components (S1 imports both);
+no separate rules engine.
+
 ## Budgets
 - Template apply (mode new): < 50ms engine-side (it's ~20 ops + kit).
 - Fragment export of a 500-node artboard: < 50ms (a lower + token resolve).
