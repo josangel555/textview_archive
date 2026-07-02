@@ -99,6 +99,23 @@ pub fn run(doc: &DocState, tokens: &TokenStore) -> Vec<Lint> {
                     });
                 }
             }
+            RecordKind::Chart => {
+                let spec_ok = PropKey::by_name("spec")
+                    .and_then(|k| rec.props.get(k))
+                    .is_some_and(|v| matches!(v, Value::Str(s)
+                        if super::chart::parse_spec(s).is_some()));
+                if !spec_ok {
+                    findings.push(Lint {
+                        severity: LintSeverity::Warn,
+                        code: "chart-spec-invalid",
+                        id: Some(id.clone()),
+                        message: "chart needs a `spec` prop: {\"mark\": \
+                                  \"bar|line|pie\", \"values\": [{\"label\", \
+                                  \"value\"}…]} (1..=1000 non-negative values)"
+                            .to_owned(),
+                    });
+                }
+            }
             RecordKind::Text => {
                 let long = PropKey::by_name("text")
                     .and_then(|k| rec.props.get(k))

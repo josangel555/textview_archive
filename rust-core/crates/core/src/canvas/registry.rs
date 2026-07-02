@@ -53,6 +53,8 @@ pub fn kind_name(kind: RecordKind) -> &'static str {
         RecordKind::Hole => "hole",
         RecordKind::Table => "table",
         RecordKind::Code => "code",
+        RecordKind::Chart => "chart",
+        RecordKind::Diagram => "diagram",
     }
 }
 
@@ -95,6 +97,14 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
         "data", "headers", "fill", "stroke", "radius", "opacity",
         "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
     ];
+    const CHART: &[&str] = &[
+        "spec", "fill", "radius", "opacity",
+        "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
+    ];
+    const DIAGRAM: &[&str] = &[
+        "text", "fill", "radius", "opacity",
+        "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
+    ];
     const CODE: &[&str] = &[
         "text", "language", "fill", "radius", "opacity",
         "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
@@ -107,6 +117,8 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
         RecordKind::Component => COMPONENT,
         RecordKind::Table => TABLE,
         RecordKind::Code => CODE,
+        RecordKind::Chart => CHART,
+        RecordKind::Diagram => DIAGRAM,
         RecordKind::Embed => EMBED,
         RecordKind::Hole => HOLE,
     }
@@ -145,6 +157,12 @@ pub fn check_value(key: PropKey, value: &Value) -> Result<(), FenceError> {
         }
         // Table data: a JSON payload, text-cap sized (structure validated
         // at lowering + lint; the fence caps bytes).
+        ("spec", Value::Str(s)) => {
+            if s.len() > MAX_TEXT_LEN {
+                return Err(FenceError::CapExceeded("chart spec length"));
+            }
+            Ok(())
+        }
         ("data", Value::Str(s)) => {
             if s.len() > MAX_TEXT_LEN {
                 return Err(FenceError::CapExceeded("table data length"));

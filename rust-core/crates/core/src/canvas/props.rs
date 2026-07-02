@@ -50,6 +50,8 @@ const KEY_TABLE: &[(u16, &str)] = &[
     (31, "headers"),
     // M4.S7a: code language tag.
     (32, "language"),
+    // M4.S7b: chart spec (VL-subset JSON).
+    (33, "spec"),
 ];
 
 impl PropKey {

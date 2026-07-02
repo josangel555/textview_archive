@@ -227,6 +227,8 @@ fn parse_kind(s: &str) -> Result<RecordKind, IoError> {
         "hole" => RecordKind::Hole,
         "table" => RecordKind::Table,
         "code" => RecordKind::Code,
+        "chart" => RecordKind::Chart,
+        "diagram" => RecordKind::Diagram,
         other => return Err(bad(&format!("kind '{other}'"))),
     })
 }

@@ -228,6 +228,8 @@ fn parse_kind(s: &str) -> Result<RecordKind, WireFault> {
         "hole" => Ok(RecordKind::Hole),
         "table" => Ok(RecordKind::Table),
         "code" => Ok(RecordKind::Code),
+        "chart" => Ok(RecordKind::Chart),
+        "diagram" => Ok(RecordKind::Diagram),
         other => Err(WireFault::Decode(format!("unknown kind '{other}'"))),
     }
 }

@@ -226,6 +226,12 @@ pub enum RecordKind {
     Table,
     /// Pre-formatted code (M4.S7a): the `text` prop + a `language` tag.
     Code,
+    /// Chart (M4.S7b): a hand-rolled Vega-Lite-SUBSET `spec` prop rendered
+    /// to deterministic SVG rust-side (bar/line/pie; zero deps).
+    Chart,
+    /// Diagram (M4.S7b): mermaid SOURCE in the `text` prop; the canvas
+    /// lowers a labeled block (live mermaid render = shell integration).
+    Diagram,
 }
 
 impl RecordKind {

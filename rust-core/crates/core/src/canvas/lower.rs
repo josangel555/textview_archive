@@ -234,6 +234,52 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
         emit_code(rec, &ctx.dom_id(id), store, id, out);
         return;
     }
+    // Chart (M4.S7b): deterministic rust-side SVG from the VL-subset spec.
+    if rec.kind == RecordKind::Chart {
+        let style = style_of(store, id);
+        out.push_str("<div data-cv-id=\"");
+        escape_attr(&ctx.dom_id(id), out);
+        out.push_str("\" data-cv-kind=\"chart\"");
+        if !style.is_empty() {
+            out.push_str(" style=\"");
+            escape_attr(&style, out);
+            out.push('"');
+        }
+        out.push('>');
+        let spec = PropKey::by_name("spec")
+            .and_then(|k| rec.props.get(k))
+            .and_then(|v| match v {
+                Value::Str(s) => super::chart::parse_spec(s),
+                _ => None,
+            });
+        match spec {
+            Some(parsed) => out.push_str(&super::chart::render_svg(&parsed)),
+            None => out.push_str("<!-- invalid chart spec -->"),
+        }
+        out.push_str("</div>");
+        return;
+    }
+    // Diagram (M4.S7b): mermaid SOURCE, escaped, class-hooked for the shell
+    // integration (live mermaid render = a shell concern, tracked).
+    if rec.kind == RecordKind::Diagram {
+        let style = style_of(store, id);
+        out.push_str("<pre data-cv-id=\"");
+        escape_attr(&ctx.dom_id(id), out);
+        out.push_str("\" data-cv-kind=\"diagram\" class=\"mermaid-source\"");
+        if !style.is_empty() {
+            out.push_str(" style=\"");
+            escape_attr(&style, out);
+            out.push('"');
+        }
+        out.push('>');
+        if let Some(Value::Str(text)) = PropKey::by_name("text")
+            .and_then(|k| rec.props.get(k))
+        {
+            escape_text(text, out);
+        }
+        out.push_str("</pre>");
+        return;
+    }
 
     let style = style_of(store, id);
     let get = |name: &str| PropKey::by_name(name).and_then(|k| rec.props.get(k));
@@ -1122,6 +1168,35 @@ mod tests {
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
                 "code NEVER injects: {html}");
         assert!(!html.contains("<script>alert"), "no raw script");
+    }
+
+    #[test]
+    fn chart_and_diagram_lower_through_the_dsl() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        let dsl_src = "chart #sales spec=\"{\\\"mark\\\":\\\"bar\\\",\\\"values\\\":[{\\\"label\\\":\\\"Q1\\\",\\\"value\\\":10}]}\"\ndiagram #flow \"graph TD; A-->B\"";
+        let ops = crate::canvas::dsl::parse_fragment(dsl_src, &pg).expect("parse");
+        d.apply(0, &ops).expect("apply");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        assert!(html.contains("data-cv-kind=\"chart\""));
+        assert!(html.contains("<svg"), "{html}");
+        assert!(html.contains("var(--cv-color-accent)"), "charts retheme");
+        assert!(html.contains("data-cv-kind=\"diagram\""));
+        assert!(html.contains("graph TD; A--&gt;B"), "diagram source escapes");
+        // Bad spec: placeholder + lint.
+        d.apply(1, &[CanvasOp::Insert {
+            id: Some(id("nd:badchart")),
+            kind: RecordKind::Chart,
+            parent: pg.clone(),
+            pos: Position::Last,
+            props: vec![(key("spec"), Value::Str("nope".into()))],
+        }]).expect("bad chart");
+        let html2 = lower_page(&d.store, &tokens, &pg);
+        assert!(html2.contains("invalid chart spec"));
+        let findings = crate::canvas::lint::run(&d, &tokens);
+        assert!(findings.iter().any(|f| f.code == "chart-spec-invalid"));
     }
 
     #[test]

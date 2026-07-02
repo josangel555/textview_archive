@@ -12,6 +12,7 @@
 //! retired by the S5c FFI swap — the E2E suite now builds its content through
 //! the real op engine (TSK-1343 has the spike's verdict + numbers).
 
+pub mod chart;
 pub mod doc;
 pub mod dsl;
 pub mod io;
