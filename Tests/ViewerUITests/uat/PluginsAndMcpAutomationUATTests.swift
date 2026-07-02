@@ -96,12 +96,14 @@ final class PluginsAndMcpAutomationUATTests: MultiScenarioTestCase {
         let ping = try mcp.request("ping", params: [:], id: 99)
         XCTAssertNotNil(ping["result"], "[PMA01] server died after 'initialized' notification")
 
-        // Step 4: tools/list → the full catalog (20 tools), documented order.
+        // Step 4: tools/list → the full catalog (31 tools), documented order.
         // (Tools join over time — set_zoom/search_files in the backlog-drain wave,
         // list_runnable_tasks under TSK-1154, process_memory under TSK-1193, the
-        // agent-interface wave outline/git_status/run_verb/lint (TSK-1275-1278), and
-        // list_verbs/list_surfaces with the agent self-discovery surface; keep this
-        // list in sync with MCPToolCatalog.all. TSK-1031/1154/1193/1275-1278.)
+        // agent-interface wave outline/git_status/run_verb/lint (TSK-1275-1278),
+        // list_verbs/list_surfaces with the agent self-discovery surface, and the
+        // 11 canvas_* tools with the Canvas epic (M2 agent surface + M4.S5 kit +
+        // M6.S3 timeline); keep this list in sync with MCPToolCatalog.all.
+        // TSK-1031/1154/1193/1275-1278/1345/1368-1371/1384/1397.)
         let toolsR = try mcp.request("tools/list", params: [:], id: 2)
         let tools = (toolsR["result"] as? [String: Any])?["tools"] as? [[String: Any]] ?? []
         let names = tools.compactMap { $0["name"] as? String }
@@ -109,7 +111,10 @@ final class PluginsAndMcpAutomationUATTests: MultiScenarioTestCase {
                         "search_files", "goto_line", "visible_text", "outline", "git_status",
                         "run_verb", "list_verbs", "list_surfaces", "lint", "current_state",
                         "toggle_bookmark", "list_bookmarks", "snapshot_window",
-                        "list_runnable_tasks", "process_memory"]
+                        "list_runnable_tasks", "process_memory",
+                        "canvas_new", "canvas_open", "canvas_save", "canvas_apply",
+                        "canvas_read", "canvas_vocab", "canvas_lint", "canvas_undo",
+                        "canvas_export", "canvas_kit_import", "canvas_timeline"]
         XCTAssertEqual(names, expected, "[PMA01] tools/list catalog mismatch")
         for t in tools {
             XCTAssertNotNil(t["name"] as? String, "[PMA01] tool missing name")
