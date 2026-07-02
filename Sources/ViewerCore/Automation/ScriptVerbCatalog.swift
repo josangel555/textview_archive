@@ -177,6 +177,12 @@ public enum ScriptVerbCatalog {
         ScriptVerb("convert-encoding", .editor, .string,
                    "Re-save the active file in a target text encoding (utf-8 / utf-16 / windows-1252 / iso-latin-1)"),
         ScriptVerb("align-tables", .editor, .none, "Re-align GFM pipe tables in the active markdown editor"),
+        // TSK-1425: clipboard-export conversions — palette parity for the File ▸
+        // Export/Share menu items (non-interactive: compute + copy, no dialog).
+        ScriptVerb("copy-doc-as-html", .files, .none, "Copy the rendered Markdown as HTML to the clipboard"),
+        ScriptVerb("copy-csv-as-markdown-table", .files, .none, "Copy the active CSV as a Markdown table"),
+        ScriptVerb("copy-csv-as-json", .files, .none, "Copy the active CSV as JSON"),
+        ScriptVerb("copy-json-as-csv", .files, .none, "Copy the active JSON as CSV"),
         ScriptVerb("editor-set-text", .editor, .string, "Replace the active tab's editor buffer text"),
         ScriptVerb("editor-save", .editor, .none, "Save the active editor buffer (⌘S equivalent)"),
         ScriptVerb("editor-format", .editor, .none, "Whole-document LSP format of the active buffer"),

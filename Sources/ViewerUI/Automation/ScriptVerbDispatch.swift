@@ -131,6 +131,14 @@ public enum ScriptVerb {
         case "zoom-in":        model.zoomIn()
         case "zoom-out":       model.zoomOut()
         case "zoom-reset":     model.zoomReset()
+        case "copy-doc-as-html":
+            if let s = model.htmlExportForActiveMarkdown() { Pasteboard.copy(s) }
+        case "copy-csv-as-markdown-table":
+            if let s = model.activeCSVAsMarkdownTable() { Pasteboard.copy(s) }
+        case "copy-csv-as-json":
+            if let s = model.activeCSVAsJSON() { Pasteboard.copy(s) }
+        case "copy-json-as-csv":
+            if let s = model.activeJSONAsCSV() { Pasteboard.copy(s) }
         case "copy-reference":
             // TSK-1256/942: copy an mdv:// reference to the current editor SELECTION
             // (a line range for a multi-line span, else the current line) to the

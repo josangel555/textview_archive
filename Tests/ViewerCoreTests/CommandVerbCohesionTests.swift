@@ -55,6 +55,28 @@ final class CommandVerbCohesionTests: XCTestCase {
         XCTAssertEqual(CommandCategory.format.title, "Format")
     }
 
+    /// TSK-1425: the non-interactive clipboard-export conversions are ⌘K-palette-
+    /// discoverable (they were menu-only). Their verbs resolve + they're
+    /// palette-invokable. (Interactive export/tools actions stay menu-only.)
+    func test_exportCopyConversions_arePaletteDiscoverable() {
+        let reg = CommandRegistry.builtIn
+        let expected: [(id: String, verb: String)] = [
+            ("file.copyDocAsHTML", "copy-doc-as-html"),
+            ("file.copyCSVAsMarkdownTable", "copy-csv-as-markdown-table"),
+            ("file.copyCSVAsJSON", "copy-csv-as-json"),
+            ("file.copyJSONAsCSV", "copy-json-as-csv"),
+        ]
+        for e in expected {
+            guard let cmd = reg.command(id: e.id) else {
+                XCTFail("missing export command \(e.id)"); continue
+            }
+            XCTAssertEqual(cmd.scriptVerb, e.verb, "\(e.id) maps to the wrong verb")
+            XCTAssertTrue(cmd.isPaletteInvokable, "\(e.id) must be palette-invokable")
+            XCTAssertTrue(ScriptVerbCatalog.tokens.contains(e.verb),
+                          "\(e.id)'s verb \(e.verb) must be a real catalog verb")
+        }
+    }
+
     /// Every command with a verb resolves to a real catalog token (first token,
     /// since a few embed a structured arg like `convert-encoding utf-8`). This is
     /// the cohesion regression guard: a command pointing at a non-existent verb

@@ -124,6 +124,9 @@ final class CommandRegistryTests: XCTestCase {
             // hand-maintained allow-list.
             "show-http-client", "show-feed-reader", "show-folder-treemap",
             "show-dependency-graph", "show-walkthroughs",
+            // clipboard-export conversions made palette-invokable (TSK-1425)
+            "copy-doc-as-html", "copy-csv-as-markdown-table",
+            "copy-csv-as-json", "copy-json-as-csv",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

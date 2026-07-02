@@ -464,6 +464,25 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "view.walkthroughs", title: "Browse Walkthroughs", category: .view,
             scriptVerb: "show-walkthroughs"),
+
+        // TSK-1425: clipboard-export conversions — ⌘K palette parity for the
+        // File ▸ Export/Share menu items (non-interactive copy actions). The
+        // interactive export/tools actions (Export as HTML…, Lint, Check Links,
+        // CSV Summary, Document Statistics) show a panel/alert and stay menu-only,
+        // like Find/Replace/Open (correctly scriptVerb-less).
+        CommandDescriptor(
+            id: "file.copyDocAsHTML", title: "Copy as HTML", category: .file,
+            scriptVerb: "copy-doc-as-html"),
+        CommandDescriptor(
+            id: "file.copyCSVAsMarkdownTable", title: "Copy CSV as Markdown Table", category: .file,
+            scriptVerb: "copy-csv-as-markdown-table"),
+        CommandDescriptor(
+            id: "file.copyCSVAsJSON", title: "Copy CSV as JSON", category: .file,
+            scriptVerb: "copy-csv-as-json"),
+        CommandDescriptor(
+            id: "file.copyJSONAsCSV", title: "Copy JSON as CSV", category: .file,
+            scriptVerb: "copy-json-as-csv"),
+
         CommandDescriptor(
             id: "git.toggleBlame", title: "Toggle Git Blame", category: .git,
             scriptVerb: "toggle-blame"),
