@@ -35,21 +35,28 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
     }
 
-    /// Every `.rs` file directly under `src/`, plus whether the tree stayed
-    /// flat (no subdirectories — the scan is non-recursive, so a new module dir
-    /// would silently escape it and must fail the test loudly instead).
+    /// Every `.rs` file under `src/`, RECURSIVELY. The scan was flat until
+    /// 2026-07-02 (with a tripwire assert), when `canvas/` became the first
+    /// legitimate module directory (M1 engine, TSK-1356) — the tripwire's own
+    /// remedy ("recurse the scan or keep core flat") chose recursion, so new
+    /// module dirs stay covered automatically. Returns the file list plus a
+    /// non-empty flag standing in for the old tripwire (a scan that finds
+    /// nothing is a broken scan, not a clean core).
     fn core_source_files() -> (Vec<PathBuf>, bool) {
-        let mut files = Vec::new();
-        let mut flat = true;
-        for entry in fs::read_dir(src_dir()).expect("read core src dir") {
-            let path = entry.expect("dir entry").path();
-            if path.is_dir() {
-                flat = false;
-            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-                files.push(path);
+        fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
+            for entry in fs::read_dir(dir).expect("read core src dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    walk(&path, files);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    files.push(path);
+                }
             }
         }
-        (files, flat)
+        let mut files = Vec::new();
+        walk(&src_dir(), &mut files);
+        let non_empty = !files.is_empty();
+        (files, non_empty)
     }
 
     /// std paths whose presence in the PRODUCTION (non-test) core would break
@@ -108,13 +115,17 @@ mod tests {
 
     #[test]
     fn core_stays_wasm_shaped_no_io_imports() {
-        let (files, flat) = core_source_files();
+        let (files, non_empty) = core_source_files();
         assert!(
-            flat,
-            "core/src grew a subdirectory — the wasm-shape scan is flat and \
-             would miss it; recurse the scan or keep core flat"
+            non_empty,
+            "the recursive wasm-shape scan found NO core source files — \
+             broken scan, not a clean core"
         );
-        assert!(!files.is_empty(), "found no core source files to scan");
+        // Recursion sanity: the canvas module dir must be covered.
+        assert!(
+            files.iter().any(|p| p.to_string_lossy().contains("canvas")),
+            "recursive scan missed the canvas/ module dir"
+        );
 
         let mut violations: Vec<String> = Vec::new();
         for file in files {
