@@ -1263,4 +1263,81 @@ frame #page-col gap=8 {
         assert_eq!(d.store.fingerprint(), before, "parsing is pure");
         let _ = Store::new(); // silence unused-import lint paths in cfg(test)
     }
+
+    // MARK: hardening — DSL parser totality-fuzz (TSK-1402; the TSK-584 lane)
+
+    /// The DSL parser is TOTAL: no arbitrary input panics; every result is
+    /// either Ok(ops, tokens) or a typed DslError. Byte-storms + structure-
+    /// aware corruptions of a rich valid fragment (every construct the
+    /// M1-M6 grammar grew). Deterministic xorshift64* — no rand, no clock.
+    #[test]
+    fn dsl_parser_is_total_over_byte_storms_and_corruptions() {
+        let mut state: u64 = 0xD1B5_4A32_D192_ED03;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        // A valid fragment exercising every construct.
+        let valid = "token set base.blue #1a6feb\n            component #card {\n  text #card-t \"T\" color=$color.accent\n}\n            frame #slide role=slide {\n            \x20 text #a \"hi\" step=1 morphId=logo linkTo=#slide\n            \x20 use #card #c1 override text #card-t \"O\"\n            \x20 each data=\"[{\\\"n\\\":\\\"x\\\"}]\" {\n    text #e-{{i}} \"{{item.n}}\"\n  }\n}";
+        let pg = Id::page(1);
+
+        for round in 0..2000usize {
+            let source: String = if round % 3 == 0 {
+                // Pure byte storm (printable-ish + structural chars).
+                let len = usize::try_from(next() % 120).unwrap_or(0);
+                (0..len)
+                    .map(|_| {
+                        let pool = b"{}#$=\" \nabc012.-_[]/";
+                        pool[usize::try_from(next() % pool.len() as u64).unwrap_or(0)] as char
+                    })
+                    .collect()
+            } else if round % 3 == 1 {
+                // Corrupt the valid fragment: delete/duplicate a random line.
+                let mut lines: Vec<&str> = valid.lines().collect();
+                if !lines.is_empty() {
+                    let i = usize::try_from(next() % lines.len() as u64).unwrap_or(0);
+                    if next() & 1 == 0 { lines.remove(i); } else { lines.insert(i, lines[i]); }
+                }
+                lines.join("\n")
+            } else {
+                // Truncate the valid fragment at a random byte boundary (char-safe).
+                let n = usize::try_from(next() % valid.chars().count() as u64).unwrap_or(0);
+                valid.chars().take(n).collect()
+            };
+
+            // MUST NOT PANIC; MUST be Ok or a typed DslError (line >= 1).
+            match parse_fragment_full(&source, &pg) {
+                Ok((_ops, _tokens)) => {}
+                Err(e) => assert!(e.line >= 1, "typed fault carries a line: {e:?}"),
+            }
+        }
+    }
+
+    /// apply_dsl over fuzzed fragments never panics — typed rejection frames
+    /// only (the doc facade's fence + teaching path stays total end to end).
+    #[test]
+    fn apply_dsl_is_total_over_fuzzed_fragments() {
+        let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for round in 0..800usize {
+            let len = usize::try_from(next() % 80).unwrap_or(0);
+            let source: String = (0..len)
+                .map(|_| {
+                    let pool = b"{}#$=\" \nframe text tokenuse each step= .0-";
+                    pool[usize::try_from(next() % pool.len() as u64).unwrap_or(0)] as char
+                })
+                .collect();
+            let mut doc = crate::canvas::doc::CanvasDoc::new_empty();
+            // Never panics; always returns a frame (response or rejection).
+            let out = doc.apply_dsl(0, &source);
+            assert!(out.is_ok() || out.is_err(), "apply_dsl returned: {round}");
+        }
+    }
 }
