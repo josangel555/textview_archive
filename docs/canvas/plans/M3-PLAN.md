@@ -88,6 +88,18 @@ path — so human edits show up in `canvas_read` and agent edits paint live.
   overlay (`MDV_ENABLE_BROKEN_CANVAS_OVERLAY`) — the T5 test must go RED.
 - Flip `.canvas` default lens to rendered; source stays one click away.
 
+### S8 — Inspector + layers (title clauses)
+- **Inspector**: a SwiftUI side panel for the current selection — kind, id,
+  and its props (registry-driven rows: the allowed set for the kind, current
+  values, token pickers for themeable slots); edits lower to `set`/`unset`
+  ops through the same controller path. Read model = `canvas_read`'s data,
+  not a parallel store.
+- **Layers**: the document tree (children hierarchy from the engine),
+  selection synced both ways (tree click → setSelection; canvas click →
+  tree highlight); reorder via the tree lands as `move` ops.
+- Host tests: registry-driven row derivation (pure); selection sync state
+  machine. VM: tree-click selects on canvas (overlay moves).
+
 ## Budgets
 - Intent→paint (click to overlay) p95 < 16ms local / < 30ms VM.
 - Edit→paint (text commit to DOM update) p95 < 50ms (the M0 loop budget).
