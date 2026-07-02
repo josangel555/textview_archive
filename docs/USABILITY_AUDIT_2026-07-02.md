@@ -431,3 +431,24 @@ PAINT IS A DESTRUCTIVE TERMINAL MODE — every post-paint crossing needs explici
 geometry=transform-the-buffer (TSK-1419 ✓), tonal=gate (TSK-1420 ✓). REMAINING crossings to check:
 selection × paint (can you select/crop-to-selection/copy after painting?), undo ORDERING across
 interleaved paint+geometry (my paint-undo v1 note flagged this), export-after-paint fidelity.
+
+### Pass 12 (2026-07-02) — undo ordering across paint+geometry unified (TSK-1421); paint-crossing set COMPLETE
+
+Fourth image-editor paint-crossing bug, all found by the deep-interaction mining (Pass 10 lesson).
+Interleaved paint+geometry undo reverted TWO actions per ⌘Z (a resize + the preceding stroke) and
+desynced base.ops from paintCanvas — two undo timelines for one destructive session. Fixed by
+collapsing to a unified paint-undo timeline: commitGeometry during paint snapshots onto paintUndo +
+transforms the buffer, no base.ops push. undo peels in order; redo re-applies (aad50470). Diagnosed
+with a failing test (undo → uniform buffer). 3 tests + teeth; TSK-1419/1416 suites still green.
+
+**PAINT-CROSSING SET COMPLETE:**
+- geometry × paint → transform the buffer through the op (TSK-1419 ✓)
+- tonal × paint → gate (baked-in, can't re-derive) (TSK-1420 ✓)
+- selection × paint → already paint-aware (copy/cut/delete/paste/crop/selectAll read paintCanvas) — CLEAN
+- undo ordering × paint → unified timeline (TSK-1421 ✓)
+- (export-after-paint uses paintCanvas, which now carries geometry — consistent.)
+
+The image-editor deep-crossing vein is now largely mined (4 real bugs: paint-undo 1416, geometry
+1419, tonal 1420, undo-ordering 1421). NEXT deep-interaction target = a DIFFERENT feature family:
+SESSION/TAB-SWITCH state (the historical bug class per CLAUDE.md — scroll reset, footer-stats blank,
+loading flashes: imperative state populated AROUND a switch, raced by the declarative render).
