@@ -305,3 +305,17 @@ report currentStateKind "preview", not "loaded"). **Verdict: SQLite browser is p
 NOT a finish-or-cut spike — remove it from TSK-1414.** (Audit correction #4; the "exploratory
 spike" framing keeps proving wrong — next drill the remaining three: HTTP client, RSS reader,
 folder treemap, verifying before assuming.)
+
+### Pass 6 (2026-07-02) — Folder treemap: code-verified + UI-drive-confirmed WORKING (not a spike)
+
+Second finish-or-cut drill (TSK-1414). Real feature: FolderTreemapView (227 ln, SwiftUI Canvas
+renderer, loading/empty states, a11y summary, byte formatting, category palette) + TreemapLayout
+(squarified engine) + FolderTreemapModel (off-main folder scan). Engine host-tested well
+(TreemapLayoutTests, FolderTreemapWiringTests, FolderTreemapPaletteTests, FolderStatsModelTests,
+FolderStateSymbolTests). Reachable via `show-folder-treemap` script-verb + showFolderTreemap()
+(TSK-506) → opens a "Folder Sizes:" hosted tab. UI-DRIVE: wrote FolderTreemapUATTests (new
+coverage) + ran on the VM — sidebar-set-root + show-folder-treemap opens the "Folder Sizes:" hosted
+tab live (windowTitle confirmed, tab additive). **Verdict: production-grade, NOT a finish-or-cut
+spike — remove from TSK-1414.** (Audit correction #5.) Remaining finish-or-cut candidates: HTTP
+client, RSS/feed reader. Given SQLite + treemap both proved fully built, expectation is these two
+are also more built than the first-pass audit assumed — verify before any cut recommendation.
