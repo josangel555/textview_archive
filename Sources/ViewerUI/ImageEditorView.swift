@@ -284,6 +284,10 @@ struct ImageEditorView: View {
                                       value.location, in: displayed,
                                       imageWidth: cg.width, imageHeight: cg.height)
                             else { return }
+                            // Stroke start (first paint of this drag): snapshot
+                            // the pre-stroke canvas so the whole drag is one
+                            // undoable unit (usability audit — paint was not undoable).
+                            if lastPaintPixel == nil { vm.beginStroke() }
                             if vm.tool == .airbrush {
                                 vm.applyTool(atX: px.x, y: px.y)   // spray at each point
                             } else if let last = lastPaintPixel {
@@ -339,6 +343,10 @@ struct ImageEditorView: View {
                                       imageWidth: cg.width, imageHeight: cg.height)
                             else { return }
                             if !vm.tool.isContinuous {
+                                // Bucket/discrete paint acts on release — snapshot
+                                // first so it's a single undo unit (colorPicker is
+                                // a pure read and doesn't push, see beginStroke).
+                                if vm.tool == .floodFill { vm.beginStroke() }
                                 vm.applyTool(atX: px.x, y: px.y)
                             }
                         }
@@ -407,7 +415,7 @@ struct ImageEditorView: View {
                     }
                     .accessibilityIdentifier("mdv.imageEditor.invertColors")
                     // TSK-1077: fill the whole canvas with the current paint color.
-                    Button { vm.clearImage() } label: {
+                    Button { vm.beginStroke(); vm.clearImage() } label: {
                         Label("Clear", systemImage: "square.slash")
                     }
                     .accessibilityIdentifier("mdv.imageEditor.clearImage")

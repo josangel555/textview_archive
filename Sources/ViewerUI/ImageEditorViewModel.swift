@@ -197,10 +197,10 @@ public final class ImageEditorViewModel: ObservableObject {
         if let initialEditState { restoreEditState(initialEditState) }
     }
 
-    /// `true` when there is a committed edit to undo (delegates to the stack).
-    public var canUndo: Bool { undoStack.canUndo }
-    /// `true` when there is a previously-undone edit to redo.
-    public var canRedo: Bool { undoStack.canRedo }
+    /// `true` when there is a committed edit OR a paint stroke to undo.
+    public var canUndo: Bool { undoStack.canUndo || canUndoPaint }
+    /// `true` when there is a previously-undone edit or paint stroke to redo.
+    public var canRedo: Bool { undoStack.canRedo || canRedoPaint }
 
     /// The full document to render / export: committed geometry history plus
     /// each non-identity tonal slider folded into a single op, applied in a
@@ -388,6 +388,7 @@ public final class ImageEditorViewModel: ObservableObject {
     /// Undo the most recent committed op, syncing `base.ops` to the stack's new
     /// current state, then re-render.
     public func undo() {
+        if canUndoPaint { _ = undoPaint(); return }
         let state = undoStack.undo()
         base = ImageDocument(source: base.source, ops: state)
         render()
@@ -396,9 +397,65 @@ public final class ImageEditorViewModel: ObservableObject {
     /// Redo the most recently undone committed op (no-op when there is no redo
     /// branch), then re-render.
     public func redo() {
+        if canRedoPaint { _ = redoPaint(); return }
         let state = undoStack.redo()
         base = ImageDocument(source: base.source, ops: state)
         render()
+    }
+
+    // MARK: - Paint-stroke undo (usability audit 2026-07-02)
+
+    // The destructive paint session (`paintCanvas`) lived OUTSIDE the op-based
+    // undo stack, so brush/eraser/bucket strokes — the most common edits — were
+    // not undoable (⌘Z did nothing, or undid an op instead). This adds a
+    // per-stroke raster snapshot stack: the view calls `beginStroke()` at a
+    // drag's start (and before a discrete bucket/clear), snapshotting the
+    // pre-stroke canvas; undo restores it. Bounded by a byte budget so large
+    // canvases can't blow memory. Paint takes undo precedence while paint
+    // history exists (paint is the top layer during a session); fully
+    // interleaved op/paint ordering is a documented v1 limitation.
+    private var paintUndo: [RasterCanvas] = []
+    private var paintRedo: [RasterCanvas] = []
+    private static let paintUndoByteBudget = 128 * 1024 * 1024  // 128 MB
+
+    public var canUndoPaint: Bool { !paintUndo.isEmpty }
+    public var canRedoPaint: Bool { !paintRedo.isEmpty }
+
+    /// Snapshot the pre-stroke canvas so the coming stroke is undoable. Bakes
+    /// the paint session first so the FIRST stroke's clean baseline is captured.
+    /// Call once per undoable paint action (drag start / discrete bucket / clear).
+    public func beginStroke() {
+        guard beginPaintSessionIfNeeded(), let canvas = paintCanvas else { return }
+        paintUndo.append(canvas)
+        paintRedo.removeAll()
+        evictPaintUndoOverBudget()
+    }
+
+    /// Undo the most recent paint stroke (restore its pre-stroke snapshot).
+    @discardableResult
+    public func undoPaint() -> Bool {
+        guard let restore = paintUndo.popLast(), let current = paintCanvas else { return false }
+        paintRedo.append(current)
+        paintCanvas = restore
+        render()
+        return true
+    }
+
+    /// Redo the most recently undone paint stroke.
+    @discardableResult
+    public func redoPaint() -> Bool {
+        guard let restore = paintRedo.popLast(), let current = paintCanvas else { return false }
+        paintUndo.append(current)
+        paintCanvas = restore
+        render()
+        return true
+    }
+
+    private func evictPaintUndoOverBudget() {
+        var bytes = paintUndo.reduce(0) { $0 + $1.pixels.count }
+        while bytes > Self.paintUndoByteBudget, paintUndo.count > 1 {
+            bytes -= paintUndo.removeFirst().pixels.count
+        }
     }
 
     /// Reset every tonal slider to identity (leaves the geometry history
