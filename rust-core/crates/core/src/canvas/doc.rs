@@ -100,10 +100,14 @@ impl CanvasDoc {
         io::save(self)
     }
 
-    /// Project the root page's subtree into canonical DSL.
+    /// Project the whole document into canonical DSL: component definitions
+    /// first (so `use` lines re-parse against defined components), then the
+    /// root page's content.
     #[must_use]
     pub fn render_dsl(&self) -> String {
-        dsl::render(&self.state.store, &self.root)
+        let mut out = dsl::render_definitions(&self.state.store);
+        out.push_str(&dsl::render(&self.state.store, &self.root));
+        out
     }
 
     /// Project ONE anchored node's subtree (`canvas_read {anchor}`), or None

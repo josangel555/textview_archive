@@ -273,6 +273,114 @@ pub fn parse_fragment(source: &str, parent: &Id) -> Result<Vec<CanvasOp>, DslErr
             continue;
         }
 
+        // `component #name {` — a DEFINITION block (M4.S3): children parse
+        // under the cmp:name root; instances reference it via `use`.
+        if head == "component" {
+            let Some(Tok::Anchor(name)) = iter.next() else {
+                return err(line_no, "component needs a '#name' anchor");
+            };
+            let Some(Tok::Open) = iter.next() else {
+                return err(line_no, "component definitions need a '{' block");
+            };
+            if iter.next().is_some() {
+                return err(line_no, "'{' must end the component line");
+            }
+            let full = format!("cmp:{name}");
+            let def_id = Id::parse(&full)
+                .map_err(|e| DslError { line: line_no, message: format!("bad component name: {e:?}") })?;
+            ops.push(CanvasOp::DefineComponent { id: def_id.clone() });
+            stack.push(def_id);
+            continue;
+        }
+
+        // `use #def #inst [props] [override text #anchor "…"]…` — an
+        // INSTANCE (single line; sugar over Insert{kind: component}).
+        if head == "use" {
+            let Some(Tok::Anchor(def_name)) = iter.next() else {
+                return err(line_no, "use needs the definition's '#name' first");
+            };
+            let Some(Tok::Anchor(inst_name)) = iter.next() else {
+                return err(line_no, "use needs an instance '#name' second");
+            };
+            if seen_anchors.contains(&inst_name) {
+                return err(line_no, format!("duplicate anchor '#{inst_name}' in this fragment"));
+            }
+            seen_anchors.push(inst_name.clone());
+            let inst_id = Id::parse(&format!("nd:{inst_name}"))
+                .map_err(|e| DslError { line: line_no, message: format!("bad anchor: {e:?}") })?;
+            let mut props: Vec<(PropKey, Value)> = Vec::new();
+            let Some(ref_key) = PropKey::by_name("ref") else {
+                return err(line_no, "internal: no ref key");
+            };
+            props.push((ref_key, Value::Str(format!("cmp:{def_name}"))));
+            let mut overrides: Vec<(String, String)> = Vec::new();
+            while let Some(tok) = iter.next() {
+                match tok {
+                    Tok::Prop(name, value) => {
+                        let Some(k) = PropKey::by_name(&name) else {
+                            return err(line_no, format!("unknown prop '{name}'"));
+                        };
+                        props.push((k, value_of(*value, line_no)?));
+                    }
+                    Tok::Word(w) if w == "override" => {
+                        // `override text #anchor "replacement"`
+                        match (iter.next(), iter.next(), iter.next()) {
+                            (
+                                Some(Tok::Word(kind)),
+                                Some(Tok::Anchor(anchor)),
+                                Some(Tok::Quoted(text)),
+                            ) if kind == "text" => {
+                                overrides.push((format!("nd:{anchor}"), text));
+                            }
+                            _ => {
+                                return err(
+                                    line_no,
+                                    "override syntax: override text #anchor \"replacement\"",
+                                )
+                            }
+                        }
+                    }
+                    other => return err(line_no, format!("unexpected {other:?} in use")),
+                }
+            }
+            if !overrides.is_empty() {
+                let Some(ok) = PropKey::by_name("overrides") else {
+                    return err(line_no, "internal: no overrides key");
+                };
+                let mut json = String::from("{");
+                for (i, (anchor, text)) in overrides.iter().enumerate() {
+                    if i > 0 {
+                        json.push(',');
+                    }
+                    json.push('"');
+                    json.push_str(anchor);
+                    json.push_str("\":\"");
+                    for ch in text.chars() {
+                        match ch {
+                            '"' => json.push_str("\\\""),
+                            '\\' => json.push_str("\\\\"),
+                            '\n' => json.push_str("\\n"),
+                            c => json.push(c),
+                        }
+                    }
+                    json.push('"');
+                }
+                json.push('}');
+                props.push((ok, Value::Str(json)));
+            }
+            let Some(current_parent) = stack.last().cloned() else {
+                return err(line_no, "internal: empty parent stack");
+            };
+            ops.push(CanvasOp::Insert {
+                id: Some(inst_id),
+                kind: RecordKind::Component,
+                parent: current_parent,
+                pos: Position::Last,
+                props,
+            });
+            continue;
+        }
+
         let kind = parse_kind(&head, line_no)?;
 
         // Optional #anchor.
@@ -498,6 +606,11 @@ fn render_value(v: &Value, out: &mut String) {
 
 fn render_node(store: &super::store::Store, id: &Id, depth: usize, out: &mut String) {
     let Some(rec) = store.get(id) else { return };
+    // Component instances project as `use` (M4.S3).
+    if rec.kind == RecordKind::Component {
+        render_use(store, id, rec, depth, out);
+        return;
+    }
     let Some(kind_word) = dsl_kind_word(rec.kind) else { return };
     for _ in 0..depth {
         out.push_str("  ");
@@ -560,6 +673,78 @@ fn dsl_kind_word(kind: RecordKind) -> Option<&'static str> {
 pub fn render_subtree(store: &super::store::Store, id: &Id) -> String {
     let mut out = String::new();
     render_node(store, id, 0, &mut out);
+    out
+}
+
+fn render_use(
+    store: &super::store::Store,
+    id: &Id,
+    rec: &super::store::Record,
+    depth: usize,
+    out: &mut String,
+) {
+    let _ = store;
+    for _ in 0..depth {
+        out.push_str("  ");
+    }
+    out.push_str("use");
+    let ref_key = PropKey::by_name("ref");
+    let ov_key = PropKey::by_name("overrides");
+    if let Some(Value::Str(target)) = ref_key.and_then(|k| rec.props.get(k)) {
+        out.push_str(" #");
+        out.push_str(target.strip_prefix("cmp:").unwrap_or(target));
+    }
+    if let Some(name) = id.as_str().strip_prefix("nd:") {
+        out.push_str(" #");
+        out.push_str(name);
+    }
+    for (key, value) in rec.props.iter() {
+        if ref_key == Some(key) || ov_key == Some(key) {
+            continue;
+        }
+        let Some(name) = key.name() else { continue };
+        out.push(' ');
+        out.push_str(name);
+        out.push('=');
+        render_value(value, out);
+    }
+    if let Some(Value::Str(json)) = ov_key.and_then(|k| rec.props.get(k))
+        && let Ok(crate::json::JsonValue::Object(pairs)) = crate::json::parse(json)
+    {
+        let mut sorted = pairs;
+        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        for (anchor, text) in sorted {
+            if let crate::json::JsonValue::Str(s) = text {
+                out.push_str(" override text #");
+                out.push_str(anchor.strip_prefix("nd:").unwrap_or(&anchor));
+                out.push(' ');
+                render_value(&Value::Str(s), out);
+            }
+        }
+    }
+    out.push('\n');
+}
+
+/// Project every cmp:* DEFINITION as a `component #name { … }` block
+/// (id-sorted; the doc-level projection emits these before page content so
+/// `use` lines always reference an already-defined component on re-parse).
+#[must_use]
+pub fn render_definitions(store: &super::store::Store) -> String {
+    let mut out = String::new();
+    let mut roots: Vec<&Id> = store
+        .ids()
+        .filter(|i| i.as_str().starts_with("cmp:"))
+        .collect();
+    roots.sort();
+    for def in roots {
+        out.push_str("component #");
+        out.push_str(def.as_str().strip_prefix("cmp:").unwrap_or(def.as_str()));
+        out.push_str(" {\n");
+        for kid in store.children(def) {
+            render_node(store, &kid, 1, &mut out);
+        }
+        out.push_str("}\n");
+    }
     out
 }
 
@@ -722,6 +907,70 @@ remove #hero
             d2.store.children(&Id::parse("nd:hero").expect("id")).len(),
             d.store.children(&Id::parse("nd:hero").expect("id")).len()
         );
+    }
+
+    // MARK: M4.S3 — component forms
+
+    const KIT: &str = r#"
+component #card {
+  text #card-title "Default title" font=$font.h2
+  text #card-body "Default body"
+}
+frame #page-col gap=8 {
+  use #card #hero fill=$color.surface override text #card-title "Hero title"
+  use #card #side
+}
+"#;
+
+    #[test]
+    fn component_and_use_parse_apply_and_expand() {
+        let (mut d, pg) = page();
+        let ops = parse_fragment(KIT, &pg).expect("parse");
+        d.apply(0, &ops).expect("apply");
+        // The definition exists as a root; instances expand with overrides.
+        let tokens = crate::canvas::tokens::TokenStore::default_theme();
+        let html = crate::canvas::lower::lower_page(&d.store, &tokens, &pg);
+        assert_eq!(html.matches(">Hero title<").count(), 1, "{html}");
+        assert_eq!(html.matches(">Default title<").count(), 1);
+        assert_eq!(html.matches(">Default body<").count(), 2);
+        assert!(html.contains("background:var(--cv-color-surface)"));
+    }
+
+    #[test]
+    fn component_round_trip_parse_render_eq_doc() {
+        let (mut d, pg) = page();
+        d.apply(0, &parse_fragment(KIT, &pg).expect("parse")).expect("apply");
+        // Doc-level projection: definitions first, then content.
+        let projected = {
+            let mut out = render_definitions(&d.store);
+            out.push_str(&render(&d.store, &pg));
+            out
+        };
+        assert!(projected.starts_with("component #card {"), "{projected}");
+        assert!(projected.contains("use #card #hero"));
+        assert!(projected.contains("override text #card-title \"Hero title\""));
+        // Re-parse on a fresh doc → identical projection (canonical form).
+        let (mut d2, pg2) = page();
+        d2.apply(0, &parse_fragment(&projected, &pg2).expect("reparse")).expect("reapply");
+        let reprojected = {
+            let mut out = render_definitions(&d2.store);
+            out.push_str(&render(&d2.store, &pg2));
+            out
+        };
+        assert_eq!(reprojected, projected, "parse(render(doc)) == doc over components");
+    }
+
+    #[test]
+    fn component_teaching_errors() {
+        let (_, pg) = page();
+        let e = parse_fragment("component card {", &pg).expect_err("anchor");
+        assert!(e.message.contains("'#name'"), "{e:?}");
+        let e = parse_fragment("component #card", &pg).expect_err("block");
+        assert!(e.message.contains("'{' block"), "{e:?}");
+        let e = parse_fragment("use #card", &pg).expect_err("inst");
+        assert!(e.message.contains("instance '#name'"), "{e:?}");
+        let e = parse_fragment("use #card #a override text #t", &pg).expect_err("ov");
+        assert!(e.message.contains("override syntax"), "{e:?}");
     }
 
     #[test]

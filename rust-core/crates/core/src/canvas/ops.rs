@@ -17,6 +17,10 @@ use super::store::{Id, Place, Position, Record, RecordKind, Store, StoreError};
 /// One canvas operation (the op layer's public vocabulary).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CanvasOp {
+    /// Create a component DEFINITION root (M4.S3): a `cmp:*` Frame subtree
+    /// root the DSL's `component #name { … }` block targets. Idempotent
+    /// replay: an existing empty-or-identical-kind root is an Ok no-op.
+    DefineComponent { id: Id },
     Insert {
         /// Caller-supplied id (idempotent retries) or None to mint.
         id: Option<Id>,
@@ -84,6 +88,8 @@ impl From<StoreError> for ApplyError {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppliedEffect {
     Noop,
+    /// A definition root was created — never rendered, never patched.
+    Defined(Id),
     /// The RESOLVED id (supplied or minted) + the DOM anchor (next sibling)
     /// captured AT APPLY TIME — a later op in the same batch may invalidate
     /// final-state anchors, so the planner must not recompute them.
@@ -227,6 +233,28 @@ impl DocState {
         minted: &mut Vec<Id>,
     ) -> Result<Option<(UndoOp, AppliedEffect)>, ApplyError> {
         match op {
+            CanvasOp::DefineComponent { id } => {
+                if !id.as_str().starts_with("cmp:") {
+                    return Err(FenceError::Detail(format!(
+                        "definitions live under cmp:* ids, got '{}'",
+                        id.as_str()
+                    ))
+                    .into());
+                }
+                if let Some(existing) = self.store.get(id) {
+                    if existing.kind == RecordKind::Frame && existing.place.is_none() {
+                        return Ok(None); // idempotent replay
+                    }
+                    return Err(ApplyError::IdInUse(id.as_str().to_owned()));
+                }
+                self.store
+                    .insert_root(id.clone(), RecordKind::Frame)
+                    .map_err(ApplyError::Store)?;
+                Ok(Some((
+                    UndoOp::RemoveInserted(id.clone()),
+                    AppliedEffect::Defined(id.clone()),
+                )))
+            }
             CanvasOp::Insert {
                 id,
                 kind,

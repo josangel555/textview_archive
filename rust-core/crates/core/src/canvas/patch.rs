@@ -91,6 +91,8 @@ pub fn plan(doc: &DocState, ops: &[CanvasOp], effects: &[AppliedEffect]) -> Vec<
             continue;
         }
         let target: Option<&Id> = match op {
+            // A fresh definition has no instances → nothing to repaint.
+            CanvasOp::DefineComponent { .. } => None,
             CanvasOp::Insert { parent, .. } => Some(parent),
             CanvasOp::Update { id, .. }
             | CanvasOp::Move { id, .. }
@@ -116,6 +118,7 @@ pub fn plan(doc: &DocState, ops: &[CanvasOp], effects: &[AppliedEffect]) -> Vec<
         };
         match (op, effect) {
             (_, AppliedEffect::Noop) => {}
+            (_, AppliedEffect::Defined(_)) => {} // definitions never patch
             (CanvasOp::Insert { .. }, AppliedEffect::Inserted { id, .. })
                 if in_definition(id) => {}
             (CanvasOp::Update { .. }, AppliedEffect::Updated(id))

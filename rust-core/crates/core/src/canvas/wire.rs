@@ -55,6 +55,8 @@ enum WirePos {
 #[serde(tag = "op", rename_all = "camelCase")]
 enum WireOp {
     #[serde(rename_all = "camelCase")]
+    Define { id: String },
+    #[serde(rename_all = "camelCase")]
     Insert {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
@@ -251,6 +253,7 @@ fn parse_props(props: Vec<(String, WireValue)>) -> Result<Vec<(PropKey, Value)>,
 
 fn parse_op(op: WireOp) -> Result<CanvasOp, WireFault> {
     Ok(match op {
+        WireOp::Define { id } => CanvasOp::DefineComponent { id: parse_id(&id)? },
         WireOp::Insert {
             id,
             kind,
