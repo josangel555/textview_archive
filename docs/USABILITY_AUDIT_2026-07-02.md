@@ -543,3 +543,21 @@ host-testable (NSMenu structure in main.swift; assert structure); a real UX cohe
 owner's TSK-1334 grant / an AX lane. (3) Owner decisions — TSK-1418 WIP finish-or-cut. (4) Perf-VM —
 UI-opening latency (TSK-598) needs the VM profiling harness. NEXT: a menu-structure audit + reorg
 spike (host-doable), or the owner unlocks the render/AX lane via TSK-1334.
+
+### Pass 17 (2026-07-02) — regression-validated the session's changes on the REAL app + verified CommitDiffAnchor clean
+
+Two things this pass:
+- **Code-verified CommitDiffAnchor (Code Review comment anchoring) — CLEAN.** Deliberately designed to
+  AVOID the anchoring-bug class: comments anchor to a frozen hunk window and resolve to `.unknown` if
+  not found (never `.stale`/mis-anchored); tested (CommitDiffAnchorTests). Another well-built model.
+- **UI-DRIVE REGRESSION VALIDATION (the mission's core directive).** This session made substantial Swift
+  changes — the menu reorg (touches the LAUNCH-CRITICAL buildMenu), command recategorization (.format),
+  export palette verbs, and the image-editor undo-system refactor (unified timeline). All host-gate-green,
+  but the real dist hadn't been rebuilt/UAT'd since. Rebuilt dist on the VM + ran the core UAT suites:
+  **34/34 PASS** (MultiFormatViewer 2, ViewModes 13, TabsAndWindowChrome 10, PluginsAndMcpAutomation 9).
+  Confirms: the app LAUNCHES (buildMenu reorg safe), and opening files / view modes / tab lifecycle /
+  MCP tools-list + script-verb dispatch all still work on the real app after the session's changes. No
+  regression from a session that fixed 7 bugs + reorganized the menus + refactored the undo system.
+
+STATE: host-fix vein dry; this session's work is regression-validated on the real app; remaining is
+owner-gated (TSK-1334 grant, flip 838, board-close, design calls 1426/1418, Canvas review).
