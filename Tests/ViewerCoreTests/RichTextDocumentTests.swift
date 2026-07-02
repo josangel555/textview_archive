@@ -338,6 +338,10 @@ final class RichTextDocumentTests: XCTestCase {
                 for p in paras { assertInlinesInVocabulary(p) }
             case let .codeBlock(code):
                 XCTAssertFalse(code.isEmpty)
+            case let .table(header, rows):
+                XCTAssertFalse(header.isEmpty)
+                for cell in header { assertInlinesInVocabulary(cell) }
+                for r in rows { for cell in r { assertInlinesInVocabulary(cell) } }
             }
         }
     }
@@ -378,6 +382,9 @@ final class RichTextDocumentTests: XCTestCase {
                 if paras.contains(where: inlineHasLink) { return true }
             case .codeBlock:
                 break   // opaque literal text, no inline links
+            case let .table(header, rows):
+                if header.contains(where: inlineHasLink) { return true }
+                if rows.contains(where: { $0.contains(where: inlineHasLink) }) { return true }
             }
         }
         return false

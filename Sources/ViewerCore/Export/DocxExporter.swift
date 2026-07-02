@@ -57,6 +57,16 @@ public enum DocxExporter {
                 for line in code.split(separator: "\n", omittingEmptySubsequences: false) {
                     body += paragraph(style: nil, [.text(String(line))])
                 }
+            case let .table(header, rows):
+                // No DOCX table model here; one tab-separated paragraph per row.
+                for r in [header] + rows {
+                    var inl: [RichInline] = []
+                    for (idx, c) in r.enumerated() {
+                        if idx > 0 { inl.append(.text("\t")) }
+                        inl.append(contentsOf: c)
+                    }
+                    body += paragraph(style: nil, inl)
+                }
             }
         }
         return """

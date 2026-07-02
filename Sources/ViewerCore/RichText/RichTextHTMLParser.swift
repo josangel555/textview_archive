@@ -141,6 +141,11 @@ public enum RichTextHTMLParser {
                 flushLoose(); i += 1
                 let code = parsePreformatted(toks, &i)
                 if !code.isEmpty { blocks.append(.codeBlock(code)) }
+            case .open(let name, _) where name == "table":
+                // TSK-1427: <table> → a GFM pipe table (first row = header),
+                // instead of collapsing every cell into one text run.
+                flushLoose(); i += 1
+                if let t = parseTable(toks, &i) { blocks.append(t) }
             case .open(let name, let href) where inlineTags.contains(name):
                 loose.append(contentsOf: parseInline(toks, &i, name: name, href: href))
             case .open:
@@ -172,6 +177,45 @@ public enum RichTextHTMLParser {
         var out = s
         while out.hasSuffix("\n") || out.hasSuffix("\r") { out.removeLast() }
         return out
+    }
+
+    /// `<table>` → a table block. `<tr>` rows of `<td>`/`<th>` cells; wrappers
+    /// (thead/tbody/tfoot/caption/colgroup) are skipped. First row = header
+    /// (Markdown tables require one). TSK-1427.
+    private static func parseTable(_ toks: [Token], _ i: inout Int) -> RichBlock? {
+        var rows: [[[RichInline]]] = []
+        while i < toks.count {
+            switch toks[i] {
+            case .close(let n) where n == "table":
+                i += 1
+                return buildTable(rows)
+            case .open(let name, _) where name == "tr":
+                i += 1
+                var cells: [[RichInline]] = []
+                rowLoop: while i < toks.count {
+                    switch toks[i] {
+                    case .close(let n) where n == "tr": i += 1; break rowLoop
+                    case .close(let n) where n == "table": break rowLoop   // unterminated <tr>
+                    case .open(let c, _) where c == "td" || c == "th":
+                        i += 1
+                        cells.append(trimEdges(parseInlines(toks, &i, until: c)))
+                    case .open: i += 1
+                    case .close: i += 1
+                    case .text: i += 1
+                    }
+                }
+                if !cells.isEmpty { rows.append(cells) }
+            case .open: i += 1   // thead/tbody/caption/… wrapper → skip
+            case .close: i += 1
+            case .text: i += 1
+            }
+        }
+        return buildTable(rows)
+    }
+
+    private static func buildTable(_ rows: [[[RichInline]]]) -> RichBlock? {
+        guard let header = rows.first, !header.isEmpty else { return nil }
+        return .table(header: header, rows: Array(rows.dropFirst()))
     }
 
     /// `<li>`-delimited items until the list's close tag.

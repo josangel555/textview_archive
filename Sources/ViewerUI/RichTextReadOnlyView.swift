@@ -86,6 +86,20 @@ public struct RichTextReadOnlyView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
                 .background(Color.secondary.opacity(0.1))
+
+        case let .table(header, rows):
+            // TSK-1427: minimal table render (WIP view is flag-gated; the
+            // paste→Markdown-table path is what ships). Rows as tab-ish text.
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(([header] + rows).enumerated()), id: \.offset) { idx, r in
+                    HStack(spacing: 12) {
+                        ForEach(Array(r.enumerated()), id: \.offset) { _, c in
+                            inlineText(c)
+                        }
+                    }
+                    .font(idx == 0 ? .body.bold() : .body)
+                }
+            }
         }
     }
 

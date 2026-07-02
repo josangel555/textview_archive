@@ -57,6 +57,10 @@ public enum RichTextNormalizer {
         case let .codeBlock(code):
             // Already in-vocabulary + opaque; drop only an empty block.
             return code.isEmpty ? nil : .codeBlock(code)
+        case let .table(header, rows):
+            let nh = header.map { normalizeInlines($0) }
+            guard !nh.isEmpty else { return nil }
+            return .table(header: nh, rows: rows.map { $0.map { normalizeInlines($0) } })
         }
     }
 

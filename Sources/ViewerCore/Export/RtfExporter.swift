@@ -111,6 +111,16 @@ public enum RtfExporter {
                 for line in code.split(separator: "\n", omittingEmptySubsequences: false) {
                     out.append(.paragraph([RtfRun(String(line))]))
                 }
+            case let .table(header, rows):
+                // No RTF table model here; one tab-separated paragraph per row.
+                for r in [header] + rows {
+                    var runs: [RtfRun] = []
+                    for (idx, c) in r.enumerated() {
+                        if idx > 0 { runs.append(RtfRun("\t")) }
+                        runs.append(contentsOf: RtfExporter.runs(from: c))
+                    }
+                    out.append(.paragraph(runs))
+                }
             }
         }
         return out

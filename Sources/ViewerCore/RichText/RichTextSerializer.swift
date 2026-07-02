@@ -62,6 +62,27 @@ public enum RichTextSerializer {
             }
             let fence = String(repeating: "`", count: max(3, longestRun + 1))
             return fence + "\n" + code + "\n" + fence
+
+        case let .table(header, rows):
+            // TSK-1427: GFM pipe table. Cells: serialize inlines, then escape `|`
+            // and flatten newlines so a cell can't break the row. Ragged rows are
+            // padded/truncated to the header's column count.
+            func cell(_ inlines: [RichInline]) -> String {
+                serializeInlines(inlines)
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .replacingOccurrences(of: "|", with: "\\|")
+            }
+            let cols = max(1, header.count)
+            func row(_ cells: [[RichInline]]) -> String {
+                var c = cells.map(cell)
+                if c.count < cols { c += Array(repeating: "", count: cols - c.count) }
+                if c.count > cols { c = Array(c.prefix(cols)) }
+                return "| " + c.joined(separator: " | ") + " |"
+            }
+            var lines = [row(header)]
+            lines.append("| " + Array(repeating: "---", count: cols).joined(separator: " | ") + " |")
+            for r in rows { lines.append(row(r)) }
+            return lines.joined(separator: "\n")
         }
     }
 

@@ -72,6 +72,10 @@ public enum RichBlock: Equatable, Sendable {
     /// doc copy) must survive as a real code block, not collapse into invalid
     /// inline-code-with-newlines.
     case codeBlock(String)
+    /// A GFM pipe table — `header` cells + `rows` of cells (each cell is inline
+    /// content). TSK-1427: a rich-paste of `<table>` (browser/spreadsheet copy)
+    /// must survive as a Markdown table, not collapse all cells into one run.
+    case table(header: [[RichInline]], rows: [[[RichInline]]])
 
     /// The allowed heading levels for this restricted model.
     public static let maxHeadingLevel = 3
