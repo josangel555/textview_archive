@@ -173,6 +173,14 @@ impl Id {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Infallible constructor for the fixed root-page ids (`pg:<n>`), used by
+    /// engine internals that need a statically-valid id without a fallible
+    /// parse (no-panic policy).
+    #[must_use]
+    pub fn page(n: u32) -> Id {
+        Id(format!("pg:{n}").into())
+    }
 }
 
 /// Hierarchy — parent link + sibling order as ONE field (atomic by

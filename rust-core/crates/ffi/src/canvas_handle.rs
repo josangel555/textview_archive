@@ -1,5 +1,5 @@
 //! Opaque canvas-document handle — the [`crate::handle`] registry pattern
-//! applied to the M0 canvas spike's [`mdvcore_core::canvas::Doc`].
+//! applied to the M0 canvas spike's [`CanvasDoc`].
 //!
 //! All soundness rationale (registry-not-Box, Arc-outlives-free, total
 //! lookup/free, single-writer `try_lock` tri-state) is documented ONCE in
@@ -8,19 +8,19 @@
 //! the M1 plan; duplicating ~80 lines is the M0-lean choice (a premature
 //! generic in a spike is scope creep).
 
-use mdvcore_core::canvas::Doc;
+use mdvcore_core::canvas::doc::CanvasDoc;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-/// Opaque handle wrapping a canvas [`Doc`] behind a `Mutex`. cbindgen emits a
+/// Opaque handle wrapping a [`CanvasDoc`] behind a `Mutex`. cbindgen emits a
 /// forward-declared opaque C struct; Swift only ever holds the token.
 pub struct CanvasHandle {
-    inner: Mutex<Doc>,
+    inner: Mutex<CanvasDoc>,
 }
 
 // SAFETY: all access to the inner Doc goes through the Mutex (`with`); no
-// reference escapes the guard. Doc is plain owned data (Send).
+// reference escapes the guard. CanvasDoc is plain owned data (Send).
 unsafe impl Send for CanvasHandle {}
 // SAFETY: see Send — shared access is mediated solely by the Mutex.
 unsafe impl Sync for CanvasHandle {}
@@ -37,7 +37,7 @@ static NEXT_TOKEN: AtomicUsize = AtomicUsize::new(1);
 impl CanvasHandle {
     /// Wrap a document in a new handle.
     #[must_use]
-    pub fn new(doc: Doc) -> Self {
+    pub fn new(doc: CanvasDoc) -> Self {
         Self {
             inner: Mutex::new(doc),
         }
@@ -86,7 +86,7 @@ impl CanvasHandle {
 
     /// Run `f` with exclusive access — `Ok(R)`, `Err(Busy)` on contention,
     /// `Err(HandleDead)` on a poisoned lock (see [`crate::handle`]).
-    pub fn with<R>(&self, f: impl FnOnce(&mut Doc) -> R) -> Result<R, crate::MdvStatus> {
+    pub fn with<R>(&self, f: impl FnOnce(&mut CanvasDoc) -> R) -> Result<R, crate::MdvStatus> {
         match self.inner.try_lock() {
             Ok(mut guard) => Ok(f(&mut guard)),
             Err(std::sync::TryLockError::Poisoned(_)) => Err(crate::MdvStatus::HandleDead),

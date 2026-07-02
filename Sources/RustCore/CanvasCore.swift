@@ -1,63 +1,141 @@
 import CMdvCore
 import Foundation
 
-// Canvas M0 spike (TSK-1353) — the Swift wrapper over the canvas patch-loop
-// FFI (`mdvcore_canvas_demo_open/html/apply/free`). Mirrors the `CsvSession`
-// shape: opaque handle + status mapping + framed MessagePack responses.
-// Throwaway-grade by design (docs/canvas/plans/M0-PLAN.md); the M1 engine
-// replaces the demo-doc internals but keeps this boundary shape.
+// Canvas M1.S5c (TSK-1360) — the Swift wrapper over the REAL canvas engine:
+// `mdvcore_canvas_doc_open/html/apply/free`, speaking the `canvas::wire`
+// shapes ({baseRev, ops} → {rev, patches} | structured rejection). Replaces
+// the M0 demo wrapper (numeric ids, mirror ops) that lived here through
+// commit 5401e5b0.
 
-/// An op the host asks the canvas core to apply (M0: exactly two).
-public enum CanvasOpRequest: Equatable, Sendable {
-    case setText(id: UInt32, text: String)
-    case setStyle(id: UInt32, key: String, value: String)
+/// A canvas op value: literal or a design-token reference.
+public enum CanvasValue: Equatable, Sendable {
+    case str(String)
+    case num(Double)
+    case bool(Bool)
+    case token(String)
 
-    /// The `{op: "...", ...}` MessagePack map the Rust side decodes.
     var msgPackValue: MsgPackValue {
         switch self {
-        case let .setText(id, text):
+        case .str(let s): return .string(s)
+        case .num(let n): return .double(n)
+        case .bool(let b): return .bool(b)
+        case .token(let path):
+            return .map([MsgPackPair(.string("token"), .string(path))])
+        }
+    }
+}
+
+/// Position within a parent's children.
+public enum CanvasPosition: Equatable, Sendable {
+    case first
+    case last
+    case before(String)
+    case after(String)
+
+    var msgPackValue: MsgPackValue {
+        switch self {
+        case .first: return .map([MsgPackPair(.string("type"), .string("first"))])
+        case .last: return .map([MsgPackPair(.string("type"), .string("last"))])
+        case .before(let anchor):
             return .map([
-                MsgPackPair(.string("op"), .string("setText")),
-                MsgPackPair(.string("id"), .uint(UInt64(id))),
-                MsgPackPair(.string("text"), .string(text)),
+                MsgPackPair(.string("type"), .string("before")),
+                MsgPackPair(.string("anchor"), .string(anchor)),
             ])
-        case let .setStyle(id, key, value):
+        case .after(let anchor):
             return .map([
-                MsgPackPair(.string("op"), .string("setStyle")),
-                MsgPackPair(.string("id"), .uint(UInt64(id))),
-                MsgPackPair(.string("key"), .string(key)),
-                MsgPackPair(.string("value"), .string(value)),
+                MsgPackPair(.string("type"), .string("after")),
+                MsgPackPair(.string("anchor"), .string(anchor)),
             ])
         }
     }
 }
 
-/// One patch instruction from the core's patch plan (M0 mirror of the op).
-public enum CanvasPatch: Equatable, Sendable {
-    case setText(id: UInt32, text: String)
-    case setStyle(id: UInt32, key: String, value: String)
+/// One canvas op (string ids, the engine's real vocabulary).
+public enum CanvasOpRequest: Equatable, Sendable {
+    case insert(
+        id: String?, kind: String, parent: String, pos: CanvasPosition,
+        props: [(String, CanvasValue)])
+    case update(id: String, set: [(String, CanvasValue)], unset: [String])
+    case move(id: String, parent: String, pos: CanvasPosition)
+    case remove(id: String)
+
+    public static func == (lhs: CanvasOpRequest, rhs: CanvasOpRequest) -> Bool {
+        lhs.msgPackValue == rhs.msgPackValue
+    }
+
+    var msgPackValue: MsgPackValue {
+        func propsValue(_ props: [(String, CanvasValue)]) -> MsgPackValue {
+            .array(props.map { .array([.string($0.0), $0.1.msgPackValue]) })
+        }
+        switch self {
+        case let .insert(id, kind, parent, pos, props):
+            var pairs = [MsgPackPair(.string("op"), .string("insert"))]
+            if let id { pairs.append(MsgPackPair(.string("id"), .string(id))) }
+            pairs.append(MsgPackPair(.string("kind"), .string(kind)))
+            pairs.append(MsgPackPair(.string("parent"), .string(parent)))
+            pairs.append(MsgPackPair(.string("pos"), pos.msgPackValue))
+            pairs.append(MsgPackPair(.string("props"), propsValue(props)))
+            return .map(pairs)
+        case let .update(id, set, unset):
+            return .map([
+                MsgPackPair(.string("op"), .string("update")),
+                MsgPackPair(.string("id"), .string(id)),
+                MsgPackPair(.string("set"), propsValue(set)),
+                MsgPackPair(.string("unset"), .array(unset.map(MsgPackValue.string))),
+            ])
+        case let .move(id, parent, pos):
+            return .map([
+                MsgPackPair(.string("op"), .string("move")),
+                MsgPackPair(.string("id"), .string(id)),
+                MsgPackPair(.string("parent"), .string(parent)),
+                MsgPackPair(.string("pos"), pos.msgPackValue),
+            ])
+        case let .remove(id):
+            return .map([
+                MsgPackPair(.string("op"), .string("remove")),
+                MsgPackPair(.string("id"), .string(id)),
+            ])
+        }
+    }
 }
 
-/// The decoded `{rev, patches, rejected}` patch-plan response.
-public struct CanvasPatchPlan: Equatable, Sendable {
+/// One DOM patch from the engine (the applier vocabulary).
+public enum CanvasPatch: Equatable, Sendable {
+    case setText(id: String, text: String)
+    case setStyle(id: String, prop: String, value: String)
+    case removeStyle(id: String, prop: String)
+    case setAttr(id: String, attr: String, value: String)
+    case insertNode(parent: String, before: String?, html: String)
+    case removeNode(id: String)
+    case moveNode(id: String, parent: String, before: String?)
+}
+
+/// A successful apply.
+public struct CanvasApplied: Equatable, Sendable {
     public let rev: UInt64
     public let patches: [CanvasPatch]
-    public let rejected: [UInt32]
+    public let minted: [String]
+    public let noop: Bool
 }
 
-/// Swift handle over the M0 canvas demo document. Single-writer (the core
-/// returns `.busy` on contention); NOT thread-safe by design — confine to one
-/// actor/queue like `CsvSession`.
-public final class CanvasDemoSession {
+/// A structured rejection (valid frame; refused batch).
+public struct CanvasRejection: Error, Equatable, Sendable {
+    public let kind: String
+    public let detail: String
+    public let currentRev: UInt64
+}
+
+/// Swift handle over a real canvas document.
+public final class CanvasDocSession {
     private var handle: OpaquePointer?
     private var dead = false
 
-    /// Open the hardcoded ~200-node demo document in the core.
+    /// Open an empty document (default theme + root page `pg:1`).
     public init() throws {
         var h: OpaquePointer?
-        let status = mdvcore_canvas_demo_open(&h)
+        let status = mdvcore_canvas_doc_open(&h)
         guard status == MDV_STATUS_OK, h != nil else {
-            throw CanvasDemoSession.mapError(status)
+            throw CanvasDocSession.mapError(status)
         }
         handle = h
     }
@@ -68,7 +146,10 @@ public final class CanvasDemoSession {
         }
     }
 
-    /// Lower the whole document to HTML (raw UTF-8 bytes, not a frame).
+    /// Root page id of documents opened by `init` (the engine's constant).
+    public static let rootPage = "pg:1"
+
+    /// Lower the whole document to HTML (raw UTF-8 bytes).
     public func html() throws -> String {
         let h = try liveHandle()
         var buf = MdvBuf(data: nil, len: 0, cap: 0)
@@ -83,11 +164,14 @@ public final class CanvasDemoSession {
         return s
     }
 
-    /// Apply an op batch; returns the decoded patch plan.
-    public func apply(_ ops: [CanvasOpRequest]) throws -> CanvasPatchPlan {
+    /// Apply an op batch against `baseRev`. Throws `CanvasRejection` for
+    /// refused batches (conflict/fence/store/idInUse) and `CoreError` for
+    /// transport faults.
+    public func apply(baseRev: UInt64, ops: [CanvasOpRequest]) throws -> CanvasApplied {
         let h = try liveHandle()
         let request = MsgPackValue.map([
-            MsgPackPair(.string("ops"), .array(ops.map(\.msgPackValue)))
+            MsgPackPair(.string("baseRev"), .uint(baseRev)),
+            MsgPackPair(.string("ops"), .array(ops.map(\.msgPackValue))),
         ])
         let frame = request.frame()
         var buf = MdvBuf(data: nil, len: 0, cap: 0)
@@ -100,10 +184,10 @@ public final class CanvasDemoSession {
         }
         try check(status)
         guard let data = buf.data, buf.len > 0 else {
-            throw CoreError.decode("empty canvas patch-plan frame")
+            throw CoreError.decode("empty canvas apply response")
         }
-        let planFrame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
-        return try Self.decodePlan(planFrame)
+        let respFrame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+        return try Self.decodeResponse(respFrame)
     }
 
     // MARK: - internals
@@ -136,40 +220,58 @@ public final class CanvasDemoSession {
         }
     }
 
-    static func decodePlan(_ frame: [UInt8]) throws -> CanvasPatchPlan {
+    static func decodeResponse(_ frame: [UInt8]) throws -> CanvasApplied {
         var reader = MsgPackReader(frame, startingAt: try CsvSession.frameBodyStart(frame))
         do {
             let map = try reader.decode().mapValue()
+            // Rejection frame?
+            if let rejected = map["rejected"] {
+                try Self.throwRejection(rejected: rejected, map: map)
+            }
             let rev = try Self.uint(map.require("rev"), "rev")
             let patches = try map.require("patches").arrayValue().map(Self.decodePatch)
-            let rejected = try map.require("rejected").arrayValue().map {
-                UInt32(truncatingIfNeeded: try Self.uint($0, "rejected id"))
-            }
-            return CanvasPatchPlan(rev: rev, patches: patches, rejected: rejected)
+            let minted = try map.require("minted").arrayValue().map { try $0.stringValue() }
+            let noop = try map.require("noop").boolValue()
+            return CanvasApplied(rev: rev, patches: patches, minted: minted, noop: noop)
         } catch let e as MsgPackError {
             throw CoreError.decode("\(e)")
         }
     }
 
+    private static func throwRejection(
+        rejected: MsgPackValue, map: [String: MsgPackValue]
+    ) throws -> Never {
+        let kind = (try? rejected.stringValue()) ?? "unknown"
+        let detail = (try? map.require("detail").stringValue()) ?? ""
+        let current = map["currentRev"].flatMap { try? Self.uint($0, "currentRev") } ?? 0
+        throw CanvasRejection(kind: kind, detail: detail, currentRev: current)
+    }
+
     private static func decodePatch(_ value: MsgPackValue) throws -> CanvasPatch {
         let map = try value.mapValue()
         let op = try map.require("op").stringValue()
-        let id = UInt32(truncatingIfNeeded: try Self.uint(map.require("id"), "id"))
+        func s(_ key: String) throws -> String { try map.require(key).stringValue() }
+        func opt(_ key: String) -> String? { map[key].flatMap { try? $0.stringValue() } }
         switch op {
         case "setText":
-            return .setText(id: id, text: try map.require("text").stringValue())
+            return .setText(id: try s("id"), text: try s("text"))
         case "setStyle":
-            return .setStyle(
-                id: id,
-                key: try map.require("key").stringValue(),
-                value: try map.require("value").stringValue()
-            )
+            return .setStyle(id: try s("id"), prop: try s("prop"), value: try s("value"))
+        case "removeStyle":
+            return .removeStyle(id: try s("id"), prop: try s("prop"))
+        case "setAttr":
+            return .setAttr(id: try s("id"), attr: try s("attr"), value: try s("value"))
+        case "insertNode":
+            return .insertNode(parent: try s("parent"), before: opt("before"), html: try s("html"))
+        case "removeNode":
+            return .removeNode(id: try s("id"))
+        case "moveNode":
+            return .moveNode(id: try s("id"), parent: try s("parent"), before: opt("before"))
         default:
             throw CoreError.decode("unknown patch op '\(op)'")
         }
     }
 
-    /// Accept both MessagePack integer encodings for an unsigned field.
     private static func uint(_ value: MsgPackValue, _ field: String) throws -> UInt64 {
         switch value {
         case .uint(let u): return u

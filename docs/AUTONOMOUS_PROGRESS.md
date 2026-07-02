@@ -14905,3 +14905,13 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - M0 VERDICT: GO — budgets met everywhere the page survives; core-side 0.1ms constant.
 - M1.S1 record store landed (577c7a18): FracIndex + flat store + tombstones + cycle checks,
   proptest storm, teeth shown; wasm-shape scan made recursive for the canvas/ module dir.
+
+## 2026-07-02 — Canvas M1.S5c: the FULL swap onto the real engine (TSK-1360)
+- M0 demo module RETIRED; FFI = mdvcore_canvas_doc_open/html/apply/free over
+  CanvasDoc{DocState, TokenStore, root page}; wire = canvas::wire ({baseRev, ops} →
+  {rev, patches} | structured rejection). Swift: CanvasDocSession (full op vocabulary,
+  string ids, typed CanvasRejection) + CanvasDocAdapter; bridge: 7-verb CVPatchInstruction;
+  canvas.js: insertNode/moveNode/removeNode/setAttr/removeStyle grown.
+- E2E suite rebuilt ON the engine (builds its own doc via ops): 4/4 LOCAL green —
+  insert/move/remove reshape the live DOM; engine core p95 0.13ms; e2e p95 30ms.
+  Host gate PASSED (one FileWatcher timing flake under load, 8/8 green in isolation).

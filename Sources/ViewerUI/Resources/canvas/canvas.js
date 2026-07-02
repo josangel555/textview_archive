@@ -45,18 +45,55 @@
     return root.querySelector('[data-cv-id="' + id + '"]');
   }
 
+  // The 7 applier verbs (M1.S5c — the real engine's patch vocabulary).
+  // insertNode/moveNode anchor on `before` (insertBefore semantics; absent =
+  // append); fragments arrive as engine-lowered HTML strings.
   function applyPatches(patches) {
     var applied = 0;
     var missing = [];
+    function parentAndAnchor(p) {
+      var parent = nodeById(p.parent);
+      if (!parent) return null;
+      var anchor = null;
+      if (p.before) {
+        anchor = nodeById(p.before);
+        if (!anchor || anchor.parentNode !== parent) anchor = null;
+      }
+      return { parent: parent, anchor: anchor };
+    }
     for (var i = 0; i < patches.length; i++) {
       var p = patches[i];
+      if (p.op === "insertNode") {
+        var t = parentAndAnchor(p);
+        if (!t) { missing.push(p.parent); continue; }
+        var tpl = document.createElement("template");
+        tpl.innerHTML = p.html;
+        t.parent.insertBefore(tpl.content, t.anchor);
+        applied += 1;
+        continue;
+      }
       var el = nodeById(p.id);
       if (!el) { missing.push(p.id); continue; }
       if (p.op === "setText") {
         el.textContent = p.text;
         applied += 1;
       } else if (p.op === "setStyle") {
-        el.style.setProperty(p.key, p.value);
+        el.style.setProperty(p.prop, p.value);
+        applied += 1;
+      } else if (p.op === "removeStyle") {
+        el.style.removeProperty(p.prop);
+        applied += 1;
+      } else if (p.op === "setAttr") {
+        if (p.value === "") { el.removeAttribute(p.attr); }
+        else { el.setAttribute(p.attr, p.value); }
+        applied += 1;
+      } else if (p.op === "removeNode") {
+        el.parentNode && el.parentNode.removeChild(el);
+        applied += 1;
+      } else if (p.op === "moveNode") {
+        var m = parentAndAnchor(p);
+        if (!m) { missing.push(p.parent); continue; }
+        m.parent.insertBefore(el, m.anchor);
         applied += 1;
       } else {
         missing.push(p.id);

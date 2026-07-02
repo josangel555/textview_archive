@@ -948,13 +948,14 @@ pub unsafe extern "C" fn mdvcore_session_free(handle: *mut SessionHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Canvas M0 spike (TSK-1343/1352) — the patch-loop boundary under test.
-// Stateful doc ⇒ the CsvSession opaque-handle pattern (canvas_handle.rs), not
-// the stateless `mdvcore_call` envelope. Docs: docs/canvas/plans/M0-PLAN.md.
+// Canvas (TSK-1360 M1.S5c) — the REAL engine boundary. Stateful doc ⇒ the
+// CsvSession opaque-handle pattern (canvas_handle.rs). Wire shapes:
+// mdvcore_core::canvas::wire. (The M0 spike's demo boundary lived here through
+// 5401e5b0; TSK-1343 has its verdict.)
 // ---------------------------------------------------------------------------
 
-/// Open the hardcoded M0 canvas demo document (~200 nodes) and return its
-/// opaque handle. Caller MUST balance with [`mdvcore_canvas_free`].
+/// Open an EMPTY canvas document (default theme + root page `pg:1`) and
+/// return its opaque handle. Caller MUST balance with [`mdvcore_canvas_free`].
 ///
 /// # Returns
 /// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], or [`MdvStatus::Panic`].
@@ -962,7 +963,7 @@ pub unsafe extern "C" fn mdvcore_session_free(handle: *mut SessionHandle) {
 /// # Safety
 /// `out_handle` must be a valid, writable pointer.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn mdvcore_canvas_demo_open(
+pub unsafe extern "C" fn mdvcore_canvas_doc_open(
     out_handle: *mut *mut canvas_handle::CanvasHandle,
 ) -> MdvStatus {
     ffi_guard!({
@@ -972,7 +973,7 @@ pub unsafe extern "C" fn mdvcore_canvas_demo_open(
         // SAFETY: out_handle validated non-null; null it so an error path
         // never leaves a dangling out value.
         unsafe { *out_handle = core::ptr::null_mut() };
-        let handle = canvas_handle::CanvasHandle::new(canvas::demo_doc());
+        let handle = canvas_handle::CanvasHandle::new(canvas::doc::CanvasDoc::new_empty());
         let raw = handle.into_raw();
         // SAFETY: out_handle validated non-null above.
         unsafe { *out_handle = raw };
@@ -989,7 +990,7 @@ pub unsafe extern "C" fn mdvcore_canvas_demo_open(
 /// [`MdvStatus::Busy`], [`MdvStatus::HandleDead`], or [`MdvStatus::Panic`].
 ///
 /// # Safety
-/// `handle` must be a token from [`mdvcore_canvas_demo_open`], not yet freed.
+/// `handle` must be a token from [`mdvcore_canvas_doc_open`], not yet freed.
 /// `out_buf` must be valid & writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mdvcore_canvas_html(
@@ -1006,7 +1007,7 @@ pub unsafe extern "C" fn mdvcore_canvas_html(
             return MdvStatus::NullArg;
         };
         h.with(|doc| {
-            let html = canvas::initial_html(doc);
+            let html = doc.html();
             // SAFETY: out_buf validated non-null above.
             unsafe { *out_buf = MdvBuf::from_vec(html.into_bytes()) };
             MdvStatus::Ok
@@ -1015,9 +1016,10 @@ pub unsafe extern "C" fn mdvcore_canvas_html(
     })
 }
 
-/// Apply a canvas op batch. `req`/`req_len` is the `{ops:[...]}` MessagePack
-/// request frame; `out_buf` receives the `{rev, patches, rejected}` patch-plan
-/// response frame. Caller MUST call [`mdvcore_buf_free`].
+/// Apply a canvas op batch. `req`/`req_len` is the `{baseRev, ops:[...]}`
+/// MessagePack request frame; `out_buf` receives the `{rev, patches, minted,
+/// noop}` response frame, or a structured `{rejected, detail, currentRev}`
+/// rejection frame. Caller MUST call [`mdvcore_buf_free`].
 ///
 /// # Returns
 /// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`] (with
@@ -1025,7 +1027,7 @@ pub unsafe extern "C" fn mdvcore_canvas_html(
 /// or [`MdvStatus::Panic`].
 ///
 /// # Safety
-/// `handle` must be a live token from [`mdvcore_canvas_demo_open`]; `req` must
+/// `handle` must be a live token from [`mdvcore_canvas_doc_open`]; `req` must
 /// point to `req_len` valid bytes (or be null with `req_len == 0`); `out_buf`
 /// must be valid & writable.
 #[unsafe(no_mangle)]
@@ -1054,7 +1056,7 @@ pub unsafe extern "C" fn mdvcore_canvas_apply(
         let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
             return MdvStatus::NullArg;
         };
-        h.with(|doc| match canvas::apply_wire(doc, frame) {
+        h.with(|doc| match doc.apply_frame(frame) {
             Ok(plan_frame) => {
                 // SAFETY: out_buf validated non-null above.
                 unsafe { *out_buf = MdvBuf::from_vec(plan_frame) };
@@ -1070,7 +1072,7 @@ pub unsafe extern "C" fn mdvcore_canvas_apply(
 /// Free a canvas handle. Null-tolerant and idempotent.
 ///
 /// # Safety
-/// `handle` is a token from [`mdvcore_canvas_demo_open`] (or null).
+/// `handle` is a token from [`mdvcore_canvas_doc_open`] (or null).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mdvcore_canvas_free(handle: *mut canvas_handle::CanvasHandle) {
     let _ = std::panic::catch_unwind(|| {
