@@ -1334,6 +1334,35 @@ pub unsafe extern "C" fn mdvcore_canvas_vocab(
     })
 }
 
+/// The PAGINATED PRINT-layout deck export (M6.S6 tail): one slide per page
+/// via Print▸Save-as-PDF, no player. Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Safety
+/// `handle` must be live; `out_buf` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_export_deck_print(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            let html = doc.export_deck_print();
+            // SAFETY: out_buf validated non-null above.
+            unsafe { *out_buf = MdvBuf::from_vec(html.into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// The deck TIMELINE as canonical JSON (M6.S3): per-slide step counts +
 /// visible-id snapshots — the agent's declarative verification surface.
 /// Caller MUST call [`mdvcore_buf_free`].

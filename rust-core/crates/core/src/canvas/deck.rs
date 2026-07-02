@@ -310,6 +310,27 @@ pub fn export_html(store: &Store, tokens: &TokenStore, page: &Id) -> String {
     out
 }
 
+/// Export the deck as a PAGINATED PRINT layout (M6.S6 tail): every slide in
+/// normal flow, each forced to its own page (page-break-after), NO player JS.
+/// Opening this and File▸Print → Save as PDF yields a one-slide-per-page PDF
+/// through the OS print path — deck→PDF with zero new machinery (the M6-PLAN
+/// PDF finding, closed via print rather than an async createPDF driver).
+/// Self-contained: theme inlined, zero network.
+#[must_use]
+pub fn export_print_html(store: &Store, tokens: &TokenStore, page: &Id) -> String {
+    let mut out = String::with_capacity(8192);
+    out.push_str("<!doctype html><html><head><meta charset=\"utf-8\">");
+    out.push_str("<title>Canvas Deck</title><style>");
+    out.push_str("@page{margin:0}html,body{margin:0;background:#fff}");
+    out.push_str("[data-cv-role=\"slide\"]{page-break-after:always;break-after:page;");
+    out.push_str("width:1280px;min-height:720px;box-sizing:border-box;overflow:hidden}");
+    out.push_str("[data-cv-role=\"slide\"]:last-child{page-break-after:auto;break-after:auto}");
+    out.push_str("</style></head><body>");
+    out.push_str(&super::lower::lower_page(store, tokens, page));
+    out.push_str("</body></html>");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,6 +445,32 @@ mod tests {
         assert_eq!(plan.pairs.len(), 250, "shared morphIds pair");
         assert_eq!(plan.leaving.len(), 250, "slide-0-only morphIds leave");
         assert!(plan.entering.is_empty(), "no slide-1-only morphIds");
+    }
+
+    #[test]
+    fn export_print_html_paginates_slides_without_the_player() {
+        let mut d = DocState::new();
+        let pg = id("pg:1");
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(0, &[
+            CanvasOp::Insert { id: Some(id("nd:s0")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:t")), kind: RecordKind::Text, parent: id("nd:s0"),
+                pos: Position::Last, props: vec![(key("text"), Value::Str("Print me".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:s1")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+        ]).expect("apply");
+        let tokens = TokenStore::default_theme();
+        let html = export_print_html(&d.store, &tokens, &pg);
+        assert!(html.starts_with("<!doctype html>"));
+        assert!(html.contains("Print me"), "slide content");
+        assert!(html.contains("page-break-after:always"), "slides paginate");
+        assert!(html.contains("@page{margin:0}"), "print page setup");
+        // It is a STATIC artifact — no player JS (Cmd-P is the driver).
+        assert!(!html.contains("addEventListener"), "no player script in print layout");
+        assert!(!html.contains("<script"), "no scripts at all");
+        // Self-contained: zero network.
+        assert!(!html.contains("http://") && !html.contains("https://"));
     }
 
     #[test]

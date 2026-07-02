@@ -184,6 +184,13 @@ impl CanvasDoc {
         deck::export_html(&self.state.store, &self.tokens, &self.root)
     }
 
+    /// The paginated PRINT-layout deck export (M6.S6 tail) — one slide per
+    /// page via Print▸Save-as-PDF, no player.
+    #[must_use]
+    pub fn export_deck_print(&self) -> String {
+        deck::export_print_html(&self.state.store, &self.tokens, &self.root)
+    }
+
     /// Full-document lint as a `{lint: […]}` frame.
     ///
     /// # Errors

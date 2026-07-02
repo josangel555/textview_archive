@@ -500,5 +500,18 @@ final class CanvasMCPToolsTests: XCTestCase {
         XCTAssertThrowsError(try call("canvas_export", [
             "doc": .string(doc), "path": .string(out.path), "flavor": .string("keynote"),
         ]))
+
+        // M6.S6 tail — the PRINT flavor: paginated, static (Cmd-P → PDF).
+        let printOut = FileManager.default.temporaryDirectory
+            .appendingPathComponent("deck-print-\(UUID().uuidString).html")
+        defer { try? FileManager.default.removeItem(at: printOut) }
+        guard case .object(let pr) = try call("canvas_export", [
+            "doc": .string(doc), "path": .string(printOut.path), "flavor": .string("print"),
+        ]) else { return XCTFail("print export") }
+        XCTAssertEqual(pr["flavor"], .string("print"))
+        let printHTML = try String(contentsOf: printOut, encoding: .utf8)
+        XCTAssertTrue(printHTML.contains("page-break-after:always"), "slides paginate for print")
+        XCTAssertFalse(printHTML.contains("<script"), "print layout is static (no player)")
+        XCTAssertFalse(printHTML.contains("http://") || printHTML.contains("https://"))
     }
 }

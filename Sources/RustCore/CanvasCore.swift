@@ -262,6 +262,11 @@ public final class CanvasDocSession {
         try stringResult { h, buf in mdvcore_canvas_export_deck(h, &buf) }
     }
 
+    /// The paginated print-layout deck export HTML (M6.S6 tail).
+    public func exportDeckPrint() throws -> String {
+        try stringResult { h, buf in mdvcore_canvas_export_deck_print(h, &buf) }
+    }
+
     /// The FRAGMENT export of one node (M5.S3): theme-less HTML with token
     /// literals inlined. Nil when the node is absent.
     public func renderFragment(node id: String) throws -> String? {

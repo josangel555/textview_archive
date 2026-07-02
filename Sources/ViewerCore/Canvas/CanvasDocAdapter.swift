@@ -165,6 +165,9 @@ public final class CanvasDocAdapter {
     /// The self-contained offline deck export HTML (M6.S6).
     public func exportDeckHTML() throws -> String { try session.exportDeck() }
 
+    /// The paginated print-layout deck export HTML (M6.S6 tail).
+    public func exportDeckPrintHTML() throws -> String { try session.exportDeckPrint() }
+
     public func renderDSL(node id: String) throws -> String? {
         try session.renderDSL(node: id)
     }
