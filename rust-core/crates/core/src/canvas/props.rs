@@ -58,6 +58,8 @@ const KEY_TABLE: &[(u16, &str)] = &[
     (35, "step"),
     // M6.S5: identity-morph tag — same id across slides animates (FLIP).
     (36, "morphId"),
+    // Post-M6: grid layout — a container lays children in N equal columns.
+    (37, "columns"),
 ];
 
 impl PropKey {

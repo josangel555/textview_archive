@@ -70,6 +70,8 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
     const CONTAINER: &[&str] = &[
         "gap", "padding", "align", "justify", "direction", "wrap", "fill", "stroke", "radius",
         "shadow", "opacity", "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
+        // Post-M6: grid layout (N equal columns).
+        "columns",
         // M5.S1: artboard marker + label (role=artboard; note = the label).
         "role", "note",
         // M5.S6: prototype-nav link (presence-keyed, any element kind).
@@ -193,7 +195,7 @@ pub fn check_value(key: PropKey, value: &Value) -> Result<(), FenceError> {
         }
         // Numeric, non-negative.
         ("gap" | "padding" | "radius" | "minW" | "maxW" | "minH" | "maxH" | "grow" | "shrink"
-            | "step",
+            | "step" | "columns",
             Value::Num(n)) => {
             if n.is_finite() && *n >= 0.0 { Ok(()) } else { bad("must be a finite number >= 0") }
         }

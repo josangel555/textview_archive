@@ -9,6 +9,8 @@
   export that plays with no network, and a print layout (one slide per page →
   File▸Print▸Save-as-PDF for a PDF deck). The step timeline is verifiable
   before any screenshot.
+- **Canvas grid layout:** a container can lay its children in N equal columns
+  (`columns=3`) — closes the design gauntlet's hand-assembled-grid gap.
 - **Canvas design system:** reusable components (edit a definition once, every
   copy updates), a starter kit of six building blocks, instant whole-document
   retheming, charts/tables/code/diagrams as first-class content, data-driven

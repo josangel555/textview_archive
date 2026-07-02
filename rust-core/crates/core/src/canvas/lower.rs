@@ -106,14 +106,33 @@ fn style_of(store: &Store, id: &Id) -> String {
         return String::new();
     };
     let mut css = String::new();
-    // Containers are flex by default (auto-layout lowers to flexbox).
+    // Containers are flex by default (auto-layout lowers to flexbox); a
+    // `columns` prop switches to an N-equal-column grid (post-M6, closing the
+    // gauntlet's hand-assembled-grid finding — minmax(0,1fr) so cells can
+    // shrink below content width).
     if rec.kind.can_parent() {
-        css.push_str("display:flex;");
-        // Column unless direction says otherwise.
-        let dir_key = PropKey::by_name("direction");
-        let has_dir = dir_key.is_some_and(|k| rec.props.get(k).is_some());
-        if !has_dir {
-            css.push_str("flex-direction:column;");
+        let cols = PropKey::by_name("columns")
+            .and_then(|k| rec.props.get(k))
+            .and_then(|v| match v {
+                Value::Num(n) if *n >= 1.0 => {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss,
+                            reason = "clamped 1..=64")]
+                    Some((*n).min(64.0) as u32)
+                }
+                _ => None,
+                _ => None,
+            });
+        if let Some(n) = cols {
+            css.push_str("display:grid;grid-template-columns:repeat(");
+            css.push_str(&n.to_string());
+            css.push_str(",minmax(0,1fr));");
+        } else {
+            css.push_str("display:flex;");
+            let dir_key = PropKey::by_name("direction");
+            let has_dir = dir_key.is_some_and(|k| rec.props.get(k).is_some());
+            if !has_dir {
+                css.push_str("flex-direction:column;");
+            }
         }
     }
     for (key, value) in rec.props.iter() {
@@ -1284,6 +1303,24 @@ mod tests {
     // MARK: M5.S3 — fragment export
 
     // MARK: M5.S6 — prototype nav (linkTo)
+
+    #[test]
+    fn columns_prop_lowers_a_container_to_a_grid() {
+        let mut d = DocState::new();
+        let pg = id("pg:1");
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        let dsl_src = "frame #grid columns=3 gap=16 {\n  text #a \"a\"\n  text #b \"b\"\n}\nframe #plain gap=8 {\n  text #c \"c\"\n}";
+        let ops = crate::canvas::dsl::parse_fragment(dsl_src, &pg).expect("parse");
+        d.apply(0, &ops).expect("apply");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        // The grid container: display:grid + 3 equal columns; NOT flex.
+        assert!(html.contains("display:grid;grid-template-columns:repeat(3,minmax(0,1fr))"), "{html}");
+        // The plain frame stays flex (columns is opt-in).
+        assert!(html.contains("display:flex;flex-direction:column;"), "plain frame unchanged");
+        // Exactly one grid container.
+        assert_eq!(html.matches("display:grid").count(), 1);
+    }
 
     #[test]
     fn linkto_lowers_to_data_cv_link_and_dangling_lints() {

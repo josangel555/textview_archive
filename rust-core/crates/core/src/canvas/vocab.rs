@@ -55,6 +55,7 @@ fn prop_note(name: &str) -> Option<&'static str> {
         "spec" => "chart spec JSON: {\"mark\": \"bar|line|pie\", \"values\": [{\"label\", \"value\"}...]}",
         "linkTo" => "prototype nav: a node id (e.g. nd:artboard-mobile) — click scrolls to it",
         "step" => "presentation reveal step (u16): the node appears at this step within its slide",
+        "columns" => "grid layout: lay this container's children in N equal columns (1..64)",
         _ => return None,
     })
 }
