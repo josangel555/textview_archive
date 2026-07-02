@@ -182,6 +182,8 @@ public final class CanvasDocAdapter {
             return .moveNode(id: id, parent: parent, before: before)
         case let .replaceNode(id, html):
             return .replaceNode(id: id, html: html)
+        case let .setTheme(css):
+            return .setTheme(css: css)
         }
     }
 }

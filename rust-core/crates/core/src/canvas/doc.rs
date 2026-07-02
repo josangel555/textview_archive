@@ -74,14 +74,58 @@ impl CanvasDoc {
     /// # Errors
     /// [`WireFault`] only if response ENCODING fails.
     pub fn apply_dsl(&mut self, base_rev: u64, source: &str) -> Result<Vec<u8>, WireFault> {
-        match dsl::parse_fragment(source, &self.root) {
-            Ok(ops) => {
+        match dsl::parse_fragment_full(source, &self.root) {
+            Ok((ops, token_statements)) => {
+                // Token statements are DOCUMENT settings (M4.S4): applied
+                // before the ops; failures reject the whole request BEFORE
+                // any record mutation (token errors are teaching-shaped).
+                let theme_changed = !token_statements.is_empty();
+                for statement in &token_statements {
+                    if let Err(e) = self.apply_token_statement(statement) {
+                        return wire::dsl_rejection(
+                            &self.state,
+                            &dsl::DslError { line: 1, message: e },
+                        );
+                    }
+                }
                 let rev_before = self.state.rev();
-                let resp = wire::respond(&mut self.state, &self.tokens, base_rev, &ops)?;
+                let resp = wire::respond_with_theme(
+                    &mut self.state, &self.tokens, base_rev, &ops, theme_changed)?;
                 self.capture_undo(rev_before);
                 Ok(resp)
             }
             Err(e) => wire::dsl_rejection(&self.state, &e),
+        }
+    }
+
+    /// Apply one token statement (rename = deprecate-and-alias). Not
+    /// undoable via the record stack in v1 (tokens are global settings;
+    /// renames keep old refs resolving by construction).
+    fn apply_token_statement(&mut self, statement: &dsl::TokenStatement) -> Result<(), String> {
+        use super::tokens::TokenError;
+        let describe = |e: TokenError| -> String {
+            match e {
+                TokenError::BadPath(p) => format!("bad token path '{p}' (seg.seg, lowercase)"),
+                TokenError::Unknown(p) => format!("unknown token '{p}'"),
+                TokenError::Cycle(p) => format!("alias cycle at '{p}'"),
+            }
+        };
+        match statement {
+            dsl::TokenStatement::Set { path, css } => {
+                self.tokens.set_literal(path, css).map_err(describe)
+            }
+            dsl::TokenStatement::Alias { path, target } => {
+                self.tokens.set_alias(path, target).map_err(describe)?;
+                // An alias that immediately cycles is a store fault — refuse
+                // now with the teaching shape rather than at render.
+                if let Err(e) = self.tokens.resolve(path) {
+                    return Err(describe(e));
+                }
+                Ok(())
+            }
+            dsl::TokenStatement::Rename { old, new } => {
+                self.tokens.deprecate_and_alias(old, new).map_err(describe)
+            }
         }
     }
 
@@ -179,6 +223,36 @@ mod tests {
         let rej = doc.apply_dsl(3, "wormhole #x").expect("rejection frame");
         assert!(!rej.is_empty());
         assert_eq!(doc.state.rev(), 3);
+    }
+
+    // MARK: M4.S4 — token statements + the zero-op retheme
+
+    #[test]
+    fn token_statements_retheme_with_one_patch_and_no_record_ops() {
+        let mut doc = CanvasDoc::new_empty();
+        doc.apply_dsl(0, "text #t \"themed\" color=$color.accent").expect("seed");
+        let rev_before = doc.state.rev();
+        // A token-only batch: rev must NOT move; the response carries the
+        // SetTheme patch and nothing else.
+        let resp = doc
+            .apply_dsl(rev_before, "token set base.blue #123456")
+            .expect("token set");
+        assert_eq!(doc.state.rev(), rev_before, "tokens are doc settings, not record ops");
+        let text = String::from_utf8_lossy(&resp);
+        assert!(text.contains("setTheme"), "the retheme patch rides the response");
+        assert!(text.contains("#123456"), "with the NEW values");
+        // The lowering reflects it (color.accent aliases base.blue).
+        assert!(doc.html().contains("--cv-base-blue: #123456;"));
+        // Rename keeps old refs resolving (the M1 law through the DSL).
+        doc.apply_dsl(rev_before, "token rename color.accent color.primary")
+            .expect("rename");
+        assert!(doc.html().contains("--cv-color-accent:"), "old path still emits");
+        assert!(doc.html().contains("--cv-color-primary:"));
+        // Teaching rejections: bad path + unknown rename source.
+        let rej = doc.apply_dsl(rev_before, "token set NotAPath x").expect("frame");
+        assert!(String::from_utf8_lossy(&rej).contains("bad token path"));
+        let rej2 = doc.apply_dsl(rev_before, "token rename color.never color.x").expect("frame");
+        assert!(String::from_utf8_lossy(&rej2).contains("unknown token"));
     }
 
     #[test]

@@ -41,6 +41,17 @@ use super::props::{PropKey, Value};
 use super::registry;
 use super::store::{Id, Position, RecordKind};
 
+/// A token-store mutation statement (M4.S4): `token set <path> <value>` /
+/// `token alias <path> <target>` / `token rename <old> <new>`. Tokens are
+/// DOCUMENT settings (not record state): applied by the doc facade, not the
+/// op engine; renames are deprecate-and-alias underneath.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenStatement {
+    Set { path: String, css: String },
+    Alias { path: String, target: String },
+    Rename { old: String, new: String },
+}
+
 /// Parse fault: line (1-based) + a teaching message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DslError {
@@ -232,6 +243,23 @@ fn parse_kind(word: &str, line_no: usize) -> Result<RecordKind, DslError> {
 /// document order; `#name` anchors become `nd:name` ids (duplicates within
 /// the fragment are errors); anchorless elements let the engine mint.
 pub fn parse_fragment(source: &str, parent: &Id) -> Result<Vec<CanvasOp>, DslError> {
+    let (ops, tokens) = parse_fragment_full(source, parent)?;
+    if !tokens.is_empty() {
+        return err(
+            1,
+            "token statements need the document context — send them through \
+             canvas_apply (they ride apply_dsl), not this ops-only entry",
+        );
+    }
+    Ok(ops)
+}
+
+/// The full parse: element/edit ops AND token statements (M4.S4).
+pub fn parse_fragment_full(
+    source: &str,
+    parent: &Id,
+) -> Result<(Vec<CanvasOp>, Vec<TokenStatement>), DslError> {
+    let mut token_statements: Vec<TokenStatement> = Vec::new();
     let mut ops: Vec<CanvasOp> = Vec::new();
     // Parent stack: (id-or-placeholder, line). Anchorless containers cannot
     // be parents (children need an addressable parent id) — teaching error.
@@ -270,6 +298,16 @@ pub fn parse_fragment(source: &str, parent: &Id) -> Result<Vec<CanvasOp>, DslErr
             if iter.next().is_some() {
                 return err(line_no, format!("trailing input after '{head}' statement"));
             }
+            continue;
+        }
+
+        // `token set|alias|rename …` — document-setting statements (M4.S4).
+        if head == "token" {
+            let statement = parse_token_statement(&mut iter, line_no)?;
+            if iter.next().is_some() {
+                return err(line_no, "trailing input after token statement");
+            }
+            token_statements.push(statement);
             continue;
         }
 
@@ -476,7 +514,42 @@ pub fn parse_fragment(source: &str, parent: &Id) -> Result<Vec<CanvasOp>, DslErr
     if stack.len() != 1 {
         return err(source.lines().count(), "unclosed '{' (missing '}')");
     }
-    Ok(ops)
+    Ok((ops, token_statements))
+}
+
+fn parse_token_statement(iter: &mut TokIter, line_no: usize) -> Result<TokenStatement, DslError> {
+    let verb = match iter.next() {
+        Some(Tok::Word(w)) => w,
+        other => return err(line_no, format!("token needs set/alias/rename, got {other:?}")),
+    };
+    let word = |iter: &mut TokIter, what: &str| -> Result<String, DslError> {
+        match iter.next() {
+            Some(Tok::Word(w)) => Ok(w),
+            Some(Tok::Quoted(s)) => Ok(s),
+            // CSS hex colors lex as anchors (#123456) — re-prefix them.
+            Some(Tok::Anchor(a)) => Ok(format!("#{a}")),
+            other => err(line_no, format!("token {verb}: expected {what}, got {other:?}")),
+        }
+    };
+    match verb.as_str() {
+        "set" => {
+            let path = word(iter, "a token path")?;
+            let css = word(iter, "a css value (quote multi-word values)")?;
+            Ok(TokenStatement::Set { path, css })
+        }
+        "alias" => Ok(TokenStatement::Alias {
+            path: word(iter, "a token path")?,
+            target: word(iter, "a target path")?,
+        }),
+        "rename" => Ok(TokenStatement::Rename {
+            old: word(iter, "the old path")?,
+            new: word(iter, "the new path")?,
+        }),
+        other => err(
+            line_no,
+            format!("unknown token verb '{other}' — token set|alias|rename"),
+        ),
+    }
 }
 
 type TokIter = std::iter::Peekable<std::vec::IntoIter<Tok>>;

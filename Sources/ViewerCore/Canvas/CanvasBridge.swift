@@ -23,6 +23,7 @@ public enum CVPatchInstruction: Equatable, Sendable {
     case removeNode(id: String)
     case moveNode(id: String, parent: String, before: String?)
     case replaceNode(id: String, html: String)
+    case setTheme(css: String)
 
     /// The JSON dictionary the JS applier consumes.
     var jsonObject: [String: Any] {
@@ -47,6 +48,8 @@ public enum CVPatchInstruction: Equatable, Sendable {
             return d
         case let .replaceNode(id, html):
             return ["op": "replaceNode", "id": id, "html": html]
+        case let .setTheme(css):
+            return ["op": "setTheme", "css": css]
         }
     }
 }

@@ -231,6 +231,43 @@ final class CanvasPatchLoopWebViewTests: WebViewTestCase {
         }
     }
 
+    /// M4.S4: the zero-op retheme — ONE setTheme patch changes the COMPUTED
+    /// style of every token-referencing node (the var() indirection), no
+    /// re-lower, no record ops.
+    func test_setTheme_rethemes_computed_styles_live() async throws {
+        _ = try adapter.applyDSL(
+            baseRev: 0, "frame #box fill=$color.surface {\n  text #t \"themed\"\n}")
+        seq += 1
+        host.send(.setContent(seq: seq, html: try adapter.html()))
+        _ = await waitUntil(5) {
+            self.inbound.contains { if case .contentSet = $0 { return true }; return false }
+        }
+        // The engine-side token edit produces the setTheme patch.
+        let resp = try adapter.applyDSL(baseRev: 1, "token set base.gray-1 \"rgb(1,2,3)\"")
+        let themePatch = resp.patches.first {
+            if case .setTheme = $0 { return true }
+            return false
+        }
+        XCTAssertNotNil(themePatch, "token edits must carry the retheme patch: \(resp.patches)")
+        XCTAssertEqual(resp.patches.count, 1, "ONE patch — the zero-op law")
+        seq += 1
+        host.send(.applyPatches(seq: seq, patches: resp.patches))
+        let acked = await waitUntil(5) {
+            self.inbound.contains {
+                if case .applied(let got, _, _, _, _) = $0 { return got == self.seq }
+                return false
+            }
+        }
+        XCTAssertTrue(acked, "retheme patch must ack")
+        // The COMPUTED background of #box (fill=$color.surface → base.gray-1)
+        // must now be the new literal.
+        var computed = ""
+        let probeJS = "getComputedStyle(document.querySelector('[data-cv-id=\"nd:box\"]')).backgroundColor"
+        host.probe(probeJS) { result in computed = result }
+        let ok = await waitUntil(5) { computed.contains("rgb(1, 2, 3)") }
+        XCTAssertTrue(ok, "computed style must reflect the retheme, got: \(computed)")
+    }
+
     func test_latencyHarness_50ops_reportsPercentiles() async throws {
         try await seedAndMount(rows: 60)
         try await applyRoundTrip([

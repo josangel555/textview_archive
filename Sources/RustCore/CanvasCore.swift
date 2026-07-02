@@ -109,6 +109,7 @@ public enum CanvasPatch: Equatable, Sendable {
     case removeNode(id: String)
     case moveNode(id: String, parent: String, before: String?)
     case replaceNode(id: String, html: String)
+    case setTheme(css: String)
 }
 
 /// One advisory lint finding (S6 — rides every apply).
@@ -419,6 +420,8 @@ public final class CanvasDocSession {
             return .moveNode(id: try s("id"), parent: try s("parent"), before: opt("before"))
         case "replaceNode":
             return .replaceNode(id: try s("id"), html: try s("html"))
+        case "setTheme":
+            return .setTheme(css: try s("css"))
         default:
             throw CoreError.decode("unknown patch op '\(op)'")
         }

@@ -466,7 +466,7 @@ pub fn visible_instances_of(store: &Store, def: &Id) -> Vec<Id> {
 #[must_use]
 pub fn lower_page(store: &Store, tokens: &TokenStore, page: &Id) -> String {
     let mut out = String::new();
-    out.push_str("<style>:root{\n");
+    out.push_str("<style id=\"cv-theme\">:root{\n");
     out.push_str(&tokens.to_css_custom_props());
     out.push_str("}</style>");
     emit(store, page, &ExpandCtx::root(), &mut out);

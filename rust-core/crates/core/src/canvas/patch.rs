@@ -26,6 +26,10 @@ pub enum Patch {
     /// verb (M4.S1c): an edit INSIDE a cmp:* subtree re-lowers every visible
     /// instance instead of patching ids that don't exist bare in the DOM.
     ReplaceNode { id: Id, html: String },
+    /// Swap the root theme block's custom properties (M4.S4) — the ZERO-OP
+    /// retheme: token edits repaint the whole document through the var()
+    /// indirection with ONE patch and no re-lower.
+    SetTheme { css: String },
 }
 
 /// Map one prop mutation to its patch (shared-table style mapping; `text` and

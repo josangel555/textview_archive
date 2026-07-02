@@ -84,6 +84,15 @@
         applied += 1;
         continue;
       }
+      if (p.op === "setTheme") {
+        // Zero-op retheme (M4.S4): ID-LESS patch — handled BEFORE the
+        // nodeById guard. Swap the theme block's custom props; every var()
+        // reference repaints, no re-lower.
+        var themeEl = document.getElementById("cv-theme");
+        if (themeEl) { themeEl.textContent = ":root{" + p.css + "}"; applied += 1; }
+        else { missing.push("cv-theme"); }
+        continue;
+      }
       var el = nodeById(p.id);
       if (!el) { missing.push(p.id); continue; }
       if (p.op === "setText") {

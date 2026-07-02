@@ -122,6 +122,8 @@ enum WirePatch {
     },
     #[serde(rename_all = "camelCase")]
     ReplaceNode { id: String, html: String },
+    #[serde(rename_all = "camelCase")]
+    SetTheme { css: String },
 }
 
 impl WirePatch {
@@ -162,6 +164,7 @@ impl WirePatch {
                 id: id.as_str().to_owned(),
                 html: html.clone(),
             },
+            Patch::SetTheme { css } => WirePatch::SetTheme { css: css.clone() },
         }
     }
 }
@@ -312,9 +315,26 @@ pub fn respond(
     base_rev: u64,
     ops: &[CanvasOp],
 ) -> Result<Vec<u8>, WireFault> {
+    respond_with_theme(doc, tokens, base_rev, ops, false)
+}
+
+/// The theme-aware responder (M4.S4): when `theme_changed`, a SetTheme
+/// patch (the zero-op retheme) is APPENDED to the plan.
+pub fn respond_with_theme(
+    doc: &mut DocState,
+    tokens: &TokenStore,
+    base_rev: u64,
+    ops: &[CanvasOp],
+    theme_changed: bool,
+) -> Result<Vec<u8>, WireFault> {
     match doc.apply(base_rev, ops) {
         Ok(applied) => {
-            let patches = super::patch::plan(doc, ops, &applied.effects);
+            let mut patches = super::patch::plan(doc, ops, &applied.effects);
+            if theme_changed {
+                patches.push(super::patch::Patch::SetTheme {
+                    css: tokens.to_css_custom_props(),
+                });
+            }
             let findings = super::lint::run(doc, tokens);
             base_wire::encode_frame(&ApplyResponse {
                 rev: applied.rev,
