@@ -130,3 +130,62 @@ final class CanvasDocSessionTests: XCTestCase {
         XCTAssertTrue(minted.minted[0].hasPrefix("nd:"))
     }
 }
+
+/// UAT-M1 (06-MILESTONES-UAT §M1) at the Swift boundary: the full journey —
+/// build via DSL → edit → undo → save → load → re-render identical.
+final class CanvasUATM1Tests: XCTestCase {
+
+    func test_uat_m1_journey_dsl_undo_save_load() throws {
+        let session = try CanvasDocSession()
+
+        // Build via DSL (token refs + nesting + text sugar).
+        let built = try session.applyDSL(
+            baseRev: 0,
+            """
+            frame #hero fill=$color.surface gap=8 {
+              text #title "v1" font=$font.h1
+            }
+            """)
+        XCTAssertEqual(built.rev, 1)
+        XCTAssertEqual(built.patches.count, 2)
+        XCTAssertTrue(try session.html().contains(">v1<"))
+
+        // Edit, then undo restores.
+        _ = try session.applyDSL(baseRev: 1, "set #title \"v2\"")
+        XCTAssertTrue(try session.html().contains(">v2<"))
+        let undoRev = try session.undo()
+        XCTAssertEqual(undoRev, 3)
+        XCTAssertTrue(try session.html().contains(">v1<"), "undo restored")
+        // Empty the stack: one more undo (the build), then nil.
+        let secondUndo = try session.undo()
+        XCTAssertEqual(secondUndo, 4)
+        XCTAssertNil(try session.undo(), "empty history is nil, not an error")
+
+        // Rebuild, project, persist, reload — renders identical.
+        _ = try session.applyDSL(
+            baseRev: 4,
+            """
+            frame #card {
+              text #t "persisted"
+            }
+            """)
+        let projected = try session.renderDSL()
+        XCTAssertTrue(projected.contains("frame #card"))
+        let saved = try session.save()
+        let reloaded = try CanvasDocSession.load(json: saved)
+        XCTAssertEqual(try reloaded.html(), try session.html())
+        XCTAssertEqual(try reloaded.renderDSL(), projected)
+
+        // DSL parse failure: typed, line-anchored, kind "dsl".
+        XCTAssertThrowsError(
+            try reloaded.applyDSL(baseRev: 5, "wormhole #x")
+        ) { error in
+            guard let rejection = error as? CanvasRejection else {
+                XCTFail("expected CanvasRejection, got \(error)")
+                return
+            }
+            XCTAssertEqual(rejection.kind, "dsl")
+            XCTAssertTrue(rejection.detail.contains("line 1"), "\(rejection.detail)")
+        }
+    }
+}

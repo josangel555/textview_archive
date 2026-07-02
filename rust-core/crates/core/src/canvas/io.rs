@@ -340,11 +340,7 @@ pub fn load(text: &str) -> Result<CanvasDoc, IoError> {
     if store.get(&root).is_none() {
         return Err(bad("root record missing"));
     }
-    Ok(CanvasDoc {
-        state: DocState::restore(store, rev),
-        tokens,
-        root,
-    })
+    Ok(CanvasDoc::from_parts(DocState::restore(store, rev), tokens, root))
 }
 
 #[cfg(test)]

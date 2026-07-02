@@ -1069,6 +1069,202 @@ pub unsafe extern "C" fn mdvcore_canvas_apply(
     })
 }
 
+/// Apply a DSL fragment (UTF-8 text) under the root page against
+/// `base_rev`. Response frame identical to [`mdvcore_canvas_apply`]; DSL
+/// parse failures return `{rejected: "dsl", detail: "line N: ..."}` frames.
+/// Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::BadUtf8`],
+/// [`MdvStatus::Busy`], [`MdvStatus::WireError`], or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be a live handle from [`mdvcore_canvas_doc_open`]; `dsl`
+/// must point to `dsl_len` readable bytes; `out_buf` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_dsl_apply(
+    handle: *mut canvas_handle::CanvasHandle,
+    base_rev: u64,
+    dsl: *const u8,
+    dsl_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || dsl.is_null() || out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        // SAFETY: dsl validated non-null; caller guarantees dsl_len bytes.
+        let bytes = unsafe { core::slice::from_raw_parts(dsl, dsl_len) };
+        let Ok(text) = core::str::from_utf8(bytes) else {
+            return MdvStatus::BadUtf8;
+        };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| match doc.apply_dsl(base_rev, text) {
+            Ok(frame) => {
+                // SAFETY: out_buf validated non-null.
+                unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                MdvStatus::Ok
+            }
+            Err(fault) => {
+                // SAFETY: out_buf validated non-null.
+                unsafe { write_wire_error(out_buf, &fault) }
+            }
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
+/// Serialize the document to canonical JSON (UTF-8). Caller MUST call
+/// [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::Busy`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be live; `out_buf` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_save(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            // SAFETY: out_buf validated non-null.
+            unsafe { *out_buf = MdvBuf::from_vec(doc.save().into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
+/// Open a document from its canonical JSON. Caller MUST balance with
+/// [`mdvcore_canvas_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::BadUtf8`],
+/// [`MdvStatus::WireError`] (parse/shape/version faults), or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `json` must point to `json_len` readable bytes; `out_handle` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_load(
+    json: *const u8,
+    json_len: usize,
+    out_handle: *mut *mut canvas_handle::CanvasHandle,
+) -> MdvStatus {
+    ffi_guard!({
+        if json.is_null() || out_handle.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_handle validated non-null.
+        unsafe { *out_handle = core::ptr::null_mut() };
+        // SAFETY: json validated non-null; caller guarantees json_len bytes.
+        let bytes = unsafe { core::slice::from_raw_parts(json, json_len) };
+        let Ok(text) = core::str::from_utf8(bytes) else {
+            return MdvStatus::BadUtf8;
+        };
+        match canvas::io::load(text) {
+            Ok(doc) => {
+                let raw = canvas_handle::CanvasHandle::new(doc).into_raw();
+                // SAFETY: out_handle validated non-null.
+                unsafe { *out_handle = raw };
+                MdvStatus::Ok
+            }
+            Err(_) => MdvStatus::WireError,
+        }
+    })
+}
+
+/// Project the root page's subtree into canonical DSL (UTF-8). Caller MUST
+/// call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::Busy`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be live; `out_buf` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_render_dsl(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            // SAFETY: out_buf validated non-null.
+            unsafe { *out_buf = MdvBuf::from_vec(doc.render_dsl().into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
+/// Undo the most recent applied batch. `out_rev` receives the resulting
+/// revision; `out_undone` is false when the undo history was empty (not an
+/// error). The shell re-renders via [`mdvcore_canvas_html`] (undo is a full
+/// re-lower in v1).
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::Busy`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be live; `out_rev` and `out_undone` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_undo(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_rev: *mut u64,
+    out_undone: *mut bool,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || out_rev.is_null() || out_undone.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_rev validated non-null.
+        unsafe { *out_rev = 0 };
+        // SAFETY: out_undone validated non-null.
+        unsafe { *out_undone = false };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            if let Some(rev) = doc.undo() {
+                // SAFETY: out_rev validated non-null.
+                unsafe { *out_rev = rev };
+                // SAFETY: out_undone validated non-null.
+                unsafe { *out_undone = true };
+            } else {
+                // SAFETY: out_rev validated non-null.
+                unsafe { *out_rev = doc.state.rev() };
+            }
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// Free a canvas handle. Null-tolerant and idempotent.
 ///
 /// # Safety

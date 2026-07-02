@@ -113,6 +113,9 @@ pub struct Applied {
 pub struct DocState {
     pub store: Store,
     rev: u64,
+    /// Inverses of the most recent mutating batch (the doc facade moves
+    /// these onto its bounded undo history after each wire apply).
+    last_inverses: Option<Vec<UndoOp>>,
 }
 
 impl DocState {
@@ -124,7 +127,17 @@ impl DocState {
     /// Persistence restore: adopt a rebuilt store at a saved revision.
     #[must_use]
     pub fn restore(store: Store, rev: u64) -> Self {
-        DocState { store, rev }
+        DocState {
+            store,
+            rev,
+            last_inverses: None,
+        }
+    }
+
+    /// Move the most recent mutating batch's inverses out (None when the
+    /// last apply was a no-op or they were already taken).
+    pub fn take_last_inverses(&mut self) -> Option<Vec<UndoOp>> {
+        self.last_inverses.take()
     }
 
     #[must_use]
@@ -162,6 +175,7 @@ impl DocState {
             self.rev = self.rev.saturating_add(1);
         }
         inverses.reverse();
+        self.last_inverses = if mutated { Some(inverses.clone()) } else { None };
         Ok(Applied {
             rev: self.rev,
             inverses,

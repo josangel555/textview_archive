@@ -119,6 +119,35 @@ public final class CanvasDocAdapter {
         )
     }
 
+    /// Apply a DSL fragment under the root page.
+    public func applyDSL(baseRev: UInt64, _ source: String) throws -> CanvasDocApplied {
+        let applied = try session.applyDSL(baseRev: baseRev, source)
+        return CanvasDocApplied(
+            rev: applied.rev,
+            patches: applied.patches.map(Self.instruction),
+            minted: applied.minted,
+            noop: applied.noop,
+            lint: applied.lint.map {
+                CanvasDocLint(
+                    severity: $0.severity, code: $0.code, id: $0.id, message: $0.message)
+            }
+        )
+    }
+
+    /// Canonical JSON (persistence).
+    public func save() throws -> String { try session.save() }
+
+    /// Canonical DSL projection of the root page.
+    public func renderDSL() throws -> String { try session.renderDSL() }
+
+    /// Undo the last batch (nil = empty history); re-render via html().
+    public func undo() throws -> UInt64? { try session.undo() }
+
+    /// Reopen from canonical JSON.
+    public init(loading json: String) throws {
+        session = try CanvasDocSession.load(json: json)
+    }
+
     /// RustCore patch → bridge instruction (the bridge cannot import RustCore).
     private static func instruction(_ core: CanvasPatch) -> CVPatchInstruction {
         switch core {

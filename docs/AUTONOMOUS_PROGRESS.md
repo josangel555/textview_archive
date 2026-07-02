@@ -14915,3 +14915,12 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - E2E suite rebuilt ON the engine (builds its own doc via ops): 4/4 LOCAL green —
   insert/move/remove reshape the live DOM; engine core p95 0.13ms; e2e p95 30ms.
   Host gate PASSED (one FileWatcher timing flake under load, 8/8 green in isolation).
+
+## 2026-07-02 — Canvas M1.S9: Swift glue + UAT-M1 (TSK-1364) — M1 slice chain COMPLETE
+- FFI grew mdvcore_canvas_dsl_apply / save / load / render_dsl / undo (house
+  contract; DSL parse failures = structured {rejected:"dsl", detail:"line N: ..."}).
+- CanvasDoc: bounded 64-deep undo stack (undo = full re-lower v1); wire::respond
+  shared by op-frame and DSL entries; CanvasDocSession/Adapter passthroughs.
+- UAT-M1 journey (build via DSL → edit → undo → save → load → re-render identical)
+  green at THREE layers: core (doc.rs), C ABI (ffi tests), Swift (CanvasUATM1Tests).
+- M1 slices: S1-S4, S6-S8 validated · S5 fixed (fuzz + VM parity pending) · S9 fixed.

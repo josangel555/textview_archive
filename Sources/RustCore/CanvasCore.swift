@@ -199,6 +199,79 @@ public final class CanvasDocSession {
         return try Self.decodeResponse(respFrame)
     }
 
+    /// Apply a DSL fragment under the root page. Same result/rejection
+    /// semantics as `apply` (DSL parse failures throw `CanvasRejection` with
+    /// kind "dsl" and a line-anchored detail).
+    public func applyDSL(baseRev: UInt64, _ source: String) throws -> CanvasApplied {
+        let h = try liveHandle()
+        var buf = MdvBuf(data: nil, len: 0, cap: 0)
+        let bytes = Array(source.utf8)
+        let status = bytes.withUnsafeBufferPointer { p in
+            mdvcore_canvas_dsl_apply(h, baseRev, p.baseAddress, UInt(p.count), &buf)
+        }
+        defer { mdvcore_buf_free(&buf) }
+        try check(status)
+        guard let data = buf.data, buf.len > 0 else {
+            throw CoreError.decode("empty canvas dsl response")
+        }
+        let respFrame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+        return try Self.decodeResponse(respFrame)
+    }
+
+    /// Canonical JSON of the document (persistence).
+    public func save() throws -> String {
+        try stringResult { h, buf in mdvcore_canvas_save(h, &buf) }
+    }
+
+    /// Project the root page into canonical DSL.
+    public func renderDSL() throws -> String {
+        try stringResult { h, buf in mdvcore_canvas_render_dsl(h, &buf) }
+    }
+
+    /// Open a document from its canonical JSON.
+    public static func load(json: String) throws -> CanvasDocSession {
+        var h: OpaquePointer?
+        let bytes = Array(json.utf8)
+        let status = bytes.withUnsafeBufferPointer { p in
+            mdvcore_canvas_load(p.baseAddress, UInt(p.count), &h)
+        }
+        guard status == MDV_STATUS_OK, let handle = h else {
+            throw mapError(status)
+        }
+        return CanvasDocSession(adopting: handle)
+    }
+
+    /// Undo the most recent batch. Returns the new revision, or nil when
+    /// the history is empty. Re-render via `html()` afterwards.
+    public func undo() throws -> UInt64? {
+        let h = try liveHandle()
+        var rev: UInt64 = 0
+        var undone = false
+        let status = mdvcore_canvas_undo(h, &rev, &undone)
+        try check(status)
+        return undone ? rev : nil
+    }
+
+    private init(adopting handle: OpaquePointer) {
+        self.handle = handle
+    }
+
+    private func stringResult(
+        _ call: (OpaquePointer, inout MdvBuf) -> MdvStatus
+    ) throws -> String {
+        let h = try liveHandle()
+        var buf = MdvBuf(data: nil, len: 0, cap: 0)
+        let status = call(h, &buf)
+        defer { mdvcore_buf_free(&buf) }
+        try check(status)
+        guard let data = buf.data, buf.len > 0 else { return "" }
+        let bytes = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+        guard let s = String(bytes: bytes, encoding: .utf8) else {
+            throw CoreError.decode("canvas string result is not UTF-8")
+        }
+        return s
+    }
+
     // MARK: - internals
 
     private func liveHandle() throws -> OpaquePointer {

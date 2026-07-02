@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-02
+
+### Added
+- **Canvas engine (foundation, not yet user-visible):** the core of the upcoming
+  Canvas feature — agents (and soon the UI) can build and edit visual documents
+  through typed, undoable operations or a compact authoring language, with design
+  tokens for live retheming, validation that teaches instead of failing silently,
+  and documents that save/reload byte-identically.
+
+### System work
+- rust-core: canvas module complete for M1 (store/props/fence/ops/tokens/lowering/
+  patch-plans/wire/lint/persistence/DSL/doc facade) + 5 new FFI entry points; ~60
+  new tests incl. proptests, golden fixture, teeth-verified guards.
+- Swift: CanvasDocSession/Adapter + 7-verb bridge codec + webview E2E suite rebuilt
+  on the real engine (local 4/4, e2e p95 30ms vs 50ms budget).
+- Tracking: M1 slices S1-S9 driven on the board (7 validated, 2 fixed pending fuzz +
+  VM-parity); LESSONS grew 4 entries (apply-time anchors, gate/commit separation,
+  equivalent mutants, SwiftPM xctest-link staleness).
+
+
 The **owner's** at-a-glance view of progress — both **user-facing** change and
 **total effort**. User-facing features/fixes/perf go under **Added / Changed / Fixed /
 Performance** (descriptive, from the user's seat). Non-user-facing effort (tests,

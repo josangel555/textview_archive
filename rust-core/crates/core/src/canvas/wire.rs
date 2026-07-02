@@ -291,9 +291,21 @@ pub fn apply_wire(
     for wire_op in req.ops {
         ops.push(parse_op(wire_op)?);
     }
-    match doc.apply(req.base_rev, &ops) {
+    respond(doc, tokens, req.base_rev, &ops)
+}
+
+/// Apply parsed ops and encode the standard response/rejection frame — the
+/// shared back half of BOTH entries (op frames and DSL text). The undo unit
+/// for the batch is pushed onto `doc`'s caller-managed stack by the caller.
+pub fn respond(
+    doc: &mut DocState,
+    tokens: &TokenStore,
+    base_rev: u64,
+    ops: &[CanvasOp],
+) -> Result<Vec<u8>, WireFault> {
+    match doc.apply(base_rev, ops) {
         Ok(applied) => {
-            let patches = super::patch::plan(doc, &ops, &applied.effects);
+            let patches = super::patch::plan(doc, ops, &applied.effects);
             let findings = super::lint::run(doc, tokens);
             base_wire::encode_frame(&ApplyResponse {
                 rev: applied.rev,
@@ -312,6 +324,16 @@ pub fn apply_wire(
             })
         }
     }
+}
+
+/// Encode a DSL parse failure as a structured rejection frame
+/// (`{rejected: "dsl", detail: "line N: …", currentRev}`).
+pub fn dsl_rejection(doc: &DocState, e: &super::dsl::DslError) -> Result<Vec<u8>, WireFault> {
+    base_wire::encode_frame(&ApplyRejection {
+        rejected: "dsl".to_owned(),
+        detail: format!("line {}: {}", e.line, e.message),
+        current_rev: doc.rev(),
+    })
 }
 
 fn describe_apply_error(e: &ApplyError) -> (String, String) {

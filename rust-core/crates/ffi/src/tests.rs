@@ -1554,3 +1554,86 @@ fn canvas_malformed_frame_is_wire_error_and_null_args_rejected() {
     unsafe { mdvcore_buf_free(&mut buf2) };
     unsafe { mdvcore_canvas_free(h) };
 }
+
+#[test]
+fn canvas_uat_m1_journey_over_the_c_abi() {
+    // Build via DSL.
+    let h = canvas_open();
+    let dsl = "frame #hero gap=8 {\n  text #title \"v1\"\n}\n";
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_canvas_dsl_apply(h, 0, dsl.as_ptr(), dsl.len(), &mut buf) };
+    assert_eq!(st, MdvStatus::Ok);
+    let echo: CanvasResp = mdvcore_core::wire::decode_frame(unsafe { buf.as_slice() }).unwrap();
+    unsafe { mdvcore_buf_free(&mut buf) };
+    assert_eq!(echo.rev, Some(1));
+
+    // Edit + undo.
+    let edit = "set #title \"v2\"";
+    let mut buf2 = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_canvas_dsl_apply(h, 1, edit.as_ptr(), edit.len(), &mut buf2) },
+        MdvStatus::Ok
+    );
+    unsafe { mdvcore_buf_free(&mut buf2) };
+    let mut rev = 0u64;
+    let mut undone = false;
+    assert_eq!(unsafe { mdvcore_canvas_undo(h, &mut rev, &mut undone) }, MdvStatus::Ok);
+    assert!(undone);
+    assert_eq!(rev, 3);
+
+    // Projection + save/load round trip.
+    let mut dsl_buf = MdvBuf::empty();
+    assert_eq!(unsafe { mdvcore_canvas_render_dsl(h, &mut dsl_buf) }, MdvStatus::Ok);
+    let projected = String::from_utf8(unsafe { dsl_buf.as_slice() }.to_vec()).unwrap();
+    unsafe { mdvcore_buf_free(&mut dsl_buf) };
+    assert!(projected.contains("frame #hero"));
+    assert!(projected.contains("\"v1\""), "undo restored v1: {projected}");
+
+    let mut save_buf = MdvBuf::empty();
+    assert_eq!(unsafe { mdvcore_canvas_save(h, &mut save_buf) }, MdvStatus::Ok);
+    let saved = unsafe { save_buf.as_slice() }.to_vec();
+    unsafe { mdvcore_buf_free(&mut save_buf) };
+
+    let mut h2: *mut canvas_handle::CanvasHandle = core::ptr::null_mut();
+    assert_eq!(
+        unsafe { mdvcore_canvas_load(saved.as_ptr(), saved.len(), &mut h2) },
+        MdvStatus::Ok
+    );
+    let mut html2 = MdvBuf::empty();
+    assert_eq!(unsafe { mdvcore_canvas_html(h2, &mut html2) }, MdvStatus::Ok);
+    let html = String::from_utf8(unsafe { html2.as_slice() }.to_vec()).unwrap();
+    unsafe { mdvcore_buf_free(&mut html2) };
+    assert!(html.contains(">v1<"));
+
+    // DSL parse failure = structured "dsl" rejection with a line number.
+    let bad = "wormhole #x";
+    let mut rej_buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_canvas_dsl_apply(h, 3, bad.as_ptr(), bad.len(), &mut rej_buf) },
+        MdvStatus::Ok
+    );
+    let rej: CanvasResp = mdvcore_core::wire::decode_frame(unsafe { rej_buf.as_slice() }).unwrap();
+    unsafe { mdvcore_buf_free(&mut rej_buf) };
+    assert_eq!(rej.rejected.as_deref(), Some("dsl"));
+
+    // Bad UTF-8 → BadUtf8; load of junk → WireError.
+    let junk = [0xFFu8, 0xFE];
+    let mut b = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_canvas_dsl_apply(h, 3, junk.as_ptr(), junk.len(), &mut b) },
+        MdvStatus::BadUtf8
+    );
+    unsafe { mdvcore_buf_free(&mut b) };
+    let mut h3: *mut canvas_handle::CanvasHandle = core::ptr::null_mut();
+    assert_eq!(
+        unsafe { mdvcore_canvas_load(junk.as_ptr(), junk.len(), &mut h3) },
+        MdvStatus::BadUtf8
+    );
+    assert_eq!(
+        unsafe { mdvcore_canvas_load(b"not json".as_ptr(), 8, &mut h3) },
+        MdvStatus::WireError
+    );
+
+    unsafe { mdvcore_canvas_free(h2) };
+    unsafe { mdvcore_canvas_free(h) };
+}
