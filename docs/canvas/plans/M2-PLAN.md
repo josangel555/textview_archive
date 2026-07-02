@@ -75,6 +75,17 @@ headless and host-testable.
   `canvas_save` → reopen via `canvas_open` → `canvas_read` identical.
 - Host-testable (no pixels). This is the milestone's acceptance gate.
 
+### S6 — `canvas_export` (HTML) + verb-bus registration (title clauses)
+- `canvas_export {doc, path}`: write the FULL lowering (`html()` — the B0
+  static export: theme block + page subtree, self-contained) to `path`
+  through the safe-write path. Returns `{path, bytes}`.
+- Script-verb integration: register the canvas tools as verbs on the app's
+  EXISTING verb bus (`run_verb` reaches them; the third action registry —
+  same triple-registration pattern the RSS/approve-reject work used), so
+  `--script` flows can drive canvas without MCP.
+- Tests: export writes bytes that contain the theme block + content and
+  re-parse as the html() output; a verb-bus dispatch reaches canvas_apply.
+
 ## Budgets / risks / kill-criteria
 - **Budget:** tool round-trip (dispatch → engine → response) p95 < 20ms on a
   1k-node doc (engine op cost is ~0.1ms; the budget is really the dispatch +
