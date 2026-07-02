@@ -95,7 +95,13 @@ pub fn render(text: &str) -> RenderOutput {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_SMART_PUNCTUATION;
+        | Options::ENABLE_SMART_PUNCTUATION
+        // Recognize a leading YAML (`---`) / TOML (`+++`) frontmatter block as a
+        // MetadataBlock so it's SUPPRESSED (see `in_metadata`) instead of rendering
+        // as an `<hr>` + a giant setext `<h2>` of the raw key/values — the ugly
+        // default for every Jekyll/Hugo/Obsidian doc.
+        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
+        | Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS;
     let mut w = Writer::default();
     for event in Parser::new_ext(text, options) {
         w.event(event);
@@ -135,6 +141,9 @@ struct Writer {
     html_block: Option<String>,
     /// Inside `<thead>` — table cells emit `<th>` instead of `<td>`.
     in_table_head: bool,
+    /// Inside a frontmatter MetadataBlock — suppress ALL inner events (the yaml
+    /// text must not render or feed slugs/plain-text).
+    in_metadata: bool,
     chunks: Vec<Chunk>,
 }
 
@@ -192,6 +201,14 @@ impl Writer {
     }
 
     fn event(&mut self, event: Event<'_>) {
+        // Frontmatter: swallow every event between MetadataBlock start and end
+        // (no html, no slug/plain-text capture) so the block is fully hidden.
+        if self.in_metadata {
+            if matches!(event, Event::End(TagEnd::MetadataBlock(_))) {
+                self.in_metadata = false;
+            }
+            return;
+        }
         match event {
             Event::Start(tag) => self.start(tag),
             Event::End(tag) => self.end(tag),
@@ -348,12 +365,14 @@ impl Writer {
                 self.image_depth = self.image_depth.saturating_add(1);
                 self.plain.push(String::new());
             }
+            // Frontmatter block: enter suppression (the event loop swallows the
+            // inner events + the matching End until it clears this).
+            Tag::MetadataBlock(_) => self.in_metadata = true,
             // Unreachable without their Options bits; treat as transparent.
             Tag::FootnoteDefinition(_)
             | Tag::DefinitionList
             | Tag::DefinitionListTitle
             | Tag::DefinitionListDefinition
-            | Tag::MetadataBlock(_)
             | Tag::Superscript
             | Tag::Subscript => {}
         }
@@ -865,6 +884,27 @@ mod tests {
         let out = render(&bombs);
         assert!(out.html.starts_with("<blockquote>"));
         assert!(!out.html.contains("truncated"));
+    }
+
+    #[test]
+    fn yaml_frontmatter_is_hidden() {
+        let out = render("---\ntitle: Hello\ntags: [a, b]\n---\n\n# Body\n\ntext");
+        assert!(!out.html.contains("title: Hello"), "yaml must not render: {}", out.html);
+        assert!(!out.html.contains("<hr"), "--- fences must not become a rule: {}", out.html);
+        assert!(out.html.contains("<h1 id=\"body\">Body</h1>"), "body must render: {}", out.html);
+    }
+
+    #[test]
+    fn toml_frontmatter_is_hidden() {
+        let out = render("+++\ntitle = \"X\"\n+++\n\n# Body");
+        assert!(!out.html.contains("title = "), "toml must not render: {}", out.html);
+        assert!(out.html.contains("Body"));
+    }
+
+    #[test]
+    fn mid_document_dashes_stay_a_thematic_break() {
+        let out = render("# A\n\ntext\n\n---\n\nmore");
+        assert!(out.html.contains("<hr"), "mid-doc --- is still a rule: {}", out.html);
     }
 
     #[test]

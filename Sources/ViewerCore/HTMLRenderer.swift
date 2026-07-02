@@ -89,10 +89,34 @@ public struct HTMLRenderer: Sendable {
         if Self.exceedsLeadingBlockNesting(markdown) {
             return HTMLVisitor.truncationMarker
         }
-        let document = Document(parsing: markdown)
+        // Match the rust path's metadata-block handling: hide a leading YAML
+        // (`---`) / TOML (`+++`) frontmatter block (swift-markdown has no such
+        // extension, so it would otherwise render as an <hr> + setext heading).
+        let document = Document(parsing: Self.strippingLeadingFrontmatter(markdown))
         var visitor = HTMLVisitor()
         visitor.authorHTML = authorHTML
         return visitor.visit(document)
+    }
+
+    /// Remove a leading YAML (`---`)/TOML (`+++`) frontmatter block, mirroring
+    /// pulldown-cmark's MetadataBlock rule: the document's FIRST line is exactly
+    /// the fence (`---` or `+++`), closed by a later line of `---`/`...` (YAML) or
+    /// `+++` (TOML). Unterminated → not frontmatter, returned unchanged (so a doc
+    /// that merely opens with a thematic-break `---` isn't eaten).
+    static func strippingLeadingFrontmatter(_ text: String) -> String {
+        guard text.hasPrefix("---\n") || text.hasPrefix("---\r\n")
+            || text.hasPrefix("+++\n") || text.hasPrefix("+++\r\n") else { return text }
+        let lines = text.components(separatedBy: "\n")
+        guard let first = lines.first else { return text }
+        let fence = first.trimmingCharacters(in: .whitespaces)   // "---" or "+++"
+        let closers: Set<String> = fence == "+++" ? ["+++"] : ["---", "..."]
+        for i in 1..<lines.count {
+            if closers.contains(lines[i].trimmingCharacters(in: .whitespaces)) {
+                // Drop lines 0...i (the block); keep the remainder verbatim.
+                return lines[(i + 1)...].joined(separator: "\n")
+            }
+        }
+        return text   // no closing fence → not a metadata block
     }
 
     /// Single-pass O(n) scan: returns `true` once any line's leading `>`

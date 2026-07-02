@@ -74,6 +74,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Copy Reference covers a selection — now with a menu item + shortcut.** Select several lines in the editor and run **Edit ▸ Copy Reference** (⌘⌥⇧C, also in the ⌘K command palette) to copy a line-RANGE `mdv://` reference (`…?line=10&endLine=20`) to paste to an agent — "these are the lines I mean". With no selection it copies the current line as before. (Source-view selections carry the range today.)
 
 ### Fixed
+- **YAML/TOML frontmatter is now hidden.** A `.md` file starting with a `---` (or `+++`) metadata block (Jekyll/Hugo/Obsidian) used to render that block as a horizontal rule + a giant heading of the raw key/values; it's now correctly suppressed, so the document starts at its real content.
 - **Align Tables leaves indented code alone.** Pipe content inside a 4-space indented code block was being reformatted as a table (stripping its indentation); it's now correctly left untouched (fenced code was already skipped).
 - **Promote/Demote Headings no longer corrupts code.** A `#` line inside an indented code block (or an HTML comment) was being shifted along with real headings — mangling the user's code; those lines are now left untouched (fenced code was already safe).
 - **Table-of-Contents links now actually jump to their heading.** Inserted-TOC anchors used a different slug rule than the renderer's heading ids, so links for headings with punctuation or extra spaces (e.g. "Setup & Config") went nowhere; both now use one shared rule.
