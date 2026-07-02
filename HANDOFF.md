@@ -12,10 +12,12 @@
 - **M1 canvas-core: S1 record store VALIDATED** (`577c7a18` — FracIndex/atomic-Place/
   tombstones/cycle checks, proptest storm; wasm-shape scan now recursive) · **S2 props+
   registry+fence VALIDATED** (`5be181b4` — u16 interned keys, typed Values w/ Token variant,
-  per-kind tables, caps, check_text_target). **NEXT: M1.S3 ops+inverses+revisions
-  (TSK-1358)**, then S4 tokens → S5 lowering/patch-plans (replaces the M0 demo internals;
-  needs TSK-1365 for its webview parity test) → S6 lint → S7 migrations+I/O → S8 DSL parser
-  → S9 Swift glue. Plan: `docs/canvas/plans/M1-PLAN.md`; slices TSK-1356..1364.
+  per-kind tables, caps, check_text_target). S3 ops+inverses (62f90115) and S4 tokens
+  (6e64e370) VALIDATED; S5a lowering (6527a25d+f084592d) + S5b patch plans w/ APPLY-TIME
+  anchors (a46efc8a) landed — **NEXT: S5c = FFI swap off the M0 demo ops (real CanvasOp wire
+  decode + msgpack Patch serialization + fuzz target) + canvas.js applier verbs + Swift
+  wrapper + E2E suite update (webview parity run consumes TSK-1365)**, then S6 lint → S7
+  migrations+I/O → S8 DSL parser → S9 Swift glue. Plan: `docs/canvas/plans/M1-PLAN.md`; slices TSK-1356..1364.
 - Board: M2..M6 chain unchanged (1345→1346→1347→1351→1348). All Q-decisions provisional-
   approved (05-ROADMAP header); owner reviews soon; rework-if-reversed accepted.
 
