@@ -43,20 +43,42 @@ measured lint → snapshot) · every render guard demonstrates teeth (negative c
 
 ## The owner decision list (Q1–Q12) — the review surface
 
-| # | Decision | Recommendation |
+| # | Decision | Recommendation / status |
 |---|---|---|
-| Q1 | First mode | **Presentation** (epic 688 + wishlist P6; both spikes + evidence converge). |
-| Q2 | File extension | `.canvas` + `textview.canvas/v1` discriminator (Obsidian collision is disambiguated by the discriminator). |
+| Q1 | First mode | **Presentation** — expanded rationale in §Q1-rationale below. Owner reviewing. |
+| Q2 | Format & interface language | **SPLIT per owner (2026-07-01):** (a) serialization = canonical JSON `.canvas` — **DECIDED, fine**; (b) the agent *interface language* is NOT settled — JSON ops are wrong for multi-turn incremental patching. → **Q2b spike (TSK-1350):** terse Canvas DSL + projection editing over the op layer (`02-CORE-ENGINE.md` §4b). Blocks M2. |
 | Q3 | Spatial kinds | Page/deck first; `board` later. Rider: 10³⁺-node boards trigger a rendering-backend fork decision *only if prioritized*. |
-| Q4 | Dependencies | **Zero new deps v1** — hand-rolled vendored runtime, hand-rolled SVG chart marks, no layout engine (browser computes), no charting lib. Per-layer dep proposals return as parked asks only when scope demands. |
+| Q4 | Dependencies | ✅ **DECIDED (owner, 2026-07-01): zero new deps v1** — hand-rolled vendored runtime, hand-rolled SVG chart marks, no layout engine (browser computes), no charting lib. Per-layer dep proposals return as parked asks only when scope demands. |
 | Q5 | `embed` ceiling | HTML/CSS-only v1 (sandboxed iframe, no script); script-bearing embeds = explicit future owner decision. |
 | Q6 | Assets | Single-file base64 ≤ ~2 MB; sidecar `X.canvas-assets/` beyond. |
 | Q7 | Content-write MCP precedent | Op fence + tab indicator + events audit trail; **no per-document human grant** (friction kills the loop). |
 | Q8 | Naming | "Canvas" (*File ▸ New Canvas*). |
 | Q9 | FLOW / text pagination | **Defer.** v1 reports = multi-page with manual breaks; `kind:flow` stays additive for a future docs/reports track (the thing every canvas tool punts on — deliberate, revisitable). |
 | Q10 | Code export | Semantic HTML/CSS first, one-way/disposable; framework target (React/SwiftUI/…) chosen when the UI-Design track starts. Multi-framework codegen rejected at v1 (Lona/Mitosis evidence). |
-| Q11 | **Engine placement** | **`canvas-core` as a rust-core crate** (owner core-first directive + reusable-core decision + no new Swift-engine port debt + wasm/remote goals + compact-binary FFI). Confirm — this shapes P1 entirely. |
+| Q11 | **Engine placement** | ✅ **DECIDED (owner, 2026-07-01): `canvas-core` as a rust-core crate.** |
 | Q12 | Presenter mode second window | Confirm an AppKit presenter window is acceptable (the app is deliberately window-frugal; it's deck-mode-only, user-invoked). |
+| Q13 | **CSS expressiveness / escape-hatch ladder** | Owner concern (2026-07-01): CSS may be impossible to fully encapsulate; Claude-Design-class complexity must stay reachable. **Design answer adopted:** don't encapsulate — *grade* it. The 5-rung ladder in `02-CORE-ENGINE.md` §3b (closed props → raw-CSS passthrough → shared style rules → embed → code components), lint steering to the lowest sufficient rung. Confirm the ladder. |
+
+### Q1-rationale — what "first mode" decides, and why Presentation
+
+M0–M4 are **mode-agnostic foundation** either way (core, agent surface, WYSIWYG, components,
+data). Q1 only decides *what M5 ships as the first complete user-facing product* and which kit
+gets polished first:
+
+- **Presentation (recommended):** cleanest core fit — pages + steps + TIME, no code-export
+  hard mile, no live-data dependency, the *least* CSS-expressiveness pressure (slides are
+  self-contained fixed pages). Immediate in-app value chain: OwnerWishlist P6 ("walkthrough as
+  a presentation — slides, docs, source code, terminal") + epic 688 make the Walkthrough
+  system a day-one dogfood consumer. Showcases the identity-morph differentiator. Its export
+  (self-contained player) is infrastructure every other mode reuses.
+- **UI-Design first (the alternative):** the biggest strategic prize (Claude-Design-like), but
+  it front-loads the three hardest problems simultaneously — code export, full-CSS
+  expressiveness (Q13), richest component kit + responsive breakpoints. Better attacked from a
+  proven core. **Note it is not actually delayed much:** M3 (interactions) + M4 (components)
+  ARE its foundation; wireframe + clickable-prototype tiers become possible immediately after
+  M4 even with Presentation as M5.
+- **Infographics first:** needs M4's DATA layer anyway; simple export; but no in-app dogfood
+  consumer and no differentiator showcased.
 
 ## Success criteria for the epic's first release (P0–P5)
 

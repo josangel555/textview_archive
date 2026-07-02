@@ -69,6 +69,27 @@ or a `{token: "color.accent"}` reference. Layout children carry intent only (`gr
 (everything above) vs **renderer-owned** (resolved geometry, measured boxes) — renderer-owned
 values are *reported* into queries, never stored as document truth.
 
+### 3b. The CSS escape-hatch ladder (Q13 — owner concern: CSS can't be fully encapsulated)
+
+CSS is the canonical leaky abstraction; a Claude-Design-class target (complex real web design)
+will exceed any closed prop set, and the research *measured* the cost of over-constraining
+(DesignAsCode: banning `backdrop-filter`/`mix-blend-mode`-class properties visibly lowers
+output quality). So the closed style set is a **default, not a ceiling** — a graded ladder,
+with lint steering every author to the lowest sufficient rung:
+
+| Rung | Mechanism | Properties | Trade |
+|---|---|---|---|
+| **L0** | Closed style props + tokens (§3) | lintable · themeable · portable · morphable | the 80% path |
+| **L1** | **Raw-CSS passthrough per node** — `style.css: {"backdrop-filter": "blur(6px)", …}` | still in the model, diffable, preserved verbatim; sanitized (no `@import`, no external `url()` — CSP fences network anyway) | not themeable/lintable; lint flags it |
+| **L2** | **Shared style rules** — named style records nodes reference (the Webflow shared-class lesson); may carry raw declarations *plus structured pseudo-class (`:hover`) and breakpoint variants*, scoped to referencing subtrees | reusable, one edit restyles all users; the home of responsive/media rules for the UI-Design track | selector power stays bounded (no global cascade) |
+| **L3** | `embed` node — sandboxed HTML/CSS island (§3) | anything, opaque | invisible to lint/morph/export-semantics |
+| **L4** | **Code components** (plugin-registered real code, Plasmic's survival move) | Claude-Design's last mile | full power, full responsibility |
+
+The load-bearing invariant: **structure, identity, and layout stay model-owned even when
+styling escapes** — the tree and IDs remain addressable/diffable/morphable at every rung, so
+the agent-editability contract survives arbitrary styling complexity. Only *visual detail*
+escapes; the document never stops being a document.
+
 ## 4. Operations — the only write path
 
 ```jsonc
@@ -93,6 +114,43 @@ values are *reported* into queries, never stored as document truth.
 - **Agent contract** (enforced in tool descriptions + schemas): plan free-form first, then emit
   ops (schema-constrained emission only at the final step); JSON-Schema published per op for
   constrained decoding.
+
+### 4b. The interface language (Q2b — PROPOSED, spike TSK-1350; owner: "not sure JSON will do")
+
+The owner's split is right: JSON is the *serialization*, not necessarily the *authoring
+language*. The canvas is built **incrementally over many agent turns**, each patching a
+portion — and the evidence says JSON ops are the wrong surface for that: AutoPresent (DSL code
+= 80%+ executability vs 2–11% raw API), Framer (invented a terse patch language for its
+agents — "every token spent is directly used"), LayoutGPT (representations the model has seen
+at scale win), Let-Me-Speak-Freely (JSON-forcing during generation degrades output).
+
+**Proposal — three surfaces, ONE op layer underneath (everything compiles to canonical ops):**
+
+1. **Canvas DSL (write path).** Terse, line-oriented, CSS/Figma-familiar vocabulary; one line
+   = one op; a fenced block = one atomic batch (one undo step). Sketch:
+   ```
+   insert kpi-card #k4 in #grid at 2 { label:"Errors"; value:"12"; delta:"-3%" }
+   set #title { text:"Q3 Review"; font:$font.display }
+   move #k1 after #k2
+   animate #chart.opacity 0 -> 1 over 400ms after beat:reveal
+   ```
+   Parsed and validated in canvas-core (a parser is exactly what rust-core is good at; it gets
+   the fuzz lane like every parser). Errors are line-anchored. `$token` / `#id|name` /
+   `beat:` are first-class tokens — addressing is *in the grammar*, not bolted on.
+2. **Projection editing (read-modify-write path — the "patch a portion" workflow).**
+   `canvas_edit(selector)` renders the selected subtree as canonical DSL text; the agent edits
+   that text exactly as it edits a code-file region today (the workflow models are heavily
+   trained on); core **structurally diffs** old→new back into ops — existing IDs preserved,
+   new nodes minted, removals explicit. This is Unison's `edit` pattern (text as a transient
+   projection of structure) applied to the canvas; the diff is semantic, not textual.
+3. **Canonical JSON ops** remain: the substrate every surface compiles to, the programmatic/
+   MCP alternative, the `events` feed format, and the persistence layer (Q2a — decided).
+
+**Spike (TSK-1350, blocks M2; parser home lands with M1):** grammar (incl. quoting/escaping
+rules that survive LLM emission), projection canonical form (stable ordering so diffs are
+minimal), the structural-diff algorithm + its property tests (`parse(render(doc)) == doc`;
+`diff(A, edit(render(A)))` applies cleanly), error-recovery ergonomics (bad line ⇒ precise
+message + the rest of the batch rejected atomically).
 
 ## 5. Tokens (DTCG-shaped, pinned)
 
