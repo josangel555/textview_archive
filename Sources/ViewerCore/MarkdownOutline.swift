@@ -115,6 +115,10 @@ public enum MarkdownOutline {
         var inFence = false
         var fenceMarker: Character = "`"
         var fenceLen = 0
+        // HTML comment block: a `#` line inside `<!-- … -->` is commented-out, not
+        // a heading. (A single-line `<!-- # x -->` has its `#` mid-line, so it's
+        // never a heading anyway — only multi-line blocks need tracking.)
+        var inComment = false
 
         // For setext: the immediately-preceding line's trimmed text + its
         // 1-based number, if it was a non-blank paragraph line eligible to be a
@@ -161,6 +165,18 @@ public enum MarkdownOutline {
                 continue
             }
             if inFence { prevParagraph = nil; continue }
+
+            // HTML comment block: skip heading detection inside <!-- … -->.
+            if inComment {
+                if trimmed.contains("-->") { inComment = false }
+                prevParagraph = nil
+                continue
+            }
+            if trimmed.hasPrefix("<!--"), !trimmed.contains("-->") {
+                inComment = true
+                prevParagraph = nil
+                continue
+            }
 
             // ATX heading: 0-3 spaces indent, then a run of 1...6 '#', then space
             // or end. 4+ spaces of indent → an indented code block, not a heading.
