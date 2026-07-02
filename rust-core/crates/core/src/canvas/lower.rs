@@ -383,15 +383,21 @@ fn emit_link_attr<'a>(get: &impl Fn(&str) -> Option<&'a Value>, out: &mut String
         escape_attr(role, out);
         out.push('"');
     }
-    if let Some(Value::Num(step)) = get("step") {
-        if *step >= 0.0 {
-            out.push_str(" data-cv-step=\"");
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss,
-                    reason = "clamped non-negative")]
-            let s = (*step).min(f64::from(u16::MAX)) as u16;
-            out.push_str(&s.to_string());
-            out.push('"');
-        }
+    if let Some(Value::Num(step)) = get("step")
+        && *step >= 0.0
+    {
+        out.push_str(" data-cv-step=\"");
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss,
+                reason = "clamped non-negative")]
+        let s = (*step).min(f64::from(u16::MAX)) as u16;
+        out.push_str(&s.to_string());
+        out.push('"');
+    }
+    // M6.S5 — identity-morph tag: the player FLIP-pairs nodes sharing it.
+    if let Some(Value::Str(morph)) = get("morphId") {
+        out.push_str(" data-cv-morph=\"");
+        escape_attr(morph, out);
+        out.push('"');
     }
 }
 

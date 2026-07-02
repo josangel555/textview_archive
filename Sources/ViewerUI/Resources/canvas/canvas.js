@@ -482,6 +482,52 @@
     return out;
   }
 
+  // M6.S5 — measure the current slide's morph nodes BEFORE a slide swap
+  // (the from-slide goes display:none, so rects must be captured first).
+  function deckMorphRects(slideEl) {
+    var map = {};
+    if (!slideEl) return map;
+    var nodes = slideEl.querySelectorAll("[data-cv-morph]");
+    for (var i = 0; i < nodes.length; i++) {
+      map[nodes[i].getAttribute("data-cv-morph")] = nodes[i].getBoundingClientRect();
+    }
+    return map;
+  }
+
+  // FLIP the incoming slide's morph nodes from their old boxes (identity-
+  // morph): same morphId ⇒ animate position + size. Engine morph_pairs is
+  // the authority for the pairing; here we run the animation over the DOM
+  // tag (the same set-diff, done on the page).
+  function deckRunMorph(fromRects, toSlideEl) {
+    if (!toSlideEl) return 0;
+    var animated = 0;
+    var nodes = toSlideEl.querySelectorAll("[data-cv-morph]");
+    for (var i = 0; i < nodes.length; i++) {
+      var mid = nodes[i].getAttribute("data-cv-morph");
+      var from = fromRects[mid];
+      if (!from) continue;
+      var to = nodes[i].getBoundingClientRect();
+      var dx = from.left - to.left, dy = from.top - to.top;
+      var sx = to.width ? from.width / to.width : 1;
+      var sy = to.height ? from.height / to.height : 1;
+      if (nodes[i].animate) {
+        nodes[i].animate(
+          [
+            { transformOrigin: "top left",
+              transform: "translate(" + dx + "px," + dy + "px) scale(" + sx + "," + sy + ")" },
+            { transformOrigin: "top left", transform: "none" }
+          ],
+          { duration: 300, easing: "ease" }
+        );
+        // Durable proof the FLIP ran on this node (non-flaky test signal;
+        // the actual motion is the T5 pixel bar).
+        nodes[i].setAttribute("data-cv-morph-ran", mid);
+        animated += 1;
+      }
+    }
+    return animated;
+  }
+
   function deckApply() {
     var slides = deckSlides();
     if (deck.slide < 0) deck.slide = 0;
@@ -519,6 +565,7 @@
 
   function deckAdvance(dir) {
     var slides = deckSlides();
+    var prevIdx = deck.slide;
     var cur = slides[deck.slide];
     var max = deckMaxStep(cur);
     if (dir > 0) {
@@ -531,7 +578,13 @@
         deck.step = deckMaxStep(slides[deck.slide]);
       }
     }
-    deckApply();
+    if (deck.slide !== prevIdx) {
+      var fromRects = deckMorphRects(slides[prevIdx]);
+      deckApply();
+      deckRunMorph(fromRects, deckSlides()[deck.slide]);
+    } else {
+      deckApply();
+    }
   }
 
   window.addEventListener("keydown", function (e) {
@@ -624,9 +677,14 @@
         break;
       }
       case "deckGoto": {
+        var prevGoto = deck.slide;
+        var fromRectsGoto = deckMorphRects(deckSlides()[prevGoto]);
         deck.slide = msg.slide | 0;
         deck.step = msg.step | 0;
         deckApply();
+        if (deck.slide !== prevGoto) {
+          deckRunMorph(fromRectsGoto, deckSlides()[deck.slide]);
+        }
         break;
       }
       case "queryText": {

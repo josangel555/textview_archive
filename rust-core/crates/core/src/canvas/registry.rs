@@ -76,18 +76,22 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
         "linkTo",
         // M6.S2: presentation reveal step.
         "step",
+            "morphId",
     ];
     const TEXT: &[&str] = &[
         "text", "role", "color", "font", "opacity", "grow", "shrink", "span", "minW", "maxW",
         "minH", "maxH", "linkTo", "step",
+            "morphId",
     ];
     const IMAGE: &[&str] = &[
         "src", "fit", "radius", "opacity", "grow", "shrink", "span", "minW", "maxW", "minH",
         "maxH", "linkTo", "step",
+            "morphId",
     ];
     const SHAPE: &[&str] = &[
         "shape", "fill", "stroke", "radius", "opacity", "grow", "shrink", "span", "minW", "maxW",
         "minH", "maxH", "linkTo", "step",
+            "morphId",
     ];
     const COMPONENT: &[&str] = &[
         // M4.S2: instance props override the expansion ROOT (fill/spacing/
@@ -98,6 +102,7 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
         "grow", "shrink", "span",
             "linkTo",
             "step",
+            "morphId",
     ];
     const EMBED: &[&str] = &["html", "minW", "maxW", "minH", "maxH", "grow", "shrink", "span"];
     const HOLE: &[&str] = &["note", "minW", "maxW", "minH", "maxH"];
@@ -180,7 +185,7 @@ pub fn check_value(key: PropKey, value: &Value) -> Result<(), FenceError> {
         ("headers", Value::Bool(_)) => Ok(()),
         ("html" | "src" | "ref" | "note" | "role" | "font" | "fill" | "stroke" | "color"
             | "shadow" | "shape" | "fit" | "align" | "justify" | "direction"
-            | "overrides" | "language" | "linkTo", Value::Str(s)) => {
+            | "overrides" | "language" | "linkTo" | "morphId", Value::Str(s)) => {
             if s.len() > MAX_STRING_LEN {
                 return Err(FenceError::CapExceeded("string length"));
             }

@@ -177,6 +177,71 @@ pub fn timeline_json(store: &Store) -> String {
     out
 }
 
+/// One identity-morph pairing between two slides (M6.S5): a morphId present
+/// in BOTH slides — the paired node animates (FLIP) from its slide-A box to
+/// its slide-B box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MorphPair {
+    pub morph_id: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// The morph transition between two slides (M6.S5) — a PURE set-diff over
+/// morphId. `pairs` = ids present in both (animate); `entering` = morphIds
+/// only in B (fade in); `leaving` = morphIds only in A (fade out). All
+/// sorted for determinism. The JS runs the FLIP; this is the authority.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MorphPlan {
+    pub pairs: Vec<MorphPair>,
+    pub entering: Vec<String>,
+    pub leaving: Vec<String>,
+}
+
+fn morph_map(store: &Store, slide: &Id) -> Vec<(String, Id)> {
+    let mut out: Vec<(String, Id)> = descendants(store, slide)
+        .into_iter()
+        .filter_map(|id| {
+            let rec = store.get(&id)?;
+            let key = PropKey::by_name("morphId")?;
+            match rec.props.get(key) {
+                Some(Value::Str(m)) => Some((m.clone(), id)),
+                _ => None,
+            }
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Classify the morph between slide A and slide B (M6.S5).
+#[must_use]
+pub fn morph_pairs(store: &Store, slide_a: &Id, slide_b: &Id) -> MorphPlan {
+    let a = morph_map(store, slide_a);
+    let b = morph_map(store, slide_b);
+    let mut plan = MorphPlan::default();
+    for (mid, from) in &a {
+        if let Some((_, to)) = b.iter().find(|(m, _)| m == mid) {
+            plan.pairs.push(MorphPair {
+                morph_id: mid.clone(),
+                from: from.as_str().to_owned(),
+                to: to.as_str().to_owned(),
+            });
+        } else {
+            plan.leaving.push(mid.clone());
+        }
+    }
+    for (mid, _) in &b {
+        if !a.iter().any(|(m, _)| m == mid) {
+            plan.entering.push(mid.clone());
+        }
+    }
+    plan.pairs.sort_by(|x, y| x.morph_id.cmp(&y.morph_id));
+    plan.entering.sort();
+    plan.leaving.sort();
+    plan
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +301,39 @@ mod tests {
         )
         .expect("apply");
         (d, id("nd:slide"))
+    }
+
+    #[test]
+    fn morph_pairs_classifies_paired_entering_leaving() {
+        let mut d = DocState::new();
+        let pg = id("pg:1");
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(0, &[
+            CanvasOp::Insert { id: Some(id("nd:s0")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:s1")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+            // logo morphs across both; hero only on s0 (leaving); cta only on s1 (entering).
+            CanvasOp::Insert { id: Some(id("nd:a-logo")), kind: RecordKind::Text, parent: id("nd:s0"),
+                pos: Position::Last, props: vec![(key("morphId"), Value::Str("logo".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:a-hero")), kind: RecordKind::Text, parent: id("nd:s0"),
+                pos: Position::Last, props: vec![(key("morphId"), Value::Str("hero".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:b-logo")), kind: RecordKind::Text, parent: id("nd:s1"),
+                pos: Position::Last, props: vec![(key("morphId"), Value::Str("logo".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:b-cta")), kind: RecordKind::Text, parent: id("nd:s1"),
+                pos: Position::Last, props: vec![(key("morphId"), Value::Str("cta".to_owned()))] },
+        ]).expect("apply");
+        let plan = morph_pairs(&d.store, &id("nd:s0"), &id("nd:s1"));
+        assert_eq!(plan.pairs.len(), 1);
+        assert_eq!(plan.pairs[0].morph_id, "logo");
+        assert_eq!(plan.pairs[0].from, "nd:a-logo");
+        assert_eq!(plan.pairs[0].to, "nd:b-logo");
+        assert_eq!(plan.leaving, vec!["hero".to_owned()]);
+        assert_eq!(plan.entering, vec!["cta".to_owned()]);
+        // The DOM carries the morph tag for the JS FLIP.
+        let tokens = crate::canvas::tokens::TokenStore::default_theme();
+        let html = crate::canvas::lower::lower_page(&d.store, &tokens, &pg);
+        assert!(html.contains("data-cv-morph=\"logo\""));
     }
 
     #[test]

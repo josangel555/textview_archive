@@ -352,6 +352,46 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
         return steps.map { Set(($0["visibleIds"] as? [String]) ?? []) }
     }
 
+    /// M6.S5: identity-morph — a node sharing a morphId across two slides
+    /// FLIP-animates on slide advance (proven by the durable morph-ran tag +
+    /// an in-flight WAAPI animation on the real page).
+    func test_identity_morph_flips_shared_node_on_slide_change() async throws {
+        _ = try adapter.applyDSL(
+            baseRev: try adapter.currentRev(),
+            "frame #slide-0 role=slide {\n  text #m0 \"Logo\" morphId=logo\n}\n" +
+            "frame #slide-1 role=slide {\n" +
+            "  frame #pad minH=300 {\n    text #ps \"x\"\n  }\n" +
+            "  text #m1 \"Logo\" morphId=logo\n}")
+        seq += 1
+        host.send(.setContent(seq: seq, html: try adapter.html()))
+        _ = await waitUntil(5) {
+            self.inbound.contains { if case .contentSet = $0 { return true }; return false }
+        }
+        host.send(.setDeckMode(on: true))
+        _ = await waitUntil(5) {
+            self.inbound.contains {
+                if case .deckStateChanged(let s, _, _) = $0 { return s == 0 }
+                return false
+            }
+        }
+        // Advance to slide 1 → the shared morphId node FLIP-animates.
+        inbound.removeAll()
+        host.send(.deckGoto(slide: 1, step: 0))
+        _ = await waitUntil(5) {
+            self.inbound.contains {
+                if case .deckStateChanged(let s, _, _) = $0 { return s == 1 }
+                return false
+            }
+        }
+        // Durable proof: the slide-1 morph node carries the morph-ran tag.
+        var ran = ""
+        let probeJS = "(function(){var e=document.querySelector('[data-cv-id=\"nd:m1\"]');"
+            + "return e?(e.getAttribute('data-cv-morph-ran')||''):'';})()"
+        host.probe(probeJS) { r in ran = r }
+        let ok = await waitUntil(5) { ran.contains("logo") }
+        XCTAssertTrue(ok, "the shared node FLIP-morphed (tag=\(ran))")
+    }
+
     func test_escape_posts_the_intent() async throws {
         host.probe(
             """
