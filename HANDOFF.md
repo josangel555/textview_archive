@@ -70,8 +70,13 @@
   another MULTI-MODE feature. Session/tab-switch + CSV verified CLEAN (well-hardened). Image editor
   is the RICHEST vein — 5 bugs (1416/1419/1420/1421/1422 = paint-undo/geometry/tonal/undo-order/
   overlay-export), its layer/mode crossings now largely covered. NEXT: HEX editor (view vs edit
-  mode, binary editing) or diff view. LESSON: multi-layer/multi-mode features harbor bugs;
-  single-purpose views are clean.
+  mode) checked — theory HOLDS (found hex-search-ignores-edits TSK-1423) but the fix is
+  representable-plumbing + AX-keyboard-gated → filed for the render lane, NOT host-fixable.
+  REFINED HEURISTIC: hunt multi-mode features whose logic is in a host-testable MODEL/PURE layer
+  (image editor, CSV, sort, parsers, diff engine) — those yield fixable+VALIDATED wins; view/
+  representable-internal + keyboard-AX behaviors are real but land in the owner/TSK-1334/AX lane.
+  NEXT host-testable targets: multi-format viewer routing edge cases, diff engine, transcript/
+  markdown/CSV parsers.
 - ⚠️ Micro-gaps on MAIN surfaces are thinning (empty states/reachability/basics verified) — audited surfaces are now
   consistently production-grade (run's fixes: CSV empty-state, paint-undo, FeedReader wire, palette
   discoverability + cohesion guard). Remaining known work is LARGER or OWNER-GATED, not micro-fixes:

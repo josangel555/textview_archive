@@ -473,3 +473,24 @@ render/paint/overlay/geometry/tonal/undo/export crossings are now largely covere
 (CSV, session-switch, search, sidebar, tabs, viewers) verify clean. NEXT candidate for hidden
 crossings = another MULTI-MODE feature: the HEX editor (view vs edit mode, binary editing) or the
 diff view. Lesson: multi-layer/multi-mode features harbor the bugs; single-purpose views are clean.
+
+### Pass 14 (2026-07-02) — hex editor (multi-mode) — theory HOLDS: real bug, but AX-gated for validation (TSK-1423)
+
+Applied the multi-mode-feature theory to the hex editor. It holds — found a real correctness bug:
+hex SEARCH ignores unsaved EDITS. recomputeMatches (on the HexView representable) scans `file.data`
+(the immutable original), while edits live on the HexTextController (editBuffer); the edited bytes
+flow only to the model (onDirtyChange → save), never into the representable's search. So after
+editing a byte you see the change but search finds the pre-edit bytes, and match highlights/count/
+nav go stale. Edit×truncation + edit×streaming ARE correctly gated (isEditable, !isStreaming).
+
+KEY DISTINCTION from the image-editor wins: the image-editor bugs were fixable + host-tested because
+the logic lives in a MODEL layer (ImageEditorViewModel, headless). The hex bug's fix is representable
+@State plumbing (controller→representable→search) and the on-screen trigger is HEX-KEYBOARD-EDIT =
+AX-driven (off-limits) → NOT host-testable or VM-drivable → filed for the render/AX lane (TSK-1423),
+NOT blind-landed (render-confirm directive). The search ENGINE is already host-tested.
+
+REFINED HUNTING HEURISTIC: multi-mode features harbor bugs (theory holds), BUT prioritize ones whose
+logic is in a host-testable MODEL/pure layer (image editor, CSV, sort, parsers) — those yield
+fixable+validated wins. View/representable-internal + keyboard-AX behaviors (hex edit, CM6 editor
+internals) are real but land in the owner/TSK-1334/AX lane. NEXT: mine host-testable MODEL/pure-logic
+crossings (e.g. multi-format viewer routing edge cases, diff engine, transcript/CSV/markdown parsers).
