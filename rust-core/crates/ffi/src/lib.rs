@@ -46,10 +46,12 @@
 )]
 
 pub mod buf;
+pub mod canvas_handle;
 pub mod guard;
 pub mod handle;
 pub mod status;
 
+use mdvcore_core::canvas;
 use mdvcore_core::diff;
 use mdvcore_core::dispatch;
 use mdvcore_core::filter::{Query, Scope};
@@ -942,6 +944,137 @@ pub unsafe extern "C" fn mdvcore_session_free(handle: *mut SessionHandle) {
         // and bogus-token free are safe no-ops; a free racing a call defers
         // the drop to the in-flight Arc).
         SessionHandle::free(handle);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Canvas M0 spike (TSK-1343/1352) — the patch-loop boundary under test.
+// Stateful doc ⇒ the CsvSession opaque-handle pattern (canvas_handle.rs), not
+// the stateless `mdvcore_call` envelope. Docs: docs/canvas/plans/M0-PLAN.md.
+// ---------------------------------------------------------------------------
+
+/// Open the hardcoded M0 canvas demo document (~200 nodes) and return its
+/// opaque handle. Caller MUST balance with [`mdvcore_canvas_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `out_handle` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_demo_open(
+    out_handle: *mut *mut canvas_handle::CanvasHandle,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_handle.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_handle validated non-null; null it so an error path
+        // never leaves a dangling out value.
+        unsafe { *out_handle = core::ptr::null_mut() };
+        let handle = canvas_handle::CanvasHandle::new(canvas::demo_doc());
+        let raw = handle.into_raw();
+        // SAFETY: out_handle validated non-null above.
+        unsafe { *out_handle = raw };
+        MdvStatus::Ok
+    })
+}
+
+/// Lower the whole canvas document to HTML. RAW-OUTPUT: `out_buf` receives the
+/// UTF-8 HTML bytes directly (no MessagePack frame — the HexRender precedent).
+/// Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`] (bad handle/out ptr),
+/// [`MdvStatus::Busy`], [`MdvStatus::HandleDead`], or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be a token from [`mdvcore_canvas_demo_open`], not yet freed.
+/// `out_buf` must be valid & writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_html(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty-default so error paths stay freeable.
+        unsafe { *out_buf = MdvBuf::empty() };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            let html = canvas::initial_html(doc);
+            // SAFETY: out_buf validated non-null above.
+            unsafe { *out_buf = MdvBuf::from_vec(html.into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
+/// Apply a canvas op batch. `req`/`req_len` is the `{ops:[...]}` MessagePack
+/// request frame; `out_buf` receives the `{rev, patches, rejected}` patch-plan
+/// response frame. Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`] (with
+/// an error frame in `out_buf`), [`MdvStatus::Busy`], [`MdvStatus::HandleDead`],
+/// or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be a live token from [`mdvcore_canvas_demo_open`]; `req` must
+/// point to `req_len` valid bytes (or be null with `req_len == 0`); `out_buf`
+/// must be valid & writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_apply(
+    handle: *mut canvas_handle::CanvasHandle,
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty-default so error paths stay freeable.
+        unsafe { *out_buf = MdvBuf::empty() };
+        if req.is_null() && req_len != 0 {
+            return MdvStatus::NullArg;
+        }
+        let frame: &[u8] = if req_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees req points to req_len bytes when
+            // req_len != 0; the zero-len branch never dereferences.
+            unsafe { core::slice::from_raw_parts(req, req_len) }
+        };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| match canvas::apply_wire(doc, frame) {
+            Ok(plan_frame) => {
+                // SAFETY: out_buf validated non-null above.
+                unsafe { *out_buf = MdvBuf::from_vec(plan_frame) };
+                MdvStatus::Ok
+            }
+            // SAFETY: out_buf validated non-null + empty-defaulted above.
+            Err(e) => unsafe { write_wire_error(out_buf, &e) },
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
+/// Free a canvas handle. Null-tolerant and idempotent.
+///
+/// # Safety
+/// `handle` is a token from [`mdvcore_canvas_demo_open`] (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_free(handle: *mut canvas_handle::CanvasHandle) {
+    let _ = std::panic::catch_unwind(|| {
+        canvas_handle::CanvasHandle::free(handle);
     });
 }
 

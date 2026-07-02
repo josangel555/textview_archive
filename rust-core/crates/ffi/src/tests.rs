@@ -1361,3 +1361,125 @@ fn session_table_ffi_encodes_from_spans_not_a_clone() {
         "session_table must NOT materialize + clone the whole Table"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Canvas M0 spike (TSK-1352) — smoke the patch loop through the REAL C ABI.
+// ---------------------------------------------------------------------------
+
+/// Open the canvas demo doc, returning the raw handle (caller frees).
+fn canvas_open() -> *mut canvas_handle::CanvasHandle {
+    let mut h: *mut canvas_handle::CanvasHandle = core::ptr::null_mut();
+    let st = unsafe { mdvcore_canvas_demo_open(&mut h) };
+    assert_eq!(st, MdvStatus::Ok);
+    assert!(!h.is_null());
+    h
+}
+
+#[test]
+fn canvas_demo_open_html_apply_free_roundtrip() {
+    let h = canvas_open();
+
+    // Initial lowering: raw HTML bytes, 201 data-cv-id-stamped nodes.
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_canvas_html(h, &mut buf) };
+    assert_eq!(st, MdvStatus::Ok);
+    let html = String::from_utf8(unsafe { buf.as_slice() }.to_vec()).unwrap();
+    unsafe { mdvcore_buf_free(&mut buf) };
+    assert_eq!(html.matches("data-cv-id=").count(), 201);
+    assert!(html.contains("Row 0.0"));
+
+    // Apply a SetText op through the boundary; expect the mirrored patch.
+    #[derive(serde::Serialize)]
+    struct Req<'a> {
+        ops: &'a [mdvcore_core::canvas::CanvasOp],
+    }
+    let ops = [mdvcore_core::canvas::CanvasOp::SetText {
+        id: 3,
+        text: "patched!".to_owned(),
+    }];
+    let req = mdvcore_core::wire::encode_frame(&Req { ops: &ops }).unwrap();
+    let mut plan_buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_canvas_apply(h, req.as_ptr(), req.len(), &mut plan_buf) };
+    assert_eq!(st, MdvStatus::Ok);
+    let plan_frame = unsafe { plan_buf.as_slice() }.to_vec();
+    unsafe { mdvcore_buf_free(&mut plan_buf) };
+
+    #[derive(serde::Deserialize)]
+    struct Plan {
+        rev: u64,
+        patches: Vec<PatchEcho>,
+        rejected: Vec<u32>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(tag = "op", rename_all = "camelCase")]
+    enum PatchEcho {
+        #[serde(rename_all = "camelCase")]
+        SetText { id: u32, text: String },
+        #[serde(rename_all = "camelCase")]
+        SetStyle {
+            #[allow(dead_code)]
+            id: u32,
+        },
+    }
+    let plan: Plan = mdvcore_core::wire::decode_frame(&plan_frame).unwrap();
+    assert_eq!(plan.rev, 1);
+    assert!(plan.rejected.is_empty());
+    assert_eq!(plan.patches.len(), 1);
+    match plan.patches.first() {
+        Some(PatchEcho::SetText { id, text }) => {
+            assert_eq!(*id, 3);
+            assert_eq!(text, "patched!");
+        }
+        other => panic!("expected SetText patch, got {:?}", other.is_some()),
+    }
+
+    // State stuck: a re-lower contains the patched text.
+    let mut buf2 = MdvBuf::empty();
+    let st = unsafe { mdvcore_canvas_html(h, &mut buf2) };
+    assert_eq!(st, MdvStatus::Ok);
+    let html2 = String::from_utf8(unsafe { buf2.as_slice() }.to_vec()).unwrap();
+    unsafe { mdvcore_buf_free(&mut buf2) };
+    assert!(html2.contains("patched!"));
+
+    unsafe { mdvcore_canvas_free(h) };
+    // Double free is a safe no-op; a freed handle degrades to NullArg.
+    unsafe { mdvcore_canvas_free(h) };
+    let mut buf3 = MdvBuf::empty();
+    let st = unsafe { mdvcore_canvas_html(h, &mut buf3) };
+    assert_eq!(st, MdvStatus::NullArg);
+    unsafe { mdvcore_buf_free(&mut buf3) };
+}
+
+#[test]
+fn canvas_apply_malformed_frame_is_wire_error_not_crash() {
+    let h = canvas_open();
+    let junk = [0xFFu8, 0x01, 0x02];
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_canvas_apply(h, junk.as_ptr(), junk.len(), &mut buf) };
+    assert_eq!(st, MdvStatus::WireError);
+    unsafe { mdvcore_buf_free(&mut buf) };
+    unsafe { mdvcore_canvas_free(h) };
+}
+
+#[test]
+fn canvas_null_args_are_rejected() {
+    let mut h: *mut canvas_handle::CanvasHandle = core::ptr::null_mut();
+    assert_eq!(
+        unsafe { mdvcore_canvas_demo_open(core::ptr::null_mut()) },
+        MdvStatus::NullArg
+    );
+    let st = unsafe { mdvcore_canvas_demo_open(&mut h) };
+    assert_eq!(st, MdvStatus::Ok);
+    assert_eq!(
+        unsafe { mdvcore_canvas_html(h, core::ptr::null_mut()) },
+        MdvStatus::NullArg
+    );
+    let mut buf = MdvBuf::empty();
+    // Null req with nonzero len is rejected.
+    assert_eq!(
+        unsafe { mdvcore_canvas_apply(h, core::ptr::null(), 3, &mut buf) },
+        MdvStatus::NullArg
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+    unsafe { mdvcore_canvas_free(h) };
+}

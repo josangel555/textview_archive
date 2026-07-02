@@ -22,6 +22,7 @@
 #![warn(missing_docs)]
 
 pub mod bench;
+pub mod canvas;
 pub mod cm_edit;
 pub mod csv;
 pub mod diff;

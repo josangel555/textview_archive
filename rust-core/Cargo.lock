@@ -439,6 +439,7 @@ dependencies = [
  "cbindgen",
  "mdvcore-core",
  "mdvcore-highlight",
+ "serde",
 ]
 
 [[package]]

@@ -52,5 +52,11 @@ mdvcore-core = { path = "../core" }
 # bundle's grammar dylibs retire once the host routes through this path.
 mdvcore-highlight = { path = "../highlight" }
 
+[dev-dependencies]
+# Test-only (canvas M0 smoke derives its request/plan echo types); the shipped
+# staticlib supply chain is unchanged — wire codec still lives in mdvcore-core
+# (TSK-569 posture holds for [dependencies]).
+serde = { workspace = true }
+
 [build-dependencies]
 cbindgen = { workspace = true }

@@ -14871,3 +14871,14 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 
 ## LOG (2026-06-27 cont. — security audit: confined() path-traversal teeth)
 - Widened the audit vein to SECURITY. confined() (rust-core/crates/web — the remote server's path-confinement chokepoint: canonicalize + component-wise starts_with, closing arbitrary-read / ..-traversal / symlink-escape) is called by every route but had NO direct test (only 2 route-integration tests referenced it). Added 5 security teeth (web/main.rs tests): root + a real under-root path allowed; ../ + nested ../.., a string-prefix sibling (component-wise containment, not string-prefix), a symlink resolving outside root, and a non-existent path (canonicalize fail-closed) all rejected. All pass — guard correct; a regression now fails the rust-core gate instead of silently opening a path-traversal vuln. Test-only; no source change.
+
+## 2026-07-01 — Canvas M0.S1: patch-loop core + FFI landed (TSK-1352)
+- `mdvcore_core::canvas` (M0 spike engine): 201-node demo doc, SetText/SetStyle ops →
+  msgpack PatchPlan (`{rev, patches, rejected}`), one-shot `initial_html` lowering with
+  `data-cv-id` stamps. 5 unit tests incl. wire round-trip + reject path.
+- FFI: `CanvasHandle` registry (TSK-541 pattern twin) + `mdvcore_canvas_demo_open/html/
+  apply/free`; 3 C-ABI smoke tests (roundtrip, malformed-frame→WireError, null-args).
+  serde added as ffi DEV-dep only (supply chain of the shipped staticlib unchanged).
+- rust-core gate GREEN (clippy no-panic wall + workspace tests + header-drift check);
+  header restaged via build-rust-core.sh; Swift build links clean. TEETH: rev-bump mutant
+  → 2 core + 1 ffi tests RED, restored green. Next: S2 (CanvasBridge + JS applier).
