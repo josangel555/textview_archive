@@ -52,6 +52,16 @@ public enum RichTextSerializer {
             return rendered
                 .map { "> " + $0 }
                 .joined(separator: "\n>\n")
+
+        case let .codeBlock(code):
+            // TSK-1327: a fenced block. Per CommonMark, the fence must be longer
+            // than any backtick run inside the code so it can't close early.
+            var longestRun = 0, run = 0
+            for ch in code {
+                if ch == "`" { run += 1; longestRun = max(longestRun, run) } else { run = 0 }
+            }
+            let fence = String(repeating: "`", count: max(3, longestRun + 1))
+            return fence + "\n" + code + "\n" + fence
         }
     }
 

@@ -54,6 +54,9 @@ public enum RichTextNormalizer {
         case let .blockquote(paras):
             let kept = paras.map { normalizeInlines($0) }.filter { !$0.isEmpty }
             return kept.isEmpty ? nil : .blockquote(kept)
+        case let .codeBlock(code):
+            // Already in-vocabulary + opaque; drop only an empty block.
+            return code.isEmpty ? nil : .codeBlock(code)
         }
     }
 

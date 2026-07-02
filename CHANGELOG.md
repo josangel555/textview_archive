@@ -74,6 +74,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Copy Reference covers a selection — now with a menu item + shortcut.** Select several lines in the editor and run **Edit ▸ Copy Reference** (⌘⌥⇧C, also in the ⌘K command palette) to copy a line-RANGE `mdv://` reference (`…?line=10&endLine=20`) to paste to an agent — "these are the lines I mean". With no selection it copies the current line as before. (Source-view selections carry the range today.)
 
 ### Fixed
+- **Pasting code from a browser/doc keeps its formatting.** A rich-text paste of a code block used to collapse into one broken run (newlines mangled); it now becomes a proper fenced code block with lines intact.
 - **Image editor: annotations (shapes, arrows, text) are now undoable, and ⌘Z works correctly when you mix annotations, painting, and crop/resize.** Adding, moving, restyling, or deleting an annotation can now be undone/redone — and undo steps back through annotations, paint, and geometry edits in the exact order you made them.
 - **Image editor: annotations (shapes, arrows, text) are now included when you Save a Copy.** Vector annotations drawn over an image were silently dropped from the exported file; the saved image now matches what you see.
 - **Image editor: undo works correctly when you mix painting and crop/resize/rotate.** Undo now steps back through your paint strokes and transforms one at a time in order, instead of reverting a transform and the previous stroke together.

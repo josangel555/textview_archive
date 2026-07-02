@@ -52,6 +52,11 @@ public enum DocxExporter {
                 }
             case let .blockquote(lines):
                 for line in lines { body += paragraph(style: "Quote", line) }
+            case let .codeBlock(code):
+                // No DOCX markdown fence; one paragraph per code line, text preserved.
+                for line in code.split(separator: "\n", omittingEmptySubsequences: false) {
+                    body += paragraph(style: nil, [.text(String(line))])
+                }
             }
         }
         return """

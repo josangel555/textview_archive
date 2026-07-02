@@ -134,6 +134,13 @@ public enum RichTextHTMLParser {
                 flushLoose(); i += 1
                 let inl = trimEdges(parseInlines(toks, &i, until: name))
                 if !inl.isEmpty { blocks.append(.blockquote([inl])) }
+            case .open(let name, _) where name == "pre":
+                // TSK-1327: preformatted → a fenced code block. Collect the RAW
+                // text (incl. any inner <code>), newlines PRESERVED, ignoring
+                // markup — a code paste must not collapse to inline code.
+                flushLoose(); i += 1
+                let code = parsePreformatted(toks, &i)
+                if !code.isEmpty { blocks.append(.codeBlock(code)) }
             case .open(let name, let href) where inlineTags.contains(name):
                 loose.append(contentsOf: parseInline(toks, &i, name: name, href: href))
             case .open:
@@ -144,6 +151,27 @@ public enum RichTextHTMLParser {
         }
         flushLoose()
         return blocks
+    }
+
+    /// Collect the raw text of an already-consumed `<pre>` until its `</pre>`,
+    /// ignoring inner tags (their text is kept) and preserving newlines. Trailing
+    /// blank lines are trimmed so the ```-fence is clean. TSK-1327.
+    private static func parsePreformatted(_ toks: [Token], _ i: inout Int) -> String {
+        var out = ""
+        while i < toks.count {
+            switch toks[i] {
+            case .close("pre"): i += 1; return trimTrailingNewlines(out)
+            case .text(let t): out += t; i += 1
+            default: i += 1   // inner tag (e.g. <code>) — drop the tag, keep its text
+            }
+        }
+        return trimTrailingNewlines(out)
+    }
+
+    private static func trimTrailingNewlines(_ s: String) -> String {
+        var out = s
+        while out.hasSuffix("\n") || out.hasSuffix("\r") { out.removeLast() }
+        return out
     }
 
     /// `<li>`-delimited items until the list's close tag.

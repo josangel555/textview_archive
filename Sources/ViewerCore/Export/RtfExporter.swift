@@ -106,6 +106,11 @@ public enum RtfExporter {
                 }
             case let .blockquote(lines):
                 for line in lines { out.append(.paragraph(runs(from: line))) }
+            case let .codeBlock(code):
+                // No RTF markdown fence; preserve the code as one paragraph per line.
+                for line in code.split(separator: "\n", omittingEmptySubsequences: false) {
+                    out.append(.paragraph([RtfRun(String(line))]))
+                }
             }
         }
         return out

@@ -77,6 +77,15 @@ public struct RichTextReadOnlyView: View {
                     }
                 }
             }
+
+        case let .codeBlock(code):
+            // TSK-1327: monospace block (this WIP view is flag-gated; the
+            // paste→markdown converter path is what ships).
+            Text(code)
+                .font(.system(.body, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Color.secondary.opacity(0.1))
         }
     }
 

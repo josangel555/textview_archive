@@ -336,6 +336,8 @@ final class RichTextDocumentTests: XCTestCase {
             case let .blockquote(paras):
                 XCTAssertFalse(paras.isEmpty)
                 for p in paras { assertInlinesInVocabulary(p) }
+            case let .codeBlock(code):
+                XCTAssertFalse(code.isEmpty)
             }
         }
     }
@@ -374,6 +376,8 @@ final class RichTextDocumentTests: XCTestCase {
                 if items.contains(where: { inlineHasLink($0.inlines) }) { return true }
             case let .blockquote(paras):
                 if paras.contains(where: inlineHasLink) { return true }
+            case .codeBlock:
+                break   // opaque literal text, no inline links
             }
         }
         return false

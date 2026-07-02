@@ -67,6 +67,11 @@ public enum RichBlock: Equatable, Sendable {
     /// A blockquote. Restricted: its content is a flat sequence of paragraphs
     /// (no nested blockquotes/lists/headings inside — those are flattened).
     case blockquote([[RichInline]])
+    /// A fenced code block — opaque literal text (newlines preserved), serialized
+    /// as a ```-fence. TSK-1327: a rich-paste of `<pre>`/`<pre><code>` (browser /
+    /// doc copy) must survive as a real code block, not collapse into invalid
+    /// inline-code-with-newlines.
+    case codeBlock(String)
 
     /// The allowed heading levels for this restricted model.
     public static let maxHeadingLevel = 3
