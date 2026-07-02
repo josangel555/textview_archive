@@ -74,6 +74,13 @@ public struct CanvasDocLint: Equatable, Sendable {
     public let code: String
     public let id: String?
     public let message: String
+
+    public init(severity: String, code: String, id: String?, message: String) {
+        self.severity = severity
+        self.code = code
+        self.id = id
+        self.message = message
+    }
 }
 
 /// The apply result in bridge vocabulary.

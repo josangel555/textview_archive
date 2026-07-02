@@ -1023,7 +1023,14 @@ public enum MCPToolCatalog {
     private static func canvasLint(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
         let doc = try canvasDoc(try args.string("doc"), host)
         do {
-            let lint: [MCP.Value] = try doc.adapter.lintAll().map { f in
+            // Static stage (the engine) + the MEASURED stage (cached by the
+            // rendered lens's controller — M4.S9). `measured` tells the
+            // agent whether geometry findings are included or the doc is
+            // unmounted.
+            var findings = try doc.adapter.lintAll()
+            let measured = doc.measuredLint
+            findings.append(contentsOf: measured ?? [])
+            let lint: [MCP.Value] = findings.map { f in
                 .object([
                     "severity": .string(f.severity),
                     "code": .string(f.code),
@@ -1031,7 +1038,10 @@ public enum MCPToolCatalog {
                     "message": .string(f.message),
                 ])
             }
-            return .object(["lint": .array(lint)])
+            return .object([
+                "lint": .array(lint),
+                "measured": .bool(measured != nil),
+            ])
         } catch {
             throw MCPError.toolFailed("canvas_lint: \(error)")
         }

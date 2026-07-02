@@ -3,6 +3,12 @@
 ## 2026-07-02
 
 ### Added
+- **Canvas design system:** reusable components (edit a definition once, every
+  copy updates), a starter kit of six building blocks, instant whole-document
+  retheming, charts/tables/code/diagrams as first-class content, data-driven
+  repetition, and a design-quality audit that now also measures the real page
+  (overflow, contrast). Verified by a ten-brief design gauntlet: every brief
+  built through the agent tools without falling back to raw HTML.
 - **Canvas visual editing (WYSIWYG):** .canvas files now open into a rendered
   canvas with a layers tree and a properties inspector — click to select,
   double-click to edit text in place, drag to reorder, ⌘Z to undo; agents and

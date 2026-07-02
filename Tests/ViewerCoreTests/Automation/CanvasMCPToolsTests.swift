@@ -273,4 +273,40 @@ final class CanvasMCPToolsTests: XCTestCase {
                       (try openDoc.adapter.renderDSL().contains("Locally edited")),
                       "the local edit survives — never silently overwritten")
     }
+
+    // MARK: M4.S9 — the measured-lint merge (TSK-1388)
+
+    func test_canvas_lint_merges_the_measured_stage_with_a_marker() throws {
+        guard case .object(let n) = try call("canvas_new", [:]),
+              case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        _ = try call("canvas_apply", [
+            "doc": .string(doc), "baseRev": .int(0),
+            "dsl": .string("hole #todo note=\"pending\""),
+        ])
+        // UNMOUNTED: static only, measured=false.
+        guard case .object(let l1) = try call("canvas_lint", ["doc": .string(doc)]),
+              case .array(let static1)? = l1["lint"] else { return XCTFail("lint1") }
+        XCTAssertEqual(l1["measured"], .bool(false), "unmounted docs say so")
+        XCTAssertTrue(static1.contains { v in
+            if case .object(let f) = v, case .string(let code)? = f["code"] { return code == "hole" }
+            return false
+        })
+        // The rendered lens's controller caches measured findings (simulated
+        // here — the live push is the webview test's half).
+        let openDoc = try host.automationCanvasStore.doc(doc)
+        openDoc.cacheMeasuredLint([
+            CanvasDocLint(severity: "warn", code: "overflow", id: "nd:todo",
+                          message: "content overflows its box")
+        ])
+        guard case .object(let l2) = try call("canvas_lint", ["doc": .string(doc)]),
+              case .array(let merged)? = l2["lint"] else { return XCTFail("lint2") }
+        XCTAssertEqual(l2["measured"], .bool(true))
+        XCTAssertTrue(merged.count > static1.count, "measured findings merged in")
+        XCTAssertTrue(merged.contains { v in
+            if case .object(let f) = v, case .string(let code)? = f["code"] {
+                return code == "overflow"
+            }
+            return false
+        }, "the geometry stage rides the same tool: \(merged)")
+    }
 }

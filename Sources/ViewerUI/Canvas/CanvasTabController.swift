@@ -120,6 +120,7 @@ public final class CanvasTabController: ObservableObject {
             seq += 1
             host.send(.applyPatches(seq: seq, patches: applied.patches))
             refreshOutline()
+            requestMeasuredLint()
         } catch let rejection as CanvasRejection {
             if rejection.kind == "conflict", !isRetry {
                 trackedRev = rejection.currentRev
@@ -133,6 +134,13 @@ public final class CanvasTabController: ObservableObject {
             NSLog("canvas gesture failed: %@", String(describing: error))
             refresh()
         }
+    }
+
+    /// Ask the runtime for the measured lint stage (results cache via the
+    /// inbound handler; also re-requested after every gesture apply).
+    public func requestMeasuredLint() {
+        seq += 1
+        host.send(.measureLint(replyId: seq))
     }
 
     /// Engine undo (⌘Z in the surface) + full re-lower (undo is a re-lower
@@ -159,6 +167,7 @@ public final class CanvasTabController: ObservableObject {
             refresh()
         case .contentSet(_, let nodeCount, _):
             phase = .mounted(nodeCount: nodeCount)
+            requestMeasuredLint()
         case .nodeClicked(let id, _):
             // S3 drives the overlay; S1 just tracks the selection state.
             selectedIDs = [id]
@@ -183,6 +192,14 @@ public final class CanvasTabController: ObservableObject {
             host.send(.clearSelection)
         case .undoRequested:
             undoLastBatch()
+        case .measuredLint(_, let findings):
+            // Cache on the STORE doc so the sync canvas_lint tool can merge
+            // the measured stage (M4.S9; the MCP dispatch cannot await a
+            // webview round trip — the cache decouples them).
+            doc?.cacheMeasuredLint(findings.map {
+                CanvasDocLint(severity: $0.severity, code: $0.code,
+                              id: $0.id, message: $0.message)
+            })
         case .error(let message):
             NSLog("canvas runtime error: %@", message)
         case .unsupportedVersion(let v):

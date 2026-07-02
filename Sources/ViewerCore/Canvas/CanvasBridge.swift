@@ -88,6 +88,8 @@ public enum CVOutboundMessage: Sendable {
     case clearSelection
     /// Toggle contenteditable on a text node (inline editing).
     case setEditable(id: String, on: Bool)
+    /// Compute the measured (geometry) lint stage (M4.S9).
+    case measureLint(replyId: UInt64)
 }
 
 /// JS → Swift messages.
@@ -113,6 +115,23 @@ public enum CVInboundMessage: Equatable, Sendable {
     case deletePressed
     /// ⌘Z pressed in the canvas surface (M3.S4 — engine undo).
     case undoRequested
+    /// The measured-lint findings (M4.S9; the lint JSON shape).
+    case measuredLint(replyId: UInt64, findings: [CanvasMeasuredFinding])
+}
+
+/// One measured finding (mirrors the static lint's shape).
+public struct CanvasMeasuredFinding: Equatable, Sendable {
+    public let severity: String
+    public let code: String
+    public let id: String?
+    public let message: String
+
+    public init(severity: String, code: String, id: String?, message: String) {
+        self.severity = severity
+        self.code = code
+        self.id = id
+        self.message = message
+    }
 }
 
 /// Codec faults (decode side).
@@ -155,6 +174,9 @@ public enum CVBridgeCodec {
             dict["type"] = "setEditable"
             dict["id"] = id
             dict["on"] = on
+        case let .measureLint(replyId):
+            dict["type"] = "measureLint"
+            dict["replyId"] = replyId
         }
         let data = try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
         guard let s = String(data: data, encoding: .utf8) else {
@@ -231,6 +253,17 @@ public enum CVBridgeCodec {
             return .deletePressed
         case "undoRequested":
             return .undoRequested
+        case "measuredLint":
+            let findings: [CanvasMeasuredFinding] =
+                (dict["findings"] as? [[String: Any]] ?? []).compactMap { f in
+                    guard let code = f["code"] as? String else { return nil }
+                    return CanvasMeasuredFinding(
+                        severity: f["severity"] as? String ?? "warn",
+                        code: code,
+                        id: f["id"] as? String,
+                        message: f["message"] as? String ?? "")
+                }
+            return .measuredLint(replyId: uint64(dict["replyId"]), findings: findings)
         default:
             throw CVBridgeCodecError.unknownType(type)
         }

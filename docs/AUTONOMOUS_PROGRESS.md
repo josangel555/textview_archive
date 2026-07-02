@@ -14952,3 +14952,12 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
   with bordered frames); no grid primitive (row+wrap / stacked rows approximate — 2 briefs);
   no per-child spacer/justify shorthand; kit-on-tinted-surface wants per-instance fills
   (root-prop overrides already cover it).
+
+## 2026-07-02 — M4 COMPLETE: design system + gauntlet, all 9 slices (TSK-1380..1388)
+- Components (expansion-at-lowering, cycle-fenced, incremental instance repaints),
+  overrides, DSL forms, zero-op retheme, vendored kit w/ drift-blocks-overwrite,
+  THE GAUNTLET (10/10, 0% escapes), table/code/chart/diagram kinds (injection-safe,
+  deterministic SVG), each-blocks (author-time, zero runtime JS), measured lint
+  (overflow/contrast on the real page, merged at canvas_lint w/ a `measured` marker).
+- M5-feeding findings on the board tickets: input/form primitives, grid primitive,
+  standalone-if + expression data-context, live mermaid shell integration.

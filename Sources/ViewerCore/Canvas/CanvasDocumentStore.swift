@@ -35,6 +35,15 @@ public final class CanvasOpenDocument {
     public func noteRevision(_ rev: UInt64) {
         lastKnownRev = rev
     }
+
+    /// The last MEASURED lint findings (M4.S9): pushed by the rendered
+    /// lens's controller after mounts/applies; merged by canvas_lint. Nil =
+    /// the doc was never mounted (measured stage unavailable).
+    public private(set) var measuredLint: [CanvasDocLint]?
+
+    public func cacheMeasuredLint(_ findings: [CanvasDocLint]) {
+        measuredLint = findings
+    }
 }
 
 /// Faults surfaced to the tool layer (plain values — agent-readable).

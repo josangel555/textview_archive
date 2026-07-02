@@ -151,6 +151,48 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
             "cleared overlay is not measurable: \(afterClear)")
     }
 
+    /// M4.S9: the measured stage on the REAL page — a maxH-constrained box
+    /// with overflowing content flags `overflow`; near-background text flags
+    /// `low-contrast`; clean nodes stay quiet.
+    func test_measured_lint_flags_overflow_and_contrast() async throws {
+        // Grow the doc: an overflowing constrained frame + low-contrast text.
+        let applied = try adapter.apply(baseRev: 1, [
+            .insert(id: "nd:tight", kind: "frame", parent: "nd:col", pos: .last,
+                    props: [("maxH", .num(24))]),
+            .insert(id: "nd:stuffed", kind: "text", parent: "nd:tight", pos: .last,
+                    props: [("text", .str(String(repeating: "overflowing content ", count: 30)))]),
+            .insert(id: "nd:ghost", kind: "text", parent: "nd:col", pos: .last,
+                    props: [("text", .str("barely visible")),
+                            ("color", .str("#f4f4f6"))]),
+        ])
+        seq += 1
+        host.send(.applyPatches(seq: seq, patches: applied.patches))
+        _ = await waitUntil(5) {
+            self.inbound.contains {
+                if case .applied(let got, _, _, _, _) = $0 { return got == self.seq }
+                return false
+            }
+        }
+        seq += 1
+        let replyId = seq
+        host.send(.measureLint(replyId: replyId))
+        let ok = await waitUntil(5) {
+            self.inbound.contains {
+                if case .measuredLint(let got, _) = $0 { return got == replyId }
+                return false
+            }
+        }
+        XCTAssertTrue(ok, "measured lint must reply")
+        for case let .measuredLint(got, findings) in inbound where got == replyId {
+            XCTAssertTrue(findings.contains { $0.code == "overflow" && $0.id == "nd:tight" },
+                          "constrained overflow flagged: \(findings)")
+            XCTAssertTrue(findings.contains { $0.code == "low-contrast" && $0.id == "nd:ghost" },
+                          "near-bg text flagged: \(findings)")
+            XCTAssertFalse(findings.contains { $0.id == "nd:r0" },
+                           "clean nodes stay quiet: \(findings)")
+        }
+    }
+
     func test_escape_posts_the_intent() async throws {
         host.probe(
             """

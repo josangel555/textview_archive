@@ -387,6 +387,64 @@
     }
   });
 
+  // M4.S9 (TSK-1388) — MEASURED lint: the geometry-dependent findings the
+  // static stage cannot see. Computed on demand (measureLint command);
+  // results ride back as ordinary findings and merge at the tool layer.
+  function relativeLuminance(rgb) {
+    var m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(rgb || "");
+    if (!m) return null;
+    function chan(v) {
+      v = v / 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    }
+    return 0.2126 * chan(+m[1]) + 0.7152 * chan(+m[2]) + 0.0722 * chan(+m[3]);
+  }
+
+  function effectiveBackground(el) {
+    var node = el;
+    while (node && node !== document.documentElement) {
+      var bg = getComputedStyle(node).backgroundColor;
+      if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") return bg;
+      node = node.parentElement;
+    }
+    return "rgb(255, 255, 255)";
+  }
+
+  function measureLint() {
+    var findings = [];
+    var nodes = root.querySelectorAll("[data-cv-id]");
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var cvId = el.getAttribute("data-cv-id");
+      // Overflow: content larger than the constrained box (either axis).
+      if (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2) {
+        findings.push({
+          severity: "warn", code: "overflow", id: cvId,
+          message: "content overflows its box (" + el.scrollWidth + "x" +
+            el.scrollHeight + " in " + el.clientWidth + "x" + el.clientHeight +
+            ") — relax maxW/maxH or shorten content"
+        });
+      }
+      // Contrast-in-context: text color vs the effective cascade background.
+      if (el.getAttribute("data-cv-kind") === "text" && el.textContent) {
+        var style = getComputedStyle(el);
+        var fg = relativeLuminance(style.color);
+        var bg = relativeLuminance(effectiveBackground(el));
+        if (fg !== null && bg !== null) {
+          var ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+          if (ratio < 3.0) {
+            findings.push({
+              severity: "warn", code: "low-contrast", id: cvId,
+              message: "text/background contrast " + ratio.toFixed(2) +
+                ":1 (< 3:1) against the effective background"
+            });
+          }
+        }
+      }
+    }
+    return findings;
+  }
+
   window.cvDispatch = function (json) {
     var msg;
     try {
@@ -443,6 +501,14 @@
         } else {
           revertEdit(); // programmatic off = cancel semantics
         }
+        break;
+      }
+      case "measureLint": {
+        post({
+          type: "measuredLint",
+          replyId: msg.replyId,
+          findings: measureLint()
+        });
         break;
       }
       case "queryText": {
