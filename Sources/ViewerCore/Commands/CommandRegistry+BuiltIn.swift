@@ -443,6 +443,27 @@ extension CommandRegistry {
             // TSK-326: omni-invokable — opens the Git panel on the Log tab, the
             // same call the View-menu's "Show Repository History" makes.
             scriptVerb: "show-repo-history"),
+
+        // MARK: Tools / hosted-view panels
+        // TSK-1413 — ⌘K palette discoverability for the hosted-view tools that
+        // were reachable ONLY via the File/View menus (no palette entry). Each
+        // maps to its existing show-* verb → openHostedView. (Feed Reader was
+        // the orphan wired in TSK-1417; this makes it palette-discoverable too.)
+        CommandDescriptor(
+            id: "file.newHTTPRequest", title: "New HTTP Request", category: .file,
+            scriptVerb: "show-http-client"),
+        CommandDescriptor(
+            id: "file.feedReader", title: "Open Feed Reader", category: .file,
+            scriptVerb: "show-feed-reader"),
+        CommandDescriptor(
+            id: "view.folderTreemap", title: "Show Folder Treemap", category: .view,
+            scriptVerb: "show-folder-treemap"),
+        CommandDescriptor(
+            id: "view.dependencyGraph", title: "Show Dependency Graph", category: .view,
+            scriptVerb: "show-dependency-graph"),
+        CommandDescriptor(
+            id: "view.walkthroughs", title: "Browse Walkthroughs", category: .view,
+            scriptVerb: "show-walkthroughs"),
         CommandDescriptor(
             id: "git.toggleBlame", title: "Toggle Git Blame", category: .git,
             scriptVerb: "toggle-blame"),

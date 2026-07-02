@@ -119,6 +119,11 @@ final class CommandRegistryTests: XCTestCase {
             "convert-encoding",
             // re-align GFM tables in the active markdown editor via the palette (TSK-1335)
             "align-tables",
+            // hosted-view tools made ⌘K-discoverable (TSK-1413); see also the
+            // catalog-based CommandVerbCohesionTests which supersedes this
+            // hand-maintained allow-list.
+            "show-http-client", "show-feed-reader", "show-folder-treemap",
+            "show-dependency-graph", "show-walkthroughs",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }
