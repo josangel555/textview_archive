@@ -302,6 +302,56 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
         XCTAssertTrue(selected, "unlinked click selects its own node")
     }
 
+    /// M6.S4: the deck player reveals EXACTLY the timeline_state set — the
+    /// two consumers (engine query + JS player) agree, step for step. This
+    /// closes the declarative-guards-the-pixel loop.
+    func test_deck_player_reveals_match_timeline_state() async throws {
+        _ = try adapter.applyDSL(
+            baseRev: try adapter.currentRev(),
+            "frame #slide-0 role=slide {\n" +
+            "  text #dbase \"base\"\n" +
+            "  text #dr1 \"one\" step=1\n" +
+            "  text #dr2 \"two\" step=2\n}")
+        seq += 1
+        host.send(.setContent(seq: seq, html: try adapter.html()))
+        _ = await waitUntil(5) {
+            self.inbound.contains { if case .contentSet = $0 { return true }; return false }
+        }
+
+        // The engine's declared visible sets per step (via canvas_timeline).
+        let tlJSON = try adapter.timelineJSON()
+        let declared = Self.declaredVisible(tlJSON, slide: "nd:slide-0")
+        XCTAssertEqual(declared.count, 3, "steps 0,1,2 declared: \(tlJSON)")
+
+        host.send(.setDeckMode(on: true))
+        for step in 0..<declared.count {
+            inbound.removeAll()
+            host.send(.deckGoto(slide: 0, step: step))
+            let got = await waitUntil(5) {
+                self.inbound.contains {
+                    if case .deckStateChanged(_, let s, _) = $0 { return s == step }
+                    return false
+                }
+            }
+            XCTAssertTrue(got, "player reports step \(step)")
+            for case let .deckStateChanged(_, s, ids) in inbound where s == step {
+                XCTAssertEqual(Set(ids), declared[step],
+                               "rendered set == declared set at step \(step)")
+            }
+        }
+    }
+
+    /// Parse canvas_timeline JSON → [step: Set<visibleId>] for one slide.
+    static func declaredVisible(_ json: String, slide: String) -> [Set<String>] {
+        guard let data = json.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let slides = obj["slides"] as? [[String: Any]],
+            let s = slides.first(where: { ($0["id"] as? String) == slide }),
+            let steps = s["steps"] as? [[String: Any]]
+        else { return [] }
+        return steps.map { Set(($0["visibleIds"] as? [String]) ?? []) }
+    }
+
     func test_escape_posts_the_intent() async throws {
         host.probe(
             """

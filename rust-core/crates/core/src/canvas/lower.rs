@@ -376,6 +376,23 @@ fn emit_link_attr<'a>(get: &impl Fn(&str) -> Option<&'a Value>, out: &mut String
         escape_attr(target, out);
         out.push('"');
     }
+    // M6.S4 — the deck player reads role + step off the DOM (role=slide finds
+    // slides; step drives the reveal, mirroring timeline_state exactly).
+    if let Some(Value::Str(role)) = get("role") {
+        out.push_str(" data-cv-role=\"");
+        escape_attr(role, out);
+        out.push('"');
+    }
+    if let Some(Value::Num(step)) = get("step") {
+        if *step >= 0.0 {
+            out.push_str(" data-cv-step=\"");
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss,
+                    reason = "clamped non-negative")]
+            let s = (*step).min(f64::from(u16::MAX)) as u16;
+            out.push_str(&s.to_string());
+            out.push('"');
+        }
+    }
 }
 
 fn emit_table(

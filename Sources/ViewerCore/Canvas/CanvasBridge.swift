@@ -90,6 +90,10 @@ public enum CVOutboundMessage: Sendable {
     case setEditable(id: String, on: Bool)
     /// Compute the measured (geometry) lint stage (M4.S9).
     case measureLint(replyId: UInt64)
+    /// Enter/exit deck PLAYER mode (M6.S4): show one slide at a time.
+    case setDeckMode(on: Bool)
+    /// Go to a slide+step in the player (M6.S4).
+    case deckGoto(slide: Int, step: Int)
 }
 
 /// JS → Swift messages.
@@ -117,6 +121,9 @@ public enum CVInboundMessage: Equatable, Sendable {
     case undoRequested
     /// The measured-lint findings (M4.S9; the lint JSON shape).
     case measuredLint(replyId: UInt64, findings: [CanvasMeasuredFinding])
+    /// The player advanced (M6.S4): current slide/step + the visible ids the
+    /// runtime actually revealed (the pixel side of the timeline_state law).
+    case deckStateChanged(slide: Int, step: Int, visibleIds: [String])
 }
 
 /// One measured finding (mirrors the static lint's shape).
@@ -177,6 +184,13 @@ public enum CVBridgeCodec {
         case let .measureLint(replyId):
             dict["type"] = "measureLint"
             dict["replyId"] = replyId
+        case let .setDeckMode(on):
+            dict["type"] = "setDeckMode"
+            dict["on"] = on
+        case let .deckGoto(slide, step):
+            dict["type"] = "deckGoto"
+            dict["slide"] = slide
+            dict["step"] = step
         }
         let data = try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
         guard let s = String(data: data, encoding: .utf8) else {
@@ -253,6 +267,12 @@ public enum CVBridgeCodec {
             return .deletePressed
         case "undoRequested":
             return .undoRequested
+        case "deckStateChanged":
+            let ids = (dict["visibleIds"] as? [String]) ?? []
+            return .deckStateChanged(
+                slide: (dict["slide"] as? Int) ?? 0,
+                step: (dict["step"] as? Int) ?? 0,
+                visibleIds: ids)
         case "measuredLint":
             let findings: [CanvasMeasuredFinding] =
                 (dict["findings"] as? [[String: Any]] ?? []).compactMap { f in

@@ -39,6 +39,15 @@ public final class CanvasTabController: ObservableObject {
     /// Kit component names available to the insert palette (M5.S4) — the
     /// store's cmp:kit-* definition roots, refreshed with the outline.
     @Published public private(set) var kitComponents: [String] = []
+
+    /// The player's current position + the ids the runtime revealed (M6.S4).
+    @Published public private(set) var deckState: DeckState?
+
+    public struct DeckState: Equatable, Sendable {
+        public let slide: Int
+        public let step: Int
+        public let visibleIds: [String]
+    }
     /// kind → registry prop specs (parsed once from the vocabulary).
     public private(set) var propSpecs: [String: [CanvasPropSpec]] = [:]
 
@@ -180,6 +189,16 @@ public final class CanvasTabController: ObservableObject {
         }
     }
 
+    /// Enter/exit deck player mode (M6.S4).
+    public func setDeckMode(_ on: Bool) {
+        host.send(.setDeckMode(on: on))
+    }
+
+    /// Go to a slide/step in the player (M6.S4).
+    public func deckGoto(slide: Int, step: Int) {
+        host.send(.deckGoto(slide: slide, step: step))
+    }
+
     /// Ask the runtime for the measured lint stage (results cache via the
     /// inbound handler; also re-requested after every gesture apply).
     public func requestMeasuredLint() {
@@ -236,6 +255,8 @@ public final class CanvasTabController: ObservableObject {
             host.send(.clearSelection)
         case .undoRequested:
             undoLastBatch()
+        case .deckStateChanged(let slide, let step, let visibleIds):
+            deckState = DeckState(slide: slide, step: step, visibleIds: visibleIds)
         case .measuredLint(_, let findings):
             // Cache on the STORE doc so the sync canvas_lint tool can merge
             // the measured stage (M4.S9; the MCP dispatch cannot await a

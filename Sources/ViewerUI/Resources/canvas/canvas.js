@@ -459,6 +459,90 @@
     return findings;
   }
 
+  // M6.S4 — the deck PLAYER. Reveal rule MIRRORS timeline_state byte for
+  // byte (deck.rs S2): a node in the current slide is visible iff it has no
+  // data-cv-step OR its step <= the current step. One rule, two consumers.
+  var deck = { on: false, slide: 0, step: 0 };
+
+  function deckSlides() {
+    return Array.prototype.slice.call(
+      root.querySelectorAll('[data-cv-role="slide"]'));
+  }
+
+  function deckVisibleIds(slideEl, step) {
+    var out = [];
+    var nodes = slideEl.querySelectorAll("[data-cv-id]");
+    for (var i = 0; i < nodes.length; i++) {
+      var s = nodes[i].getAttribute("data-cv-step");
+      if (s === null || parseInt(s, 10) <= step) {
+        out.push(nodes[i].getAttribute("data-cv-id"));
+      }
+    }
+    out.sort();
+    return out;
+  }
+
+  function deckApply() {
+    var slides = deckSlides();
+    if (deck.slide < 0) deck.slide = 0;
+    if (deck.slide >= slides.length) deck.slide = Math.max(0, slides.length - 1);
+    for (var i = 0; i < slides.length; i++) {
+      slides[i].style.display = (i === deck.slide) ? "" : "none";
+    }
+    var cur = slides[deck.slide];
+    var reported = [];
+    if (cur) {
+      var nodes = cur.querySelectorAll("[data-cv-step]");
+      for (var j = 0; j < nodes.length; j++) {
+        var st = parseInt(nodes[j].getAttribute("data-cv-step"), 10);
+        nodes[j].style.visibility = (st <= deck.step) ? "" : "hidden";
+      }
+      reported = deckVisibleIds(cur, deck.step);
+    }
+    post({
+      type: "deckStateChanged",
+      slide: deck.slide,
+      step: deck.step,
+      visibleIds: reported
+    });
+  }
+
+  function deckMaxStep(slideEl) {
+    var max = 0;
+    var nodes = slideEl ? slideEl.querySelectorAll("[data-cv-step]") : [];
+    for (var i = 0; i < nodes.length; i++) {
+      var s = parseInt(nodes[i].getAttribute("data-cv-step"), 10);
+      if (s > max) max = s;
+    }
+    return max;
+  }
+
+  function deckAdvance(dir) {
+    var slides = deckSlides();
+    var cur = slides[deck.slide];
+    var max = deckMaxStep(cur);
+    if (dir > 0) {
+      if (deck.step < max) { deck.step += 1; }
+      else if (deck.slide < slides.length - 1) { deck.slide += 1; deck.step = 0; }
+    } else {
+      if (deck.step > 0) { deck.step -= 1; }
+      else if (deck.slide > 0) {
+        deck.slide -= 1;
+        deck.step = deckMaxStep(slides[deck.slide]);
+      }
+    }
+    deckApply();
+  }
+
+  window.addEventListener("keydown", function (e) {
+    if (!deck.on) return;
+    if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") {
+      e.preventDefault(); deckAdvance(1);
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      e.preventDefault(); deckAdvance(-1);
+    }
+  });
+
   window.cvDispatch = function (json) {
     var msg;
     try {
@@ -523,6 +607,26 @@
           replyId: msg.replyId,
           findings: measureLint()
         });
+        break;
+      }
+      case "setDeckMode": {
+        deck.on = !!msg.on;
+        if (deck.on) { deck.slide = 0; deck.step = 0; deckApply(); }
+        else {
+          // Restore: show every slide + every stepped node.
+          var slides = deckSlides();
+          for (var si = 0; si < slides.length; si++) {
+            slides[si].style.display = "";
+            var stepped = slides[si].querySelectorAll("[data-cv-step]");
+            for (var k = 0; k < stepped.length; k++) stepped[k].style.visibility = "";
+          }
+        }
+        break;
+      }
+      case "deckGoto": {
+        deck.slide = msg.slide | 0;
+        deck.step = msg.step | 0;
+        deckApply();
         break;
       }
       case "queryText": {
