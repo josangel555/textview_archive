@@ -156,7 +156,7 @@ fn emit(store: &Store, id: &Id, out: &mut String) {
                 escape_attr(&style, out);
                 out.push('"');
             }
-            out.push_str(">");
+            out.push('>');
         }
         _ => {
             out.push_str("<div data-cv-id=\"");
