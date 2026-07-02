@@ -86,4 +86,49 @@ final class CanvasBridgeCodecTests: XCTestCase {
         XCTAssertThrowsError(try CVBridgeCodec.decode("{\"type\":\"ready\"}"))
         XCTAssertThrowsError(try CVBridgeCodec.decode("{\"v\":1,\"type\":\"nope\"}"))
     }
+
+    // MARK: - M3.S2 — edit intents + selection commands (TSK-1373)
+
+    func test_encode_selection_and_editable_commands() throws {
+        let sel = try CVBridgeCodec.encode(.setSelection(ids: ["nd:a", "nd:b"]))
+        let obj = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(sel.utf8)) as? [String: Any])
+        XCTAssertEqual(obj["type"] as? String, "setSelection")
+        XCTAssertEqual(obj["ids"] as? [String], ["nd:a", "nd:b"])
+        let clear = try CVBridgeCodec.encode(.clearSelection)
+        XCTAssertTrue(clear.contains("\"type\":\"clearSelection\""))
+        let edit = try CVBridgeCodec.encode(.setEditable(id: "nd:t", on: true))
+        let eobj = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(edit.utf8)) as? [String: Any])
+        XCTAssertEqual(eobj["id"] as? String, "nd:t")
+        XCTAssertEqual(eobj["on"] as? Bool, true)
+    }
+
+    func test_decode_edit_intents() throws {
+        XCTAssertEqual(
+            try CVBridgeCodec.decode("{\"v\":1,\"type\":\"nodeClicked\",\"id\":\"nd:a\",\"shift\":true}"),
+            .nodeClicked(id: "nd:a", shift: true))
+        XCTAssertEqual(
+            try CVBridgeCodec.decode("{\"v\":1,\"type\":\"nodeClicked\",\"id\":\"nd:a\"}"),
+            .nodeClicked(id: "nd:a", shift: false), "shift defaults false")
+        XCTAssertEqual(
+            try CVBridgeCodec.decode("{\"v\":1,\"type\":\"textEdited\",\"id\":\"nd:t\",\"text\":\"new copy\"}"),
+            .textEdited(id: "nd:t", text: "new copy"))
+        XCTAssertEqual(
+            try CVBridgeCodec.decode(
+                "{\"v\":1,\"type\":\"dragEnded\",\"id\":\"nd:a\",\"parent\":\"nd:col\",\"beforeId\":\"nd:b\"}"),
+            .dragEnded(id: "nd:a", parent: "nd:col", beforeId: "nd:b"))
+        XCTAssertEqual(
+            try CVBridgeCodec.decode(
+                "{\"v\":1,\"type\":\"dragEnded\",\"id\":\"nd:a\",\"parent\":\"nd:col\"}"),
+            .dragEnded(id: "nd:a", parent: "nd:col", beforeId: nil), "append form")
+        XCTAssertEqual(
+            try CVBridgeCodec.decode("{\"v\":1,\"type\":\"escapePressed\"}"),
+            .escapePressed)
+        // Malformed intents fail typed, not silently.
+        XCTAssertThrowsError(
+            try CVBridgeCodec.decode("{\"v\":1,\"type\":\"nodeClicked\"}"))
+        XCTAssertThrowsError(
+            try CVBridgeCodec.decode("{\"v\":1,\"type\":\"textEdited\",\"id\":\"nd:t\"}"))
+    }
 }

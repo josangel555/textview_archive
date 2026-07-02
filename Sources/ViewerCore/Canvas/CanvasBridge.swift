@@ -75,6 +75,13 @@ public enum CVOutboundMessage: Sendable {
     case queryGeometry(replyId: UInt64, ids: [String])
     /// Read back one node's text content (E2E assert aid).
     case queryText(replyId: UInt64, id: String)
+    // M3.S2 (TSK-1373) — WYSIWYG selection/edit commands (v1-additive):
+    /// Show the selection overlay on `ids` (empty = clear).
+    case setSelection(ids: [String])
+    /// Clear the selection overlay.
+    case clearSelection
+    /// Toggle contenteditable on a text node (inline editing).
+    case setEditable(id: String, on: Bool)
 }
 
 /// JS → Swift messages.
@@ -86,6 +93,16 @@ public enum CVInboundMessage: Equatable, Sendable {
     case text(replyId: UInt64, found: Bool, text: String?)
     case error(message: String)
     case unsupportedVersion(v: Int)
+    // M3.S2 (TSK-1373) — WYSIWYG edit intents (v1-additive):
+    /// A node was clicked (hit-test result; modifiers for multi-select later).
+    case nodeClicked(id: String, shift: Bool)
+    /// An inline text edit committed.
+    case textEdited(id: String, text: String)
+    /// A drag ended over a drop slot: re-place `id` under `parent` before
+    /// `beforeId` (nil = append).
+    case dragEnded(id: String, parent: String, beforeId: String?)
+    /// Escape pressed (clear selection / cancel edit).
+    case escapePressed
 }
 
 /// Codec faults (decode side).
@@ -119,6 +136,15 @@ public enum CVBridgeCodec {
             dict["type"] = "queryText"
             dict["replyId"] = replyId
             dict["id"] = id
+        case let .setSelection(ids):
+            dict["type"] = "setSelection"
+            dict["ids"] = ids
+        case .clearSelection:
+            dict["type"] = "clearSelection"
+        case let .setEditable(id, on):
+            dict["type"] = "setEditable"
+            dict["id"] = id
+            dict["on"] = on
         }
         let data = try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
         guard let s = String(data: data, encoding: .utf8) else {
@@ -174,6 +200,23 @@ public enum CVBridgeCodec {
             )
         case "error":
             return .error(message: dict["message"] as? String ?? "")
+        case "nodeClicked":
+            guard let id = dict["id"] as? String else {
+                throw CVBridgeCodecError.missingField("id")
+            }
+            return .nodeClicked(id: id, shift: dict["shift"] as? Bool ?? false)
+        case "textEdited":
+            guard let id = dict["id"] as? String, let text = dict["text"] as? String else {
+                throw CVBridgeCodecError.missingField("id/text")
+            }
+            return .textEdited(id: id, text: text)
+        case "dragEnded":
+            guard let id = dict["id"] as? String, let parent = dict["parent"] as? String else {
+                throw CVBridgeCodecError.missingField("id/parent")
+            }
+            return .dragEnded(id: id, parent: parent, beforeId: dict["beforeId"] as? String)
+        case "escapePressed":
+            return .escapePressed
         default:
             throw CVBridgeCodecError.unknownType(type)
         }
