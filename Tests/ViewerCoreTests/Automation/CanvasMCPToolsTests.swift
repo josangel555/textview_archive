@@ -401,4 +401,37 @@ final class CanvasMCPToolsTests: XCTestCase {
             "flavor": .string("react"),
         ]), "unknown flavor rejects")
     }
+
+    // MARK: M6.S1 — the presentation mode template (TSK-1395)
+
+    func test_presentation_mode_seeds_slides_token_and_survives_io() throws {
+        guard case .object(let n) = try call("canvas_new", [
+            "mode": .string("presentation"), "slides": .int(4),
+        ]), case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+
+        let openDoc = try host.automationCanvasStore.doc(doc)
+        XCTAssertTrue(CanvasPresentationMode.isPresentation(openDoc), "deck token seeds")
+        guard case .object(let read) = try call("canvas_read", ["doc": .string(doc)]),
+              case .string(let dsl)? = read["dsl"] else { return XCTFail("read") }
+        XCTAssertTrue(dsl.contains("#slide-0") && dsl.contains("#slide-3"), "4 slides")
+        XCTAssertFalse(dsl.contains("#slide-4"), "exactly 4")
+        XCTAssertTrue(dsl.contains("role=\"slide\""), "slides carry role")
+        XCTAssertTrue(dsl.contains("minH=720"), "16:9 preset")
+        XCTAssertTrue(dsl.contains("component #kit-card"), "kit imported")
+
+        // Deck survives save/load.
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent("deck-\(UUID().uuidString).canvas")
+        defer { try? FileManager.default.removeItem(at: target) }
+        _ = try call("canvas_save", ["doc": .string(doc), "path": .string(target.path)])
+        host.automationCanvasStore.close(CanvasDocumentStore.docID(for: target))
+        let reopened = try host.automationCanvasStore.open(url: target)
+        XCTAssertTrue(CanvasPresentationMode.isPresentation(reopened), "deck rides io")
+
+        // Plain new: not a deck.
+        guard case .object(let p) = try call("canvas_new", [:]),
+              case .string(let plain)? = p["doc"] else { return XCTFail("plain") }
+        XCTAssertFalse(CanvasPresentationMode.isPresentation(
+            try host.automationCanvasStore.doc(plain)))
+    }
 }

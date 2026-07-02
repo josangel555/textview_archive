@@ -822,16 +822,23 @@ public enum MCPToolCatalog {
         inputSchema: schema([
             "mode":     .object(["type": .string("string")]),
             "template": .object(["type": .string("string")]),
+            "slides":   .object(["type": .string("integer")]),
         ])
     )
 
     private static func canvasNew(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
         do {
             let doc = try host.automationCanvasStore.create()
-            if (try? args.string("mode")) == "ui-design" {
+            switch (try? args.string("mode")) {
+            case "ui-design":
                 let template = (try? args.string("template"))
                     .flatMap(CanvasUIDesignMode.Template.init(rawValue:)) ?? .both
                 try CanvasUIDesignMode.seed(into: doc, template: template)
+            case "presentation":
+                let slides = (try? args.int("slides")) ?? 3
+                try CanvasPresentationMode.seed(into: doc, slides: slides)
+            default:
+                break
             }
             return .object(["doc": .string(doc.id), "rev": .int(Int(doc.lastKnownRev))])
         } catch {
