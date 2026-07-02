@@ -114,6 +114,23 @@ public enum MarkdownLinks {
         let n = chars.count
         var i = 0
         while i < n {
+            // Skip inline code spans: a run of N backticks is closed by a run of
+            // exactly N backticks; `[text](url)` inside one is code, not a link.
+            if chars[i] == "`" {
+                var run = 0
+                while i + run < n, chars[i + run] == "`" { run += 1 }
+                var k = i + run
+                while k < n {
+                    if chars[k] == "`" {
+                        var r2 = 0
+                        while k + r2 < n, chars[k + r2] == "`" { r2 += 1 }
+                        if r2 == run { i = k + r2; break }   // matched close → skip span
+                        k += r2
+                    } else { k += 1 }
+                }
+                if k >= n { i += run }   // no matching close → backticks are literal
+                continue
+            }
             guard chars[i] == "[" else { i += 1; continue }
             let isImage = i > 0 && chars[i - 1] == "!"
 

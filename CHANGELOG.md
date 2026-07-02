@@ -74,6 +74,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Copy Reference covers a selection — now with a menu item + shortcut.** Select several lines in the editor and run **Edit ▸ Copy Reference** (⌘⌥⇧C, also in the ⌘K command palette) to copy a line-RANGE `mdv://` reference (`…?line=10&endLine=20`) to paste to an agent — "these are the lines I mean". With no selection it copies the current line as before. (Source-view selections carry the range today.)
 
 ### Fixed
+- **Check Links no longer false-flags code examples.** A `[text](url)` written inside an inline code span (common in docs *about* Markdown) was treated as a real link and reported broken; code-span links are now correctly ignored.
 - **Document outline / Table of Contents no longer shows false headings from code.** A `#`-comment inside an indented (4-space) code block was mistaken for a heading, polluting the outline sidebar and inserted TOC; it's now correctly ignored (CommonMark 0–3 space rule).
 - **Opening a Word (.docx) document keeps its tables.** Tables in a .docx used to flatten into loose lines; they now render as proper Markdown tables (matching the headings/lists the viewer already preserved).
 - **Pasting a nested list keeps its indentation.** A rich-text paste of a nested bullet/numbered list used to merge the sub-items into their parent; nested items now indent correctly.
