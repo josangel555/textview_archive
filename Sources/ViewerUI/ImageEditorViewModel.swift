@@ -207,10 +207,26 @@ public final class ImageEditorViewModel: ObservableObject {
     /// paint (or revert) to adjust tone again. (usability audit 2026-07-02)
     public var isToneEditable: Bool { paintCanvas == nil }
 
-    /// `true` when there is a committed edit OR a paint stroke to undo.
-    public var canUndo: Bool { undoStack.canUndo || canUndoPaint }
-    /// `true` when there is a previously-undone edit or paint stroke to redo.
-    public var canRedo: Bool { undoStack.canRedo || canRedoPaint }
+    /// `true` when there is any edit — geometry op, paint stroke, or overlay
+    /// annotation — to undo. Driven by the unified `undoOrder` timeline (TSK-1424)
+    /// so ⌘Z peels the three edit layers in the exact order they happened.
+    public var canUndo: Bool { !undoOrder.isEmpty }
+    /// `true` when there is any previously-undone edit to redo.
+    public var canRedo: Bool { !redoOrder.isEmpty }
+
+    // Unified undo timeline (TSK-1424): the image editor has THREE independent
+    // edit layers — committed geometry ops (`undoStack`), the destructive paint
+    // buffer (`paintUndo`), and the vector overlay (`overlayUndo`). Each user
+    // action appends its layer here (and clears redo); ⌘Z pops the last layer and
+    // routes to that layer's undo, so interleaved edits peel in true order rather
+    // than one layer shadowing another. Overlay edits were previously NOT undoable
+    // at all (annotations were permanent) — this is the same missing-undo class as
+    // the paint-stroke fix (TSK-1416).
+    private enum UndoLayer { case op, paint, overlay }
+    private var undoOrder: [UndoLayer] = []
+    private var redoOrder: [UndoLayer] = []
+    private var overlayUndo: [VectorOverlay] = []
+    private var overlayRedo: [VectorOverlay] = []
 
     /// The full document to render / export: committed geometry history plus
     /// each non-identity tonal slider folded into a single op, applied in a
@@ -405,6 +421,8 @@ public final class ImageEditorViewModel: ObservableObject {
         let next = base.appending(op).ops
         undoStack.push(next)
         base = base.appending(op)
+        undoOrder.append(.op)
+        redoOrder.removeAll()
         render()
     }
 
@@ -417,22 +435,71 @@ public final class ImageEditorViewModel: ObservableObject {
     /// when there is nothing to undo). Does not touch the tonal sliders.
     public func undoGeometry() { undo() }
 
-    /// Undo the most recent committed op, syncing `base.ops` to the stack's new
-    /// current state, then re-render.
+    /// Undo the most recent edit — routes to the correct layer (op / paint /
+    /// overlay) via the unified `undoOrder` timeline so interleaved edits peel in
+    /// the exact order they happened (TSK-1424).
     public func undo() {
-        if canUndoPaint { _ = undoPaint(); return }
-        let state = undoStack.undo()
-        base = ImageDocument(source: base.source, ops: state)
-        render()
+        guard let layer = undoOrder.popLast() else { return }
+        redoOrder.append(layer)
+        switch layer {
+        case .op:
+            let state = undoStack.undo()
+            base = ImageDocument(source: base.source, ops: state)
+            render()
+        case .paint:
+            _ = peelPaintUndo()
+        case .overlay:
+            _ = peelOverlayUndo()
+        }
     }
 
-    /// Redo the most recently undone committed op (no-op when there is no redo
-    /// branch), then re-render.
+    /// Redo the most recently undone edit (no-op when there is no redo branch).
     public func redo() {
-        if canRedoPaint { _ = redoPaint(); return }
-        let state = undoStack.redo()
-        base = ImageDocument(source: base.source, ops: state)
-        render()
+        guard let layer = redoOrder.popLast() else { return }
+        undoOrder.append(layer)
+        switch layer {
+        case .op:
+            let state = undoStack.redo()
+            base = ImageDocument(source: base.source, ops: state)
+            render()
+        case .paint:
+            _ = peelPaintRedo()
+        case .overlay:
+            _ = peelOverlayRedo()
+        }
+    }
+
+    // MARK: - Overlay (vector annotation) undo — peels the overlay layer.
+    @discardableResult
+    private func peelOverlayUndo() -> Bool {
+        guard let restore = overlayUndo.popLast() else { return false }
+        overlayRedo.append(overlay)
+        overlay = restore
+        selectedShapeID = nil
+        return true
+    }
+    @discardableResult
+    private func peelOverlayRedo() -> Bool {
+        guard let restore = overlayRedo.popLast() else { return false }
+        overlayUndo.append(overlay)
+        overlay = restore
+        selectedShapeID = nil
+        return true
+    }
+
+    /// Run an overlay mutation, recording a pre-edit snapshot on the unified undo
+    /// timeline IFF it actually changed the overlay (no-ops don't pollute undo).
+    @discardableResult
+    private func mutatingOverlay<T>(_ body: () -> T) -> T {
+        let before = overlay
+        let result = body()
+        if overlay != before {
+            overlayUndo.append(before)
+            overlayRedo.removeAll()
+            undoOrder.append(.overlay)
+            redoOrder.removeAll()
+        }
+        return result
     }
 
     // MARK: - Paint-stroke undo (usability audit 2026-07-02)
@@ -460,26 +527,46 @@ public final class ImageEditorViewModel: ObservableObject {
         guard beginPaintSessionIfNeeded(), let canvas = paintCanvas else { return }
         paintUndo.append(canvas)
         paintRedo.removeAll()
+        undoOrder.append(.paint)
+        redoOrder.removeAll()
         evictPaintUndoOverBudget()
     }
 
-    /// Undo the most recent paint stroke (restore its pre-stroke snapshot).
+    /// Peel the paint layer (restore the pre-stroke snapshot). Order-agnostic —
+    /// `undo()` owns the unified timeline; the public `undoPaint()` syncs it.
     @discardableResult
-    public func undoPaint() -> Bool {
+    private func peelPaintUndo() -> Bool {
         guard let restore = paintUndo.popLast(), let current = paintCanvas else { return false }
         paintRedo.append(current)
         paintCanvas = restore
         render()
         return true
     }
-
-    /// Redo the most recently undone paint stroke.
     @discardableResult
-    public func redoPaint() -> Bool {
+    private func peelPaintRedo() -> Bool {
         guard let restore = paintRedo.popLast(), let current = paintCanvas else { return false }
         paintUndo.append(current)
         paintCanvas = restore
         render()
+        return true
+    }
+
+    /// Undo the most recent paint stroke (restore its pre-stroke snapshot), and
+    /// keep the unified timeline in sync for direct callers.
+    @discardableResult
+    public func undoPaint() -> Bool {
+        guard peelPaintUndo() else { return false }
+        if let i = undoOrder.lastIndex(of: .paint) { undoOrder.remove(at: i) }
+        redoOrder.append(.paint)
+        return true
+    }
+
+    /// Redo the most recently undone paint stroke.
+    @discardableResult
+    public func redoPaint() -> Bool {
+        guard peelPaintRedo() else { return false }
+        if let i = redoOrder.lastIndex(of: .paint) { redoOrder.remove(at: i) }
+        undoOrder.append(.paint)
         return true
     }
 
@@ -505,6 +592,11 @@ public final class ImageEditorViewModel: ObservableObject {
         base = base.reverted()
         undoStack.reset(to: [])
         paintCanvas = nil          // discard the destructive paint session too
+        // "Start over" ⇒ drop the whole unified undo history across all layers
+        // (TSK-1424; also clears paintUndo/Redo, which the old revertAll missed).
+        undoOrder.removeAll(); redoOrder.removeAll()
+        overlayUndo.removeAll(); overlayRedo.removeAll()
+        paintUndo.removeAll(); paintRedo.removeAll()
         resetTonal()   // re-renders
     }
 
@@ -663,6 +755,10 @@ public final class ImageEditorViewModel: ObservableObject {
     public func discardPaint() {
         guard paintCanvas != nil else { return }
         paintCanvas = nil
+        // The paint session (and its slice of the undo timeline) is gone.
+        paintUndo.removeAll(); paintRedo.removeAll()
+        undoOrder.removeAll { $0 == .paint }
+        redoOrder.removeAll { $0 == .paint }
         render()
     }
 
@@ -694,7 +790,7 @@ public final class ImageEditorViewModel: ObservableObject {
     /// overlay draws above the raster preview, not through `Renderer`.
     @discardableResult
     public func addShape(_ shape: VectorShape) -> UUID {
-        overlay.add(shape)
+        mutatingOverlay { overlay.add(shape) }
         return shape.id
     }
 
@@ -715,30 +811,30 @@ public final class ImageEditorViewModel: ObservableObject {
     @discardableResult
     public func removeShape(id: UUID) -> Bool {
         if selectedShapeID == id { selectedShapeID = nil }
-        return overlay.remove(id: id)
+        return mutatingOverlay { overlay.remove(id: id) }
     }
 
     /// Translate the shape with `id` by a normalized delta (no-op for unknown).
     @discardableResult
     public func moveShape(id: UUID, byX dx: CGFloat, y dy: CGFloat) -> Bool {
-        overlay.move(id: id, byX: dx, y: dy)
+        mutatingOverlay { overlay.move(id: id, byX: dx, y: dy) }
     }
 
     /// Raise the shape with `id` one step in the z-order (no-op for unknown).
     @discardableResult
     public func bringShapeForward(id: UUID) -> Bool {
-        overlay.bringForward(id: id)
+        mutatingOverlay { overlay.bringForward(id: id) }
     }
 
     /// Lower the shape with `id` one step in the z-order (no-op for unknown).
     @discardableResult
     public func sendShapeBackward(id: UUID) -> Bool {
-        overlay.sendBackward(id: id)
+        mutatingOverlay { overlay.sendBackward(id: id) }
     }
 
     /// Clear every vector annotation.
     public func clearShapes() {
-        overlay.removeAll()
+        mutatingOverlay { overlay.removeAll() }
         selectedShapeID = nil
     }
 
@@ -771,14 +867,14 @@ public final class ImageEditorViewModel: ObservableObject {
     @discardableResult
     public func moveSelectedShape(byX dx: CGFloat, y dy: CGFloat) -> Bool {
         guard let id = selectedShapeID else { return false }
-        return overlay.move(id: id, byX: dx, y: dy)
+        return mutatingOverlay { overlay.move(id: id, byX: dx, y: dy) }
     }
 
     /// Set the selected shape's normalized frame (resize / reposition). No-op without one.
     @discardableResult
     public func resizeSelectedShape(to frame: CGRect) -> Bool {
         guard let id = selectedShapeID else { return false }
-        return overlay.setFrame(id: id, frame)
+        return mutatingOverlay { overlay.setFrame(id: id, frame) }
     }
 
     /// Replace the selected shape's style (colour / line-width / fill — "change
@@ -786,7 +882,7 @@ public final class ImageEditorViewModel: ObservableObject {
     @discardableResult
     public func restyleSelectedShape(_ style: ViewerCore.ShapeStyle) -> Bool {
         guard let id = selectedShapeID else { return false }
-        return overlay.setStyle(id: id, style)
+        return mutatingOverlay { overlay.setStyle(id: id, style) }
     }
 
     /// Set the selected `.text` shape's string + font size (the editable text element — TSK-1310).
@@ -794,7 +890,7 @@ public final class ImageEditorViewModel: ObservableObject {
     @discardableResult
     public func setSelectedShapeText(_ text: String?, fontSize: Double?) -> Bool {
         guard let id = selectedShapeID else { return false }
-        return overlay.setText(id: id, text, fontSize: fontSize)
+        return mutatingOverlay { overlay.setText(id: id, text, fontSize: fontSize) }
     }
 
     /// Set the selected shape's rotation in degrees (clockwise, about its centre — TSK-1321).
@@ -802,14 +898,14 @@ public final class ImageEditorViewModel: ObservableObject {
     @discardableResult
     public func setSelectedShapeRotation(_ degrees: Double?) -> Bool {
         guard let id = selectedShapeID else { return false }
-        return overlay.setRotation(id: id, degrees)
+        return mutatingOverlay { overlay.setRotation(id: id, degrees) }
     }
 
     /// Set the selected `.text` shape's font style — bold / italic (TSK-1310). No-op without a selection.
     @discardableResult
     public func setSelectedShapeTextStyle(bold: Bool?, italic: Bool?) -> Bool {
         guard let id = selectedShapeID else { return false }
-        return overlay.setTextStyle(id: id, bold: bold, italic: italic)
+        return mutatingOverlay { overlay.setTextStyle(id: id, bold: bold, italic: italic) }
     }
 
     // MARK: - Edit-state persistence (TSK-1303)
