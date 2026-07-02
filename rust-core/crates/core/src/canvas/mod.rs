@@ -14,6 +14,7 @@
 //!
 //! Wire: MessagePack maps via [`crate::wire`] (`to_vec_named` framing rules).
 
+pub mod lower;
 pub mod ops;
 pub mod props;
 pub mod registry;
