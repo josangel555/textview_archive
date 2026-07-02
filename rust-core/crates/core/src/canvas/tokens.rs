@@ -88,6 +88,14 @@ impl TokenStore {
         self.defs.contains_key(path)
     }
 
+    /// The replacement path when `path` is deprecated (lint steering).
+    #[must_use]
+    pub fn deprecated_replacement(&self, path: &str) -> Option<&str> {
+        self.defs
+            .get(path)
+            .and_then(|d| d.deprecated_for.as_deref())
+    }
+
     /// Is `path` a tier-1 primitive (agents are lint-steered away from these)?
     #[must_use]
     pub fn is_primitive(path: &str) -> bool {

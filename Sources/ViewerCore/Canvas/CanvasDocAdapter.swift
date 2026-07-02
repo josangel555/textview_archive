@@ -68,12 +68,21 @@ public enum CanvasDocOp: Equatable, Sendable {
     }
 }
 
+/// One advisory lint finding (severity/code/id/message — plain values).
+public struct CanvasDocLint: Equatable, Sendable {
+    public let severity: String
+    public let code: String
+    public let id: String?
+    public let message: String
+}
+
 /// The apply result in bridge vocabulary.
 public struct CanvasDocApplied: Sendable {
     public let rev: UInt64
     public let patches: [CVPatchInstruction]
     public let minted: [String]
     public let noop: Bool
+    public let lint: [CanvasDocLint]
 }
 
 /// Adapter over a real canvas document.
@@ -102,7 +111,11 @@ public final class CanvasDocAdapter {
             rev: applied.rev,
             patches: applied.patches.map(Self.instruction),
             minted: applied.minted,
-            noop: applied.noop
+            noop: applied.noop,
+            lint: applied.lint.map {
+                CanvasDocLint(
+                    severity: $0.severity, code: $0.code, id: $0.id, message: $0.message)
+            }
         )
     }
 

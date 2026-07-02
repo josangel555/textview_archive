@@ -7,6 +7,13 @@ hours.
 
 ## Session 2026-07-02 — Canvas M1 build lessons
 
+- **SwiftPM staleness trap, xctest-link variant: touching sources is NOT enough when only the
+  external `.a` changed.** Touched Swift files recompile to CONTENT-IDENTICAL objects, so
+  SwiftPM skips the relink and the `.xctest` bundle keeps the OLD staticlib (live case: the
+  S6 lint field rode the wire in cargo + C-ABI tests but Swift saw `[]`). Remedy after a
+  `build-rust-core.sh` refresh mid-session: `rm -rf .build/arm64-apple-macosx/debug/
+  MarkdownViewerPackageTests.xctest` (or make a real content change), then re-run.
+
 - **DOM-patch anchors must be captured at each op's APPLY time, never recomputed from the
   post-batch store.** A batch [insert X before S; remove S] plans X's `insertBefore` anchor
   wrong if computed from final state (S is gone there) — while the DOM at that patch's

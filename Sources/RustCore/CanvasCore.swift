@@ -110,12 +110,21 @@ public enum CanvasPatch: Equatable, Sendable {
     case moveNode(id: String, parent: String, before: String?)
 }
 
+/// One advisory lint finding (S6 — rides every apply).
+public struct CanvasLintFinding: Equatable, Sendable {
+    public let severity: String
+    public let code: String
+    public let id: String?
+    public let message: String
+}
+
 /// A successful apply.
 public struct CanvasApplied: Equatable, Sendable {
     public let rev: UInt64
     public let patches: [CanvasPatch]
     public let minted: [String]
     public let noop: Bool
+    public let lint: [CanvasLintFinding]
 }
 
 /// A structured rejection (valid frame; refused batch).
@@ -232,7 +241,20 @@ public final class CanvasDocSession {
             let patches = try map.require("patches").arrayValue().map(Self.decodePatch)
             let minted = try map.require("minted").arrayValue().map { try $0.stringValue() }
             let noop = try map.require("noop").boolValue()
-            return CanvasApplied(rev: rev, patches: patches, minted: minted, noop: noop)
+            let lint: [CanvasLintFinding] =
+                try map["lint"].map { value in
+                    try value.arrayValue().map { entry in
+                        let m = try entry.mapValue()
+                        return CanvasLintFinding(
+                            severity: try m.require("severity").stringValue(),
+                            code: try m.require("code").stringValue(),
+                            id: m["id"].flatMap { try? $0.stringValue() },
+                            message: try m.require("message").stringValue()
+                        )
+                    }
+                } ?? []
+            return CanvasApplied(
+                rev: rev, patches: patches, minted: minted, noop: noop, lint: lint)
         } catch let e as MsgPackError {
             throw CoreError.decode("\(e)")
         }

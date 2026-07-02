@@ -285,6 +285,11 @@ impl Store {
         self.records.get(id)
     }
 
+    /// All live record ids (unordered; callers sort for determinism).
+    pub fn ids(&self) -> impl Iterator<Item = &Id> {
+        self.records.keys()
+    }
+
     /// Mint a fresh, never-used id with the given prefix.
     pub fn mint_id(&mut self, prefix: &str) -> Result<Id, StoreError> {
         loop {

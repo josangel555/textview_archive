@@ -1417,6 +1417,11 @@ struct CanvasResp {
     rev: Option<u64>,
     patches: Option<Vec<CanvasPatchEcho>>,
     rejected: Option<String>,
+    lint: Option<Vec<CanvasLintEcho>>,
+}
+#[derive(Debug, serde::Deserialize)]
+struct CanvasLintEcho {
+    code: String,
 }
 #[derive(Debug, serde::Deserialize)]
 struct CanvasPatchEcho {
@@ -1465,6 +1470,23 @@ fn canvas_doc_open_apply_html_roundtrip() {
     assert_eq!(patches.len(), 1);
     assert_eq!(patches[0].op, "insertNode");
     assert!(patches[0].html.as_deref().unwrap().contains(">from the ABI<"));
+
+    // Lint rides the C-ABI response too (S6).
+    let lit = canvas_req(
+        1,
+        vec![CanvasWireOp::Insert {
+            id: "nd:s".to_owned(),
+            kind: "shape".to_owned(),
+            parent: "pg:1".to_owned(),
+            pos: CanvasWirePos::Last,
+            props: vec![("fill".to_owned(), "#ff0000".to_owned())],
+        }],
+    );
+    let (st, resp) = canvas_apply(h, &lit);
+    assert_eq!(st, MdvStatus::Ok);
+    let echo: CanvasResp = mdvcore_core::wire::decode_frame(&resp).unwrap();
+    let lint = echo.lint.unwrap_or_default();
+    assert!(lint.iter().any(|l| l.code == "raw-literal-themeable"), "got {lint:?}");
 
     // State stuck: re-lower carries the node.
     let mut buf2 = MdvBuf::empty();

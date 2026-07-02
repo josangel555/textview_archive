@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::lint::{Lint, LintSeverity};
 use super::ops::{ApplyError, CanvasOp, DocState};
 use super::patch::Patch;
 use super::props::{PropKey, Value};
@@ -157,7 +158,33 @@ impl WirePatch {
     }
 }
 
-/// The apply response frame.
+/// One advisory lint finding on the wire.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WireLint {
+    severity: String,
+    code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    message: String,
+}
+
+impl WireLint {
+    fn from_lint(l: &Lint) -> WireLint {
+        WireLint {
+            severity: match l.severity {
+                LintSeverity::Warn => "warn".to_owned(),
+                LintSeverity::Info => "info".to_owned(),
+            },
+            code: l.code.to_owned(),
+            id: l.id.as_ref().map(|i| i.as_str().to_owned()),
+            message: l.message.clone(),
+        }
+    }
+}
+
+/// The apply response frame. `lint` rides EVERY apply (02 §8 — the agent
+/// sees problems without asking).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ApplyResponse {
@@ -165,6 +192,7 @@ struct ApplyResponse {
     patches: Vec<WirePatch>,
     minted: Vec<String>,
     noop: bool,
+    lint: Vec<WireLint>,
 }
 
 /// Application-level rejection (a VALID frame carrying a refused batch —
@@ -258,7 +286,6 @@ pub fn apply_wire(
     tokens: &TokenStore,
     req_frame: &[u8],
 ) -> Result<Vec<u8>, WireFault> {
-    let _ = tokens; // reserved: token-aware planning (S6 lint rides here)
     let req: ApplyRequest = base_wire::decode_frame(req_frame)?;
     let mut ops: Vec<CanvasOp> = Vec::with_capacity(req.ops.len());
     for wire_op in req.ops {
@@ -267,11 +294,13 @@ pub fn apply_wire(
     match doc.apply(req.base_rev, &ops) {
         Ok(applied) => {
             let patches = super::patch::plan(doc, &ops, &applied.effects);
+            let findings = super::lint::run(doc, tokens);
             base_wire::encode_frame(&ApplyResponse {
                 rev: applied.rev,
                 patches: patches.iter().map(WirePatch::from_patch).collect(),
                 minted: applied.minted.iter().map(|m| m.as_str().to_owned()).collect(),
                 noop: applied.noop,
+                lint: findings.iter().map(WireLint::from_lint).collect(),
             })
         }
         Err(e) => {
@@ -340,6 +369,12 @@ mod tests {
         noop: Option<bool>,
         rejected: Option<String>,
         current_rev: Option<u64>,
+        lint: Option<Vec<LintEcho>>,
+    }
+    #[derive(Debug, serde::Deserialize)]
+    struct LintEcho {
+        severity: String,
+        code: String,
     }
     #[derive(Debug, serde::Deserialize)]
     struct PatchEcho {
@@ -382,6 +417,28 @@ mod tests {
         assert_eq!(patches[0].op, "insertNode");
         assert!(patches[0].html.as_deref().is_some_and(|h| h.contains(">hi<")));
         assert_eq!(patches[1].op, "setStyle");
+    }
+
+    #[test]
+    fn lint_rides_the_apply_response() {
+        let (mut d, t) = doc();
+        let req = RawReq {
+            base_rev: 0,
+            ops: vec![WireOp::Insert {
+                id: Some("nd:s".to_owned()),
+                kind: "shape".to_owned(),
+                parent: "pg:1".to_owned(),
+                pos: WirePos::Last,
+                props: vec![("fill".to_owned(), WireValue::Str("#ff0000".to_owned()))],
+            }],
+        };
+        let resp = apply_wire(&mut d, &t, &frame(&req)).expect("apply");
+        let echo: RespEcho = base_wire::decode_frame(&resp).expect("decode");
+        let lint = echo.lint.expect("lint must ride the apply");
+        assert!(
+            lint.iter().any(|l| l.code == "raw-literal-themeable" && l.severity == "info"),
+            "expected the tier-2 steer, got {lint:?}"
+        );
     }
 
     #[test]

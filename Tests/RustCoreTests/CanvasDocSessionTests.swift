@@ -93,6 +93,20 @@ final class CanvasDocSessionTests: XCTestCase {
         }
     }
 
+    func test_lint_rides_the_apply_response() throws {
+        let session = try CanvasDocSession()
+        let applied = try session.apply(
+            baseRev: 0,
+            ops: [
+                .insert(
+                    id: "nd:s", kind: "shape", parent: CanvasDocSession.rootPage, pos: .last,
+                    props: [("fill", .str("#ff0000"))])  // raw literal in a themeable slot
+            ])
+        XCTAssertTrue(
+            applied.lint.contains { $0.code == "raw-literal-themeable" && $0.id == "nd:s" },
+            "the tier-2 steer must ride the apply; got \(applied.lint)")
+    }
+
     func test_idempotent_replay_is_noop_and_minted_ids_return() throws {
         let session = try CanvasDocSession()
         let op = CanvasOpRequest.insert(
