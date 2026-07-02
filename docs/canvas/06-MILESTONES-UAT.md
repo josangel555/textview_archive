@@ -118,6 +118,11 @@ FileWatcher feeds.
   `repeat` over a data block produces N instances with stable derived ids.
 - Webview: chart SVG marks match data fixture (bar heights ∝ values); measured lint flags a
   deliberate overflow; contrast check flags a deliberate low-contrast token pair.
+- **The Claude-Design gauntlet (epic kill-switch — see 05-ROADMAP §Q1-rationale):** agent
+  replicates a real marketing landing page, a settings screen, and a dashboard shell through
+  the escape-hatch ladder. Measure: styling rung distribution (L0/L1/L2 vs L3/L4), op/token
+  cost per design, lint noise. **Pivot criterion: >~30% of styling pressure escaping to
+  embed/code-components ⇒ redesign the ladder before M5 ships.**
 
 **UAT-M4 "live infographic" (T6):**
 1. Agent creates an infographic bound to `perf.csv` (3 KPI tiles via `repeat` + a bar chart).
@@ -127,7 +132,34 @@ FileWatcher feeds.
    log** (proves value-swap theming).
 4. Export PNG → non-empty, size-capped.
 
-## M5 — Presentation: the first full mode (P5)
+## M5 — UI-Design mode, Tier 1: the assumption validator (P5)
+
+**Scope (owner criterion Q1 — validate assumptions earliest):** UI component kit
+(buttons/inputs/nav/cards/forms), device-frame presets, prototype navigation + interactions,
+shared style rules (ladder L2 — `:hover`, breakpoint variants). **No code export** (later
+tier, Q10). The Claude-Design gauntlet (M4) is the entry bar; this milestone productizes it.
+
+**Exit validations:**
+- cargo: shared-style-rule resolution (one rule edit restyles all referents as one invertible
+  op); breakpoint-variant lowering deterministic.
+- Webview: prototype navigation (`gotoPage` on click) works; `:hover` rule applies; a
+  breakpoint variant switches at the device-frame width.
+- T5 + negative control: hover styling actually renders; device-frame chrome not occluded.
+- Gauntlet re-run on the productized kit: rung distribution within the pivot criterion.
+
+**UAT-M5 "design a real app screen" (T6 — the assumption demo):**
+1. Agent builds a settings screen from the kit (nav sidebar, form sections, toggles, save bar)
+   via DSL ops — **zero raw HTML** — inside a phone AND a desktop device frame.
+2. Query proves the same document renders both frames (breakpoint variants, not duplicates).
+3. Human drags a form section to reorder; agent adds a field to it afterward (co-edit on real
+   UI content).
+4. Wire "Save" → `gotoPage(confirmation)`; click in preview navigates (clickable prototype).
+5. One deliberately-exotic styling ask ("frosted-glass header") lands at ladder L1/L2 (raw-CSS
+   passthrough / shared rule), is lint-flagged but renders — and the node stays
+   addressable/editable afterward (the model-owned invariant proven).
+6. Teeth: negative-control switch breaks hover-rule application → T5/UAT goes RED.
+
+## M6 — Presentation: the first content mode (P6)
 
 **Scope:** `kind:deck`; steps/fragments; timing tree + beats; **identity-morph**; player;
 `timeline_state`; presenter window; deck export (standalone player + PDF); walkthrough verbs.
@@ -140,7 +172,7 @@ FileWatcher feeds.
 - T5 + negative control: a fragment past its reveal index is genuinely invisible ON SCREEN
   (the render-tail proof).
 
-**UAT-M5 "the deck journey" (T6 — the release demo):**
+**UAT-M6 "the deck journey" (T6 — the release demo):**
 1. Agent builds a 3-slide deck: slide 1 title; slide 2 = same title node id smaller +
   3 bullets as fragments; slide 3 = a chart whose `morphKey` matches slide 2's third bullet.
 2. `canvas.timeline_state(slide2, step1)` → bullet 1 visible, 2–3 not (declarative check
@@ -152,8 +184,7 @@ FileWatcher feeds.
    offline (no network).
 6. PDF export → 3 pages, fragments flattened to final state.
 
-## M6+ — Tracks (umbrella; sequenced by owner priority after M5)
+## M7+ — Tracks (umbrella; sequenced by owner priority after M6)
 
-UI-Design kit + prototype behaviors → live dashboards → markdown inline figures →
-`kind:board` → state-machine INTERACT → code export tier → plugin kits. Each gets its own
-milestone doc + UAT when scheduled.
+Code-export tier (Q10) → live dashboards → markdown inline figures → `kind:board` →
+state-machine INTERACT → plugin kits. Each gets its own milestone doc + UAT when scheduled.

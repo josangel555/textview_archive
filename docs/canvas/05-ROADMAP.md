@@ -25,13 +25,19 @@
 - **P4 — Design system + data.** Components/instances + first kits (report, KPI/infographic);
   `table`/`chart`(Vega-Lite subset)/`code`/`diagram` nodes; data blocks + `bind` +
   `conditional`/`repeat`; measured lint; CSV-engine + FileWatcher feeds. Gates: cargo + webview.
-- **P5 — Presentation (first mode).** `kind:deck`, steps/fragments, timing tree + beats,
+- **P5 — UI-Design mode, Tier 1 (first mode; owner criterion: earliest assumption
+  validation).** UI component kit (buttons/inputs/nav/cards/forms), device-frame page presets,
+  prototype navigation + interactions (behaviors + `conditional`), shared style rules
+  (ladder L2: `:hover` + breakpoint variants), the **Claude-Design gauntlet** as the
+  acceptance bar (see §Q1-rationale addendum). NO code export (that's the later tier, Q10).
+  Gates: webview interactions + T5 with negative controls + T6 prototype journey.
+- **P6 — Presentation mode.** `kind:deck`, steps/fragments, timing tree + beats,
   **identity-morph transitions**, `timeline_state` query, player, presenter window, deck
-  export (standalone HTML player + PDF); walkthrough verbs (explainer). Gates: webview player
+  export (standalone player + PDF); walkthrough verbs (explainer). Gates: webview player
   tests + T5 fragment/morph pixels + T6 deck journey.
-- **P6+ — Tracks by owner priority.** UI-Design kit + prototype behaviors → dashboards
-  (live data) → markdown inline figures → `kind:board` → state-machine INTERACT escalation →
-  code export tier → plugin kits/renderers (code components).
+- **P7+ — Tracks by owner priority.** Code-export tier (Q10) → dashboards (live data) →
+  markdown inline figures → `kind:board` → state-machine INTERACT escalation → plugin
+  kits/renderers (code components).
 
 ## Standing engineering rules (from the analysis — bind all phases)
 
@@ -45,7 +51,7 @@ measured lint → snapshot) · every render guard demonstrates teeth (negative c
 
 | # | Decision | Recommendation / status |
 |---|---|---|
-| Q1 | First mode | **Presentation** — expanded rationale in §Q1-rationale below. Owner reviewing. |
+| Q1 | First mode | ✅ **DECIDED (owner criterion, 2026-07-01: "pick whichever validates our assumptions earliest") → UI-Design, Tier 1 (wireframe + clickable prototype, NO code export).** It stress-tests the two riskiest assumptions (Q13 CSS ladder; the seed vision "agent inserts elements instead of writing HTML for UI") earliest; Presentation's subsystems (TIME/morph) are lower-risk (proven prior art) and move to M6. Addendum in §Q1-rationale. |
 | Q2 | Format & interface language | **SPLIT per owner (2026-07-01):** (a) serialization = canonical JSON `.canvas` — **DECIDED, fine**; (b) the agent *interface language* is NOT settled — JSON ops are wrong for multi-turn incremental patching. → **Q2b spike (TSK-1350):** terse Canvas DSL + projection editing over the op layer (`02-CORE-ENGINE.md` §4b). Blocks M2. |
 | Q3 | Spatial kinds | Page/deck first; `board` later. Rider: 10³⁺-node boards trigger a rendering-backend fork decision *only if prioritized*. |
 | Q4 | Dependencies | ✅ **DECIDED (owner, 2026-07-01): zero new deps v1** — hand-rolled vendored runtime, hand-rolled SVG chart marks, no layout engine (browser computes), no charting lib. Per-layer dep proposals return as parked asks only when scope demands. |
@@ -79,6 +85,32 @@ gets polished first:
   M4 even with Presentation as M5.
 - **Infographics first:** needs M4's DATA layer anyway; simple export; but no in-app dogfood
   consumer and no differentiator showcased.
+
+**ADDENDUM — the decision, under the owner's criterion (2026-07-01).** The owner picked the
+selection criterion, not the mode: *"whichever validates our assumptions earliest."* That
+flips the answer to **UI-Design Tier 1**. Honest risk ranking of the epic's assumptions:
+
+| Assumption | Risk | Validated earliest by |
+|---|---|---|
+| Op/DSL surface makes agents effective authors | med (strong evidence, unproven here) | M2 — mode-agnostic |
+| Patch loop + perf over binary FFI | med | M0 — mode-agnostic |
+| **CSS ladder suffices for Claude-Design-class output (Q13)** | **HIGHEST — the industry graveyard (80/20 ceiling); owner's own stated doubt** | **UI-Design content only** |
+| Auto-layout + components carry real UI design | high | UI-Design content only |
+| TIME/steps/morph work | low-med (reveal/WAAPI/FLIP = proven prior art; morph is a set-diff over IDs we control) | Presentation |
+
+Presentation validates the *low-risk* mode assumptions; UI-Design validates the *make-or-break*
+ones. If the CSS-ladder assumption fails, the epic's flagship pillar needs redesign — we must
+learn that at M4/M5, not after shipping decks. Cost accepted: walkthrough dogfood + the morph
+showcase defer one milestone (Presentation = M6; its core subsystems TIME/beats/timeline_state
+still land in M4/M5 where prototypes need interactions).
+
+**Pulled-forward validation — the "Claude-Design gauntlet" (new M4 exit criterion):** the
+agent replicates 2–3 real-world-complexity designs (a marketing landing page, a settings
+screen, a dashboard shell) through the ladder; we measure the rung distribution (% of styling
+at L0/L1/L2 vs escaping to L3/L4), op/token cost per design, and lint noise. **Pivot
+criterion: if >~30% of styling pressure lands in embed/code-components, the ladder gets
+redesigned before the UI-Design mode ships.** This is the epic's cheapest early kill-switch
+for its riskiest assumption.
 
 ## Success criteria for the epic's first release (P0–P5)
 
