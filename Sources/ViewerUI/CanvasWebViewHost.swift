@@ -65,6 +65,7 @@ public final class CanvasWebViewHost: NSObject, WKNavigationDelegate {
         }
         let baseDir = htmlURL.deletingLastPathComponent()
         webView.loadFileURL(htmlURL, allowingReadAccessTo: baseDir)
+        startReadyRecovery()
     }
 
     /// Send an outbound envelope to the JS runtime.
@@ -106,6 +107,11 @@ public final class CanvasWebViewHost: NSObject, WKNavigationDelegate {
     /// delivers N-1, and a mark would then wrongly drop N-1. Bounded by the
     /// JS outbox (256); the M1 bridge revisits with a windowed set.
     private var deliveredPostIds = Set<UInt64>()
+    /// Highest postId seen — the drain FLOOR (drains ask only for entries
+    /// above `max - slack`, so a busy page never re-posts its whole outbox:
+    /// the flood itself was killing the channel on the slow VM — TSK-1365).
+    private var maxDeliveredPostId: UInt64 = 0
+    private static let drainSlack: UInt64 = 32
 
     /// Chain counters (M0 diagnosis): where do replies die?
     public private(set) var pushDelivered = 0
@@ -131,6 +137,7 @@ public final class CanvasWebViewHost: NSObject, WKNavigationDelegate {
         {
             if deliveredPostIds.contains(postId) { return }
             deliveredPostIds.insert(postId)
+            maxDeliveredPostId = max(maxDeliveredPostId, postId)
         }
         guard let message = try? CVBridgeCodec.decode(json) else { return }
         if case .ready = message { isReady = true }
@@ -148,15 +155,36 @@ public final class CanvasWebViewHost: NSObject, WKNavigationDelegate {
         // result, because eval results are themselves droppable on the VM's
         // older WebKit (the M3.S1b finding). Deliveries arrive via
         // receive(); the postId set dedups push/drain races.
+        let floor = maxDeliveredPostId > Self.drainSlack
+            ? maxDeliveredPostId - Self.drainSlack : 0
         webView.evaluateJavaScript(
-            "window.__cvDrain ? window.__cvDrain(0) : 0"
+            "window.__cvDrain ? window.__cvDrain(\(floor)) : 0"
         ) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.drainResults += 1 }
         }
     }
 
+    /// READY RECOVERY (TSK-1365 fix 2): the runtime's `ready` post itself
+    /// can vanish on the VM's WebKit, and the CONTROLLER only listens — so
+    /// the host self-drains on a timer until ready arrives (or 20s). This is
+    /// a production path (the app's mount), not test plumbing.
+    private var readyDrainTask: Task<Void, Never>?
+
+    private func startReadyRecovery() {
+        readyDrainTask?.cancel()
+        readyDrainTask = Task { [weak self] in
+            for _ in 0..<80 { // 80 × 250ms = 20s
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, !Task.isCancelled else { return }
+                if self.isReady { return }
+                self.drainMissedReplies()
+            }
+        }
+    }
+
     /// Break the retain cycle host → controller → proxy → host when done.
     public func teardown() {
+        readyDrainTask?.cancel()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: Self.handlerName)
     }
 }

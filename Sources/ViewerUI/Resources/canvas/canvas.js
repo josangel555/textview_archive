@@ -25,7 +25,7 @@
   // count (loss-tolerant).
   window.__cvDrain = function (after) {
     var n = 0;
-    for (var i = 0; i < window.__cvOutbox.length; i++) {
+    for (var i = 0; i < window.__cvOutbox.length && n < 16; i++) {
       var entry = window.__cvOutbox[i];
       if (entry.postId > after) {
         n += 1;
