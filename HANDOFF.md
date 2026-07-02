@@ -1,9 +1,34 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — Canvas giga-epic design DELIVERED + parked for owner review; subagent-runaway post-mortem; autonomous cron STOPPED (2026-07-01)
+# Handoff — Canvas epic GREENLIT (provisional defaults) + BUILD STARTED; cron re-armed on the milestone chain (2026-07-01, late)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `338fa26d`+ (a Canvas-design doc commit follows this handoff — verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` (verify `git log -1`)
 
-## ⛳ LATEST CHECKPOINT (2026-07-01 — READ FIRST — supersedes the older checkpoints below)
+## ⛳ LATEST CHECKPOINT (2026-07-01 LATE — READ FIRST — supersedes everything below)
+
+**Canvas moved from design→BUILD.** Owner (2026-07-01): *"Go with these defaults for all for
+now. Will review in details tomorrow. Re-enable the 5-min cron to work on M0, M1, M2… before
+each milestone do a planning pass. You are on your own."*
+
+- **Design set (v2, authoritative): `docs/canvas/`** — README · 01-RESEARCH-ANALYSIS ·
+  02-CORE-ENGINE (flat record store, §2c hyper-perf internals, §3b CSS ladder, §7 dynamism
+  ladder B0–B5, §10b data contract) · 03-SHELLS · 04-MODES · 05-ROADMAP (**Q-LIST: ALL
+  PROVISIONALLY DECIDED at defaults — see its header; owner detailed review pending**) ·
+  06-MILESTONES-UAT (validation ladders + UAT journeys) · 07-DSL-SPIKE (the agent interface
+  language; TSK-1350 at review). Old CANVAS_DESIGN*.md = superseded history.
+- **Board:** epic TSK-1342; milestone chain **TSK-1343 (M0 patch-loop spike, NEXT ACTIONABLE)
+  → 1344 (M1 core) → 1345 (M2 agent surface) → 1346 (M3 WYSIWYG) → 1347 (M4 design system +
+  Claude-Design gauntlet) → 1351 (M5 UI-Design mode — FIRST MODE per owner criterion) → 1348
+  (M6 Presentation) → 1349 (M7+)**. Greenlight comments on 1342/1343.
+- **Cron 9c2961d0 (session-only, 5-min)** carries the build mission: planning pass before each
+  milestone (`docs/canvas/plans/M<N>-PLAN.md` + slice child tickets) → implement inline slice
+  by slice → gates per the validation ladder (cargo / headless / webview / T5-with-teeth) →
+  commit per slice. If the session restarts, RE-ARM the cron with that mission (CronCreate is
+  session-only).
+- **Watch items:** decisions are provisional (rework-if-reversed accepted — keep M0/M1 slices
+  cheap to redo); TSK-1334 (VM Screen-Recording grant) needed from M3 for T5 (webview lane
+  suffices through M2); M0 has a KILL CRITERION (06 §M0) — honor it.
+
+## ⛳ PRIOR CHECKPOINT (Canvas design phase — superseded above)
 
 **Owner direct request (cron was stopped first):** design a **Canvas** giga-epic — a WYSIWYG
 editor for AGENTS (and humans) to build UIs / infographics / explainers / presentations;

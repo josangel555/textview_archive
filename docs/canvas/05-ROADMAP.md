@@ -47,7 +47,14 @@ programs · geometry is renderer-owned and only reported · text-JSON canonical 
 diff viewer stay useful) · feedback ladder cheap→dear (query → static lint → timeline state →
 measured lint → snapshot) · every render guard demonstrates teeth (negative controls).
 
-## The owner decision list (Q1–Q12) — the review surface
+## The owner decision list — the review surface
+
+> ✅ **GLOBAL PROVISIONAL DECISION (owner, 2026-07-01): "Go with these defaults for all for
+> now. Will review in details tomorrow."** Every open item below is DECIDED-AT-DEFAULT
+> effective immediately (Q14/Q15/Q2b-spike/Q7/Q6/Q12/Q8 per recommendation; Q3/Q9/Q10
+> deferred-as-recommended). **Implementation is GREENLIT** — the epic proceeds M0 → M1 → M2…
+> under the standing rule: if tomorrow's detailed review reverses an item, the affected slice
+> reworks (cheap at M0/M1 depth). Per-row statuses below are historical context.
 
 | # | Decision | Recommendation / status |
 |---|---|---|
