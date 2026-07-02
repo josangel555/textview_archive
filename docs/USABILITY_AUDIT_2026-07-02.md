@@ -188,3 +188,34 @@ This is the foundation pass (hierarchy + themes + state + path). Subsequent pass
 per-feature production-grade specs for the top finish targets; (b) on-screen re-verification of
 the 🟡/🟠 assessments (owner's bar: confirm usability on the real UI, not from code); (c) the
 finish-or-cut owner decisions for the exploratory spikes.
+
+---
+
+## CODE-VERIFICATION LOG (append per pass — code verdicts replace ticket-derived states)
+
+### Pass 2 (2026-07-02) — document viewers + command surface
+
+**Verdict: the CORE is substantially more built, cohesive, and tested than pass-1 (ticket-
+derived) implied.** Code-reading three central areas found them near-production-grade, three
+tickets stale, one real gap (fixed), one real gap (confirmed, deferred):
+
+| Area | Code verdict | Ticket said | Delta |
+|---|---|---|---|
+| CSV viewer (`CSVTableView`, 974 ln) | keyboard cell-cursor, find-in-table, filter, sort, multi-cell rect-select + NSPasteboard copy, formula gate — all WIRED | TSK-924 "multi-cell model-only" | **ticket STALE** |
+| CSV viewport paging (`CSVViewportPager`) | **0 refs in the view — genuinely not wired** (large-file perf gap) | TSK-1139 "done, not wired" | **ticket ACCURATE** — real gap, render-VM slice |
+| CSV empty-state | was a blank void on empty/filtered-nothing → **FIXED** (TSK-1415, `CSVEmptyState`) | (unticketed — found by code-read) | **new gap, closed** |
+| Hex viewer (`HexView`, 1517 ln) | hex/ASCII search, "0 matches"/"N/M+", truncation handling, chunked streaming + placeholder, match-cap, edit mode | — | **production-grade already** |
+| Command surface (`CommandRegistry+BuiltIn`, 116 cmds/11 cats + 490-ln test) | comprehensive; unique-ids/namespacing/palette-parity all tested; 13 `scriptVerb:nil` are CORRECTLY nil (interactive dialogs/window ops) | Theme-2 feared scatter | **cohesive; palette parity largely done (TSK-951)** |
+| Image editor tool picker | 10 tools wired (brush/airbrush/eraser/colorPicker/floodFill/drawLine/Rect/RoundedRect/selectRect/selectLasso) | TSK-1048 "~4 capabilities" | **ticket STALE** |
+| LSP completion | `autocompletion` wired + invoked in `codemirror.html` | TSK-463/1136 "not wired" | **ticket STALE** |
+
+**Implication for the plan (revised):** the remediation is NOT "build missing UI." It is, in
+priority order: (1) **reconcile the stale board to code** (TSK-1412 — 4 stale tickets found in
+one pass; extrapolates to many of the ~417) so planning rests on truth; (2) fix the genuinely-
+thin spots + real gaps (CSVViewportPager perf, and whatever code-reads surface next); (3)
+cohesion/discoverability of LESS-central features + cross-cutting bugs (key-event routing
+TSK-1315); (4) finish-or-cut the exploratory spikes (TSK-1414). The well-built core mostly needs
+targeted polish (empty-states, edge bugs), not rebuilding. **Owner's "almost all unusable" reads,
+at the code level, as: a few thin spikes + discoverability + a badly stale tracker — the core is
+sound.** (Caveat: on-screen re-verification of the 🟡 features is still owed per the render bar;
+this pass verified code-wiring, which for these native-SwiftUI/CM6 features is high-signal.)
