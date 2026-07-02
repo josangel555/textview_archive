@@ -344,3 +344,28 @@ Drilled the last two TSK-1414 candidates.
 orphaned (RSS reader). Zero were "half-built".** The audit's original "exploratory spikes / likely
 unusable" framing was wrong on all 4 counts — the real defect was reachability/cohesion + stale
 tracking, not missing implementation. The RSS orphan is the single true "built but unusable" case.
+
+### Pass 8 (2026-07-02) — orphan + cohesion sweeps: clean; hosted-view tools now ⌘K-discoverable
+
+Systematic follow-on to the FeedReader orphan (TSK-1417). Two whole classes swept:
+- **Orphaned View structs (built-but-unreachable):** of 166 View structs, only 2 are instantiated
+  nowhere — ActionHistoryView (TSK-703) and RichTextReadOnlyView (TSK-706). BOTH are DELIBERATE WIP
+  foundation slices, NOT accidental orphans like FeedReader: RichText is `RichTextFeatureFlag`-gated
+  off (editor/toolbar are later, unbuilt slices); ActionHistory's log class is instantiated NOWHERE
+  and fed by nothing, so wiring the view would show an empty panel. So the app's COMPLETE features
+  are all reachable — FeedReader was the sole accidental orphan. The 2 WIP slices are tracked
+  finish-or-cut (owner) — filed, not wired blind (finishing each is a real build, not a wire).
+- **Script-verb ↔ dispatch cohesion:** clean — every advertised verb dispatches (the 2 apparent
+  "no-dispatch" verbs, wait-editor-line/wait-rendered-scroll, are DELIBERATELY harness-handled;
+  the 6 apparent "extra" dispatch tokens are nested sub-args (save/discard/cancel/on/off) + a comment).
+- **GAP FOUND + FIXED — command-palette discoverability (TSK-1413):** the hosted-view tools
+  (HTTP client, feed reader, folder treemap, dependency graph, walkthroughs) were reachable via
+  File/View menus + verbs but had NO ⌘K palette entries. Added 5 CommandDescriptors → their existing
+  show-* verbs, + a CommandVerbCohesionTests REGRESSION GUARD (every command verb resolves to a real
+  catalog token — catches a palette command that would silently no-op). Teeth-verified. Commit
+  1c46b2a0.
+
+Running tally of GENUINE gaps found + fixed this run: CSV empty-state (1415), image paint-undo
+(1416), HTTP-client verb cohesion, FeedReader orphan wired (1417), palette discoverability (1413).
+The app is broadly built + reachable; the remaining known-incomplete surfaces are the 2 WIP slices
+(ActionHistory/RichText — owner finish-or-cut) + the pixel/occlusion tail (TSK-1334).
