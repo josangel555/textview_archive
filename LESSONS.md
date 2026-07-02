@@ -5,6 +5,26 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Session 2026-07-01 — the subagent fan-out RUNAWAY (burned ~half the owner's quota)
+
+- **NEVER delegate research to broad-prompted `general-purpose` subagents — they have the Agent
+  tool and RECURSIVELY FAN OUT.** MISS (2026-07-01, Canvas spike TSK-1342): I launched 3
+  `general-purpose` agents with wide prompts ("research the landscape", "cast a wide net",
+  "brainstorm many use-cases"). `general-purpose` = `*` tools INCLUDING the Agent tool, so each
+  spawned its own sub-agents → a cascade to ~**75 agents**, several running ~20 min, burning
+  ~half the owner's quota before they killed them all. Tell-tale: a stray "music notation
+  engraving" agent I never intended (a sub-agent's self-chosen research angle). This is NOT
+  ultracode (the Workflow tool was never called) — an unbounded `general-purpose` fan-out
+  produces the same runaway. RULES: (1) do research **INLINE** by default. (2) If you must
+  delegate, use the **read-only `Explore`** agent (its toolset EXCLUDES Agent → it physically
+  can't fan out), or a `general-purpose` agent ONLY with an explicit cap in the prompt ("single
+  pass; do NOT spawn any sub-agents") and a tight, narrow scope. (3) Never launch multiple broad
+  `general-purpose` agents at once. (4) The whole autonomous-loop ethos is already "work inline,
+  no fan-out" — a direct owner request for a *thorough* spike does NOT license an unbounded agent
+  cascade; thoroughness is achieved inline. Salvage of that run: `~/canvas-subagent-salvage-2026-07-01/`
+  (726 raw task transcripts + a post-mortem README; the 2 useful results were folded into
+  docs/CANVAS_DESIGN.md). Cost of this lesson: ~half a quota — do not repeat it.
+
 ## Session 2026-06-30 — the owner correction: "T5-blocked" ≠ "render-blocked"
 
 - **State-based NATIVE AppKit views are HOST-validatable — a render feature reaches `validated` WITHOUT the T5 grant when its on-screen truth is a headless-assertable native-view STATE.** Proven 2026-06-30 (TSK-1341 "Find in PDF" reached `validated` host-side, no VM): `PDFView.setCurrentSelection`/`currentSelection` is a data operation that works with NO window (unlike LAYOUT — `scrollSelectionToVisible`/`currentPage`/frame need one), and PDFView renders its `currentSelection` as the highlight NATIVELY — so asserting `currentSelection == the match` in a host test IS confirming the on-screen behaviour (the native view's rendering is a guarantee, not SwiftUI-composite / WebView-occlusion uncertainty). PATTERN: extract the imperative consumer (the `updateNSView` body) into a plain `@MainActor` driver (e.g. `PDFFindDriver`) so a host test drives the ACTUAL code against a REAL native view — create the NSView object host-side (no window, like `HexFixedGridFrameTests` does for `NSTextView`), then assert its state. TRIAGE before concluding "render → T5-blocked → review": is the on-screen truth a headless-assertable native-view STATE (selection / text / value on an `NSView`)? → host-validate → `validated`. CONTRAST — genuinely T5/VM/AX-gated: layout-dependent state (scroll offset, visible page), SwiftUI drawn OVER a representable (compositor-occlusion, TSK-488 — e.g. the TSK-1166 disk-conflict banner over the CM6 WebView), WKWebView pixels, and faithful pointer/key gestures (AX — e.g. TSK-1188 CM6 click). Also stays at review: SwiftUI `@StateObject` view-recreation seeding (TSK-1303 image edit — the model+seed are host-tested but the live view-recreation is framework-driven).

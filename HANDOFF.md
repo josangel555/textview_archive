@@ -1,9 +1,48 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — PDF find shipped + VALIDATED host-side (the native-state render-validation path); image/disk-conflict render at review; board saturated (2026-06-30)
+# Handoff — Canvas giga-epic design DELIVERED + parked for owner review; subagent-runaway post-mortem; autonomous cron STOPPED (2026-07-01)
 
-**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `cba43ec1` (verify `git log -1`)
+**Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` @ `338fa26d`+ (a Canvas-design doc commit follows this handoff — verify `git log -1`)
 
-## ⛳ LATEST CHECKPOINT (READ FIRST — supersedes the older checkpoints below)
+## ⛳ LATEST CHECKPOINT (2026-07-01 — READ FIRST — supersedes the older checkpoints below)
+
+**Owner direct request (cron was stopped first):** design a **Canvas** giga-epic — a WYSIWYG
+editor for AGENTS (and humans) to build UIs / infographics / explainers / presentations;
+HTML/CSS/JS underneath but abstracted so agents insert structured elements instead of writing
+top-down HTML. Foundation for UI Design (Claude-Design-like), Presentations, Explainers-in-
+Walkthroughs, etc. Asked: spike abstractions + detailed design + explore many use-cases +
+**BLOCK on owner review + DO NOT implement**.
+
+- ✅ **DELIVERED: `docs/CANVAS_DESIGN.md`** (TSK-1342). Recommended architecture: **Canvas =
+  a LOWERING COMPILER, not an HTML editor** — a semantic Scene IR (tree of typed elements +
+  stable IDs) → deterministic Scene→HTML/CSS/JS lowering in a WKWebView; the agent authors via a
+  small addressable/idempotent/undoable **OP API** (insert/move/style/bind), never by emitting
+  HTML. Abstraction stack §4: Scene IR ▸ Op API ▸ Layout(hybrid free-form + auto-layout) ▸
+  Components+design-tokens ▸ Behavior(data/interact/time) ▸ Export ▸ Modes/presets. One core,
+  many modes. ~60 use-cases (§9); hard boundaries held (§10). **6 blocking decisions in §12.**
+- ✅ **TSK-1342 PARKED on owner review** (waiting=human, kind=review) with the §12 decisions.
+- ⛔ **DO NOT implement** until the owner answers §12 (v1 scope/first-mode, layout+FLOW,
+  code-export target, per-layer dep policy, DOM-vs-canvas backend, multiplayer).
+
+**⚠️ POST-MORTEM — subagent fan-out RUNAWAY (see LESSONS.md 2026-07-01, the top entry):** the 3
+`general-purpose` research agents I launched for the spike RECURSIVELY FANNED OUT to ~75 agents,
+burned ~half the owner's quota (owner killed them). NEVER delegate research to broad-prompted
+`general-purpose` agents (they have the Agent tool → fan out). Use inline, or the read-only
+`Explore` agent, or a capped single-pass prompt. Salvage: `~/canvas-subagent-salvage-2026-07-01/`
+(726 raw transcripts + post-mortem README).
+
+**AUTONOMOUS CRON IS STOPPED** (owner asked to pause it end-of-tick; cron `6527343e` deleted —
+`CronList` empty). Do NOT re-arm it unless the owner asks. The prior autonomous work is below.
+
+**Prior autonomous session state (still true):**
+- Shipped+validated: PDF find (TSK-1341 validated host-side via the native-state path — see the
+  2026-06-30 LESSONS entry), multi-format viewer arc, FindBarRouting.
+- **At review (genuinely T5/AX-gated):** TSK-1303 (image edit session-persistence — SwiftUI
+  view-recreation seed), TSK-1166 (disk-conflict banner — occlusion pixel tier).
+- **Owner unblocks (highest leverage):** TSK-1334 (VM Screen-Recording grant → the T5 render
+  tier), TSK-838 (one-line DOM-patch flip → kills the 2-9s rendered-MD reload storm).
+- Board is otherwise saturated for clean fresh builds (verified extensively).
+
+## ⛳ PRIOR CHECKPOINT (PDF find / native-state render-validation — superseded above)
 
 **This stretch (since the last handoff @ 65daa55a) shipped, all host-gate-green, committed per-item:**
 - **TSK-1303 image edit-state session persistence** (`22675ef0` core + `be95778d` view binding): edits survive a session switch. `Tab.imageEditState` + `TabSnapshot` round-trip + `imageEditStateByURL` channel + capture-at-drain/restore-on-materialize (mirrors rendered-scroll TSK-1041); declarative seed at VM construction. Host-tested; **at REVIEW** — the live SwiftUI `@StateObject` view-recreation-seed is framework-driven (not host-assertable); needs a VM hosting test.
