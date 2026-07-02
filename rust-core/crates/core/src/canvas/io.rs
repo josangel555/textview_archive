@@ -393,6 +393,77 @@ mod tests {
         doc
     }
 
+    /// io::load is TOTAL over corrupt `.canvas` input (the untrusted-bytes
+    /// surface a user opens): byte-storms and structure-aware corruptions of
+    /// a valid saved doc (bit flips, truncations, field deletions, type swaps,
+    /// injected bad ids) must NEVER panic, returning only Ok(doc) or a typed
+    /// IoError. The json layer under it is fuzzed separately; this pins the
+    /// migration, record-rebuild, and store-reconstruction layers above it.
+    /// Dep-free xorshift64* (no rand, no clock).
+    #[test]
+    fn load_is_total_over_corrupt_canvas_files() {
+        let mut state: u64 = 0x84A3_11F0_C2D5_9E77;
+        let mut nxt = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let valid = save(&built_doc());
+
+        for round in 0..2500usize {
+            let source: String = match nxt() % 5 {
+                0 => {
+                    // Pure byte storm (JSON-ish char pool).
+                    let len = usize::try_from(nxt() % 160).unwrap_or(0);
+                    (0..len)
+                        .map(|_| {
+                            let pool = b"{}[]\":,0123456789.-truefalsn ndpgcmp";
+                            pool[usize::try_from(nxt() % pool.len() as u64).unwrap_or(0)] as char
+                        })
+                        .collect()
+                }
+                1 => {
+                    // Bit-flip a byte of the valid doc (char-safe rebuild).
+                    let mut b = valid.clone().into_bytes();
+                    if !b.is_empty() {
+                        let i = usize::try_from(nxt() % b.len() as u64).unwrap_or(0);
+                        b[i] ^= 1 << (nxt() % 8);
+                    }
+                    String::from_utf8_lossy(&b).into_owned()
+                }
+                2 => {
+                    // Truncate at a random char boundary.
+                    let n = usize::try_from(nxt() % valid.chars().count() as u64).unwrap_or(0);
+                    valid.chars().take(n).collect()
+                }
+                3 => {
+                    // Delete a required key (blank it out).
+                    let keys = ["formatVersion", "rev", "serial", "root", "records", "kind", "parent"];
+                    let k = keys[usize::try_from(nxt() % keys.len() as u64).unwrap_or(0)];
+                    valid.replace(&format!("\"{k}\""), "\"__x__\"")
+                }
+                _ => {
+                    // Type/value swaps: numbers→strings, ids→garbage, version bumps.
+                    let mut s = valid.clone();
+                    match nxt() % 4 {
+                        0 => s = s.replace("\"formatVersion\":1", "\"formatVersion\":999999"),
+                        1 => s = s.replace("\"nd:hero\"", "\"@@@bad-id@@@\""),
+                        2 => s = s.replace("\"records\":[", "\"records\":\"nope\","),
+                        _ => s = s.replace("\"rev\":", "\"rev\":\"x\"//"),
+                    }
+                    s
+                }
+            };
+
+            // MUST NOT PANIC; MUST be Ok or a typed IoError.
+            match load(&source) {
+                Ok(_) => {}
+                Err(IoError::Parse(_) | IoError::BadShape(_) | IoError::TooNew(_)) => {}
+            }
+        }
+    }
+
     #[test]
     fn save_load_round_trips_exactly() {
         let doc = built_doc();
