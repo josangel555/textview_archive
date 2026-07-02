@@ -452,3 +452,24 @@ The image-editor deep-crossing vein is now largely mined (4 real bugs: paint-und
 1419, tonal 1420, undo-ordering 1421). NEXT deep-interaction target = a DIFFERENT feature family:
 SESSION/TAB-SWITCH state (the historical bug class per CLAUDE.md — scroll reset, footer-stats blank,
 loading flashes: imperative state populated AROUND a switch, raced by the declarative render).
+
+### Pass 13 (2026-07-02) — overlay annotations dropped on export = data loss (TSK-1422); other families verified clean
+
+Verified CLEAN this pass (production-grade, no fix): session/tab-switch state (updateDerived is
+synchronous + equality-guarded + heavily hardened), CSV sort (CsvSort numeric-aware/empties-last/
+stable/localized), CSV filter×copy (all copy ops read displayRows), CSV edit×filter/sort (gated via
+editingAvailable — same gate pattern as tonal). The tab-switch + CSV families are well-hardened.
+
+REAL BUG found in the image-editor LAYER model: the vector overlay (annotation shapes + text, drawn
+over the preview, "never baked") was SILENTLY DROPPED on export/save-a-copy — diagnosed with a
+byte-identical export test. Fixed by compositing the overlay via ImageRenderer(VectorOverlayView)
+over the export base — WYSIWYG-guaranteed, host-testable (7d3b5070). 2 tests + teeth; 114-test suite
+green.
+
+THE IMAGE EDITOR IS THE RICHEST VEIN — 5 real bugs this run (paint-undo 1416, geometry-after-paint
+1419, tonal-after-paint 1420, undo-ordering 1421, overlay-export 1422), all from its MULTI-LAYER/
+MULTI-MODE design (source→geometry→tonal render, destructive paint buffer, vector overlay). The
+render/paint/overlay/geometry/tonal/undo/export crossings are now largely covered. Other families
+(CSV, session-switch, search, sidebar, tabs, viewers) verify clean. NEXT candidate for hidden
+crossings = another MULTI-MODE feature: the HEX editor (view vs edit mode, binary editing) or the
+diff view. Lesson: multi-layer/multi-mode features harbor the bugs; single-purpose views are clean.

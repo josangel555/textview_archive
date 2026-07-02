@@ -67,8 +67,11 @@
   terminal mode: post-paint crossings each need handling — geometry=transform (TSK-1419 ✓),
   tonal=gate (TSK-1420 ✓), undo-ordering=unify (TSK-1421 ✓), selection×paint=already-clean. The
   image-editor deep-crossing vein is largely MINED (4 real bugs). NEXT deep-interaction target = a
-  DIFFERENT family: SESSION/TAB-SWITCH state (historical bug class per CLAUDE.md — scroll reset,
-  footer-stats blank, loading flashes; imperative state raced by declarative render).
+  another MULTI-MODE feature. Session/tab-switch + CSV verified CLEAN (well-hardened). Image editor
+  is the RICHEST vein — 5 bugs (1416/1419/1420/1421/1422 = paint-undo/geometry/tonal/undo-order/
+  overlay-export), its layer/mode crossings now largely covered. NEXT: HEX editor (view vs edit
+  mode, binary editing) or diff view. LESSON: multi-layer/multi-mode features harbor bugs;
+  single-purpose views are clean.
 - ⚠️ Micro-gaps on MAIN surfaces are thinning (empty states/reachability/basics verified) — audited surfaces are now
   consistently production-grade (run's fixes: CSV empty-state, paint-undo, FeedReader wire, palette
   discoverability + cohesion guard). Remaining known work is LARGER or OWNER-GATED, not micro-fixes:
