@@ -2325,7 +2325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         csvSummaryItem.target = self
         toolsMenu.addItem(csvSummaryItem)
         toolsMenuItem.submenu = toolsMenu
-        mainMenu.addItem(toolsMenuItem)
+        // (added to mainMenu in the ordered block below, after View)
 
         // TSK-1413 reorg slice 2: Export/Share actions (rendered-doc export +
         // clipboard conversions) grouped under File ▸ Export / Share, moved OUT of
@@ -2524,6 +2524,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             mi.target = self
             editMenu.addItem(applyShortcut(id, to: mi))
         }
+        // TSK-1413 reorg slice 3: content-TRANSFORM actions move to a dedicated
+        // top-level FORMAT menu (they were cluttering Edit, which is about the
+        // clipboard/selection). Selectors unchanged (AppMenuActionsTests guards).
+        let formatMenuItem = NSMenuItem()
+        let formatMenu = NSMenu(title: "Format")
         // TSK-350: align markdown pipe tables in the active editor (in place —
         // markdown has no format VIEW lens by design). Enabled only for a
         // markdown tab with an editor buffer (validateMenuItem).
@@ -2531,7 +2536,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             title: "Align Markdown Tables",
             action: #selector(alignMarkdownTables(_:)), keyEquivalent: "")
         alignTablesItem.target = self
-        editMenu.addItem(alignTablesItem)
+        formatMenu.addItem(alignTablesItem)
         // TSK-352: re-save the active file in a chosen text encoding. Tag =
         // index into `encodingChoices`. Enabled for any active text file.
         let convertItem = NSMenuItem(title: "Convert Encoding", action: nil, keyEquivalent: "")
@@ -2544,7 +2549,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             convertMenu.addItem(mi)
         }
         convertItem.submenu = convertMenu
-        editMenu.addItem(convertItem)
+        formatMenu.addItem(convertItem)
         // TSK-675: normalize the active file's line endings (LF/CRLF/CR). Tag =
         // index into `lineEndingChoices`. Enabled for any active text file.
         let eolItem = NSMenuItem(title: "Convert Line Endings", action: nil, keyEquivalent: "")
@@ -2557,16 +2562,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             eolMenu.addItem(mi)
         }
         eolItem.submenu = eolMenu
-        editMenu.addItem(eolItem)
+        formatMenu.addItem(eolItem)
         // TSK-675: whitespace cleanup on the active file (line endings preserved).
         let trimWSItem = NSMenuItem(title: "Trim Trailing Whitespace",
                                     action: #selector(trimTrailingWhitespace(_:)), keyEquivalent: "")
         trimWSItem.target = self
-        editMenu.addItem(trimWSItem)
+        formatMenu.addItem(trimWSItem)
         let finalNLItem = NSMenuItem(title: "Ensure Final Newline",
                                      action: #selector(ensureFinalNewline(_:)), keyEquivalent: "")
         finalNLItem.target = self
-        editMenu.addItem(finalNLItem)
+        formatMenu.addItem(finalNLItem)
         // TSK-675: convert leading indentation between tabs and spaces (using the
         // editor's indent width). Enabled for any active text file.
         let indentItem = NSMenuItem(title: "Convert Indentation", action: nil, keyEquivalent: "")
@@ -2580,22 +2585,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         toTabsItem.target = self
         indentMenu.addItem(toTabsItem)
         indentItem.submenu = indentMenu
-        editMenu.addItem(indentItem)
+        formatMenu.addItem(indentItem)
         // TSK-675: insert/refresh a Markdown table of contents from the file's
         // headings (idempotent via <!-- toc --> markers). Markdown files only.
         let tocItem = NSMenuItem(title: "Insert Table of Contents",
                                  action: #selector(insertTableOfContents(_:)), keyEquivalent: "")
         tocItem.target = self
-        editMenu.addItem(tocItem)
+        formatMenu.addItem(tocItem)
         // Shift all ATX heading levels (restructure a Markdown doc). Markdown only.
         let promoteItem = NSMenuItem(title: "Promote Headings",
                                      action: #selector(promoteHeadings(_:)), keyEquivalent: "")
         promoteItem.target = self
-        editMenu.addItem(promoteItem)
+        formatMenu.addItem(promoteItem)
         let demoteItem = NSMenuItem(title: "Demote Headings",
                                     action: #selector(demoteHeadings(_:)), keyEquivalent: "")
         demoteItem.target = self
-        editMenu.addItem(demoteItem)
+        formatMenu.addItem(demoteItem)
+        formatMenuItem.submenu = formatMenu
+        // (added to mainMenu in the ordered block below, after Edit)
         // Whole-file line operations on the active text file (in place).
         let linesItem = NSMenuItem(title: "Lines", action: nil, keyEquivalent: "")
         let linesMenu = NSMenu(title: "Lines")
@@ -2697,7 +2704,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // next to "Tabs" mental model. (App was added at the top.)
         mainMenu.addItem(fileMenuItem)
         mainMenu.addItem(editMenuItem)
+        mainMenu.addItem(formatMenuItem)   // TSK-1413: standard App/File/Edit/Format/View order
         mainMenu.addItem(viewMenuItem)
+        mainMenu.addItem(toolsMenuItem)    // TSK-1413: app-specific, after View
         // Navigate menu — surfaces the LSP go-to commands (TSK-464 follow-up).
         // Each dispatches the verified-working `navigateViaLSPAtCursor`;
         // `applyShortcut` picks up any user keybinding (none by default —
