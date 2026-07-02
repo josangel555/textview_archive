@@ -36,6 +36,9 @@
   hosting lane (above); per-feature ceiling = hosting-lane AX-assert + real-app model-state.
 - The 5-min cron message was updated (job ae60ea77) to carry this discipline.
 
+## 🧭 SESSION STATE (2026-07-02 usability run) — host-doable vein substantially worked
+Fixed with teeth this run: 7 user-facing bugs (CSV empty-state + image-editor undo/geometry/tonal/overlay-export/overlay-undo cluster), FULL menu reorg (Tools/Export/Format + ordering), palette/command cohesion (recategorize + export parity + cohesion guard), FeedReader orphan wired, finish-or-cut resolved (SQLite/treemap/HTTP built; RSS wired). Verified CLEAN (production-grade): CSV sort/filter/edit, diff-apply, audio editor, session-switch, search/list empty-states, viewer routing, perf-slow-tests. BACKLOG.md reconciled to code (TSK-1412). ⇒ The host-testable usability vein is largely mined; REMAINING is OWNER-GATED: TSK-1334 Screen-Recording grant (unblocks pixel/AX validation for the P0 CM6 render bugs 1200/1188/1271/891/910/1032, menu-appearance confirm, hex-edit 1423), owner flips (838/1215/1202), TSK-1418 WIP finish-or-cut, TSK-598 perf-VM. NEXT tick: if TSK-1334 still ungranted, either (a) chase a remaining host-testable gap in an un-audited family (terminal/monitor/walkthrough-model), or (b) say plainly the host vein is dry and the highest-leverage move is the owner's TSK-1334 grant.
+
 ## 📊 REAL-APP VALIDATION MAP (2026-07-02, ~97 UAT tests green on the VM)
 - Ran ~the whole UAT suite on the VM GUI lane (real spawned app). ~97 tests PASS across editor/CM6/
   LSP/sessions/search/previews/git/settings-menus/plugins-MCP/tabs/view-modes/sidebar+bookmarks/
