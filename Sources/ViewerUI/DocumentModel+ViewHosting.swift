@@ -35,3 +35,26 @@ extension DocumentModel {
         return hostID
     }
 }
+
+
+// Canvas rendered-lens controllers (M3.S1, TSK-1372) — one per canvas tab,
+// created lazily when the tab enters `.rendered`, dropped on tab close
+// (`dropCanvasController` is called from the tab-close path alongside the
+// other per-tab caches).
+extension DocumentModel {
+
+    /// Lazily create (or return) the canvas controller for a `.canvas` tab.
+    public func canvasController(forTab tabID: UUID, fileURL: URL) -> CanvasTabController {
+        if let existing = canvasControllers[tabID] { return existing }
+        let controller = CanvasTabController(
+            tabID: tabID, fileURL: fileURL, store: automationCanvasStore)
+        canvasControllers[tabID] = controller
+        return controller
+    }
+
+    /// Drop (and tear down) the controller when its tab closes.
+    public func dropCanvasController(forTab tabID: UUID) {
+        canvasControllers[tabID]?.teardown()
+        canvasControllers[tabID] = nil
+    }
+}

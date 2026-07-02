@@ -111,6 +111,12 @@ public enum ViewModeOptions {
         // opt-in mode. The later `.editor` insert also lands after
         // .source, so the final picker reads Source | Editor | Rendered |
         // … — what matters is Source is first/default, Rendered is not.
+        // .canvas (M3.S1, TSK-1372): the WYSIWYG rendered lens, AFTER .source
+        // like .html (source stays the conservative default until M3.S7 flips
+        // it — the render path is still growing its gesture surface).
+        if cat == .canvas {
+            modes.append(.rendered)
+        }
         if cat == .html {
             if let sourceIdx = modes.firstIndex(of: .source) {
                 modes.insert(.rendered, at: sourceIdx + 1)

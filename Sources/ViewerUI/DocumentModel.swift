@@ -1869,6 +1869,9 @@ public final class DocumentModel: ObservableObject {
     // Internal (not private) so the open/resolve logic can live in the
     // DocumentModel+ViewHosting.swift SRP slice (TSK-1110).
     var hostedViews: [UUID: AnyView] = [:]
+    /// Canvas rendered-lens controllers by tab id (M3.S1; see
+    /// DocumentModel+ViewHosting for the accessors).
+    var canvasControllers: [UUID: CanvasTabController] = [:]
     // hostedView(forID:) / openHTTPClient() / openHostedView(_:) →
     // DocumentModel+ViewHosting.swift.
 
@@ -3189,6 +3192,10 @@ public final class DocumentModel: ObservableObject {
     /// rendering), and only their *eviction* is tab-id-keyed.
     func purgeCaches(forURL closedURL: URL?, tabID: UUID? = nil) {
         if let tabID {
+            // Canvas rendered-lens controller (M3.S1): tear down the webview
+            // host with the tab. The STORE doc stays open (agents may still
+            // hold it); only the view binding dies.
+            dropCanvasController(forTab: tabID)
             // PERF #5: drop the per-tab highlight cache actor.
             // GC happens automatically once the last observer (the
             // source view) drops its `@ObservedObject` reference.

@@ -809,6 +809,12 @@ public struct ContentView: View {
             // Jupyter .ipynb as typed cells. Gated ⇒ no default-path impact; a
             // parse failure falls through to the normal JSON / source view.
             NotebookCellListView(document: notebook)
+        } else if tab.viewMode == .rendered && category == .canvas {
+            // Canvas WYSIWYG lens (M3.S1, TSK-1372): the engine-rendered
+            // surface. The controller binds this tab to the SHARED canvas
+            // store doc (agents and the UI co-edit one revision stream).
+            CanvasTabView(
+                controller: model.canvasController(forTab: tab.id, fileURL: file.url))
         } else if tab.viewMode == .table {
             // Per-tab CSV filter state lives on DocumentModel keyed by tab id;
             // pass THIS pane's id so each retained pane keeps its own filter.

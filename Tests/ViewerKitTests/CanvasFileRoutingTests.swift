@@ -29,7 +29,10 @@ final class CanvasFileRoutingTests: XCTestCase {
         let modes = ViewModeOptions.availableModes(for: url, forcedCategory: nil)
         XCTAssertTrue(modes.contains(.source))
         XCTAssertTrue(modes.contains(.hex))
-        XCTAssertFalse(modes.contains(.rendered), "no rendered lens before M3")
+        // M3.S1 (TSK-1372): the WYSIWYG lens arrived; source stays default
+        // until M3.S7 flips it.
+        XCTAssertTrue(modes.contains(.rendered), "the rendered lens exists from M3.S1")
+        XCTAssertEqual(modes.first, .source, "source is still the default lens")
     }
 
     func test_canvas_source_highlights_as_json() {
