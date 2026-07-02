@@ -1,4 +1,4 @@
-# Canvas — design spike (TSK-1342)
+# Canvas — unified design (TSK-1342, reconciles CANVAS-0001)
 
 > **Status: DESIGN — awaiting owner review. Nothing implemented.**
 > Owner ask (2026-07-01): a WYSIWYG editor for **agents** (and humans) to build UIs,
@@ -6,8 +6,98 @@
 > **abstraction layers to reduce friction** so an agent *inserts/edits structured elements*
 > instead of writing top-down HTML files. It is the **foundation layer** for later features
 > (UI Design à la Claude Design, Presentations, Explainers-in-Walkthroughs, and more).
-> This doc: the problem space, a recommended architecture (the abstraction stack), and a
-> broad use-case exploration. **Decisions the owner must make are in §12.**
+> **Read §0 first** — it reconciles the two independent design passes and carries the single
+> merged decision list (Q1–Q10). §1–§11 below remain the problem-space/foundations spike.
+
+---
+
+## 0. RECONCILIATION (2026-07-01) — adopted unified design
+
+Two independent design passes were produced the same day: **this doc** (TSK-1342 — problem
+space, prior-art/lowering principles, wide use-case sweep, boundaries) and
+**`docs/CANVAS_DESIGN_CANVAS-0001.md`** (a second claude-mdv session; markdown-filed as
+CANVAS-0001 while the board was down — deep codebase-integrated engineering design). They
+**converge on every fundamental** *independently* — a strong signal the architecture is right:
+scene graph as the only source of truth (never HTML) · stable IDs on every node with a
+`data-cv-id` DOM back-reference · small declarative ops (insert/update/move/delete/batch) with
+the op log = undo = history · auto-layout containers lowered to flex/grid · design tokens with
+app-theme inheritance · components with props/slots · declarative behaviors (no authored JS) ·
+sandboxed raw-HTML `embed` escape hatch · standalone-HTML/PDF/PNG export · no CRDT v1 ·
+zero new deps / vendored hand-rolled runtime.
+
+**Verdict: adopt CANVAS-0001 as the engineering base** — it is materially stronger where it
+counts for build-out (verified against the code 2026-07-01: the cited reuse seams
+`CodeMirrorBridge`, trusted-HTML `HTMLDocumentPolicy` (†in `ViewerCore/`, not `ViewerUI/`),
+`MermaidBundle` vendoring, Walkthrough engine/store, `MCPToolCatalog`/`AutomationHost`,
+`ScriptVerbCatalog`, warm WebView caches, `ViewMode` all exist as claimed):
+
+- **L0–L4 stack bound to real app seams** (CM6-style bridge/vendoring, warm caches, MCP tools) —
+  de-risks the build and honors house lessons (TSK-1046 park/re-attach, compositor occlusion).
+- **F1–F8 friction table** — each layer justified by the friction it kills.
+- **The feedback loop** (query → lint → snapshot tiers; lint inline with every apply; snapshot
+  via the runtime = headless, **no Screen-Recording TCC** — sidesteps the T5-grant class).
+- **Co-editing protocol** (rev/baseRev conflicts, events feed, shared undo with author labels,
+  locks) — my design only gestured at this.
+- **Security model** (op fence, path jail, first content-write-MCP precedent, resource caps,
+  embed = HTML/CSS-only sandboxed iframe) and a **testing strategy** mapped to the house tiers
+  (host gate / WebView lane / T5+T6 with negative-control teeth).
+- **P0-first phasing** that kills the riskiest unknowns (bridge perf, patch fidelity) before any
+  schema freeze.
+
+**This doc contributes to the unified design (CANVAS-0001 adopts these):**
+- **§10 hard boundaries** — the distortion table (no pixel editing / NLE / CAD / 3D / app
+  backend / prepress / game runtime; the 10³⁺-node DOM-scale fork). CANVAS-0001 has thin
+  non-goals; foundation epics die by scope creep — this is the fence.
+- **§9 wide use-case sweep** (~60 across 11 families) + the *preset formula* (a mode = spatial
+  model + palette + enabled layers + export targets) — pressure-tests that one core carries all;
+  CANVAS-0001's UC-1..14 are the near-term subset.
+- **§3 lowering principles** (engraving research): three-layer model (intent ▸ structure ▸
+  presentation, presentation always computed), bidirectional intent↔pixel linkage, primitives
+  carrying composition metadata — the design rationale under D1.
+- **Two decisions CANVAS-0001 misses** — added as Q9/Q10 below.
+
+**Conflicts resolved:**
+
+| Topic | This doc said | CANVAS-0001 says | Resolution |
+|---|---|---|---|
+| Layout default | free-form default (slides/infographics), auto-layout for UI | auto-layout default, `absolute` opt-in per-frame (D2) | **Adopt D2.** The agent-first argument wins: agents without pixel feedback produce overlapping absolute layouts (the #1 LLM-layout failure). Free-form stays one op away for the genuinely freeform. §5's hybrid note is superseded accordingly. |
+| Layer numbering | L0–L7 stack | L0–L4 stack | Same layers, different granularity (my L3 layout + L4 comp/tokens + L5 behavior live *inside* its L2 model + L1 runtime; my L6 export + L7 modes ≈ its L4 domain layers). **Adopt CANVAS-0001's L0–L4 naming** going forward. |
+| Op surface | generic `scene.*` verbs | concrete `canvas_*` MCP tools + script verbs + `{baseRev, ops[]}` envelope | **Adopt CANVAS-0001's** (concrete, house-patterned, adds the missing read/lint/snapshot/events tools). |
+| DOM back-ref attr | `data-cvs-id` | `data-cv-id` | `data-cv-id`. |
+| First mode | Slides *or* Explainer (asked owner) | Presentation first (Q1: epic 688 + OwnerWishlist P6 signal) | **Converged: Presentation first** — CANVAS-0001 brings the evidence. |
+| Ticket of record | TSK-1342 | CANVAS-0001 (board was down) | Board is back: **TSK-1342 is the epic of record**; CANVAS-0001 ≡ TSK-1342. Decompose per its §15 (one ticket per P0–P5 slice, `area:canvas`) on green-light. |
+
+**Review findings on CANVAS-0001 (gaps the unified design fixes — none architectural):**
+1. **No FLOW/pagination stance** → its UC-9 "rich reports (PDF export)" hits text pagination
+   immediately (the thing Figma/Canva/Miro all punt). → **Q9**.
+2. **No DOM-scale ceiling** for `kind:"board"`/diagram ambitions (10³–10⁴ nodes collapse DOM
+   rendering) → note the virtualization/canvas-backend fork trigger on D3. → folded into Q3.
+3. **Insert idempotency:** `baseRev` handles conflicts but not *retries* — a re-sent
+   `insert` duplicates. Fix: ops may carry caller-supplied IDs (insert-with-id = idempotent
+   upsert). Spec note for P1.
+4. **`update` path semantics** (`"set": {"style.font": …}`) needs precise merge rules —
+   dotted-path sets, an `unset`, array semantics. Spec note for P1.
+5. **Component-definition update undo** (re-projects all instances) must be a single invertible
+   op. Spec note for P1/P4.
+6. Path nit: `HTMLDocumentPolicy.swift` is in `Sources/ViewerCore/`.
+
+### The single merged decision list (owner review — supersedes §12 below and CANVAS-0001 §16)
+
+| # | Decision | Recommendation |
+|---|---|---|
+| Q1 | First domain track after the core — Presentation (UC-2/3) or UI Design (UC-1)? | **Presentation** (epic 688 + wishlist P6; both designs converge). |
+| Q2 | File extension — `.canvas` (Obsidian collision) or `.tvcanvas`? | `.canvas` + our `textview.canvas/v1` schema discriminator. |
+| Q3 | Page/artboard-first; infinite `board` later (D3)? | Yes — with the added rider: `board`/large-diagram ambitions carry a **DOM-scale fork trigger** (virtualize or canvas-backend at ~10³ nodes); decide only if/when that use-case is prioritized. |
+| Q4 | Zero new deps v1 — hand-rolled vendored runtime + hand-rolled SVG chart marks (D4)? | Yes; per-layer dep proposals (chart micro-lib, graph auto-layout à la elk/dagre) come back as parked approval asks only when scope demands. |
+| Q5 | `embed` ceiling: HTML/CSS-only v1 (no script)? | Yes; script-in-iframe deferred until a use case demands it. |
+| Q6 | Assets: single-file base64 (capped) vs sidecar dir? | Single-file to ~2 MB, sidecar beyond. |
+| Q7 | Content-write MCP precedent: op fence + tab indicator + events audit, or per-document human grant? | Op fence + indicator + audit (grants add friction to the core loop). |
+| Q8 | User-facing name "Canvas" (*File ▸ New Canvas*)? | Yes. |
+| Q9 | **FLOW / text pagination stance** (reports/résumés/email — every canvas tool punts) | **Defer full FLOW**; v1 "reports" = multi-page pages with manual breaks; revisit as its own mechanic when a reports/docs track is prioritized. The schema keeps it additive (`kind:"flow"` later). |
+| Q10 | **Code-export target for the UI-Design track** (UC-1's hard mile) | Standalone semantic HTML/CSS first; the framework target (React vs SwiftUI vs plain) decided when the UC-1 track starts — tiered: wireframe → clickable prototype → code. |
+
+**On green-light:** implement per CANVAS-0001 §15 phasing (P0 spike → P1 document core → P2 agent
+surface → P3 WYSIWYG → P4 design system → P5 presentation), decomposed on the board under TSK-1342.
 
 ---
 
@@ -186,7 +276,7 @@ Document = `{ schemaVersion, theme (token overrides), mode/preset, data?, pages/
 - **CRDT-ready but not CRDT (v1):** stable IDs + tree + typed ops make a later Yjs/CRDT swap
   feasible without a rewrite; v1 is single-writer with an undo stack.
 
-### Layout model — the deepest fork (recommendation: **hybrid, free-form default + auto-layout containers**)
+### Layout model — the deepest fork (⚠️ superseded by §0: **auto-layout default, `absolute` opt-in** — CANVAS-0001 D2)
 The research names the spatial model as *the* early architectural fork. Three modes over one IR:
 - **free-form** (absolute x/y/w/h within parent) — design freedom; the default for slides/
   infographics/whiteboard. Agent-assisted by **snapping + alignment guides + align/distribute ops**
@@ -328,7 +418,7 @@ temporal model* than DOM/CSS/vector-screen. **Support the *authoring/layout*, ne
 
 ---
 
-## 12. Decisions needed from the owner (blocking)
+## 12. Decisions needed from the owner (⚠️ superseded — the merged Q1–Q10 list in §0 is authoritative)
 1. **Scope of v1 / which mode first.** Recommend Phase-1 core + **Slides** *or* **Explainer** as the
    first end-to-end mode. Which? (Explainer dogfoods into the existing Walkthrough system.)
 2. **Layout model.** Confirm the **hybrid** (free-form default + auto-layout containers). And: is
