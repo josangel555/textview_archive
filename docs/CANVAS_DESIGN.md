@@ -95,9 +95,129 @@ counts for build-out (verified against the code 2026-07-01: the cited reuse seam
 | Q8 | User-facing name "Canvas" (*File ▸ New Canvas*)? | Yes. |
 | Q9 | **FLOW / text pagination stance** (reports/résumés/email — every canvas tool punts) | **Defer full FLOW**; v1 "reports" = multi-page pages with manual breaks; revisit as its own mechanic when a reports/docs track is prioritized. The schema keeps it additive (`kind:"flow"` later). |
 | Q10 | **Code-export target for the UI-Design track** (UC-1's hard mile) | Standalone semantic HTML/CSS first; the framework target (React vs SwiftUI vs plain) decided when the UC-1 track starts — tiered: wireframe → clickable prototype → code. |
+| Q11 | **Engine placement** — `canvas-core` as a rust-core crate (§0.6) vs a Swift ViewerCore model layer? | **rust-core** (per the owner's core-first directive + the settled reusable-core decision; §0.6 argues practicality). Confirm — it shapes P1 entirely. |
 
 **On green-light:** implement per CANVAS-0001 §15 phasing (P0 spike → P1 document core → P2 agent
-surface → P3 WYSIWYG → P4 design system → P5 presentation), decomposed on the board under TSK-1342.
+surface → P3 WYSIWYG → P4 design system → P5 presentation), decomposed on the board under TSK-1342,
+with the §0.5 deltas and the §0.6 core-first split applied.
+
+---
+
+## 0.5 Research round 2 — salvaged fan-out results, mined 2026-07-01 (deltas ADOPTED)
+
+The killed research fleet's canvas-related outputs were salvaged and mined (20 substantive
+reports; per-dimension detail + citations: **`docs/research/canvas-2026-07-01/`**, README = index).
+Two kinds of value: hard **evidence** for bets already made, and concrete **design deltas**.
+
+### The empirical backbone (evidence the abstraction bet is right)
+- **The abstraction level of the authoring API is the dominant lever on agent reliability:**
+  AutoPresent measured LLM slide-generation executability at **2–11% against a raw low-level API
+  vs 80%+ against a purpose-built high-level DSL** (170-line raw programs → 13-line library calls).
+- **Raw coordinates are the documented model weakness:** LLM-layout literature finds "spatial
+  hallucination… struggle with fine-grained spatial constraints and precise coordinate
+  positioning"; raw SVG degrades with complexity. Flow/flex intent is the model's *strength*.
+- **Generation is open-loop and blind** (DesignAsCode): render-and-inspect feedback is mandatory,
+  not optional — independently validates the query→lint→snapshot loop (and the house T6 rule).
+- **The production LLM-UI pattern is "select + parameterize from a registered vocabulary," not
+  "write markup"** (Vercel AI-SDK generative UI, Thesys C1, Airbnb/Lyft server-driven UI) — the
+  component-kit layer is the industry-convergent shape, arrived at from both the SDUI and LLM sides.
+- **Framer's agent postmortem** (the one team that shipped "agent authors a design tree it can't
+  see"): stream **patch deltas against stable ids**, compress the IR (short prop names, omit
+  defaults) — "every token spent is directly used."
+
+### Design deltas (adopted; supersede conflicting details in the docs below)
+
+| # | Delta | Source / why |
+|---|---|---|
+| **R1** | **Flat record store, not a nested tree.** Document = map `id → node` + `parentId` + **fractional sibling index** (jittered, tldraw-style); `parentId+index` updated **atomically as one property** (Figma's orphan warning). File = `{formatVersion, schema, records}` (à la `.tldr`), canonical-sorted → still git-diff-friendly (one record per entry). The *render* tree is derived. Supersedes the nested `children:[…]` sketches in §5 below and CANVAS-0001 §5. | `document-models-scene-graphs.md`: "flat map vs nested children[] is the load-bearing decision" — O(1) reparent/reorder, surgical agent patches, CRDT-ready. |
+| **R2** | **Schema migrations from day one.** Versioned per-sequence up/down migrations run on load (tldraw `StoreSchema`); unknown node types/props round-trip opaquely; Rive's type-tagged forward-compat is the north star if a binary form ever ships. | `tldraw-programmatic-authoring.md`, `scene-identity-timeline-transitions.md`. Additive-Codable alone under-invests; agent-written docs outlive schema versions. |
+| **R3** | **Tokens = W3C DTCG 2025.10 format** (`$value`/`$type`, brace aliases) instead of an ad-hoc token tree. Three tiers (primitive → semantic → component); **the op fence constrains agents to tier-2 semantic references** (raw literals allowed but lint-flagged); renames via deprecate-and-alias. Compiles to `--cv-*` CSS custom properties (unchanged). | `design-tokens-theming.md`. A real standard with tooling; validates + hardens CANVAS-0001 §6.2. |
+| **R4** | **Layout D2 hardened:** flow/flex/grid make overlap *impossible by construction* and are **statically checkable in the core without rendering** → the static half of lint moves into the engine (§0.6). Add min/max clamps on hug/fill (bounds intrinsic-sizing blowouts). **Never add a constraint solver** — under-constrained systems fail *silently* (Apple's own docs: no warning, no breakpoint) — the worst failure shape for a blind agent. | `layout-abstractions-blind-agents.md` (+ LLM-layout papers). |
+| **R5** | **Op ergonomics:** ops accept **partials, engine fills type defaults** (kills tldraw's two-write-tier footgun); `insert` accepts **caller-supplied IDs** → idempotent retries; a `hole` placeholder node type (Hazel) so mid-build documents are never invalid; document `unset` + dotted-path merge semantics precisely. Tool guidance: **plan free-form, then emit schema-constrained ops** — format-restricting the *reasoning* measurably degrades it ("Let Me Speak Freely"). | `tldraw…`, `projectional-editing…`, `ui-description-languages…`. |
+| **R6** | **TIME/INTERACT layer shapes:** every animatable property uses Lottie's **`{a,k}` container** (constant *or* keyframed, one interpolation path for everything); timeline composition = SMIL's **`par`/`seq`/`excl` container tree** with **relational timing** (`after: intro.end`), serializable + seekable; INTERACT altitude = Rive-style **state machine** (named states + typed inputs + transitions) rather than loose event→action pairs when state grows. | `animation-motion-representations.md`, `scene-identity-timeline-transitions.md`. |
+| **R7** | **Identity-based morph transitions — signature feature.** Keynote Magic-Move / PowerPoint Morph / reveal auto-animate all *heuristically match* elements between slides (and mis-match). **Our stable IDs make the match exact**: same id on adjacent pages/steps ⇒ deterministic FLIP morph. Falls out of the model nearly free; no other HTML deck tool has exact matching. | `scene-identity-timeline-transitions.md`. |
+| **R8** | **Verify loop for motion/steps** (MoVer pattern, 58.8%→93.6% via check-and-iterate): the runtime exposes **declarative timeline state queries** ("what is visible/where at step N") so agents and tests verify TIME behavior as data before any snapshot. | `animation-motion-representations.md`. |
+| **R9** | **Meet the training distribution:** node/style/layout vocabulary mirrors CSS/Figma names the model has seen at scale (`gap`, `padding`, `align`, `justify`, `fill`, `stroke`…) — no exotic synonyms. Chart IR follows the Vega-Lite encoding shape (`mark` + channel→field). | `explorables-llm-ui-generation.md` (LayoutGPT), `declarative-grammars…`. |
+| **R10** | **Ceiling placed consciously; escape hatch is an early feature.** A too-tight IR measurably *lowers* visual quality (DesignAsCode); the no-code 80/20 ceiling is real. `embed` ships early (P1/P2, not "later"); Plasmic-style **code components** are the reserved plugin shape for the last mile. One-way codegen stays absolute — exported HTML is disposable, never hand-edited (round-trip = "two one-way pipes in a trench coat"). | `ui-description-languages…`. |
+| **R11** | **Content-hash subtree caching** (Unison): hash each record subtree → skip re-lowering/re-rendering unchanged subtrees; also the natural fingerprint for the events feed. Perf lever, not a v1 requirement. | `projectional-editing…`. |
+| **R12** | **The projectional-editing graveyard, read correctly:** structured editing failed where *humans hand-drove the structure* (Intentional, Darklang's editor); it works when the human sees a **projection** (our WYSIWYG) and the machine authors the model. The inherited obligation: diff/merge/review/search must stay possible → the canonical **text** JSON format + the app's own diff viewer are load-bearing, not cosmetic. Keeps Q-format decisions honest (no binary-only format). | `projectional-editing…`. |
+
+### Review verdict on the salvage
+Nothing contradicts the adopted architecture — the strongest reports *independently converge* on
+it (typed nodes + stable IDs + ops + tokens + components + declarative behaviors + one-way
+lowering). The material *changes* storage shape (R1), the token standard (R3), where lint lives
+(R4→§0.6), op ergonomics (R5), and the TIME layer's internal shape (R6–R8) — and contributes one
+signature feature (R7).
+
+---
+
+## 0.6 Core-first architecture (owner directive 2026-07-01) — where the bulk of the work lives
+
+> Owner: Canvas must stay agent-driven and user-facing, but be **a fundamental, extendable,
+> broadly reusable core feature — the bulk of the work is in core.** This section makes that
+> concrete and grounded.
+
+### The split: a pure, UI-agnostic **canvas engine** + thin shells
+
+Everything that defines Canvas semantics is a **pure, sans-IO engine** — no WebView, no
+SwiftUI, no file I/O inside it:
+
+```
+                    ┌──────────────────────────────────────────────────────┐
+   ENGINE (core)    │  canvas-core: schema + records + migrations (R1/R2)  │
+   pure, sans-IO    │  op reducer + validation fence + undo/invert         │
+                    │  selectors · token resolution (DTCG) · component     │
+                    │  expansion · STATIC lint (flow safety, token refs,   │
+                    │  schema, caps — R4) · lowering → HTML/CSS + patch    │
+                    │  plan · export assembly · events/rev log             │
+                    └───────────────┬──────────────────────────────────────┘
+                    FFI (compact binary ops/patches — house style, no JSON over the boundary)
+        ┌───────────────────────────┼───────────────────────────────┐
+   Swift shell                      │                        JS shell (WKWebView)
+   file I/O · persistence/sessions  │                        DOM patch APPLIER (engine emits the
+   MCP/script-verb hosting · undo   │                        patch plan) · direct manipulation →
+   stack UI · SwiftUI chrome        │                        ops · MEASURED lint (geometry,
+   (inspector/layers/palette)       │                        contrast-in-context, overflow) ·
+                                    │                        behavior/timeline player · snapshot
+```
+
+- **In core** (the bulk): document model, ops, fence, selectors, tokens, components, static lint,
+  the IR→HTML/CSS lowering and DOM-**patch plan** computation, export assembly, migrations, the
+  rev/event log. All deterministic, all host-testable, all reusable.
+- **Deliberately NOT in core:** the layout *math* — flexbox/grid geometry is computed by the
+  browser engine (that is *the* reason HTML/CSS is the substrate; we never write or vendor a
+  layout engine — no Taffy, keeps core dep-free). Consequence: geometry/measured-lint live in the
+  JS shell and are reported back as data.
+- **Swift/JS become shells:** Swift = I/O + persistence + agent-surface hosting + native chrome;
+  JS = a dumb patch applier + interaction capture + measurement + player.
+
+### Placement: the engine is a **rust-core crate** (`canvas-core`)
+
+Grounded in standing house decisions, not novelty:
+1. **"Reusable-core is Rust"** is the settled architecture (2026-05-30 decision; engine ports
+   TSK-630..634). Building a NEW engine in Swift would mint the next port-debt item on day one —
+   the migration policy exists precisely because we keep paying that cost.
+2. **Remote-core + wasm32 are standing goals** the engine slots into: `canvas-core` sans-IO ⇒
+   wasm-buildable (CI-guarded like the rest of the core), which keeps two doors open cheaply —
+   a remote agent authoring canvases through the transport-agnostic contract, and (later) the
+   exported standalone player sharing the exact engine.
+3. **Compact binary over the boundary** is the owner's stated FFI preference; Lyft's SDUI
+   (protobuf primitives, 40–60% smaller payloads) is the production precedent for binary UI-doc
+   ops. Ops/patches ride the existing envelope work (TSK-634 codegen lineage).
+4. **The test story lands in the strongest lane:** op-reducer invariants are proptest-shaped
+   (`apply∘invert = identity`, idempotent re-apply, fence never partially applies, lowering
+   determinism) — the house property-test lane (TSK-585). The op fence decodes untrusted input ⇒
+   a fuzz target + corpus per the TSK-584 rule. Both are cargo-gate, VM-free.
+5. **Known frictions, priced in:** FFI surface grows (mitigated by the codegen path); the VM has
+   no Rust toolchain (existing flow: host-built `libmdvcore_ffi.a` rsync'd — unchanged); Swift
+   keeps thin Codable mirrors only where SwiftUI needs value types.
+
+### What this changes in the phasing (CANVAS-0001 §15, amended)
+- **P0 spike** gains one goal: prove the **core↔WebView patch loop** (Rust computes patch plan →
+  FFI → JS applies → geometry query returns) alongside bridge perf.
+- **P1 document core = the `canvas-core` crate** (records/ops/fence/tokens/lowering/static-lint +
+  proptest/fuzz), NOT a Swift model layer. Swift gets the Codable mirror + store glue only.
+- Later phases unchanged in order; each render slice still carries its VM tail.
 
 ---
 
@@ -237,6 +357,10 @@ always present; the rest are **opt-in per mode/preset**.
 ---
 
 ## 5. The Scene IR (L1) — recommended shape
+
+> ⚠️ **Storage shape superseded by §0.5-R1:** the document is stored as a **flat record map**
+> (`id → node` + `parentId` + fractional sibling index); the tree below is the *derived/logical*
+> view. Field content (type/style/props/bind/on/steps) still applies.
 
 A **tree** of elements (not a flat array — we need containers/auto-layout/grouping), each:
 
