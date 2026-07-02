@@ -132,19 +132,86 @@ fn style_of(store: &Store, id: &Id) -> String {
 #[must_use]
 pub fn lower_subtree(store: &Store, id: &Id) -> String {
     let mut out = String::new();
-    emit(store, id, &mut out);
+    emit(store, id, &ExpandCtx::root(), &mut out);
     out
 }
 
-fn emit(store: &Store, id: &Id, out: &mut String) {
+/// Component-expansion context (M4.S1): the id-namespace prefix for nodes
+/// emitted INSIDE an instance expansion (`nd:inst/…`), and the depth cap
+/// that bounds nesting (a cycle fence lives at apply-time; the cap is the
+/// render-side backstop so even a corrupted doc cannot loop the lowerer).
+struct ExpandCtx {
+    prefix: String,
+    depth: u8,
+}
+
+const MAX_EXPANSION_DEPTH: u8 = 8;
+
+impl ExpandCtx {
+    fn root() -> ExpandCtx {
+        ExpandCtx { prefix: String::new(), depth: 0 }
+    }
+    fn enter(&self, instance_id: &Id) -> ExpandCtx {
+        ExpandCtx {
+            prefix: format!("{}{}/", self.prefix, instance_id.as_str()),
+            depth: self.depth.saturating_add(1),
+        }
+    }
+    /// The DOM id for `id` in this context (namespaced inside expansions).
+    fn dom_id(&self, id: &Id) -> String {
+        if self.prefix.is_empty() {
+            id.as_str().to_owned()
+        } else {
+            format!("{}{}", self.prefix, id.as_str())
+        }
+    }
+}
+
+fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
     let Some(rec) = store.get(id) else { return };
+
+    // Component INSTANCE: expand its definition's subtree with namespaced
+    // ids (M4-PLAN §S1 — expansion at lowering: editing the definition
+    // updates every instance by construction). Unknown/dangling refs render
+    // a visible placeholder (lint already warns via dangling-ref).
+    if rec.kind == RecordKind::Component {
+        let target = PropKey::by_name("ref")
+            .and_then(|k| rec.props.get(k))
+            .and_then(|v| match v {
+                Value::Str(s) => Id::parse(s).ok(),
+                _ => None,
+            });
+        out.push_str("<div data-cv-id=\"");
+        escape_attr(&ctx.dom_id(id), out);
+        out.push_str("\" data-cv-kind=\"component\"");
+        let style = style_of(store, id);
+        if !style.is_empty() {
+            out.push_str(" style=\"");
+            escape_attr(&style, out);
+            out.push('"');
+        }
+        out.push('>');
+        if ctx.depth >= MAX_EXPANSION_DEPTH {
+            out.push_str("<!-- expansion depth cap -->");
+        } else if let Some(def) = target.filter(|t| store.get(t).is_some()) {
+            let inner = ctx.enter(id);
+            for kid in store.children(&def) {
+                emit(store, &kid, &inner, out);
+            }
+        } else {
+            out.push_str("<!-- unresolved component -->");
+        }
+        out.push_str("</div>");
+        return;
+    }
+
     let style = style_of(store, id);
     let get = |name: &str| PropKey::by_name(name).and_then(|k| rec.props.get(k));
 
     match rec.kind {
         RecordKind::Image => {
             out.push_str("<img data-cv-id=\"");
-            escape_attr(id.as_str(), out);
+            escape_attr(&ctx.dom_id(id), out);
             out.push('"');
             if let Some(Value::Str(src)) = get("src") {
                 out.push_str(" src=\"");
@@ -160,7 +227,7 @@ fn emit(store: &Store, id: &Id, out: &mut String) {
         }
         _ => {
             out.push_str("<div data-cv-id=\"");
-            escape_attr(id.as_str(), out);
+            escape_attr(&ctx.dom_id(id), out);
             out.push('"');
             // Kind marker for the runtime/debugging (stable vocabulary).
             out.push_str(" data-cv-kind=\"");
@@ -188,7 +255,7 @@ fn emit(store: &Store, id: &Id, out: &mut String) {
                 _ => {}
             }
             for kid in store.children(id) {
-                emit(store, &kid, out);
+                emit(store, &kid, ctx, out);
             }
             out.push_str("</div>");
         }
@@ -203,7 +270,7 @@ pub fn lower_page(store: &Store, tokens: &TokenStore, page: &Id) -> String {
     out.push_str("<style>:root{\n");
     out.push_str(&tokens.to_css_custom_props());
     out.push_str("}</style>");
-    emit(store, page, &mut out);
+    emit(store, page, &ExpandCtx::root(), &mut out);
     out
 }
 
@@ -310,6 +377,132 @@ mod tests {
         let html = lower_page(&d.store, &tokens, &pg);
         assert!(html.contains("display:flex;flex-direction:column;"));
         assert!(html.contains("gap:8px"));
+    }
+
+    // MARK: M4.S1 — component expansion
+
+    /// Build: a cmp:card definition (frame > title + body texts) + two
+    /// instances on the page.
+    fn component_fixture() -> (DocState, Id) {
+        let (mut d, pg) = {
+            let mut d = DocState::new();
+            let pg = Id::page(1);
+            d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+            (d, pg)
+        };
+        let card = Id::parse("cmp:card").expect("cmp id");
+        d.store.insert_root(card.clone(), RecordKind::Frame).expect("cmp root");
+        d.apply(
+            0,
+            &[
+                CanvasOp::Insert {
+                    id: Some(id("nd:card-title")),
+                    kind: RecordKind::Text,
+                    parent: card.clone(),
+                    pos: Position::Last,
+                    props: vec![(key("text"), Value::Str("Card title".into()))],
+                },
+                CanvasOp::Insert {
+                    id: Some(id("nd:inst-a")),
+                    kind: RecordKind::Component,
+                    parent: pg.clone(),
+                    pos: Position::Last,
+                    props: vec![(key("ref"), Value::Str("cmp:card".into()))],
+                },
+                CanvasOp::Insert {
+                    id: Some(id("nd:inst-b")),
+                    kind: RecordKind::Component,
+                    parent: pg.clone(),
+                    pos: Position::Last,
+                    props: vec![(key("ref"), Value::Str("cmp:card".into()))],
+                },
+            ],
+        )
+        .expect("fixture");
+        (d, pg)
+    }
+
+    #[test]
+    fn instances_expand_their_definition_with_namespaced_ids() {
+        let (d, pg) = component_fixture();
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        // Both instances render the definition's content...
+        assert_eq!(html.matches(">Card title<").count(), 2, "{html}");
+        // ...with NAMESPACED inner ids (stable + collision-free).
+        assert!(html.contains("data-cv-id=\"nd:inst-a/nd:card-title\""));
+        assert!(html.contains("data-cv-id=\"nd:inst-b/nd:card-title\""));
+        // The definition itself is NOT rendered on the page (separate root).
+        assert!(!html.contains("data-cv-id=\"nd:card-title\""), "no un-namespaced leak");
+    }
+
+    #[test]
+    fn definition_edit_updates_every_instance_by_construction() {
+        let (mut d, pg) = component_fixture();
+        let tokens = TokenStore::default_theme();
+        d.apply(
+            1,
+            &[CanvasOp::Update {
+                id: id("nd:card-title"),
+                set: vec![(key("text"), Value::Str("Edited once".into()))],
+                unset: vec![],
+            }],
+        )
+        .expect("edit the definition");
+        let html = lower_page(&d.store, &tokens, &pg);
+        assert_eq!(html.matches(">Edited once<").count(), 2,
+                   "one definition edit, every instance updated");
+        assert_eq!(html.matches(">Card title<").count(), 0);
+    }
+
+    #[test]
+    fn dangling_refs_render_placeholders_and_depth_is_capped() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(
+            0,
+            &[CanvasOp::Insert {
+                id: Some(id("nd:ghost")),
+                kind: RecordKind::Component,
+                parent: pg.clone(),
+                pos: Position::Last,
+                props: vec![(key("ref"), Value::Str("cmp:missing".into()))],
+            }],
+        )
+        .expect("ghost");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        assert!(html.contains("unresolved component"));
+
+        // Depth cap: a self-instantiating definition (the apply-time cycle
+        // fence is S1b; the RENDER-side cap must already refuse to loop).
+        let looper = Id::parse("cmp:loop").expect("id");
+        d.store.insert_root(looper.clone(), RecordKind::Frame).expect("root2");
+        d.apply(
+            1,
+            &[CanvasOp::Insert {
+                id: Some(id("nd:selfref")),
+                kind: RecordKind::Component,
+                parent: looper.clone(),
+                pos: Position::Last,
+                props: vec![(key("ref"), Value::Str("cmp:loop".into()))],
+            }],
+        )
+        .expect("self-instantiating definition");
+        d.apply(
+            2,
+            &[CanvasOp::Insert {
+                id: Some(id("nd:top")),
+                kind: RecordKind::Component,
+                parent: pg.clone(),
+                pos: Position::Last,
+                props: vec![(key("ref"), Value::Str("cmp:loop".into()))],
+            }],
+        )
+        .expect("top instance");
+        let html2 = lower_page(&d.store, &tokens, &pg);
+        assert!(html2.contains("expansion depth cap"), "the lowerer must not loop");
     }
 
     #[test]
