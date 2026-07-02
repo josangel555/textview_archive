@@ -394,3 +394,23 @@ SearchAnywhereSection, StructuralSearchView, command-palette hints).
 TSK-1413 status: palette-parity (Pass 8) + env-var audit (this pass) DONE. Remaining: menu reorg
 (TSK-751/1318) — a larger UX-design task. No code fix warranted this tick (surfaces audited are
 production-grade; not manufacturing marginal work per owner directive).
+
+### Pass 10 (2026-07-02) — REAL BUG found in a deep interaction path: geometry-after-paint (TSK-1419)
+
+Reversing last pass's "micro-gap vein thinning" note: the vein is thin on MAIN surfaces (empty
+states, reachability, per-feature basics — all verified production-grade), but DEEP INTERACTION
+paths (feature × feature) still harbor real bugs. Found + fixed a silent DATA-LOSS bug: in the image
+editor, committing a geometry op (crop/resize/rotate/skew) AFTER starting a paint session was
+silently swallowed — render() early-returns the destructive paint buffer, shadowing base.ops, so the
+op was recorded but never rendered AND lost on export (the paint buffer, without the op, was
+written). Diagnosed with a failing test first (rendered stayed 12px after a resize to 24), fixed by
+transforming the paint buffer THROUGH the op via the same Renderer (4dc94b8c). 3 host tests + teeth.
+
+LESSON for the remaining run: stop re-checking main surfaces (verified). Hunt DEEP INTERACTION /
+EDGE paths — ordering between two features (paint↔geometry), state across a switch (session/tab),
+undo across mode changes, export after edits. That's where the genuine bugs remain. Trigger here
+(paint drag + resize dialog) is AX/pixel-gated, so these are host-tested + teeth (on-screen is the
+same code path) — the honest ceiling until TSK-1334.
+
+Genuine gaps found+fixed this run: CSV empty-state (1415), paint-undo (1416), HTTP verb + palette
+discoverability + cohesion guard (1413), FeedReader orphan wired (1417), geometry-after-paint (1419).

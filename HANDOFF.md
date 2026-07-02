@@ -59,7 +59,12 @@
   image" + "waveform"; rest are harness/experimental/WIP). Also verified production-grade: audio MP3
   export degradation, all search empty-states, all list-view empty-states (bookmarks/recent/action-
   history). CSV empty-state (TSK-1415) was the one real empty-state gap — fixed.
-- ⚠️ HONEST STATE: the "find + fix a genuine micro-gap" vein is THINNING — audited surfaces are now
+- ✅ CORRECTION to the "vein thinning" note: main SURFACES are clean, but DEEP INTERACTION paths
+  still harbor real bugs — found+fixed geometry-after-paint silent data-loss (TSK-1419, 4dc94b8c):
+  crop/resize/rotate after a paint session were shadowed by the paint buffer (invisible + lost on
+  export). HUNT DEEP INTERACTION/EDGE paths next (feature×feature ordering, state-across-switch,
+  undo-across-mode, export-after-edits) — NOT main surfaces (verified). 
+- ⚠️ Micro-gaps on MAIN surfaces are thinning (empty states/reachability/basics verified) — audited surfaces are now
   consistently production-grade (run's fixes: CSV empty-state, paint-undo, FeedReader wire, palette
   discoverability + cohesion guard). Remaining known work is LARGER or OWNER-GATED, not micro-fixes:
 - NEXT: (1) TSK-1413 remainder = MENU REORG (TSK-751/1318) — a larger UX-design task. (2) TSK-1412 =
