@@ -74,18 +74,20 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
         "role", "note",
         // M5.S6: prototype-nav link (presence-keyed, any element kind).
         "linkTo",
+        // M6.S2: presentation reveal step.
+        "step",
     ];
     const TEXT: &[&str] = &[
         "text", "role", "color", "font", "opacity", "grow", "shrink", "span", "minW", "maxW",
-        "minH", "maxH", "linkTo",
+        "minH", "maxH", "linkTo", "step",
     ];
     const IMAGE: &[&str] = &[
         "src", "fit", "radius", "opacity", "grow", "shrink", "span", "minW", "maxW", "minH",
-        "maxH", "linkTo",
+        "maxH", "linkTo", "step",
     ];
     const SHAPE: &[&str] = &[
         "shape", "fill", "stroke", "radius", "opacity", "grow", "shrink", "span", "minW", "maxW",
-        "minH", "maxH", "linkTo",
+        "minH", "maxH", "linkTo", "step",
     ];
     const COMPONENT: &[&str] = &[
         // M4.S2: instance props override the expansion ROOT (fill/spacing/
@@ -95,6 +97,7 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
         "gap", "padding", "minW", "maxW", "minH", "maxH",
         "grow", "shrink", "span",
             "linkTo",
+            "step",
     ];
     const EMBED: &[&str] = &["html", "minW", "maxW", "minH", "maxH", "grow", "shrink", "span"];
     const HOLE: &[&str] = &["note", "minW", "maxW", "minH", "maxH"];
@@ -184,7 +187,8 @@ pub fn check_value(key: PropKey, value: &Value) -> Result<(), FenceError> {
             Ok(())
         }
         // Numeric, non-negative.
-        ("gap" | "padding" | "radius" | "minW" | "maxW" | "minH" | "maxH" | "grow" | "shrink",
+        ("gap" | "padding" | "radius" | "minW" | "maxW" | "minH" | "maxH" | "grow" | "shrink"
+            | "step",
             Value::Num(n)) => {
             if n.is_finite() && *n >= 0.0 { Ok(()) } else { bad("must be a finite number >= 0") }
         }

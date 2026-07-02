@@ -54,6 +54,8 @@ const KEY_TABLE: &[(u16, &str)] = &[
     (33, "spec"),
     // M5.S6: prototype nav — click scrolls to the referenced node.
     (34, "linkTo"),
+    // M6.S2: presentation step — the node reveals at this step (u16).
+    (35, "step"),
 ];
 
 impl PropKey {

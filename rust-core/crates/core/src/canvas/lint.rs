@@ -48,6 +48,19 @@ pub fn run(doc: &DocState, tokens: &TokenStore) -> Vec<Lint> {
         for (key, value) in rec.props.iter() {
             lint_prop(id, key, value, tokens, &mut findings);
         }
+        // M6.S2: a `step` (presentation reveal) only makes sense inside a
+        // slide — an orphan step reveals nothing.
+        if PropKey::by_name("step").is_some_and(|k| rec.props.get(k).is_some())
+            && !under_slide(&doc.store, id)
+        {
+            findings.push(Lint {
+                severity: LintSeverity::Warn,
+                code: "orphan-step",
+                id: Some(id.clone()),
+                message: "step is set on a node outside any role=slide frame —                           the presentation player only reveals within slides"
+                    .to_owned(),
+            });
+        }
         // M5.S6: a linkTo (prototype nav) must reference a live node.
         if let Some(Value::Str(target)) = PropKey::by_name("linkTo")
             .and_then(|k| rec.props.get(k))
@@ -213,6 +226,25 @@ fn lint_prop(
         }
         Value::Bool(_) => {}
     }
+}
+
+/// True when `id` has an ancestor frame with role=slide (M6.S2).
+fn under_slide(store: &super::store::Store, id: &Id) -> bool {
+    let mut cursor = store.get(id).and_then(|r| r.place.as_ref()).map(|p| p.parent.clone());
+    while let Some(pid) = cursor {
+        if let Some(rec) = store.get(&pid) {
+            let is_slide = PropKey::by_name("role")
+                .and_then(|k| rec.props.get(k))
+                .is_some_and(|v| matches!(v, Value::Str(s) if s == "slide"));
+            if is_slide {
+                return true;
+            }
+            cursor = rec.place.as_ref().map(|p| p.parent.clone());
+        } else {
+            break;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

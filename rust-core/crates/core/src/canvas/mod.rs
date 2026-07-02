@@ -13,6 +13,7 @@
 //! the real op engine (TSK-1343 has the spike's verdict + numbers).
 
 pub mod chart;
+pub mod deck;
 pub mod doc;
 pub mod dsl;
 pub mod io;
