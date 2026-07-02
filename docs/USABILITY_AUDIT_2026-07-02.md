@@ -219,3 +219,25 @@ targeted polish (empty-states, edge bugs), not rebuilding. **Owner's "almost all
 at the code level, as: a few thin spikes + discoverability + a badly stale tracker — the core is
 sound.** (Caveat: on-screen re-verification of the 🟡 features is still owed per the render bar;
 this pass verified code-wiring, which for these native-SwiftUI/CM6 features is high-signal.)
+
+### Pass 2 addendum (self-correction) — distinguish BACKLOG.md-file lag from BOARD state
+
+Deeper check corrects pass-2's own "board badly under-reports code" claim — it was **too
+strong**. Reconciling one flagged ticket against the live board (not the BACKLOG.md file):
+- **TSK-924** (CSV multi-cell) board state = `review`, with a careful reconciliation: model
+  host-tested (CSVRectSelection 5/5, CSVCopy, CSVClipboard, EditableCSVModel.paste), view
+  wired (rect→⌘C→NSPasteboard, Copy Row/Col context menu), and an HONEST ceiling note — the
+  focus-gated selection tint + the shift-select gesture (AX) genuinely can't be host-confirmed
+  (ImageRenderer has no focus engine; AX is the one off-limits lane). So the ticket is **not
+  stale** — it's accurately at review with a real render/AX tail.
+
+**Refined finding:** the staleness is layered — (a) the **BACKLOG.md FILE lags** (it says
+"model-only" for features the board already reconciled; the file's own header admits it lags);
+(b) the **board tickets are largely honest**, sitting at `review`/`fixed` with real render/AX-
+confirmation tails; (c) my pass-2 conflated the two. The genuine systemic pattern is therefore:
+**features are model-complete + view-wired, stuck at an honest on-screen/AX confirmation tail**
+that is the SAME owner-gated bar the whole app hit (TSK-1334 pixel grant + the AX lane) — NOT
+incompleteness, and NOT a dishonest board. So TSK-1412 shrinks from "reconcile a dishonest
+board" to "refresh the lagging BACKLOG.md file + close the review-lane items whose only gap is
+the owner-gated render/AX confirmation." The real agent-actionable polish is the genuine gaps
+code-reads surface (e.g. the CSV empty-state, TSK-1415) + the thin spikes + cross-cutting bugs.
