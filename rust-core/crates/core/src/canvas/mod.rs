@@ -14,6 +14,8 @@
 //!
 //! Wire: MessagePack maps via [`crate::wire`] (`to_vec_named` framing rules).
 
+pub mod props;
+pub mod registry;
 pub mod store;
 
 use crate::wire::{self, WireFault};
