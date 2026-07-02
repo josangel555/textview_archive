@@ -1,4 +1,24 @@
 <!-- CLAUDE-HANDOFF v1 -->
+
+## 🔀 MISSION PIVOT (2026-07-02): Canvas PARKED → app-wide production-grade usability polish
+- **Canvas (M0→M6) is COMPLETE + validated + hardened + PARKED pending owner review** (docs/canvas/
+  README.md = review index; docs/canvas/plans/TIER2-BACKLOG.md = the deferred-features decision menu).
+  Do NOT resume Canvas building until the owner reviews.
+- **NEW STANDING MISSION (owner 2026-07-02):** audit the whole app's feature surface, make it
+  production-grade with high standards, autonomously. Umbrella epic **TSK-1411**; foundation audit
+  = **docs/USABILITY_AUDIT_2026-07-02.md** (9 feature families + themes + rubric).
+- **⛔ CODE IS SOURCE OF TRUTH — do NOT trust tickets/docs/commit messages** (owner directive).
+  Proven: 3/3 flagship "model-only" tickets were REFUTED by code (image editor 10 tools wired,
+  CSV multi-cell in-view, LSP completion wired). The board UNDER-reports the code. The #1 finding
+  (TSK-1412) is board≠code; the real defects are polish/quality/UX/cohesion in WIRED features, not
+  missing UI. For every feature: read the view+wiring, verify on-screen, THEN judge.
+- **Go-forward (per tick):** pick a feature family from the audit → code-verify its real state →
+  fix the highest-value polish/quality/UX gap to on-screen-validated → correct the board to match →
+  commit per item. Systemic tickets: TSK-1412 (board reconcile), TSK-1413 (entry-point cohesion),
+  TSK-1414 (finish-or-cut spikes, owner-decision). Keep main gate-green; teeth on every guard.
+
+---
+
 # Handoff — Canvas M0 DONE (GO) + M1 underway (S1/S2 validated); cron drives the milestone chain (2026-07-02)
 
 ## ⛳ BUILD STATE (2026-07-02 — freshest; supersedes below)
