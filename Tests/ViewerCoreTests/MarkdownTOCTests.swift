@@ -11,15 +11,35 @@ final class MarkdownTOCTests: XCTestCase {
 
     // MARK: slug (GitHub-style)
 
-    func test_slug_dropsPunctuation_spacesToHyphens_lowercases() {
+    func test_slug_collapsesPunctuationRuns_lowercases_matchesRenderer() {
         XCTAssertEqual(MarkdownTOC.slug("Hello, World!"), "hello-world")
-        XCTAssertEqual(MarkdownTOC.slug("Setup & Config"), "setup--config")  // & dropped, 2 spaces → 2 hyphens
+        // Punctuation runs COLLAPSE to one dash (matching the rendered heading id),
+        // NOT dropped — "Setup & Config" renders as id="setup-config".
+        XCTAssertEqual(MarkdownTOC.slug("Setup & Config"), "setup-config")
         XCTAssertEqual(MarkdownTOC.slug("C++ Guide"), "c-guide")
         XCTAssertEqual(MarkdownTOC.slug("Keep-Hyphen"), "keep-hyphen")
     }
 
     func test_slug_keepsUnicodeLettersAndDigits() {
         XCTAssertEqual(MarkdownTOC.slug("Café 2"), "café-2")
+    }
+
+    /// The load-bearing contract: a TOC link target MUST equal the id the renderer
+    /// gives the heading, or clicking the link navigates nowhere. Pins MarkdownTOC's
+    /// slug to HTMLVisitor.baseSlug (≡ rust-core unique_slug) for tricky titles.
+    func test_slug_matchesRendererHeadingId() {
+        for title in ["Q&A: Setup", "Setup & Config", "Hello,  World!!!", "  Spaced  Out  ",
+                      "Trailing punctuation...", "C++ / Rust", "100% Done", "émojis 🎉 here"] {
+            XCTAssertEqual(MarkdownTOC.slug(title), HTMLVisitor.baseSlug(for: title),
+                           "TOC anchor must match the rendered heading id for '\(title)'")
+        }
+    }
+
+    func test_generate_dedupeMatchesRendererSuffixes() {
+        // Two headings with the same slug → `#dup`, `#dup-1` (renderer's scheme),
+        // so both TOC links resolve.
+        let toc = MarkdownTOC.generate(from: [h(1, "Dup"), h(1, "Dup")])
+        XCTAssertEqual(toc, "- [Dup](#dup)\n- [Dup](#dup-1)")
     }
 
     // MARK: generate

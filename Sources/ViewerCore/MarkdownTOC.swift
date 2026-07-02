@@ -13,17 +13,13 @@ public enum MarkdownTOC {
     public static let openMarker = "<!-- toc -->"
     public static let closeMarker = "<!-- /toc -->"
 
-    /// A GitHub-style anchor slug: lowercase; drop everything that isn't a
-    /// letter, number, space, or hyphen; spaces → hyphens (runs are NOT
-    /// collapsed, matching GitHub). Letters include Unicode (é, λ stay).
+    /// The anchor slug for a heading title — the SAME algorithm the renderer uses
+    /// for heading `id`s (`HTMLVisitor.baseSlug` ≡ rust-core `unique_slug`), so a
+    /// TOC link `#slug` actually resolves to its heading. (Previously this dropped
+    /// punctuation + didn't collapse runs, so e.g. "Setup & Config" → "setup--config"
+    /// while the rendered id was "setup-config" → the TOC link went nowhere.)
     public static func slug(_ title: String) -> String {
-        var out = ""
-        for ch in title.lowercased() {
-            if ch.isLetter || ch.isNumber { out.append(ch) }
-            else if ch == " " || ch == "-" { out.append("-") }
-            // every other char (punctuation, etc.) is dropped
-        }
-        return out
+        HTMLVisitor.baseSlug(for: title)
     }
 
     /// A nested Markdown bullet list of `[title](#slug)` links, indented two
@@ -32,18 +28,12 @@ public enum MarkdownTOC {
     public static func generate(from headings: [MarkdownHeading]) -> String {
         guard !headings.isEmpty else { return "" }
         let minLevel = headings.map(\.level).min() ?? 1
-        var seen: [String: Int] = [:]
+        // Dedupe via the renderer's exact uniqueSlug so anchors match heading ids
+        // 1:1 (first → `slug`, then `slug-1`, `slug-2`, …).
+        var used: [String: Int] = [:]
         var lines: [String] = []
         for h in headings {
-            let base = slug(h.title)
-            let anchor: String
-            if let n = seen[base] {
-                seen[base] = n + 1
-                anchor = "\(base)-\(n)"
-            } else {
-                seen[base] = 1
-                anchor = base
-            }
+            let anchor = HTMLVisitor.uniqueSlug(for: h.title, used: &used)
             let indent = String(repeating: "  ", count: max(0, h.level - minLevel))
             lines.append("\(indent)- [\(escapeLinkText(h.title))](#\(anchor))")
         }

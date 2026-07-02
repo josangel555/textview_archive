@@ -252,7 +252,13 @@ struct HTMLVisitor: MarkupVisitor {
     /// GitHub-flavored slug: lowercase, ASCII alphanumerics & dashes; spaces and
     /// other characters collapse to single dashes; trim leading/trailing dashes.
     /// `used` tracks already-issued slugs in this document to disambiguate.
-    static func uniqueSlug(for text: String, used: inout [String: Int]) -> String {
+    /// The per-heading slug (no de-dupe): lowercase, ASCII/Unicode alphanumerics
+    /// kept, every run of other characters collapses to ONE dash, leading/trailing
+    /// dashes trimmed, empty → "section". This is the single source of truth for
+    /// heading anchors — the renderer, `MarkdownTOC` (link targets), and
+    /// `MarkdownLint` (dup-anchor) MUST all use it so TOC links resolve to the
+    /// rendered heading ids. Mirrors rust-core `markdown.rs` `unique_slug`.
+    static func baseSlug(for text: String) -> String {
         var slug = ""
         slug.reserveCapacity(text.count)
         var lastWasDash = true
@@ -267,7 +273,11 @@ struct HTMLVisitor: MarkupVisitor {
             }
         }
         while slug.hasSuffix("-") { slug.removeLast() }
-        if slug.isEmpty { slug = "section" }
+        return slug.isEmpty ? "section" : slug
+    }
+
+    static func uniqueSlug(for text: String, used: inout [String: Int]) -> String {
+        let slug = baseSlug(for: text)
         if let n = used[slug] {
             used[slug] = n + 1
             return "\(slug)-\(n + 1)"
