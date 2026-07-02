@@ -9,6 +9,11 @@
   frame-wipe → fence rule; WebContent termination on the VM lane → **TSK-1365** hardening
   ticket, consumer deadline M1.S5's parity test). M0's demo engine lives in
   `rust-core/crates/core/src/canvas/mod.rs` + FFI `mdvcore_canvas_*` + `canvas.js` applier.
+- **M1 COMPLETE (2026-07-02): S1-S4, S6-S9 VALIDATED; S5 fixed (VM parity via TSK-1365 = last
+  tail; fuzz tail closed 3f4b0b4f). Milestone TSK-1344 at fixed.** .canvas is an openable file
+  type (source lens, d48eaf90); UAT-M1 green at core/C-ABI/Swift (65745065). **M2 PLANNED:
+  docs/canvas/plans/M2-PLAN.md + slice tickets TSK-1366..1370 (vocab / doc store / MCP tools
+  new-open-save-apply / read-vocab-lint-undo / UAT-M2 journey). NEXT: M2.S1 (rust vocab.rs).**
 - **M1 canvas-core: S1 record store VALIDATED** (`577c7a18` — FracIndex/atomic-Place/
   tombstones/cycle checks, proptest storm; wasm-shape scan now recursive) · **S2 props+
   registry+fence VALIDATED** (`5be181b4` — u16 interned keys, typed Values w/ Token variant,
