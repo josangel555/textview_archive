@@ -268,3 +268,25 @@ features (finish-or-cut, TSK-1414); (2) code-found micro-gaps like the CSV empty
 + paint-undo (TSK-1416); (3) cross-cutting bugs (key-event routing TSK-1315); (4) the pixel/
 occlusion tail (TSK-1334). Next passes: run the remaining UAT suites (Cm6Editor, LSP, media) for a
 full core map, then drill the non-core features that lack UAT coverage.
+
+### Pass 4 (2026-07-02) — near-complete real-app UAT sweep (~97 tests)
+
+Ran essentially the whole UAT suite on the VM GUI lane (real spawned app, real action paths,
+model-state asserts). ~97 real-app UAT tests PASS across: MultiFormatViewer, ViewModes, Tabs,
+Sidebar+Bookmarks, Cm6Editor, LSP, Sessions, SearchSurfaces, Previews, GitPanel, Interaction,
+SettingsMenusAndShortcuts, Plugins+MCP, MetadataChecksum, KeySynth, and rendered-scroll-restore.
+
+The sweep found exactly TWO issues, both handled:
+- **PMA01** — a real code<->test divergence I introduced (Canvas added 11 canvas_* MCP tools; the
+  UAT's expected tools/list was stale at 20). FIXED (fc9fba51) -> 31, re-run green. Note: it was a
+  TEST-expectation lag; the app catalog was correct.
+- **PMA04** — a 30s TIMEOUT flake under heavy batch load (zoomIn is unconditional; passed on
+  re-run). Test-perf edge, not an app bug.
+- ScrollRestore: rendered-scroll restore PASSES; editor-scroll SKIPS = TSK-1200 (owner-parked).
+
+Bottom line (evidence, not code-read): the app's core AND most secondary features are
+UI-DRIVE-CONFIRMED WORKING on the real app. "Almost all unusable" does NOT hold for anything with
+UAT coverage. Genuine remaining work: (1) features WITHOUT UAT coverage (exploratory spikes -
+HTTP client, RSS reader, folder treemap, SQLite browser; TSK-1414 finish-or-cut) - drill next;
+(2) editor scroll-to-line (TSK-1200); (3) pixel/occlusion tail (TSK-1334); (4) code-found
+micro-gaps. Caveat: UAT asserts model-state on the real app (strong for behavior); true pixels = TSK-1334.

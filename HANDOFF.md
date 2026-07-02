@@ -36,6 +36,18 @@
   hosting lane (above); per-feature ceiling = hosting-lane AX-assert + real-app model-state.
 - The 5-min cron message was updated (job ae60ea77) to carry this discipline.
 
+## 📊 REAL-APP VALIDATION MAP (2026-07-02, ~97 UAT tests green on the VM)
+- Ran ~the whole UAT suite on the VM GUI lane (real spawned app). ~97 tests PASS across editor/CM6/
+  LSP/sessions/search/previews/git/settings-menus/plugins-MCP/tabs/view-modes/sidebar+bookmarks/
+  multi-format/metadata + rendered-scroll-restore. Core + most secondary features are UI-DRIVE-
+  CONFIRMED working on the real app; "almost all unusable" does NOT hold for anything with UAT
+  coverage. See docs/USABILITY_AUDIT Pass 4.
+- Sweep found 2 issues: PMA01 (my stale canvas_* tools/list expectation -> FIXED fc9fba51) + PMA04
+  (30s timeout flake under load, passed on re-run). Editor scroll-to-line SKIPS (TSK-1200 parked).
+- NEXT: drill the features WITHOUT UAT coverage (exploratory spikes: HTTP client, RSS reader, folder
+  treemap, SQLite browser; TSK-1414 finish-or-cut) - code-verify + UI-drive each; then pixel tail
+  (TSK-1334) + editor-scroll (TSK-1200) need the owner.
+
 ## 🔀 MISSION PIVOT (2026-07-02): Canvas PARKED → app-wide production-grade usability polish
 - **Canvas (M0→M6) is COMPLETE + validated + hardened + PARKED pending owner review** (docs/canvas/
   README.md = review index; docs/canvas/plans/TIER2-BACKLOG.md = the deferred-features decision menu).
