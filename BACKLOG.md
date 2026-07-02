@@ -17,6 +17,30 @@ scripts/test-in-vm.sh all` — `all` rebuilds dist/ first). The ONLY blocked lan
 Board (shared, ~all markdown_viewer): **1658 total** · ~**417 await owner close** (review+fixed). Agent-complete
 items are now in **§✅ DONE (bottom)**. `reported` is still INT-126-inflated (~70 mass-reset; `task_get` before trusting; do NOT hand-mutate — INT-128 tooling fix).
 
+## ✅ Completed since the 2026-06-29 curation (2026-07-02 usability run — verified vs CODE; close on the board)
+> This file lagged; several items listed as pending below are DONE. Reconcile (TSK-1412). Each verified
+> by the code + tests this session (not commit messages), host-gate-green, teeth on every fix.
+- **Image-editor undo — TSK-1305 "full Undo" DONE** (was P1 render-VM): paint strokes undoable (TSK-1416),
+  geometry-after-paint no longer swallowed (1419), tonal-after-paint gated (1420), interleaved undo ordering
+  unified (1421), **overlay annotations undoable + a unified op/paint/overlay undo timeline** (1424). ⌘Z now
+  covers every edit layer. (host-tested + teeth)
+- **Image-editor data-loss fixes:** vector annotations were silently dropped on Export/Save-a-Copy — now
+  composited (1422); CSV empty-state placeholder (1415).
+- **New ▸ Image — TSK-1306 DONE + UI-drive-CONFIRMED** on the real app (EmptyStateNewImageHostingTests, VM).
+- **Overlay text/shape editing — TSK-1310 / TSK-1321** exist (setText/rotation/frame/style) + now undoable (1424).
+- **Menu reorg — TSK-1318 / TSK-751 DONE** (TSK-1413): new Tools + File▸Export/Share + Format menus; View
+  decluttered to see-the-doc only; standard App/File/Edit/Format/View/Tools order.
+- **⌘K palette parity — TSK-951 / TSK-1186 (largely)** (TSK-1413/1425): hosted-view tools (HTTP/feed/treemap/
+  dep-graph/walkthroughs) + clipboard-export conversions now palette-discoverable; commands recategorized to
+  match the new menus; a command↔verb cohesion regression guard added.
+- **RSS feed reader — TSK-955 / TSK-1149 DONE** (TSK-1417): was built but ORPHANED (unreachable) — wired to
+  File ▸ Feed Reader + a show-feed-reader verb; UI-drive-confirmed on the VM.
+- **Finish-or-cut spikes (TSK-1414):** SQLite browser + folder treemap + HTTP client all code-verified +
+  UI-drive-confirmed BUILT & working (not spikes). RSS reader was the one true orphan → finished.
+- Still-open highest-value (unchanged, mostly OWNER-gated): the P0 render-VM CM6 bugs (1200/1188/1271/891/
+  910/1032), **TSK-1334** Screen-Recording grant (unblocks pixel/AX validation — menu appearance, hex-edit
+  search 1423, CM6 internals), and the owner flips (838 DOM-patch, 1215 formula, 1202 fold).
+
 ## 🆕 Owner intake 2026-06-29 (filed TSK-1302–1327) — fresh owner-reported bugs + features
 Mostly user-facing render-VM (image-editor / panes / terminal / menus); host-model where applicable, render at review. Grouped:
 - **Image editor (cluster — relates the TSK-1048 overhaul):** TSK-1302 editor pane covered by file-property pane (layout/overflow) · TSK-1303 edit state reset on session-switch · TSK-1304 hide file-property pane · TSK-1305 full Undo for image edits · TSK-1306 New▸Image → blank-canvas editor · TSK-1307 canvas size-adjust (MS-Paint) · TSK-1309 remove the Draw Box button · TSK-1310 edit Draw Text element (text/pos/color/font) · TSK-1320 Annotations: clarify-vs-Shapes/editability · TSK-1321 selectable+editable overlay elements (resize/rotate/move/props; latest-first→all) · TSK-1325 image format+quality convert.
