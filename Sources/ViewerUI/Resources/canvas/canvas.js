@@ -117,13 +117,71 @@
   function geometry(ids) {
     var boxes = [];
     for (var i = 0; i < ids.length; i++) {
-      var el = nodeById(ids[i]);
+      // Document-scoped (not root-scoped): the selection overlay lives on
+      // document.body (root.innerHTML is wiped by setContent), and it must
+      // be measurable through this same query (M3.S3 tests + inspector).
+      var el = document.querySelector('[data-cv-id="' + ids[i] + '"]');
       if (!el) continue;
       var r = el.getBoundingClientRect();
       boxes.push({ id: ids[i], x: r.x, y: r.y, w: r.width, h: r.height });
     }
     return boxes;
   }
+
+  // M3.S3 (TSK-1374) — selection: ONE absolutely-positioned overlay box,
+  // repositioned over the selected node (never per-node borders, so
+  // geometry queries stay clean). Addressable for tests via the
+  // data-cv-id "cv-overlay" (outside the engine's nd:* space).
+  var selectedId = null;
+  var overlay = document.createElement("div");
+  overlay.setAttribute("data-cv-id", "cv-overlay");
+  overlay.style.cssText =
+    "position:absolute;display:none;pointer-events:none;z-index:2147483646;" +
+    "outline:2px solid #0a84ff;outline-offset:1px;border-radius:2px;";
+  document.body.appendChild(overlay);
+
+  function positionOverlay() {
+    if (!selectedId) { overlay.style.display = "none"; return; }
+    var el = nodeById(selectedId);
+    if (!el) { overlay.style.display = "none"; return; }
+    var r = el.getBoundingClientRect();
+    overlay.style.left = (r.left + window.scrollX) + "px";
+    overlay.style.top = (r.top + window.scrollY) + "px";
+    overlay.style.width = r.width + "px";
+    overlay.style.height = r.height + "px";
+    overlay.style.display = "block";
+  }
+
+  function setSelection(ids) {
+    selectedId = (ids && ids.length) ? ids[0] : null;
+    positionOverlay();
+  }
+
+  // The overlay must stay GLUED through reflow (patch applies, window
+  // resizes, content edits). ResizeObserver on the root + window resize.
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(positionOverlay).observe(root);
+  }
+  window.addEventListener("resize", positionOverlay);
+
+  // Click hit-test → nodeClicked intent. Swift owns selection state and
+  // echoes setSelection back (one authority, no local-echo divergence).
+  root.addEventListener("click", function (e) {
+    var el = e.target && e.target.closest
+      ? e.target.closest("[data-cv-id]")
+      : null;
+    if (!el || el === root) return;
+    post({
+      type: "nodeClicked",
+      id: el.getAttribute("data-cv-id"),
+      shift: !!e.shiftKey
+    });
+  });
+
+  // Escape → intent (Swift clears and echoes clearSelection).
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") post({ type: "escapePressed" });
+  });
 
   window.cvDispatch = function (json) {
     var msg;
@@ -151,6 +209,7 @@
       case "applyPatches": {
         var t0 = performance.now();
         var result = applyPatches(msg.patches || []);
+        positionOverlay();
         post({
           type: "applied",
           seq: msg.seq,
@@ -163,6 +222,14 @@
       }
       case "queryGeometry": {
         post({ type: "geometry", replyId: msg.replyId, boxes: geometry(msg.ids || []) });
+        break;
+      }
+      case "setSelection": {
+        setSelection(msg.ids || []);
+        break;
+      }
+      case "clearSelection": {
+        setSelection([]);
         break;
       }
       case "queryText": {
