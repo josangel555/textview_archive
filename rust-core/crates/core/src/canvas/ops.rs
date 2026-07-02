@@ -568,9 +568,14 @@ mod tests {
     }
 
     proptest! {
-        /// apply ∘ undo = identity over arbitrary VALID batches.
+        /// apply ∘ undo = identity over arbitrary batches spanning the FULL
+        /// op vocabulary (Insert / Update / Move / Remove / DefineComponent —
+        /// the last two were undo-covered only by example tests). AND: a
+        /// batch the fence REJECTS leaves state byte-identical (atomicity).
+        /// Byte range 0..6 exercises every arm; invalid combos (e.g. remove
+        /// then touch the same id) exercise the rejection path.
         #[test]
-        fn apply_then_undo_is_identity(seed in proptest::collection::vec(0u8..4, 1..30)) {
+        fn apply_then_undo_is_identity(seed in proptest::collection::vec(0u8..6, 1..30)) {
             let (mut d, pg) = doc_with_page();
             // Seed some structure.
             d.apply(0, &[
@@ -598,16 +603,32 @@ mod tests {
                     2 => batch.push(CanvasOp::Move {
                         id: id("nd:t2"), parent: id("nd:f"), pos: Position::First,
                     }),
-                    _ => batch.push(CanvasOp::Update {
+                    3 => batch.push(CanvasOp::Update {
                         id: id("nd:t2"),
                         set: vec![(key("color"), Value::Token("color.fg".to_owned()))],
                         unset: vec![(key("font"))],
                     }),
+                    // M4.S3 op — a definition root (undo = subtree resurrection).
+                    4 => batch.push(CanvasOp::DefineComponent {
+                        id: id(&format!("cmp:gen{i}")),
+                    }),
+                    // Remove — order vs Move/Update of the same id may make the
+                    // batch invalid, exercising the rejection-atomicity path.
+                    _ => batch.push(CanvasOp::Remove { id: id("nd:t2") }),
                 }
             }
-            let applied = d.apply(base, &batch).expect("apply");
-            d.undo(applied.inverses);
-            prop_assert_eq!(d.store.fingerprint(), before);
+            match d.apply(base, &batch) {
+                Ok(applied) => {
+                    d.undo(applied.inverses);
+                    prop_assert_eq!(d.store.fingerprint(), before, "apply∘undo = identity");
+                }
+                Err(_) => {
+                    // The fence rejected the batch atomically: NO state change.
+                    prop_assert_eq!(
+                        d.store.fingerprint(), before,
+                        "a rejected batch leaves state byte-identical");
+                }
+            }
         }
     }
 }
