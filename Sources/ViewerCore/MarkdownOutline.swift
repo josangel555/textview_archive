@@ -140,6 +140,10 @@ public enum MarkdownOutline {
             if line.hasSuffix("\r") { line.removeLast() }
             let trimmedLeading = line.drop { $0 == " " || $0 == "\t" }
             let trimmed = trimmedLeading.trimmingCharacters(in: .whitespaces)
+            // CommonMark indentation width of the leading whitespace (tab = 4-col
+            // stop). ≥4 means an indented code block, not an ATX heading.
+            let leadingIndent = line.prefix { $0 == " " || $0 == "\t" }
+                .reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
 
             // Fenced code blocks: toggle on a ``` / ~~~ run of >= 3.
             if let (marker, count) = fenceRun(trimmed) {
@@ -158,8 +162,9 @@ public enum MarkdownOutline {
             }
             if inFence { prevParagraph = nil; continue }
 
-            // ATX heading: leading run of 1...6 '#', then space or end.
-            if trimmed.first == "#" {
+            // ATX heading: 0-3 spaces indent, then a run of 1...6 '#', then space
+            // or end. 4+ spaces of indent → an indented code block, not a heading.
+            if trimmed.first == "#", leadingIndent <= 3 {
                 let hashes = trimmed.prefix { $0 == "#" }
                 let level = hashes.count
                 let after = trimmed.dropFirst(level)
