@@ -488,6 +488,95 @@ mod tests {
         assert_eq!(echo.rejected.as_deref(), Some("fence"));
     }
 
+    /// Dep-free fuzz of the untrusted-bytes boundary (the TSK-584 lane's
+    /// in-tree pattern, mirroring the highlight runs_utf16 fuzz): (a) pure
+    /// byte storms and (b) structure-aware corruptions of a VALID frame —
+    /// bit flips, truncations, length-prefix damage. Invariants: never a
+    /// panic (the test would abort), every outcome is a typed WireFault or
+    /// a decodable response frame, and the document NEVER half-applies —
+    /// its fingerprint moves only when the response says a mutation
+    /// happened.
+    #[test]
+    fn fuzz_apply_wire_byte_storms_and_frame_corruptions() {
+        // Deterministic xorshift64* — no rand dep, no wall clock.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+
+        let (mut d, t) = doc();
+        let valid = frame(&RawReq {
+            base_rev: 0,
+            ops: vec![WireOp::Insert {
+                id: Some("nd:a".to_owned()),
+                kind: "text".to_owned(),
+                parent: "pg:1".to_owned(),
+                pos: WirePos::Last,
+                props: vec![("text".to_owned(), WireValue::Str("seed".to_owned()))],
+            }],
+        });
+
+        for round in 0..1200usize {
+            let bytes: Vec<u8> = if round % 2 == 0 {
+                // Pure storm: 0..96 random bytes.
+                let len = usize::try_from(next() % 96).unwrap_or(0);
+                (0..len).map(|_| (next() & 0xFF) as u8).collect()
+            } else {
+                // Structure-aware: corrupt the valid frame.
+                let mut b = valid.clone();
+                match next() % 4 {
+                    0 => {
+                        // Bit flip somewhere.
+                        let i = usize::try_from(next() % b.len() as u64).unwrap_or(0);
+                        b[i] ^= 1 << (next() % 8);
+                    }
+                    1 => {
+                        // Truncate.
+                        b.truncate(usize::try_from(next() % b.len() as u64).unwrap_or(0));
+                    }
+                    2 => {
+                        // Damage the length prefix.
+                        let i = usize::try_from(next() % 4.min(b.len()) as u64).unwrap_or(0);
+                        b[i] = (next() & 0xFF) as u8;
+                    }
+                    _ => {
+                        // Append garbage.
+                        let extra = usize::try_from(next() % 16).unwrap_or(0);
+                        b.extend((0..extra).map(|_| (next() & 0xFF) as u8));
+                    }
+                }
+                b
+            };
+
+            let before = d.store.fingerprint();
+            let rev_before = d.rev();
+            match apply_wire(&mut d, &t, &bytes) {
+                Err(_) => {
+                    // Typed fault: state must be untouched.
+                    assert_eq!(d.store.fingerprint(), before, "fault mutated state");
+                    assert_eq!(d.rev(), rev_before);
+                }
+                Ok(resp) => {
+                    // Any Ok frame must decode; state may move only if the
+                    // response is a non-noop success.
+                    let echo: RespEcho =
+                        base_wire::decode_frame(&resp).expect("Ok frames decode");
+                    let mutated = echo.rev.is_some() && echo.noop == Some(false);
+                    if !mutated {
+                        assert_eq!(
+                            d.store.fingerprint(),
+                            before,
+                            "rejection/noop mutated state"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn malformed_frames_and_unknown_vocabulary_are_wire_faults() {
         let (mut d, t) = doc();
