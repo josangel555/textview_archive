@@ -178,6 +178,77 @@
     });
   });
 
+  // M3.S5 (TSK-1376) — inline text editing. Edit MODE is view state (JS
+  // owns entry/exit); the COMMIT is an intent (Swift owns the doc). Entry:
+  // dblclick on a text node, or the programmatic setEditable command (the
+  // S8 inspector's path). Commit: blur or Enter (never mid-IME-composition).
+  // Escape reverts to the pre-edit text and exits WITHOUT posting.
+  var editing = null; // { id, el, original }
+
+  function enterEdit(el) {
+    if (editing) commitEdit();
+    var id = el.getAttribute("data-cv-id");
+    editing = { id: id, el: el, original: el.textContent };
+    el.setAttribute("contenteditable", "true");
+    el.focus();
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function exitEdit() {
+    if (!editing) return;
+    editing.el.removeAttribute("contenteditable");
+    editing = null;
+  }
+
+  function commitEdit() {
+    if (!editing) return;
+    var id = editing.id;
+    var text = editing.el.textContent;
+    var changed = text !== editing.original;
+    exitEdit();
+    if (changed) post({ type: "textEdited", id: id, text: text });
+  }
+
+  function revertEdit() {
+    if (!editing) return;
+    editing.el.textContent = editing.original;
+    exitEdit();
+  }
+
+  root.addEventListener("dblclick", function (e) {
+    var el = e.target && e.target.closest
+      ? e.target.closest('[data-cv-kind="text"]')
+      : null;
+    if (!el) return;
+    enterEdit(el);
+    e.preventDefault();
+  });
+
+  // Commit on blur (click-away), commit on Enter, revert on Escape — but
+  // NEVER commit mid-IME-composition (compositionend re-arms Enter).
+  root.addEventListener("focusout", function (e) {
+    if (editing && e.target === editing.el) commitEdit();
+  });
+  window.addEventListener("keydown", function (e) {
+    if (!editing) return;
+    if (e.isComposing) return; // IME guard: composition owns the keys
+    if (e.key === "Enter" && !e.shiftKey) {
+      commitEdit();
+      e.preventDefault();
+    } else if (e.key === "Escape") {
+      revertEdit();
+      e.preventDefault();
+      // stopImmediatePropagation, not stopPropagation: the selection-Escape
+      // handler lives on the SAME target (window), and plain stopPropagation
+      // only blocks OTHER nodes — same-target listeners still fire.
+      e.stopImmediatePropagation();
+    }
+  }, true); // capture: beat the selection-Escape handler below
+
   // Keyboard intents (Swift owns the semantics; JS only reports).
   window.addEventListener("keydown", function (e) {
     if (e.key === "Escape") { post({ type: "escapePressed" }); return; }
@@ -241,6 +312,15 @@
       }
       case "clearSelection": {
         setSelection([]);
+        break;
+      }
+      case "setEditable": {
+        if (msg.on) {
+          var target = nodeById(msg.id);
+          if (target) enterEdit(target);
+        } else {
+          revertEdit(); // programmatic off = cancel semantics
+        }
         break;
       }
       case "queryText": {
