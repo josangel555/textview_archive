@@ -30,6 +30,15 @@ public final class CanvasTabController: ObservableObject {
     /// The inspector/layers read model (M3.S8): one parse of the canonical
     /// JSON, refreshed on every revision change. Engine stays the truth.
     @Published public private(set) var outline: CanvasOutlineNode?
+
+    /// True for UI-Design-mode docs (M5.S4) — the shell shows the kit strip
+    /// and opens with panels visible. Read once at mount (the mode token is
+    /// document-stable).
+    @Published public private(set) var isUIDesign: Bool = false
+
+    /// Kit component names available to the insert palette (M5.S4) — the
+    /// store's cmp:kit-* definition roots, refreshed with the outline.
+    @Published public private(set) var kitComponents: [String] = []
     /// kind → registry prop specs (parsed once from the vocabulary).
     public private(set) var propSpecs: [String: [CanvasPropSpec]] = [:]
 
@@ -51,6 +60,7 @@ public final class CanvasTabController: ObservableObject {
             self.trackedRev = opened.lastKnownRev
             self.propSpecs = CanvasVocabularyIndex.propSpecs(
                 fromVocabularyJSON: (try? opened.adapter.vocabulary(asJSON: true)) ?? "")
+            self.isUIDesign = CanvasUIDesignMode.isUIDesign(opened)
             refreshOutline()
         } catch {
             self.phase = .failed(String(describing: error))
@@ -102,7 +112,41 @@ public final class CanvasTabController: ObservableObject {
     /// Re-parse the canonical JSON into the outline snapshot.
     func refreshOutline() {
         guard let doc else { return }
-        outline = (try? doc.adapter.save()).flatMap { try? CanvasOutlineParser.parse($0) }
+        let json = try? doc.adapter.save()
+        outline = json.flatMap { try? CanvasOutlineParser.parse($0) }
+        kitComponents = json.map { CanvasComponentIndex.kitComponents(fromCanvasJSON: $0) } ?? []
+    }
+
+    /// Insert a `use` of a kit component at the current insertion point
+    /// (M5.S4) — through the ordinary op path (the same insert the agent's
+    /// `use` DSL lands). Returns nothing; state flows through refreshOutline.
+    public func insertKitComponent(_ name: String) {
+        let ref = name.hasPrefix("cmp:") ? name : "cmp:" + name
+        applyGesture([.insert(
+            id: nil, kind: "component", parent: insertionParent(),
+            pos: .last, props: [("ref", .str(ref))])])
+    }
+
+    /// The best parent for an insert: the selected node if it can contain
+    /// children (a frame/artboard), else the first artboard, else the root.
+    func insertionParent() -> String {
+        if let sel = selectedIDs.first, let root = outline,
+            let node = CanvasOutlineParser.find(sel, in: root), node.kind == "frame" {
+            return sel
+        }
+        if let root = outline, let board = Self.firstArtboard(root) { return board.id }
+        return outline?.id ?? "pg:1"
+    }
+
+    static func firstArtboard(_ node: CanvasOutlineNode) -> CanvasOutlineNode? {
+        if node.kind == "frame",
+            node.props.contains(where: { $0.name == "role" && $0.value == .str("artboard") }) {
+            return node
+        }
+        for child in node.children {
+            if let hit = firstArtboard(child) { return hit }
+        }
+        return nil
     }
 
     // MARK: - the write path (M3.S4)
@@ -217,6 +261,17 @@ public struct CanvasTabView: View {
     }
 
     public var body: some View {
+        VStack(spacing: 0) {
+            // M5.S4: the kit strip — UI-Design docs only (Tier 1's ONLY new
+            // chrome). Insert palette over the SAME op path as the agent.
+            if controller.isUIDesign {
+                CanvasKitStripView(controller: controller)
+            }
+            panels
+        }
+    }
+
+    private var panels: some View {
         HSplitView {
             // M3.S8: layers | surface | inspector — both panels read the
             // controller's outline; edits lower through the op path.
@@ -239,5 +294,33 @@ public struct CanvasTabView: View {
             .accessibilityIdentifier("mdv.canvas.surface")
             CanvasInspectorView(controller: controller)
         }
+    }
+}
+
+/// M5.S4 — the kit strip: a thin insert palette listing the doc's kit
+/// components; click = `use` at the insertion point through the controller's
+/// op path. Shown only for UI-Design docs.
+struct CanvasKitStripView: View {
+    @ObservedObject var controller: CanvasTabController
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Text("Insert")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(controller.kitComponents, id: \.self) { name in
+                    Button(name.replacingOccurrences(of: "kit-", with: "")) {
+                        controller.insertKitComponent(name)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("mdv.canvas.kit.\(name)")
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial)
+        .accessibilityIdentifier("mdv.canvas.kitstrip")
     }
 }

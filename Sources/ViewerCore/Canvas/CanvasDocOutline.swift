@@ -134,6 +134,37 @@ public struct CanvasPropSpec: Equatable, Sendable {
     public let note: String?
 }
 
+/// The component-definition index (M5.S4): the `cmp:*` definition roots in a
+/// canvas document (the kit strip's source). Derived from the same canonical
+/// JSON as the outline — no parallel store.
+public enum CanvasComponentIndex {
+    /// Kit component names (the `cmp:kit-*` definition roots), sorted. Names
+    /// drop the `cmp:` prefix (e.g. "kit-card").
+    public static func kitComponents(fromCanvasJSON json: String) -> [String] {
+        definitionIDs(fromCanvasJSON: json)
+            .filter { $0.hasPrefix("cmp:kit-") }
+            .map { String($0.dropFirst("cmp:".count)) }
+            .sorted()
+    }
+
+    /// Every component-definition root id — records with the branded `cmp:`
+    /// id prefix and no parent (the DefineComponent roots). The `cmp:` prefix
+    /// IS the definition marker by construction (the root's record kind is
+    /// the definition's top element, not "component").
+    public static func definitionIDs(fromCanvasJSON json: String) -> [String] {
+        guard let data = json.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let records = obj["records"] as? [[String: Any]]
+        else { return [] }
+        return records.compactMap { record in
+            guard let id = record["id"] as? String, id.hasPrefix("cmp:"),
+                record["parent"] == nil || record["parent"] is NSNull
+            else { return nil }
+            return id
+        }
+    }
+}
+
 public enum CanvasVocabularyIndex {
     /// kind name → its allowed prop specs.
     public static func propSpecs(fromVocabularyJSON json: String) -> [String: [CanvasPropSpec]] {

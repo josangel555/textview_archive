@@ -232,4 +232,57 @@ final class CanvasTabControllerTests: XCTestCase {
         let plain = CanvasOutlineNode(id: "nd:z", kind: "text", props: [], children: [])
         XCTAssertNil(CanvasInspectorView.instanceBadge(plain))
     }
+
+    // MARK: M5.S4 — the mode-aware shell (TSK-1392)
+
+    func test_kitComponents_derivation_from_canvas_json() throws {
+        let store = harness.model.automationCanvasStore
+        let doc = try store.create()
+        try CanvasUIDesignMode.seed(into: doc, template: .both)
+        let json = try doc.adapter.save()
+        let names = CanvasComponentIndex.kitComponents(fromCanvasJSON: json)
+        XCTAssertTrue(names.contains("kit-card"), "kit definitions surface: \(names)")
+        XCTAssertTrue(names.contains("kit-button"))
+        XCTAssertEqual(names, names.sorted(), "sorted for stable UI")
+        // Non-kit / plain docs: empty.
+        let plain = try store.create()
+        _ = try plain.adapter.applyDSL(baseRev: 0, "text #t \"x\"")
+        XCTAssertTrue(
+            CanvasComponentIndex.kitComponents(fromCanvasJSON: try plain.adapter.save()).isEmpty)
+    }
+
+    func test_uiDesign_controller_inserts_kit_component_via_op_path() throws {
+        // A UI-Design doc on disk.
+        let store = harness.model.automationCanvasStore
+        let doc = try store.create()
+        try CanvasUIDesignMode.seed(into: doc, template: .desktop)
+        let uiFile = try harness.writeFile("ui.canvas", "")
+        _ = try store.save(doc.id, to: uiFile)
+        store.close(CanvasDocumentStore.docID(for: uiFile))
+
+        let controller = harness.model.canvasController(forTab: UUID(), fileURL: uiFile)
+        XCTAssertTrue(controller.isUIDesign, "mode detected at mount")
+        XCTAssertFalse(controller.kitComponents.isEmpty, "kit strip populated")
+
+        // Insert a kit card: it lands as a component under the desktop artboard.
+        let before = controller.outline.map { countNodes($0) } ?? 0
+        controller.insertKitComponent("kit-card")
+        let after = controller.outline.map { countNodes($0) } ?? 0
+        XCTAssertGreaterThan(after, before, "the insert landed a real op")
+        // The inserted node is a component referencing the kit definition.
+        let hasCardInstance = controller.outline.map { hasComponentRef($0, "cmp:kit-card") } ?? false
+        XCTAssertTrue(hasCardInstance, "a kit-card instance is now in the tree")
+    }
+
+    private func countNodes(_ node: CanvasOutlineNode) -> Int {
+        1 + node.children.reduce(0) { $0 + countNodes($1) }
+    }
+
+    private func hasComponentRef(_ node: CanvasOutlineNode, _ ref: String) -> Bool {
+        if node.kind == "component",
+            node.props.contains(where: { $0.name == "ref" && $0.value == .str(ref) }) {
+            return true
+        }
+        return node.children.contains { hasComponentRef($0, ref) }
+    }
 }
