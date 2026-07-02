@@ -193,6 +193,16 @@ fn lex_value(
                 err(line_no, format!("'{word}' is not a number"))
             })
         }
+        // `#name` as a prop VALUE resolves to the node id nd:name (M5.S6 —
+        // linkTo=#artboard; the DSL anchor convention for id-valued props).
+        Some('#') => {
+            chars.next();
+            let name = lex_word(chars);
+            if name.is_empty() {
+                return err(line_no, "'#' must be followed by a node name (e.g. #artboard)");
+            }
+            Ok(Tok::Word(format!("nd:{name}")))
+        }
         Some(_) => {
             let word = lex_word(chars);
             if word.is_empty() {

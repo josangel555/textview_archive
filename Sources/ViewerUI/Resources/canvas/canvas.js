@@ -184,9 +184,23 @@
   // Click hit-test → nodeClicked intent. Swift owns selection state and
   // echoes setSelection back (one authority, no local-echo divergence).
   root.addEventListener("click", function (e) {
-    var el = e.target && e.target.closest
-      ? e.target.closest("[data-cv-id]")
-      : null;
+    if (!e.target || !e.target.closest) return;
+    // M5.S6 — prototype nav: a click on a linked node (or its ancestor)
+    // SCROLLS to the target and flashes it, INSTEAD of selecting (nav keys
+    // on the linkTo PROP, not the mode — the thin-mode law). Layers-tree
+    // selection still reaches linked nodes for editing.
+    var linked = e.target.closest("[data-cv-link]");
+    if (linked) {
+      var targetId = linked.getAttribute("data-cv-link");
+      var target = root.querySelector('[data-cv-id="' + targetId + '"]');
+      if (target && target.scrollIntoView) {
+        target.scrollIntoView({ block: "start", inline: "nearest" });
+        target.classList.add("cv-link-flash");
+        post({ type: "nodeClicked", id: targetId, shift: false, nav: true });
+      }
+      return;
+    }
+    var el = e.target.closest("[data-cv-id]");
     if (!el || el === root) return;
     post({
       type: "nodeClicked",

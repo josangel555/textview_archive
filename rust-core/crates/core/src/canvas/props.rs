@@ -52,6 +52,8 @@ const KEY_TABLE: &[(u16, &str)] = &[
     (32, "language"),
     // M4.S7b: chart spec (VL-subset JSON).
     (33, "spec"),
+    // M5.S6: prototype nav — click scrolls to the referenced node.
+    (34, "linkTo"),
 ];
 
 impl PropKey {

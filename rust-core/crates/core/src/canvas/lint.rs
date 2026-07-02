@@ -48,6 +48,23 @@ pub fn run(doc: &DocState, tokens: &TokenStore) -> Vec<Lint> {
         for (key, value) in rec.props.iter() {
             lint_prop(id, key, value, tokens, &mut findings);
         }
+        // M5.S6: a linkTo (prototype nav) must reference a live node.
+        if let Some(Value::Str(target)) = PropKey::by_name("linkTo")
+            .and_then(|k| rec.props.get(k))
+        {
+            let ok = Id::parse(target).is_ok_and(|t| doc.store.get(&t).is_some());
+            if !ok {
+                findings.push(Lint {
+                    severity: LintSeverity::Warn,
+                    code: "dangling-link",
+                    id: Some(id.clone()),
+                    message: format!(
+                        "linkTo target '{target}' does not exist (link an existing \
+                         node id, e.g. an artboard)"
+                    ),
+                });
+            }
+        }
         match rec.kind {
             RecordKind::Hole => {
                 let note = PropKey::by_name("note")

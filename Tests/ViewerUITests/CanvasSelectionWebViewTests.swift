@@ -250,6 +250,58 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
         }
     }
 
+    /// M5.S6: prototype nav — a click on a linkTo node scrolls the target
+    /// into view and posts a nav intent; an unlinked click still selects.
+    func test_linkTo_click_navigates_and_unlinked_click_selects() async throws {
+        // A tall doc: a nav link at top, a spacer, then the target far below.
+        _ = try adapter.applyDSL(
+            baseRev: try adapter.currentRev(),
+            "text #navlink \"Jump\" linkTo=#target\n" +
+            "frame #spacer minH=2000 {\n  text #s \"spacer\"\n}\n" +
+            "frame #target role=artboard minH=100 {\n  text #tt \"there\"\n}")
+        seq += 1
+        host.send(.setContent(seq: seq, html: try adapter.html()))
+        _ = await waitUntil(5) {
+            self.inbound.contains { if case .contentSet = $0 { return true }; return false }
+        }
+
+        // Target starts far below the fold.
+        let beforeBoxes = await boxes(for: ["nd:target"])
+        let beforeTop = beforeBoxes.first?.y ?? 0
+        XCTAssertGreaterThan(beforeTop, 400, "target starts below the fold: \(beforeTop)")
+
+        // Click the nav link → scrollIntoView pulls the target toward the top.
+        inbound.removeAll()
+        host.probe(
+            "(function(){var el=document.querySelector('[data-cv-id=\"nd:navlink\"]');" +
+            "el.dispatchEvent(new MouseEvent('click',{bubbles:true}));return 1;})()"
+        ) { _ in }
+        let navved = await waitUntil(5) {
+            self.inbound.contains {
+                if case .nodeClicked(let id, _) = $0 { return id == "nd:target" }
+                return false
+            }
+        }
+        XCTAssertTrue(navved, "linked click posts a nav to the TARGET id")
+        let afterBoxes = await boxes(for: ["nd:target"])
+        let afterTop = afterBoxes.first?.y ?? beforeTop
+        XCTAssertLessThan(afterTop, beforeTop - 100, "the target scrolled up: \(beforeTop)→\(afterTop)")
+
+        // An unlinked click still selects (posts its OWN id, not a nav).
+        inbound.removeAll()
+        host.probe(
+            "(function(){var el=document.querySelector('[data-cv-id=\"nd:s\"]');" +
+            "el.dispatchEvent(new MouseEvent('click',{bubbles:true}));return 1;})()"
+        ) { _ in }
+        let selected = await waitUntil(5) {
+            self.inbound.contains {
+                if case .nodeClicked(let id, _) = $0 { return id == "nd:s" }
+                return false
+            }
+        }
+        XCTAssertTrue(selected, "unlinked click selects its own node")
+    }
+
     func test_escape_posts_the_intent() async throws {
         host.probe(
             """

@@ -195,6 +195,8 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
         out.push_str("<div data-cv-id=\"");
         escape_attr(&ctx.dom_id(id), out);
         out.push_str("\" data-cv-kind=\"component\"");
+        // A component instance can itself be a nav link (M5.S6).
+        emit_link_attr(&|name| PropKey::by_name(name).and_then(|k| rec.props.get(k)), out);
         let style = style_of(store, id);
         if !style.is_empty() {
             out.push_str(" style=\"");
@@ -295,6 +297,7 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
             out.push_str("<img data-cv-id=\"");
             escape_attr(&ctx.dom_id(id), out);
             out.push('"');
+            emit_link_attr(&get, out);
             if let Some(Value::Str(src)) = get("src") {
                 out.push_str(" src=\"");
                 escape_attr(src, out);
@@ -315,6 +318,7 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
             out.push_str(" data-cv-kind=\"");
             out.push_str(super::registry::kind_name(rec.kind));
             out.push('"');
+            emit_link_attr(&get, out);
             if is_artboard {
                 let mut chromed = style.clone();
                 chromed.push_str(
@@ -361,6 +365,16 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
             }
             out.push_str("</div>");
         }
+    }
+}
+
+/// M5.S6 — prototype nav: emit data-cv-link when the node carries a linkTo
+/// prop (the runtime scrolls to the referenced node on click).
+fn emit_link_attr<'a>(get: &impl Fn(&str) -> Option<&'a Value>, out: &mut String) {
+    if let Some(Value::Str(target)) = get("linkTo") {
+        out.push_str(" data-cv-link=\"");
+        escape_attr(target, out);
+        out.push('"');
     }
 }
 
@@ -1245,6 +1259,28 @@ mod tests {
     // MARK: M5.S2 — artboard chrome
 
     // MARK: M5.S3 — fragment export
+
+    // MARK: M5.S6 — prototype nav (linkTo)
+
+    #[test]
+    fn linkto_lowers_to_data_cv_link_and_dangling_lints() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        let src_dsl = "frame #ab role=artboard {\n  text #inner \"x\"\n}\ntext #nav \"Go\" linkTo=#ab\ntext #broken \"Bad\" linkTo=#ghost";
+        let ops = crate::canvas::dsl::parse_fragment(src_dsl, &pg).expect("parse");
+        d.apply(0, &ops).expect("apply");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        // The link resolves to the target dom id.
+        assert!(html.contains("data-cv-link=\"nd:ab\""), "{html}");
+        // Dangling link lints; the live one does not.
+        let findings = crate::canvas::lint::run(&d, &tokens);
+        let dangling: Vec<_> = findings.iter()
+            .filter(|f| f.code == "dangling-link").collect();
+        assert_eq!(dangling.len(), 1, "only the ghost link lints");
+        assert_eq!(dangling[0].id.as_ref().map(|i| i.as_str()), Some("nd:broken"));
+    }
 
     #[test]
     fn fragment_inlines_token_literals_and_omits_the_theme_block() {

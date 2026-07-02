@@ -53,6 +53,7 @@ fn prop_note(name: &str) -> Option<&'static str> {
         "headers" => "true = the first data row renders as headers",
         "language" => "code language tag (display only in v1)",
         "spec" => "chart spec JSON: {\"mark\": \"bar|line|pie\", \"values\": [{\"label\", \"value\"}...]}",
+        "linkTo" => "prototype nav: a node id (e.g. nd:artboard-mobile) — click scrolls to it",
         _ => return None,
     })
 }
