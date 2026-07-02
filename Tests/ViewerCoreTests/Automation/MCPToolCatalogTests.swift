@@ -77,7 +77,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 28)  // +8 canvas_* (M2.S3+S4, TSK-1368/1369)
+        XCTAssertEqual(names.count, 29)  // +9 canvas_* (M2.S3+S4+S6, TSK-1368/1369/1371)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -90,6 +90,7 @@ final class MCPToolCatalogTests: XCTestCase {
             // Canvas agent surface (M2.S3+S4, TSK-1368/1369):
             "canvas_new", "canvas_open", "canvas_save", "canvas_apply",
             "canvas_read", "canvas_vocab", "canvas_lint", "canvas_undo",
+            "canvas_export",
         ]
         XCTAssertEqual(names, expected)
     }

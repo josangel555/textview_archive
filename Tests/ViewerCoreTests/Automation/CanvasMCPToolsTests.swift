@@ -205,4 +205,26 @@ final class CanvasMCPToolsTests: XCTestCase {
         }
         XCTAssertEqual(u2["undone"], .bool(false), "empty history is data, not an error")
     }
+
+    // MARK: M2.S6 — canvas_export (TSK-1371)
+
+    func test_export_writes_selfContained_html() throws {
+        guard case .object(let n) = try call("canvas_new", [:]),
+              case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        _ = try call("canvas_apply", [
+            "doc": .string(doc), "baseRev": .int(0),
+            "dsl": .string("frame #hero fill=$color.surface {\n  text #t \"exported\"\n}"),
+        ])
+        let out = dir.appendingPathComponent("page.html")
+        guard case .object(let e) = try call("canvas_export", [
+            "doc": .string(doc), "path": .string(out.path),
+        ]) else { return XCTFail("export shape") }
+        XCTAssertEqual(e["path"], .string(out.path))
+        let html = try String(contentsOf: out, encoding: .utf8)
+        XCTAssertTrue(html.contains("--cv-color-surface"), "theme block embedded")
+        XCTAssertTrue(html.contains(">exported<"), "content lowered")
+        XCTAssertTrue(html.contains("var(--cv-color-surface)"), "tokens symbolic")
+        guard case .int(let bytes)? = e["bytes"] else { return XCTFail("bytes") }
+        XCTAssertEqual(bytes, html.utf8.count)
+    }
 }

@@ -3,6 +3,10 @@
 ## 2026-07-02
 
 ### Added
+- **Canvas agent tools:** agents connected to the app can now create, author
+  (in a compact teaching language), read back, lint, undo, save, reopen, and
+  export canvas documents — 9 new MCP tools plus two one-line script verbs
+  (`canvas-export`, `canvas-apply-file`); exports are self-contained HTML.
 - **Canvas engine (foundation, not yet user-visible):** the core of the upcoming
   Canvas feature — agents (and soon the UI) can build and edit visual documents
   through typed, undoable operations or a compact authoring language, with design

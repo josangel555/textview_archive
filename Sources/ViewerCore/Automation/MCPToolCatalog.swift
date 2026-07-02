@@ -52,6 +52,7 @@ public enum MCPToolCatalog {
         canvasVocabDescriptor,
         canvasLintDescriptor,
         canvasUndoDescriptor,
+        canvasExportDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -91,6 +92,7 @@ public enum MCPToolCatalog {
         case "canvas_vocab":       return try canvasVocab(args, host)
         case "canvas_lint":        return try canvasLint(args, host)
         case "canvas_undo":        return try canvasUndo(args, host)
+        case "canvas_export":      return try canvasExport(args, host)
         default:
             throw MCPError.notFound("unknown tool: \(name)")
         }
@@ -1052,6 +1054,32 @@ public enum MCPToolCatalog {
             return .object(["rev": .int(Int(doc.lastKnownRev)), "undone": .bool(false)])
         } catch {
             throw MCPError.toolFailed("canvas_undo: \(error)")
+        }
+    }
+
+
+    private static let canvasExportDescriptor = MCP.ToolDescriptor(
+        name: "canvas_export",
+        description: "Export a canvas doc as a SELF-CONTAINED static HTML file (theme "
+            + "custom-property block + the lowered page — the B0 export tier). "
+            + "Returns {path, bytes}.",
+        inputSchema: schema([
+            "doc":  .object(["type": .string("string")]),
+            "path": .object(["type": .string("string"),
+                             "description": .string("Output .html path")]),
+        ], required: ["doc", "path"])
+    )
+
+    private static func canvasExport(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let doc = try canvasDoc(try args.string("doc"), host)
+        let path = try args.string("path")
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        do {
+            let html = try doc.adapter.html()
+            try EditorWriter.save(html, to: url)
+            return .object(["path": .string(url.path), "bytes": .int(html.utf8.count)])
+        } catch {
+            throw MCPError.toolFailed("canvas_export: \(error)")
         }
     }
 

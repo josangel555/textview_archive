@@ -51,6 +51,7 @@ public enum ScriptVerbCatalog {
         case metadata      // info-panel checksum
         case tools         // clipboard text tools
         case palette       // command palette / go-to prompt
+        case canvas        // canvas agent surface (M2.S6 — export / apply-file)
         case harness       // test/profiling-only (delay, snapshot, nav-sweep…)
 
         public var title: String {
@@ -68,6 +69,7 @@ public enum ScriptVerbCatalog {
             case .metadata:  return "Metadata"
             case .tools:     return "Text Tools"
             case .palette:   return "Command Palette"
+            case .canvas:    return "Canvas"
             case .harness:   return "Harness / Profiling"
             }
         }
@@ -122,6 +124,12 @@ public enum ScriptVerbCatalog {
     /// enforces it). Verbs whose `case` is shared with sibling tokens
     /// (the `git-log-click` family) are listed once per token.
     public static let all: [ScriptVerb] = [
+        // Canvas (M2.S6, TSK-1371) — doc = an open doc id OR a .canvas path
+        // (auto-opened through the store).
+        ScriptVerb("canvas-export", .canvas, .structured,
+                   "Export a canvas doc to standalone HTML: \"<doc> <outPath>\""),
+        ScriptVerb("canvas-apply-file", .canvas, .structured,
+                   "Apply a canvas DSL file: \"<doc> <baseRev> <dslPath>\""),
         // ---- View ----
         ScriptVerb("toggle-view", .view, .none, "Toggle source ↔ rendered view mode"),
         ScriptVerb("toggle-sidebar", .view, .none, "Show/hide the file sidebar"),

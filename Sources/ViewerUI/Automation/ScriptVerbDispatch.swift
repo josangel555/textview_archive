@@ -65,6 +65,26 @@ public enum ScriptVerb {
     /// - Returns: `true` if the verb was recognised and applied here;
     ///   `false` if it is a window / `NSApp` / AppDelegate-coupled verb
     ///   the caller must handle (or, for the headless harness, skip).
+    /// Canvas verb plumbing (M2.S6): resolve "<doc>" as an open id first,
+    /// else as a .canvas path opened through the store.
+    private static func canvasDoc(
+        _ ref: String, _ store: CanvasDocumentStore
+    ) throws -> CanvasOpenDocument {
+        if let open = try? store.doc(ref) { return open }
+        return try store.open(url: URL(fileURLWithPath: (ref as NSString).expandingTildeInPath))
+    }
+
+    /// Run a canvas verb body, logging faults (verbs have no return channel).
+    private static func canvasVerb(
+        _ model: DocumentModel, _ body: (CanvasDocumentStore) throws -> Void
+    ) {
+        do {
+            try body(model.automationCanvasStore)
+        } catch {
+            NSLog("canvas verb failed: %@", String(describing: error))
+        }
+    }
+
     @discardableResult
     public static func apply(
         verb line: String,
@@ -80,6 +100,32 @@ public enum ScriptVerb {
         // excluded so a recording never captures its own start/stop/replay.
         if !cmd.hasPrefix("macro-") { model.macros.recordVerb(cmd) }
         switch cmd {
+        // Canvas (M2.S6, TSK-1371): one-line script access to the canvas
+        // engine. Doc references accept an open doc id or a .canvas path
+        // (auto-opened). Failures log-and-return-true (the verb WAS
+        // recognised; scripts read the log like every other verb fault).
+        case "canvas-export":
+            let fields = arg.split(separator: " ").map(String.init)
+            guard fields.count == 2 else {
+                NSLog("canvas-export needs \"<doc> <outPath>\"")
+                return true
+            }
+            canvasVerb(model) { store in
+                let doc = try canvasDoc(fields[0], store)
+                let html = try doc.adapter.html()
+                try EditorWriter.save(html, to: URL(fileURLWithPath: fields[1]))
+            }
+        case "canvas-apply-file":
+            let fields = arg.split(separator: " ").map(String.init)
+            guard fields.count == 3, let baseRev = UInt64(fields[1]) else {
+                NSLog("canvas-apply-file needs \"<doc> <baseRev> <dslPath>\"")
+                return true
+            }
+            canvasVerb(model) { store in
+                let doc = try canvasDoc(fields[0], store)
+                let dsl = try String(contentsOf: URL(fileURLWithPath: fields[2]), encoding: .utf8)
+                _ = try doc.adapter.applyDSL(baseRev: baseRev, dsl)
+            }
         case "toggle-view":    model.toggleViewMode()
         case "toggle-sidebar": model.sidebar.toggleVisibility()
         case "zoom-in":        model.zoomIn()
