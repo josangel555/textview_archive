@@ -35,7 +35,10 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         switch url.pathExtension.lowercased() {
         case "swift":                                  return .swift
         case "json", "jsonl", "json5", "jsonc",
-             "ndjson":                                 return .json
+             "ndjson",
+             // .canvas = the canvas engine's canonical JSON (M1.S9b) — the
+             // source lens highlights it as JSON.
+             "canvas":                                 return .json
         case "xml", "plist", "xib", "storyboard",
              "svg", "xsd", "xsl", "xslt", "wsdl",
              "rss", "atom", "pom", "csproj", "vbproj",

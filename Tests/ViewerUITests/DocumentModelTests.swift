@@ -1,6 +1,7 @@
 import XCTest
 import ViewerKit
 import ViewerCore
+import RustCore
 @testable import ViewerUI
 
 /// Tier 1 main-actor tests for the top-level app model.
@@ -108,6 +109,39 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model.editorFocusRequest, 1, "dismiss bumps the refocus nonce (→ editor re-takes focus)")
         model.showPalette(); model.dismissPalette()
         XCTAssertEqual(model.editorFocusRequest, 2, "each dismiss bumps")
+    }
+
+    // MARK: Canvas file routing (TSK-1364/M1.S9b)
+
+    /// A .canvas file (the engine's canonical JSON) opens through the STANDARD
+    /// text pipeline into the source lens — thereby inheriting autosave,
+    /// hot-exit, and TabSnapshot behavior with zero canvas-specific forks.
+    /// Uses a REAL engine-produced document (Rust save()), not a hand fake.
+    func test_canvasFile_opensLoaded_sourceMode_editableText() throws {
+        let session = try CanvasDocSession()
+        _ = try session.apply(
+            baseRev: 0,
+            ops: [
+                .insert(
+                    id: "nd:t", kind: "text", parent: CanvasDocSession.rootPage,
+                    pos: .last, props: [("text", .str("from the engine"))])
+            ])
+        let json = try session.save()
+
+        let model = makeModel()
+        let f = try writeFile("design.canvas", json)
+        model.open(url: f)
+        guard case .loaded(let doc) = model.tabs.selected?.state else {
+            XCTFail("expected .loaded, got \(String(describing: model.tabs.selected?.state))")
+            return
+        }
+        XCTAssertEqual(model.currentViewMode, .source, "v1 = source lens")
+        let shown = model.displayedText(for: doc).text
+        XCTAssertTrue(shown.contains("\"formatVersion\":1"))
+        XCTAssertTrue(shown.contains("from the engine"))
+        // The round trip holds: what the editor shows reloads in the engine.
+        let reloaded = try CanvasDocSession.load(json: shown)
+        XCTAssertTrue(try reloaded.html().contains(">from the engine<"))
     }
 
     // MARK: Preview focus (TSK-905 — active rendered preview takes first responder)

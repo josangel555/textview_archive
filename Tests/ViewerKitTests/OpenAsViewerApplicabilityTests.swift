@@ -27,7 +27,10 @@ final class OpenAsViewerApplicabilityTests: XCTestCase {
     // MARK: - hasTextRepresentation partition (the gating predicate)
 
     func test_hasTextRepresentation_partition() {
-        let textShaped: Set<FileCategory> = [.markdown, .mermaid, .plainText, .code, .html]
+        // .canvas joined in M1.S9b (TSK-1364): canonical-JSON source lens.
+        let textShaped: Set<FileCategory> = [
+            .markdown, .mermaid, .plainText, .code, .html, .canvas,
+        ]
         for cat in FileCategory.allCases {
             XCTAssertEqual(ViewModeOptions.hasTextRepresentation(cat),
                            textShaped.contains(cat),

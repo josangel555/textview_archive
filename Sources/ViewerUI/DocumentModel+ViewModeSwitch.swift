@@ -54,7 +54,7 @@ extension DocumentModel {
         if mode == .rendered, let url = t.url {
             let cat = t.categoryOverride ?? FileTypeDetector.category(for: url)
             switch cat {
-            case .markdown, .mermaid, .plainText, .code, .html:
+            case .markdown, .mermaid, .plainText, .code, .html, .canvas:
                 // Text-representation category: trust availableModes.
                 if !ViewModeOptions.availableModes(
                     for: url, forcedCategory: t.categoryOverride
@@ -119,7 +119,7 @@ extension DocumentModel {
                 case .image, .audio, .video, .pdf, .sqlite, .archive:
                     let state = controller.open(url: url)
                     t.state = state
-                case .markdown, .mermaid, .plainText, .code, .html:
+                case .markdown, .mermaid, .plainText, .code, .html, .canvas:
                     loadTextAsync(url: url, intoTabID: t.id)
                 case .binary, .unknown:
                     // bug3: binary / unknown files have no Source/Rendered/

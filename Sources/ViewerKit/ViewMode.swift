@@ -228,7 +228,9 @@ public enum ViewModeOptions {
     /// render via the `.preview` document state, not a Source ViewMode.
     static func hasTextRepresentation(_ cat: FileCategory) -> Bool {
         switch cat {
-        case .markdown, .mermaid, .plainText, .code, .html:
+        // .canvas: the canonical JSON is hand-editable text (source lens v1;
+        // the rendered canvas lens is M3 — TSK-1364/M1.S9b).
+        case .markdown, .mermaid, .plainText, .code, .html, .canvas:
             return true
         case .image, .audio, .video, .pdf, .sqlite, .archive, .binary, .unknown:
             return false
@@ -244,7 +246,7 @@ public enum ViewModeOptions {
         switch cat {
         case .image, .audio, .video, .pdf, .sqlite, .archive:
             return true
-        case .markdown, .mermaid, .plainText, .code, .html, .binary, .unknown:
+        case .markdown, .mermaid, .plainText, .code, .html, .canvas, .binary, .unknown:
             return false
         }
     }

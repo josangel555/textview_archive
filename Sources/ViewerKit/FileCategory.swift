@@ -19,6 +19,11 @@ public enum FileCategory: String, Equatable, Sendable, CaseIterable {
     /// Browsable archive (zip/jar/tar/tgz/tbz2 — TSK-311). Rendered via
     /// the `.preview` lens as an entry listing; HEX stays the raw lens.
     case archive
+    /// Canvas document (.canvas — TSK-1364/M1.S9b): the canvas engine's
+    /// canonical JSON (rust-core canvas::io). v1 routes through the SOURCE
+    /// view (the JSON is hand-editable text; loads validate through the
+    /// engine); the rendered/WYSIWYG lens is the M3 milestone.
+    case canvas
     case unknown
 }
 
@@ -123,6 +128,7 @@ public enum FileTypeDetector {
         if audioExtensions.contains(ext) { return .audio }
         if videoExtensions.contains(ext) { return .video }
         if ext == "pdf" { return .pdf }
+        if ext == "canvas" { return .canvas }
         if sqliteExtensions.contains(ext) { return .sqlite }
         // Archives (TSK-311). Two-part extensions (.tar.gz/.tar.bz2) don't
         // round-trip through `pathExtension`, so match on the whole name —

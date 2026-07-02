@@ -1711,6 +1711,7 @@ struct ModeBar: View {
         case .pdf:       return "PDF"
         case .sqlite:    return "SQLite"
         case .archive:   return "Archive"
+        case .canvas:    return "Canvas (source)"
         case .binary:    return "HEX (raw bytes)"
         case .unknown:   return "Unknown"
         }
@@ -1732,6 +1733,7 @@ struct ModeBar: View {
         case .pdf:       return "PDF"
         case .sqlite:    return "SQLite"
         case .archive:   return "Archive"
+        case .canvas:    return "Canvas"
         case .binary:    return "Binary"
         case .unknown:   return "Unknown"
         }
