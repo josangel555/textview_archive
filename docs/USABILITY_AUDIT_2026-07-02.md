@@ -369,3 +369,28 @@ Running tally of GENUINE gaps found + fixed this run: CSV empty-state (1415), im
 (1416), HTTP-client verb cohesion, FeedReader orphan wired (1417), palette discoverability (1413).
 The app is broadly built + reachable; the remaining known-incomplete surfaces are the 2 WIP slices
 (ActionHistory/RichText — owner finish-or-cut) + the pixel/occlusion tail (TSK-1334).
+
+### Pass 9 (2026-07-02) — env-var-only entry-point audit (TSK-1413): CLEAN; media-export + search empty-states production-grade
+
+Audited the TSK-1413 sub-gap "features reachable ONLY via an env var (no UI)". Enumerated all MDV_*
+env reads in Sources and classified:
+- **MDV_START_IMAGE_EDIT / MDV_START_AUDIO_EDIT** — the audit's prime suspects. Both are TEST-ONLY
+  shortcuts ("opens straight into the editor so a T5 pixel test can capture it"), NOT sole entries:
+  image editing has the real "Edit image" button (MediaPreviewView:269), audio has the "waveform"
+  control-bar button (mdv.audioPreview.editButton:761). NOT env-var-only. (Corrects the audit's
+  MDV_START_AUDIO_EDIT suspicion — same "more built than assumed" pattern.)
+- **MDV_RICHTEXT** — the RichText WIP flag (TSK-706/1418, tracked WIP, correctly gated off).
+- **MDV_DOM_PATCH** (experimental render flip TSK-838), **MDV_REMOTE_SOCKET** (experimental remote-
+  core), **MDV_BACKGROUND** (headless launch), **MDV_PRESERVE_RECENT_SOURCE_VIEWS** (cache tuning),
+  **MDV_APP_SUPPORT / _DIAGNOSE_DELAY / _WINDOW_DIAG / _ENABLE_DIAGNOSTICS / _SIGNPOSTS /
+  _PRISTINE_CHROME** — all harness/diagnostics/experimental, not user features.
+  => NO env-var-only USER feature exists. Sub-gap CLEAN.
+
+Also confirmed production-grade while here (no fix needed): audio MP3 export degrades gracefully
+(AudioExportAccessory disables MP3 + retitles "MP3 (ffmpeg not found)" when ffmpeg absent; export
+errors show specific alerts); search empty-states all present (CrossSearchPanel "No matches",
+SearchAnywhereSection, StructuralSearchView, command-palette hints).
+
+TSK-1413 status: palette-parity (Pass 8) + env-var audit (this pass) DONE. Remaining: menu reorg
+(TSK-751/1318) — a larger UX-design task. No code fix warranted this tick (surfaces audited are
+production-grade; not manufacturing marginal work per owner directive).
