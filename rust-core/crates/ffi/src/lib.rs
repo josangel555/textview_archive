@@ -1305,6 +1305,36 @@ pub unsafe extern "C" fn mdvcore_canvas_vocab(
     })
 }
 
+/// The deck TIMELINE as canonical JSON (M6.S3): per-slide step counts +
+/// visible-id snapshots — the agent's declarative verification surface.
+/// Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Safety
+/// `handle` must be live; `out_buf` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_timeline(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            let text = doc.timeline_json();
+            // SAFETY: out_buf validated non-null.
+            unsafe { *out_buf = MdvBuf::from_vec(text.into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// Project ONE anchored node's subtree into canonical DSL. `id`/`id_len`
 /// is the record id (e.g. "nd:hero"). Empty result = unknown id (the caller
 /// distinguishes it from an empty subtree by asking canvas_read for the

@@ -54,6 +54,7 @@ public enum MCPToolCatalog {
         canvasUndoDescriptor,
         canvasExportDescriptor,
         canvasKitImportDescriptor,
+        canvasTimelineDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -95,6 +96,7 @@ public enum MCPToolCatalog {
         case "canvas_undo":        return try canvasUndo(args, host)
         case "canvas_export":      return try canvasExport(args, host)
         case "canvas_kit_import":  return try canvasKitImport(args, host)
+        case "canvas_timeline":    return try canvasTimeline(args, host)
         default:
             throw MCPError.notFound("unknown tool: \(name)")
         }
@@ -1187,6 +1189,46 @@ public enum MCPToolCatalog {
             ])
         } catch {
             throw MCPError.toolFailed("canvas_kit_import: \(error)")
+        }
+    }
+
+
+    private static let canvasTimelineDescriptor = MCP.ToolDescriptor(
+        name: "canvas_timeline",
+        description: "The deck's presentation timeline (M6): per role=slide frame, the "
+            + "stepCount and, for each step, the visibleIds. This is the DECLARATIVE "
+            + "verification surface — check step reveals here BEFORE any screenshot. "
+            + "Returns {slides: [{id, stepCount, steps: [{step, visibleIds}]}]}.",
+        inputSchema: schema([
+            "doc": .object(["type": .string("string")]),
+        ], required: ["doc"])
+    )
+
+    private static func canvasTimeline(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let doc = try canvasDoc(try args.string("doc"), host)
+        do {
+            let json = try doc.adapter.timelineJSON()
+            guard let data = json.data(using: .utf8),
+                let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let slides = obj["slides"] as? [[String: Any]]
+            else { return .object(["slides": .array([])]) }
+            let out: [MCP.Value] = slides.map { slide in
+                let steps = (slide["steps"] as? [[String: Any]] ?? []).map { st -> MCP.Value in
+                    let ids = (st["visibleIds"] as? [String] ?? []).map { MCP.Value.string($0) }
+                    return .object([
+                        "step": .int(st["step"] as? Int ?? 0),
+                        "visibleIds": .array(ids),
+                    ])
+                }
+                return .object([
+                    "id": .string(slide["id"] as? String ?? ""),
+                    "stepCount": .int(slide["stepCount"] as? Int ?? 0),
+                    "steps": .array(steps),
+                ])
+            }
+            return .object(["slides": .array(out)])
+        } catch {
+            throw MCPError.toolFailed("canvas_timeline: \(error)")
         }
     }
 

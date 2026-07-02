@@ -434,4 +434,43 @@ final class CanvasMCPToolsTests: XCTestCase {
         XCTAssertFalse(CanvasPresentationMode.isPresentation(
             try host.automationCanvasStore.doc(plain)))
     }
+
+    // MARK: M6.S3 — the timeline tool (TSK-1397)
+
+    func test_canvas_timeline_reports_per_slide_step_snapshots() throws {
+        guard case .object(let n) = try call("canvas_new", [
+            "mode": .string("presentation"), "slides": .int(2),
+        ]), case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        let openDoc = try host.automationCanvasStore.doc(doc)
+        // Add stepped reveals into slide-0.
+        _ = try openDoc.adapter.apply(baseRev: try openDoc.adapter.currentRev(), [
+            .insert(id: "nd:base", kind: "text", parent: "nd:slide-0", pos: .last,
+                    props: [("text", .str("base"))]),
+            .insert(id: "nd:r1", kind: "text", parent: "nd:slide-0", pos: .last,
+                    props: [("text", .str("one")), ("step", .num(1))]),
+            .insert(id: "nd:r2", kind: "text", parent: "nd:slide-0", pos: .last,
+                    props: [("text", .str("two")), ("step", .num(2))]),
+        ])
+
+        guard case .object(let tl) = try call("canvas_timeline", ["doc": .string(doc)]),
+              case .array(let slides)? = tl["slides"] else { return XCTFail("timeline") }
+        XCTAssertEqual(slides.count, 2, "two slides")
+        // slide-0 has stepCount 2 and monotone reveals.
+        guard case .object(let s0) = slides[0] else { return XCTFail("s0") }
+        XCTAssertEqual(s0["id"], .string("nd:slide-0"))
+        XCTAssertEqual(s0["stepCount"], .int(2))
+        guard case .array(let steps)? = s0["steps"] else { return XCTFail("steps") }
+        XCTAssertEqual(steps.count, 3, "steps 0,1,2")
+        func visible(_ v: MCP.Value) -> Set<String> {
+            guard case .object(let o) = v, case .array(let ids)? = o["visibleIds"] else { return [] }
+            return Set(ids.compactMap { if case .string(let s) = $0 { return s }; return nil })
+        }
+        let at0 = visible(steps[0]), at1 = visible(steps[1]), at2 = visible(steps[2])
+        XCTAssertTrue(at0.contains("nd:base") && !at0.contains("nd:r1"), "base only at 0")
+        XCTAssertTrue(at1.contains("nd:r1") && !at1.contains("nd:r2"))
+        XCTAssertTrue(at2.isSuperset(of: at1) && at2.contains("nd:r2"))
+        // slide-1 has no steps → stepCount 0.
+        guard case .object(let s1) = slides[1] else { return XCTFail("s1") }
+        XCTAssertEqual(s1["stepCount"], .int(0))
+    }
 }

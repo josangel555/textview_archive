@@ -96,6 +96,87 @@ pub fn timeline_state(store: &Store, slide: &Id) -> Vec<StepState> {
         .collect()
 }
 
+/// All `role=slide` frame ids in the document, in document (frac-index)
+/// order — the deck's slide sequence.
+#[must_use]
+pub fn slide_ids(store: &Store) -> Vec<Id> {
+    // Slides are role=slide frames; collect from a full walk, ordered by the
+    // stable child order under each parent. A page-child walk suffices for
+    // v1 decks (slides are page children), but we scan all ids to be robust
+    // and then sort by the same frac-index the store exposes via children().
+    let mut ids: Vec<Id> = store
+        .ids()
+        .filter(|id| {
+            store.get(id).is_some_and(|rec| {
+                PropKey::by_name("role")
+                    .and_then(|k| rec.props.get(k))
+                    .is_some_and(|v| matches!(v, Value::Str(s) if s == "slide"))
+            })
+        })
+        .cloned()
+        .collect();
+    // Order by document position: a slide's ancestry+index. Sorting by id is
+    // NOT document order, so order by each slide's place index string within
+    // its parent (page-level slides share a parent → the frac index sorts).
+    ids.sort_by(|a, b| {
+        let ka = store.get(a).and_then(|r| r.place.as_ref()).map(|p| p.index.as_str().to_owned());
+        let kb = store.get(b).and_then(|r| r.place.as_ref()).map(|p| p.index.as_str().to_owned());
+        ka.cmp(&kb).then_with(|| a.as_str().cmp(b.as_str()))
+    });
+    ids
+}
+
+fn esc_json(s: &str, out: &mut String) {
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+/// The whole deck's timeline as canonical JSON (M6.S3): the declarative
+/// verification surface the agent reads before any pixel.
+/// `{"slides":[{"id","stepCount","steps":[{"step","visibleIds":[...]}]}]}`
+#[must_use]
+pub fn timeline_json(store: &Store) -> String {
+    let mut out = String::from("{\"slides\":[");
+    for (si, slide) in slide_ids(store).iter().enumerate() {
+        if si > 0 {
+            out.push(',');
+        }
+        let states = timeline_state(store, slide);
+        out.push_str("{\"id\":");
+        esc_json(slide.as_str(), &mut out);
+        out.push_str(",\"stepCount\":");
+        out.push_str(&max_step(store, slide).to_string());
+        out.push_str(",\"steps\":[");
+        for (i, st) in states.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str("{\"step\":");
+            out.push_str(&st.step.to_string());
+            out.push_str(",\"visibleIds\":[");
+            for (j, v) in st.visible_ids.iter().enumerate() {
+                if j > 0 {
+                    out.push(',');
+                }
+                esc_json(v, &mut out);
+            }
+            out.push_str("]}");
+        }
+        out.push_str("]}");
+    }
+    out.push_str("]}");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +281,32 @@ mod tests {
         let findings = crate::canvas::lint::run(&d, &tokens);
         assert!(findings.iter().any(|f| f.code == "orphan-step"
             && f.id.as_ref().map(|i| i.as_str()) == Some("nd:loose")));
+    }
+
+    #[test]
+    fn timeline_json_lists_slides_in_document_order() {
+        let mut d = DocState::new();
+        let pg = id("pg:1");
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        // Two slides, a stepped node in the first.
+        d.apply(0, &[
+            CanvasOp::Insert { id: Some(id("nd:s0")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:s1")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:x")), kind: RecordKind::Text, parent: id("nd:s0"),
+                pos: Position::Last, props: vec![
+                    (key("text"), Value::Str("x".to_owned())),
+                    (key("step"), Value::Num(1.0))] },
+        ]).expect("apply");
+        let ids = slide_ids(&d.store);
+        assert_eq!(ids, vec![id("nd:s0"), id("nd:s1")], "document order");
+        let json = timeline_json(&d.store);
+        assert!(json.contains("\"id\":\"nd:s0\""));
+        assert!(json.contains("\"stepCount\":1"), "{json}");
+        assert!(json.contains("\"visibleIds\":[\"nd:x\"]") || json.contains("nd:x"));
+        // Valid JSON round-trips through the in-house parser.
+        assert!(crate::json::parse(&json).is_ok(), "well-formed JSON");
     }
 
     #[test]

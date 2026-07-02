@@ -6,7 +6,7 @@
 use super::ops::{DocState, UndoOp};
 use super::store::{Id, RecordKind};
 use super::tokens::TokenStore;
-use super::{dsl, io, lower, wire};
+use super::{deck, dsl, io, lower, wire};
 use crate::wire::WireFault;
 
 /// Undo history depth (bounded — the undo unit is an apply batch).
@@ -168,6 +168,13 @@ impl CanvasDoc {
     pub fn render_fragment(&self, id: &Id) -> Option<String> {
         self.state.store.get(id)?;
         Some(lower::render_fragment(&self.state.store, &self.tokens, id))
+    }
+
+    /// The deck timeline as canonical JSON (M6.S3) — per-slide step counts
+    /// and visible-id snapshots (the declarative verification surface).
+    #[must_use]
+    pub fn timeline_json(&self) -> String {
+        deck::timeline_json(&self.state.store)
     }
 
     /// Full-document lint as a `{lint: […]}` frame.
