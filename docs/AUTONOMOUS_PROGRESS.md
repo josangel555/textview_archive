@@ -14943,3 +14943,12 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - T5 pixel guard for overlay visibility + codified negative control
   (MDV_ENABLE_BROKEN_CANVAS_OVERLAY) + canvas-demo scene — self-skipping until TSK-1334;
   VM webview bar pinned to TSK-1365 (two real lane fixes landed en route).
+
+## 2026-07-02 — THE CLAUDE-DESIGN GAUNTLET: 10/10, escape rate 0% (M4.S6, TSK-1385)
+- All ten pre-committed briefs (M4-PLAN §S6) completed through ONLY the MCP surface;
+  ZERO embed escapes (vs the owner's 30% pivot criterion); zero lint findings (token
+  discipline held everywhere). The abstraction holds for Claude-Design-class work.
+- Abstraction-gap log (feeds the owner review + M5): no input/form primitives (mock-able
+  with bordered frames); no grid primitive (row+wrap / stacked rows approximate — 2 briefs);
+  no per-child spacer/justify shorthand; kit-on-tinted-surface wants per-instance fills
+  (root-prop overrides already cover it).
