@@ -652,6 +652,25 @@ pub fn visible_instances_of(store: &Store, def: &Id) -> Vec<Id> {
     result
 }
 
+/// M5.S3 — the FRAGMENT export: one node's subtree with NO theme block and
+/// every var(--cv-*) reference inlined to its literal (embeddable in an
+/// existing site that has no `--cv-*` custom properties). Uses the token
+/// store's forward map so dash-containing paths (base.gray-1) stay exact.
+#[must_use]
+pub fn render_fragment(store: &Store, tokens: &TokenStore, id: &Id) -> String {
+    inline_token_vars(&lower_subtree(store, id), tokens)
+}
+
+fn inline_token_vars(html: &str, tokens: &TokenStore) -> String {
+    let mut out = html.to_owned();
+    // Replace whole `var(<name>)` patterns (the closing paren makes each
+    // match exact, so --cv-color never eats --cv-color-fg). Small pair set.
+    for (name, literal) in tokens.css_var_pairs() {
+        out = out.replace(&format!("var({name})"), &literal);
+    }
+    out
+}
+
 /// Lower a whole page: the theme's custom-property block once at the root,
 /// then the page subtree.
 #[must_use]
@@ -1224,6 +1243,31 @@ mod tests {
     }
 
     // MARK: M5.S2 — artboard chrome
+
+    // MARK: M5.S3 — fragment export
+
+    #[test]
+    fn fragment_inlines_token_literals_and_omits_the_theme_block() {
+        // A named dashed token so the ambiguous-reverse trap is exercised.
+        let mut doc = crate::canvas::doc::CanvasDoc::new_empty();
+        // Token-only batch leaves rev unmoved (M4.S4) — both applies at 0.
+        doc.apply_dsl(0, "token set base.gray-1 #abcdef").expect("tok");
+        doc.apply_dsl(0, "frame #board role=artboard fill=$base.gray-1 {\n  text #t \"hi\" color=$color.accent\n}").expect("apply");
+
+        let board = Id::parse("nd:board").expect("id");
+        let fragment = doc.render_fragment(&board).expect("fragment");
+        // NO theme block.
+        assert!(!fragment.contains("<style"), "fragment has no theme: {fragment}");
+        assert!(!fragment.contains("cv-theme"));
+        // var() refs are GONE — inlined to literals (dashed path resolved exactly).
+        assert!(!fragment.contains("var(--cv-"), "no var refs remain: {fragment}");
+        assert!(fragment.contains("#abcdef"), "the dashed token literal inlined");
+        // Scoped to the artboard subtree.
+        assert!(fragment.contains(">hi<"));
+        assert!(fragment.contains("data-cv-id=\"nd:board\""));
+        // A missing node yields None.
+        assert!(doc.render_fragment(&Id::parse("nd:nope").expect("id")).is_none());
+    }
 
     #[test]
     fn artboards_get_labeled_chrome_and_plain_frames_do_not() {

@@ -154,6 +154,11 @@ public final class CanvasDocAdapter {
     public func undo() throws -> UInt64? { try session.undo() }
 
     /// Anchored-subtree DSL projection (nil = unknown id).
+    /// The fragment export of one node (M5.S3).
+    public func renderFragment(node id: String) throws -> String? {
+        try session.renderFragment(node: id)
+    }
+
     public func renderDSL(node id: String) throws -> String? {
         try session.renderDSL(node: id)
     }

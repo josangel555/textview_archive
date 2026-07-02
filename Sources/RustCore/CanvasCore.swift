@@ -252,6 +252,18 @@ public final class CanvasDocSession {
         return text.isEmpty ? nil : text
     }
 
+    /// The FRAGMENT export of one node (M5.S3): theme-less HTML with token
+    /// literals inlined. Nil when the node is absent.
+    public func renderFragment(node id: String) throws -> String? {
+        let bytes = Array(id.utf8)
+        let text = try stringResult { h, buf in
+            bytes.withUnsafeBufferPointer { p in
+                mdvcore_canvas_render_fragment(h, p.baseAddress, UInt(p.count), &buf)
+            }
+        }
+        return text.isEmpty ? nil : text
+    }
+
     /// Full-document lint findings (the canvas_lint tool's payload).
     public func lintAll() throws -> [CanvasLintFinding] {
         let h = try liveHandle()

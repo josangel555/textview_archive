@@ -1081,13 +1081,19 @@ public enum MCPToolCatalog {
 
     private static let canvasExportDescriptor = MCP.ToolDescriptor(
         name: "canvas_export",
-        description: "Export a canvas doc as a SELF-CONTAINED static HTML file (theme "
-            + "custom-property block + the lowered page — the B0 export tier). "
-            + "Returns {path, bytes}.",
+        description: "Export a canvas doc as static HTML. flavor: \"standalone\" "
+            + "(default; theme custom-property block + the lowered page — the B0 "
+            + "tier, self-contained) or \"fragment\" (one artboard's subtree, NO "
+            + "theme block, var(--cv-*) refs inlined as literals — embeddable in "
+            + "an existing site). fragment picks the artboard arg (#id) or the "
+            + "first role=artboard node. Returns {path, bytes, flavor}.",
         inputSchema: schema([
             "doc":  .object(["type": .string("string")]),
             "path": .object(["type": .string("string"),
                              "description": .string("Output .html path")]),
+            "flavor":   .object(["type": .string("string")]),
+            "artboard": .object(["type": .string("string"),
+                                 "description": .string("#id of the artboard (fragment)")]),
         ], required: ["doc", "path"])
     )
 
@@ -1095,13 +1101,61 @@ public enum MCPToolCatalog {
         let doc = try canvasDoc(try args.string("doc"), host)
         let path = try args.string("path")
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let flavor = (try? args.string("flavor")) ?? "standalone"
         do {
-            let html = try doc.adapter.html()
+            let html: String
+            switch flavor {
+            case "standalone":
+                html = try doc.adapter.html()
+            case "fragment":
+                let nodeID = try canvasFragmentTarget(args, doc)
+                guard let fragment = try doc.adapter.renderFragment(node: nodeID) else {
+                    throw MCPError.toolFailed(
+                        "canvas_export: fragment target \(nodeID) not found")
+                }
+                html = fragment
+            default:
+                throw MCPError.toolFailed(
+                    "canvas_export: flavor must be standalone|fragment, got \(flavor)")
+            }
             try EditorWriter.save(html, to: url)
-            return .object(["path": .string(url.path), "bytes": .int(html.utf8.count)])
+            return .object([
+                "path": .string(url.path),
+                "bytes": .int(html.utf8.count),
+                "flavor": .string(flavor),
+            ])
+        } catch let e as MCPError {
+            throw e
         } catch {
             throw MCPError.toolFailed("canvas_export: \(error)")
         }
+    }
+
+    /// Resolve the fragment target: the explicit `artboard` arg (#id → nd:id)
+    /// or the first role=artboard node in the outline.
+    private static func canvasFragmentTarget(
+        _ args: MCP.Value, _ doc: CanvasOpenDocument
+    ) throws -> String {
+        if let raw = try? args.string("artboard"), !raw.isEmpty {
+            return raw.hasPrefix("nd:") ? raw
+                : "nd:" + (raw.hasPrefix("#") ? String(raw.dropFirst()) : raw)
+        }
+        let root = try CanvasOutlineParser.parse(doc.adapter.save())
+        if let board = firstArtboard(root) { return board.id }
+        throw MCPError.toolFailed(
+            "canvas_export: fragment needs an artboard — pass {artboard: \"#id\"} "
+                + "or add a role=artboard frame")
+    }
+
+    private static func firstArtboard(_ node: CanvasOutlineNode) -> CanvasOutlineNode? {
+        let isArtboard = node.props.contains {
+            $0.name == "role" && $0.value == .str("artboard")
+        }
+        if isArtboard { return node }
+        for child in node.children {
+            if let hit = firstArtboard(child) { return hit }
+        }
+        return nil
     }
 
 

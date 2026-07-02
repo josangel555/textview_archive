@@ -162,6 +162,14 @@ impl CanvasDoc {
         Some(dsl::render_subtree(&self.state.store, id))
     }
 
+    /// The FRAGMENT export of one node's subtree (M5.S3): HTML with the
+    /// theme block omitted and var(--cv-*) refs inlined as literals. None
+    /// when the node does not exist.
+    pub fn render_fragment(&self, id: &Id) -> Option<String> {
+        self.state.store.get(id)?;
+        Some(lower::render_fragment(&self.state.store, &self.tokens, id))
+    }
+
     /// Full-document lint as a `{lint: […]}` frame.
     ///
     /// # Errors

@@ -349,4 +349,56 @@ final class CanvasMCPToolsTests: XCTestCase {
               case .string(let dsl)? = read["dsl"] else { return XCTFail("read") }
         XCTAssertFalse(dsl.contains("artboard"))
     }
+
+    // MARK: M5.S3 — export flavors (TSK-1391)
+
+    func test_export_standalone_vs_fragment() throws {
+        guard case .object(let n) = try call("canvas_new", [
+            "mode": .string("ui-design"), "template": .string("desktop"),
+        ]), case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        // Put a token-colored node inside the desktop artboard.
+        let openDoc = try host.automationCanvasStore.doc(doc)
+        _ = try openDoc.adapter.apply(baseRev: try openDoc.adapter.currentRev(), [
+            .insert(id: "nd:hi", kind: "text", parent: "nd:artboard-desktop", pos: .last,
+                    props: [("text", .str("hello")), ("color", .token("color.accent"))]),
+        ])
+
+        let tmp = FileManager.default.temporaryDirectory
+        let standalone = tmp.appendingPathComponent("s-\(UUID().uuidString).html")
+        let fragment = tmp.appendingPathComponent("f-\(UUID().uuidString).html")
+        defer { try? FileManager.default.removeItem(at: standalone)
+                try? FileManager.default.removeItem(at: fragment) }
+
+        // Standalone: theme block + var() refs present.
+        guard case .object(let s) = try call("canvas_export", [
+            "doc": .string(doc), "path": .string(standalone.path),
+        ]) else { return XCTFail("standalone") }
+        XCTAssertEqual(s["flavor"], .string("standalone"))
+        let sHTML = try String(contentsOf: standalone, encoding: .utf8)
+        XCTAssertTrue(sHTML.contains("cv-theme"), "standalone carries the theme")
+        XCTAssertTrue(sHTML.contains("var(--cv-"), "standalone keeps var refs")
+
+        // Fragment (first artboard auto-picked): NO theme, NO var(), scoped.
+        guard case .object(let f) = try call("canvas_export", [
+            "doc": .string(doc), "path": .string(fragment.path),
+            "flavor": .string("fragment"),
+        ]) else { return XCTFail("fragment") }
+        XCTAssertEqual(f["flavor"], .string("fragment"))
+        let fHTML = try String(contentsOf: fragment, encoding: .utf8)
+        XCTAssertFalse(fHTML.contains("cv-theme"), "fragment drops the theme block")
+        XCTAssertFalse(fHTML.contains("var(--cv-"), "fragment inlines literals: \(fHTML.prefix(300))")
+        XCTAssertTrue(fHTML.contains(">hello<"), "scoped to the artboard subtree")
+        XCTAssertTrue(fHTML.contains("data-cv-id=\"nd:artboard-desktop\""))
+
+        // Explicit artboard arg + bad flavor.
+        guard case .object(let f2) = try call("canvas_export", [
+            "doc": .string(doc), "path": .string(fragment.path),
+            "flavor": .string("fragment"), "artboard": .string("#artboard-desktop"),
+        ]) else { return XCTFail("explicit") }
+        XCTAssertEqual(f2["flavor"], .string("fragment"))
+        XCTAssertThrowsError(try call("canvas_export", [
+            "doc": .string(doc), "path": .string(fragment.path),
+            "flavor": .string("react"),
+        ]), "unknown flavor rejects")
+    }
 }

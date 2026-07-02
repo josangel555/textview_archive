@@ -213,18 +213,33 @@ impl TokenStore {
     /// SKIPPED (validate() is the loud path; emission stays total).
     #[must_use]
     pub fn to_css_custom_props(&self) -> String {
+        let mut out = String::new();
+        for (name, css) in self.css_var_pairs() {
+            out.push_str(&name);
+            out.push_str(": ");
+            out.push_str(&css);
+            out.push_str(";\n");
+        }
+        out
+    }
+
+    /// The resolved (`--cv-<name>`, literal) pairs — the SAME forward
+    /// transform as `to_css_custom_props` (dots→dashes), exposed so var-ref
+    /// inlining (M5.S3 fragment export) uses the exact forward map and never
+    /// has to reverse the ambiguous dash encoding. Path-sorted; unresolvable
+    /// tokens skipped.
+    #[must_use]
+    pub fn css_var_pairs(&self) -> Vec<(String, String)> {
         let mut paths: Vec<&String> = self.defs.keys().collect();
         paths.sort();
-        let mut out = String::new();
+        let mut out = Vec::with_capacity(paths.len());
         for path in paths {
             if let Ok(css) = self.resolve(path) {
-                out.push_str("--cv-");
+                let mut name = String::from("--cv-");
                 for ch in path.chars() {
-                    out.push(if ch == '.' { '-' } else { ch });
+                    name.push(if ch == '.' { '-' } else { ch });
                 }
-                out.push_str(": ");
-                out.push_str(css);
-                out.push_str(";\n");
+                out.push((name, css.to_owned()));
             }
         }
         out

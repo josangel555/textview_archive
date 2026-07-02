@@ -1351,6 +1351,46 @@ pub unsafe extern "C" fn mdvcore_canvas_render_dsl_node(
     })
 }
 
+/// Render one node's subtree as a FRAGMENT (M5.S3): theme block omitted,
+/// var(--cv-*) refs inlined as literals. Empty buffer if the node is
+/// absent. Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Safety
+/// `handle` must be live; `id` points to `id_len` bytes; `out_buf` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_render_fragment(
+    handle: *mut canvas_handle::CanvasHandle,
+    id: *const u8,
+    id_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || id.is_null() || out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        // SAFETY: id validated non-null; caller guarantees id_len bytes.
+        let bytes = unsafe { core::slice::from_raw_parts(id, id_len) };
+        let Ok(id_text) = core::str::from_utf8(bytes) else {
+            return MdvStatus::BadUtf8;
+        };
+        let Ok(parsed) = mdvcore_core::canvas::store::Id::parse(id_text) else {
+            return MdvStatus::BadUtf8;
+        };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            let text = doc.render_fragment(&parsed).unwrap_or_default();
+            // SAFETY: out_buf validated non-null.
+            unsafe { *out_buf = MdvBuf::from_vec(text.into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// Full-document lint as a `{lint: […]}` MessagePack frame (same WireLint
 /// shape that rides applies). Caller MUST call [`mdvcore_buf_free`].
 ///
