@@ -14,6 +14,7 @@ public enum MarkdownHeadingShift {
         var inFence = false
         var fenceChar: Character = "`"
         var fenceLen = 0
+        var inComment = false
         var out = ""
         out.reserveCapacity(text.count)
         for (content, term) in splitLines(text) {
@@ -24,7 +25,19 @@ public enum MarkdownHeadingShift {
                 out += content + term
                 continue
             }
-            out += (inFence ? content : shiftHeadingLine(content, by: delta)) + term
+            if inFence { out += content + term; continue }
+            // HTML comment blocks: never shift a `#` line that's commented out.
+            if inComment {
+                if trimmed.contains("-->") { inComment = false }
+                out += content + term
+                continue
+            }
+            if trimmed.hasPrefix("<!--"), !trimmed.contains("-->") {
+                inComment = true
+                out += content + term
+                continue
+            }
+            out += shiftHeadingLine(content, by: delta) + term
         }
         return out
     }
@@ -34,7 +47,14 @@ public enum MarkdownHeadingShift {
     private static func shiftHeadingLine(_ line: String, by delta: Int) -> String {
         let chars = Array(line)
         var i = 0
-        while i < chars.count, chars[i] == " " || chars[i] == "\t" { i += 1 }
+        var indentWidth = 0
+        while i < chars.count, chars[i] == " " || chars[i] == "\t" {
+            indentWidth += chars[i] == "\t" ? 4 : 1   // CommonMark tab = 4-col stop
+            i += 1
+        }
+        // 4+ columns of indent → an indented code block, NOT an ATX heading;
+        // shifting it would corrupt the user's code content.
+        guard indentWidth <= 3 else { return line }
         var h = i
         while h < chars.count, chars[h] == "#" { h += 1 }
         let count = h - i
