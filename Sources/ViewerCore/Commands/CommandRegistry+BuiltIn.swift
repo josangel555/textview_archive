@@ -46,24 +46,24 @@ extension CommandRegistry {
         // Re-saves the active file in the chosen encoding; .excluded from macros
         // (a disk-write keyed on the active file, not a clean headless replay).
         CommandDescriptor(
-            id: "edit.convertEncoding.utf8", title: "Convert Encoding: UTF-8", category: .edit,
+            id: "edit.convertEncoding.utf8", title: "Convert Encoding: UTF-8", category: .format,
             scriptVerb: "convert-encoding utf-8", replayability: .excluded),
         CommandDescriptor(
-            id: "edit.convertEncoding.utf16", title: "Convert Encoding: UTF-16", category: .edit,
+            id: "edit.convertEncoding.utf16", title: "Convert Encoding: UTF-16", category: .format,
             scriptVerb: "convert-encoding utf-16", replayability: .excluded),
         CommandDescriptor(
             id: "edit.convertEncoding.windows1252",
-            title: "Convert Encoding: Western (Windows-1252)", category: .edit,
+            title: "Convert Encoding: Western (Windows-1252)", category: .format,
             scriptVerb: "convert-encoding windows-1252", replayability: .excluded),
         CommandDescriptor(
             id: "edit.convertEncoding.isoLatin1",
-            title: "Convert Encoding: Western (ISO Latin-1)", category: .edit,
+            title: "Convert Encoding: Western (ISO Latin-1)", category: .format,
             scriptVerb: "convert-encoding iso-latin-1", replayability: .excluded),
         // TSK-1335 — palette parity for Edit ▸ Align Markdown Tables (the transform,
         // Formatter.prettyPrint(.markdown), already exists). Replayable: a deterministic
         // editor-buffer transform like Pretty-Print.
         CommandDescriptor(
-            id: "edit.alignTables", title: "Align Markdown Tables", category: .edit,
+            id: "edit.alignTables", title: "Align Markdown Tables", category: .format,
             scriptVerb: "align-tables"),
         CommandDescriptor(
             id: "file.open", title: "Open…", category: .file,
@@ -237,10 +237,10 @@ extension CommandRegistry {
             id: "edit.collapseBlankLines", title: "Collapse Blank Lines", category: .edit,
             scriptVerb: "edit-collapse-blank-lines"),
         CommandDescriptor(
-            id: "edit.trimTrailingWhitespace", title: "Trim Trailing Whitespace", category: .edit,
+            id: "edit.trimTrailingWhitespace", title: "Trim Trailing Whitespace", category: .format,
             scriptVerb: "edit-trim-trailing"),
         CommandDescriptor(
-            id: "edit.ensureFinalNewline", title: "Ensure Final Newline", category: .edit,
+            id: "edit.ensureFinalNewline", title: "Ensure Final Newline", category: .format,
             scriptVerb: "edit-ensure-final-newline"),
         // TSK-1186: the case transforms dispatch (edit-uppercase/lowercase/capitalize
         // via TextTransform) but had no palette descriptors — menu-only until now.
@@ -256,10 +256,10 @@ extension CommandRegistry {
         // TSK-1186: heading promote/demote (MarkdownHeadingShift, host-tested
         // TSK-882) drove from the menu only — now palette- + verb-invokable.
         CommandDescriptor(
-            id: "edit.promoteHeading", title: "Promote Heading", category: .edit,
+            id: "edit.promoteHeading", title: "Promote Heading", category: .format,
             scriptVerb: "edit-promote-heading"),
         CommandDescriptor(
-            id: "edit.demoteHeading", title: "Demote Heading", category: .edit,
+            id: "edit.demoteHeading", title: "Demote Heading", category: .format,
             scriptVerb: "edit-demote-heading"),
         // TSK-1186: line ops (sort/reverse/dedup) had model methods but no verbs.
         CommandDescriptor(
@@ -278,20 +278,20 @@ extension CommandRegistry {
         // dispatcher carries args, but enumerated targets keep the palette
         // prompt-free) — convertActiveFileLineEnding is file-write, host-tested.
         CommandDescriptor(
-            id: "edit.convertLineEndingsLF", title: "Convert Line Endings to LF", category: .edit,
+            id: "edit.convertLineEndingsLF", title: "Convert Line Endings to LF", category: .format,
             scriptVerb: "convert-line-endings-lf"),
         CommandDescriptor(
-            id: "edit.convertLineEndingsCRLF", title: "Convert Line Endings to CRLF", category: .edit,
+            id: "edit.convertLineEndingsCRLF", title: "Convert Line Endings to CRLF", category: .format,
             scriptVerb: "convert-line-endings-crlf"),
         CommandDescriptor(
-            id: "edit.convertLineEndingsCR", title: "Convert Line Endings to CR", category: .edit,
+            id: "edit.convertLineEndingsCR", title: "Convert Line Endings to CR", category: .format,
             scriptVerb: "convert-line-endings-cr"),
         // TSK-1186: indentation converters (per-target, param-less) — file-write.
         CommandDescriptor(
-            id: "edit.convertIndentationToSpaces", title: "Convert Indentation to Spaces", category: .edit,
+            id: "edit.convertIndentationToSpaces", title: "Convert Indentation to Spaces", category: .format,
             scriptVerb: "convert-indentation-to-spaces"),
         CommandDescriptor(
-            id: "edit.convertIndentationToTabs", title: "Convert Indentation to Tabs", category: .edit,
+            id: "edit.convertIndentationToTabs", title: "Convert Indentation to Tabs", category: .format,
             scriptVerb: "convert-indentation-to-tabs"),
         // TSK-1162: macro record/replay control verbs. Marked .excluded so a
         // recording never captures its own start/stop/replay.
@@ -310,7 +310,7 @@ extension CommandRegistry {
             id: "edit.minifyJSON", title: "Minify JSON (Compact)", category: .edit,
             scriptVerb: "edit-minify-json"),
         CommandDescriptor(
-            id: "edit.insertTOC", title: "Insert Table of Contents", category: .edit,
+            id: "edit.insertTOC", title: "Insert Table of Contents", category: .format,
             scriptVerb: "edit-insert-toc"),
         CommandDescriptor(
             id: "edit.insertDate", title: "Insert Date and Time", category: .edit,

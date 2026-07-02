@@ -16,7 +16,7 @@ final class ConvertEncodingPaletteCommandTests: XCTestCase {
         XCTAssertEqual(convertCommands.count, 4, "one palette command per menu encoding choice")
         for cmd in convertCommands {
             XCTAssertTrue(cmd.isPaletteInvokable, "\(cmd.id) must carry a script verb")
-            XCTAssertEqual(cmd.category, .edit)
+            XCTAssertEqual(cmd.category, .format)   // TSK-1413: moved Edit → Format menu/category
             XCTAssertEqual(cmd.replayability, .excluded,
                            "a disk-write re-encode keyed on the active file is excluded from macros")
         }
@@ -45,6 +45,6 @@ final class ConvertEncodingPaletteCommandTests: XCTestCase {
         XCTAssertNotNil(cmd, "Align Markdown Tables should be a ⌘K palette command (TSK-1335)")
         XCTAssertEqual(cmd?.scriptVerb, "align-tables")
         XCTAssertTrue(cmd?.isPaletteInvokable ?? false)
-        XCTAssertEqual(cmd?.category, .edit)
+        XCTAssertEqual(cmd?.category, .format)   // TSK-1413: moved Edit → Format menu/category
     }
 }

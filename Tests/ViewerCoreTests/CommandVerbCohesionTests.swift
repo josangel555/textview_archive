@@ -32,6 +32,29 @@ final class CommandVerbCohesionTests: XCTestCase {
         }
     }
 
+    /// TSK-1413: the content-transform commands live in the Format CATEGORY so the
+    /// ⌘K palette + keyboard-shortcuts help group them under "Format" — matching
+    /// the new Format MENU (they used to be scattered under Edit). Keeps the two
+    /// action surfaces (menu bar ↔ palette/shortcuts) coherent.
+    func test_transformCommands_areInFormatCategory_matchingTheMenu() {
+        let reg = CommandRegistry.builtIn
+        let formatIds = [
+            "edit.alignTables", "edit.trimTrailingWhitespace", "edit.ensureFinalNewline",
+            "edit.promoteHeading", "edit.demoteHeading", "edit.convertIndentationToSpaces",
+            "edit.convertIndentationToTabs", "edit.insertTOC",
+            "edit.convertEncoding.utf8", "edit.convertEncoding.utf16",
+            "edit.convertLineEndingsLF", "edit.convertLineEndingsCRLF",
+        ]
+        for id in formatIds {
+            guard let cmd = reg.command(id: id) else {
+                XCTFail("missing transform command \(id)"); continue
+            }
+            XCTAssertEqual(cmd.category, .format,
+                "\(id) is a content transform → must be in .format (matches the Format menu), got \(cmd.category)")
+        }
+        XCTAssertEqual(CommandCategory.format.title, "Format")
+    }
+
     /// Every command with a verb resolves to a real catalog token (first token,
     /// since a few embed a structured arg like `convert-encoding utf-8`). This is
     /// the cohesion regression guard: a command pointing at a non-existent verb

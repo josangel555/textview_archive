@@ -6,6 +6,7 @@ public enum CommandCategory: String, Sendable, CaseIterable, Comparable {
     case file
     case view
     case edit
+    case format
     case navigation
     case tabs
     case sessions
@@ -21,6 +22,7 @@ public enum CommandCategory: String, Sendable, CaseIterable, Comparable {
         case .file:       return "File"
         case .view:       return "View"
         case .edit:       return "Edit"
+        case .format:     return "Format"
         case .navigation: return "Navigation"
         case .tabs:       return "Tabs"
         case .sessions:   return "Sessions"
