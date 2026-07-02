@@ -52,7 +52,7 @@ measured lint → snapshot) · every render guard demonstrates teeth (negative c
 | # | Decision | Recommendation / status |
 |---|---|---|
 | Q1 | First mode | ✅ **DECIDED (owner criterion, 2026-07-01: "pick whichever validates our assumptions earliest") → UI-Design, Tier 1 (wireframe + clickable prototype, NO code export).** It stress-tests the two riskiest assumptions (Q13 CSS ladder; the seed vision "agent inserts elements instead of writing HTML for UI") earliest; Presentation's subsystems (TIME/morph) are lower-risk (proven prior art) and move to M6. Addendum in §Q1-rationale. |
-| Q2 | Format & interface language | **SPLIT per owner (2026-07-01):** (a) serialization = canonical JSON `.canvas` — **DECIDED, fine**; (b) the agent *interface language* is NOT settled — JSON ops are wrong for multi-turn incremental patching. → **Q2b spike (TSK-1350):** terse Canvas DSL + projection editing over the op layer (`02-CORE-ENGINE.md` §4b). Blocks M2. |
+| Q2 | Format & interface language | **(a) DECIDED:** serialization = canonical JSON `.canvas`. **(b) DSL direction approved by owner (2026-07-01)** — spike delivered: **`07-DSL-SPIKE.md`** (grammar, registry-generated vocabulary via MCP `canvas_vocab` + cheat-sheet + skill, projection editing, authoring-time scripting, component/kit sync, bench plan). Owner to review the spike; riders honored: full-vocabulary discoverability + hyper-perf internals (`02` §2c). |
 | Q3 | Spatial kinds | Page/deck first; `board` later. Rider: 10³⁺-node boards trigger a rendering-backend fork decision *only if prioritized*. |
 | Q4 | Dependencies | ✅ **DECIDED (owner, 2026-07-01): zero new deps v1** — hand-rolled vendored runtime, hand-rolled SVG chart marks, no layout engine (browser computes), no charting lib. Per-layer dep proposals return as parked asks only when scope demands. |
 | Q5 | `embed` ceiling | HTML/CSS-only v1 (sandboxed iframe, no script); script-bearing embeds = explicit future owner decision. |
@@ -63,7 +63,7 @@ measured lint → snapshot) · every render guard demonstrates teeth (negative c
 | Q10 | Code export | Semantic HTML/CSS first, one-way/disposable; framework target (React/SwiftUI/…) chosen when the UI-Design track starts. Multi-framework codegen rejected at v1 (Lona/Mitosis evidence). |
 | Q11 | **Engine placement** | ✅ **DECIDED (owner, 2026-07-01): `canvas-core` as a rust-core crate.** |
 | Q12 | Presenter mode second window | Confirm an AppKit presenter window is acceptable (the app is deliberately window-frugal; it's deck-mode-only, user-invoked). |
-| Q13 | **CSS expressiveness / escape-hatch ladder** | Owner concern (2026-07-01): CSS may be impossible to fully encapsulate; Claude-Design-class complexity must stay reachable. **Design answer adopted:** don't encapsulate — *grade* it. The 5-rung ladder in `02-CORE-ENGINE.md` §3b (closed props → raw-CSS passthrough → shared style rules → embed → code components), lint steering to the lowest sufficient rung. Confirm the ladder. |
+| Q13 | **CSS expressiveness / escape-hatch ladder** | ✅ **DECIDED (owner, 2026-07-01): ladder agreed.** The 5-rung ladder in `02-CORE-ENGINE.md` §3b; lint steers to the lowest sufficient rung; the M4 Claude-Design gauntlet is its kill-switch. |
 
 ### Q1-rationale — what "first mode" decides, and why Presentation
 

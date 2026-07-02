@@ -44,7 +44,37 @@ Record (common envelope)
 - **Record kinds**: nodes (visual tree), pages, component defs, token sets, data blocks,
   timelines, behaviors. One store, one diff/merge/event model for all of them.
 - **The tree is derived**: `childrenOf(parent)` = index-ordered scan (cached). Physical layout
-  of the store is an engine freedom (arena/columnar later — the SlotTable lesson), not schema.
+  of the store is an engine freedom (arena/columnar — §2c), not schema.
+
+### 2c. Physical representation — hyper-optimized internals (owner directive 2026-07-01)
+
+Owner bar: *extremely minimal storage overhead; minimal transformations and intermediary
+objects; minimal mem/CPU footprint; hyper-performant.* The design commitments (validated by
+criterion benches in M0/M1, budgets below):
+
+- **Interning everywhere.** Type ids and prop keys → `u16` symbols (registry-assigned, stable
+  per schema version); string *values* → doc-local intern pool (`u32` handles, dedup). A prop
+  is `(u16 key, CompactValue)`; a `CompactValue` is a tagged union (inline f64/i32/bool/symbol/
+  token-ref/handle) — no boxed JSON values anywhere in memory.
+- **Arena + SoA hot columns.** Records live in a generational arena (indices, not pointers);
+  the hot fields (`type`, `parent`, `index`, flags) are struct-of-arrays for cache-friendly
+  tree walks; cold props are compact sorted small-vecs per record. Target: **< ~200 bytes/node
+  + interned strings**; a 10k-node document ≈ low tens of MB ceiling.
+- **JSON exists only at the boundary.** Parse streams straight into the arena (serde streaming,
+  no `serde_json::Value` intermediate); serialization streams back out. In-memory is never
+  JSON-shaped.
+- **Zero-intermediary pipeline.** DSL/ops parse → validate against the store in place (no
+  retained AST) → apply → patch plan emitted into a reusable byte buffer → FFI returns a
+  borrowed slice (zero-copy out). The patch plan is computed from op semantics + the type
+  registry — there is **no shadow DOM in core** and no tree-diff on the edit path; full
+  re-lower is the recovery path only.
+- **Undo is the inverse-op log** (no snapshots, no persistent structures needed with a
+  single-writer store); content-hash subtree fingerprints (u64) are the deferred incremental
+  cache key for lowering.
+- **Budgets (criterion-benched, gate-enforced once set in M1):** apply single op < 100µs and
+  patch-plan emit < 1ms @ 10k nodes · load 10k-node doc < 50ms · full lower 10k nodes < 100ms ·
+  steady-state memory < ~30MB @ 10k nodes. Budgets are ratchets: the bench suite fails the
+  cargo gate on regression, same discipline as the app's perf benches.
 
 ## 3. Node types & prop schemas (the ShapeUtil pattern)
 
@@ -115,7 +145,7 @@ escapes; the document never stops being a document.
   ops (schema-constrained emission only at the final step); JSON-Schema published per op for
   constrained decoding.
 
-### 4b. The interface language (Q2b — PROPOSED, spike TSK-1350; owner: "not sure JSON will do")
+### 4b. The interface language (Q2b — spike DONE, `07-DSL-SPIKE.md`; owner approved the DSL direction 2026-07-01)
 
 The owner's split is right: JSON is the *serialization*, not necessarily the *authoring
 language*. The canvas is built **incrementally over many agent turns**, each patching a
@@ -165,6 +195,14 @@ custom properties; a document restyles by swapping tier-1 values.
 - **Component def** = named subtree + declared prop/slot schema; **instance** = `{ref, props}`.
   Def-update re-expands instances as **one invertible op**. No variants matrix at v1
   (Plasmic-scale machinery; deferred with the tier-3-token rule: build when 3+ kits need it).
+- **Focused component work + system-owned sync (owner directive 2026-07-01):** the def is its
+  own projection-editing scope (`canvas_edit(component:…)` — agent context holds only the
+  component); instances are **closed** v1 (param overrides only; `detach` forks to plain
+  nodes; slot overrides = designed v2). Cross-document reuse via **kits** (kind:`kit` docs of
+  defs+tokens): imports are **vendored + pinned** `{kit, version, hash}` so files stay
+  self-contained; the app detects hash drift and offers per-document sync (diff preview → one
+  invertible op). Replication/versioning/drift is engine+app machinery the agent never
+  manages. Full workflow: `07-DSL-SPIKE.md` §4.
 - **Structural control flow** (the UIDL/SwiftUI convergence): `conditional` (visibleWhen over
   state/data) and `repeat` (template × data collection) are node types, never code.
 - **Data blocks**: named tabular/JSON records (`dat:`); `bind` = declarative property references
