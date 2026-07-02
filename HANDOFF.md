@@ -1,5 +1,23 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — Canvas epic GREENLIT (provisional defaults) + BUILD STARTED; cron re-armed on the milestone chain (2026-07-01, late)
+# Handoff — Canvas M0 DONE (GO) + M1 underway (S1/S2 validated); cron drives the milestone chain (2026-07-02)
+
+## ⛳ BUILD STATE (2026-07-02 — freshest; supersedes below)
+- **M0 patch-loop spike: COMPLETE, verdict GO** (TSK-1343 fixed; slices 1352/1353 validated,
+  1354/1355 fixed). Numbers: core ~0.1ms; E2E p95 30ms vs 50ms budget (local 4/4; VM p50 30ms
+  when flowing). Commits `e95b45ab`/`c275fbd8`/`d0f013ed`. Four bridge-reliability lessons in
+  LESSONS 2026-07-02 (object-literal sends + `;0`; reply outbox + pull-drain w/ SET dedup;
+  frame-wipe → fence rule; WebContent termination on the VM lane → **TSK-1365** hardening
+  ticket, consumer deadline M1.S5's parity test). M0's demo engine lives in
+  `rust-core/crates/core/src/canvas/mod.rs` + FFI `mdvcore_canvas_*` + `canvas.js` applier.
+- **M1 canvas-core: S1 record store VALIDATED** (`577c7a18` — FracIndex/atomic-Place/
+  tombstones/cycle checks, proptest storm; wasm-shape scan now recursive) · **S2 props+
+  registry+fence VALIDATED** (`5be181b4` — u16 interned keys, typed Values w/ Token variant,
+  per-kind tables, caps, check_text_target). **NEXT: M1.S3 ops+inverses+revisions
+  (TSK-1358)**, then S4 tokens → S5 lowering/patch-plans (replaces the M0 demo internals;
+  needs TSK-1365 for its webview parity test) → S6 lint → S7 migrations+I/O → S8 DSL parser
+  → S9 Swift glue. Plan: `docs/canvas/plans/M1-PLAN.md`; slices TSK-1356..1364.
+- Board: M2..M6 chain unchanged (1345→1346→1347→1351→1348). All Q-decisions provisional-
+  approved (05-ROADMAP header); owner reviews soon; rework-if-reversed accepted.
 
 **Session:** claude-mdv · **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer` · **branch:** `main` (verify `git log -1`)
 
