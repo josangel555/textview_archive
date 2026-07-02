@@ -1124,6 +1124,34 @@ remove #hero
     }
 
     #[test]
+fn render_round_trips_over_the_full_m5_m6_prop_surface() {
+        // A deck/grid doc exercising every M5/M6 prop kind + a bool: role,
+        // step (num), morphId (str), linkTo (nd:-id), columns (num), a table
+        // with headers (bool) + data (str), a token ref. The round-trip law
+        // must hold over ALL of them, not just components/overrides.
+        let src_dsl = "frame #slide-0 role=slide columns=2 gap=16 {\n\
+            \x20 text #title \"Q3\" morphId=logo step=1 color=$color.accent\n\
+            \x20 text #nav \"Jump\" linkTo=#slide-0\n\
+            \x20 table #grid headers=true data=\"[[\\\"a\\\",\\\"b\\\"]]\"\n\
+            }";
+        let (mut d, pg) = page();
+        d.apply(0, &parse_fragment(src_dsl, &pg).expect("seed")).expect("apply");
+        let projected = render(&d.store, &pg);
+        // Every M5/M6 prop must survive to the projection.
+        assert!(projected.contains("role=\"slide\"") || projected.contains("role=slide"), "{projected}");
+        assert!(projected.contains("columns=2"), "grid columns: {projected}");
+        assert!(projected.contains("step=1"), "reveal step");
+        assert!(projected.contains("morphId=logo") || projected.contains("morphId=\"logo\""), "morph tag");
+        assert!(projected.contains("linkTo=nd:slide-0") || projected.contains("linkTo=\"nd:slide-0\""), "link");
+        assert!(projected.contains("headers=true"), "bool prop round-trips as bool, not string");
+        // The LAW: reparse the projection → reproject → byte-identical.
+        let (mut d2, pg2) = page();
+        d2.apply(0, &parse_fragment(&projected, &pg2).expect("reparse")).expect("reapply");
+        assert_eq!(render(&d2.store, &pg2), projected,
+                   "parse(render(doc)) == doc over the full M5/M6 prop surface");
+    }
+
+    #[test]
     fn render_round_trips_parse_render_eq_doc() {
         let (mut d, pg) = page();
         d.apply(0, &parse_fragment(HERO, &pg).expect("seed")).expect("seed apply");
