@@ -148,4 +148,75 @@ final class CanvasTabControllerTests: XCTestCase {
                       "both edits survive — no clobber")
         XCTAssertEqual(controller.trackedRev, 3, "controller adopted the stream")
     }
+
+    // MARK: M3.S8 — inspector + layers (TSK-1379)
+
+    /// The outline snapshot mirrors the engine (structure, order, values) and
+    /// refreshes on every mutation.
+    func test_outline_tracks_the_engine_through_edits() throws {
+        let model = harness.model
+        let controller = model.canvasController(forTab: UUID(), fileURL: file)
+        let doc = try XCTUnwrap(controller.doc)
+
+        var root = try XCTUnwrap(controller.outline)
+        XCTAssertEqual(root.kind, "page")
+        XCTAssertEqual(root.children.map(\.id), ["nd:t"], "the seeded text node")
+
+        // A gesture edit refreshes the outline.
+        controller.host.onInbound?(.textEdited(id: "nd:t", text: "outlined"))
+        root = try XCTUnwrap(controller.outline)
+        let node = try XCTUnwrap(CanvasOutlineParser.find("nd:t", in: root))
+        XCTAssertTrue(node.props.contains { $0.name == "text" && $0.value == .str("outlined") })
+
+        // Ordering follows the engine's sibling order (FracIndex-sorted).
+        _ = try doc.adapter.applyDSL(baseRev: controller.trackedRev, "text #z \"last\"")
+        controller.refresh() // out-of-band (agent) edit → refresh re-reads
+        root = try XCTUnwrap(controller.outline)
+        XCTAssertEqual(root.children.map(\.id), ["nd:t", "nd:z"])
+    }
+
+    /// The registry-driven prop specs come from the live vocabulary.
+    func test_propSpecs_derive_from_the_vocabulary() throws {
+        let model = harness.model
+        let controller = model.canvasController(forTab: UUID(), fileURL: file)
+        let textSpecs = try XCTUnwrap(controller.propSpecs["text"])
+        XCTAssertTrue(textSpecs.contains { $0.name == "text" })
+        XCTAssertTrue(textSpecs.contains { $0.name == "color" })
+        XCTAssertFalse(textSpecs.contains { $0.name == "src" }, "src is image-only")
+        let opacity = controller.propSpecs["shape"]?.first { $0.name == "opacity" }
+        XCTAssertEqual(opacity?.note, "0..1", "fence semantics ride the specs")
+    }
+
+    /// Tree-click selection = the same authority as canvas clicks; inspector
+    /// commits lower through the op path (set + unset + value parsing).
+    func test_select_and_inspector_edits_reach_the_engine() throws {
+        let model = harness.model
+        let controller = model.canvasController(forTab: UUID(), fileURL: file)
+        let doc = try XCTUnwrap(controller.doc)
+
+        controller.select("nd:t")
+        XCTAssertEqual(controller.selectedIDs, ["nd:t"])
+
+        // Inspector: set a token, a number, and a string; then unset.
+        controller.setProp("nd:t", name: "color", value: CanvasInspectorView.parse("$color.accent"))
+        controller.setProp("nd:t", name: "maxW", value: CanvasInspectorView.parse("240"))
+        controller.setProp("nd:t", name: "text", value: CanvasInspectorView.parse("inspected"))
+        var html = try doc.adapter.html()
+        XCTAssertTrue(html.contains("color:var(--cv-color-accent)"))
+        XCTAssertTrue(html.contains("max-width:240px"))
+        XCTAssertTrue(html.contains(">inspected<"))
+
+        controller.unsetProp("nd:t", name: "color")
+        html = try doc.adapter.html()
+        XCTAssertFalse(html.contains("color:var(--cv-color-accent)"), "unset removes")
+
+        // The outline reflects the inspector's edits (read model in sync).
+        let node = try XCTUnwrap(
+            CanvasOutlineParser.find("nd:t", in: try XCTUnwrap(controller.outline)))
+        XCTAssertTrue(node.props.contains { $0.name == "maxW" && $0.value == .num(240) })
+        XCTAssertFalse(node.props.contains { $0.name == "color" })
+
+        controller.select(nil)
+        XCTAssertEqual(controller.selectedIDs, [])
+    }
 }

@@ -27,6 +27,11 @@ public final class CanvasTabController: ObservableObject {
     /// The engine revision this controller last observed (the write path's
     /// baseRev; conflict recovery refreshes it from the rejection).
     public private(set) var trackedRev: UInt64 = 0
+    /// The inspector/layers read model (M3.S8): one parse of the canonical
+    /// JSON, refreshed on every revision change. Engine stays the truth.
+    @Published public private(set) var outline: CanvasOutlineNode?
+    /// kind → registry prop specs (parsed once from the vocabulary).
+    public private(set) var propSpecs: [String: [CanvasPropSpec]] = [:]
 
     public enum Phase: Equatable {
         case mounting
@@ -44,6 +49,9 @@ public final class CanvasTabController: ObservableObject {
             let opened = try store.open(url: fileURL)
             self.doc = opened
             self.trackedRev = opened.lastKnownRev
+            self.propSpecs = CanvasVocabularyIndex.propSpecs(
+                fromVocabularyJSON: (try? opened.adapter.vocabulary(asJSON: true)) ?? "")
+            refreshOutline()
         } catch {
             self.phase = .failed(String(describing: error))
         }
@@ -57,6 +65,7 @@ public final class CanvasTabController: ObservableObject {
         do {
             seq += 1
             host.send(.setContent(seq: seq, html: try doc.adapter.html()))
+            refreshOutline()
         } catch {
             phase = .failed(String(describing: error))
         }
@@ -64,6 +73,36 @@ public final class CanvasTabController: ObservableObject {
 
     public func teardown() {
         host.teardown()
+    }
+
+    // MARK: - selection + read model (M3.S8)
+
+    /// Programmatic selection (the layers tree's click path) — same authority
+    /// as a canvas click.
+    public func select(_ id: String?) {
+        selectedIDs = id.map { [$0] } ?? []
+        seq += 1
+        if let id {
+            host.send(.setSelection(ids: [id]))
+        } else {
+            host.send(.clearSelection)
+        }
+    }
+
+    /// Inspector commit: one prop edit lowered through the write path.
+    public func setProp(_ id: String, name: String, value: CanvasDocValue) {
+        applyGesture([.update(id: id, set: [(name, value)], unset: [])])
+    }
+
+    /// Inspector clear: unset one prop.
+    public func unsetProp(_ id: String, name: String) {
+        applyGesture([.update(id: id, set: [], unset: [name])])
+    }
+
+    /// Re-parse the canonical JSON into the outline snapshot.
+    func refreshOutline() {
+        guard let doc else { return }
+        outline = (try? doc.adapter.save()).flatMap { try? CanvasOutlineParser.parse($0) }
     }
 
     // MARK: - the write path (M3.S4)
@@ -80,6 +119,7 @@ public final class CanvasTabController: ObservableObject {
             doc.noteRevision(applied.rev)
             seq += 1
             host.send(.applyPatches(seq: seq, patches: applied.patches))
+            refreshOutline()
         } catch let rejection as CanvasRejection {
             if rejection.kind == "conflict", !isRetry {
                 trackedRev = rejection.currentRev
@@ -104,6 +144,7 @@ public final class CanvasTabController: ObservableObject {
                 trackedRev = rev
                 doc.noteRevision(rev)
                 refresh()
+                refreshOutline()
             }
         } catch {
             NSLog("canvas undo failed: %@", String(describing: error))
@@ -159,19 +200,27 @@ public struct CanvasTabView: View {
     }
 
     public var body: some View {
-        ZStack {
-            CanvasSurfaceView(host: controller.host)
-            if case .failed(let why) = controller.phase {
-                // Occlusion rule (LESSONS/TSK-488): the SwiftUI overlay must
-                // composite ABOVE the WKWebView representable.
-                Text("Canvas failed: \(why)")
-                    .padding(8)
-                    .background(.red.opacity(0.85))
-                    .foregroundStyle(.white)
-                    .compositingGroup()
-                    .zIndex(1)
+        HSplitView {
+            // M3.S8: layers | surface | inspector — both panels read the
+            // controller's outline; edits lower through the op path.
+            CanvasLayersView(controller: controller)
+            ZStack {
+                CanvasSurfaceView(host: controller.host)
+                if case .failed(let why) = controller.phase {
+                    // Occlusion rule (LESSONS/TSK-488): the SwiftUI overlay must
+                    // composite ABOVE the WKWebView representable.
+                    Text("Canvas failed: \(why)")
+                        .padding(8)
+                        .background(.red.opacity(0.85))
+                        .foregroundStyle(.white)
+                        .compositingGroup()
+                        .zIndex(1)
+                }
             }
+            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
+            .accessibilityIdentifier("mdv.canvas.surface")
+            CanvasInspectorView(controller: controller)
         }
-        .accessibilityIdentifier("mdv.canvas.surface")
     }
 }
