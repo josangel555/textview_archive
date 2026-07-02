@@ -9,6 +9,16 @@
   frame-wipe → fence rule; WebContent termination on the VM lane → **TSK-1365** hardening
   ticket, consumer deadline M1.S5's parity test). M0's demo engine lives in
   `rust-core/crates/core/src/canvas/mod.rs` + FFI `mdvcore_canvas_*` + `canvas.js` applier.
+- **🏁 M6 COMPLETE (2026-07-02): Presentation mode — milestone TSK-1348 at FIXED, all 7
+  slices validated (TSK-1395..1401, commits cb7e25f0..e2640d42). THE M0→M6 EPIC MILESTONE
+  CHAIN IS COMPLETE.** Deck infra+slides, the step model (deck.rs timeline_state, proptest),
+  timeline_state FFI+canvas_timeline tool, the JS player (reveal==timeline_state, two-consumers
+  law proven live), identity-morph (morph_pairs diff + FLIP), self-contained offline deck export
+  (plays with zero network), UAT-M6 the deck journey. Thin-mode law HELD across both modes
+  (props+queries, zero new kinds, zero engine mode-branches). Standing bars: TSK-1334 (owner
+  Screen-Recording grant → T5 morph/transition PIXELS), TSK-1365 (VM webview residual), owner
+  Q-review. Findings: PDF deck export, richer morphs, walkthrough dogfood (P7).
+  **NEXT: owner review of the full epic; or drain the standing bars when the grant lands.**
 - **M5 COMPLETE (2026-07-02): UI-Design mode Tier 1 — milestone TSK-1351 driving to FIXED,
   all 6 slices validated (TSK-1389..1394, commits 597b08a6..93e118a0).** The first MODE as a
   thin preset (the thin-mode law held: zero engine branches on mode). Mode infra+template,
