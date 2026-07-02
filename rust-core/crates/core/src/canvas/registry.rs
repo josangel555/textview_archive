@@ -58,7 +58,7 @@ pub fn bears_text(kind: RecordKind) -> bool {
 
 /// Prop names legal per kind. Shared style/layout groups spelled out so the
 /// table stays greppable; the closed key table lives in `props.rs`.
-fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
+pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
     const CONTAINER: &[&str] = &[
         "gap", "padding", "align", "justify", "direction", "wrap", "fill", "stroke", "radius",
         "shadow", "opacity", "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
