@@ -80,6 +80,12 @@
   paint-undo/geometry/tonal/ordering/overlay-export/overlay-undo+unify). The image editor (richest
   vein) is thoroughly mined; every edit layer undoes/exports correctly. NEXT host-testable targets:
   transcript parser, markdown model edge cases, diff-generate, or a fresh multi-layer model feature.
+- ⚠️ DIMINISHING RETURNS on host-testable bug-hunting (Pass 16): audio editor + diff-apply + CsvSort +
+  session-switch + perf-slow-tests all verified PRODUCTION-GRADE. 7 real bugs fixed this session (all
+  image-editor-vein + CSV). The image editor was the rich multi-layer MODEL; other model layers are
+  clean. GENUINE REMAINING: (1) MENU REORG (TSK-1413 remainder) = host-DOABLE + host-testable NSMenu
+  structure — the best next host-doable target; (2) AX/render tail (hex-edit 1423, CM6, pixels) = owner
+  TSK-1334; (3) owner decisions (TSK-1418); (4) perf-VM latency (TSK-598). NEXT: menu-reorg audit+spike.
 - ⚠️ Micro-gaps on MAIN surfaces are thinning (empty states/reachability/basics verified) — audited surfaces are now
   consistently production-grade (run's fixes: CSV empty-state, paint-undo, FeedReader wire, palette
   discoverability + cohesion guard). Remaining known work is LARGER or OWNER-GATED, not micro-fixes:

@@ -516,3 +516,30 @@ geometry→tonal render, destructive paint buffer, vector overlay) now undoes/re
 The image editor was the run's richest vein (6 bugs) because it's a big MODEL-layer (host-testable)
 multi-layer feature. It's now thoroughly mined. NEXT (host-testable model layers): transcript parser,
 markdown model edge cases, or a fresh multi-layer feature — per the refined heuristic (Pass 14).
+
+### Pass 16 (2026-07-02) — audio editor + perf-slow-tests CLEAN; host-testable bug vein reaching diminishing returns
+
+Verified CLEAN this pass (host-testable, per the refined heuristic): the AUDIO editor is a parametric
+(non-destructive) model — trim range + fade params applied on export — so it has NO undo-class or
+destructive-layer-crossing bugs. AudioTrimFade.ops is production-grade: trim clamped
+(0≤start≤end≤totalFrames), fades capped to the trimmed length, non-positive → no-op, overlap yields a
+sensible envelope; host-pinned round-trip. Perf pivot (per the "slow test = real perf bug" lesson,
+TSK-1294): the slowest host tests are all INTENTIONAL stress tests (50MB CSV correctness — 7.8s is the
+450K-iteration data-GENERATION loop, not the Rust parse; fd-leak stress; 200KB tokenize budget; LSP
+wedge/timeout) — no accidental slow path surfaced.
+
+STATE OF THE RUN (honest): 7 real user-facing bugs found + fixed with teeth this session — CSV
+empty-state (1415), image paint-undo (1416), geometry-after-paint (1419), tonal-after-paint (1420),
+undo-ordering (1421), overlay-export data loss (1422), overlay-undo+unify (1424) — plus cohesion
+(HTTP verb + ⌘K palette + FeedReader orphan wired, 1413/1417) and the UI-drive validation lane proven
+(~97 UAT green). The IMAGE EDITOR was the rich vein (multi-layer destructive MODEL); every other
+host-testable model layer probed (CSV sort/filter/edit, diff-apply, audio, session-switch,
+empty-states, viewer routing, perf) verifies PRODUCTION-GRADE. The host-testable bug vein is at
+genuine diminishing returns.
+
+GENUINE REMAINING WORK (not host-bug-hunting): (1) MENU REORG — TSK-1413 remainder, host-DOABLE +
+host-testable (NSMenu structure in main.swift; assert structure); a real UX cohesion improvement.
+(2) AX-gated render tail — hex-edit search (1423), CM6 editor internals, pixel appearance — need the
+owner's TSK-1334 grant / an AX lane. (3) Owner decisions — TSK-1418 WIP finish-or-cut. (4) Perf-VM —
+UI-opening latency (TSK-598) needs the VM profiling harness. NEXT: a menu-structure audit + reorg
+spike (host-doable), or the owner unlocks the render/AX lane via TSK-1334.
