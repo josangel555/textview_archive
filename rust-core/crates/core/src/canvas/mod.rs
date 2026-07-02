@@ -21,8 +21,9 @@ pub mod props;
 pub mod registry;
 pub mod store;
 pub mod tokens;
+pub mod wire;
 
-use crate::wire::{self, WireFault};
+use crate::wire::WireFault;
 use serde::{Deserialize, Serialize};
 
 /// Node kind for the demo document. M0 needs only containers and text.
@@ -165,7 +166,7 @@ struct PatchPlan {
 /// [`WireFault`] on a malformed frame; application-level rejects ride the
 /// response's `rejected` list instead.
 pub fn apply_wire(doc: &mut Doc, req_frame: &[u8]) -> Result<Vec<u8>, WireFault> {
-    let req: ApplyRequest = wire::decode_frame(req_frame)?;
+    let req: ApplyRequest = crate::wire::decode_frame(req_frame)?;
     let mut patches = Vec::with_capacity(req.ops.len());
     let mut rejected = Vec::new();
     for op in req.ops {
@@ -192,7 +193,7 @@ pub fn apply_wire(doc: &mut Doc, req_frame: &[u8]) -> Result<Vec<u8>, WireFault>
     if !patches.is_empty() {
         doc.rev = doc.rev.saturating_add(1);
     }
-    wire::encode_frame(&PatchPlan {
+    crate::wire::encode_frame(&PatchPlan {
         rev: doc.rev,
         patches,
         rejected,
@@ -272,7 +273,7 @@ mod tests {
         struct Req<'a> {
             ops: &'a [CanvasOp],
         }
-        let frame = wire::encode_frame(&Req { ops }).expect("encode request");
+        let frame = crate::wire::encode_frame(&Req { ops }).expect("encode request");
         apply_wire(doc, &frame).expect("apply")
     }
 
@@ -313,7 +314,7 @@ mod tests {
                 text: "Hello <world>".to_owned(),
             }],
         );
-        let plan: PlanEcho = wire::decode_frame(&plan_frame).expect("decode plan");
+        let plan: PlanEcho = crate::wire::decode_frame(&plan_frame).expect("decode plan");
         assert_eq!(plan.rev, 1);
         assert!(plan.rejected.is_empty());
         assert_eq!(
@@ -363,7 +364,7 @@ mod tests {
                 text: "x".to_owned(),
             }],
         );
-        let plan: PlanEcho = wire::decode_frame(&plan_frame).expect("decode plan");
+        let plan: PlanEcho = crate::wire::decode_frame(&plan_frame).expect("decode plan");
         assert_eq!(plan.rejected, vec![9999]);
         assert!(plan.patches.is_empty());
         assert_eq!(plan.rev, 0, "no applied patches => rev unchanged");
