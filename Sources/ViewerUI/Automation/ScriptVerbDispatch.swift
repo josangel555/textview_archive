@@ -199,6 +199,7 @@ public enum ScriptVerb {
         case "show-dependency-graph": model.showDependencyGraph()
         case "show-folder-treemap": model.showFolderTreemap()
         case "show-http-client": _ = model.openHTTPClient()
+        case "show-feed-reader": _ = model.openFeedReader()
         case "new-image":       model.newBlankImageForLanding()
         case "show-walkthroughs": model.showWalkthroughsBrowser()
         case "dismiss-palette": model.dismissPalette()

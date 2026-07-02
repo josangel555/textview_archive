@@ -1032,6 +1032,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openHTTPClient()
     }
 
+    /// TSK-1417 — File → Feed Reader: open the RSS/feed reader (was fully built
+    /// + host-tested but orphaned; owner chose FINISH → wire the entry point).
+    @objc func openFeedReader(_ sender: Any?) {
+        model.openFeedReader()
+    }
+
     /// TSK-1100 — open the project's import dependency graph in a hosted tab.
     @objc func showDependencyGraph(_ sender: Any?) {
         model.showDependencyGraph()
@@ -1642,6 +1648,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(newHTTPRequest(_:)), keyEquivalent: "")
         newHTTPItem.target = self
         fileMenu.addItem(newHTTPItem)
+
+        // TSK-1417: File → Feed Reader — opens the RSS/feed reader (subscriptions
+        // + OPML import + refresh) in a hosted tab. Was built + host-tested but
+        // orphaned (nothing instantiated it); owner chose FINISH → wired here.
+        let feedReaderItem = NSMenuItem(
+            title: "Feed Reader",
+            action: #selector(openFeedReader(_:)), keyEquivalent: "")
+        feedReaderItem.target = self
+        fileMenu.addItem(feedReaderItem)
 
         // TSK-1100: File → Dependency Graph — the project's import graph in a
         // hosted tab (surfaces the built-but-unreachable DependencyGraphView).

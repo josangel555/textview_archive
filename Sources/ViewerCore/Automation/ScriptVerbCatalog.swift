@@ -294,6 +294,7 @@ public enum ScriptVerbCatalog {
         ScriptVerb("show-dependency-graph", .view, .none, "Open the project's import dependency graph"),
         ScriptVerb("show-folder-treemap", .view, .none, "Open the project folder's size treemap"),
         ScriptVerb("show-http-client", .view, .none, "Open the in-app HTTP request tool"),
+        ScriptVerb("show-feed-reader", .view, .none, "Open the RSS/feed reader"),
         ScriptVerb("new-image", .files, .none, "Create and open a new blank image"),
         ScriptVerb("show-walkthroughs", .view, .none, "Browse and run saved walkthroughs"),
         ScriptVerb("dismiss-palette", .palette, .none, "Dismiss the command palette"),

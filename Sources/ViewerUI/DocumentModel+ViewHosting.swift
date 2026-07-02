@@ -20,6 +20,23 @@ extension DocumentModel {
         openHostedView(title: "HTTP Request", rootView: HTTPClientView())
     }
 
+    /// TSK-1417 — open the RSS/feed reader in a fresh hosted tab. The feature
+    /// was fully built + host-tested (FeedReaderView + parser/fetcher/
+    /// subscription store/refresh scheduler/OPML) but ORPHANED — nothing
+    /// instantiated it, so it was unreachable. Owner chose FINISH (wire it).
+    /// Subscriptions + read-state persist to disk via `FeedSubscriptionStore`
+    /// (feeds.json / feed-read-state.json under Application Support), so a fresh
+    /// per-open model reloads them; `@ObservedObject` retains the model for the
+    /// hosted view's lifetime.
+    @discardableResult
+    public func openFeedReader() -> UUID {
+        let store = FeedSubscriptionStore(
+            subscriptionsURL: FeedSubscriptionStore.defaultSubscriptionsURL(),
+            readStateURL: FeedSubscriptionStore.defaultReadStateURL())
+        let model = FeedReaderViewModel(store: store)
+        return openHostedView(title: "Feeds", rootView: FeedReaderView(model: model))
+    }
+
     /// Open a new tab that hosts an arbitrary SwiftUI `rootView`. Always a
     /// fresh tab (these aren't file-backed, so there's nothing to reveal /
     /// dedup against). Returns the tab id so callers can identify it. The

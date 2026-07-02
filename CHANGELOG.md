@@ -3,6 +3,7 @@
 ## 2026-07-02
 
 ### Added
+- **Feed Reader (RSS) is now reachable — File → Feed Reader.** The built-in feed reader (subscriptions, OPML import, refresh, unread counts) was complete but had no way to open it; it now opens in a tab.
 - **Canvas Presentation mode:** build a themed slide deck entirely through the
   agent tools — stepped reveals, identity-morph transitions (a shared element
   glides between slides), a keyboard-driven player, one-file offline HTML
