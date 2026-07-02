@@ -262,6 +262,112 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
     }
 }
 
+/// Detect an expansion cycle: a `cmp:*` definition that transitively
+/// instantiates itself. Returns the offending definition id. Total (visited
+/// sets), store-order deterministic.
+#[must_use]
+pub fn find_expansion_cycle(store: &Store) -> Option<Id> {
+    // def → the defs its subtree instantiates.
+    let mut ids: Vec<&Id> = store.ids().collect();
+    ids.sort();
+    let defs: Vec<&Id> = ids.iter().copied()
+        .filter(|i| i.as_str().starts_with("cmp:"))
+        .collect();
+    for def in defs {
+        let mut stack: Vec<Id> = vec![def.clone()];
+        let mut visited: Vec<Id> = Vec::new();
+        while let Some(current) = stack.pop() {
+            if visited.contains(&current) {
+                continue;
+            }
+            visited.push(current.clone());
+            for referenced in referenced_defs(store, &current) {
+                if &referenced == def {
+                    return Some(def.clone());
+                }
+                stack.push(referenced);
+            }
+        }
+    }
+    None
+}
+
+/// The defs directly instantiated anywhere inside `root`'s subtree.
+fn referenced_defs(store: &Store, root: &Id) -> Vec<Id> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(current) = stack.pop() {
+        for kid in store.children(&current) {
+            if let Some(rec) = store.get(&kid) {
+                if rec.kind == RecordKind::Component
+                    && let Some(Value::Str(s)) =
+                        PropKey::by_name("ref").and_then(|k| rec.props.get(k))
+                    && let Ok(target) = Id::parse(s)
+                {
+                    out.push(target);
+                }
+                if rec.kind.can_parent() {
+                    stack.push(kid);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The cmp:* definition CONTAINING `id` (walking parents), or None when the
+/// node lives in ordinary page content.
+#[must_use]
+pub fn containing_definition(store: &Store, id: &Id) -> Option<Id> {
+    let mut current = id.clone();
+    loop {
+        if current.as_str().starts_with("cmp:") {
+            return Some(current);
+        }
+        let parent = store.get(&current)?.place.as_ref()?.parent.clone();
+        current = parent;
+    }
+}
+
+/// Every VISIBLE instance whose expansion includes `def` — direct instances
+/// in page content, plus (recursively) visible instances of definitions that
+/// themselves instantiate `def`. Total via a visited set.
+#[must_use]
+pub fn visible_instances_of(store: &Store, def: &Id) -> Vec<Id> {
+    let mut result: Vec<Id> = Vec::new();
+    let mut pending: Vec<Id> = vec![def.clone()];
+    let mut seen_defs: Vec<Id> = Vec::new();
+    while let Some(target) = pending.pop() {
+        if seen_defs.contains(&target) {
+            continue;
+        }
+        seen_defs.push(target.clone());
+        let mut ids: Vec<&Id> = store.ids().collect();
+        ids.sort();
+        for id in ids {
+            let Some(rec) = store.get(id) else { continue };
+            if rec.kind != RecordKind::Component {
+                continue;
+            }
+            let refs_target = PropKey::by_name("ref")
+                .and_then(|k| rec.props.get(k))
+                .is_some_and(|v| matches!(v, Value::Str(s) if Id::parse(s).ok().as_ref() == Some(&target)));
+            if !refs_target {
+                continue;
+            }
+            match containing_definition(store, id) {
+                None => {
+                    if !result.contains(id) {
+                        result.push(id.clone());
+                    }
+                }
+                Some(outer_def) => pending.push(outer_def),
+            }
+        }
+    }
+    result
+}
+
 /// Lower a whole page: the theme's custom-property block once at the root,
 /// then the page subtree.
 #[must_use]
@@ -475,11 +581,11 @@ mod tests {
         let html = lower_page(&d.store, &tokens, &pg);
         assert!(html.contains("unresolved component"));
 
-        // Depth cap: a self-instantiating definition (the apply-time cycle
-        // fence is S1b; the RENDER-side cap must already refuse to loop).
+        // The apply-time CYCLE FENCE rejects a self-instantiating definition
+        // atomically (M4.S1b) — the op path can never create the loop.
         let looper = Id::parse("cmp:loop").expect("id");
         d.store.insert_root(looper.clone(), RecordKind::Frame).expect("root2");
-        d.apply(
+        let rejected = d.apply(
             1,
             &[CanvasOp::Insert {
                 id: Some(id("nd:selfref")),
@@ -488,10 +594,22 @@ mod tests {
                 pos: Position::Last,
                 props: vec![(key("ref"), Value::Str("cmp:loop".into()))],
             }],
-        )
-        .expect("self-instantiating definition");
+        );
+        assert!(rejected.is_err(), "the fence must reject the expansion cycle");
+        assert!(d.store.get(&id("nd:selfref")).is_none(), "rejected atomically");
+
+        // The RENDER-side depth cap is the backstop for a CORRUPTED doc that
+        // bypassed the ops (store surgery below — no fence in that path).
+        d.store
+            .insert(id("nd:selfref2"), RecordKind::Component, &looper, &Position::Last)
+            .expect("store surgery");
+        d.store
+            .props_mut(&id("nd:selfref2"))
+            .expect("props")
+            .set(key("ref"), Value::Str("cmp:loop".into()));
+        let rev = d.rev();
         d.apply(
-            2,
+            rev,
             &[CanvasOp::Insert {
                 id: Some(id("nd:top")),
                 kind: RecordKind::Component,
@@ -500,7 +618,15 @@ mod tests {
                 props: vec![(key("ref"), Value::Str("cmp:loop".into()))],
             }],
         )
-        .expect("top instance");
+        .expect_err("the fence also catches the pre-corrupted doc");
+        // Even bypassing ops for the top instance, lowering must terminate.
+        d.store
+            .insert(id("nd:top2"), RecordKind::Component, &pg, &Position::Last)
+            .expect("store surgery 2");
+        d.store
+            .props_mut(&id("nd:top2"))
+            .expect("props2")
+            .set(key("ref"), Value::Str("cmp:loop".into()));
         let html2 = lower_page(&d.store, &tokens, &pg);
         assert!(html2.contains("expansion depth cap"), "the lowerer must not loop");
     }

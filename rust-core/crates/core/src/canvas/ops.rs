@@ -171,6 +171,20 @@ impl DocState {
                 }
             }
         }
+        // Expansion cycle FENCE (M4.S1b): a batch that leaves a definition
+        // transitively instantiating itself is REJECTED atomically — roll
+        // back through the collected inverses (the render-side depth cap is
+        // only the backstop; the fence keeps the document valid).
+        if mutated && super::lower::find_expansion_cycle(&self.store).is_some() {
+            while let Some(undo) = inverses.pop() {
+                self.run_undo(undo);
+            }
+            return Err(ApplyError::Fence(super::registry::FenceError::KindMismatch {
+                kind: "component",
+                why: "this batch would make a definition transitively instantiate \
+                      itself (expansion cycle) — break the ref chain",
+            }));
+        }
         if mutated {
             self.rev = self.rev.saturating_add(1);
         }
