@@ -240,26 +240,31 @@ These EIGHT themes recur in every ✖ above — fixing them per-feature is the p
 | Hex edit (1423), paint persistence (1426) | data-editing completeness |
 | Canvas review (M0–M6 parked) | ship or shelve |
 
-## Gap tickets (filed 2026-07-02, parent TSK-1411)
+## Gap-ticket hierarchy (filed 2026-07-02; every ticket is a self-contained subagent brief)
 
-| Ticket | Gap |
+Root: **TSK-1411** (usability umbrella). Every child ticket carries CONTEXT / FILES / BUILD /
+VALIDATE / DONE-WHEN so a fresh subagent can execute it with minimal context.
+
+**Cross-cutting themes (directly under TSK-1411):**
+- TSK-1434 results panel (de-alerts Check Links/Lint/Stats/CSV summary) · TSK-1435 empty states
+- TSK-1436 progress+error surfacing · TSK-1437 keyboard shortcuts · TSK-1449 cohesion/consolidation
+
+**Family epics → children:**
+| Epic | Children |
 |---|---|
-| TSK-1434 | Results panel component (Check Links/Lint/Stats/CSV summary out of modal alerts) |
-| TSK-1435 | Empty states for every hosted view |
-| TSK-1436 | Progress + error surfacing for long operations |
-| TSK-1437 | Keyboard shortcuts labeled + gaps filled |
-| TSK-1438 | Outline/TOC live panel UX |
-| TSK-1439 | SQLite browser core loop (query + export) |
-| TSK-1440 | Notebook cell OUTPUTS |
-| TSK-1441 | Image editor UX pass |
-| TSK-1442 | Audio trim→export round-trip + ffmpeg guidance |
-| TSK-1443 | Git panel standard loop |
-| TSK-1444 | LSP status affordance |
-| TSK-1445 | Code review end-to-end journey |
-| TSK-1446 | Feed reader reading loop |
-| TSK-1447 | HTTP client request-builder ergonomics |
-| TSK-1448 | First-run experience + in-app help |
-| TSK-1449 | Cohesion: consolidate overlapping surfaces |
+| TSK-1450 editor polish | 1461 snippets UX · 1462 local-history timeline |
+| TSK-1451 file-nav | 1463 file-tree ops · 1464 bookmarks/recents · 1465 cross-file search UX |
+| TSK-1452 viewing | 1466 mermaid error UX · 1467 lens auto-pick cohesion (+ owner: flip TSK-838) |
+| TSK-1453 markdown tools | 1438 outline/TOC panel (+ 1434/1437 apply here) |
+| TSK-1454 data formats | 1439 SQLite loop · 1440 notebook outputs · 1468 spreadsheet gate-prep · 1469 archive/package preview · 1470 dep-graph interactive · 1471 log-patterns finish-or-cut · 1472 CSV editing |
+| TSK-1455 media | 1441 image-editor UX · 1442 audio round-trip · 1473 convert-image · 1474 video preview |
+| TSK-1456 devtools | 1443 git loop · 1444 LSP status · 1445 review journey · 1475 terminal/task-runner · 1476 structural-search UX · 1477 monitor polish |
+| TSK-1457 automation | 1478 plugins lifecycle UI |
+| TSK-1458 paste/convert | 1479 paste feedback toast · 1480 converters show current state (+ owner: RichText 1418) |
+| TSK-1459 feeds & web | 1446 feed reading loop · 1447 HTTP ergonomics (+ owner: browser 676) |
+| TSK-1460 chrome | 1448 first-run · 1481 Settings IA · 1482 menu-bar audit |
+
+Owner-decision items stay in § Owner decision queue above (1334, 838, 1418, 1423, 1426, 676,
+788/1215, Canvas review) — referenced by the epics, never duplicated.
 
 This document is the hierarchy + the production-grade path; the board tracks execution state.
-Owner-decision items live in the table above (§ Owner decision queue).
