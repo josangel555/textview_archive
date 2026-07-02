@@ -14882,3 +14882,13 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - rust-core gate GREEN (clippy no-panic wall + workspace tests + header-drift check);
   header restaged via build-rust-core.sh; Swift build links clean. TEETH: rev-bump mutant
   → 2 core + 1 ffi tests RED, restored green. Next: S2 (CanvasBridge + JS applier).
+
+## 2026-07-01 — Canvas M0.S2: bridge + JS applier + host landed (TSK-1353)
+- RustCore: `CanvasDemoSession` (wraps the 4 canvas FFI symbols; msgpack request framing via
+  the in-tree MsgPackValue writer; plan decode). ViewerCore: `CVProtocol` v1 envelope +
+  `CVBridgeCodec` (pure JSON, version window, host-testable) + `CanvasDemoAdapter` (the
+  Rust*Adapter layering — ViewerUI can't import RustCore). ViewerUI: `canvas.html`/`canvas.js`
+  (plain hand-written applier: setContent/applyPatches/queryGeometry/queryText, perf
+  timestamps) + `CanvasWebViewHost` (loadFileURL, weak-proxy handler) + thin CanvasSurfaceView.
+- 9 host tests green (6 codec + 3 session-over-real-FFI); TEETH: version-gate mutant → 2 RED,
+  restored. Host headless gate PASSED. Next: S3 E2E on the VM (kill-criterion numbers).
