@@ -14961,3 +14961,15 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
   (overflow/contrast on the real page, merged at canvas_lint w/ a `measured` marker).
 - M5-feeding findings on the board tickets: input/form primitives, grid primitive,
   standalone-if + expression data-context, live mermaid shell integration.
+
+## 2026-07-02 — M5 COMPLETE: UI-Design mode Tier 1, all 6 slices (TSK-1389..1394)
+- The FIRST MODE, proven as a thin PRESET over the shared core (the thin-mode law held
+  end-to-end: zero engine branches on mode, zero new record kinds; a mode is just a token
+  + template + presentation presets + export flavors). Slices: mode infra + artboard
+  template; artboard chrome (token-colored, responsive check rides the existing measured
+  stage); export flavors (fragment inlines token literals, drops the theme); mode-aware
+  shell (kit strip over the op path); UAT-M5 (the designer journey, host + real-page
+  responsive check); prototype nav (linkTo → scroll-to-artboard).
+- New general capabilities banked: #anchor as a prop VALUE (nd:id); token css_var_pairs
+  forward map; CanvasComponentIndex. Bars: kit-strip + linkTo-flash PIXELS pinned to
+  TSK-1334 (owner Screen-Recording grant); behavior all host/webview-validated.

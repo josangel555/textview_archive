@@ -9,6 +9,12 @@
   frame-wipe → fence rule; WebContent termination on the VM lane → **TSK-1365** hardening
   ticket, consumer deadline M1.S5's parity test). M0's demo engine lives in
   `rust-core/crates/core/src/canvas/mod.rs` + FFI `mdvcore_canvas_*` + `canvas.js` applier.
+- **M5 COMPLETE (2026-07-02): UI-Design mode Tier 1 — milestone TSK-1351 driving to FIXED,
+  all 6 slices validated (TSK-1389..1394, commits 597b08a6..93e118a0).** The first MODE as a
+  thin preset (the thin-mode law held: zero engine branches on mode). Mode infra+template,
+  artboard chrome, fragment export (token literals inlined), kit-strip shell, UAT-M5 designer
+  journey, prototype-nav linkTo. Bars: kit-strip+linkTo pixels → TSK-1334 (owner grant).
+  **NEXT: M6 (Presentation) planning pass (TSK-1348).**
 - **M4 COMPLETE (2026-07-02 late): milestone TSK-1347 at FIXED — all 9 slices validated.**
   Components/overrides/DSL/tokens+zero-op-retheme/kit(drift-blocks)/table+code+chart+diagram/
   each-blocks/measured-lint — and THE GAUNTLET: 10/10 pre-committed briefs, 0% ESCAPE RATE
