@@ -92,9 +92,41 @@ the abstraction fails into escape hatches. **Pivot criterion (owner):
   escape rate) and FAILS if escape rate > 30% — the pivot criterion as an
   executable assert. This is the milestone's acceptance gate.
 
+### S7 — rich content kinds: chart (VL-subset) / table / code / diagram
+- New kinds (registry + fence + vocab + DSL + lowering + inspector rows):
+  `table` (rows/cols from a data prop, lowered to a real <table>), `code`
+  (pre-formatted, language prop; v1 = escaped <pre>, the app's tree-sitter
+  highlight can arrive later), `diagram` (MERMAID SOURCE — the app already
+  ships mermaid rendering; the canvas node carries the source and lowers to
+  the same mermaid path), `chart` (a HAND-ROLLED Vega-Lite SUBSET: bar,
+  line, pie over inline data — zero new deps; the VL-subset JSON lives in a
+  `spec` prop; lowering emits SVG server-side in rust for determinism).
+- Each kind: fence rules + lint (empty spec, oversized data) + DSL forms +
+  the rot-proofed vocab. Likely splits into S7a (table/code) + S7b
+  (chart/diagram) at implementation time.
+
+### S8 — bindings + repeat/conditional (the B0-B3 author-time tier)
+- 02 §7's ladder made real at B3: DSL `each`/`if` blocks + a `data` prop
+  (inline JSON) — EXPANDED AT APPLY (author-time: the doc stores the
+  expanded records + the generating source on the container for re-runs;
+  no runtime JS). FormulaEngine reuse for expressions where it fits
+  (`{{item.price * 1.2}}` — the gated engine from the formula port).
+- Fence: expansion caps (the records-per-doc cap already guards); teaching
+  errors on bad paths/expressions.
+
+### S9 — measured lint (the JS-side stage)
+- The second lint stage (02 §8): geometry-dependent findings the static
+  stage cannot see — text overflow (scrollWidth > clientWidth), offscreen
+  nodes, contrast-in-context (fg/bg resolved through the cascade) —
+  computed in canvas.js on demand (`measureLint` command → findings ride
+  back), merged with static lint at the canvas_lint tool layer.
+- Local-lane webview tests; the tool merge is host-tested.
+
 ## Budgets
 - Expansion cost: lowering a 1k-node doc with 100 instances ≤ 1.5× the
   flat-doc cost (measured in the S1 tests, M0-style printout).
+- Chart lowering (rust SVG): 1k-point bar/line ≤ 5ms; repeat expansion:
+  500 items ≤ 10ms apply-side.
 - Definition edit → 50 visible instances re-lowered ≤ 100ms engine-side.
 - setTheme retheme: zero document ops, one patch, no re-lower.
 
