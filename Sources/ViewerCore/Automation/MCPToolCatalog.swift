@@ -1094,8 +1094,9 @@ public enum MCPToolCatalog {
             + "(default; theme custom-property block + the lowered page — the B0 "
             + "tier, self-contained) or \"fragment\" (one artboard's subtree, NO "
             + "theme block, var(--cv-*) refs inlined as literals — embeddable in "
-            + "an existing site). fragment picks the artboard arg (#id) or the "
-            + "first role=artboard node. Returns {path, bytes, flavor}.",
+            + "an existing site). deck = a self-contained offline HTML deck (slides "
+            + "+ inlined player, arrow-key nav, zero network). fragment picks the "
+            + "artboard arg (#id) or the first role=artboard node. Returns {path, bytes, flavor}.",
         inputSchema: schema([
             "doc":  .object(["type": .string("string")]),
             "path": .object(["type": .string("string"),
@@ -1123,9 +1124,11 @@ public enum MCPToolCatalog {
                         "canvas_export: fragment target \(nodeID) not found")
                 }
                 html = fragment
+            case "deck":
+                html = try doc.adapter.exportDeckHTML()
             default:
                 throw MCPError.toolFailed(
-                    "canvas_export: flavor must be standalone|fragment, got \(flavor)")
+                    "canvas_export: flavor must be standalone|fragment|deck, got \(flavor)")
             }
             try EditorWriter.save(html, to: url)
             return .object([

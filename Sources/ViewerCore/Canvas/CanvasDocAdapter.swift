@@ -162,6 +162,9 @@ public final class CanvasDocAdapter {
     /// The deck timeline JSON (M6.S3).
     public func timelineJSON() throws -> String { try session.timeline() }
 
+    /// The self-contained offline deck export HTML (M6.S6).
+    public func exportDeckHTML() throws -> String { try session.exportDeck() }
+
     public func renderDSL(node id: String) throws -> String? {
         try session.renderDSL(node: id)
     }

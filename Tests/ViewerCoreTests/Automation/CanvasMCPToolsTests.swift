@@ -473,4 +473,32 @@ final class CanvasMCPToolsTests: XCTestCase {
         guard case .object(let s1) = slides[1] else { return XCTFail("s1") }
         XCTAssertEqual(s1["stepCount"], .int(0))
     }
+
+    // MARK: M6.S6 — deck export (TSK-1400)
+
+    func test_export_deck_is_self_contained() throws {
+        guard case .object(let n) = try call("canvas_new", [
+            "mode": .string("presentation"), "slides": .int(3),
+        ]), case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent("deck-\(UUID().uuidString).html")
+        defer { try? FileManager.default.removeItem(at: out) }
+        guard case .object(let r) = try call("canvas_export", [
+            "doc": .string(doc), "path": .string(out.path), "flavor": .string("deck"),
+        ]) else { return XCTFail("export") }
+        XCTAssertEqual(r["flavor"], .string("deck"))
+        let html = try String(contentsOf: out, encoding: .utf8)
+        XCTAssertTrue(html.hasPrefix("<!doctype html>"))
+        XCTAssertTrue(html.contains("addEventListener('keydown'"), "player inlined")
+        XCTAssertTrue(html.contains("data-cv-id=\"nd:slide-0\"")
+            && html.contains("data-cv-id=\"nd:slide-1\"")
+            && html.contains("data-cv-id=\"nd:slide-2\""), "3 slides present")
+        XCTAssertFalse(html.contains("data-cv-id=\"nd:slide-3\""), "exactly 3")
+        XCTAssertFalse(html.contains("http://") || html.contains("https://"),
+                       "self-contained, zero network")
+        // Unknown flavor still rejects.
+        XCTAssertThrowsError(try call("canvas_export", [
+            "doc": .string(doc), "path": .string(out.path), "flavor": .string("keynote"),
+        ]))
+    }
 }

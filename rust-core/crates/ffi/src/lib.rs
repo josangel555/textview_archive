@@ -1016,6 +1016,35 @@ pub unsafe extern "C" fn mdvcore_canvas_html(
     })
 }
 
+/// The self-contained offline DECK export (M6.S6): theme + slides + inlined
+/// player, zero network. Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Safety
+/// `handle` must be live; `out_buf` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_export_deck(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            let html = doc.export_deck();
+            // SAFETY: out_buf validated non-null above.
+            unsafe { *out_buf = MdvBuf::from_vec(html.into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// Apply a canvas op batch. `req`/`req_len` is the `{baseRev, ops:[...]}`
 /// MessagePack request frame; `out_buf` receives the `{rev, patches, minted,
 /// noop}` response frame, or a structured `{rejected, detail, currentRev}`

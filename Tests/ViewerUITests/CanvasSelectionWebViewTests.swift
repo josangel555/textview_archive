@@ -392,6 +392,40 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
         XCTAssertTrue(ok, "the shared node FLIP-morphed (tag=\(ran))")
     }
 
+    /// M6.S6: the EXPORTED deck plays OFFLINE — loaded as a standalone HTML
+    /// string (baseURL nil ⇒ no network), the inlined player runs and
+    /// ArrowRight reveals the next step.
+    func test_exported_deck_plays_offline() async throws {
+        _ = try adapter.applyDSL(
+            baseRev: try adapter.currentRev(),
+            "frame #slide-0 role=slide {\n" +
+            "  text #base \"base\"\n  text #rev1 \"revealed\" step=1\n}")
+        let deckHTML = try adapter.exportDeckHTML()
+        // Load the standalone artifact directly (no bridge, no file, no net).
+        host.webView.loadHTMLString(deckHTML, baseURL: nil)
+
+        // Wait for the document + the player (slide-0 shown, step-1 hidden).
+        var ready = ""
+        let readyJS = "(function(){var e=document.querySelector('[data-cv-id=\"nd:rev1\"]');"
+            + "if(!e)return 'x';return getComputedStyle(e).visibility;})()"
+        let loaded = await waitUntil(8) {
+            self.host.probe(readyJS) { r in ready = r }
+            return ready.contains("hidden")
+        }
+        XCTAssertTrue(loaded, "player hid the step-1 node at start (got \(ready))")
+
+        // ArrowRight → the player advances a step → rev1 becomes visible.
+        host.probe(
+            "(function(){document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight'}));return 1;})()"
+        ) { _ in }
+        var after = ""
+        let revealed = await waitUntil(5) {
+            self.host.probe(readyJS) { r in after = r }
+            return after.contains("visible")
+        }
+        XCTAssertTrue(revealed, "ArrowRight revealed the step-1 node offline (got \(after))")
+    }
+
     func test_escape_posts_the_intent() async throws {
         host.probe(
             """

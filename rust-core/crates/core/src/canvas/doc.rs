@@ -177,6 +177,13 @@ impl CanvasDoc {
         deck::timeline_json(&self.state.store)
     }
 
+    /// The self-contained offline deck export (M6.S6) — theme + slides +
+    /// inlined player, zero network.
+    #[must_use]
+    pub fn export_deck(&self) -> String {
+        deck::export_html(&self.state.store, &self.tokens, &self.root)
+    }
+
     /// Full-document lint as a `{lint: […]}` frame.
     ///
     /// # Errors

@@ -9,6 +9,7 @@
 
 use super::props::{PropKey, Value};
 use super::store::{Id, Store};
+use super::tokens::TokenStore;
 
 /// The reveal step of a node: `Some(n)` if it carries a `step` prop, else
 /// `None` (base content). Negative / non-integer values clamp to 0.
@@ -242,6 +243,60 @@ pub fn morph_pairs(store: &Store, slide_a: &Id, slide_b: &Id) -> MorphPlan {
     plan
 }
 
+
+/// The standalone offline player (M6.S6) — inlined into the exported deck.
+/// Self-contained: keyboard nav + the SAME reveal rule as timeline_state
+/// (S2) and the live player (S4), plus FLIP morph. No bridge, no network.
+const DECK_PLAYER_JS: &str = r####"
+(function(){
+  var root=document.body;
+  var deck={slide:0,step:0};
+  function slides(){return Array.prototype.slice.call(root.querySelectorAll('[data-cv-role="slide"]'));}
+  function maxStep(s){var m=0;if(!s)return 0;var n=s.querySelectorAll('[data-cv-step]');
+    for(var i=0;i<n.length;i++){var v=parseInt(n[i].getAttribute('data-cv-step'),10);if(v>m)m=v;}return m;}
+  function morphRects(s){var map={};if(!s)return map;var n=s.querySelectorAll('[data-cv-morph]');
+    for(var i=0;i<n.length;i++)map[n[i].getAttribute('data-cv-morph')]=n[i].getBoundingClientRect();return map;}
+  function runMorph(from,to){if(!to)return;var n=to.querySelectorAll('[data-cv-morph]');
+    for(var i=0;i<n.length;i++){var id=n[i].getAttribute('data-cv-morph');var f=from[id];if(!f)continue;
+      var t=n[i].getBoundingClientRect();var dx=f.left-t.left,dy=f.top-t.top;
+      var sx=t.width?f.width/t.width:1,sy=t.height?f.height/t.height:1;
+      if(n[i].animate)n[i].animate([{transformOrigin:'top left',transform:'translate('+dx+'px,'+dy+'px) scale('+sx+','+sy+')'},{transformOrigin:'top left',transform:'none'}],{duration:300,easing:'ease'});}}
+  function apply(){var s=slides();if(deck.slide<0)deck.slide=0;if(deck.slide>=s.length)deck.slide=Math.max(0,s.length-1);
+    for(var i=0;i<s.length;i++)s[i].style.display=(i===deck.slide)?'':'none';
+    var cur=s[deck.slide];if(cur){var n=cur.querySelectorAll('[data-cv-step]');
+      for(var j=0;j<n.length;j++){var st=parseInt(n[j].getAttribute('data-cv-step'),10);n[j].style.visibility=(st<=deck.step)?'':'hidden';}}}
+  function advance(d){var s=slides();var prev=deck.slide;var max=maxStep(s[deck.slide]);
+    if(d>0){if(deck.step<max)deck.step+=1;else if(deck.slide<s.length-1){deck.slide+=1;deck.step=0;}}
+    else{if(deck.step>0)deck.step-=1;else if(deck.slide>0){deck.slide-=1;deck.step=maxStep(s[deck.slide]);}}
+    if(deck.slide!==prev){var fr=morphRects(s[prev]);apply();runMorph(fr,slides()[deck.slide]);}else apply();}
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();advance(1);}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();advance(-1);}});
+  apply();
+})();
+"####;
+
+/// Export the deck as a SELF-CONTAINED offline HTML document (M6.S6): the
+/// theme block + lowered slides + the inlined player. Plays with arrow keys,
+/// zero network (06 success #4).
+#[must_use]
+pub fn export_html(store: &Store, tokens: &TokenStore, page: &Id) -> String {
+    let mut out = String::with_capacity(8192);
+    out.push_str(
+        "<!doctype html><html><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <title>Canvas Deck</title><style>\
+         html,body{margin:0;height:100%;background:#111;overflow:hidden}\
+         [data-cv-role=\"slide\"]{position:absolute;inset:0;margin:auto}\
+         </style></head><body>",
+    );
+    out.push_str(&super::lower::lower_page(store, tokens, page));
+    out.push_str("<script>");
+    out.push_str(DECK_PLAYER_JS);
+    out.push_str("</script></body></html>");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,6 +356,32 @@ mod tests {
         )
         .expect("apply");
         (d, id("nd:slide"))
+    }
+
+    #[test]
+    fn export_html_is_self_contained_and_playable() {
+        let mut d = DocState::new();
+        let pg = id("pg:1");
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(0, &[
+            CanvasOp::Insert { id: Some(id("nd:s0")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:t")), kind: RecordKind::Text, parent: id("nd:s0"),
+                pos: Position::Last, props: vec![(key("text"), Value::Str("Hello deck".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:s1")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+        ]).expect("apply");
+        let tokens = TokenStore::default_theme();
+        let html = export_html(&d.store, &tokens, &pg);
+        assert!(html.starts_with("<!doctype html>"), "full document");
+        assert!(html.contains("Hello deck"), "slide content");
+        assert!(html.contains("data-cv-role=\"slide\""), "slides present");
+        assert!(html.contains("addEventListener('keydown'"), "the player is inlined");
+        assert!(html.contains("ArrowRight"), "keyboard nav");
+        // SELF-CONTAINED: zero network (success #4).
+        assert!(!html.contains("http://") && !html.contains("https://"),
+                "no external URLs");
+        assert!(html.contains("</html>"), "well-formed close");
     }
 
     #[test]
