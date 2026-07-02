@@ -11,14 +11,28 @@ import WebKit
 
 /// Hosts the canvas WebView and speaks the CV envelope both ways.
 @MainActor
-public final class CanvasWebViewHost: NSObject {
+public final class CanvasWebViewHost: NSObject, WKNavigationDelegate {
     public let webView: WKWebView
+
+    /// Set when WebKit reports the WebContent process died — the M0.S3 VM
+    /// finding: an invisible webview's content process gets suspended/reaped
+    /// under the GUI-lane session and every subsequent eval errors.
+    public private(set) var contentProcessDied = false
+
+    public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        contentProcessDied = true
+        NSLog("CanvasWebViewHost: WebContent process TERMINATED")
+    }
 
     /// Inbound-message callback (test/observation hook).
     public var onInbound: ((CVInboundMessage) -> Void)?
 
     /// Flip when the runtime posts `ready`.
     public private(set) var isReady = false
+
+    /// Last evaluateJavaScript error, if any (diagnosis hook — a dead
+    /// Swift→JS hop is otherwise silent).
+    public private(set) var lastSendError: String?
 
     private static let handlerName = "mdvCanvas"
 
@@ -28,6 +42,7 @@ public final class CanvasWebViewHost: NSObject {
         config.userContentController = controller
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         super.init()
+        webView.navigationDelegate = self
         controller.add(MessageProxy(host: self), name: Self.handlerName)
     }
 
@@ -42,25 +57,98 @@ public final class CanvasWebViewHost: NSObject {
     }
 
     /// Send an outbound envelope to the JS runtime.
+    ///
+    /// The envelope goes in as a JS OBJECT LITERAL (`cvDispatch({...})`) —
+    /// the exact shape production CM6 uses (`CodeMirrorEditorView.dispatch`,
+    /// `window.cmDispatch(\(json));`), which is proven against the VM's older
+    /// WebKit. A trailing `0` keeps the eval result serializable (WKError-5,
+    /// the TSK-1047 class, observed live on the M0.S3 VM runs).
     public func send(_ message: CVOutboundMessage) {
         guard let json = try? CVBridgeCodec.encode(message) else {
             assertionFailure("CV encode failed for \(message)")
             return
         }
-        // The envelope is a JSON string literal argument to cvDispatch — encode
-        // the *string itself* as JSON to get correct escaping.
-        guard let literalData = try? JSONSerialization.data(withJSONObject: [json]),
-              var literal = String(data: literalData, encoding: .utf8)
-        else { return }
-        // [ "..." ] → "..."
-        literal = String(literal.dropFirst().dropLast())
-        webView.evaluateJavaScript("window.cvDispatch(\(literal))", completionHandler: nil)
+        webView.evaluateJavaScript("window.cvDispatch(\(json)); 0") { [weak self] _, error in
+            if let error {
+                MainActor.assumeIsolated {
+                    self?.lastSendError = "\(error)"
+                }
+                NSLog("CanvasWebViewHost eval error: \(error)")
+            }
+        }
+    }
+
+    /// Diagnostic probe (M0): evaluate a JS expression, returning its
+    /// stringified result or the error — decisively answers "did JS run".
+    public func probe(_ js: String, completion: @escaping (String) -> Void) {
+        webView.evaluateJavaScript(js) { value, error in
+            if let error {
+                completion("ERR: \(error)")
+            } else {
+                completion("OK: \(String(describing: value))")
+            }
+        }
+    }
+
+    /// postIds already delivered (push or drain) — SET dedup, not a
+    /// high-water mark: a drain may deliver id N before the push path
+    /// delivers N-1, and a mark would then wrongly drop N-1. Bounded by the
+    /// JS outbox (256); the M1 bridge revisits with a windowed set.
+    private var deliveredPostIds = Set<UInt64>()
+
+    /// Chain counters (M0 diagnosis): where do replies die?
+    public private(set) var pushDelivered = 0
+    public private(set) var drainAttempts = 0
+    public private(set) var drainResults = 0
+    public private(set) var drainDelivered = 0
+    public var chainCounters: String {
+        "push=\(pushDelivered) drains=\(drainAttempts)/\(drainResults) drained=\(drainDelivered)"
     }
 
     fileprivate func receive(_ body: Any) {
-        guard let message = try? CVBridgeCodec.decode(body) else { return }
+        pushDelivered += 1
+        deliver(json: body as? String)
+    }
+
+    private func deliver(json: String?) {
+        guard let json else { return }
+        // postId rides the envelope outside the typed messages; parse it for
+        // dedup, then decode normally.
+        if let data = json.data(using: .utf8),
+            let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let postId = (dict["postId"] as? Int).flatMap(UInt64.init(exactly:))
+        {
+            if deliveredPostIds.contains(postId) { return }
+            deliveredPostIds.insert(postId)
+        }
+        guard let message = try? CVBridgeCodec.decode(json) else { return }
         if case .ready = message { isReady = true }
         onInbound?(message)
+    }
+
+    /// Pull-drain replies the push path dropped (the VM/older-WebKit
+    /// script-message flake — M0.S3 finding: eval runs, DOM mutates, but
+    /// ~30% of mid-session postMessage replies vanish). Safe to call
+    /// repeatedly; the postId set makes it idempotent against push.
+    public func drainMissedReplies() {
+        drainAttempts += 1
+        webView.evaluateJavaScript(
+            "window.__cvDrain ? window.__cvDrain(0) : \"[]\""
+        ) { [weak self] value, _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard let arrayJSON = value as? String,
+                    let data = arrayJSON.data(using: .utf8),
+                    let entries = (try? JSONSerialization.jsonObject(with: data)) as? [String]
+                else { return }
+                self.drainResults += 1
+                for json in entries {
+                    let before = self.deliveredPostIds.count
+                    self.deliver(json: json)
+                    if self.deliveredPostIds.count > before { self.drainDelivered += 1 }
+                }
+            }
+        }
     }
 
     /// Break the retain cycle host → controller → proxy → host when done.

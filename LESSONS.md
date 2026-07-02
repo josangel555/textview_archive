@@ -5,6 +5,29 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Session 2026-07-02 — WKWebView bridge reliability on the VM's older WebKit (Canvas M0.S3)
+
+- **`evaluateJavaScript` on macOS-15 WebKit fails with WKError-5 ("result of an unsupported
+  type") when the expression's RESULT can't serialize — and the dispatch never lands.** The
+  host's newer WebKit tolerates the same call. Live case: `window.cvDispatch("json-string")`
+  (quoted-string arg, `undefined` result) died VM-only, every call. FIX = production CM6's
+  exact shape: pass the envelope as a JS **object literal** (`cvDispatch({...})`) and end the
+  script with a serializable value (`; 0`). This is the TSK-1047 class seen from the SEND side.
+  Always capture the eval error (`lastSendError` hook) — fire-and-forget `completionHandler:
+  nil` made this failure INVISIBLE for a full VM round-trip.
+- **On the same WebKit, `window.webkit.messageHandlers.X.postMessage` from an eval-initiated
+  stack intermittently DROPS (~30% observed) — the eval RAN (DOM mutated, no error), the reply
+  just vanished.** Load-time posts (`ready`) always arrive; mid-session replies flake. FIX =
+  a JS-side reply **outbox** (every post also appended with a monotonic `postId`, bounded 256)
+  + a Swift **pull-drain** (`__cvDrain` eval) with **SET-based postId dedup — not a high-water
+  mark** (a drain can deliver id N before push delivers N-1; a mark would then drop N-1
+  forever). Push stays the fast path; the drain closes the gap. Diagnosis pattern that cracked
+  both: probe `domCount` + `typeof cvDispatch` on ack-timeout — separates "JS never ran" from
+  "reply lost" in one shot.
+- Meta: the M0 boundary spike surfaced all of this BEFORE the M1 engine froze its bridge
+  design — exactly what the spike was for. The M1 bridge inherits: object-literal sends,
+  serializable eval results, reply outbox + drain as the reliability layer.
+
 ## Session 2026-07-01 — the subagent fan-out RUNAWAY (burned ~half the owner's quota)
 
 - **NEVER delegate research to broad-prompted `general-purpose` subagents — they have the Agent

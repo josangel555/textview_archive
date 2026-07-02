@@ -14892,3 +14892,16 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
   timestamps) + `CanvasWebViewHost` (loadFileURL, weak-proxy handler) + thin CanvasSurfaceView.
 - 9 host tests green (6 codec + 3 session-over-real-FFI); TEETH: version-gate mutant → 2 RED,
   restored. Host headless gate PASSED. Next: S3 E2E on the VM (kill-criterion numbers).
+
+## 2026-07-02 — Canvas M0.S3 (E2E loop): local-proven; VM lane findings; M1.S1 store landed
+- S3 E2E suite (CanvasPatchLoopWebViewTests): LOCAL 4/4 green across ~6 runs — exact-node
+  patch proof, flow-sane geometry, detach/re-attach survival, 50-op latency harness:
+  core p50 0.04ms / e2e p95 30ms (budget 50ms). VM lane peeled 4 real findings (all in
+  LESSONS 2026-07-02): frame-wipe fence rule; WKError-5 on undefined-result evals →
+  CM6-shape object-literal sends; push-reply drops → JS outbox + pull-drain (set dedup);
+  WebContent process TERMINATED mid-test under the GUI lane (contentProcessDied=true;
+  window-hosting made boot worse) — filed as a lane-hardening ticket, NOT an M0 blocker
+  (memory fine at 51%; no crash reports; all evals incl. trivial probes die together).
+- M0 VERDICT: GO — budgets met everywhere the page survives; core-side 0.1ms constant.
+- M1.S1 record store landed (577c7a18): FracIndex + flat store + tombstones + cycle checks,
+  proptest storm, teeth shown; wasm-shape scan made recursive for the canvas/ module dir.

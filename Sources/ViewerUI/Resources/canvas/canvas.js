@@ -8,12 +8,35 @@
   var PROTOCOL_VERSION = 1;
   var root = document.getElementById("cv-root");
 
+  // Reply OUTBOX (M0.S3 finding): the VM's older WebKit (macOS 15)
+  // intermittently DROPS script-message posts made from an eval-initiated
+  // stack (~30% observed), while the eval itself runs fine. Every post is
+  // therefore also appended here with a monotonic postId; the Swift host
+  // drains missed entries by pull (`window.__cvDrain(after)`). Push stays
+  // the fast path; the drain closes the reliability gap.
+  var postSeq = 0;
+  window.__cvOutbox = [];
+  window.__cvDrain = function (after) {
+    var out = [];
+    for (var i = 0; i < window.__cvOutbox.length; i++) {
+      var entry = window.__cvOutbox[i];
+      if (entry.postId > after) out.push(entry.json);
+    }
+    return JSON.stringify(out);
+  };
+
   function post(msg) {
     msg.v = PROTOCOL_VERSION;
+    postSeq += 1;
+    msg.postId = postSeq;
+    var json = JSON.stringify(msg);
+    window.__cvOutbox.push({ postId: postSeq, json: json });
+    if (window.__cvOutbox.length > 256) window.__cvOutbox.shift();
     try {
-      window.webkit.messageHandlers.mdvCanvas.postMessage(JSON.stringify(msg));
+      window.webkit.messageHandlers.mdvCanvas.postMessage(json);
     } catch (e) {
-      // Host handler absent (e.g. opened in a plain browser) — no-op.
+      // Host handler absent (plain browser) or post failed — the outbox
+      // drain is the recovery path either way.
     }
   }
 
@@ -108,6 +131,10 @@
       default:
         post({ type: "error", message: "cvDispatch: unknown type " + msg.type });
     }
+    // WKError-5 dodge (the TSK-1047 class): older WebKit rejects an eval whose
+    // result is `undefined` ("result of an unsupported type") — return a
+    // serializable value so evaluateJavaScript always has one.
+    return true;
   };
 
   post({ type: "ready", tsMs: performance.now() });
