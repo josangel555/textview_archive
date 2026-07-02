@@ -13,6 +13,17 @@ public struct CanvasOutlineNode: Identifiable, Equatable, Sendable {
     public let props: [(name: String, value: CanvasOutlineValue)]
     public var children: [CanvasOutlineNode]
 
+    public init(
+        id: String, kind: String,
+        props: [(name: String, value: CanvasOutlineValue)],
+        children: [CanvasOutlineNode]
+    ) {
+        self.id = id
+        self.kind = kind
+        self.props = props
+        self.children = children
+    }
+
     public static func == (lhs: CanvasOutlineNode, rhs: CanvasOutlineNode) -> Bool {
         lhs.id == rhs.id && lhs.kind == rhs.kind
             && lhs.children == rhs.children

@@ -219,4 +219,17 @@ final class CanvasTabControllerTests: XCTestCase {
         controller.select(nil)
         XCTAssertEqual(controller.selectedIDs, [])
     }
+
+    // MARK: M4.S5 — inspector badge
+
+    func test_instance_badge_derivation() {
+        let inst = CanvasOutlineNode(
+            id: "nd:x", kind: "component",
+            props: [("ref", .str("cmp:kit-card"))], children: [])
+        XCTAssertEqual(CanvasInspectorView.instanceBadge(inst), "instance of #kit-card")
+        let dangling = CanvasOutlineNode(id: "nd:y", kind: "component", props: [], children: [])
+        XCTAssertEqual(CanvasInspectorView.instanceBadge(dangling), "instance (unresolved)")
+        let plain = CanvasOutlineNode(id: "nd:z", kind: "text", props: [], children: [])
+        XCTAssertNil(CanvasInspectorView.instanceBadge(plain))
+    }
 }

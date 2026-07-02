@@ -162,6 +162,12 @@ impl Id {
         if suffix.is_empty() {
             return Err(IdError::BadShape);
         }
+        // Namespaced EXPANSION ids (nd:inst/nd:inner) are DOM-only (M4-PLAN
+        // leakage fence): they must never become op targets — instances are
+        // edited via their definition or overrides.
+        if suffix.contains('/') {
+            return Err(IdError::BadShape);
+        }
         if !ID_PREFIXES.contains(&prefix) {
             return Err(IdError::UnknownPrefix);
         }
@@ -180,6 +186,18 @@ impl Id {
     #[must_use]
     pub fn page(n: u32) -> Id {
         Id(format!("pg:{n}").into())
+    }
+}
+
+#[cfg(test)]
+mod id_fence_tests {
+    use super::*;
+
+    #[test]
+    fn namespaced_expansion_ids_are_dom_only() {
+        // The M4 leakage fence: expanded ids can never be op targets.
+        assert_eq!(Id::parse("nd:inst-a/nd:inner"), Err(IdError::BadShape));
+        assert!(Id::parse("nd:inst-a").is_ok());
     }
 }
 

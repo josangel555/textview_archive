@@ -53,6 +53,7 @@ public enum MCPToolCatalog {
         canvasLintDescriptor,
         canvasUndoDescriptor,
         canvasExportDescriptor,
+        canvasKitImportDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -93,6 +94,7 @@ public enum MCPToolCatalog {
         case "canvas_lint":        return try canvasLint(args, host)
         case "canvas_undo":        return try canvasUndo(args, host)
         case "canvas_export":      return try canvasExport(args, host)
+        case "canvas_kit_import":  return try canvasKitImport(args, host)
         default:
             throw MCPError.notFound("unknown tool: \(name)")
         }
@@ -1080,6 +1082,31 @@ public enum MCPToolCatalog {
             return .object(["path": .string(url.path), "bytes": .int(html.utf8.count)])
         } catch {
             throw MCPError.toolFailed("canvas_export: \(error)")
+        }
+    }
+
+
+    private static let canvasKitImportDescriptor = MCP.ToolDescriptor(
+        name: "canvas_kit_import",
+        description: "Vendor the starter component kit into a canvas doc (6 components: "
+            + "kit-card/button/badge/header/two-col/kpi — then `use #kit-card #my-card`). "
+            + "Copies + pins by hash; a locally-EDITED kit component blocks re-import "
+            + "(driftDetected=true, nothing overwritten). Returns {imported, driftDetected}.",
+        inputSchema: schema([
+            "doc": .object(["type": .string("string")]),
+        ], required: ["doc"])
+    )
+
+    private static func canvasKitImport(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let doc = try canvasDoc(try args.string("doc"), host)
+        do {
+            let result = try CanvasStarterKit.importKit(into: doc)
+            return .object([
+                "imported": .bool(result.imported),
+                "driftDetected": .bool(result.driftDetected),
+            ])
+        } catch {
+            throw MCPError.toolFailed("canvas_kit_import: \(error)")
         }
     }
 

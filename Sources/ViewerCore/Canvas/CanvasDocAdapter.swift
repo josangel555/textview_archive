@@ -156,6 +156,19 @@ public final class CanvasDocAdapter {
         try session.vocabulary(asJSON: asJSON)
     }
 
+    /// Read one token's recorded literal (the kit-pin read-back; nil when
+    /// the token doesn't exist). Derived from the vocabulary JSON — no new
+    /// FFI surface.
+    public func recordedKitPin(tokenPath: String) throws -> String? {
+        let json = try session.vocabulary(asJSON: true)
+        guard let data = json.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let tokens = obj["tokens"] as? [[String: Any]]
+        else { return nil }
+        let value = tokens.first { ($0["path"] as? String) == tokenPath }?["value"] as? String
+        return value.flatMap { $0.hasPrefix("pin-") ? String($0.dropFirst(4)) : $0 }
+    }
+
     /// Full-document lint findings.
     public func lintAll() throws -> [CanvasDocLint] {
         try session.lintAll().map {

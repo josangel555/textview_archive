@@ -67,6 +67,14 @@ struct CanvasInspectorView: View {
                         Text(node.kind).bold()
                         Text(node.id).foregroundStyle(.secondary)
                     }
+                    if let badge = Self.instanceBadge(node) {
+                        Text(badge)
+                            .font(.caption)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.15))
+                            .clipShape(Capsule())
+                            .accessibilityIdentifier("mdv.canvas.inspector.badge")
+                    }
                     Divider()
                     // Registry-driven rows: the kind's ALLOWED props, current
                     // values from the outline, edits through the op path.
@@ -113,6 +121,16 @@ struct CanvasInspectorView: View {
             controller.setProp(node.id, name: spec.name, value: Self.parse(trimmed))
         }
         drafts[spec.name] = nil
+    }
+
+    /// "instance of #card" badge for component nodes (M4.S5) — pure,
+    /// host-testable derivation from the outline.
+    static func instanceBadge(_ node: CanvasOutlineNode) -> String? {
+        guard node.kind == "component" else { return nil }
+        let ref = node.props.first { $0.name == "ref" }?.value
+        guard case .str(let target)? = ref else { return "instance (unresolved)" }
+        let name = target.hasPrefix("cmp:") ? String(target.dropFirst(4)) : target
+        return "instance of #\(name)"
     }
 
     /// Inspector value parsing mirrors the DSL's: `$path` = token,

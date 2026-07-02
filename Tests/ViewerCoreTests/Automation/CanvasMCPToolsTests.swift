@@ -227,4 +227,50 @@ final class CanvasMCPToolsTests: XCTestCase {
         guard case .int(let bytes)? = e["bytes"] else { return XCTFail("bytes") }
         XCTAssertEqual(bytes, html.utf8.count)
     }
+
+    // MARK: M4.S5 — the starter kit (TSK-1384)
+
+    func test_kit_import_use_and_drift_blocks_overwrite() throws {
+        guard case .object(let n) = try call("canvas_new", [:]),
+              case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+
+        // Import: definitions land + the pin records.
+        guard case .object(let first) = try call("canvas_kit_import", ["doc": .string(doc)]) else {
+            return XCTFail("import shape")
+        }
+        XCTAssertEqual(first["imported"], .bool(true))
+        XCTAssertEqual(first["driftDetected"], .bool(false))
+
+        // The kit is usable: instantiate a card and read it back.
+        let openDoc = try host.automationCanvasStore.doc(doc)
+        let rev = try openDoc.adapter.currentRev()
+        guard case .object(let applied) = try call("canvas_apply", [
+            "doc": .string(doc), "baseRev": .int(Int(rev)),
+            "dsl": .string("use #kit-card #my-card override text #kit-card-title \"Kitted\""),
+        ]) else { return XCTFail("apply shape") }
+        XCTAssertNotNil(applied["rev"], "kit instance applies: \(applied)")
+        XCTAssertTrue(try openDoc.adapter.html().contains(">Kitted<"),
+                      "the kit card expands with the override")
+
+        // Clean re-import: idempotent, no drift.
+        guard case .object(let second) = try call("canvas_kit_import", ["doc": .string(doc)]) else {
+            return XCTFail("re-import shape")
+        }
+        XCTAssertEqual(second["imported"], .bool(true))
+        XCTAssertEqual(second["driftDetected"], .bool(false))
+
+        // EDIT a kit component (vendored copy diverges), then re-import:
+        // drift is DETECTED and nothing is overwritten.
+        let rev2 = try openDoc.adapter.currentRev()
+        _ = try openDoc.adapter.applyDSL(
+            baseRev: rev2, "set #kit-card-title \"Locally edited\"")
+        guard case .object(let third) = try call("canvas_kit_import", ["doc": .string(doc)]) else {
+            return XCTFail("drift shape")
+        }
+        XCTAssertEqual(third["imported"], .bool(false), "drift must block")
+        XCTAssertEqual(third["driftDetected"], .bool(true))
+        XCTAssertTrue(try openDoc.adapter.html().contains(">Locally edited<") ||
+                      (try openDoc.adapter.renderDSL().contains("Locally edited")),
+                      "the local edit survives — never silently overwritten")
+    }
 }
