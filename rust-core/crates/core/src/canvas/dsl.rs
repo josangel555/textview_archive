@@ -23,8 +23,18 @@
 //! teaching messages listing what IS legal — the close-the-loop rule), and
 //! the fence re-checks everything at apply.
 //!
-//! Projection read-back and id-anchored structural diff editing are the M2
-//! surface (07 §5); S8 is the parser.
+//! EDIT statements complete the verb set (id-anchored, one per line):
+//!
+//! ```text
+//! set #title text="New copy" color=$color.accent
+//! unset #title font
+//! move #pic -> #row first
+//! remove #hero
+//! ```
+//!
+//! [`render`] projects a live subtree BACK into canonical DSL —
+//! `parse(render(doc)) == doc` (round-trip pinned by test). Structural-diff
+//! projection EDITING (rewrite-the-block workflows) is the M2 surface (07 §5).
 
 use super::ops::CanvasOp;
 use super::props::{PropKey, Value};
@@ -249,10 +259,20 @@ pub fn parse_fragment(source: &str, parent: &Id) -> Result<Vec<CanvasOp>, DslErr
             other => {
                 return err(
                     line_no,
-                    format!("expected an element name at line start, got {other:?}"),
+                    format!("expected an element or statement at line start, got {other:?}"),
                 )
             }
         };
+
+        // Edit statements (set/unset/move/remove) — id-anchored, single line.
+        if matches!(head.as_str(), "set" | "unset" | "move" | "remove") {
+            ops.push(parse_statement(&head, &mut iter, line_no)?);
+            if iter.next().is_some() {
+                return err(line_no, format!("trailing input after '{head}' statement"));
+            }
+            continue;
+        }
+
         let kind = parse_kind(&head, line_no)?;
 
         // Optional #anchor.
@@ -351,6 +371,201 @@ pub fn parse_fragment(source: &str, parent: &Id) -> Result<Vec<CanvasOp>, DslErr
     Ok(ops)
 }
 
+type TokIter = std::iter::Peekable<std::vec::IntoIter<Tok>>;
+
+fn need_anchor(iter: &mut TokIter, what: &str, line_no: usize) -> Result<Id, DslError> {
+    match iter.next() {
+        Some(Tok::Anchor(name)) => {
+            let full = format!("nd:{name}");
+            Id::parse(&full).map_or_else(
+                |e| err(line_no, format!("bad anchor '#{name}': {e:?}")),
+                Ok,
+            )
+        }
+        other => err(line_no, format!("{what} needs a '#id' anchor, got {other:?}")),
+    }
+}
+
+/// Parse one edit statement (`set`/`unset`/`move`/`remove`).
+fn parse_statement(
+    head: &str,
+    iter: &mut TokIter,
+    line_no: usize,
+) -> Result<CanvasOp, DslError> {
+    match head {
+        "remove" => Ok(CanvasOp::Remove {
+            id: need_anchor(iter, "remove", line_no)?,
+        }),
+        "set" => {
+            let id = need_anchor(iter, "set", line_no)?;
+            let mut set: Vec<(PropKey, Value)> = Vec::new();
+            for tok in iter.by_ref() {
+                match tok {
+                    Tok::Prop(name, value) => {
+                        let Some(key) = PropKey::by_name(&name) else {
+                            return err(line_no, format!("unknown prop '{name}'"));
+                        };
+                        set.push((key, value_of(*value, line_no)?));
+                    }
+                    Tok::Quoted(s) => {
+                        let Some(key) = PropKey::by_name("text") else {
+                            return err(line_no, "internal: no text key");
+                        };
+                        set.push((key, Value::Str(s)));
+                    }
+                    other => return err(line_no, format!("unexpected {other:?} in set")),
+                }
+            }
+            if set.is_empty() {
+                return err(line_no, "set needs at least one prop=value");
+            }
+            Ok(CanvasOp::Update { id, set, unset: vec![] })
+        }
+        "unset" => {
+            let id = need_anchor(iter, "unset", line_no)?;
+            let mut unset: Vec<PropKey> = Vec::new();
+            for tok in iter.by_ref() {
+                match tok {
+                    Tok::Word(name) => {
+                        let Some(key) = PropKey::by_name(&name) else {
+                            return err(line_no, format!("unknown prop '{name}'"));
+                        };
+                        unset.push(key);
+                    }
+                    other => return err(line_no, format!("unexpected {other:?} in unset")),
+                }
+            }
+            if unset.is_empty() {
+                return err(line_no, "unset needs at least one prop name");
+            }
+            Ok(CanvasOp::Update { id, set: vec![], unset })
+        }
+        "move" => {
+            let id = need_anchor(iter, "move", line_no)?;
+            match iter.next() {
+                Some(Tok::Word(arrow)) if arrow == "->" || arrow == "to" => {}
+                // `->` lexes as unexpected char; accept `to` as the word form.
+                other => {
+                    return err(
+                        line_no,
+                        format!("move syntax: move #id to #parent [first|before #x|after #x], got {other:?}"),
+                    )
+                }
+            }
+            let parent = need_anchor(iter, "move target", line_no)?;
+            let pos = match iter.next() {
+                None => Position::Last,
+                Some(Tok::Word(w)) => match w.as_str() {
+                    "first" => Position::First,
+                    "last" => Position::Last,
+                    "before" => Position::Before(need_anchor(iter, "before", line_no)?),
+                    "after" => Position::After(need_anchor(iter, "after", line_no)?),
+                    other => return err(line_no, format!("unknown position '{other}'")),
+                },
+                other => return err(line_no, format!("unexpected {other:?} in move")),
+            };
+            Ok(CanvasOp::Move { id, parent, pos })
+        }
+        _ => err(line_no, "internal: unknown statement"),
+    }
+}
+
+// MARK: - projection (render)
+
+fn render_value(v: &Value, out: &mut String) {
+    match v {
+        Value::Str(s) => {
+            out.push('"');
+            for ch in s.chars() {
+                match ch {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    '\n' => out.push_str("\\n"),
+                    '\t' => out.push_str("\\t"),
+                    c => out.push(c),
+                }
+            }
+            out.push('"');
+        }
+        Value::Num(n) => out.push_str(&format!("{n}")),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Token(p) => {
+            out.push('$');
+            out.push_str(p);
+        }
+    }
+}
+
+fn render_node(store: &super::store::Store, id: &Id, depth: usize, out: &mut String) {
+    let Some(rec) = store.get(id) else { return };
+    let Some(kind_word) = dsl_kind_word(rec.kind) else { return };
+    for _ in 0..depth {
+        out.push_str("  ");
+    }
+    out.push_str(kind_word);
+    // Anchors render only for nd:-prefixed ids (the DSL's mintable space).
+    if let Some(name) = id.as_str().strip_prefix("nd:") {
+        out.push_str(" #");
+        out.push_str(name);
+    }
+    let text_key = PropKey::by_name("text");
+    // Text sugar first.
+    if let Some(k) = text_key
+        && let Some(Value::Str(s)) = rec.props.get(k)
+    {
+        out.push(' ');
+        render_value(&Value::Str(s.clone()), out);
+    }
+    for (key, value) in rec.props.iter() {
+        if text_key == Some(key) {
+            continue; // already rendered as sugar
+        }
+        let Some(name) = key.name() else { continue };
+        out.push(' ');
+        out.push_str(name);
+        out.push('=');
+        render_value(value, out);
+    }
+    let kids = store.children(id);
+    if kids.is_empty() {
+        out.push('\n');
+    } else {
+        out.push_str(" {\n");
+        for kid in kids {
+            render_node(store, &kid, depth + 1, out);
+        }
+        for _ in 0..depth {
+            out.push_str("  ");
+        }
+        out.push_str("}\n");
+    }
+}
+
+fn dsl_kind_word(kind: RecordKind) -> Option<&'static str> {
+    Some(match kind {
+        RecordKind::Frame => "frame",
+        RecordKind::Text => "text",
+        RecordKind::Image => "image",
+        RecordKind::Shape => "shape",
+        RecordKind::Component => "component",
+        RecordKind::Embed => "embed",
+        RecordKind::Hole => "hole",
+        RecordKind::Page => return None, // pages are containers of fragments, not elements
+    })
+}
+
+/// Project the children of `parent` into canonical DSL. Round-trip law:
+/// applying `parse_fragment(render(store, parent), parent)` to an empty
+/// parent rebuilds the identical subtree (anchors preserved for nd: ids).
+#[must_use]
+pub fn render(store: &super::store::Store, parent: &Id) -> String {
+    let mut out = String::new();
+    for kid in store.children(parent) {
+        render_node(store, &kid, 0, &mut out);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,6 +661,58 @@ frame #hero fill=$color.surface padding=$space.lg gap=8 {
         let e = d.apply(0, &ops).expect_err("fence rejects");
         let _ = e; // typed ApplyError::Fence — pinned by ops tests
         assert!(d.store.get(&Id::parse("nd:s").expect("id")).is_none());
+    }
+
+    #[test]
+    fn edit_statements_parse_into_the_op_vocabulary() {
+        let (mut d, pg) = page();
+        d.apply(0, &parse_fragment(HERO, &pg).expect("seed")).expect("seed apply");
+        let edits = r#"
+set #title "New copy" color=$color.accent
+unset #title font
+move #pic to #row first
+remove #hero
+"#;
+        let ops = parse_fragment(edits, &pg).expect("parse edits");
+        assert_eq!(ops.len(), 4);
+        assert!(matches!(&ops[0], CanvasOp::Update { set, unset, .. }
+            if set.len() == 2 && unset.is_empty()));
+        assert!(matches!(&ops[1], CanvasOp::Update { set, unset, .. }
+            if set.is_empty() && unset.len() == 1));
+        assert!(matches!(&ops[2], CanvasOp::Move { pos: Position::First, .. }));
+        assert!(matches!(&ops[3], CanvasOp::Remove { .. }));
+        // They apply for real (move #pic under #row, then remove the tree).
+        let rev = d.rev();
+        d.apply(rev, &ops[..3]).expect("edits apply");
+        let row_kids = d.store.children(&Id::parse("nd:row").expect("id"));
+        assert_eq!(row_kids.first().map(|k| k.as_str().to_owned()), Some("nd:pic".to_owned()));
+        // Statement errors teach.
+        let e = parse_fragment("set #title", &pg).expect_err("empty set");
+        assert!(e.message.contains("at least one"), "{e:?}");
+        let e = parse_fragment("move #a #b", &pg).expect_err("no arrow");
+        assert!(e.message.contains("move syntax"), "{e:?}");
+    }
+
+    #[test]
+    fn render_round_trips_parse_render_eq_doc() {
+        let (mut d, pg) = page();
+        d.apply(0, &parse_fragment(HERO, &pg).expect("seed")).expect("seed apply");
+        let projected = render(&d.store, &pg);
+        assert!(projected.contains("frame #hero"), "{projected}");
+        assert!(projected.contains("$color.surface"), "token refs render as $path");
+        // Rebuild from the projection on a fresh doc: subtree-identical
+        // modulo the one engine-minted id (anchorless in HERO), which renders
+        // with its minted anchor and therefore round-trips stably from here.
+        let (mut d2, pg2) = page();
+        let ops = parse_fragment(&projected, &pg2).expect("reparse");
+        d2.apply(0, &ops).expect("reapply");
+        let reprojected = render(&d2.store, &pg2);
+        assert_eq!(reprojected, projected, "parse(render(doc)) == doc (canonical form)");
+        // And the structures agree.
+        assert_eq!(
+            d2.store.children(&Id::parse("nd:hero").expect("id")).len(),
+            d.store.children(&Id::parse("nd:hero").expect("id")).len()
+        );
     }
 
     #[test]
