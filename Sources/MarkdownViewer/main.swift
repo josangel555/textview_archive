@@ -2165,39 +2165,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyShortcut("view.actualSize", to: zoomReset)
         viewMenu.addItem(zoomReset)
 
-        viewMenu.addItem(.separator())
-        // (Document Statistics moved to the Tools menu — TSK-1413 reorg.)
-        // TSK-675: export the rendered Markdown as standalone HTML (CSP-free, so
-        // it renders in a browser). Markdown files only.
-        let copyHTMLItem = NSMenuItem(title: "Copy as HTML",
-                                      action: #selector(copyAsHTML(_:)), keyEquivalent: "")
-        copyHTMLItem.target = self
-        viewMenu.addItem(copyHTMLItem)
-        let exportHTMLItem = NSMenuItem(title: "Export as HTML…",
-                                        action: #selector(exportAsHTML(_:)), keyEquivalent: "")
-        exportHTMLItem.target = self
-        viewMenu.addItem(exportHTMLItem)
-        // Open the rendered Markdown (self-contained) in the default browser.
-        let openBrowserItem = NSMenuItem(title: "Open in Browser",
-                                         action: #selector(openInBrowser(_:)), keyEquivalent: "")
-        openBrowserItem.target = self
-        viewMenu.addItem(openBrowserItem)
-        // (Check Links + Lint Markdown moved to the Tools menu — TSK-1413 reorg.)
-        // CSV → clipboard conversions (active .csv/.tsv only).
-        let csvMDItem = NSMenuItem(title: "Copy as Markdown Table",
-                                   action: #selector(copyCSVAsMarkdownTable(_:)), keyEquivalent: "")
-        csvMDItem.target = self
-        viewMenu.addItem(csvMDItem)
-        let csvJSONItem = NSMenuItem(title: "Copy as JSON",
-                                     action: #selector(copyCSVAsJSON(_:)), keyEquivalent: "")
-        csvJSONItem.target = self
-        viewMenu.addItem(csvJSONItem)
-        // (CSV Summary moved to the Tools menu — TSK-1413 reorg.)
-        // JSON → CSV (active .json whose top level is an array of objects).
-        let jsonCSVItem = NSMenuItem(title: "Copy as CSV",
-                                     action: #selector(copyJSONAsCSV(_:)), keyEquivalent: "")
-        jsonCSVItem.target = self
-        viewMenu.addItem(jsonCSVItem)
+        // (Document Statistics / Check Links / Lint Markdown / CSV Summary moved
+        // to the Tools menu, and the Copy-as/Export/Open-in-Browser actions to the
+        // File ▸ Export/Share submenu — TSK-1413 reorg. View keeps see-the-doc
+        // actions only.)
 
         viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
@@ -2355,6 +2326,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         toolsMenu.addItem(csvSummaryItem)
         toolsMenuItem.submenu = toolsMenu
         mainMenu.addItem(toolsMenuItem)
+
+        // TSK-1413 reorg slice 2: Export/Share actions (rendered-doc export +
+        // clipboard conversions) grouped under File ▸ Export / Share, moved OUT of
+        // View. `fileMenu` is still in scope from the File section above; selectors
+        // are unchanged (AppMenuActionsTests guards them).
+        let exportShareItem = NSMenuItem(title: "Export / Share", action: nil, keyEquivalent: "")
+        let exportShareMenu = NSMenu(title: "Export / Share")
+        // TSK-675: rendered Markdown → standalone HTML (CSP-free, browser-openable).
+        let copyHTMLItem = NSMenuItem(title: "Copy as HTML",
+                                      action: #selector(copyAsHTML(_:)), keyEquivalent: "")
+        copyHTMLItem.target = self
+        exportShareMenu.addItem(copyHTMLItem)
+        let exportHTMLItem = NSMenuItem(title: "Export as HTML…",
+                                        action: #selector(exportAsHTML(_:)), keyEquivalent: "")
+        exportHTMLItem.target = self
+        exportShareMenu.addItem(exportHTMLItem)
+        let openBrowserItem = NSMenuItem(title: "Open in Browser",
+                                         action: #selector(openInBrowser(_:)), keyEquivalent: "")
+        openBrowserItem.target = self
+        exportShareMenu.addItem(openBrowserItem)
+        exportShareMenu.addItem(.separator())
+        // CSV → clipboard conversions (active .csv/.tsv only).
+        let csvMDItem = NSMenuItem(title: "Copy as Markdown Table",
+                                   action: #selector(copyCSVAsMarkdownTable(_:)), keyEquivalent: "")
+        csvMDItem.target = self
+        exportShareMenu.addItem(csvMDItem)
+        let csvJSONItem = NSMenuItem(title: "Copy as JSON",
+                                     action: #selector(copyCSVAsJSON(_:)), keyEquivalent: "")
+        csvJSONItem.target = self
+        exportShareMenu.addItem(csvJSONItem)
+        // JSON → CSV (active .json whose top level is an array of objects).
+        let jsonCSVItem = NSMenuItem(title: "Copy as CSV",
+                                     action: #selector(copyJSONAsCSV(_:)), keyEquivalent: "")
+        jsonCSVItem.target = self
+        exportShareMenu.addItem(jsonCSVItem)
+        exportShareItem.submenu = exportShareMenu
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(exportShareItem)
 
         let windowMenuItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
