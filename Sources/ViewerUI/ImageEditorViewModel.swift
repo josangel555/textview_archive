@@ -197,6 +197,15 @@ public final class ImageEditorViewModel: ObservableObject {
         if let initialEditState { restoreEditState(initialEditState) }
     }
 
+    /// Tone (brightness/contrast/exposure/…) can only be adjusted BEFORE a
+    /// destructive paint session starts. Painting bakes the current tonal result
+    /// into an opaque pixel buffer that SHADOWS the tonal pipeline in `render()`,
+    /// so a later slider change is a silent no-op that can't be re-derived (unlike
+    /// discrete geometry ops, which `commitGeometry` transforms the buffer
+    /// through). The UI disables the Tone controls once painting begins; discard
+    /// paint (or revert) to adjust tone again. (usability audit 2026-07-02)
+    public var isToneEditable: Bool { paintCanvas == nil }
+
     /// `true` when there is a committed edit OR a paint stroke to undo.
     public var canUndo: Bool { undoStack.canUndo || canUndoPaint }
     /// `true` when there is a previously-undone edit or paint stroke to redo.

@@ -92,3 +92,5 @@ TSK-687 deep agent integrations · 688 walkthrough-as-presentation · 689 PinBoa
 - Earlier (since 2026-06-27): TSK-847 (gate), 1270 (find-highlights), 1151 (line-height), 400 (rpcd spike), 836/794 (timings/threading audit). Coverage landed: RichTextSerializer, FileQuarantine, cspMeta, Focus-shortcuts.
 
 *Coverage now (2026-06-29): 69.74% region / 64.72% line (host) — the uncovered is render UI [VM-tested]; pure-logic is comprehensively covered. Full archive → `archive/BACKLOG_archive_2026-06-27.md`.*
+
+- **Image editor: non-destructive paint layer** (enh) — paint is currently a DESTRUCTIVE baked buffer, so tone-after-paint can't be re-derived (TSK-1420 gates the Tone controls once painting starts as the honest interim). A real fix = keep paint as a separate compositing layer over the live tonal/geometry render, so tone/paint are independently editable. Larger architecture change.

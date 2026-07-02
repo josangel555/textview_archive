@@ -378,13 +378,25 @@ struct ImageEditorView: View {
                 ImageElementPropertiesPanel(vm: vm)
 
                 groupLabel("Tone")
-                slider("Brightness", \.brightness, -1, 1, id: "brightness")
-                slider("Contrast", \.contrast, 0, 2, id: "contrast")
-                slider("Saturation", \.saturation, 0, 2, id: "saturation")
-                slider("Exposure", \.exposureEV, -2, 2, id: "exposure")
-                slider("Shadows", \.shadow, 0, 1, id: "shadow")
-                slider("Highlights", \.highlight, 0, 1, id: "highlight")
-                slider("Sharpen", \.sharpness, 0, 2, id: "sharpen")
+                Group {
+                    slider("Brightness", \.brightness, -1, 1, id: "brightness")
+                    slider("Contrast", \.contrast, 0, 2, id: "contrast")
+                    slider("Saturation", \.saturation, 0, 2, id: "saturation")
+                    slider("Exposure", \.exposureEV, -2, 2, id: "exposure")
+                    slider("Shadows", \.shadow, 0, 1, id: "shadow")
+                    slider("Highlights", \.highlight, 0, 1, id: "highlight")
+                    slider("Sharpen", \.sharpness, 0, 2, id: "sharpen")
+                }
+                // usability audit 2026-07-02: painting bakes the tonal result into a
+                // destructive buffer, so later tone changes are a silent no-op — gate
+                // the controls (rather than lie) and say why. Discard paint to adjust.
+                .disabled(!vm.isToneEditable)
+                if !vm.isToneEditable {
+                    Text("Tone is baked into the painted image. Discard paint to adjust it.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("mdv.imageEditor.toneLockedNote")
+                }
 
                 groupLabel("Geometry")
                 HStack {
