@@ -3,6 +3,10 @@
 ## 2026-07-02
 
 ### Added
+- **Canvas visual editing (WYSIWYG):** .canvas files now open into a rendered
+  canvas with a layers tree and a properties inspector — click to select,
+  double-click to edit text in place, drag to reorder, ⌘Z to undo; agents and
+  humans edit the same live document without overwriting each other.
 - **Canvas agent tools:** agents connected to the app can now create, author
   (in a compact teaching language), read back, lint, undo, save, reopen, and
   export canvas documents — 9 new MCP tools plus two one-line script verbs

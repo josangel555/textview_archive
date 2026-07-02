@@ -145,7 +145,10 @@
     var el = nodeById(selectedId);
     if (!el) { overlay.style.display = "none"; return; }
     var r = el.getBoundingClientRect();
-    overlay.style.left = (r.left + window.scrollX) + "px";
+    // T5 negative control: deliberately mis-anchor when the committed
+    // break switch is on (MDV_ENABLE_BROKEN_CANVAS_OVERLAY -> user script).
+    var dx = window.__cvBrokenOverlay ? 120 : 0;
+    overlay.style.left = (r.left + window.scrollX + dx) + "px";
     overlay.style.top = (r.top + window.scrollY) + "px";
     overlay.style.width = r.width + "px";
     overlay.style.height = r.height + "px";

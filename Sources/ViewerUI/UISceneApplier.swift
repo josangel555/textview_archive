@@ -179,6 +179,35 @@ public enum UISceneApplier {
             return "ui-scene: applied '\(scene)' tabs=\(model.tabs.tabs.count) preview=\(model.tabs.previewTabID != nil)"
         }
 
+        // Canvas WYSIWYG scene (M3.S7, TSK-1378): a deterministic .canvas doc
+        // opened into the rendered lens with #title SELECTED — the T5 pixel
+        // test asserts the selection overlay actually composites on screen
+        // (and its negative control asserts the committed break goes RED).
+        if scene == "canvas-demo" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("scene.canvas")
+            do {
+                let store = model.automationCanvasStore
+                let doc = try store.create()
+                _ = try doc.adapter.applyDSL(baseRev: 0, "frame #col gap=8 padding=24 {\n  text #title \"Canvas pixel scene\" font=$font.h1\n  text #body \"supporting copy for the capture\"\n}")
+                _ = try store.save(doc.id, to: f)
+                store.close(CanvasDocumentStore.docID(for: f))
+                model.open(url: f)
+                if let tabID = model.tabs.selected?.id {
+                    let controller = model.canvasController(forTab: tabID, fileURL: f)
+                    // Select once mounted (the runtime needs a beat; the delay
+                    // keeps the overlay deterministic for the capture).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        controller.select("nd:title")
+                    }
+                }
+                return "ui-scene: applied 'canvas-demo'"
+            } catch {
+                return "ui-scene: canvas-demo FAILED: \(error)"
+            }
+        }
+
         // FILE tab-strip scenes (TSK-261/268/331): `tabs-<N>` opens N throwaway
         // markdown files as PERMANENT tabs so the top TabBar is on screen with a
         // deterministic population. Files live under `tabsBaseDir` (never

@@ -14932,3 +14932,14 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - UAT-M2 GREEN: the full agent journey (discover→create→mistake-taught→build→read→
   conflict-retry→lint-clean→undo→save→reopen→identical) over ONLY the MCP surface;
   1k-node latency: apply p95 0.11ms, read p95 0.18ms vs the 20ms budget.
+
+## 2026-07-02 — Canvas M3 S1-S8: WYSIWYG complete on the local lane (TSK-1372..1379)
+- Rendered lens (now DEFAULT) + CanvasTabController (store-doc identity: humans and agents
+  co-edit ONE revision stream; conflict-retry absorbs agent co-edits — teeth on all).
+- Selection overlay glued through reflow; inline text editing (IME-safe, revert semantics);
+  drag-reorder with midpoint slots; layers tree + registry-driven inspector off one
+  canonical-JSON read model; ⌘Z chain.
+- UAT-M3 GREEN through the controller on the real runtime (25/25 canvas tests locally).
+- T5 pixel guard for overlay visibility + codified negative control
+  (MDV_ENABLE_BROKEN_CANVAS_OVERLAY) + canvas-demo scene — self-skipping until TSK-1334;
+  VM webview bar pinned to TSK-1365 (two real lane fixes landed en route).

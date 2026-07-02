@@ -30,12 +30,12 @@ final class CanvasTabControllerTests: XCTestCase {
         harness = nil
     }
 
-    func test_canvas_offers_rendered_lens_source_default() {
+    func test_canvas_offers_rendered_lens_as_default() {
         let modes = ViewModeOptions.availableModes(for: file, forcedCategory: nil)
-        XCTAssertTrue(modes.contains(.rendered), "M3.S1: the WYSIWYG lens exists")
-        XCTAssertEqual(modes.first, .source, "source stays default until S7")
+        XCTAssertEqual(modes.first, .rendered, "M3.S7: rendered is primary")
+        XCTAssertTrue(modes.contains(.source), "source stays one click away")
         XCTAssertEqual(
-            ViewModeOptions.defaultMode(for: file, isRenderableText: true), .source)
+            ViewModeOptions.defaultMode(for: file, isRenderableText: true), .rendered)
     }
 
     func test_controller_mounts_selects_and_clears_via_bridge_messages() throws {

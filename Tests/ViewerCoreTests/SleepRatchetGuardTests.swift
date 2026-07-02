@@ -53,7 +53,12 @@ final class SleepRatchetGuardTests: XCTestCase {
     /// ones (terminate-quiesce + post-launch render settle). Polling a SPAWNED
     /// app's cross-process render-readiness has no clean predicate, so these
     /// match the established T5-capture pattern rather than introduce polling.
-    private static let baseline = 79
+    /// 2026-07-02: 79 → 82 — M3.S7/TSK-1378: CanvasOverlaySceneHarness
+    /// carries the standard T5 spawn plumbing (terminate-quiesce,
+    /// activate-settle, scene-apply/paint settle before capture) — the same
+    /// three sleeps every T5 visual suite in this baseline carries; no
+    /// pollable signal exists for "the spawned app painted its scene".
+    private static let baseline = 82
 
     func test_noNewFixedDurationSleeps() throws {
         let fm = FileManager.default

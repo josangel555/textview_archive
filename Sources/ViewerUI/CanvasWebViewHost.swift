@@ -48,6 +48,17 @@ public final class CanvasWebViewHost: NSObject, WKNavigationDelegate {
 
     /// Load the bundled canvas.html (one-shot `loadFileURL`, the CM6 pattern).
     public func load() {
+        // T5 negative control (M3.S7 / TSK-1134 pattern): a DELIBERATE,
+        // committed break behind MDV_ENABLE_BROKEN_CANVAS_OVERLAY — the
+        // pixel test spawns the app with this env and must go RED, proving
+        // the overlay-visibility guard has teeth.
+        if MDVNegativeControl.isBroken("CANVAS_OVERLAY") {
+            let script = WKUserScript(
+                source: "window.__cvBrokenOverlay = true;",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true)
+            webView.configuration.userContentController.addUserScript(script)
+        }
         guard let htmlURL = Bundle.module.url(forResource: "canvas", withExtension: "html") else {
             assertionFailure("canvas.html missing from ViewerUI resources")
             return

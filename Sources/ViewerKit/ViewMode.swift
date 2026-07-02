@@ -111,11 +111,11 @@ public enum ViewModeOptions {
         // opt-in mode. The later `.editor` insert also lands after
         // .source, so the final picker reads Source | Editor | Rendered |
         // … — what matters is Source is first/default, Rendered is not.
-        // .canvas (M3.S1, TSK-1372): the WYSIWYG rendered lens, AFTER .source
-        // like .html (source stays the conservative default until M3.S7 flips
-        // it — the render path is still growing its gesture surface).
+        // .canvas (M3.S7 flip, TSK-1378): the WYSIWYG lens is the PRIMARY —
+        // rendered first like markdown (the gesture surface is complete:
+        // select/edit/drag/undo/inspector); Source stays one click away.
         if cat == .canvas {
-            modes.append(.rendered)
+            modes.insert(.rendered, at: 0)
         }
         if cat == .html {
             if let sourceIdx = modes.firstIndex(of: .source) {
@@ -207,13 +207,15 @@ public enum ViewModeOptions {
                 if hasNativePreview(forced) { return .preview }
                 return isRenderableText == true ? .source : .hex
             }
-            if forced == .markdown || forced == .mermaid { return .rendered }
+            if forced == .markdown || forced == .mermaid || forced == .canvas {
+                return .rendered
+            }
             return .source
         }
         if Self.supportsDiff(url) { return .diff }
         if Self.supportsTable(url) { return .table }
         let cat = FileTypeDetector.category(for: url)
-        if cat == .markdown || cat == .mermaid { return .rendered }
+        if cat == .markdown || cat == .mermaid || cat == .canvas { return .rendered }
         // Native-preview categories default to the Preview lens (native
         // MediaPreviewView). Binary / unknown have no native preview, so they
         // default straight into HEX (bug3) — opening into a usable view rather

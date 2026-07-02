@@ -135,7 +135,7 @@ final class DocumentModelTests: XCTestCase {
             XCTFail("expected .loaded, got \(String(describing: model.tabs.selected?.state))")
             return
         }
-        XCTAssertEqual(model.currentViewMode, .source, "v1 = source lens")
+        XCTAssertEqual(model.currentViewMode, .rendered, "M3.S7: rendered is the default lens")
         let shown = model.displayedText(for: doc).text
         XCTAssertTrue(shown.contains("\"formatVersion\":1"))
         XCTAssertTrue(shown.contains("from the engine"))

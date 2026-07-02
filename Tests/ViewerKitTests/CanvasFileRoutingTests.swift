@@ -19,20 +19,17 @@ final class CanvasFileRoutingTests: XCTestCase {
             .canvas)
     }
 
-    func test_canvas_defaults_to_source_and_offers_text_modes() {
+    func test_canvas_defaults_to_rendered_with_source_one_click_away() {
         XCTAssertTrue(ViewModeOptions.hasTextRepresentation(.canvas))
         XCTAssertFalse(ViewModeOptions.hasNativePreview(.canvas))
+        // M3.S7 (TSK-1378): the WYSIWYG lens is PRIMARY (the gesture surface
+        // is complete); Source remains available for hand-editing the JSON.
         XCTAssertEqual(
-            ViewModeOptions.defaultMode(for: url, isRenderableText: true),
-            .source,
-            "v1 opens into the source lens (rendered canvas is M3)")
+            ViewModeOptions.defaultMode(for: url, isRenderableText: true), .rendered)
         let modes = ViewModeOptions.availableModes(for: url, forcedCategory: nil)
+        XCTAssertEqual(modes.first, .rendered, "rendered is the default lens")
         XCTAssertTrue(modes.contains(.source))
         XCTAssertTrue(modes.contains(.hex))
-        // M3.S1 (TSK-1372): the WYSIWYG lens arrived; source stays default
-        // until M3.S7 flips it.
-        XCTAssertTrue(modes.contains(.rendered), "the rendered lens exists from M3.S1")
-        XCTAssertEqual(modes.first, .source, "source is still the default lens")
     }
 
     func test_canvas_source_highlights_as_json() {
