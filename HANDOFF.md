@@ -12,6 +12,15 @@
   CSV multi-cell in-view, LSP completion wired). The board UNDER-reports the code. The #1 finding
   (TSK-1412) is board≠code; the real defects are polish/quality/UX/cohesion in WIRED features, not
   missing UI. For every feature: read the view+wiring, verify on-screen, THEN judge.
+- **REFINED FINDING (2026-07-02 pass-2+correction):** code-reading CSV/Hex/command-registry shows
+  the CORE is near-production-grade; the app is largely **model-complete + view-wired**, stuck at an
+  HONEST render/AX confirmation tail = the same owner-gated bar (TSK-1334 pixel grant + the AX lane),
+  NOT incompleteness. The BOARD is largely honest (tickets at review with real ceilings); it's the
+  **BACKLOG.md FILE that lags** + my earlier conflation of the two. So the work is NOT a big
+  board-reconcile or UI-rebuild — it's: (1) fix GENUINE gaps code-reads surface (unticketed, e.g. CSV
+  empty-state TSK-1415); (2) the thin exploratory spikes (TSK-1414, owner finish-or-cut); (3)
+  cross-cutting bugs (key-event routing TSK-1315); (4) refresh the lagging BACKLOG.md. Many "incomplete"
+  features just need the owner's TSK-1334 grant to confirm their render tail.
 - **Go-forward (per tick):** pick a feature family from the audit → code-verify its real state →
   fix the highest-value polish/quality/UX gap to on-screen-validated → correct the board to match →
   commit per item. Systemic tickets: TSK-1412 (board reconcile), TSK-1413 (entry-point cohesion),
