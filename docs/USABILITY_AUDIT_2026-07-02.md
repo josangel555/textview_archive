@@ -290,3 +290,18 @@ UAT coverage. Genuine remaining work: (1) features WITHOUT UAT coverage (explora
 HTTP client, RSS reader, folder treemap, SQLite browser; TSK-1414 finish-or-cut) - drill next;
 (2) editor scroll-to-line (TSK-1200); (3) pixel/occlusion tail (TSK-1334); (4) code-found
 micro-gaps. Caveat: UAT asserts model-state on the real app (strong for behavior); true pixels = TSK-1334.
+
+### Pass 5 (2026-07-02) — SQLite browser: code-verified + UI-drive-confirmed WORKING (not a spike)
+
+Drilled the first "exploratory spike" from the finish-or-cut list (TSK-1414). Code says it's a
+REAL feature, not a stub: SQLiteBrowserView (516 ln) — 3-pane schema(tables/views/indexes/
+triggers)/SQL-editor/results, off-main query + Cancel, error/empty/loading states, row cap
+(maxRows=1000 + `truncated`), big-value guard, `SELECT … LIMIT 100` seeding on table click;
+engine SQLiteReader host-tested (SQLiteReaderTests/FileInfo/Width + a UATSQLiteFixture). Wired to
+`.sqlite` native-preview routing. UI-DRIVE: wrote SQLiteBrowserUATTests (new coverage — it had
+none) and ran it on the VM — opening a real enumerable `.sqlite` mounts the browser as a preview
+tab with NO error state → CONFIRMED working on the real app (calibration: native-preview tabs
+report currentStateKind "preview", not "loaded"). **Verdict: SQLite browser is production-grade,
+NOT a finish-or-cut spike — remove it from TSK-1414.** (Audit correction #4; the "exploratory
+spike" framing keeps proving wrong — next drill the remaining three: HTTP client, RSS reader,
+folder treemap, verifying before assuming.)
