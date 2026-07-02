@@ -1265,6 +1265,46 @@ pub unsafe extern "C" fn mdvcore_canvas_undo(
     })
 }
 
+/// Emit the document's authoring vocabulary (generated from the live
+/// registry — 07-DSL-SPIKE: agents learn the vocabulary via MCP). Text
+/// cheat-sheet form, or structured JSON when `as_json`. Caller MUST call
+/// [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::Busy`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be live; `out_buf` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_vocab(
+    handle: *mut canvas_handle::CanvasHandle,
+    as_json: bool,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated non-null.
+        unsafe { *out_buf = MdvBuf::empty() };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            let text = if as_json {
+                canvas::vocab::emit_json(&doc.tokens)
+            } else {
+                canvas::vocab::emit_text(&doc.tokens)
+            };
+            // SAFETY: out_buf validated non-null.
+            unsafe { *out_buf = MdvBuf::from_vec(text.into_bytes()) };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// Free a canvas handle. Null-tolerant and idempotent.
 ///
 /// # Safety

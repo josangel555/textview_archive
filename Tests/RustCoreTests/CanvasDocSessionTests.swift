@@ -189,3 +189,20 @@ final class CanvasUATM1Tests: XCTestCase {
         }
     }
 }
+
+/// M2.S1 (TSK-1366): the vocabulary reaches Swift with the document's tokens.
+final class CanvasVocabTests: XCTestCase {
+    func test_vocabulary_text_and_json_through_the_real_ffi() throws {
+        let session = try CanvasDocSession()
+        let text = try session.vocabulary()
+        XCTAssertTrue(text.contains("ELEMENTS AND THEIR PROPS"))
+        XCTAssertTrue(text.contains("frame (container)"))
+        XCTAssertTrue(text.contains("$color.accent"))
+        XCTAssertTrue(text.contains("conflict"))
+        let json = try session.vocabulary(asJSON: true)
+        XCTAssertTrue(json.contains("\"kinds\""))
+        XCTAssertTrue(json.contains("\"caps\""))
+        let obj = try JSONSerialization.jsonObject(with: Data(json.utf8))
+        XCTAssertNotNil(obj as? [String: Any], "vocab JSON parses")
+    }
+}

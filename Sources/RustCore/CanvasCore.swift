@@ -223,6 +223,12 @@ public final class CanvasDocSession {
         try stringResult { h, buf in mdvcore_canvas_save(h, &buf) }
     }
 
+    /// The authoring vocabulary (registry-generated; cheat-sheet text or
+    /// structured JSON) — the canvas_vocab tool's payload.
+    public func vocabulary(asJSON: Bool = false) throws -> String {
+        try stringResult { h, buf in mdvcore_canvas_vocab(h, asJSON, &buf) }
+    }
+
     /// Project the root page into canonical DSL.
     public func renderDSL() throws -> String {
         try stringResult { h, buf in mdvcore_canvas_render_dsl(h, &buf) }

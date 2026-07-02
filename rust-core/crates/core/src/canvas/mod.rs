@@ -23,4 +23,5 @@ pub mod props;
 pub mod registry;
 pub mod store;
 pub mod tokens;
+pub mod vocab;
 pub mod wire;
