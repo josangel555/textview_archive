@@ -106,6 +106,22 @@ impl CanvasDoc {
         dsl::render(&self.state.store, &self.root)
     }
 
+    /// Project ONE anchored node's subtree (`canvas_read {anchor}`), or None
+    /// for an unknown id.
+    #[must_use]
+    pub fn render_dsl_node(&self, id: &Id) -> Option<String> {
+        self.state.store.get(id)?;
+        Some(dsl::render_subtree(&self.state.store, id))
+    }
+
+    /// Full-document lint as a `{lint: […]}` frame.
+    ///
+    /// # Errors
+    /// [`WireFault`] if encoding fails.
+    pub fn lint_frame(&self) -> Result<Vec<u8>, WireFault> {
+        wire::lint_frame(&self.state, &self.tokens)
+    }
+
     /// Pull the just-applied batch's inverse off the engine and onto the
     /// bounded history (no-op when nothing mutated).
     fn capture_undo(&mut self, rev_before: u64) {

@@ -229,6 +229,45 @@ public final class CanvasDocSession {
         try stringResult { h, buf in mdvcore_canvas_vocab(h, asJSON, &buf) }
     }
 
+    /// Project ONE anchored node's subtree into canonical DSL (nil for an
+    /// unknown id — the engine returns empty for those).
+    public func renderDSL(node id: String) throws -> String? {
+        let bytes = Array(id.utf8)
+        let text = try stringResult { h, buf in
+            bytes.withUnsafeBufferPointer { p in
+                mdvcore_canvas_render_dsl_node(h, p.baseAddress, UInt(p.count), &buf)
+            }
+        }
+        return text.isEmpty ? nil : text
+    }
+
+    /// Full-document lint findings (the canvas_lint tool's payload).
+    public func lintAll() throws -> [CanvasLintFinding] {
+        let h = try liveHandle()
+        var buf = MdvBuf(data: nil, len: 0, cap: 0)
+        let status = mdvcore_canvas_lint(h, &buf)
+        defer { mdvcore_buf_free(&buf) }
+        try check(status)
+        guard let data = buf.data, buf.len > 0 else { return [] }
+        let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+        var reader = MsgPackReader(frame, startingAt: try CsvSession.frameBodyStart(frame))
+        do {
+            let map = try reader.decode().mapValue()
+            guard let lintValue = map["lint"] else { return [] }
+            return try lintValue.arrayValue().map { entry in
+                let m = try entry.mapValue()
+                return CanvasLintFinding(
+                    severity: try m.require("severity").stringValue(),
+                    code: try m.require("code").stringValue(),
+                    id: m["id"].flatMap { try? $0.stringValue() },
+                    message: try m.require("message").stringValue()
+                )
+            }
+        } catch let e as MsgPackError {
+            throw CoreError.decode("\(e)")
+        }
+    }
+
     /// Project the root page into canonical DSL.
     public func renderDSL() throws -> String {
         try stringResult { h, buf in mdvcore_canvas_render_dsl(h, &buf) }

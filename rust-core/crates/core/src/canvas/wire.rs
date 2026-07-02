@@ -326,6 +326,20 @@ pub fn respond(
     }
 }
 
+/// Encode the full-document lint findings as a standalone `{lint: […]}`
+/// frame (the `canvas_lint` tool's payload — same WireLint shape that rides
+/// applies).
+pub fn lint_frame(doc: &DocState, tokens: &TokenStore) -> Result<Vec<u8>, WireFault> {
+    #[derive(Serialize)]
+    struct LintFrame {
+        lint: Vec<WireLint>,
+    }
+    let findings = super::lint::run(doc, tokens);
+    base_wire::encode_frame(&LintFrame {
+        lint: findings.iter().map(WireLint::from_lint).collect(),
+    })
+}
+
 /// Encode a DSL parse failure as a structured rejection frame
 /// (`{rejected: "dsl", detail: "line N: …", currentRev}`).
 pub fn dsl_rejection(doc: &DocState, e: &super::dsl::DslError) -> Result<Vec<u8>, WireFault> {

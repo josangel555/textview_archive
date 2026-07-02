@@ -48,6 +48,10 @@ public enum MCPToolCatalog {
         canvasOpenDescriptor,
         canvasSaveDescriptor,
         canvasApplyDescriptor,
+        canvasReadDescriptor,
+        canvasVocabDescriptor,
+        canvasLintDescriptor,
+        canvasUndoDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -83,6 +87,10 @@ public enum MCPToolCatalog {
         case "canvas_open":        return try canvasOpen(args, host)
         case "canvas_save":        return try canvasSave(args, host)
         case "canvas_apply":       return try canvasApply(args, host)
+        case "canvas_read":        return try canvasRead(args, host)
+        case "canvas_vocab":       return try canvasVocab(args, host)
+        case "canvas_lint":        return try canvasLint(args, host)
+        case "canvas_undo":        return try canvasUndo(args, host)
         default:
             throw MCPError.notFound("unknown tool: \(name)")
         }
@@ -925,6 +933,125 @@ public enum MCPToolCatalog {
         case .unknownDoc(let m), .notCanvasFile(let m), .loadFailed(let m),
              .saveFailed(let m), .untitledNeedsPath(let m):
             return m
+        }
+    }
+
+
+    private static let canvasReadDescriptor = MCP.ToolDescriptor(
+        name: "canvas_read",
+        description: "Read a canvas doc back as canonical DSL — the whole page, or one "
+            + "subtree via `anchor` (e.g. \"#hero\"). `format: \"json\"` returns the "
+            + "canonical document JSON instead. Returns {dsl|json, rev}.",
+        inputSchema: schema([
+            "doc":    .object(["type": .string("string")]),
+            "anchor": .object(["type": .string("string"),
+                               "description": .string("#name of the subtree to slice")]),
+            "format": .object(["type": .string("string"),
+                               "description": .string("\"dsl\" (default) or \"json\"")]),
+        ], required: ["doc"])
+    )
+
+    private static func canvasRead(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let doc = try canvasDoc(try args.string("doc"), host)
+        let rev = MCP.Value.int(Int(doc.lastKnownRev))
+        if (try? args.string("format")) == "json" {
+            do {
+                return .object(["json": .string(try doc.adapter.save()), "rev": rev])
+            } catch {
+                throw MCPError.toolFailed("canvas_read: \(error)")
+            }
+        }
+        do {
+            if let anchor = try? args.string("anchor") {
+                let name = anchor.hasPrefix("#") ? String(anchor.dropFirst()) : anchor
+                guard let slice = try doc.adapter.renderDSL(node: "nd:\(name)") else {
+                    throw MCPError.invalidParams(
+                        "no node '#\(name)' — canvas_read without anchor lists the page")
+                }
+                return .object(["dsl": .string(slice), "rev": rev])
+            }
+            return .object(["dsl": .string(try doc.adapter.renderDSL()), "rev": rev])
+        } catch let e as MCPError {
+            throw e
+        } catch {
+            throw MCPError.toolFailed("canvas_read: \(error)")
+        }
+    }
+
+    private static let canvasVocabDescriptor = MCP.ToolDescriptor(
+        name: "canvas_vocab",
+        description: "The FULL canvas authoring vocabulary (generated from the live "
+            + "registry — kinds, per-kind props with semantics, this doc's design tokens, "
+            + "caps, rejection kinds). `format: \"json\"` for the structured form.",
+        inputSchema: schema([
+            "doc":    .object(["type": .string("string"),
+                               "description": .string("Doc whose tokens to include (optional)")]),
+            "format": .object(["type": .string("string")]),
+        ])
+    )
+
+    private static func canvasVocab(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let asJSON = (try? args.string("format")) == "json"
+        do {
+            let adapter: CanvasDocAdapter
+            if let id = try? args.string("doc") {
+                adapter = try canvasDoc(id, host).adapter
+            } else {
+                adapter = try CanvasDocAdapter() // default-theme vocabulary
+            }
+            return .object(["vocabulary": .string(try adapter.vocabulary(asJSON: asJSON))])
+        } catch let e as MCPError {
+            throw e
+        } catch {
+            throw MCPError.toolFailed("canvas_vocab: \(error)")
+        }
+    }
+
+    private static let canvasLintDescriptor = MCP.ToolDescriptor(
+        name: "canvas_lint",
+        description: "Full-document lint (advisory: token health, tier-2 steering, holes, "
+            + "dangling refs, unclamped text). Returns {lint: [{severity, code, id, message}]}.",
+        inputSchema: schema([
+            "doc": .object(["type": .string("string")]),
+        ], required: ["doc"])
+    )
+
+    private static func canvasLint(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let doc = try canvasDoc(try args.string("doc"), host)
+        do {
+            let lint: [MCP.Value] = try doc.adapter.lintAll().map { f in
+                .object([
+                    "severity": .string(f.severity),
+                    "code": .string(f.code),
+                    "id": f.id.map { MCP.Value.string($0) } ?? .null,
+                    "message": .string(f.message),
+                ])
+            }
+            return .object(["lint": .array(lint)])
+        } catch {
+            throw MCPError.toolFailed("canvas_lint: \(error)")
+        }
+    }
+
+    private static let canvasUndoDescriptor = MCP.ToolDescriptor(
+        name: "canvas_undo",
+        description: "Undo the most recent applied batch (bounded history). Returns "
+            + "{rev, undone}; undone=false means the history was empty. Re-read after.",
+        inputSchema: schema([
+            "doc": .object(["type": .string("string")]),
+        ], required: ["doc"])
+    )
+
+    private static func canvasUndo(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let doc = try canvasDoc(try args.string("doc"), host)
+        do {
+            if let rev = try doc.adapter.undo() {
+                doc.lastKnownRev = rev
+                return .object(["rev": .int(Int(rev)), "undone": .bool(true)])
+            }
+            return .object(["rev": .int(Int(doc.lastKnownRev)), "undone": .bool(false)])
+        } catch {
+            throw MCPError.toolFailed("canvas_undo: \(error)")
         }
     }
 

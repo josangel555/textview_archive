@@ -143,6 +143,23 @@ public final class CanvasDocAdapter {
     /// Undo the last batch (nil = empty history); re-render via html().
     public func undo() throws -> UInt64? { try session.undo() }
 
+    /// Anchored-subtree DSL projection (nil = unknown id).
+    public func renderDSL(node id: String) throws -> String? {
+        try session.renderDSL(node: id)
+    }
+
+    /// Registry-generated vocabulary.
+    public func vocabulary(asJSON: Bool = false) throws -> String {
+        try session.vocabulary(asJSON: asJSON)
+    }
+
+    /// Full-document lint findings.
+    public func lintAll() throws -> [CanvasDocLint] {
+        try session.lintAll().map {
+            CanvasDocLint(severity: $0.severity, code: $0.code, id: $0.id, message: $0.message)
+        }
+    }
+
     /// Reopen from canonical JSON.
     public init(loading json: String) throws {
         session = try CanvasDocSession.load(json: json)

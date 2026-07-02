@@ -131,4 +131,78 @@ final class CanvasMCPToolsTests: XCTestCase {
             XCTAssertTrue(msg.contains("open docs:"), "\(msg)")
         }
     }
+
+    // MARK: M2.S4 — read-side tools (TSK-1369)
+
+    func test_read_wholePage_anchorSlice_and_json_forms() throws {
+        guard case .object(let n) = try call("canvas_new", [:]),
+              case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        _ = try call("canvas_apply", [
+            "doc": .string(doc), "baseRev": .int(0),
+            "dsl": .string("frame #hero gap=8 {\n  text #title \"readable\"\n}\ntext #tail \"outside\""),
+        ])
+        // Whole page.
+        guard case .object(let whole) = try call("canvas_read", ["doc": .string(doc)]),
+              case .string(let dsl)? = whole["dsl"] else { return XCTFail("read shape") }
+        XCTAssertTrue(dsl.contains("frame #hero"))
+        XCTAssertTrue(dsl.contains("text #tail"))
+        XCTAssertEqual(whole["rev"], .int(1))
+        // Anchor slice: contains the subtree, not the sibling.
+        guard case .object(let sliced) = try call("canvas_read", [
+            "doc": .string(doc), "anchor": .string("#hero"),
+        ]), case .string(let slice)? = sliced["dsl"] else { return XCTFail("slice shape") }
+        XCTAssertTrue(slice.contains("#title"))
+        XCTAssertFalse(slice.contains("#tail"), "slice must exclude siblings")
+        // Unknown anchor teaches.
+        XCTAssertThrowsError(try call("canvas_read", [
+            "doc": .string(doc), "anchor": .string("#nope"),
+        ])) { error in
+            guard case MCPError.invalidParams(let msg) = error else {
+                return XCTFail("expected invalidParams, got \(error)")
+            }
+            XCTAssertTrue(msg.contains("#nope"))
+        }
+        // JSON form parses and carries the format version.
+        guard case .object(let j) = try call("canvas_read", [
+            "doc": .string(doc), "format": .string("json"),
+        ]), case .string(let json)? = j["json"] else { return XCTFail("json shape") }
+        XCTAssertTrue(json.contains("\"formatVersion\":1"))
+    }
+
+    func test_vocab_lint_undo_tools_close_the_loop() throws {
+        // Vocab without a doc: default theme; with format json parses.
+        guard case .object(let v) = try call("canvas_vocab", [:]),
+              case .string(let vocab)? = v["vocabulary"] else { return XCTFail("vocab") }
+        XCTAssertTrue(vocab.contains("ELEMENTS AND THEIR PROPS"))
+        guard case .object(let vj) = try call("canvas_vocab", ["format": .string("json")]),
+              case .string(let vocabJSON)? = vj["vocabulary"] else { return XCTFail("vocab json") }
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(vocabJSON.utf8)) as? [String: Any])
+
+        // Lint: a hole surfaces through the tool.
+        guard case .object(let n) = try call("canvas_new", [:]),
+              case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        _ = try call("canvas_apply", [
+            "doc": .string(doc), "baseRev": .int(0),
+            "dsl": .string("hole #todo note=\"finish the chart\""),
+        ])
+        guard case .object(let l) = try call("canvas_lint", ["doc": .string(doc)]),
+              case .array(let lint)? = l["lint"] else { return XCTFail("lint shape") }
+        XCTAssertTrue(lint.contains { v in
+            if case .object(let f) = v, case .string(let code)? = f["code"] { return code == "hole" }
+            return false
+        }, "hole audit through the tool: \(lint)")
+
+        // Undo through the tool restores; empty history is data.
+        guard case .object(let u1) = try call("canvas_undo", ["doc": .string(doc)]) else {
+            return XCTFail("undo shape")
+        }
+        XCTAssertEqual(u1["undone"], .bool(true))
+        guard case .object(let read) = try call("canvas_read", ["doc": .string(doc)]),
+              case .string(let after)? = read["dsl"] else { return XCTFail("read") }
+        XCTAssertFalse(after.contains("#todo"), "undo removed the hole")
+        guard case .object(let u2) = try call("canvas_undo", ["doc": .string(doc)]) else {
+            return XCTFail("undo2 shape")
+        }
+        XCTAssertEqual(u2["undone"], .bool(false), "empty history is data, not an error")
+    }
 }

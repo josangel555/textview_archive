@@ -554,6 +554,15 @@ fn dsl_kind_word(kind: RecordKind) -> Option<&'static str> {
     })
 }
 
+/// Project ONE node (and its subtree) into canonical DSL — the `#anchor`
+/// slice `canvas_read` serves (M2.S4).
+#[must_use]
+pub fn render_subtree(store: &super::store::Store, id: &Id) -> String {
+    let mut out = String::new();
+    render_node(store, id, 0, &mut out);
+    out
+}
+
 /// Project the children of `parent` into canonical DSL. Round-trip law:
 /// applying `parse_fragment(render(store, parent), parent)` to an empty
 /// parent rebuilds the identical subtree (anchors preserved for nd: ids).
