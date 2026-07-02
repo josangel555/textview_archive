@@ -1,0 +1,502 @@
+//! Canvas M1.S3 — ops, inverses, revisions (TSK-1358; design 02-CORE-ENGINE §4).
+//!
+//! The ONLY write path: a batch of typed ops applies ATOMICALLY against a
+//! revisioned document — every op is fence-validated (S2) as it applies, and
+//! any failure ROLLS BACK the batch via the inverses collected so far, so a
+//! bad op can never leave a half-applied batch. Every applied batch yields
+//! its inverse (the undo unit) and bumps `rev` exactly once.
+//!
+//! Idempotent replays: `Insert` with a caller-supplied id that already exists
+//! with the SAME kind+parent+props is an Ok NO-OP (agent retry semantics,
+//! 07-DSL-SPIKE §0/§1); any other id collision is a typed error.
+
+use super::props::{PropBag, PropKey, Value};
+use super::registry::{self, FenceError, MAX_PROPS_PER_RECORD, MAX_RECORDS_PER_DOC};
+use super::store::{Id, Place, Position, Record, RecordKind, Store, StoreError};
+
+/// One canvas operation (the op layer's public vocabulary).
+#[derive(Debug, Clone, PartialEq)]
+pub enum CanvasOp {
+    Insert {
+        /// Caller-supplied id (idempotent retries) or None to mint.
+        id: Option<Id>,
+        kind: RecordKind,
+        parent: Id,
+        pos: Position,
+        props: Vec<(PropKey, Value)>,
+    },
+    Update {
+        id: Id,
+        set: Vec<(PropKey, Value)>,
+        unset: Vec<PropKey>,
+    },
+    Move {
+        id: Id,
+        parent: Id,
+        pos: Position,
+    },
+    Remove {
+        id: Id,
+    },
+}
+
+/// The exact-state inverse of one applied op (internal undo vocabulary —
+/// restores EXACT places/props, never re-mints indexes).
+#[derive(Debug, Clone)]
+pub enum UndoOp {
+    RemoveInserted(Id),
+    RestoreProps {
+        id: Id,
+        set: Vec<(PropKey, Value)>,
+        unset: Vec<PropKey>,
+    },
+    RestorePlace {
+        id: Id,
+        place: Option<Place>,
+    },
+    Resurrect(Vec<Record>),
+}
+
+/// Apply faults.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ApplyError {
+    /// Stale `base_rev` — the caller must re-query and retry (02 §4).
+    Conflict { current: u64 },
+    Fence(FenceError),
+    Store(StoreError),
+    /// Insert id collision with DIFFERENT content (not an idempotent replay).
+    IdInUse(String),
+}
+
+impl From<FenceError> for ApplyError {
+    fn from(e: FenceError) -> Self {
+        ApplyError::Fence(e)
+    }
+}
+impl From<StoreError> for ApplyError {
+    fn from(e: StoreError) -> Self {
+        ApplyError::Store(e)
+    }
+}
+
+/// A successfully applied batch.
+#[derive(Debug)]
+pub struct Applied {
+    pub rev: u64,
+    /// Inverses in REVERSE apply order — running them front-to-back undoes
+    /// the batch exactly.
+    pub inverses: Vec<UndoOp>,
+    /// Ids minted for `Insert { id: None }` ops, in op order.
+    pub minted: Vec<Id>,
+    /// True when every op was an idempotent replay (rev did NOT bump).
+    pub noop: bool,
+}
+
+/// A revisioned canvas document: the store + its monotonic revision.
+#[derive(Debug, Default)]
+pub struct DocState {
+    pub store: Store,
+    rev: u64,
+}
+
+impl DocState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn rev(&self) -> u64 {
+        self.rev
+    }
+
+    /// Apply `ops` atomically against `base_rev`.
+    pub fn apply(&mut self, base_rev: u64, ops: &[CanvasOp]) -> Result<Applied, ApplyError> {
+        if base_rev != self.rev {
+            return Err(ApplyError::Conflict { current: self.rev });
+        }
+        let mut inverses: Vec<UndoOp> = Vec::new();
+        let mut minted: Vec<Id> = Vec::new();
+        let mut mutated = false;
+        for op in ops {
+            match self.apply_one(op, &mut minted) {
+                Ok(Some(undo)) => {
+                    mutated = true;
+                    inverses.push(undo);
+                }
+                Ok(None) => {} // idempotent replay — no state change
+                Err(e) => {
+                    // Roll back everything this batch already applied.
+                    while let Some(undo) = inverses.pop() {
+                        self.run_undo(undo);
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        if mutated {
+            self.rev = self.rev.saturating_add(1);
+        }
+        inverses.reverse();
+        Ok(Applied {
+            rev: self.rev,
+            inverses,
+            minted,
+            noop: !mutated,
+        })
+    }
+
+    /// Undo a previously returned inverse list (front-to-back), bumping rev.
+    pub fn undo(&mut self, inverses: Vec<UndoOp>) {
+        let mutated = !inverses.is_empty();
+        for undo in inverses {
+            self.run_undo(undo);
+        }
+        if mutated {
+            self.rev = self.rev.saturating_add(1);
+        }
+    }
+
+    // MARK: internals
+
+    fn apply_one(
+        &mut self,
+        op: &CanvasOp,
+        minted: &mut Vec<Id>,
+    ) -> Result<Option<UndoOp>, ApplyError> {
+        match op {
+            CanvasOp::Insert {
+                id,
+                kind,
+                parent,
+                pos,
+                props,
+            } => {
+                if self.store.len() >= MAX_RECORDS_PER_DOC {
+                    return Err(FenceError::CapExceeded("records per doc").into());
+                }
+                if props.len() > MAX_PROPS_PER_RECORD {
+                    return Err(FenceError::CapExceeded("props per record").into());
+                }
+                // Fence EVERY prop before any mutation.
+                for (k, v) in props {
+                    registry::check_prop(*kind, *k, v)?;
+                }
+                // Idempotent replay probe (caller-supplied ids only).
+                if let Some(existing_id) = id
+                    && let Some(existing) = self.store.get(existing_id)
+                {
+                    let same_kind = existing.kind == *kind;
+                    let same_parent =
+                        existing.place.as_ref().map(|p| &p.parent) == Some(parent);
+                    let mut replay_bag = PropBag::new();
+                    for (k, v) in props {
+                        replay_bag.set(*k, v.clone());
+                    }
+                    if same_kind && same_parent && existing.props == replay_bag {
+                        return Ok(None); // replay — already applied
+                    }
+                    return Err(ApplyError::IdInUse(existing_id.as_str().to_owned()));
+                }
+                let new_id = match id {
+                    Some(supplied) => supplied.clone(),
+                    None => {
+                        let m = self.store.mint_id("nd")?;
+                        minted.push(m.clone());
+                        m
+                    }
+                };
+                self.store.insert(new_id.clone(), *kind, parent, pos)?;
+                let bag = self.store.props_mut(&new_id)?;
+                for (k, v) in props {
+                    bag.set(*k, v.clone());
+                }
+                Ok(Some(UndoOp::RemoveInserted(new_id)))
+            }
+            CanvasOp::Update { id, set, unset } => {
+                let Some(rec) = self.store.get(id) else {
+                    return Err(StoreError::UnknownId(id.as_str().to_owned()).into());
+                };
+                let kind = rec.kind;
+                if rec.props.len() + set.len() > MAX_PROPS_PER_RECORD {
+                    return Err(FenceError::CapExceeded("props per record").into());
+                }
+                for (k, v) in set {
+                    registry::check_prop(kind, *k, v)?;
+                }
+                for k in unset {
+                    registry::check_allowed(kind, *k)?;
+                }
+                // Capture the inverse BEFORE mutating.
+                let mut inv_set: Vec<(PropKey, Value)> = Vec::new();
+                let mut inv_unset: Vec<PropKey> = Vec::new();
+                for (k, _) in set {
+                    match rec.props.get(*k) {
+                        Some(old) => inv_set.push((*k, old.clone())),
+                        None => inv_unset.push(*k),
+                    }
+                }
+                for k in unset {
+                    if let Some(old) = rec.props.get(*k) {
+                        inv_set.push((*k, old.clone()));
+                    }
+                }
+                let bag = self.store.props_mut(id)?;
+                for (k, v) in set {
+                    bag.set(*k, v.clone());
+                }
+                for k in unset {
+                    bag.unset(*k);
+                }
+                Ok(Some(UndoOp::RestoreProps {
+                    id: id.clone(),
+                    set: inv_set,
+                    unset: inv_unset,
+                }))
+            }
+            CanvasOp::Move { id, parent, pos } => {
+                let Some(rec) = self.store.get(id) else {
+                    return Err(StoreError::UnknownId(id.as_str().to_owned()).into());
+                };
+                let old_place = rec.place.clone();
+                self.store.move_to(id, parent, pos)?;
+                Ok(Some(UndoOp::RestorePlace {
+                    id: id.clone(),
+                    place: old_place,
+                }))
+            }
+            CanvasOp::Remove { id } => {
+                let removed = self.store.remove(id)?;
+                Ok(Some(UndoOp::Resurrect(removed)))
+            }
+        }
+    }
+
+    fn run_undo(&mut self, undo: UndoOp) {
+        // Undo ops restore states this engine itself captured; a failure here
+        // means internal inconsistency — surface loudly in debug, tolerate in
+        // release (the store stays valid either way).
+        match undo {
+            UndoOp::RemoveInserted(id) => {
+                let r = self.store.remove(&id);
+                debug_assert!(r.is_ok(), "undo remove failed: {r:?}");
+            }
+            UndoOp::RestoreProps { id, set, unset } => {
+                if let Ok(bag) = self.store.props_mut(&id) {
+                    for (k, v) in set {
+                        bag.set(k, v);
+                    }
+                    for k in unset {
+                        bag.unset(k);
+                    }
+                }
+            }
+            UndoOp::RestorePlace { id, place } => {
+                let r = self.store.set_place(&id, place);
+                debug_assert!(r.is_ok(), "undo place failed: {r:?}");
+            }
+            UndoOp::Resurrect(records) => {
+                let r = self.store.resurrect(records);
+                debug_assert!(r.is_ok(), "undo resurrect failed: {r:?}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn id(s: &str) -> Id {
+        Id::parse(s).expect("id")
+    }
+    fn key(name: &str) -> PropKey {
+        PropKey::by_name(name).expect("key")
+    }
+
+    fn doc_with_page() -> (DocState, Id) {
+        let mut d = DocState::new();
+        let pg = id("pg:1");
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        (d, pg)
+    }
+
+    fn insert_text(ids: &str, parent: &Id, text: &str) -> CanvasOp {
+        CanvasOp::Insert {
+            id: Some(id(ids)),
+            kind: RecordKind::Text,
+            parent: parent.clone(),
+            pos: Position::Last,
+            props: vec![(key("text"), Value::Str(text.to_owned()))],
+        }
+    }
+
+    #[test]
+    fn apply_bumps_rev_and_undo_restores_fingerprint() {
+        let (mut d, pg) = doc_with_page();
+        let before = d.store.fingerprint();
+        let applied = d
+            .apply(0, &[insert_text("nd:a", &pg, "hello")])
+            .expect("apply");
+        assert_eq!(applied.rev, 1);
+        assert_ne!(d.store.fingerprint(), before);
+        d.undo(applied.inverses);
+        assert_eq!(d.store.fingerprint(), before, "undo must restore exactly");
+        assert_eq!(d.rev(), 2, "undo is itself a revision");
+    }
+
+    #[test]
+    fn stale_base_rev_conflicts_with_current() {
+        let (mut d, pg) = doc_with_page();
+        d.apply(0, &[insert_text("nd:a", &pg, "x")]).expect("first");
+        let err = d.apply(0, &[insert_text("nd:b", &pg, "y")]).expect_err("stale");
+        assert_eq!(err, ApplyError::Conflict { current: 1 });
+    }
+
+    #[test]
+    fn failing_op_rolls_back_the_whole_batch() {
+        let (mut d, pg) = doc_with_page();
+        let before = d.store.fingerprint();
+        // Second op violates the fence (text prop on a frame).
+        let batch = [
+            insert_text("nd:ok", &pg, "fine"),
+            CanvasOp::Insert {
+                id: Some(id("nd:bad")),
+                kind: RecordKind::Frame,
+                parent: pg.clone(),
+                pos: Position::Last,
+                props: vec![(key("text"), Value::Str("nope".to_owned()))],
+            },
+        ];
+        let err = d.apply(0, &batch).expect_err("fence");
+        assert!(matches!(err, ApplyError::Fence(FenceError::PropNotAllowed { .. })));
+        assert_eq!(d.store.fingerprint(), before, "no partial application");
+        assert_eq!(d.rev(), 0, "failed batch must not bump rev");
+        assert!(d.store.get(&id("nd:ok")).is_none());
+    }
+
+    #[test]
+    fn insert_replay_with_same_content_is_idempotent_noop() {
+        let (mut d, pg) = doc_with_page();
+        let op = insert_text("nd:a", &pg, "hello");
+        let first = d.apply(0, std::slice::from_ref(&op)).expect("first");
+        assert_eq!(first.rev, 1);
+        // Replay (e.g. an agent retry after a lost reply): Ok, no rev bump.
+        let replay = d.apply(1, std::slice::from_ref(&op)).expect("replay");
+        assert!(replay.noop);
+        assert_eq!(replay.rev, 1);
+        // Same id, DIFFERENT content: typed error.
+        let clash = insert_text("nd:a", &pg, "different");
+        assert!(matches!(
+            d.apply(1, &[clash]).expect_err("clash"),
+            ApplyError::IdInUse(_)
+        ));
+    }
+
+    #[test]
+    fn update_inverse_restores_prior_values_and_absences() {
+        let (mut d, pg) = doc_with_page();
+        d.apply(0, &[insert_text("nd:a", &pg, "v1")]).expect("seed");
+        let before = d.store.fingerprint();
+        let applied = d
+            .apply(
+                1,
+                &[CanvasOp::Update {
+                    id: id("nd:a"),
+                    set: vec![
+                        (key("text"), Value::Str("v2".to_owned())),
+                        (key("color"), Value::Token("color.accent".to_owned())),
+                    ],
+                    unset: vec![],
+                }],
+            )
+            .expect("update");
+        d.undo(applied.inverses);
+        assert_eq!(d.store.fingerprint(), before);
+    }
+
+    #[test]
+    fn move_inverse_restores_exact_place_and_remove_resurrects_subtree() {
+        let (mut d, pg) = doc_with_page();
+        d.apply(
+            0,
+            &[
+                CanvasOp::Insert {
+                    id: Some(id("nd:f")),
+                    kind: RecordKind::Frame,
+                    parent: pg.clone(),
+                    pos: Position::Last,
+                    props: vec![],
+                },
+                insert_text("nd:a", &pg, "a"),
+            ],
+        )
+        .expect("seed");
+        let before = d.store.fingerprint();
+        // Move then undo.
+        let moved = d
+            .apply(
+                1,
+                &[CanvasOp::Move {
+                    id: id("nd:a"),
+                    parent: id("nd:f"),
+                    pos: Position::First,
+                }],
+            )
+            .expect("move");
+        d.undo(moved.inverses);
+        assert_eq!(d.store.fingerprint(), before);
+        // Remove the frame subtree then undo.
+        let rev = d.rev();
+        let removed = d
+            .apply(rev, &[CanvasOp::Remove { id: id("nd:f") }])
+            .expect("remove");
+        d.undo(removed.inverses);
+        assert_eq!(d.store.fingerprint(), before);
+    }
+
+    proptest! {
+        /// apply ∘ undo = identity over arbitrary VALID batches.
+        #[test]
+        fn apply_then_undo_is_identity(seed in proptest::collection::vec(0u8..4, 1..30)) {
+            let (mut d, pg) = doc_with_page();
+            // Seed some structure.
+            d.apply(0, &[
+                CanvasOp::Insert { id: Some(id("nd:f")), kind: RecordKind::Frame,
+                    parent: pg.clone(), pos: Position::Last, props: vec![] },
+                insert_text("nd:t1", &pg, "one"),
+                insert_text("nd:t2", &pg, "two"),
+            ]).expect("seed");
+            let before = d.store.fingerprint();
+            let base = d.rev();
+            // Build a batch from the seed bytes.
+            let mut batch: Vec<CanvasOp> = Vec::new();
+            for (i, b) in seed.iter().enumerate() {
+                match b {
+                    0 => batch.push(CanvasOp::Insert {
+                        id: None, kind: RecordKind::Text, parent: pg.clone(),
+                        pos: Position::Last,
+                        props: vec![(key("text"), Value::Str(format!("gen{i}")))],
+                    }),
+                    1 => batch.push(CanvasOp::Update {
+                        id: id("nd:t1"),
+                        set: vec![(key("text"), Value::Str(format!("upd{i}")))],
+                        unset: vec![],
+                    }),
+                    2 => batch.push(CanvasOp::Move {
+                        id: id("nd:t2"), parent: id("nd:f"), pos: Position::First,
+                    }),
+                    _ => batch.push(CanvasOp::Update {
+                        id: id("nd:t2"),
+                        set: vec![(key("color"), Value::Token("color.fg".to_owned()))],
+                        unset: vec![(key("font"))],
+                    }),
+                }
+            }
+            let applied = d.apply(base, &batch).expect("apply");
+            d.undo(applied.inverses);
+            prop_assert_eq!(d.store.fingerprint(), before);
+        }
+    }
+}

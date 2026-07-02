@@ -205,14 +205,15 @@ impl RecordKind {
     }
 }
 
-/// One stored record. Payload (props/styles) arrives with S2's registry —
-/// S1 owns identity, kind, and placement.
+/// One stored record: identity, kind, placement, and the S2 prop bag.
 #[derive(Debug, Clone)]
 pub struct Record {
     pub id: Id,
     pub kind: RecordKind,
     /// `None` = a root record (a page). Everything else is placed.
     pub place: Option<Place>,
+    /// Typed properties (S2: interned keys, fence-validated by the op layer).
+    pub props: super::props::PropBag,
 }
 
 /// Where to insert/move within a parent's sibling list.
@@ -316,9 +317,59 @@ impl Store {
                 id,
                 kind,
                 place: None,
+                props: super::props::PropBag::new(),
             },
         );
         Ok(())
+    }
+
+    /// Mutable prop access for the op layer (which owns fence validation).
+    pub fn props_mut(&mut self, id: &Id) -> Result<&mut super::props::PropBag, StoreError> {
+        self.records
+            .get_mut(id)
+            .map(|r| &mut r.props)
+            .ok_or_else(|| StoreError::UnknownId(id.as_str().to_owned()))
+    }
+
+    /// Restore a record's EXACT place (undo path — no index re-mint).
+    pub fn set_place(&mut self, id: &Id, place: Option<Place>) -> Result<(), StoreError> {
+        let Some(rec) = self.records.get_mut(id) else {
+            return Err(StoreError::UnknownId(id.as_str().to_owned()));
+        };
+        rec.place = place;
+        Ok(())
+    }
+
+    /// Re-insert previously-removed records VERBATIM (the undo of a subtree
+    /// remove). The ONLY path that clears a tombstone — an undo legitimately
+    /// resurrects ids; ordinary inserts still never reuse them.
+    pub fn resurrect(&mut self, records: Vec<Record>) -> Result<(), StoreError> {
+        for rec in &records {
+            if self.records.contains_key(&rec.id) {
+                return Err(StoreError::DuplicateId(rec.id.as_str().to_owned()));
+            }
+        }
+        for rec in records {
+            self.tombstones.remove(&rec.id);
+            self.records.insert(rec.id.clone(), rec);
+        }
+        Ok(())
+    }
+
+    /// A deterministic content fingerprint (sorted id → kind/place/props dump)
+    /// for equality-style assertions that must ignore mint counters.
+    #[must_use]
+    pub fn fingerprint(&self) -> String {
+        let mut ids: Vec<&Id> = self.records.keys().collect();
+        ids.sort();
+        let mut out = String::new();
+        for id in ids {
+            let Some(r) = self.records.get(id) else { continue };
+            out.push_str(id.as_str());
+            out.push('=');
+            out.push_str(&format!("{:?}|{:?}|{:?};", r.kind, r.place, r.props));
+        }
+        out
     }
 
     /// Insert a placed record under `parent` at `pos`. The id must be fresh
@@ -342,6 +393,7 @@ impl Store {
                     parent: parent.clone(),
                     index,
                 }),
+                props: super::props::PropBag::new(),
             },
         );
         Ok(())
@@ -375,8 +427,9 @@ impl Store {
         Ok(())
     }
 
-    /// Remove a record AND its subtree; all removed ids tombstone.
-    pub fn remove(&mut self, id: &Id) -> Result<Vec<Id>, StoreError> {
+    /// Remove a record AND its subtree; all removed ids tombstone. Returns the
+    /// removed RECORDS verbatim — the op layer's inverse resurrects them.
+    pub fn remove(&mut self, id: &Id) -> Result<Vec<Record>, StoreError> {
         if !self.records.contains_key(id) {
             return Err(StoreError::UnknownId(id.as_str().to_owned()));
         }
@@ -386,9 +439,9 @@ impl Store {
             for kid in self.children(&current) {
                 stack.push(kid);
             }
-            if self.records.remove(&current).is_some() {
+            if let Some(rec) = self.records.remove(&current) {
                 self.tombstones.insert(current.clone());
-                removed.push(current);
+                removed.push(rec);
             }
         }
         Ok(removed)
