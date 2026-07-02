@@ -220,11 +220,24 @@ custom properties; a document restyles by swapping tier-1 values.
   (`after: "tl:intro.end+0.3s"`) and **named beats** (`beat:reveal`) — agents sequence against
   beats; humans nudge beat times in the editor without touching structure (Motion Canvas
   time-events seam).
-- **Behaviors v1** = closed verb set (`gotoPage`, `setState`, `showTooltip`, `playTo(beat)`,
-  `openUrl`(policy-gated), `postMessage`(vetted)) hung on events. **Escalation path** (when a
-  mode needs real state): Rive/XState-shaped **state machine records** — named states, typed
-  inputs (bool/number/trigger), guarded transitions with mix durations. Documents stay data,
-  never programs (PostScript anti-decision).
+- **Runtime dynamism ladder (owner directive 2026-07-01: "pages must be able to be dynamic
+  with JS") — the behavior twin of the CSS ladder (§3b).** Documents stay data-FIRST; script
+  is a contained upper rung, never the default. Lint steers down-ladder:
+
+  | Rung | Mechanism | Nature |
+  |---|---|---|
+  | **B0** | Declarative **bindings** (data→props) + `conditional`/`repeat` | pure data; exportable, diffable, morphable |
+  | **B1** | Closed **verb set** on events (`gotoPage`, `setState`, `showTooltip`, `playTo(beat)`, `openUrl`·policy-gated, `postMessage`·vetted, `submit(sink)`) | interpreted actions |
+  | **B2** | **State machines** (Rive/XState shape: named states, typed inputs, guarded transitions, mix durations) | formal, verifiable interactivity |
+  | **B3** | **Expressions** — pure computed values in bindings/guards (`value: =sum(data.rev.usd)`, `visibleWhen: =state.tab == "b"`), dependency-tracked recompute (the signals paradigm). **Reuses the in-tree Rust FormulaEngine** (already ported, owner-approved — verify wiring at build time): deterministic, side-effect-free, zero new deps. | spreadsheet-grade logic, still data |
+  | **B4** | **Script nodes/handlers — real JS, sandboxed.** Runs in an isolated context (sandboxed iframe/worker) against a **capability API** (`canvas.state.get/set`, `canvas.data.read/subscribe`, `canvas.emit(verb)`, `canvas.on(event)`, scoped DOM only within the node's own subtree island) — never raw DOM over the document, never network beyond the declared data contract (§10b). | the "dynamic with JS" rung — contained |
+  | **B5** | **Code components** (plugin-registered, full power) | the last mile |
+
+  B0–B3 are fully semantic to the engine (lint/morph/`timeline_state`/export reason about
+  them); B4/B5 are opaque islands with declared inputs/outputs. The PostScript line holds in
+  refined form: *the document's structure is never computed by scripts* — scripts read/write
+  state and data, the engine owns the tree. (This refines Q5: `embed` stays HTML/CSS-only;
+  sanctioned script lives in B4's capability sandbox instead — Q14.)
 - **Morph transitions** (the signature): between two pages/steps the engine computes the
   **identity set-diff** — matched IDs interpolate (FLIP over WAAPI), enter/leave partitions
   fade — deterministic because IDs are real, with `morphKey` to force cross-node
@@ -256,6 +269,32 @@ the JS shell is a dumb applier. Full re-lower = the recovery path, never the edi
 **Export:** standalone HTML (records + player + assets inlined; the player interprets the same
 document — runtime-interpreted, not codegen, per the Lona lesson) · PDF/PNG via the shell.
 Framework code export = later tier (Q10), one-way and disposable, never re-imported.
+
+### 10b. Dynamic outputs & the declared data contract (owner question 2026-07-01)
+
+**Exports are NOT static sites.** A standalone export = the records + the player = a
+**client-side dynamic app**: state, interactions, state machines, expressions, timelines, and
+script-rung islands all run in the exported bundle. It *deploys* like a static asset (any
+static host) but *behaves* like an app.
+
+**Dynamic-site situations — the data contract.** Where a page needs a backend, the document
+declares its I/O instead of embedding it:
+- **Sources:** a data block is `static` · `watchedFile` (in-app, FileWatcher) · `endpoint`
+  (HTTP GET/poll — declared URL + shape, policy-gated). Live re-bind is the same mechanism
+  regardless of source.
+- **Sinks:** `submit(sink)` verbs post to a declared sink (HTTP POST/webhook · `postMessage` ·
+  file). Forms/configurators stop at the sink boundary.
+- **Security is per-surface:** in-app canvases keep `connect-src 'none'` (sources proxied by
+  the Swift shell, policy-gated); an exported bundle gets a CSP allowing **exactly the declared
+  origins**, listed in an export manifest the owner can read. Nothing undeclared ever talks.
+
+**Whose concern is the backend?** Out of **Canvas's** scope (the §04 boundary: no routing/
+auth/DB — Canvas never becomes a platform) but **not out of the agent's**: the agent builds
+the backend with its normal tools and wires it to the contract Canvas declares — the contract
+is the handshake between the two workstreams. And for in-app "dynamic content" there is a
+third path with no backend at all: **server/agent-driven canvases** — any service or agent
+streams *ops* to a live document over the op/events channel (the SDUI pattern; the remote-core
+goal makes this first-class) — live dashboards without the document containing a line of code.
 
 ## 10. Events & queries
 

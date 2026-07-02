@@ -68,7 +68,7 @@ Support the *authoring/layout*; never become the specialized *runtime*:
 | Video NLE / motion-graphics editor / DAW | multi-track media decode/scrub/audio | motion *templates* (CSS/WAAPI-grade); not an editor |
 | Photo compositing / raster editing | pixel buffers, masks, pixel blend | image placement + CSS filters; the image editor stays its own feature |
 | 3D / AR | 3D scene graph, camera, lighting | out of scope |
-| Micro-apps with backends | routing/auth/DB = a platform | emit front-ends; stop at the data-sink boundary |
+| Micro-apps with backends | routing/auth/DB = a platform | emit **client-side dynamic apps** + a **declared data contract** (sources/sinks — `02` §10b); the backend is the agent's separate workstream wired to that contract, never Canvas's |
 | Commercial prepress | CMYK/bleed/imposition | office-grade RGB PDF only |
 | Games | 60fps loop/physics/input | level *layout* export at most |
 | 10³–10⁴-node boards/diagrams | DOM rendering collapses | not a distortion but a **scaling fork** (virtualize or canvas-backend) — trigger only if such a use-case is ever prioritized (Q3 rider) |
