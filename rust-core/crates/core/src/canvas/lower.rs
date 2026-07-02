@@ -283,6 +283,12 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
 
     let style = style_of(store, id);
     let get = |name: &str| PropKey::by_name(name).and_then(|k| rec.props.get(k));
+    // Artboard chrome (M5.S2): role=artboard frames read as design
+    // viewports — an outline + a label strip (the note text), all
+    // token-colored so chrome rethemes with the document. Ordinary frames
+    // are untouched (the thin-mode law: chrome keys on the PROP).
+    let is_artboard = rec.kind.can_parent()
+        && matches!(get("role"), Some(Value::Str(s)) if s == "artboard");
 
     match rec.kind {
         RecordKind::Image => {
@@ -309,12 +315,30 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
             out.push_str(" data-cv-kind=\"");
             out.push_str(super::registry::kind_name(rec.kind));
             out.push('"');
-            if !style.is_empty() {
+            if is_artboard {
+                let mut chromed = style.clone();
+                chromed.push_str(
+                    "outline:1px solid var(--cv-color-border);outline-offset:4px;",
+                );
+                out.push_str(" style=\"");
+                escape_attr(&chromed, out);
+                out.push('"');
+            } else if !style.is_empty() {
                 out.push_str(" style=\"");
                 escape_attr(&style, out);
                 out.push('"');
             }
             out.push('>');
+            if is_artboard && let Some(Value::Str(label)) = get("note") {
+                // The label strip: plain chrome (no data-cv-id — it is not
+                // an addressable node; selection/geometry stay content-true).
+                out.push_str(
+                    "<div style=\"font:600 11px -apple-system, sans-serif;\
+                     color:var(--cv-color-muted);margin:-2px 0 6px 0\">",
+                );
+                escape_text(label, out);
+                out.push_str("</div>");
+            }
             match rec.kind {
                 RecordKind::Text => {
                     if let Some(replacement) = ctx.override_for(id) {
@@ -1197,6 +1221,38 @@ mod tests {
         assert!(html2.contains("invalid chart spec"));
         let findings = crate::canvas::lint::run(&d, &tokens);
         assert!(findings.iter().any(|f| f.code == "chart-spec-invalid"));
+    }
+
+    // MARK: M5.S2 — artboard chrome
+
+    #[test]
+    fn artboards_get_labeled_chrome_and_plain_frames_do_not() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        let dsl_src = "frame #board role=artboard note=\"Desktop — 1280\" minW=1280 maxW=1280 {\n  text #inside \"content\"\n}\nframe #plain gap=8 {\n  text #other \"plain\"\n}";
+        let ops = crate::canvas::dsl::parse_fragment(dsl_src, &pg).expect("parse");
+        d.apply(0, &ops).expect("apply");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        // The artboard: outline + the label strip (token-colored chrome).
+        assert!(html.contains("outline:1px solid var(--cv-color-border)"), "{html}");
+        assert!(html.contains(">Desktop — 1280</div>"), "label renders");
+        assert!(html.contains("var(--cv-color-muted)"), "chrome rethemes");
+        // The plain frame: NO chrome (count the outline exactly once).
+        assert_eq!(html.matches("outline:1px solid").count(), 1);
+        // The label is NOT addressable (no data-cv-id on chrome): the label
+        // strip's opening tag carries only a style attribute.
+        assert!(
+            html.contains("margin:-2px 0 6px 0\">Desktop — 1280</div>"),
+            "the label renders inside the style-only chrome div"
+        );
+        assert!(
+            !html.contains("data-cv-id=\"nd:board\" data-cv-kind=\"frame\">Desktop"),
+            "the label is not the artboard node's direct text"
+        );
+        // Both artboard viewport presets live on the ADDRESSABLE node.
+        assert!(html.contains("min-width:1280px"));
     }
 
     #[test]

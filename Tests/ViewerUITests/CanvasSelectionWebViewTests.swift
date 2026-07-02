@@ -173,6 +173,21 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
                 return false
             }
         }
+        // M5.S2: an ARTBOARD fixture — the existing measured stage must
+        // flag content wider than the artboard's viewport (the responsive
+        // check's foundation), with the ordinary overflow rule (no new code).
+        let artboard = try adapter.applyDSL(
+            baseRev: try adapter.currentRev(),
+            "frame #board role=artboard note=\"Mobile\" minW=120 maxW=120 {\n" +
+            "  text #wide \"unbreakablerunoftextfarwiderthanthemobileartboardviewport\"\n}")
+        seq += 1
+        host.send(.applyPatches(seq: seq, patches: artboard.patches))
+        _ = await waitUntil(5) {
+            self.inbound.contains {
+                if case .applied(let got, _, _, _, _) = $0 { return got == self.seq }
+                return false
+            }
+        }
         seq += 1
         let replyId = seq
         host.send(.measureLint(replyId: replyId))
@@ -190,6 +205,8 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
                           "near-bg text flagged: \(findings)")
             XCTAssertFalse(findings.contains { $0.id == "nd:r0" },
                            "clean nodes stay quiet: \(findings)")
+            XCTAssertTrue(findings.contains { $0.code == "overflow" && $0.id == "nd:board" },
+                          "artboard-overflow (the responsive check) flags: \(findings)")
         }
     }
 
