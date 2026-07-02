@@ -21,9 +21,19 @@
   `textview://` URL-scheme verbs DRIVES but can't self-verify (no interactive readback verb — the
   `snapshot` verb defers to the caller). NEXT CONCRETE STEP: write a T4 LiveAppTestCase that
   user-drives a recent fix (CSV empty-state / image New-Image) + asserts state; run it on the VM.
+- **✅ VALIDATED CAPABILITY (2026-07-02, ran on VM): the hosting-test lane confirms real SwiftUI UI
+  WITHOUT screencapture.** `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_WEBVIEW_FILTER=<Suite>
+  bash scripts/test-in-vm.sh webview` builds + runs a WebViewTestCase/hosting suite that REALIZES the
+  SwiftUI view in an NSHostingView on the GUI lane and introspects its AX tree (buttons/labels/
+  structure present + realized, non-zero). PROVEN: EmptyStateNewImageHostingTests passed → the New
+  Image button is really rendered in the empty state (TSK-1054/1306 CONFIRMED working on the real app,
+  not just wired). So SwiftUI PRESENCE/STRUCTURE is agent-confirmable now; only true PIXEL/occlusion
+  compositing still needs TSK-1334. THIS is the practical UI-drive vehicle for SwiftUI polish: write/
+  run a hosting test that realizes the view + AX-asserts. (Gotcha: the `pixel` mode does NOT arm
+  MDV_RUN_WEBVIEW_TESTS inside the GUI bridge → tests SKIP; use the `webview` mode, which does.)
 - **Biggest unlock:** the owner granting **TSK-1334** (Screen-Recording on the VM xctest/app) turns
-  on real pixel confirmation for the whole render surface. Until then, per-feature validation ceiling
-  = real-app script-verb drive + model-state assert.
+  on real pixel/occlusion confirmation. Structure/presence is already confirmable via the webview
+  hosting lane (above); per-feature ceiling = hosting-lane AX-assert + real-app model-state.
 - The 5-min cron message was updated (job ae60ea77) to carry this discipline.
 
 ## 🔀 MISSION PIVOT (2026-07-02): Canvas PARKED → app-wide production-grade usability polish
