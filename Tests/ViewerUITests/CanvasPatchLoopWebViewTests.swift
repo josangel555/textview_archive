@@ -16,10 +16,15 @@ import ViewerCore
 @MainActor
 final class CanvasPatchLoopWebViewTests: WebViewTestCase {
 
+    /// SHARED webview per class (M3.S1b / TSK-1365 hardening): the M0
+    /// journal showed WebContent dying under repeated boots on the VM GUI
+    /// lane — one boot per class removes most of that churn. Each test
+    /// still gets a FRESH engine doc; setContent resets the DOM.
+    private static var sharedHost: CanvasWebViewHost?
+
     private var host: CanvasWebViewHost!
     private var adapter: CanvasDocAdapter!
     private var inbound: [CVInboundMessage] = []
-    private var window: NSWindow?
     private var rev: UInt64 = 0
     private var seq: UInt64 = 0
 
@@ -29,26 +34,39 @@ final class CanvasPatchLoopWebViewTests: WebViewTestCase {
         rev = 0
         seq = 0
         adapter = try CanvasDocAdapter()
-        host = CanvasWebViewHost()
+        if let existing = Self.sharedHost, existing.isReady, !existing.contentProcessDied {
+            host = existing
+        } else {
+            Self.sharedHost?.teardown()
+            // WINDOWLESS on purpose (M3.S1b): the proven-green in-process
+            // WebView suites (EditorScrollRestore etc.) never window-host,
+            // and the M0 journal showed window-hosting WORSENS boot on the
+            // VM GUI lane. WKWebView runs its runtime fine unattached.
+            let fresh = CanvasWebViewHost()
+            fresh.webView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+            Self.sharedHost = fresh
+            fresh.load()
+            host = fresh
+        }
         host.onInbound = { [weak self] msg in self?.inbound.append(msg) }
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.titled], backing: .buffered, defer: false)
-        w.contentView = host.webView
-        w.orderFrontRegardless()
-        window = w
-        host.load()
-        let ok = await waitUntil(5) { self.host.isReady }
+        let ok = await waitUntil(10) { self.host.isReady }
         try XCTSkipUnless(ok, "canvas.html runtime never posted ready")
     }
 
     override func tearDown() async throws {
-        host?.teardown()
-        window?.orderOut(nil)
-        window = nil
+        // The shared host survives the class; just detach this test's sink.
+        host?.onInbound = nil
         host = nil
         adapter = nil
         try await super.tearDown()
+    }
+
+    override class func tearDown() {
+        MainActor.assumeIsolated {
+            sharedHost?.teardown()
+            sharedHost = nil
+        }
+        super.tearDown()
     }
 
     // MARK: - helpers

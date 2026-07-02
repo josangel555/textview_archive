@@ -132,22 +132,15 @@ public final class CanvasWebViewHost: NSObject, WKNavigationDelegate {
     /// repeatedly; the postId set makes it idempotent against push.
     public func drainMissedReplies() {
         drainAttempts += 1
+        // Fire-and-forget: the drain RE-POSTS pending entries through the
+        // script-message channel (see canvas.js) — nothing rides the eval
+        // result, because eval results are themselves droppable on the VM's
+        // older WebKit (the M3.S1b finding). Deliveries arrive via
+        // receive(); the postId set dedups push/drain races.
         webView.evaluateJavaScript(
-            "window.__cvDrain ? window.__cvDrain(0) : \"[]\""
-        ) { [weak self] value, _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                guard let arrayJSON = value as? String,
-                    let data = arrayJSON.data(using: .utf8),
-                    let entries = (try? JSONSerialization.jsonObject(with: data)) as? [String]
-                else { return }
-                self.drainResults += 1
-                for json in entries {
-                    let before = self.deliveredPostIds.count
-                    self.deliver(json: json)
-                    if self.deliveredPostIds.count > before { self.drainDelivered += 1 }
-                }
-            }
+            "window.__cvDrain ? window.__cvDrain(0) : 0"
+        ) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.drainResults += 1 }
         }
     }
 

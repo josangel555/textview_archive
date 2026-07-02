@@ -16,13 +16,25 @@
   // the fast path; the drain closes the reliability gap.
   var postSeq = 0;
   window.__cvOutbox = [];
+  // M3.S1b transport fix: the drain RE-POSTS pending entries through the
+  // script-message channel instead of RETURNING them via the eval result —
+  // on the VM's older WebKit BOTH push posts (~30%) AND eval results drop,
+  // so a drain that answers through eval-return is built on the channel it
+  // exists to bypass. Re-posting gives each drain an independent retry
+  // (geometric recovery); the Swift SET-dedup absorbs duplicates. Returns a
+  // count (loss-tolerant).
   window.__cvDrain = function (after) {
-    var out = [];
+    var n = 0;
     for (var i = 0; i < window.__cvOutbox.length; i++) {
       var entry = window.__cvOutbox[i];
-      if (entry.postId > after) out.push(entry.json);
+      if (entry.postId > after) {
+        n += 1;
+        try {
+          window.webkit.messageHandlers.mdvCanvas.postMessage(entry.json);
+        } catch (e) { /* next drain retries */ }
+      }
     }
-    return JSON.stringify(out);
+    return n;
   };
 
   function post(msg) {

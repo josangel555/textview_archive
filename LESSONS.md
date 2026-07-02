@@ -5,6 +5,24 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Session 2026-07-02 (late) — VM webview lane: boot cured, channel-death residual (M3.S1b)
+
+- **Window-hosting a WKWebView in the VM GUI-lane tests breaks BOOT** (runtime never posts
+  ready). The proven-green in-process WebView suites never window-host; the canvas suites did
+  (an M0-era fix attempt that made things worse). WINDOWLESS shared hosts boot fine — after
+  this change 2 of 5 canvas VM tests pass instantly where 0 did. Rule: in-process WKWebView
+  tests stay unattached; only spawned-app tiers (T4/T5) get windows.
+- **Never ship data through eval RETURN VALUES on this lane** — both push posts (~30%) AND
+  eval results drop on the VM's macOS-15 WebKit. The M0 drain answered through eval-return —
+  built on the channel it existed to bypass. Drains now RE-POST through the script-message
+  channel (geometric retry; Swift SET-dedup absorbs duplicates).
+- **Residual (TSK-1365, escalated):** specific tests see WHOLE-CHANNEL death (every ack lost
+  for 200+ consecutive seconds of 100ms drains) while adjacent tests on the SAME shared page
+  pass instantly — not the 30% flake, a distinct mode. Suspects logged on the ticket
+  (drain-flood self-DoS: __cvDrain(0) re-posts the WHOLE outbox every poll; first-boot
+  handler registration race). The local in-process lane (the M0 numbers' vehicle) stays the
+  validation fallback per M3-PLAN's pre-declared contingency.
+
 ## Session 2026-07-02 — Canvas M1 build lessons
 
 - **SwiftPM staleness trap, xctest-link variant: touching sources is NOT enough when only the
