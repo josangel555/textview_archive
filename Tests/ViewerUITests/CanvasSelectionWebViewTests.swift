@@ -210,6 +210,46 @@ final class CanvasSelectionWebViewTests: WebViewTestCase {
         }
     }
 
+    /// M5.S5 (UAT-M5 responsive check): the SAME content placed in a 1280
+    /// desktop artboard and a 390 mobile artboard — the measured stage flags
+    /// overflow ONLY inside the mobile artboard. This is the responsive
+    /// check's defining fixture, proven on the REAL page.
+    func test_responsive_check_flags_mobile_not_desktop() async throws {
+        // Two artboards, one wide unbroken run each (same content).
+        let run = String(repeating: "responsivewidthprobe", count: 5) // ~100 unbroken chars
+        let applied = try adapter.applyDSL(
+            baseRev: try adapter.currentRev(),
+            "frame #ab-desktop role=artboard minW=1280 maxW=1280 {\n" +
+            "  text #on-desktop \"\(run)\"\n}\n" +
+            "frame #ab-mobile role=artboard minW=390 maxW=390 {\n" +
+            "  text #on-mobile \"\(run)\"\n}")
+        seq += 1
+        host.send(.applyPatches(seq: seq, patches: applied.patches))
+        _ = await waitUntil(5) {
+            self.inbound.contains {
+                if case .applied(let got, _, _, _, _) = $0 { return got == self.seq }
+                return false
+            }
+        }
+        seq += 1
+        let replyId = seq
+        host.send(.measureLint(replyId: replyId))
+        let ok = await waitUntil(5) {
+            self.inbound.contains {
+                if case .measuredLint(let got, _) = $0 { return got == replyId }
+                return false
+            }
+        }
+        XCTAssertTrue(ok, "measured lint must reply")
+        for case let .measuredLint(got, findings) in inbound where got == replyId {
+            let overflows = Set(findings.filter { $0.code == "overflow" }.compactMap(\.id))
+            XCTAssertTrue(overflows.contains("nd:ab-mobile"),
+                          "the mobile artboard overflows: \(overflows)")
+            XCTAssertFalse(overflows.contains("nd:ab-desktop"),
+                           "the desktop artboard has room: \(overflows)")
+        }
+    }
+
     func test_escape_posts_the_intent() async throws {
         host.probe(
             """
