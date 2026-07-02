@@ -1,5 +1,23 @@
 <!-- CLAUDE-HANDOFF v1 -->
 
+## ⭐ UI-DRIVE VALIDATION DIRECTIVE (owner 2026-07-02) — confirm on the real app before "works"
+- Owner's concern is NOT "is it built" but "does it actually work FOR THE END USER." Before
+  concluding any feature is production-grade, DRIVE THE UI as a user on the real running app —
+  never conclude from code-read or host-test alone.
+- **Capability reality (record it, work within it):** no `mac-computer-use` MCP; AX-driven tests
+  are the one off-limits lane; screencapture PIXELS need the owner's **TSK-1334** grant (not given).
+  So TRUE visual/interaction confirmation is currently blocked. What IS available: launch
+  `dist/TextView.app` on the VM GUI lane and drive features via **script-verbs / in-app MCP
+  (AutomationHost)** — the real action path a user's gestures trigger — verifying via **model-state
+  dumps (DiagnosticDump/modelStateDump) + geometry/DOM queries** on the REAL running app (a genuine
+  step up from isolated host tests). Features whose action isn't a script-verb (e.g. a canvas paint
+  DRAG) can't be user-driven without AX/CGEvent → report "behavior host-tested; user-gesture drive
+  needs AX/pixel grant."
+- **Biggest unlock:** the owner granting **TSK-1334** (Screen-Recording on the VM xctest/app) turns
+  on real pixel confirmation for the whole render surface. Until then, per-feature validation ceiling
+  = real-app script-verb drive + model-state assert.
+- The 5-min cron message was updated (job ae60ea77) to carry this discipline.
+
 ## 🔀 MISSION PIVOT (2026-07-02): Canvas PARKED → app-wide production-grade usability polish
 - **Canvas (M0→M6) is COMPLETE + validated + hardened + PARKED pending owner review** (docs/canvas/
   README.md = review index; docs/canvas/plans/TIER2-BACKLOG.md = the deferred-features decision menu).
