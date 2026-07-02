@@ -14924,3 +14924,11 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - UAT-M1 journey (build via DSL → edit → undo → save → load → re-render identical)
   green at THREE layers: core (doc.rs), C ABI (ffi tests), Swift (CanvasUATM1Tests).
 - M1 slices: S1-S4, S6-S8 validated · S5 fixed (fuzz + VM parity pending) · S9 fixed.
+
+## 2026-07-02 — Canvas M2 S1-S5: the agent surface is LIVE (TSK-1366..1370)
+- 8 MCP tools (canvas_new/open/save/apply/read/vocab/lint/undo) through the standard
+  catalog+dispatch; rejections are DATA (conflict carries currentRev; dsl teaches verbatim);
+  lint rides every apply; #anchor subtree slices; registry-generated vocabulary (rot-proofed).
+- UAT-M2 GREEN: the full agent journey (discover→create→mistake-taught→build→read→
+  conflict-retry→lint-clean→undo→save→reopen→identical) over ONLY the MCP surface;
+  1k-node latency: apply p95 0.11ms, read p95 0.18ms vs the 20ms budget.
