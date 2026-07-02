@@ -241,3 +241,30 @@ incompleteness, and NOT a dishonest board. So TSK-1412 shrinks from "reconcile a
 board" to "refresh the lagging BACKLOG.md file + close the review-lane items whose only gap is
 the owner-gated render/AX confirmation." The real agent-actionable polish is the genuine gaps
 code-reads surface (e.g. the CSV empty-state, TSK-1415) + the thin spikes + cross-cutting bugs.
+
+### Pass 3 (2026-07-02) — UI-DRIVE VALIDATION on the REAL app (owner directive)
+
+Ran the existing T4/UAT suites on the VM GUI lane (`test-in-vm.sh pixel --filter …` — spawns the
+REAL `dist/TextView.app`, drives via real action paths, asserts model-state dumps). This is
+"act like a user on the real app," not code-read. **35/35 core-workflow tests PASSED:**
+
+| Suite | Tests | Real-app result |
+|---|---|---|
+| MultiFormatViewerUATTests | 2 | ✅ RTF + DOCX open → extracted text reaches the model |
+| ViewModesUATTests | 13 | ✅ md/source/hex/csv/json/diff/html modes, per-tab persistence, zoom, open-as routing, empty-file, error-state-keeps-tabs |
+| TabsAndWindowChromeUATTests | 10 | ✅ multi-tab lifecycle, symlink-dedup, async-loader-race (latest-wins), mode routing, status-bar coupling, zoom scaling |
+| SidebarFileTreeAndBookmarksUATTests | 10 | ✅ folder nav, tree, file+folder bookmarks PERSIST across launch, keyboard nav, git/folder-stats toggles, open-in-new-session |
+| EmptyStateNewImageHostingTests | 1 | ✅ New-Image button realized in the empty state (hosting-lane AX) |
+
+**Verdict (evidence-based, corrects "almost all unusable" for the CORE):** the core workflows —
+opening files across formats, all view modes, tab lifecycle/routing, sidebar+bookmarks — are
+UI-drive-CONFIRMED WORKING on the real app, not just code-wired. This extends the owner's own
+"editor/tabs/file-nav work" with hard real-app evidence and adds viewers/view-modes/bookmarks.
+(Caveat: UAT asserts model-state on the real spawned app — very strong for routing/persistence/
+lifecycle correctness; true PIXEL appearance is still the TSK-1334-gated tail.)
+
+**So the genuine usability work is NOT the core** — it's: (1) the less-central / exploratory
+features (finish-or-cut, TSK-1414); (2) code-found micro-gaps like the CSV empty-state (TSK-1415)
++ paint-undo (TSK-1416); (3) cross-cutting bugs (key-event routing TSK-1315); (4) the pixel/
+occlusion tail (TSK-1334). Next passes: run the remaining UAT suites (Cm6Editor, LSP, media) for a
+full core map, then drill the non-core features that lack UAT coverage.
