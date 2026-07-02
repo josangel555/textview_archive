@@ -9,6 +9,16 @@
   frame-wipe → fence rule; WebContent termination on the VM lane → **TSK-1365** hardening
   ticket, consumer deadline M1.S5's parity test). M0's demo engine lives in
   `rust-core/crates/core/src/canvas/mod.rs` + FFI `mdvcore_canvas_*` + `canvas.js` applier.
+- **POST-CHAIN HARDENING (2026-07-02, after M6): the engine's data-integrity is property-pinned
+  beyond the milestone bar.** All four untrusted-byte decoders now carry totality-fuzz
+  (json+wire pre-existing; TSK-1402 dsl parser, TSK-1403 io::load) + two correctness properties
+  (TSK-1404 io save∘load round-trip over the full M1-M6 prop/kind surface; TSK-1405 undo-identity
+  over the FULL op vocabulary incl. DefineComponent/Remove + fence atomicity). All dep-free
+  (xorshift/proptest in-tree), all teeth-verified, commits 3449b3bb/62b192c4/ca6b956f/8531afb4.
+  ⚠️ THE HARDENING VEIN IS NOW SATURATED — the decoders + round-trip + undo are all covered;
+  further fuzz/property ticks would be MARGINAL. Next genuinely-high-value work is OWNER-GATED
+  (TSK-1334 grant → T5 pixels) or awaits the owner's epic review. Do NOT manufacture more
+  marginal hardening; if the actionable non-owner-gated queue is truly dry, say so plainly.
 - **🏁 M6 COMPLETE (2026-07-02): Presentation mode — milestone TSK-1348 at FIXED, all 7
   slices validated (TSK-1395..1401, commits cb7e25f0..e2640d42). THE M0→M6 EPIC MILESTONE
   CHAIN IS COMPLETE.** Deck infra+slides, the step model (deck.rs timeline_state, proptest),
