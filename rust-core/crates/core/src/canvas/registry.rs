@@ -51,6 +51,8 @@ pub fn kind_name(kind: RecordKind) -> &'static str {
         RecordKind::Component => "component",
         RecordKind::Embed => "embed",
         RecordKind::Hole => "hole",
+        RecordKind::Table => "table",
+        RecordKind::Code => "code",
     }
 }
 
@@ -89,12 +91,22 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
     ];
     const EMBED: &[&str] = &["html", "minW", "maxW", "minH", "maxH", "grow", "shrink", "span"];
     const HOLE: &[&str] = &["note", "minW", "maxW", "minH", "maxH"];
+    const TABLE: &[&str] = &[
+        "data", "headers", "fill", "stroke", "radius", "opacity",
+        "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
+    ];
+    const CODE: &[&str] = &[
+        "text", "language", "fill", "radius", "opacity",
+        "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
+    ];
     match kind {
         RecordKind::Page | RecordKind::Frame => CONTAINER,
         RecordKind::Text => TEXT,
         RecordKind::Image => IMAGE,
         RecordKind::Shape => SHAPE,
         RecordKind::Component => COMPONENT,
+        RecordKind::Table => TABLE,
+        RecordKind::Code => CODE,
         RecordKind::Embed => EMBED,
         RecordKind::Hole => HOLE,
     }
@@ -131,9 +143,18 @@ pub fn check_value(key: PropKey, value: &Value) -> Result<(), FenceError> {
             }
             Ok(())
         }
+        // Table data: a JSON payload, text-cap sized (structure validated
+        // at lowering + lint; the fence caps bytes).
+        ("data", Value::Str(s)) => {
+            if s.len() > MAX_TEXT_LEN {
+                return Err(FenceError::CapExceeded("table data length"));
+            }
+            Ok(())
+        }
+        ("headers", Value::Bool(_)) => Ok(()),
         ("html" | "src" | "ref" | "note" | "role" | "font" | "fill" | "stroke" | "color"
             | "shadow" | "shape" | "fit" | "align" | "justify" | "direction"
-            | "overrides", Value::Str(s)) => {
+            | "overrides" | "language", Value::Str(s)) => {
             if s.len() > MAX_STRING_LEN {
                 return Err(FenceError::CapExceeded("string length"));
             }

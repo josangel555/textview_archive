@@ -227,12 +227,14 @@ fn parse_kind(word: &str, line_no: usize) -> Result<RecordKind, DslError> {
         "component" => RecordKind::Component,
         "embed" => RecordKind::Embed,
         "hole" => RecordKind::Hole,
+        "table" => RecordKind::Table,
+        "code" => RecordKind::Code,
         other => {
             return err(
                 line_no,
                 format!(
                     "unknown element '{other}' — elements are: frame, text, image, \
-                     shape, component, embed, hole"
+                     shape, component, embed, hole, table, code"
                 ),
             )
         }
@@ -736,6 +738,8 @@ fn dsl_kind_word(kind: RecordKind) -> Option<&'static str> {
         RecordKind::Component => "component",
         RecordKind::Embed => "embed",
         RecordKind::Hole => "hole",
+        RecordKind::Table => "table",
+        RecordKind::Code => "code",
         RecordKind::Page => return None, // pages are containers of fragments, not elements
     })
 }

@@ -221,6 +221,11 @@ pub enum RecordKind {
     Component,
     Embed,
     Hole,
+    /// Tabular data (M4.S7a): rows/cells from a JSON `data` prop, lowered
+    /// to a real `<table>`.
+    Table,
+    /// Pre-formatted code (M4.S7a): the `text` prop + a `language` tag.
+    Code,
 }
 
 impl RecordKind {

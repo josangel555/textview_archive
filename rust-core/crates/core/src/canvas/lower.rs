@@ -223,6 +223,18 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
         return;
     }
 
+    // Table (M4.S7a): a real <table> from the JSON data prop; malformed
+    // data renders a placeholder (lint warns — lowering stays total).
+    if rec.kind == RecordKind::Table {
+        emit_table(rec, &ctx.dom_id(id), store, id, out);
+        return;
+    }
+    // Code (M4.S7a): escaped <pre><code>, language as a data attribute.
+    if rec.kind == RecordKind::Code {
+        emit_code(rec, &ctx.dom_id(id), store, id, out);
+        return;
+    }
+
     let style = style_of(store, id);
     let get = |name: &str| PropKey::by_name(name).and_then(|k| rec.props.get(k));
 
@@ -280,6 +292,115 @@ fn emit(store: &Store, id: &Id, ctx: &ExpandCtx, out: &mut String) {
             out.push_str("</div>");
         }
     }
+}
+
+fn emit_table(
+    rec: &super::store::Record,
+    dom_id: &str,
+    store: &Store,
+    id: &Id,
+    out: &mut String,
+) {
+    let style = style_of(store, id);
+    out.push_str("<table data-cv-id=\"");
+    escape_attr(dom_id, out);
+    out.push_str("\" data-cv-kind=\"table\"");
+    if !style.is_empty() {
+        out.push_str(" style=\"");
+        escape_attr(&style, out);
+        out.push('"');
+    }
+    out.push('>');
+    let data = PropKey::by_name("data")
+        .and_then(|k| rec.props.get(k))
+        .and_then(|v| match v {
+            Value::Str(s) => parse_table_data(s),
+            _ => None,
+        });
+    let headers = PropKey::by_name("headers")
+        .and_then(|k| rec.props.get(k))
+        .is_some_and(|v| matches!(v, Value::Bool(true)));
+    match data {
+        Some(rows) => {
+            for (i, row) in rows.iter().enumerate() {
+                out.push_str("<tr>");
+                let cell_tag = if headers && i == 0 { "th" } else { "td" };
+                for cell in row {
+                    out.push('<');
+                    out.push_str(cell_tag);
+                    out.push('>');
+                    escape_text(cell, out);
+                    out.push_str("</");
+                    out.push_str(cell_tag);
+                    out.push('>');
+                }
+                out.push_str("</tr>");
+            }
+        }
+        None => out.push_str("<!-- invalid table data -->"),
+    }
+    out.push_str("</table>");
+}
+
+/// Lint's validity probe for table data (M4.S7a).
+#[must_use]
+pub fn table_data_is_valid(json: &str) -> bool {
+    parse_table_data(json).is_some()
+}
+
+/// Table data: a JSON array of rows of stringifiable cells.
+fn parse_table_data(json: &str) -> Option<Vec<Vec<String>>> {
+    let crate::json::JsonValue::Array(rows) = crate::json::parse(json).ok()? else {
+        return None;
+    };
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let crate::json::JsonValue::Array(cells) = row else { return None };
+        let mut cells_out = Vec::with_capacity(cells.len());
+        for cell in cells {
+            match cell {
+                crate::json::JsonValue::Str(s) => cells_out.push(s),
+                crate::json::JsonValue::Int(i) => cells_out.push(i.to_string()),
+                crate::json::JsonValue::Float(f) => cells_out.push(f.to_string()),
+                crate::json::JsonValue::Bool(b) => cells_out.push(b.to_string()),
+                _ => return None,
+            }
+        }
+        out.push(cells_out);
+    }
+    Some(out)
+}
+
+fn emit_code(
+    rec: &super::store::Record,
+    dom_id: &str,
+    store: &Store,
+    id: &Id,
+    out: &mut String,
+) {
+    let style = style_of(store, id);
+    out.push_str("<pre data-cv-id=\"");
+    escape_attr(dom_id, out);
+    out.push_str("\" data-cv-kind=\"code\"");
+    if let Some(Value::Str(lang)) = PropKey::by_name("language")
+        .and_then(|k| rec.props.get(k))
+    {
+        out.push_str(" data-cv-lang=\"");
+        escape_attr(lang, out);
+        out.push('"');
+    }
+    if !style.is_empty() {
+        out.push_str(" style=\"");
+        escape_attr(&style, out);
+        out.push('"');
+    }
+    out.push_str("><code>");
+    if let Some(Value::Str(text)) = PropKey::by_name("text")
+        .and_then(|k| rec.props.get(k))
+    {
+        escape_text(text, out);
+    }
+    out.push_str("</code></pre>");
 }
 
 /// Parse the instance `overrides` JSON (a flat object of anchor-id →
@@ -932,6 +1053,75 @@ mod tests {
         let saved = crate::canvas::io::save(&doc);
         let loaded = crate::canvas::io::load(&saved).expect("load");
         assert!(loaded.html().contains(">Persisted<"), "override survives save/load");
+    }
+
+    // MARK: M4.S7a — table + code kinds
+
+    #[test]
+    fn table_lowers_real_rows_with_headers_and_escaping() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(0, &[CanvasOp::Insert {
+            id: Some(id("nd:tbl")),
+            kind: RecordKind::Table,
+            parent: pg.clone(),
+            pos: Position::Last,
+            props: vec![
+                (key("data"),
+                 Value::Str("[[\"Plan\",\"Price\"],[\"Pro <b>\",\"$12\"]]".into())),
+                (key("headers"), Value::Bool(true)),
+            ],
+        }]).expect("tbl");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        assert!(html.contains("<table data-cv-id=\"nd:tbl\""));
+        assert!(html.contains("<th>Plan</th><th>Price</th>"), "{html}");
+        assert!(html.contains("<td>Pro &lt;b&gt;</td>"), "cells escape");
+        assert!(html.contains("<td>$12</td>"));
+    }
+
+    #[test]
+    fn invalid_table_data_renders_placeholder_and_lints() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(0, &[CanvasOp::Insert {
+            id: Some(id("nd:bad")),
+            kind: RecordKind::Table,
+            parent: pg.clone(),
+            pos: Position::Last,
+            props: vec![(key("data"), Value::Str("{\"not\": \"rows\"}".into()))],
+        }]).expect("bad");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        assert!(html.contains("invalid table data"), "total lowering");
+        let findings = crate::canvas::lint::run(&d, &tokens);
+        assert!(findings.iter().any(|f| f.code == "table-data-invalid"));
+    }
+
+    #[test]
+    fn code_lowers_escaped_pre_with_language() {
+        let mut d = DocState::new();
+        let pg = Id::page(1);
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(0, &[CanvasOp::Insert {
+            id: Some(id("nd:snippet")),
+            kind: RecordKind::Code,
+            parent: pg.clone(),
+            pos: Position::Last,
+            props: vec![
+                (key("text"), Value::Str("<script>alert(1)</script>".into())),
+                (key("language"), Value::Str("html".into())),
+            ],
+        }]).expect("code");
+        let tokens = TokenStore::default_theme();
+        let html = lower_page(&d.store, &tokens, &pg);
+        assert!(html.contains("<pre data-cv-id=\"nd:snippet\""));
+        assert!(html.contains("data-cv-lang=\"html\""));
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
+                "code NEVER injects: {html}");
+        assert!(!html.contains("<script>alert"), "no raw script");
     }
 
     #[test]

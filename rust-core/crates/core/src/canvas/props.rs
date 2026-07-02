@@ -45,6 +45,11 @@ const KEY_TABLE: &[(u16, &str)] = &[
     (28, "role"),
     // M4.S2: the instance text-override table (compact JSON, component-only).
     (29, "overrides"),
+    // M4.S7a: table cell data (JSON array-of-arrays) + header-row flag.
+    (30, "data"),
+    (31, "headers"),
+    // M4.S7a: code language tag.
+    (32, "language"),
 ];
 
 impl PropKey {

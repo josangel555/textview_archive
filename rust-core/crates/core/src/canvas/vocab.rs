@@ -22,6 +22,8 @@ const KINDS: &[RecordKind] = &[
     RecordKind::Component,
     RecordKind::Embed,
     RecordKind::Hole,
+    RecordKind::Table,
+    RecordKind::Code,
 ];
 
 /// Semantic notes the FENCE enforces (check_value) that prop names alone
@@ -45,6 +47,9 @@ fn prop_note(name: &str) -> Option<&'static str> {
         "wrap" => "true to allow wrapping",
         "fit" => "cover | contain | fill",
         "note" => "what this hole placeholder still needs",
+        "data" => "table cells: JSON array of rows, e.g. [[\"a\",\"b\"],[\"1\",\"2\"]]",
+        "headers" => "true = the first data row renders as headers",
+        "language" => "code language tag (display only in v1)",
         _ => return None,
     })
 }
@@ -233,7 +238,7 @@ mod tests {
         // And the kind LIST itself can't silently shrink: every name in the
         // prop key table that is kind-bound appears somewhere above (spot
         // guard; the registry matches are compiler-exhaustive).
-        assert_eq!(KINDS.len(), 8, "new RecordKind? extend KINDS + this test");
+        assert_eq!(KINDS.len(), 10, "new RecordKind? extend KINDS + this test");
     }
 
     #[test]

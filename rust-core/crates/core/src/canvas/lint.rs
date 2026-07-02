@@ -83,6 +83,22 @@ pub fn run(doc: &DocState, tokens: &TokenStore) -> Vec<Lint> {
                     });
                 }
             }
+            RecordKind::Table => {
+                let data_ok = PropKey::by_name("data")
+                    .and_then(|k| rec.props.get(k))
+                    .is_some_and(|v| matches!(v, Value::Str(s)
+                        if super::lower::table_data_is_valid(s)));
+                if !data_ok {
+                    findings.push(Lint {
+                        severity: LintSeverity::Warn,
+                        code: "table-data-invalid",
+                        id: Some(id.clone()),
+                        message: "table needs a `data` prop holding a JSON array of \
+                                  rows (e.g. [[\"a\",\"b\"],[\"1\",\"2\"]])"
+                            .to_owned(),
+                    });
+                }
+            }
             RecordKind::Text => {
                 let long = PropKey::by_name("text")
                     .and_then(|k| rec.props.get(k))
