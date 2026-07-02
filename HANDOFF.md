@@ -54,10 +54,18 @@
   finish-or-cut); script-verb↔dispatch CLEAN. GAP FOUND+FIXED: hosted-view tools (HTTP/feed/treemap/
   depgraph/walkthroughs) now ⌘K-palette-discoverable + a command↔verb cohesion regression guard
   (1c46b2a0, teeth). FeedReader-class accidental orphans = NONE remaining.
-- NEXT: (1) TSK-1413 remaining sub-gaps — audit ENV-VAR-ONLY entry points (MDV_START_AUDIO_EDIT /
-  MDV_UI_SCENE etc.: features reachable only via an env var → give real UI) + menu reorg (TSK-751/
-  1318). (2) code-found micro-gaps in reachable features. (3) pixel tail (TSK-1334) + editor-scroll
-  (TSK-1200) need the owner.
+- ENV-VAR-ONLY ENTRY AUDIT DONE (2026-07-02, audit Pass 9): CLEAN — no user feature is env-var-only
+  (MDV_START_IMAGE_EDIT/AUDIO_EDIT are T5 test shortcuts; both editors have real buttons — "Edit
+  image" + "waveform"; rest are harness/experimental/WIP). Also verified production-grade: audio MP3
+  export degradation, all search empty-states, all list-view empty-states (bookmarks/recent/action-
+  history). CSV empty-state (TSK-1415) was the one real empty-state gap — fixed.
+- ⚠️ HONEST STATE: the "find + fix a genuine micro-gap" vein is THINNING — audited surfaces are now
+  consistently production-grade (run's fixes: CSV empty-state, paint-undo, FeedReader wire, palette
+  discoverability + cohesion guard). Remaining known work is LARGER or OWNER-GATED, not micro-fixes:
+- NEXT: (1) TSK-1413 remainder = MENU REORG (TSK-751/1318) — a larger UX-design task. (2) TSK-1412 =
+  refresh the stale BACKLOG.md to match code (owner flagged it lags). (3) OWNER-GATED: pixel/occlusion
+  tail (TSK-1334 grant), editor-scroll (TSK-1200), the 2 WIP slices (TSK-1418 finish-or-cut). (4) if
+  hunting more micro-gaps, target deeper edge/error paths, not the main surfaces (those are verified).
 
 ## 🔀 MISSION PIVOT (2026-07-02): Canvas PARKED → app-wide production-grade usability polish
 - **Canvas (M0→M6) is COMPLETE + validated + hardened + PARKED pending owner review** (docs/canvas/
