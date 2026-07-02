@@ -370,6 +370,19 @@ public final class ImageEditorViewModel: ObservableObject {
     /// branch and enforces the cap (TSK-749).
     public func commitGeometry(_ op: EditOp) {
         assert(op.isCommittable, "commitGeometry expects a geometry/draw op; tonal ops ride the slider state")
+        // usability audit 2026-07-02: during a destructive paint session the painted
+        // buffer IS the visible document and SHADOWS base.ops in render(), so an op
+        // added only to base.ops was silently invisible AND lost on export (a user
+        // who painted then cropped/resized/rotated saw nothing happen). Transform the
+        // paint buffer THROUGH the op with the same Renderer so paint stays aligned
+        // with the geometry. (Draw ops likewise draw onto the live buffer.)
+        if let canvas = paintCanvas, let image = canvas.cgImage() {
+            let probe = ImageDocument(data: Data(), ops: [op])   // source unused: render(_:base:) applies ops to `base`
+            if let transformed = try? Renderer.render(probe, base: image),
+               let rebaked = RasterCanvas.from(transformed) {
+                paintCanvas = rebaked
+            }
+        }
         let next = base.appending(op).ops
         undoStack.push(next)
         base = base.appending(op)
