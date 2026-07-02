@@ -2166,12 +2166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         viewMenu.addItem(zoomReset)
 
         viewMenu.addItem(.separator())
-        // TSK-675: word/character/line counts for the active text file.
-        let docStatsItem = NSMenuItem(
-            title: "Document Statistics",
-            action: #selector(showDocumentStatistics(_:)), keyEquivalent: "")
-        docStatsItem.target = self
-        viewMenu.addItem(docStatsItem)
+        // (Document Statistics moved to the Tools menu — TSK-1413 reorg.)
         // TSK-675: export the rendered Markdown as standalone HTML (CSP-free, so
         // it renders in a browser). Markdown files only.
         let copyHTMLItem = NSMenuItem(title: "Copy as HTML",
@@ -2187,16 +2182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                          action: #selector(openInBrowser(_:)), keyEquivalent: "")
         openBrowserItem.target = self
         viewMenu.addItem(openBrowserItem)
-        // TSK-675: report broken LOCAL links/images in the active Markdown file.
-        let checkLinksItem = NSMenuItem(title: "Check Links",
-                                        action: #selector(checkLinks(_:)), keyEquivalent: "")
-        checkLinksItem.target = self
-        viewMenu.addItem(checkLinksItem)
-        // Markdown doc-quality lint (missing alt, heading skips, dup anchors).
-        let lintItem = NSMenuItem(title: "Lint Markdown",
-                                  action: #selector(lintMarkdown(_:)), keyEquivalent: "")
-        lintItem.target = self
-        viewMenu.addItem(lintItem)
+        // (Check Links + Lint Markdown moved to the Tools menu — TSK-1413 reorg.)
         // CSV → clipboard conversions (active .csv/.tsv only).
         let csvMDItem = NSMenuItem(title: "Copy as Markdown Table",
                                    action: #selector(copyCSVAsMarkdownTable(_:)), keyEquivalent: "")
@@ -2206,10 +2192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                      action: #selector(copyCSVAsJSON(_:)), keyEquivalent: "")
         csvJSONItem.target = self
         viewMenu.addItem(csvJSONItem)
-        let csvSummaryItem = NSMenuItem(title: "CSV Summary",
-                                        action: #selector(showCSVSummary(_:)), keyEquivalent: "")
-        csvSummaryItem.target = self
-        viewMenu.addItem(csvSummaryItem)
+        // (CSV Summary moved to the Tools menu — TSK-1413 reorg.)
         // JSON → CSV (active .json whose top level is an array of objects).
         let jsonCSVItem = NSMenuItem(title: "Copy as CSV",
                                      action: #selector(copyJSONAsCSV(_:)), keyEquivalent: "")
@@ -2345,6 +2328,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         viewMenu.addItem(focusDocumentItem)
 
         viewMenuItem.submenu = viewMenu
+
+        // TSK-1413 (owner-approved full menu reorg): a dedicated TOOLS menu for
+        // document-analysis actions that were cluttering View (which should be
+        // about how you SEE the doc). Selectors/targets are unchanged — only the
+        // host menu moves — so AppMenuActionsTests still guards that the actions
+        // fire. (Export/Share submenu + a Format menu are the follow-on slices.)
+        let toolsMenuItem = NSMenuItem()
+        let toolsMenu = NSMenu(title: "Tools")
+        let docStatsItem = NSMenuItem(
+            title: "Document Statistics",
+            action: #selector(showDocumentStatistics(_:)), keyEquivalent: "")
+        docStatsItem.target = self
+        toolsMenu.addItem(docStatsItem)
+        let checkLinksItem = NSMenuItem(title: "Check Links",
+                                        action: #selector(checkLinks(_:)), keyEquivalent: "")
+        checkLinksItem.target = self
+        toolsMenu.addItem(checkLinksItem)
+        let lintItem = NSMenuItem(title: "Lint Markdown",
+                                  action: #selector(lintMarkdown(_:)), keyEquivalent: "")
+        lintItem.target = self
+        toolsMenu.addItem(lintItem)
+        let csvSummaryItem = NSMenuItem(title: "CSV Summary",
+                                        action: #selector(showCSVSummary(_:)), keyEquivalent: "")
+        csvSummaryItem.target = self
+        toolsMenu.addItem(csvSummaryItem)
+        toolsMenuItem.submenu = toolsMenu
+        mainMenu.addItem(toolsMenuItem)
 
         let windowMenuItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
