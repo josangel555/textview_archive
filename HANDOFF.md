@@ -44,9 +44,14 @@
   coverage. See docs/USABILITY_AUDIT Pass 4.
 - Sweep found 2 issues: PMA01 (my stale canvas_* tools/list expectation -> FIXED fc9fba51) + PMA04
   (30s timeout flake under load, passed on re-run). Editor scroll-to-line SKIPS (TSK-1200 parked).
-- NEXT: drill the features WITHOUT UAT coverage (exploratory spikes: HTTP client, RSS reader, folder
-  treemap, SQLite browser; TSK-1414 finish-or-cut) - code-verify + UI-drive each; then pixel tail
-  (TSK-1334) + editor-scroll (TSK-1200) need the owner.
+- FINISH-OR-CUT COMPLETE (TSK-1414): drilled all 4 "spikes" — SQLite browser, folder treemap, HTTP
+  client were BUILT + UI-drive-confirmed working (added the missing UATs + a show-http-client cohesion
+  verb). The RSS feed reader was the ONE genuine orphan (built + tested, reachable from nowhere); owner
+  chose FINISH → wired File → Feed Reader + show-feed-reader verb, UI-drive-confirmed (TSK-1417
+  validated, a8a2bd2a). ZERO of the 4 were half-built. Audit Passes 5-7 carry detail.
+- NEXT: (1) sweep for OTHER orphans — built-but-unreachable View structs never instantiated (like
+  FeedReader was); highest-value class. (2) code-found micro-gaps. (3) pixel tail (TSK-1334) +
+  editor-scroll (TSK-1200) need the owner.
 
 ## 🔀 MISSION PIVOT (2026-07-02): Canvas PARKED → app-wide production-grade usability polish
 - **Canvas (M0→M6) is COMPLETE + validated + hardened + PARKED pending owner review** (docs/canvas/
