@@ -49,9 +49,15 @@
   verb). The RSS feed reader was the ONE genuine orphan (built + tested, reachable from nowhere); owner
   chose FINISH → wired File → Feed Reader + show-feed-reader verb, UI-drive-confirmed (TSK-1417
   validated, a8a2bd2a). ZERO of the 4 were half-built. Audit Passes 5-7 carry detail.
-- NEXT: (1) sweep for OTHER orphans — built-but-unreachable View structs never instantiated (like
-  FeedReader was); highest-value class. (2) code-found micro-gaps. (3) pixel tail (TSK-1334) +
-  editor-scroll (TSK-1200) need the owner.
+- ORPHAN + COHESION SWEEPS DONE (2026-07-02, audit Pass 8): orphan-View sweep CLEAN (166 View
+  structs, only 2 unwired — ActionHistory/RichText, both deliberate WIP, filed TSK-1418 owner
+  finish-or-cut); script-verb↔dispatch CLEAN. GAP FOUND+FIXED: hosted-view tools (HTTP/feed/treemap/
+  depgraph/walkthroughs) now ⌘K-palette-discoverable + a command↔verb cohesion regression guard
+  (1c46b2a0, teeth). FeedReader-class accidental orphans = NONE remaining.
+- NEXT: (1) TSK-1413 remaining sub-gaps — audit ENV-VAR-ONLY entry points (MDV_START_AUDIO_EDIT /
+  MDV_UI_SCENE etc.: features reachable only via an env var → give real UI) + menu reorg (TSK-751/
+  1318). (2) code-found micro-gaps in reachable features. (3) pixel tail (TSK-1334) + editor-scroll
+  (TSK-1200) need the owner.
 
 ## 🔀 MISSION PIVOT (2026-07-02): Canvas PARKED → app-wide production-grade usability polish
 - **Canvas (M0→M6) is COMPLETE + validated + hardened + PARKED pending owner review** (docs/canvas/
