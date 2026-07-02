@@ -855,6 +855,14 @@ public enum Formatter {
 
     /// A line that carries at least one UNescaped `|` (a table-row candidate).
     static func mdIsTableRow(_ line: String) -> Bool {
+        // 4+ columns of leading indent → an indented code block, NOT a table row
+        // (CommonMark; tab = 4-col stop). Reformatting it would strip the indent
+        // and corrupt code that merely contains pipes.
+        var indent = 0
+        for c in line {
+            if c == " " { indent += 1 } else if c == "\t" { indent += 4 } else { break }
+            if indent >= 4 { return false }
+        }
         let t = line.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return false }
         var prev: Character = " "
