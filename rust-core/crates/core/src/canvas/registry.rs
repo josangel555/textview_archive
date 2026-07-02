@@ -70,6 +70,8 @@ pub fn allowed_names(kind: RecordKind) -> &'static [&'static str] {
     const CONTAINER: &[&str] = &[
         "gap", "padding", "align", "justify", "direction", "wrap", "fill", "stroke", "radius",
         "shadow", "opacity", "minW", "maxW", "minH", "maxH", "grow", "shrink", "span",
+        // M5.S1: artboard marker + label (role=artboard; note = the label).
+        "role", "note",
     ];
     const TEXT: &[&str] = &[
         "text", "role", "color", "font", "opacity", "grow", "shrink", "span", "minW", "maxW",

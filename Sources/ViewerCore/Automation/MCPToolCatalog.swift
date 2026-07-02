@@ -816,15 +816,24 @@ public enum MCPToolCatalog {
     private static let canvasNewDescriptor = MCP.ToolDescriptor(
         name: "canvas_new",
         description: "Create an empty canvas document (default theme, root page pg:1). "
+            + "mode: \"ui-design\" seeds the UI-Design workspace (starter kit + "
+            + "artboards; template: desktop|mobile|both, default both). "
             + "Returns {doc, rev}. " + canvasDSLHint,
-        inputSchema: emptySchema
+        inputSchema: schema([
+            "mode":     .object(["type": .string("string")]),
+            "template": .object(["type": .string("string")]),
+        ])
     )
 
     private static func canvasNew(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
-        _ = args
         do {
             let doc = try host.automationCanvasStore.create()
-            return .object(["doc": .string(doc.id), "rev": .int(0)])
+            if (try? args.string("mode")) == "ui-design" {
+                let template = (try? args.string("template"))
+                    .flatMap(CanvasUIDesignMode.Template.init(rawValue:)) ?? .both
+                try CanvasUIDesignMode.seed(into: doc, template: template)
+            }
+            return .object(["doc": .string(doc.id), "rev": .int(Int(doc.lastKnownRev))])
         } catch {
             throw MCPError.toolFailed("canvas_new: \(error)")
         }

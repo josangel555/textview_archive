@@ -309,4 +309,44 @@ final class CanvasMCPToolsTests: XCTestCase {
             return false
         }, "the geometry stage rides the same tool: \(merged)")
     }
+
+    // MARK: M5.S1 — the UI-Design mode template (TSK-1389)
+
+    func test_mode_new_seeds_kit_artboards_and_token_and_survives_io() throws {
+        guard case .object(let n) = try call("canvas_new", [
+            "mode": .string("ui-design"), "template": .string("both"),
+        ]), case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+
+        let openDoc = try host.automationCanvasStore.doc(doc)
+        XCTAssertTrue(CanvasUIDesignMode.isUIDesign(openDoc), "the mode token seeds")
+        // Both artboards + the kit landed (read through the projection).
+        guard case .object(let read) = try call("canvas_read", ["doc": .string(doc)]),
+              case .string(let dsl)? = read["dsl"] else { return XCTFail("read") }
+        XCTAssertTrue(dsl.contains("#artboard-desktop"), "\(dsl.prefix(400))")
+        XCTAssertTrue(dsl.contains("#artboard-mobile"))
+        XCTAssertTrue(dsl.contains("role=\"artboard\""), "canonical projection quotes strings")
+        XCTAssertTrue(dsl.contains("component #kit-card"), "kit imported")
+        // The artboards carry the viewport presets.
+        XCTAssertTrue(dsl.contains("minW=1280") && dsl.contains("minW=390"))
+
+        // The mode survives save/load (tokens ride io).
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mode-\(UUID().uuidString).canvas")
+        defer { try? FileManager.default.removeItem(at: target) }
+        _ = try call("canvas_save", ["doc": .string(doc), "path": .string(target.path)])
+        host.automationCanvasStore.close(CanvasDocumentStore.docID(for: target))
+        let reopened = try host.automationCanvasStore.open(url: target)
+        XCTAssertTrue(CanvasUIDesignMode.isUIDesign(reopened), "mode rides io")
+    }
+
+    func test_plain_new_is_untouched_by_the_mode_machinery() throws {
+        guard case .object(let n) = try call("canvas_new", [:]),
+              case .string(let doc)? = n["doc"] else { return XCTFail("new") }
+        let openDoc = try host.automationCanvasStore.doc(doc)
+        XCTAssertFalse(CanvasUIDesignMode.isUIDesign(openDoc))
+        XCTAssertEqual(n["rev"], .int(0), "plain new stays empty at rev 0")
+        guard case .object(let read) = try call("canvas_read", ["doc": .string(doc)]),
+              case .string(let dsl)? = read["dsl"] else { return XCTFail("read") }
+        XCTAssertFalse(dsl.contains("artboard"))
+    }
 }
