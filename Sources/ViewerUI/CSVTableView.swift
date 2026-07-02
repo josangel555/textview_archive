@@ -192,6 +192,20 @@ struct CSVTableView: View {
                                         rowIndex: i, formulaValues: formulaValues)
                                     .id(i)
                             }
+                            // Usability: never a blank void — show why the grid
+                            // is empty (empty file vs filtered-to-nothing).
+                            if let empty = CSVEmptyState.message(
+                                total: result.rows.count,
+                                shown: displayRows.count,
+                                filterActive: filtered.rows.count < result.rows.count
+                                    || !debouncedFilter.isEmpty)
+                            {
+                                Text(empty)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .padding(.vertical, 24)
+                                    .accessibilityIdentifier("mdv.csv.emptyState")
+                            }
                         } header: {
                             headerRow(result)
                         }
