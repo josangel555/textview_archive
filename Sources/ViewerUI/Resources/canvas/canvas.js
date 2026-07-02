@@ -155,6 +155,7 @@
   function setSelection(ids) {
     selectedId = (ids && ids.length) ? ids[0] : null;
     positionOverlay();
+    syncDraggable();
   }
 
   // The overlay must stay GLUED through reflow (patch applies, window
@@ -248,6 +249,111 @@
       e.stopImmediatePropagation();
     }
   }, true); // capture: beat the selection-Escape handler below
+
+  // M3.S6 (TSK-1377) — drag-reorder within the flow. The SELECTED node is
+  // draggable; dragover computes the drop SLOT (before the hovered sibling
+  // when the cursor is in its upper half, after otherwise; hovering a
+  // container drops INTO it, appending); a thin indicator line previews the
+  // slot; drop posts dragEnded{id, parent, beforeId} and Swift lowers it to
+  // the engine's exact-anchor move (the S4 write path).
+  var dragging = null; // the dragged node's id
+  var dropSlot = null; // { parent, beforeId }
+  var indicator = document.createElement("div");
+  indicator.style.cssText =
+    "position:absolute;display:none;pointer-events:none;z-index:2147483645;" +
+    "height:2px;background:#0a84ff;border-radius:1px;";
+  document.body.appendChild(indicator);
+
+  function hideIndicator() {
+    indicator.style.display = "none";
+    dropSlot = null;
+  }
+
+  function showIndicatorAt(rect, before) {
+    indicator.style.left = (rect.left + window.scrollX) + "px";
+    indicator.style.width = rect.width + "px";
+    indicator.style.top =
+      ((before ? rect.top : rect.bottom) + window.scrollY - 1) + "px";
+    indicator.style.display = "block";
+  }
+
+  function syncDraggable() {
+    var nodes = root.querySelectorAll("[draggable]");
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].removeAttribute("draggable");
+    }
+    if (selectedId) {
+      var el = nodeById(selectedId);
+      if (el) el.setAttribute("draggable", "true");
+    }
+  }
+
+  root.addEventListener("dragstart", function (e) {
+    var el = e.target && e.target.closest
+      ? e.target.closest("[data-cv-id]") : null;
+    if (!el || el.getAttribute("data-cv-id") !== selectedId) {
+      e.preventDefault();
+      return;
+    }
+    dragging = selectedId;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", dragging); } catch (err) {}
+    }
+  });
+
+  root.addEventListener("dragover", function (e) {
+    if (!dragging) return;
+    e.preventDefault(); // allow drop
+    var el = e.target && e.target.closest
+      ? e.target.closest("[data-cv-id]") : null;
+    if (!el) { hideIndicator(); return; }
+    var hoveredId = el.getAttribute("data-cv-id");
+    if (hoveredId === dragging) { hideIndicator(); return; }
+    var rect = el.getBoundingClientRect();
+    var isContainer = el.getAttribute("data-cv-kind") === "frame"
+      || el.getAttribute("data-cv-kind") === "page";
+    if (isContainer && el.contains(e.target) && e.target === el) {
+      // Hovering the container's own surface: drop INTO (append).
+      dropSlot = { parent: hoveredId, beforeId: null };
+      showIndicatorAt(rect, false);
+      return;
+    }
+    // Sibling slot: before/after by the cursor's vertical midpoint.
+    var parentEl = el.parentElement && el.parentElement.closest
+      ? el.parentElement.closest("[data-cv-id]") : null;
+    if (!parentEl) { hideIndicator(); return; }
+    var before = e.clientY < rect.top + rect.height / 2;
+    var beforeId;
+    if (before) {
+      beforeId = hoveredId;
+    } else {
+      var next = el.nextElementSibling;
+      beforeId = next && next.getAttribute
+        ? next.getAttribute("data-cv-id") : null;
+    }
+    dropSlot = {
+      parent: parentEl.getAttribute("data-cv-id"),
+      beforeId: beforeId === dragging ? null : beforeId
+    };
+    showIndicatorAt(rect, before);
+  });
+
+  root.addEventListener("drop", function (e) {
+    e.preventDefault();
+    if (dragging && dropSlot) {
+      var msg = { type: "dragEnded", id: dragging, parent: dropSlot.parent };
+      if (dropSlot.beforeId) msg.beforeId = dropSlot.beforeId;
+      post(msg);
+    }
+    dragging = null;
+    hideIndicator();
+  });
+
+  root.addEventListener("dragend", function () {
+    dragging = null;
+    hideIndicator();
+  });
 
   // Keyboard intents (Swift owns the semantics; JS only reports).
   window.addEventListener("keydown", function (e) {

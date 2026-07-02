@@ -300,6 +300,7 @@ run_webview_tests() {
     --filter ViewerUITests.CanvasTabMountWebViewTests \
     --filter ViewerUITests.CanvasSelectionWebViewTests \
     --filter ViewerUITests.CanvasInlineEditWebViewTests \
+    --filter ViewerUITests.CanvasDragReorderWebViewTests \
     --filter ViewerUITests.RenderedFindBarTests \
     --filter ViewerUITests.RenderedFindClearWebViewTests \
     --filter ViewerUITests.ScriptConsoleHostingTests \
