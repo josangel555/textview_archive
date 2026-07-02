@@ -63,7 +63,10 @@
   still harbor real bugs — found+fixed geometry-after-paint silent data-loss (TSK-1419, 4dc94b8c):
   crop/resize/rotate after a paint session were shadowed by the paint buffer (invisible + lost on
   export). HUNT DEEP INTERACTION/EDGE paths next (feature×feature ordering, state-across-switch,
-  undo-across-mode, export-after-edits) — NOT main surfaces (verified). 
+  undo-across-mode, export-after-edits) — NOT main surfaces (verified). PAINT is a destructive
+  terminal mode: post-paint crossings each need handling — geometry=transform (TSK-1419 ✓),
+  tonal=gate (TSK-1420 ✓). NEXT crossings: selection×paint, undo-ORDERING across interleaved
+  paint+geometry, export-after-paint fidelity.
 - ⚠️ Micro-gaps on MAIN surfaces are thinning (empty states/reachability/basics verified) — audited surfaces are now
   consistently production-grade (run's fixes: CSV empty-state, paint-undo, FeedReader wire, palette
   discoverability + cohesion guard). Remaining known work is LARGER or OWNER-GATED, not micro-fixes:

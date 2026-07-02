@@ -414,3 +414,20 @@ same code path) — the honest ceiling until TSK-1334.
 
 Genuine gaps found+fixed this run: CSV empty-state (1415), paint-undo (1416), HTTP verb + palette
 discoverability + cohesion guard (1413), FeedReader orphan wired (1417), geometry-after-paint (1419).
+
+### Pass 11 (2026-07-02) — tonal × paint crossing: silent no-op fixed by gating (TSK-1420)
+
+Continuing the deep-interaction-path mining (Pass 10's lesson). Same shadow root as geometry-after-
+paint: render() early-returns the destructive paint buffer, so the Tone sliders (shown
+unconditionally, calling scheduleRender) were a SILENT NO-OP after painting — diagnosed with a
+failing test (brightness=-1 left paintCanvas pixels unchanged). Unlike discrete geometry ops (which
+commitGeometry now transforms the buffer through), tonal is CONTINUOUS live state baked into the
+buffer and can't be re-derived per-tick, so the fix GATES rather than fakes: isToneEditable
+(paintCanvas==nil) → the view disables the Tone group + a "discard paint to adjust" note. Geometry
+stays enabled. 3 host tests + teeth (6cb11753). The real long-term fix (non-destructive paint layer)
+is BACKLOG'd.
+
+PAINT IS A DESTRUCTIVE TERMINAL MODE — every post-paint crossing needs explicit handling:
+geometry=transform-the-buffer (TSK-1419 ✓), tonal=gate (TSK-1420 ✓). REMAINING crossings to check:
+selection × paint (can you select/crop-to-selection/copy after painting?), undo ORDERING across
+interleaved paint+geometry (my paint-undo v1 note flagged this), export-after-paint fidelity.
