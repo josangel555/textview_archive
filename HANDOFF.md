@@ -14,10 +14,15 @@
   registry+fence VALIDATED** (`5be181b4` — u16 interned keys, typed Values w/ Token variant,
   per-kind tables, caps, check_text_target). S3 ops+inverses (62f90115) and S4 tokens
   (6e64e370) VALIDATED; S5a lowering (6527a25d+f084592d) + S5b patch plans w/ APPLY-TIME
-  anchors (a46efc8a) landed — **NEXT: S5c = FFI swap off the M0 demo ops (real CanvasOp wire
-  decode + msgpack Patch serialization + fuzz target) + canvas.js applier verbs + Swift
-  wrapper + E2E suite update (webview parity run consumes TSK-1365)**, then S6 lint → S7
-  migrations+I/O → S8 DSL parser → S9 Swift glue. Plan: `docs/canvas/plans/M1-PLAN.md`; slices TSK-1356..1364.
+  anchors (a46efc8a) landed — S5c-rust wire codec landed (5401e5b0 —
+  {baseRev,ops}→{rev,patches}|structured-rejection; the canvas↔serde boundary = the TSK-584
+  fuzz seam). **NEXT: S5c remainder = (a) FFI swap (mdvcore_canvas_* → CanvasDoc{DocState,
+  TokenStore, root page}, wire::apply_wire; retires the M0 demo module) + (b) Swift wrapper/
+  adapter onto string ids + new op vocab + (c) canvas.js applier verbs (insertNode/moveNode/
+  removeNode/setAttr/removeStyle) + (d) E2E suite update + (e) fuzz target + corpus; VM parity
+  run consumes TSK-1365** — then S6 lint → S7 migrations+I/O → S8 DSL parser → S9 Swift glue.
+  Fresh LESSONS (2026-07-02 build): apply-time patch anchors (never plan from post-batch
+  state); never chain gate+commit in one command; behavior-equivalent teeth mutants. Plan: `docs/canvas/plans/M1-PLAN.md`; slices TSK-1356..1364.
 - Board: M2..M6 chain unchanged (1345→1346→1347→1351→1348). All Q-decisions provisional-
   approved (05-ROADMAP header); owner reviews soon; rework-if-reversed accepted.
 

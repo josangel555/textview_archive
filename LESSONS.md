@@ -5,6 +5,24 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Session 2026-07-02 — Canvas M1 build lessons
+
+- **DOM-patch anchors must be captured at each op's APPLY time, never recomputed from the
+  post-batch store.** A batch [insert X before S; remove S] plans X's `insertBefore` anchor
+  wrong if computed from final state (S is gone there) — while the DOM at that patch's
+  execution moment still contains S. Fix shape: the op engine's `AppliedEffect` carries the
+  anchor captured mid-batch; the planner consumes and never recomputes (canvas a46efc8a).
+  General class: any plan-from-final-state translation of a sequential batch is suspect —
+  later ops invalidate earlier anchors.
+- **Do NOT chain `gate.sh; git commit` in one shell command** — the commit runs regardless of
+  the gate's rc (bit live at 6527a25d: committed on a red clippy gate). This is the
+  `reference_background_gate_exit_gotcha` class in a new coat: gate FIRST, READ the rc, THEN
+  commit as a separate command.
+- **A surviving teeth-mutant isn't always a weak test**: removing the token cycle-detector's
+  visited-check survived because the depth cap also yields `Cycle` — behavior-equivalent
+  mutant (the documented footgun). Swap to a behavior-bearing mutation instead of weakening
+  the code or chasing the test.
+
 ## Session 2026-07-02 — WKWebView bridge reliability on the VM's older WebKit (Canvas M0.S3)
 
 - **`evaluateJavaScript` on macOS-15 WebKit fails with WKError-5 ("result of an unsupported
