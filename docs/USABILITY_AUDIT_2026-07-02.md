@@ -319,3 +319,28 @@ tab live (windowTitle confirmed, tab additive). **Verdict: production-grade, NOT
 spike — remove from TSK-1414.** (Audit correction #5.) Remaining finish-or-cut candidates: HTTP
 client, RSS/feed reader. Given SQLite + treemap both proved fully built, expectation is these two
 are also more built than the first-pass audit assumed — verify before any cut recommendation.
+
+### Pass 7 (2026-07-02) — finish-or-cut COMPLETE: HTTP client works; RSS feed reader is ORPHANED
+
+Drilled the last two TSK-1414 candidates.
+- **HTTP client — BUILT + REACHABLE + now UI-drive-confirmed.** HTTPClientView (211 ln, request
+  builder + response/error/empty states) + host-tested HTTPClientCore/ViewModel; reachable via
+  File → New HTTP Request (TSK-721). Gap found + fixed: it had NO script-verb (cohesion gap vs
+  show-folder-treemap, TSK-1413) → added `show-http-client`; new HTTPClientUATTests confirms the
+  "HTTP Request" tab opens live. NOT a cut candidate.
+- **RSS feed reader — BUILT + EXTENSIVELY TESTED but ORPHANED (the ONE real "built-but-unusable").**
+  FeedReaderView (177 ln) + FeedReaderViewModel + FeedParser + FeedFetcher + FeedSubscriptionStore +
+  FeedRefreshScheduler + OPML import — ~13 files, host-tested (FeedParserTests, FeedFetcherTests,
+  FeedSubscriptionStoreTests, FeedRefreshSchedulerTests, OPMLTests, FeedReaderViewModelTests,
+  FeedReaderViewRenderTests, …). BUT `FeedReaderView(`/`FeedReaderViewModel(` are instantiated
+  NOWHERE in Sources — no menu, command, script-verb, or parent view. It is unreachable dead code.
+  This is the genuine finish-or-cut decision (owner): FINISH = wire an entry point (a File-menu item
+  + a show-feed-reader verb, ~mirrors the HTTP client — small, since it's fully built+tested) or
+  CUT = delete ~13 files. RECOMMENDATION: FINISH — the feature is complete and tested; wiring is
+  nearly free and it turns tested dead code into a usable feature. But whether a code/markdown viewer
+  SHOULD ship an RSS reader is a product/scope call = owner's. Filed + surfaced.
+
+**FINISH-OR-CUT RESULT: 4 candidates → 3 fully built + working (SQLite, treemap, HTTP client), 1
+orphaned (RSS reader). Zero were "half-built".** The audit's original "exploratory spikes / likely
+unusable" framing was wrong on all 4 counts — the real defect was reachability/cohesion + stale
+tracking, not missing implementation. The RSS orphan is the single true "built but unusable" case.
