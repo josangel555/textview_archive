@@ -9,6 +9,15 @@
   frame-wipe → fence rule; WebContent termination on the VM lane → **TSK-1365** hardening
   ticket, consumer deadline M1.S5's parity test). M0's demo engine lives in
   `rust-core/crates/core/src/canvas/mod.rs` + FFI `mdvcore_canvas_*` + `canvas.js` applier.
+- **M3 WYSIWYG COMPLETE on the local lane (2026-07-02): milestone TSK-1346 at FIXED.**
+  All 8 slices landed (fd25bad3..fd417b7b): rendered lens = DEFAULT for .canvas; selection
+  overlay glued through reflow; inline text edit (IME-safe); drag-reorder; ⌘Z; inspector +
+  layers off one canonical-JSON read model; every gesture through the agent's op path;
+  co-editing proven (agent+human edits both survive). UAT-M3 green through the controller;
+  25/25 canvas tests local. **Validation bars: TSK-1365 residual (VM webview channel-death —
+  2 real fixes landed: windowless boot cure, re-post drains) + TSK-1334 (T5 Screen-Recording,
+  owner). NEXT: M4 planning pass (design system + Claude-Design gauntlet) — or drain the
+  TSK-1365 residual first (fix sketches on the ticket).**
 - **M2 COMPLETE + VALIDATED (2026-07-02): the agent surface is LIVE.** 9 MCP tools + 2
   script verbs + HTML export; UAT-M2 green MCP-only (mistake-taught, conflict-retry,
   byte-identical reopen); 1k-node apply p95 0.11ms vs 20ms budget. Slices TSK-1366..1371 +
