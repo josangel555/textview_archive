@@ -85,13 +85,26 @@ pub struct StepState {
 /// agent checks BEFORE any pixel (06 success #3).
 #[must_use]
 pub fn timeline_state(store: &Store, slide: &Id) -> Vec<StepState> {
-    let steps = max_step(store, slide);
+    // Walk the subtree + resolve each node's step ONCE (was O(steps × nodes):
+    // visible_at re-walked descendants per step, plus max_step walked again).
+    // Now a single walk feeds every step's filter — same output, no repeated
+    // traversal.
+    let mut nodes: Vec<(Id, Option<u16>)> = descendants(store, slide)
+        .into_iter()
+        .map(|id| {
+            let s = node_step(store, &id);
+            (id, s)
+        })
+        .collect();
+    nodes.sort_by(|a, b| a.0.cmp(&b.0)); // deterministic id order (as before)
+    let steps = nodes.iter().filter_map(|(_, s)| *s).max().unwrap_or(0);
     (0..=steps)
         .map(|step| StepState {
             step,
-            visible_ids: visible_at(store, slide, step)
+            visible_ids: nodes
                 .iter()
-                .map(|id| id.as_str().to_owned())
+                .filter(|(_, s)| s.is_none_or(|v| v <= step))
+                .map(|(id, _)| id.as_str().to_owned())
                 .collect(),
         })
         .collect()
@@ -356,6 +369,61 @@ mod tests {
         )
         .expect("apply");
         (d, id("nd:slide"))
+    }
+
+    /// Scale guard (M6-PLAN §Budgets, sans-IO structural style — wall-clock
+    /// is walled in core per bench.rs): timeline_state + morph_pairs handle
+    /// the plan's documented max (a ~500-node slide, many steps) correctly and
+    /// without pathology. Also pins that the single-walk optimization is
+    /// still correct at scale (all nodes visible at the top step; monotone).
+    #[test]
+    fn timeline_and_morph_scale_to_the_documented_max() {
+        let mut d = DocState::new();
+        let pg = id("pg:1");
+        d.store.insert_root(pg.clone(), RecordKind::Page).expect("root");
+        d.apply(0, &[
+            CanvasOp::Insert { id: Some(id("nd:s0")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+            CanvasOp::Insert { id: Some(id("nd:s1")), kind: RecordKind::Frame, parent: pg.clone(),
+                pos: Position::Last, props: vec![(key("role"), Value::Str("slide".to_owned()))] },
+        ]).expect("slides");
+        // 500 stepped, morph-tagged nodes across 30 steps on slide 0; 250 with
+        // matching morphIds on slide 1.
+        let mut batch = Vec::new();
+        for i in 0..500u32 {
+            batch.push(CanvasOp::Insert {
+                id: Some(id(&format!("nd:a{i}"))), kind: RecordKind::Text,
+                parent: id("nd:s0"), pos: Position::Last,
+                props: vec![
+                    (key("text"), Value::Str(format!("n{i}"))),
+                    (key("step"), Value::Num(f64::from(i % 30))),
+                    (key("morphId"), Value::Str(format!("m{i}"))),
+                ],
+            });
+        }
+        d.apply(d.rev(), &batch).expect("500 nodes");
+        let mut batch2 = Vec::new();
+        for i in 0..250u32 {
+            batch2.push(CanvasOp::Insert {
+                id: Some(id(&format!("nd:b{i}"))), kind: RecordKind::Text,
+                parent: id("nd:s1"), pos: Position::Last,
+                props: vec![(key("morphId"), Value::Str(format!("m{i}")))],
+            });
+        }
+        d.apply(d.rev(), &batch2).expect("250 nodes");
+
+        let tl = timeline_state(&d.store, &id("nd:s0"));
+        assert_eq!(tl.len(), 30, "steps 0..=29");
+        assert_eq!(tl[29].visible_ids.len(), 500, "all revealed at the top step");
+        // Monotone growth across the whole timeline.
+        for w in tl.windows(2) {
+            assert!(w[1].visible_ids.len() >= w[0].visible_ids.len(), "monotone at scale");
+        }
+        // morph_pairs across the two slides: 250 shared morphIds pair, 250 leave.
+        let plan = morph_pairs(&d.store, &id("nd:s0"), &id("nd:s1"));
+        assert_eq!(plan.pairs.len(), 250, "shared morphIds pair");
+        assert_eq!(plan.leaving.len(), 250, "slide-0-only morphIds leave");
+        assert!(plan.entering.is_empty(), "no slide-1-only morphIds");
     }
 
     #[test]
