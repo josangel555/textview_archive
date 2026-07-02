@@ -3,6 +3,7 @@ import Combine
 import CoreGraphics
 import Foundation
 import ImageIO
+import SwiftUI
 import ViewerCore
 
 /// Host-testable model layer for the image editor (TSK-342 UI enablement over
@@ -705,7 +706,7 @@ public final class ImageEditorViewModel: ObservableObject {
         let stroke = OverlayColor(
             r: Double(paintColor.r) / 255, g: Double(paintColor.g) / 255,
             b: Double(paintColor.b) / 255, a: Double(paintColor.a) / 255)
-        let style = ShapeStyle(stroke: stroke, lineWidth: max(2, Double(brushRadius)),
+        let style = ViewerCore.ShapeStyle(stroke: stroke, lineWidth: max(2, Double(brushRadius)),
                                fill: shapeFilled ? stroke : nil)
         return addShape(VectorShape(kind: kind, frame: normalizedFrame, style: style))
     }
@@ -783,7 +784,7 @@ public final class ImageEditorViewModel: ObservableObject {
     /// Replace the selected shape's style (colour / line-width / fill — "change
     /// properties after the fact"). No-op without a selection.
     @discardableResult
-    public func restyleSelectedShape(_ style: ShapeStyle) -> Bool {
+    public func restyleSelectedShape(_ style: ViewerCore.ShapeStyle) -> Bool {
         guard let id = selectedShapeID else { return false }
         return overlay.setStyle(id: id, style)
     }
@@ -1014,10 +1015,44 @@ public final class ImageEditorViewModel: ObservableObject {
     /// the painted `CGImage` directly instead of re-deriving from `source + ops`.
     public func exportData(format: ExportSpec.Format, quality: Double = 0.9) throws -> Data {
         let spec = ExportSpec(format: format, quality: quality)
+        // The base pixels: the destructive paint buffer if a session is active,
+        // else the tonal/geometry render of the document.
+        let base: CGImage
         if let canvas = paintCanvas, let image = canvas.cgImage() {
-            return try Exporter.encode(image, spec)
+            base = image
+        } else {
+            base = try Renderer.render(document)
         }
-        return try Exporter.export(document, spec)
+        // usability audit 2026-07-02: the vector overlay (annotation shapes + text)
+        // is drawn OVER the preview but was never baked, so save-a-copy SILENTLY
+        // DROPPED every annotation the user saw (WYSIWYG/data-loss). Composite it
+        // here by rasterizing the SAME VectorOverlayView (guaranteed to match the
+        // on-screen draw) and drawing it over the base. (TSK-1422)
+        return try Exporter.encode(compositingOverlay(onto: base), spec)
+    }
+
+    /// Rasterize the vector overlay onto `base` (no-op when empty). Reuses the
+    /// live `VectorOverlayView` via `ImageRenderer` so the exported annotations
+    /// match the preview exactly — Canvas is native SwiftUI (not a representable),
+    /// so ImageRenderer captures it correctly (unlike an occluded representable).
+    private func compositingOverlay(onto base: CGImage) -> CGImage {
+        guard !overlay.isEmpty else { return base }
+        let w = base.width, h = base.height
+        guard w > 0, h > 0 else { return base }
+        let full = CGRect(x: 0, y: 0, width: w, height: h)
+        let renderer = ImageRenderer(
+            content: VectorOverlayView(overlay: overlay, imageRect: full)
+                .frame(width: CGFloat(w), height: CGFloat(h)))
+        renderer.scale = 1
+        guard let overlayImage = renderer.cgImage,
+              let ctx = CGContext(
+                data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return base }
+        ctx.draw(base, in: full)
+        ctx.draw(overlayImage, in: full)
+        return ctx.makeImage() ?? base
     }
 
     /// Encode the current edited `document` and write it atomically to `url`.
