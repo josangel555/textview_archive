@@ -494,3 +494,25 @@ logic is in a host-testable MODEL/pure layer (image editor, CSV, sort, parsers) 
 fixable+validated wins. View/representable-internal + keyboard-AX behaviors (hex edit, CM6 editor
 internals) are real but land in the owner/TSK-1334/AX lane. NEXT: mine host-testable MODEL/pure-logic
 crossings (e.g. multi-format viewer routing edge cases, diff engine, transcript/CSV/markdown parsers).
+
+### Pass 15 (2026-07-02) — overlay annotations undoable + unified undo timeline (TSK-1424); image-editor undo HARDENING COMPLETE
+
+Verified CLEAN this pass (host-testable model layers, per the refined heuristic): the diff-APPLY model
+(AgentDiffApply.revertingRejectedHunks sorts hunks bottom-to-top to avoid the line-shift bug; applyToFile
+uses a guarded exactly-one-occurrence replace) and CsvSort — both production-grade.
+
+REAL BUG found + fixed (image-editor, host-testable): vector overlay edits (add/remove/move/restyle/
+text/rotation/frame/z-order/clear) pushed to NO undo stack — annotations were PERMANENT (⌘Z did
+nothing), the same missing-undo class as paint strokes. And overlay interleaves freely with paint/
+geometry, so per-layer precedence couldn't order it. Fixed with a UNIFIED undo timeline (undoOrder over
+.op/.paint/.overlay; each action records its layer, undo pops+routes) so all three layers peel in true
+order. Also fixed a latent revertAll paintUndo leak. 4 tests + teeth; 114-test suite green (08d6d6eb).
+
+IMAGE-EDITOR UNDO HARDENING COMPLETE — 6 bugs across the full multi-layer/multi-mode design:
+paint-undo (1416), geometry-after-paint (1419), tonal-after-paint (1420), interleaved undo ordering
+(1421), overlay-export data loss (1422), overlay-undo + unification (1424). Every edit layer (source→
+geometry→tonal render, destructive paint buffer, vector overlay) now undoes/redoes/exports correctly.
+
+The image editor was the run's richest vein (6 bugs) because it's a big MODEL-layer (host-testable)
+multi-layer feature. It's now thoroughly mined. NEXT (host-testable model layers): transcript parser,
+markdown model edge cases, or a fresh multi-layer feature — per the refined heuristic (Pass 14).

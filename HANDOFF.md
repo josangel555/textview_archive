@@ -76,7 +76,10 @@
   (image editor, CSV, sort, parsers, diff engine) — those yield fixable+VALIDATED wins; view/
   representable-internal + keyboard-AX behaviors are real but land in the owner/TSK-1334/AX lane.
   NEXT host-testable targets: multi-format viewer routing edge cases, diff engine, transcript/
-  markdown/CSV parsers.
+  markdown/CSV parsers. IMAGE-EDITOR UNDO HARDENING COMPLETE (6 bugs: 1416/1419/1420/1421/1422/1424 —
+  paint-undo/geometry/tonal/ordering/overlay-export/overlay-undo+unify). The image editor (richest
+  vein) is thoroughly mined; every edit layer undoes/exports correctly. NEXT host-testable targets:
+  transcript parser, markdown model edge cases, diff-generate, or a fresh multi-layer model feature.
 - ⚠️ Micro-gaps on MAIN surfaces are thinning (empty states/reachability/basics verified) — audited surfaces are now
   consistently production-grade (run's fixes: CSV empty-state, paint-undo, FeedReader wire, palette
   discoverability + cohesion guard). Remaining known work is LARGER or OWNER-GATED, not micro-fixes:
