@@ -74,6 +74,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Copy Reference covers a selection — now with a menu item + shortcut.** Select several lines in the editor and run **Edit ▸ Copy Reference** (⌘⌥⇧C, also in the ⌘K command palette) to copy a line-RANGE `mdv://` reference (`…?line=10&endLine=20`) to paste to an agent — "these are the lines I mean". With no selection it copies the current line as before. (Source-view selections carry the range today.)
 
 ### Fixed
+- **Opening a Word (.docx) document keeps its tables.** Tables in a .docx used to flatten into loose lines; they now render as proper Markdown tables (matching the headings/lists the viewer already preserved).
 - **Pasting a nested list keeps its indentation.** A rich-text paste of a nested bullet/numbered list used to merge the sub-items into their parent; nested items now indent correctly.
 - **Pasting a table from a browser/spreadsheet keeps its structure.** A rich-text paste of an HTML table used to collapse every cell into one run of text; it now becomes a proper Markdown table (header + rows, cells escaped).
 - **Pasting code from a browser/doc keeps its formatting.** A rich-text paste of a code block used to collapse into one broken run (newlines mangled); it now becomes a proper fenced code block with lines intact.

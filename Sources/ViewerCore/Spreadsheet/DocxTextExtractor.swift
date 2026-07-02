@@ -65,11 +65,23 @@ public enum DocxTextExtractor {
         private var runItalic = false
         private var runText = ""
         private var inText = false
+        // TSK-1427: table state (w:tbl/w:tr/w:tc) → a .table block, so a Word doc's
+        // tables survive on open instead of flattening to loose paragraphs.
+        private var tableRows: [[[RichInline]]] = []
+        private var currentRow: [[RichInline]] = []
+        private var cellInlines: [RichInline] = []
+        private var inCell = false
 
         func parser(_ parser: XMLParser, didStartElement element: String,
                     namespaceURI: String?, qualifiedName qName: String?,
                     attributes attrs: [String: String]) {
             switch element {
+            case "w:tbl":
+                flushPendingList(); tableRows = []
+            case "w:tr":
+                currentRow = []
+            case "w:tc":
+                inCell = true; cellInlines = []
             case "w:p":
                 inParagraph = true; paraInlines = []; paraStyle = nil; paraIsList = false
             case "w:pStyle":
@@ -102,7 +114,24 @@ public enum DocxTextExtractor {
                 }
             case "w:p":
                 inParagraph = false
-                endParagraph()
+                if inCell {
+                    // Accumulate the cell's paragraph text (cells rarely have >1;
+                    // separate them with a space) instead of emitting a block.
+                    if !cellInlines.isEmpty && !paraInlines.isEmpty { cellInlines.append(.text(" ")) }
+                    cellInlines.append(contentsOf: paraInlines)
+                } else {
+                    endParagraph()
+                }
+            case "w:tc":
+                inCell = false
+                currentRow.append(cellInlines)
+            case "w:tr":
+                if !currentRow.isEmpty { tableRows.append(currentRow) }
+            case "w:tbl":
+                if let first = tableRows.first, !first.isEmpty {
+                    blocks.append(.table(header: first, rows: Array(tableRows.dropFirst())))
+                }
+                tableRows = []
             default: break
             }
         }
