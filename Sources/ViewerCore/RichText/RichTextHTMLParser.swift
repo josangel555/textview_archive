@@ -226,14 +226,44 @@ public enum RichTextHTMLParser {
             case .close(let n) where n == listTag: i += 1; return items
             case .open(let name, _) where name == "li":
                 i += 1
-                let inl = trimEdges(parseInlines(toks, &i, until: "li"))
-                items.append(RichListItem(inl.isEmpty ? [.text("")] : inl))
+                items.append(parseListItem(toks, &i))
             case .close: i += 1            // stray close
             case .open: i += 1             // non-li open inside a list → skip its tag
             case .text: i += 1             // inter-item whitespace/text → drop
             }
         }
         return items
+    }
+
+    /// One `<li>` (open already consumed): its inline content + any nested
+    /// `<ul>`/`<ol>` captured as children (recursion), so nesting survives instead
+    /// of the inner items' text merging into this one. TSK-1427.
+    private static func parseListItem(_ toks: [Token], _ i: inout Int) -> RichListItem {
+        var inlines: [RichInline] = []
+        var children: [RichBlock] = []
+        func done() -> RichListItem {
+            let t = trimEdges(inlines)
+            return RichListItem(t.isEmpty ? [.text("")] : t, children: children)
+        }
+        while i < toks.count {
+            switch toks[i] {
+            case .close(let n) where n == "li": i += 1; return done()
+            case .close(let n) where n == "ul" || n == "ol":
+                return done()   // parent list closing an unterminated <li> — don't consume
+            case .open(let name, _) where name == "ul" || name == "ol":
+                i += 1
+                let sub = parseListItems(toks, &i, until: name)
+                if !sub.isEmpty {
+                    children.append(name == "ul" ? .bulletList(sub) : .orderedList(start: 1, items: sub))
+                }
+            case .open(let name, let href) where inlineTags.contains(name):
+                inlines.append(contentsOf: parseInline(toks, &i, name: name, href: href))
+            case .text(let t): inlines.append(.text(t)); i += 1
+            case .open: i += 1    // other block tag inside <li> → strip tag, keep text
+            case .close: i += 1   // stray close
+            }
+        }
+        return done()
     }
 
     // MARK: - Inline parsing

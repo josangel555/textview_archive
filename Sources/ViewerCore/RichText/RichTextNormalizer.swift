@@ -66,7 +66,9 @@ public enum RichTextNormalizer {
 
     private static func normalizeItem(_ item: RichListItem) -> RichListItem? {
         let runs = normalizeInlines(item.inlines)
-        return runs.isEmpty ? nil : RichListItem(runs)
+        let kids = item.children.compactMap { normalizeBlock($0) }   // recurse into nested lists
+        if runs.isEmpty && kids.isEmpty { return nil }
+        return RichListItem(runs.isEmpty ? [.text("")] : runs, children: kids)
     }
 
     /// Coalesce adjacent text, collapse empty emphasis wrappers, drop empty

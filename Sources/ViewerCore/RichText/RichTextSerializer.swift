@@ -33,17 +33,10 @@ public enum RichTextSerializer {
             return serializeInlines(inlines)
 
         case let .bulletList(items):
-            return items.map { "- " + serializeInlines($0.inlines) }
-                .joined(separator: "\n")
+            return serializeList(items, ordered: false, start: 1, indent: 0)
 
         case let .orderedList(start, items):
-            var lines: [String] = []
-            var n = max(start, 1)
-            for item in items {
-                lines.append("\(n). " + serializeInlines(item.inlines))
-                n += 1
-            }
-            return lines.joined(separator: "\n")
+            return serializeList(items, ordered: true, start: start, indent: 0)
 
         case let .blockquote(paras):
             let rendered = paras.map { serializeInlines($0) }
@@ -84,6 +77,29 @@ public enum RichTextSerializer {
             for r in rows { lines.append(row(r)) }
             return lines.joined(separator: "\n")
         }
+    }
+
+    /// Serialize a (possibly nested) list. Children (nested sub-lists) indent 2
+    /// spaces per level — GFM sublist convention. TSK-1427.
+    static func serializeList(_ items: [RichListItem], ordered: Bool, start: Int, indent: Int) -> String {
+        var lines: [String] = []
+        var n = max(start, 1)
+        let pad = String(repeating: "  ", count: indent)
+        for item in items {
+            lines.append(pad + (ordered ? "\(n). " : "- ") + serializeInlines(item.inlines))
+            n += 1
+            for child in item.children {
+                switch child {
+                case let .bulletList(sub):
+                    lines.append(serializeList(sub, ordered: false, start: 1, indent: indent + 1))
+                case let .orderedList(s, sub):
+                    lines.append(serializeList(sub, ordered: true, start: s, indent: indent + 1))
+                default:
+                    break   // list items only nest lists in this vocabulary
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     static func serializeInlines(_ inlines: [RichInline]) -> String {

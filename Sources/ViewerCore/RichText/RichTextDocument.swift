@@ -48,7 +48,14 @@ public indirect enum RichInline: Equatable, Sendable {
 /// for this restricted model; ``RichTextNormalizer`` flattens such input.)
 public struct RichListItem: Equatable, Sendable {
     public var inlines: [RichInline]
-    public init(_ inlines: [RichInline]) { self.inlines = inlines }
+    /// Nested sub-lists under this item (bulletList/orderedList blocks). Empty for
+    /// a flat item. TSK-1427: a rich-paste of a nested `<ul>`/`<ol>` must keep the
+    /// nesting (indented sub-items), not merge the inner items' text into this one.
+    public var children: [RichBlock]
+    public init(_ inlines: [RichInline], children: [RichBlock] = []) {
+        self.inlines = inlines
+        self.children = children
+    }
 }
 
 /// A block node. Closed vocabulary — every block in a `RichTextDocument` is one
