@@ -9,6 +9,10 @@ import ViewerKit
 @MainActor
 final class FakeAutomationHost: AutomationHost {
 
+    /// Per-instance canvas store (isolated per test — the class property is
+    /// the protocol witness, so canvas tools never touch the shared default).
+    let automationCanvasStore = CanvasDocumentStore()
+
     var openedPath: (URL, Bool)?
     var nextOpenedID: UUID = UUID()
     var selectedByIndex: Int?
@@ -73,7 +77,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 20)
+        XCTAssertEqual(names.count, 24)  // +4 canvas_* (M2.S3, TSK-1368)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -83,6 +87,8 @@ final class MCPToolCatalogTests: XCTestCase {
             "find", "search_files", "goto_line", "visible_text", "current_state",
             "toggle_bookmark", "list_bookmarks", "snapshot_window",
             "list_runnable_tasks", "process_memory", "outline", "git_status", "run_verb", "list_verbs", "list_surfaces", "lint",
+            // Canvas agent surface (M2.S3, TSK-1368):
+            "canvas_new", "canvas_open", "canvas_save", "canvas_apply",
         ]
         XCTAssertEqual(names, expected)
     }

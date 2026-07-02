@@ -14,6 +14,13 @@ import ViewerKit
 @MainActor
 public protocol AutomationHost: AnyObject {
 
+    // MARK: Canvas (M2 agent surface — TSK-1368)
+
+    /// The canvas document registry the canvas_* tools address. Defaulted
+    /// (below) to a process-shared store so existing hosts/doubles need no
+    /// changes; DocumentModel overrides with its own instance.
+    var automationCanvasStore: CanvasDocumentStore { get }
+
     // MARK: Files & tabs
 
     /// Open `url` in a new tab (or the current blank tab) and return
@@ -164,4 +171,14 @@ public enum AutomationLimits {
     /// Cap on `visibleText` payload. Design §8 calls for 10 MB; we
     /// pick the same value to match the framing ceiling intent.
     public static let visibleTextMaxBytes: Int = 10 * 1024 * 1024
+}
+
+
+/// Process-shared default canvas store (hosts that don't override share it;
+/// the live DocumentModel provides its own).
+@MainActor
+private let sharedCanvasStore = CanvasDocumentStore()
+
+extension AutomationHost {
+    public var automationCanvasStore: CanvasDocumentStore { sharedCanvasStore }
 }

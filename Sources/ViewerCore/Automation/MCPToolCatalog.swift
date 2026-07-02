@@ -1,4 +1,5 @@
 import Foundation
+import RustCore
 import ViewerKit
 
 /// The v1 MCP tools, per design §6. Each tool has a descriptor
@@ -43,6 +44,10 @@ public enum MCPToolCatalog {
         snapshotWindowDescriptor,
         listRunnableTasksDescriptor,
         processMemoryDescriptor,
+        canvasNewDescriptor,
+        canvasOpenDescriptor,
+        canvasSaveDescriptor,
+        canvasApplyDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -74,6 +79,10 @@ public enum MCPToolCatalog {
         case "snapshot_window":   return try snapshotWindow(args, host)
         case "list_runnable_tasks": return try listRunnableTasks(args, host)
         case "process_memory":    return try processMemory(args, host)
+        case "canvas_new":         return try canvasNew(args, host)
+        case "canvas_open":        return try canvasOpen(args, host)
+        case "canvas_save":        return try canvasSave(args, host)
+        case "canvas_apply":       return try canvasApply(args, host)
         default:
             throw MCPError.notFound("unknown tool: \(name)")
         }
@@ -781,4 +790,142 @@ public enum MCPToolCatalog {
         }
         return url
     }
+
+    // MARK: - canvas_* (M2 agent surface — TSK-1368; docs/canvas/plans/M2-PLAN.md)
+
+    /// The short grammar header embedded in tool descriptions (07-DSL-SPIKE:
+    /// the cheat-sheet leads, canvas_vocab carries the full vocabulary).
+    private static let canvasDSLHint = """
+        DSL: `<kind> [#id] ["text"] [prop=value …] [{` …children… `}` — kinds: \
+        frame/text/image/shape/component/embed/hole; edits: set/unset/move/remove #id; \
+        values: 8, "str", true, $token.path. Call canvas_vocab for the FULL vocabulary.
+        """
+
+    private static let canvasNewDescriptor = MCP.ToolDescriptor(
+        name: "canvas_new",
+        description: "Create an empty canvas document (default theme, root page pg:1). "
+            + "Returns {doc, rev}. " + canvasDSLHint,
+        inputSchema: emptySchema
+    )
+
+    private static func canvasNew(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        _ = args
+        do {
+            let doc = try host.automationCanvasStore.create()
+            return .object(["doc": .string(doc.id), "rev": .int(0)])
+        } catch {
+            throw MCPError.toolFailed("canvas_new: \(error)")
+        }
+    }
+
+    private static let canvasOpenDescriptor = MCP.ToolDescriptor(
+        name: "canvas_open",
+        description: "Open a .canvas file (deduped: one doc per file). Returns {doc, rev}.",
+        inputSchema: schema([
+            "path": .object(["type": .string("string"),
+                             "description": .string("Path to a .canvas file")]),
+        ], required: ["path"])
+    )
+
+    private static func canvasOpen(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let path = try args.string("path")
+        let url = try validatedExistingURL(from: path)
+        do {
+            let doc = try host.automationCanvasStore.open(url: url)
+            return .object(["doc": .string(doc.id), "rev": .int(Int(doc.lastKnownRev))])
+        } catch let e as CanvasStoreError {
+            throw MCPError.invalidParams(canvasStoreErrorMessage(e))
+        }
+    }
+
+    private static let canvasSaveDescriptor = MCP.ToolDescriptor(
+        name: "canvas_save",
+        description: "Save a canvas doc — to its file, or to `path` (untitled docs "
+            + "require path; the doc id re-keys to the path). Returns {doc, path}.",
+        inputSchema: schema([
+            "doc":  .object(["type": .string("string")]),
+            "path": .object(["type": .string("string"),
+                             "description": .string("Target .canvas path (optional when file-backed)")]),
+        ], required: ["doc"])
+    )
+
+    private static func canvasSave(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let id = try args.string("doc")
+        let path = try? args.string("path")
+        do {
+            let target = try host.automationCanvasStore.save(
+                id, to: path.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) })
+            let newID = CanvasDocumentStore.docID(for: target)
+            return .object(["doc": .string(newID), "path": .string(target.path)])
+        } catch let e as CanvasStoreError {
+            throw MCPError.invalidParams(canvasStoreErrorMessage(e))
+        }
+    }
+
+    private static let canvasApplyDescriptor = MCP.ToolDescriptor(
+        name: "canvas_apply",
+        description: "Apply a canvas DSL fragment (inserts under the root page; "
+            + "set/unset/move/remove statements for edits) against baseRev. Returns "
+            + "{rev, applied, minted, noop, lint} on success or {rejected, detail, "
+            + "currentRev} — a rejection is DATA, not an error: read detail, fix, retry. "
+            + canvasDSLHint,
+        inputSchema: schema([
+            "doc":     .object(["type": .string("string")]),
+            "baseRev": .object(["type": .string("integer"),
+                                "description": .string("The revision this edit is based on")]),
+            "dsl":     .object(["type": .string("string")]),
+        ], required: ["doc", "baseRev", "dsl"])
+    )
+
+    private static func canvasApply(_ args: MCP.Value, _ host: AutomationHost) throws -> MCP.Value {
+        let id = try args.string("doc")
+        let baseRev = try args.int("baseRev")
+        let dsl = try args.string("dsl")
+        let doc = try canvasDoc(id, host)
+        do {
+            let applied = try doc.adapter.applyDSL(baseRev: UInt64(baseRev), dsl)
+            doc.lastKnownRev = applied.rev
+            let lint: [MCP.Value] = applied.lint.map { f in
+                .object([
+                    "severity": .string(f.severity),
+                    "code": .string(f.code),
+                    "id": f.id.map { MCP.Value.string($0) } ?? .null,
+                    "message": .string(f.message),
+                ])
+            }
+            return .object([
+                "rev": .int(Int(applied.rev)),
+                "applied": .int(applied.patches.count),
+                "minted": .array(applied.minted.map { .string($0) }),
+                "noop": .bool(applied.noop),
+                "lint": .array(lint),
+            ])
+        } catch let rejection as CanvasRejection {
+            return .object([
+                "rejected": .string(rejection.kind),
+                "detail": .string(rejection.detail),
+                "currentRev": .int(Int(rejection.currentRev)),
+            ])
+        }
+    }
+
+    /// Shared doc lookup with the store's teaching message.
+    private static func canvasDoc(
+        _ id: String, _ host: AutomationHost
+    ) throws -> CanvasOpenDocument {
+        do {
+            return try host.automationCanvasStore.doc(id)
+        } catch let e as CanvasStoreError {
+            throw MCPError.invalidParams(canvasStoreErrorMessage(e))
+        }
+    }
+
+    private static func canvasStoreErrorMessage(_ e: CanvasStoreError) -> String {
+        switch e {
+        case .unknownDoc(let m), .notCanvasFile(let m), .loadFailed(let m),
+             .saveFailed(let m), .untitledNeedsPath(let m):
+            return m
+        }
+    }
+
 }
