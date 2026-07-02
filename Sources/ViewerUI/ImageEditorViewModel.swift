@@ -380,17 +380,26 @@ public final class ImageEditorViewModel: ObservableObject {
     public func commitGeometry(_ op: EditOp) {
         assert(op.isCommittable, "commitGeometry expects a geometry/draw op; tonal ops ride the slider state")
         // usability audit 2026-07-02: during a destructive paint session the painted
-        // buffer IS the visible document and SHADOWS base.ops in render(), so an op
-        // added only to base.ops was silently invisible AND lost on export (a user
-        // who painted then cropped/resized/rotated saw nothing happen). Transform the
-        // paint buffer THROUGH the op with the same Renderer so paint stays aligned
-        // with the geometry. (Draw ops likewise draw onto the live buffer.)
+        // buffer IS the visible document and SHADOWS base.ops in render(). Two rules
+        // fall out (TSK-1419/1421):
+        //  1. Transform the paint buffer THROUGH the op (same Renderer) so paint
+        //     stays aligned with the geometry — else the op is silently invisible
+        //     and lost on export.
+        //  2. Record the op on the UNIFIED paint-undo timeline (a pre-op snapshot),
+        //     NOT base.ops/undoStack. The split desynced undo: one undo reverted
+        //     BOTH the op and the last stroke together, and a second undo hit the
+        //     shadowed base.ops invisibly. Riding paintUndo makes undo peel strokes
+        //     and transforms in order; base.ops stays clean for when paint is
+        //     discarded (the destructive session is one undoable unit).
         if let canvas = paintCanvas, let image = canvas.cgImage() {
+            beginStroke()   // snapshot the pre-op buffer onto paintUndo + clear redo
             let probe = ImageDocument(data: Data(), ops: [op])   // source unused: render(_:base:) applies ops to `base`
             if let transformed = try? Renderer.render(probe, base: image),
                let rebaked = RasterCanvas.from(transformed) {
                 paintCanvas = rebaked
             }
+            render()
+            return
         }
         let next = base.appending(op).ops
         undoStack.push(next)

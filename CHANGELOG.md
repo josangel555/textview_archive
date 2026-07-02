@@ -74,6 +74,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Copy Reference covers a selection — now with a menu item + shortcut.** Select several lines in the editor and run **Edit ▸ Copy Reference** (⌘⌥⇧C, also in the ⌘K command palette) to copy a line-RANGE `mdv://` reference (`…?line=10&endLine=20`) to paste to an agent — "these are the lines I mean". With no selection it copies the current line as before. (Source-view selections carry the range today.)
 
 ### Fixed
+- **Image editor: undo works correctly when you mix painting and crop/resize/rotate.** Undo now steps back through your paint strokes and transforms one at a time in order, instead of reverting a transform and the previous stroke together.
 - **Image editor: Tone sliders no longer silently do nothing after you start painting.** Painting bakes the current tone into the image, so the Tone controls now disable with a note ("discard paint to adjust") instead of appearing to work but having no effect.
 - **Image editor: crop/resize/rotate now work after painting.** Applying a geometry edit once you'd started painting silently did nothing (and was lost on export); the painted layer now transforms with the image.
 - **Image editor: brush/eraser/bucket strokes are now undoable.** Painting lived
