@@ -325,6 +325,10 @@ public final class DocumentModel: ObservableObject {
     /// Owned here (not at ContentView level) so the menu item + script
     /// runner can toggle it without prop-drilling. See `GoToPathPrompt`.
     @Published public var isGoToPathPresented: Bool = false
+    /// The shared tool-results panel's current result set (TSK-1434) — non-nil
+    /// presents the panel (Check Links / Lint / Doc Stats / CSV Summary route
+    /// here instead of modal alerts). See `DocumentModel+ToolResults`.
+    @Published public var toolResults: ToolResults?
     /// LSP "Rename Symbol…" prompt presentation (TSK-640). Owned here so the
     /// command/menu + script runner toggle it without prop-drilling, mirroring
     /// `isGoToPathPresented`. The prompt's submit runs the host-tested

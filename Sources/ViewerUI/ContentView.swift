@@ -339,6 +339,18 @@ public struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
 
+            // TSK-1434: the shared tool-results panel (Check Links / Lint /
+            // Doc Stats / CSV Summary). NON-modal: no scrim, bottom-trailing,
+            // so the user keeps editing while walking the results.
+            if let toolResults = model.toolResults {
+                ToolResultsPanel(model: model, results: toolResults)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: .bottomTrailing)
+                    .compositingGroup()
+                    .zIndex(2)   // above AppKit-backed surfaces (LESSONS occlusion rule)
+            }
+
             // MARK: - GoToPath overlay
             // Lives under its own MARK so a parallel branch touching
             // ContentView (e.g. nested-tabs) doesn't clobber it on

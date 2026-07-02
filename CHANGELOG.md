@@ -264,6 +264,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-26
 
 ### Changed
+- **Tool results now open in a panel, not a pop-up.** Check Links, Lint, Document Statistics, and CSV Summary show their results in a floating panel — click a row to jump to that line, copy everything, keep editing while it's open — instead of a blocking alert. All four are now also in the command palette.
 - **Menus reorganized for clarity.** The overloaded View menu is decluttered: a new **Tools** menu (Document Statistics, Check Links, Lint Markdown, CSV Summary), a **File ▸ Export / Share** submenu (Copy as HTML/Markdown/JSON/CSV, Export HTML, Open in Browser), and a new **Format** menu (encoding/line-endings/indentation, trim whitespace, tabs↔spaces, table of contents, promote/demote headings, align tables). View now holds only see-the-doc actions.
 - **Editor caret no longer blinks** — the text cursor is now steady in both vim modes (the NORMAL-mode block cursor and the INSERT-mode line caret).
 - **Paste a copied table → opens as a table** — "New Tab from Clipboard" now detects a copied spreadsheet/web-table range (tab-separated) and opens it in the CSV/table viewer instead of as plain text. Comma-bearing prose is unaffected (only real tab-delimited grids are treated as tables).

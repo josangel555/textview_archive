@@ -139,6 +139,13 @@ public enum ScriptVerb {
             if let s = model.activeCSVAsJSON() { Pasteboard.copy(s) }
         case "copy-json-as-csv":
             if let s = model.activeJSONAsCSV() { Pasteboard.copy(s) }
+        // TSK-1434: doc-quality tools → the shared results panel (same entry
+        // points the Tools menu uses).
+        case "check-links":          _ = model.runCheckLinksToPanel()
+        case "lint-markdown":        _ = model.runLintToPanel()
+        case "document-stats":       _ = model.runDocStatsToPanel()
+        case "csv-summary":          _ = model.runCSVSummaryToPanel()
+        case "dismiss-tool-results": model.dismissToolResults()
         case "copy-reference":
             // TSK-1256/942: copy an mdv:// reference to the current editor SELECTION
             // (a line range for a multi-line span, else the current line) to the

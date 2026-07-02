@@ -183,6 +183,12 @@ public enum ScriptVerbCatalog {
         ScriptVerb("copy-csv-as-markdown-table", .files, .none, "Copy the active CSV as a Markdown table"),
         ScriptVerb("copy-csv-as-json", .files, .none, "Copy the active CSV as JSON"),
         ScriptVerb("copy-json-as-csv", .files, .none, "Copy the active JSON as CSV"),
+        // TSK-1434: the doc-quality tools — results go to the shared panel.
+        ScriptVerb("check-links", .files, .none, "Check the active Markdown's local links (results panel)"),
+        ScriptVerb("lint-markdown", .files, .none, "Lint the active Markdown (results panel)"),
+        ScriptVerb("document-stats", .files, .none, "Word/character/line counts (results panel)"),
+        ScriptVerb("csv-summary", .files, .none, "Column profile of the active CSV (results panel)"),
+        ScriptVerb("dismiss-tool-results", .files, .none, "Close the tool-results panel"),
         ScriptVerb("editor-set-text", .editor, .string, "Replace the active tab's editor buffer text"),
         ScriptVerb("editor-save", .editor, .none, "Save the active editor buffer (⌘S equivalent)"),
         ScriptVerb("editor-format", .editor, .none, "Whole-document LSP format of the active buffer"),

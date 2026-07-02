@@ -3235,22 +3235,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     /// TSK-675 — report broken local links/images in the active Markdown file.
     @objc func checkLinks(_ sender: Any?) {
-        guard let report = model.checkLinksInActiveMarkdown() else { return }
-        let alert = NSAlert()
-        if report.broken.isEmpty {
-            alert.messageText = "All links OK"
-            alert.informativeText =
-                "Checked \(report.total) link\(report.total == 1 ? "" : "s") — no broken local links or images."
-            alert.alertStyle = .informational
-        } else {
-            alert.messageText = "\(report.broken.count) of \(report.total) link(s) broken"
-            let shown = report.broken.prefix(25)
-                .map { "• line \($0.line): \($0.target)" }
-                .joined(separator: "\n")
-            alert.informativeText = shown + (report.broken.count > 25 ? "\n…" : "")
-            alert.alertStyle = .warning
-        }
-        alert.runModal()
+        // TSK-1434: results go to the shared non-modal panel (click-to-line).
+        _ = model.runCheckLinksToPanel()
     }
 
     /// Copy the active CSV as a Markdown pipe table.
@@ -3284,31 +3270,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     /// Show a profile of the active CSV (row/column counts + per-column stats).
     @objc func showCSVSummary(_ sender: Any?) {
-        guard let report = model.activeCSVSummary() else { return }
-        let alert = NSAlert()
-        alert.messageText = "CSV Summary"
-        alert.informativeText = report
-        alert.alertStyle = .informational
-        alert.runModal()
+        // TSK-1434: results go to the shared non-modal panel.
+        _ = model.runCSVSummaryToPanel()
     }
 
     /// Lint the active Markdown for common doc-quality issues.
     @objc func lintMarkdown(_ sender: Any?) {
-        guard let issues = model.lintActiveMarkdown() else { return }
-        let alert = NSAlert()
-        if issues.isEmpty {
-            alert.messageText = "No lint issues"
-            alert.informativeText = "No missing image alt text, heading-level skips, or duplicate anchors found."
-            alert.alertStyle = .informational
-        } else {
-            alert.messageText = "\(issues.count) lint issue\(issues.count == 1 ? "" : "s")"
-            let shown = issues.prefix(25)
-                .map { "• line \($0.line) [\($0.rule)]: \($0.message)" }
-                .joined(separator: "\n")
-            alert.informativeText = shown + (issues.count > 25 ? "\n…" : "")
-            alert.alertStyle = .warning
-        }
-        alert.runModal()
+        // TSK-1434: results go to the shared non-modal panel (click-to-line).
+        _ = model.runLintToPanel()
     }
 
     /// TSK-675 — copy the active Markdown rendered as standalone HTML to the clipboard.
@@ -3346,17 +3315,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     /// TSK-675 — show word/character/line counts for the active file.
     @objc func showDocumentStatistics(_ sender: Any?) {
-        guard let stats = model.activeDocumentStats else { return }
-        let alert = NSAlert()
-        alert.messageText = "Document Statistics"
-        alert.informativeText = """
-        Lines: \(stats.lines)
-        Words: \(stats.words)
-        Characters: \(stats.characters)
-        Characters (no whitespace): \(stats.charactersNoWhitespace)
-        """
-        alert.alertStyle = .informational
-        alert.runModal()
+        // TSK-1434: results go to the shared non-modal panel.
+        _ = model.runDocStatsToPanel()
     }
 
     /// TSK-705 — insert the snippet (built-in or user-defined) at the menu

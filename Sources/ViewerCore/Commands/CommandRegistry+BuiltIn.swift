@@ -467,9 +467,11 @@ extension CommandRegistry {
 
         // TSK-1425: clipboard-export conversions — ⌘K palette parity for the
         // File ▸ Export/Share menu items (non-interactive copy actions). The
-        // interactive export/tools actions (Export as HTML…, Lint, Check Links,
-        // CSV Summary, Document Statistics) show a panel/alert and stay menu-only,
-        // like Find/Replace/Open (correctly scriptVerb-less).
+        // Interactive export actions that open a dialog (Export as HTML…) stay
+        // menu-only, like Find/Replace/Open (correctly scriptVerb-less). The
+        // doc-quality tools (Lint / Check Links / CSV Summary / Document
+        // Statistics) route to the shared results PANEL since TSK-1434, so they
+        // are palette-invokable below.
         CommandDescriptor(
             id: "file.copyDocAsHTML", title: "Copy as HTML", category: .file,
             scriptVerb: "copy-doc-as-html"),
@@ -482,6 +484,19 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "file.copyJSONAsCSV", title: "Copy JSON as CSV", category: .file,
             scriptVerb: "copy-json-as-csv"),
+        // TSK-1434: doc-quality tools — results in the shared panel.
+        CommandDescriptor(
+            id: "file.checkLinks", title: "Check Links", category: .file,
+            scriptVerb: "check-links"),
+        CommandDescriptor(
+            id: "file.lintMarkdown", title: "Lint Markdown", category: .file,
+            scriptVerb: "lint-markdown"),
+        CommandDescriptor(
+            id: "file.documentStats", title: "Document Statistics", category: .file,
+            scriptVerb: "document-stats"),
+        CommandDescriptor(
+            id: "file.csvSummary", title: "CSV Summary", category: .file,
+            scriptVerb: "csv-summary"),
 
         CommandDescriptor(
             id: "git.toggleBlame", title: "Toggle Git Blame", category: .git,
