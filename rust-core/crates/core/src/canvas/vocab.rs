@@ -49,6 +49,8 @@ fn prop_note(name: &str) -> Option<&'static str> {
         "wrap" => "true to allow wrapping",
         "fit" => "cover | contain | fill",
         "note" => "what this hole placeholder still needs",
+        "role" => "layout role: artboard (UI-Design frame) | slide (presentation deck)",
+        "morphId" => "presentation morph tag: a node with the SAME morphId on two slides animates (FLIP) between its positions across the transition",
         "data" => "table cells: JSON array of rows, e.g. [[\"a\",\"b\"],[\"1\",\"2\"]]",
         "headers" => "true = the first data row renders as headers",
         "language" => "code language tag (display only in v1)",
@@ -92,6 +94,13 @@ pub fn emit_text(tokens: &TokenStore) -> String {
     out.push_str("COMPONENTS:  component #name { …children… }  defines a reusable\n");
     out.push_str("  block; use #name #instance [prop=…] [override text #anchor \"…\"]\n");
     out.push_str("  instantiates it (editing the definition updates every instance).\n");
+    out.push_str("PRESENTATION (a deck):  frame #slide-N role=slide { … } per slide;\n");
+    out.push_str("  step=K on a child reveals it at step K (base = always shown);\n");
+    out.push_str("  morphId=name on nodes in consecutive slides morphs them (FLIP);\n");
+    out.push_str("  canvas_timeline verifies reveals before pixels; canvas_export\n");
+    out.push_str("  {flavor: deck} = offline player, {flavor: print} = one-page-per-slide PDF.\n");
+    out.push_str("LAYOUT EXTRAS:  columns=N on a container → N-equal-column grid;\n");
+    out.push_str("  linkTo=#node on any element → click scrolls to it (prototype nav).\n");
     out.push_str("VALUES:  8 → number(px)  0.5 → number  \"text\" → string  cover → keyword\n");
     out.push_str("  true/false → bool  $color.accent → design-token reference\n");
     out.push_str("IDS:  #name mints nd:name (stable, addressable); omit to auto-mint;\n");
@@ -280,6 +289,8 @@ mod tests {
         for needle in [
             "ELEMENT LINES", "EDIT STATEMENTS", "set #id", "move #id to",
             "$color.accent", "conflict", "fence", "dsl", "Lint rides every apply",
+            "PRESENTATION (a deck)", "role=slide", "step=K", "morphId", "canvas_timeline",
+            "flavor: deck", "flavor: print", "columns=N", "linkTo=#node",
         ] {
             assert!(text.contains(needle), "cheat sheet missing: {needle}");
         }
