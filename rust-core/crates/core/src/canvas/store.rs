@@ -290,6 +290,40 @@ impl Store {
         self.records.keys()
     }
 
+    /// Tombstoned ids (unordered; persistence sorts).
+    pub fn tombstone_ids(&self) -> impl Iterator<Item = &Id> {
+        self.tombstones.iter()
+    }
+
+    /// The id-mint serial (persisted so loads keep minting fresh ids).
+    #[must_use]
+    pub fn serial(&self) -> u64 {
+        self.next_serial
+    }
+
+    /// Persistence restore: bulk-place verbatim records. Rejects duplicate
+    /// ids; performs NO structural validation beyond that (the saved form is
+    /// this engine's own output — `load` shape-checks fields).
+    pub fn restore_records(&mut self, records: Vec<Record>) -> Result<(), StoreError> {
+        for rec in records {
+            if self.records.contains_key(&rec.id) {
+                return Err(StoreError::DuplicateId(rec.id.as_str().to_owned()));
+            }
+            self.records.insert(rec.id.clone(), rec);
+        }
+        Ok(())
+    }
+
+    /// Persistence restore: the tombstone set.
+    pub fn restore_tombstones(&mut self, ids: Vec<Id>) {
+        self.tombstones.extend(ids);
+    }
+
+    /// Persistence restore: the mint serial.
+    pub fn restore_serial(&mut self, serial: u64) {
+        self.next_serial = serial;
+    }
+
     /// Mint a fresh, never-used id with the given prefix.
     pub fn mint_id(&mut self, prefix: &str) -> Result<Id, StoreError> {
         loop {

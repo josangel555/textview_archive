@@ -121,6 +121,12 @@ impl DocState {
         Self::default()
     }
 
+    /// Persistence restore: adopt a rebuilt store at a saved revision.
+    #[must_use]
+    pub fn restore(store: Store, rev: u64) -> Self {
+        DocState { store, rev }
+    }
+
     #[must_use]
     pub fn rev(&self) -> u64 {
         self.rev

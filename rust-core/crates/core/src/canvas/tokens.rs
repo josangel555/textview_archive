@@ -102,6 +102,27 @@ impl TokenStore {
         path.starts_with("base.")
     }
 
+    /// All defined paths (unordered; persistence sorts).
+    pub fn paths(&self) -> impl Iterator<Item = &str> {
+        self.defs.keys().map(String::as_str)
+    }
+
+    /// The full definition of a token (persistence read-back).
+    #[must_use]
+    pub fn def(&self, path: &str) -> Option<&TokenDef> {
+        self.defs.get(path)
+    }
+
+    /// Persistence restore: place a verbatim definition (path-fenced).
+    pub fn set_def(&mut self, path: &str, def: TokenDef) -> Result<(), TokenError> {
+        check_path(path)?;
+        if let TokenValue::Alias(target) = &def.value {
+            check_path(target)?;
+        }
+        self.defs.insert(path.to_owned(), def);
+        Ok(())
+    }
+
     /// Define/overwrite a literal token.
     pub fn set_literal(&mut self, path: &str, css: &str) -> Result<(), TokenError> {
         check_path(path)?;
