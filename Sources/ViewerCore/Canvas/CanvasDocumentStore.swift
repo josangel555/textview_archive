@@ -29,6 +29,12 @@ public final class CanvasOpenDocument {
     fileprivate func markSaved(to url: URL) {
         self.url = url
     }
+
+    /// Record the engine revision an accessor observed (tool layer + the
+    /// M3 tab controller share this bookkeeping).
+    public func noteRevision(_ rev: UInt64) {
+        lastKnownRev = rev
+    }
 }
 
 /// Faults surfaced to the tool layer (plain values — agent-readable).
@@ -88,6 +94,7 @@ public final class CanvasDocumentStore {
             throw CanvasStoreError.loadFailed("\(url.lastPathComponent): \(error)")
         }
         let doc = CanvasOpenDocument(id: id, adapter: adapter, url: url)
+        doc.noteRevision((try? adapter.currentRev()) ?? 0)
         docs[id] = doc
         return doc
     }

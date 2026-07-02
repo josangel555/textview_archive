@@ -98,6 +98,9 @@ public final class CanvasDocAdapter {
         session = try CanvasDocSession()
     }
 
+    /// The engine's current revision.
+    public func currentRev() throws -> UInt64 { try session.currentRev() }
+
     /// The full HTML lowering (theme block + page subtree).
     public func html() throws -> String {
         try session.html()

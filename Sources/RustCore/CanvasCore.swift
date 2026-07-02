@@ -158,6 +158,15 @@ public final class CanvasDocSession {
     /// Root page id of documents opened by `init` (the engine's constant).
     public static let rootPage = "pg:1"
 
+    /// The engine's current revision.
+    public func currentRev() throws -> UInt64 {
+        let h = try liveHandle()
+        var rev: UInt64 = 0
+        let status = mdvcore_canvas_rev(h, &rev)
+        try check(status)
+        return rev
+    }
+
     /// Lower the whole document to HTML (raw UTF-8 bytes).
     public func html() throws -> String {
         let h = try liveHandle()

@@ -103,6 +103,10 @@ public enum CVInboundMessage: Equatable, Sendable {
     case dragEnded(id: String, parent: String, beforeId: String?)
     /// Escape pressed (clear selection / cancel edit).
     case escapePressed
+    /// Delete/Backspace pressed with a selection (M3.S4 — remove it).
+    case deletePressed
+    /// ⌘Z pressed in the canvas surface (M3.S4 — engine undo).
+    case undoRequested
 }
 
 /// Codec faults (decode side).
@@ -217,6 +221,10 @@ public enum CVBridgeCodec {
             return .dragEnded(id: id, parent: parent, beforeId: dict["beforeId"] as? String)
         case "escapePressed":
             return .escapePressed
+        case "deletePressed":
+            return .deletePressed
+        case "undoRequested":
+            return .undoRequested
         default:
             throw CVBridgeCodecError.unknownType(type)
         }

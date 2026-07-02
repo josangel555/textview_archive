@@ -87,4 +87,65 @@ final class CanvasTabControllerTests: XCTestCase {
         XCTAssertNoThrow(
             try model.automationCanvasStore.doc(CanvasDocumentStore.docID(for: file)))
     }
+
+    // MARK: M3.S4 — intents → ops (TSK-1375)
+
+    /// Human gestures land in the ENGINE through the bridge intents — text
+    /// edit, drag-move, delete — and the projection reflects each.
+    func test_gesture_intents_mutate_the_engine() throws {
+        let model = harness.model
+        let controller = model.canvasController(forTab: UUID(), fileURL: file)
+        let doc = try XCTUnwrap(controller.doc)
+        // Seed a second node so moves/deletes have structure.
+        _ = try doc.adapter.applyDSL(baseRev: 1, "frame #row direction=row {\n}")
+        controller.host.onInbound?(.contentSet(seq: 1, nodeCount: 3, tsMs: 0))
+        // (trackedRev is stale=1 now: the seed bumped to 2 out-of-band —
+        // exactly the agent-co-edit case; the conflict path must absorb it.)
+
+        // Text edit via intent.
+        controller.host.onInbound?(.textEdited(id: "nd:t", text: "typed by hand"))
+        XCTAssertTrue(try doc.adapter.html().contains(">typed by hand<"),
+                      "textEdited must land in the engine (through conflict-retry)")
+
+        // Drag-move via intent: nd:t into #row.
+        controller.host.onInbound?(.dragEnded(id: "nd:t", parent: "nd:row", beforeId: nil))
+        let projected = try doc.adapter.renderDSL(node: "nd:row")
+        XCTAssertTrue(projected?.contains("#t") == true, "moved under #row: \(projected ?? "nil")")
+
+        // Delete via intent (selection first).
+        controller.host.onInbound?(.nodeClicked(id: "nd:t", shift: false))
+        controller.host.onInbound?(.deletePressed)
+        XCTAssertFalse(try doc.adapter.html().contains(">typed by hand<"),
+                       "deletePressed removes the selection")
+        XCTAssertEqual(controller.selectedIDs, [], "selection cleared after delete")
+    }
+
+    /// ⌘Z (undoRequested) walks the engine's undo stack.
+    func test_undoRequested_restores_prior_state() throws {
+        let model = harness.model
+        let controller = model.canvasController(forTab: UUID(), fileURL: file)
+        let doc = try XCTUnwrap(controller.doc)
+        controller.host.onInbound?(.textEdited(id: "nd:t", text: "v2"))
+        XCTAssertTrue(try doc.adapter.html().contains(">v2<"))
+        controller.host.onInbound?(.undoRequested)
+        XCTAssertTrue(try doc.adapter.html().contains(">mounted<"),
+                      "undo restored the pre-edit text")
+    }
+
+    /// The conflict path: an agent edit bumps the rev out-of-band; the very
+    /// next gesture must adopt currentRev and land (the one-retry loop).
+    func test_agent_coedit_conflict_is_absorbed_in_one_retry() throws {
+        let model = harness.model
+        let controller = model.canvasController(forTab: UUID(), fileURL: file)
+        let doc = try XCTUnwrap(controller.doc)
+        XCTAssertEqual(controller.trackedRev, 1)
+        // Agent co-edits (rev 1 → 2) behind the controller's back.
+        _ = try doc.adapter.applyDSL(baseRev: 1, "text #agent \"from the agent\"")
+        // Human gesture with the stale trackedRev.
+        controller.host.onInbound?(.textEdited(id: "nd:t", text: "human wins"))
+        XCTAssertTrue(try doc.adapter.html().contains(">human wins<"))
+        XCTAssertTrue(try doc.adapter.html().contains(">from the agent<"),
+                      "both edits survive — no clobber")
+        XCTAssertEqual(controller.trackedRev, 3, "controller adopted the stream")
+    }
 }

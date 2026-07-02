@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import RustCore
 import ViewerCore
 
 // Canvas M3.S1 (TSK-1372) — the tab↔engine binding (M3-PLAN §S1). One
@@ -23,6 +24,9 @@ public final class CanvasTabController: ObservableObject {
     @Published public private(set) var phase: Phase = .mounting
     /// Sequence counter for outbound messages.
     private var seq: UInt64 = 0
+    /// The engine revision this controller last observed (the write path's
+    /// baseRev; conflict recovery refreshes it from the rejection).
+    public private(set) var trackedRev: UInt64 = 0
 
     public enum Phase: Equatable {
         case mounting
@@ -37,7 +41,9 @@ public final class CanvasTabController: ObservableObject {
             self?.handle(message)
         }
         do {
-            self.doc = try store.open(url: fileURL)
+            let opened = try store.open(url: fileURL)
+            self.doc = opened
+            self.trackedRev = opened.lastKnownRev
         } catch {
             self.phase = .failed(String(describing: error))
         }
@@ -60,6 +66,50 @@ public final class CanvasTabController: ObservableObject {
         host.teardown()
     }
 
+    // MARK: - the write path (M3.S4)
+
+    /// Apply a human gesture as engine ops — THE SAME path the agent uses.
+    /// On a revision conflict (an agent edited concurrently): adopt the
+    /// engine's currentRev and retry ONCE; a second failure falls back to a
+    /// full re-lower (state is never guessed).
+    func applyGesture(_ ops: [CanvasDocOp], isRetry: Bool = false) {
+        guard let doc else { return }
+        do {
+            let applied = try doc.adapter.apply(baseRev: trackedRev, ops)
+            trackedRev = applied.rev
+            doc.noteRevision(applied.rev)
+            seq += 1
+            host.send(.applyPatches(seq: seq, patches: applied.patches))
+        } catch let rejection as CanvasRejection {
+            if rejection.kind == "conflict", !isRetry {
+                trackedRev = rejection.currentRev
+                applyGesture(ops, isRetry: true)
+            } else {
+                NSLog("canvas gesture rejected (%@): %@ — re-lowering",
+                      rejection.kind, rejection.detail)
+                refresh()
+            }
+        } catch {
+            NSLog("canvas gesture failed: %@", String(describing: error))
+            refresh()
+        }
+    }
+
+    /// Engine undo (⌘Z in the surface) + full re-lower (undo is a re-lower
+    /// in v1 per M1.S9).
+    public func undoLastBatch() {
+        guard let doc else { return }
+        do {
+            if let rev = try doc.adapter.undo() {
+                trackedRev = rev
+                doc.noteRevision(rev)
+                refresh()
+            }
+        } catch {
+            NSLog("canvas undo failed: %@", String(describing: error))
+        }
+    }
+
     // MARK: - inbound
 
     private func handle(_ message: CVInboundMessage) {
@@ -78,9 +128,20 @@ public final class CanvasTabController: ObservableObject {
             seq += 1
             host.send(.clearSelection)
         case .applied, .geometry, .text:
-            break // S4+ consumers
-        case .textEdited, .dragEnded:
-            break // S4/S6 wire these to ops
+            break // patch acks / query replies (S7 latency wiring)
+        case .textEdited(let id, let text):
+            applyGesture([.update(id: id, set: [("text", .str(text))], unset: [])])
+        case .dragEnded(let id, let parent, let beforeId):
+            let pos: CanvasDocPosition = beforeId.map { .before($0) } ?? .last
+            applyGesture([.move(id: id, parent: parent, pos: pos)])
+        case .deletePressed:
+            guard !selectedIDs.isEmpty else { break }
+            applyGesture(selectedIDs.map { .remove(id: $0) })
+            selectedIDs = []
+            seq += 1
+            host.send(.clearSelection)
+        case .undoRequested:
+            undoLastBatch()
         case .error(let message):
             NSLog("canvas runtime error: %@", message)
         case .unsupportedVersion(let v):

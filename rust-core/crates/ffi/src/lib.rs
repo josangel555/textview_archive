@@ -1389,6 +1389,37 @@ pub unsafe extern "C" fn mdvcore_canvas_lint(
     })
 }
 
+/// Read the document's current revision.
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::Busy`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `handle` must be live; `out_rev` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_canvas_rev(
+    handle: *mut canvas_handle::CanvasHandle,
+    out_rev: *mut u64,
+) -> MdvStatus {
+    ffi_guard!({
+        if handle.is_null() || out_rev.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_rev validated non-null.
+        unsafe { *out_rev = 0 };
+        let Some(h) = canvas_handle::CanvasHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|doc| {
+            // SAFETY: out_rev validated non-null.
+            unsafe { *out_rev = doc.state.rev() };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// Free a canvas handle. Null-tolerant and idempotent.
 ///
 /// # Safety

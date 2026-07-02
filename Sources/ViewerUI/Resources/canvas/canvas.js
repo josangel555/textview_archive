@@ -178,9 +178,20 @@
     });
   });
 
-  // Escape → intent (Swift clears and echoes clearSelection).
+  // Keyboard intents (Swift owns the semantics; JS only reports).
   window.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") post({ type: "escapePressed" });
+    if (e.key === "Escape") { post({ type: "escapePressed" }); return; }
+    // Never steal keys from an active inline edit (S5 contenteditable).
+    if (e.target && e.target.isContentEditable) return;
+    if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+      post({ type: "deletePressed" });
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      post({ type: "undoRequested" });
+      e.preventDefault();
+    }
   });
 
   window.cvDispatch = function (json) {
