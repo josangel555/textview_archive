@@ -1,5 +1,14 @@
 # TextView / MarkdownViewer — Claude instructions
 
+## Context budgets (2026-07-03)
+
+- **`HANDOFF.md` is CURRENT STATE, not a session log** — update it in place; never append
+  tick-by-tick history (that lives in git log / the board / docs). It is re-injected into
+  context after every compaction, so bloat is a permanent per-session token tax.
+- Budgets have TEETH: `ContextBudgetTests` (host gate) caps `HANDOFF.md` at 12 KB and this
+  file at 40 KB; the re-inject hook truncates over-budget handoffs with a prune instruction.
+  A red budget test means PRUNE THE FILE — bumping a budget is an owner decision.
+
 ## Testing rules
 
 ### ⛔ NEVER report a render/on-screen bug "fixed" without confirming on the REAL UI (OWNER DIRECTIVE 2026-06-20)
