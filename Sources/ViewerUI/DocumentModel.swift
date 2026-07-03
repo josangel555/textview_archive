@@ -844,11 +844,11 @@ public final class DocumentModel: ObservableObject {
     /// single entry point for the sidebar right-click → Rename and the F2
     /// key (TSK-283).
     ///
-    /// An editor tab open on the renamed file is intentionally left as-is:
-    /// it surfaces the existing `diskState == .deleted` "moved on disk"
-    /// signal, identical to renaming the file in Finder while it's open.
-    /// Silently repointing the live editor buffer/state is a separate,
-    /// view-coupled change deferred out of this slice.
+    /// TSK-1463: open tabs FOLLOW the rename — `retargetOpenTabs` repoints
+    /// the tab URL, loaded state, and editor buffer (preserving unsaved
+    /// edits), for the exact item and anything beneath a renamed folder.
+    /// (This used to be deferred; a rename stranded open tabs on the dead
+    /// path with a spurious "deleted on disk" dot.)
     @discardableResult
     public func renameFile(at url: URL, to newName: String) -> URL? {
         do {
@@ -856,6 +856,7 @@ public final class DocumentModel: ObservableObject {
             let parent = url.deletingLastPathComponent()
             sidebar.reloadChildren(of: parent)
             sidebar.setSelected(newURL)
+            retargetOpenTabs(from: url, to: newURL)
             if bookmarksStore.relocate(from: url, to: newURL) > 0 {
                 refreshBookmarks()
             }

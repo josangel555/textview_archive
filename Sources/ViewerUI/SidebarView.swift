@@ -350,6 +350,39 @@ struct SidebarView: View {
         _ = model.renameFile(at: url, to: field.stringValue)
     }
 
+    /// TSK-1463: destructive-op confirmation for right-click → Move to Trash.
+    /// Same light NSAlert idiom as the rename prompt; the disk work + tab/tree
+    /// follow-through live in `DocumentModel.deleteFileToTrash` (always the
+    /// Trash — recoverable — never a hard unlink).
+    @MainActor
+    static func presentDeleteConfirm(for url: URL, model: DocumentModel) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Move \u{201C}\(url.lastPathComponent)\u{201D} to Trash?"
+        alert.informativeText =
+            "You can put it back from the Trash. Tabs open on it stay open — saving them recreates the file."
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        _ = model.deleteFileToTrash(at: url)
+    }
+
+    /// TSK-1463: right-click → Move to Folder… — a directory picker, then the
+    /// collision-safe `DocumentModel.moveFile` (never overwrites; open tabs
+    /// and bookmarks follow the move).
+    @MainActor
+    static func presentMovePanel(for url: URL, model: DocumentModel) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Move"
+        panel.message = "Choose a destination folder for \u{201C}\(url.lastPathComponent)\u{201D}."
+        panel.directoryURL = url.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        _ = model.moveFile(at: url, to: dest)
+    }
+
     // MARK: - Accordion stack (visibility-aware divider placement)
     //
     // Below FILES sits an ordered run of panels; each one is either
@@ -1146,8 +1179,16 @@ private struct FileRowContextMenu: View {
         // TSK-355: hand the file to its default external app (Preview, Numbers, …).
         Button("Open in Default App") { Finder.openInDefaultApp(node.url) }
         // TSK-283: rename this file/folder (also bound to F2). Collision-safe
-        // via the model; the tree + bookmarks follow the move.
+        // via the model; the tree + bookmarks + open tabs follow the move.
         Button("Rename…") { SidebarView.presentRenamePrompt(for: node.url, model: model) }
+        // TSK-1463: move into another folder (picker). Never overwrites; open
+        // tabs and bookmarks follow.
+        Button("Move to Folder…") { SidebarView.presentMovePanel(for: node.url, model: model) }
+        // TSK-1463: trash — confirmed, recoverable, never a hard delete. Open
+        // tabs stay open (marked "deleted on disk"); saving recreates the file.
+        Button("Move to Trash…", role: .destructive) {
+            SidebarView.presentDeleteConfirm(for: node.url, model: model)
+        }
         if node.isDirectory {
             // TSK-329/747: create a new file in this folder (the right-click →
             // New File entry point). Atomic + non-colliding via the model.
@@ -1163,6 +1204,8 @@ private struct FileRowContextMenu: View {
                     }
                 }
             }
+            // TSK-1463: non-colliding "untitled folder" here.
+            Button("New Folder") { _ = model.createNewFolder(in: node.url) }
             Divider()
             Button("Open in Terminal") {
                 model.openTerminalInApp(at: node.url, isDirectory: node.isDirectory)

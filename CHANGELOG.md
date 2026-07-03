@@ -11,6 +11,14 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **File tree grew safe file operations — Move to Trash, New Folder, Move to
+  Folder, and renames that open tabs follow.** Right-click a file or folder:
+  Move to Trash asks first and is always recoverable (never a hard delete;
+  tabs open on it stay open and re-saving recreates the file), New Folder
+  creates a non-colliding "untitled folder", and Move to Folder relocates
+  without ever overwriting. Renaming or moving a file — or a whole folder —
+  now retargets any open tabs (including unsaved edits) instead of stranding
+  them on the old path with a "deleted on disk" dot.
 - **Local History grew Restore — and File → Local History now opens the full
   timeline.** The File-menu entry used to open a bare view-only list; it now
   opens the same viewer as the context menus: timeline with per-save size
