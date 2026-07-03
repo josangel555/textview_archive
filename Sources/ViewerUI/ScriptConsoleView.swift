@@ -69,9 +69,14 @@ struct ScriptConsoleView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("mdv.scriptConsole.error")
+            } else if vm.output.isEmpty {
+                // TSK-1435: purposeful empty state (what the console does +
+                // how input/output flow) instead of the bare dash line.
+                HostedEmptyStateView(EmptyStateCatalog.scriptConsole)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("mdv.scriptConsole.output")
             } else {
-                Text(vm.output.isEmpty ? "— run an expression to see output —" : vm.output)
-                    .foregroundStyle(vm.output.isEmpty ? .secondary : .primary)
+                Text(vm.output)
                     .font(.system(.body, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)

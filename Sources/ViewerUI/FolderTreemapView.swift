@@ -78,10 +78,10 @@ struct FolderTreemapView: View {
     }
 
     private var emptyRow: some View {
-        Text("This folder is empty.")
-            .font(.system(size: doc.uiSize(11)))
-            .foregroundStyle(.tertiary)
-            .frame(height: 60)
+        // TSK-1435: purposeful empty state — names the tool and the next step
+        // instead of the bare "This folder is empty.".
+        HostedEmptyStateView(EmptyStateCatalog.folderTreemap)
+            .frame(maxWidth: .infinity)
     }
 
     // MARK: - Treemap canvas

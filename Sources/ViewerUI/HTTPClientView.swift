@@ -149,8 +149,9 @@ struct HTTPClientView: View {
                         .accessibilityIdentifier("mdv.http.responseBody")
                 }
             } else {
-                Text("Send a request to see the response.")
-                    .foregroundColor(.secondary)
+                // TSK-1435: purposeful empty state (what this tool is + how
+                // to fire the first request).
+                HostedEmptyStateView(EmptyStateCatalog.httpClient)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }

@@ -42,9 +42,10 @@ struct TaskRunnerView: View {
 
     @ViewBuilder private var taskList: some View {
         if vm.tasks.isEmpty {
-            Text("No runnable tasks found (package.json scripts / Cargo / Makefile).")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // TSK-1435: purposeful empty state — says where tasks come from so
+            // the user knows how to make some appear.
+            HostedEmptyStateView(EmptyStateCatalog.taskRunner)
+                .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("mdv.taskRunner.empty")
         } else {
             List(vm.tasks, selection: $vm.selectedTaskID) { task in
@@ -73,12 +74,18 @@ struct TaskRunnerView: View {
                     if let err = vm.errorMessage {
                         Text(err).foregroundStyle(.red).font(.system(.caption, design: .monospaced))
                     }
-                    Text(vm.output.isEmpty ? "— select a task and Run —" : vm.output)
-                        .foregroundStyle(vm.output.isEmpty ? .secondary : .primary)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("mdv.taskRunner.output")
+                    if vm.output.isEmpty {
+                        // TSK-1435: shared empty-state card for the output pane.
+                        HostedEmptyStateView(EmptyStateCatalog.taskRunnerOutput)
+                            .frame(maxWidth: .infinity)
+                            .accessibilityIdentifier("mdv.taskRunner.output")
+                    } else {
+                        Text(vm.output)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("mdv.taskRunner.output")
+                    }
                 }
             }
         }

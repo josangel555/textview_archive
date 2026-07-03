@@ -175,12 +175,10 @@ public struct SQLiteBrowserView: View {
         } else if let result = model.queryResult {
             ResultTableView(result: result, uiScale: uiScale)
         } else {
-            VStack(spacing: 8) {
-                Text("Click a table or write a SELECT, then ⌘↵ to run.")
-                    .font(.system(size: 11 * uiScale))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // TSK-1435: purposeful empty state (what this tool is + both ways
+            // to get a first result) instead of the bare hint line.
+            HostedEmptyStateView(EmptyStateCatalog.sqliteBrowser)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

@@ -100,8 +100,10 @@ struct FeedReaderView: View {
                 }
             }
             .overlay {
+                // TSK-1435: purposeful empty state (what this is + next step)
+                // instead of the bare "No feeds".
                 if model.summaries.isEmpty {
-                    Text("No feeds").foregroundStyle(.secondary)
+                    HostedEmptyStateView(EmptyStateCatalog.feedReader)
                 }
             }
         }
@@ -167,10 +169,13 @@ struct FeedReaderView: View {
             }
         }
         .overlay {
-            if model.selectedFeedURL == nil {
-                Text("Select a feed").foregroundStyle(.secondary)
-            } else if model.items.isEmpty {
-                Text("No items").foregroundStyle(.secondary)
+            // TSK-1435: one guidance card for both "nothing selected" and
+            // "selected feed has no items" (its copy covers both next steps).
+            // Suppressed while there are no feeds at all — the sidebar's
+            // feedReader empty state already owns that moment.
+            if !model.summaries.isEmpty,
+               model.selectedFeedURL == nil || model.items.isEmpty {
+                HostedEmptyStateView(EmptyStateCatalog.feedReaderItems)
             }
         }
     }

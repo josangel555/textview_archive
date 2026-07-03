@@ -11,6 +11,10 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Tool views now explain themselves when empty.** Feeds, HTTP Request, the
+  SQLite browser, the folder size map, the script console, and the task runner
+  used to open as a blank pane (or a terse "No feeds"); each now says what the
+  view does and what to do first, in one consistent style.
 - **Feed Reader (RSS) is now reachable — File → Feed Reader.** The built-in feed reader (subscriptions, OPML import, refresh, unread counts) was complete but had no way to open it; it now opens in a tab.
 - **Canvas Presentation mode:** build a themed slide deck entirely through the
   agent tools — stepped reveals, identity-morph transitions (a shared element
