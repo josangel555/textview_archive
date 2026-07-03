@@ -121,4 +121,108 @@ final class CrossFileReplaceModelTests: XCTestCase {
         model.runCrossFileReplace()
         XCTAssertNil(model.crossSearchReplaceStatus)
     }
+
+    // MARK: - Preview → confirm flow (TSK-1465 safe replace)
+
+    /// Wait for the preview outcomes to publish.
+    private func awaitPreview(_ model: DocumentModel) {
+        let done = expectation(description: "preview posted")
+        let cancellable = model.$crossSearchReplacePreview.dropFirst().sink { preview in
+            if preview != nil { done.fulfill() }
+        }
+        model.runCrossFileReplacePreview()
+        wait(for: [done], timeout: 5)
+        cancellable.cancel()
+    }
+
+    func test_previewFlow_reportsCounts_withoutWriting() throws {
+        let a = try write("a.txt", "foo and foo")
+        let model = makeModel()
+        model.crossSearchQuery = "foo"
+        model.crossSearchReplacement = "bar"
+        model.crossSearchCaseSensitive = true
+        model.crossSearchResults = [CrossFileSearch.FileMatches(url: a, matches: [])]
+
+        awaitPreview(model)
+
+        XCTAssertEqual(model.crossSearchReplacePreview?.count, 1)
+        XCTAssertEqual(model.crossSearchReplacePreview?.first?.replacements, 2)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "foo and foo",
+                       "preview must not touch the disk")
+        XCTAssertFalse(model.crossSearchResults.isEmpty,
+                       "results stay listed while the confirm step is pending")
+    }
+
+    func test_confirm_appliesPreviewedReplace_andClearsPreview() throws {
+        let a = try write("a.txt", "foo and foo")
+        let model = makeModel()
+        model.crossSearchQuery = "foo"
+        model.crossSearchReplacement = "bar"
+        model.crossSearchCaseSensitive = true
+        model.crossSearchResults = [CrossFileSearch.FileMatches(url: a, matches: [])]
+        awaitPreview(model)
+
+        let done = expectation(description: "replace status posted")
+        let cancellable = model.$crossSearchReplaceStatus.dropFirst().sink { status in
+            if status != nil { done.fulfill() }
+        }
+        model.confirmCrossFileReplace()
+        XCTAssertNil(model.crossSearchReplacePreview, "confirm consumes the preview")
+        wait(for: [done], timeout: 5)
+        cancellable.cancel()
+
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "bar and bar")
+        XCTAssertEqual(model.crossSearchReplaceStatus, "Replaced 2 occurrences in 1 file")
+    }
+
+    func test_cancelPreview_discardsWithoutWriting() throws {
+        let a = try write("a.txt", "foo")
+        let model = makeModel()
+        model.crossSearchQuery = "foo"
+        model.crossSearchReplacement = "bar"
+        model.crossSearchCaseSensitive = true
+        model.crossSearchResults = [CrossFileSearch.FileMatches(url: a, matches: [])]
+        awaitPreview(model)
+
+        model.cancelCrossFileReplacePreview()
+        XCTAssertNil(model.crossSearchReplacePreview)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "foo",
+                       "backing out of the confirm step writes nothing")
+    }
+
+    // MARK: - Query persistence + cancel state (TSK-1465)
+
+    func test_dismiss_retainsQuery_clearsTransientState() {
+        let model = makeModel()
+        model.crossSearchQuery = "needle"
+        model.crossSearchResults = [CrossFileSearch.FileMatches(
+            url: tmpDir.appendingPathComponent("x.md"), matches: [])]
+        model.crossSearchProgress = CrossSearchProgress(scanned: 5, matches: 1)
+        model.crossSearchReplacePreview = []
+
+        model.dismissCrossSearch()
+
+        XCTAssertEqual(model.crossSearchQuery, "needle",
+                       "the last query survives a dismiss (persist-last-query)")
+        XCTAssertTrue(model.crossSearchResults.isEmpty)
+        XCTAssertNil(model.crossSearchProgress)
+        XCTAssertNil(model.crossSearchReplacePreview)
+        XCTAssertFalse(model.isCrossSearchPresented)
+    }
+
+    func test_cancelToken_tripsCooperatively() {
+        let token = CrossSearchCancelToken()
+        XCTAssertFalse(token.isCancelled)
+        token.cancel()
+        XCTAssertTrue(token.isCancelled)
+    }
+
+    func test_cancelCrossSearch_tripsTheCurrentToken() {
+        let model = makeModel()
+        let token = CrossSearchCancelToken()
+        model.crossSearchCancelToken = token
+        model.cancelCrossSearch()
+        XCTAssertTrue(token.isCancelled,
+                      "the Stop button must trip the walk's cooperative token")
+    }
 }

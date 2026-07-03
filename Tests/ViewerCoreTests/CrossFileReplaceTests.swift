@@ -206,4 +206,48 @@ final class CrossFileReplaceTests: XCTestCase {
         XCTAssertEqual(s.filesChanged, 2)
         XCTAssertEqual(s.failures.count, 1)
     }
+
+    // MARK: - Preview (TSK-1465 — the safe-replace confirm step)
+
+    func test_preview_reportsCounts_writesNothing() throws {
+        let a = try write("a.md", "one foo two foo\n")
+        let b = try write("b.md", "no match here\n")
+        let beforeA = try Data(contentsOf: a)
+        let beforeB = try Data(contentsOf: b)
+
+        let outcomes = CrossFileReplace.preview(
+            toFiles: [a, b], query: "foo", replacement: "bar",
+            caseSensitive: false, useRegex: false)
+
+        XCTAssertEqual(outcomes.count, 1, "only files with matches appear")
+        XCTAssertEqual(outcomes.first?.replacements, 2)
+        XCTAssertNil(outcomes.first?.error)
+        XCTAssertEqual(try Data(contentsOf: a), beforeA,
+                       "preview must be byte-identical no-write")
+        XCTAssertEqual(try Data(contentsOf: b), beforeB)
+    }
+
+    func test_preview_countsAgreeWithApply() throws {
+        let a = try write("agree.md", "x foo y FOO z\n")
+
+        let previewed = CrossFileReplace.preview(
+            toFiles: [a], query: "foo", replacement: "bar",
+            caseSensitive: false, useRegex: false)
+        let applied = CrossFileReplace.apply(
+            toFiles: [a], query: "foo", replacement: "bar",
+            caseSensitive: false, useRegex: false)
+
+        XCTAssertEqual(previewed.map(\.replacements), applied.map(\.replacements),
+                       "the confirm step must promise exactly what apply does")
+        XCTAssertEqual(read(a), "x bar y bar z\n")
+    }
+
+    func test_preview_surfacesUnreadableFile_asFailure() {
+        let ghost = dir.appendingPathComponent("ghost.md")
+        let outcomes = CrossFileReplace.preview(
+            toFiles: [ghost], query: "foo", replacement: "bar",
+            caseSensitive: false, useRegex: false)
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertNotNil(outcomes.first?.error)
+    }
 }

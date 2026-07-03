@@ -120,7 +120,20 @@ struct CrossSearchPanel: View {
                 .accessibilityLabel("Show replace")
                 .accessibilityIdentifier("mdv.crossSearch.replaceToggle")
                 if model.crossSearchIsRunning {
+                    // TSK-1465 — live walk feedback + a real cancel (stops the
+                    // walk; whatever was found so far still lands).
                     ProgressView().controlSize(.small)
+                    if let progress = model.crossSearchProgress, progress.scanned > 0 {
+                        Text("\(progress.scanned) scanned · \(progress.matches) found")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("mdv.crossSearch.progress")
+                    }
+                    Button("Stop") { model.cancelCrossSearch() }
+                        .controlSize(.small)
+                        .help("Stop searching and keep the matches found so far")
+                        .accessibilityIdentifier("mdv.crossSearch.cancel")
                 }
                 Button {
                     model.dismissCrossSearch()
@@ -140,6 +153,12 @@ struct CrossSearchPanel: View {
             if model.crossSearchReplaceVisible && !model.crossSearchFilenameMode {
                 Divider()
                 replaceRow
+                // TSK-1465 — the confirm step: what WOULD change, before any
+                // byte moves. Non-nil only after "Preview Replace".
+                if let preview = model.crossSearchReplacePreview {
+                    Divider()
+                    replacePreviewSection(preview)
+                }
             }
 
             modeRow
@@ -217,7 +236,7 @@ struct CrossSearchPanel: View {
             TextField("Replace with…", text: $model.crossSearchReplacement)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
-                .onSubmit { model.runCrossFileReplace() }
+                .onSubmit { model.runCrossFileReplacePreview() }
                 .accessibilityIdentifier("mdv.crossSearch.replaceField")
             if let status = model.crossSearchReplaceStatus {
                 Text(status)
@@ -226,13 +245,69 @@ struct CrossSearchPanel: View {
                     .lineLimit(1)
                     .accessibilityIdentifier("mdv.crossSearch.replaceStatus")
             }
-            Button("Replace All") { model.runCrossFileReplace() }
+            // TSK-1465 — replace is a two-step: PREVIEW (no writes), then a
+            // confirm in the section below. The one-click blind write is gone.
+            Button("Preview Replace") { model.runCrossFileReplacePreview() }
                 .controlSize(.small)
                 .disabled(model.crossSearchResults.isEmpty
                           || model.crossSearchQuery.isEmpty
                           || model.crossSearchIsRunning)
-                .help("Replace every match across all listed files")
+                .help("Show what would change — per file — before writing anything")
                 .accessibilityIdentifier("mdv.crossSearch.replaceAll")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    /// TSK-1465 — the confirm step: totals + per-file would-be counts (and
+    /// per-file failures), then an explicit destructive confirm. Computed by
+    /// the SAME engine path as the write, so it can't disagree with it.
+    private func replacePreviewSection(_ preview: [CrossFileReplace.FileOutcome]) -> some View {
+        let summary = CrossFileReplace.Summary(outcomes: preview)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "eye")
+                    .foregroundStyle(.secondary)
+                Text(summary.totalReplacements == 0
+                     ? "Nothing to replace."
+                     : "Will replace \(summary.totalReplacements) occurrence\(summary.totalReplacements == 1 ? "" : "s") in \(summary.filesChanged) file\(summary.filesChanged == 1 ? "" : "s").")
+                    .font(.system(size: 12, weight: .medium))
+                    .accessibilityIdentifier("mdv.crossSearch.previewSummary")
+                Spacer()
+                Button("Cancel") { model.cancelCrossFileReplacePreview() }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("mdv.crossSearch.previewCancel")
+                Button("Replace", role: .destructive) { model.confirmCrossFileReplace() }
+                    .controlSize(.small)
+                    .disabled(summary.totalReplacements == 0)
+                    .help("Write the previewed replacements to disk")
+                    .accessibilityIdentifier("mdv.crossSearch.previewConfirm")
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(preview, id: \.url) { outcome in
+                        HStack(spacing: 6) {
+                            Text(outcome.url.lastPathComponent)
+                                .font(.system(size: 11, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            if let error = outcome.error {
+                                Text(error)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.orange)
+                                    .lineLimit(1)
+                            } else {
+                                Text("\(outcome.replacements)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 110)
+            .accessibilityIdentifier("mdv.crossSearch.previewList")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -455,41 +530,64 @@ struct CrossSearchPanel: View {
 private struct CrossSearchFileGroupView: View {
     let group: CrossFileSearch.FileMatches
     @ObservedObject var model: DocumentModel
+    /// TSK-1465 — per-file collapse: fold a noisy file's matches away while
+    /// scanning the rest. View-local (resets on a new search — deliberate).
+    @State private var isCollapsed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                model.openPath(group.url)
-                model.dismissCrossSearch()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.text")
-                        .foregroundStyle(.secondary)
-                    Text(group.url.lastPathComponent)
-                        .font(.system(.body, design: .default).weight(.medium))
-                    // Filename-mode hits carry no line matches (TSK-758) — the
-                    // file itself is the result, so the "(N)" count is hidden.
-                    if !group.matches.isEmpty {
-                        Text("(\(group.matches.count))")
-                            .font(.caption)
+            HStack(spacing: 0) {
+                // The collapse chevron is a SEPARATE target from the header
+                // (which opens the file) so the two actions don't fight.
+                if !group.matches.isEmpty {
+                    Button {
+                        isCollapsed.toggle()
+                    } label: {
+                        Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
                     }
-                    Spacer()
-                    Text(group.url.deletingLastPathComponent().path)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
+                    .buttonStyle(.plain)
+                    .padding(.leading, 6)
+                    .help(isCollapsed ? "Show this file's matches" : "Hide this file's matches")
+                    .accessibilityIdentifier("mdv.crossSearch.groupCollapse")
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 4)
+                Button {
+                    model.openPath(group.url)
+                    model.dismissCrossSearch()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                        Text(group.url.lastPathComponent)
+                            .font(.system(.body, design: .default).weight(.medium))
+                        // Filename-mode hits carry no line matches (TSK-758) — the
+                        // file itself is the result, so the "(N)" count is hidden.
+                        if !group.matches.isEmpty {
+                            Text("(\(group.matches.count))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(group.url.deletingLastPathComponent().path)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                    }
+                    .padding(.trailing, 14)
+                    .padding(.leading, group.matches.isEmpty ? 14 : 4)
+                    .padding(.vertical, 4)
+                }
+                // UIRESP-06: file-group header reads as clickable (opens the
+                // file) with hover background + pointing-hand cursor.
+                .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+                .accessibilityLabel("Open \(group.url.lastPathComponent), \(group.matches.count) matches")
             }
-            // UIRESP-06: file-group header reads as clickable (opens the
-            // file) with hover background + pointing-hand cursor.
-            .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
-            .accessibilityLabel("Open \(group.url.lastPathComponent), \(group.matches.count) matches")
 
-            ForEach(group.matches.prefix(8), id: \.lineNumber) { m in
+            ForEach(isCollapsed ? [] : Array(group.matches.prefix(8)), id: \.lineNumber) { m in
                 // Search result jump (jump-wiring agent): each match
                 // row opens the file at its 1-based line. Previously
                 // only the file header was clickable, which dropped
@@ -518,7 +616,7 @@ private struct CrossSearchFileGroupView: View {
                 .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
                 .accessibilityLabel("Line \(m.lineNumber): \(m.line)")
             }
-            if group.matches.count > 8 {
+            if !isCollapsed, group.matches.count > 8 {
                 Text("+ \(group.matches.count - 8) more")
                     .font(.caption)
                     .foregroundStyle(.secondary)

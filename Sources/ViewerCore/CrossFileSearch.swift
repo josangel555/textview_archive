@@ -144,7 +144,8 @@ public enum CrossFileSearch {
         root: URL,
         query: String,
         options: Options = Options(),
-        isCancelled: () -> Bool = { false }
+        isCancelled: () -> Bool = { false },
+        onProgress: ((_ entriesScanned: Int, _ matches: Int) -> Void)? = nil
     ) -> [FileMatches] {
         guard !query.isEmpty else { return [] }
         // Needle is passed as-is; case-insensitive matching is done
@@ -229,8 +230,12 @@ public enum CrossFileSearch {
             // In-loop cancellation (SCALE-5). Cheap modulo check so the
             // common no-cancel path costs ~nothing; poll every K entries
             // rather than per-entry to keep the closure call out of the
-            // hottest part of the directory walk.
-            if entriesScanned % cancelCheckStride == 0, isCancelled() { break }
+            // hottest part of the directory walk. TSK-1465: progress rides
+            // the same stride (matches lag by at most one pending batch).
+            if entriesScanned % cancelCheckStride == 0 {
+                if isCancelled() { break }
+                onProgress?(entriesScanned, totalMatches)
+            }
 
             let lastComponent = url.lastPathComponent
             // Skip well-known build / VCS dirs.
@@ -275,6 +280,8 @@ public enum CrossFileSearch {
         }
         // Match + fold the trailing partial batch.
         _ = flushBatch()
+        // Final progress tick so the caller's last-seen counts are exact.
+        onProgress?(entriesScanned, totalMatches)
         return results
     }
 
@@ -327,7 +334,8 @@ public enum CrossFileSearch {
         root: URL,
         query: String,
         options: Options = Options(),
-        isCancelled: () -> Bool = { false }
+        isCancelled: () -> Bool = { false },
+        onProgress: ((_ entriesScanned: Int, _ matches: Int) -> Void)? = nil
     ) -> [FileMatches] {
         guard !query.isEmpty else { return [] }
         guard let matcher = Matcher.make(
@@ -349,7 +357,10 @@ public enum CrossFileSearch {
             if results.count >= options.maxResults { break }
             entriesScanned += 1
             if entriesScanned > options.maxEntriesScanned { break }
-            if entriesScanned % cancelCheckStride == 0, isCancelled() { break }
+            if entriesScanned % cancelCheckStride == 0 {
+                if isCancelled() { break }
+                onProgress?(entriesScanned, results.count)
+            }
 
             let lastComponent = url.lastPathComponent
             if options.skipDirNames.contains(lastComponent) {
@@ -377,6 +388,7 @@ public enum CrossFileSearch {
                 results.append(FileMatches(url: url, matches: []))
             }
         }
+        onProgress?(entriesScanned, results.count)
         return results
     }
 

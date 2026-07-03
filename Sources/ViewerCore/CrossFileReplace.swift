@@ -132,6 +132,41 @@ public enum CrossFileReplace {
         maxFileBytes: Int = 2 * 1024 * 1024,
         allowSymlink: Bool = false
     ) -> [FileOutcome] {
+        run(files: files, query: query, replacement: replacement,
+            caseSensitive: caseSensitive, useRegex: useRegex,
+            maxFileBytes: maxFileBytes, allowSymlink: allowSymlink, write: true)
+    }
+
+    /// TSK-1465 — the SAFE-replace preview: identical read/decode/count path
+    /// to `apply` but **never writes**, so the panel can show exactly what a
+    /// confirm would change ("N occurrences in M files", per-file counts)
+    /// before any byte moves. Unreadable/binary/oversized files surface the
+    /// same failure outcomes `apply` would.
+    public static func preview(
+        toFiles files: [URL],
+        query: String,
+        replacement: String,
+        caseSensitive: Bool,
+        useRegex: Bool,
+        maxFileBytes: Int = 2 * 1024 * 1024
+    ) -> [FileOutcome] {
+        run(files: files, query: query, replacement: replacement,
+            caseSensitive: caseSensitive, useRegex: useRegex,
+            maxFileBytes: maxFileBytes, allowSymlink: false, write: false)
+    }
+
+    /// Shared core for `apply`/`preview`: one read/decode/count path so the
+    /// preview can never disagree with the write about WHAT would change.
+    private static func run(
+        files: [URL],
+        query: String,
+        replacement: String,
+        caseSensitive: Bool,
+        useRegex: Bool,
+        maxFileBytes: Int,
+        allowSymlink: Bool,
+        write: Bool
+    ) -> [FileOutcome] {
         var outcomes: [FileOutcome] = []
         outcomes.reserveCapacity(files.count)
         for url in files {
@@ -160,6 +195,11 @@ public enum CrossFileReplace {
                 continue
             }
             guard count > 0 else { continue }  // no match in this file — skip
+            guard write else {
+                // Preview: report the would-be count, touch nothing.
+                outcomes.append(FileOutcome(url: url, replacements: count, error: nil))
+                continue
+            }
             do {
                 _ = try EditorWriter.save(newText, to: url, encoding: encoding,
                                           allowSymlink: allowSymlink)

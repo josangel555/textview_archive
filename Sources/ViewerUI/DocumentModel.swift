@@ -1345,6 +1345,24 @@ public final class DocumentModel: ObservableObject {
     /// opens don't re-apply a stale scope.
     @Published public var crossSearchPresetScope: SearchScope? = nil
 
+    // TSK-1465 — cross-search operation feedback + safe replace.
+    /// Live walk feedback ("Searched N entries · M matches") published by the
+    /// engine's onProgress hook, throttled to the walk's cancel stride. nil
+    /// when no search is in flight. (No "total" — knowing it would cost a
+    /// full pre-walk of the tree, doubling IO for a number the stride counter
+    /// already approximates.)
+    @Published public var crossSearchProgress: CrossSearchProgress? = nil
+    /// The pending replace PREVIEW (per-file would-be counts, computed
+    /// WITHOUT writing). Non-nil ⇒ the panel shows the confirm step;
+    /// `confirmCrossFileReplace()` applies it, `cancelCrossFileReplacePreview()`
+    /// discards. Cleared by any new search (the files it summarizes changed).
+    @Published public var crossSearchReplacePreview: [CrossFileReplace.FileOutcome]? = nil
+    /// Cooperative cancel handle for the CURRENT walk (TSK-1465). The engine
+    /// polls it every cancel stride; `cancelCrossSearch()` trips it. Unlike a
+    /// generation bump, a trip lets the in-flight walk return PARTIAL results,
+    /// which still land (same generation) — "stop and show what you found".
+    var crossSearchCancelToken: CrossSearchCancelToken? = nil
+
     /// Monotonically increasing counter that scopes each runCrossSearch()
     /// call. Bumped on every invocation AND on dismiss. Background
     /// completions check the captured value against this and drop their

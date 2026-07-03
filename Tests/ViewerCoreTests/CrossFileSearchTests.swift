@@ -228,4 +228,47 @@ final class CrossFileSearchTests: XCTestCase {
         XCTAssertLessThanOrEqual(total, opts.maxEntriesScanned,
             "result count must not exceed the cap")
     }
+
+    // MARK: - Progress + cooperative cancel (TSK-1465)
+
+    func test_search_onProgress_finalTickReportsExactCounts() {
+        write("a.md", "needle\n")
+        write("b.md", "needle twice\nneedle again\n")
+        write("c.md", "nothing here\n")
+        var ticks: [(Int, Int)] = []
+        let groups = CrossFileSearch.search(
+            root: tmpDir, query: "needle",
+            onProgress: { ticks.append(($0, $1)) })
+        let total = groups.reduce(0) { $0 + $1.matches.count }
+        XCTAssertEqual(total, 3)
+        XCTAssertFalse(ticks.isEmpty, "onProgress must fire at least the final tick")
+        XCTAssertEqual(ticks.last?.1, 3, "the final tick reports the exact match count")
+        XCTAssertGreaterThan(ticks.last?.0 ?? 0, 0, "entries scanned is reported")
+    }
+
+    func test_search_isCancelled_stopsEarly_returnsPartial() {
+        for i in 0..<10 { write("f\(i).md", "needle \(i)\n") }
+        let full = CrossFileSearch.search(root: tmpDir, query: "needle")
+        XCTAssertEqual(full.count, 10, "precondition: all files match")
+        // A token that trips after the first candidate is admitted: the walk's
+        // per-file cancellation point breaks before later reads.
+        var calls = 0
+        let partial = CrossFileSearch.search(
+            root: tmpDir, query: "needle",
+            isCancelled: { calls += 1; return calls > 1 })
+        XCTAssertLessThan(partial.count, full.count,
+                          "a tripped token must stop the walk early (partial results)")
+    }
+
+    func test_searchFilenames_onProgress_finalTickReportsCounts() {
+        write("hit-one.md", "x")
+        write("hit-two.md", "x")
+        write("miss.txt", "x")
+        var ticks: [(Int, Int)] = []
+        let groups = CrossFileSearch.searchFilenames(
+            root: tmpDir, query: "hit",
+            onProgress: { ticks.append(($0, $1)) })
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(ticks.last?.1, 2, "final tick reports the filename-match count")
+    }
 }

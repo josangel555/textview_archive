@@ -11,6 +11,14 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Search in Files grew live progress, Stop, collapsible results, and a safe
+  two-step replace.** While a big folder is scanned you now see "N scanned ·
+  M found" with a Stop button that keeps whatever was already found; each
+  file's matches can be folded away with a chevron; the search box remembers
+  your last query when reopened. Replace-across-files is no longer one blind
+  click: "Preview Replace" first shows exactly what would change — total and
+  per-file counts, plus any files that couldn't be processed — and only an
+  explicit Replace confirm writes to disk.
 - **Bookmarks and Recents clean up after themselves.** Both sidebar panels
   grew a "remove missing" action that sweeps entries whose files were deleted
   or moved outside the app (bookmark pruning is undoable with ⌘Z), recents
