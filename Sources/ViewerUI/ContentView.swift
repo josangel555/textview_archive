@@ -919,6 +919,12 @@ public struct ContentView: View {
                     replaceAllRequest: model.editorReplaceAllRequest,
                     initialSelection: seed,
                     cacheKey: editorCacheKey,
+                    // TSK-1483: pane identity for one-shot request routing —
+                    // targeted requests (goto/insert/select) apply only on the
+                    // pane whose tab they were stamped for; nonce channels
+                    // (focus) only on the active pane. See CMOneShotRouting.
+                    paneTabID: tid,
+                    isActivePane: isActive,
                     onTextChange: { newText in
                         model.updateEditorText(newText, forTabID: tid)
                     },

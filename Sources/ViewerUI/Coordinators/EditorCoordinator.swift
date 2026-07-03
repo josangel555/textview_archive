@@ -108,9 +108,13 @@ public final class EditorCoordinator: ObservableObject {
     @Published public var editorInsertRequest: CMInsertRequest? = nil
 
     /// Queue an insert-at-caret of `text` into the active CM6 editor.
-    public func insertIntoEditor(_ text: String) {
+    /// TSK-1483: `target` is the tab the insert is FOR (the active tab at the
+    /// caller's level — `EditorCoordinator` doesn't know tabs). Only the pane
+    /// hosting that tab applies the request; nil (legacy) degrades to
+    /// active-pane-only. See `CMOneShotRouting`.
+    public func insertIntoEditor(_ text: String, target: UUID? = nil) {
         guard !text.isEmpty else { return }
-        editorInsertRequest = CMInsertRequest(text: text)
+        editorInsertRequest = CMInsertRequest(text: text, target: target)
     }
 
     // MARK: - Snippet tab-stop navigation (TSK-705)
@@ -140,12 +144,17 @@ public final class EditorCoordinator: ObservableObject {
     /// returns true; a snippet with no tab stops can't be navigated, so it
     /// returns false and leaves no session.
     @discardableResult
-    public func beginSnippetSession(_ snippet: Snippet, insertedAt baseOffset: Int) -> Bool {
+    public func beginSnippetSession(_ snippet: Snippet, insertedAt baseOffset: Int,
+                                    target: UUID? = nil) -> Bool {
         guard let session = SnippetSession(snippet: snippet.parsed, insertedAt: baseOffset) else {
             activeSnippetSession = nil
+            snippetSessionTarget = nil
             return false
         }
         activeSnippetSession = session
+        // TSK-1483: remember which tab the session's caret walk targets so
+        // every tab-stop `CMSelectRequest` is stamped for that pane only.
+        snippetSessionTarget = target
         selectCurrentSnippetStop()
         return true
     }
@@ -193,13 +202,19 @@ public final class EditorCoordinator: ObservableObject {
     /// another snippet). Idempotent.
     public func endSnippetSession() {
         activeSnippetSession = nil
+        snippetSessionTarget = nil
     }
+
+    /// TSK-1483: the tab whose pane the active snippet session's caret walk
+    /// belongs to (stamped onto each tab-stop `CMSelectRequest`).
+    private var snippetSessionTarget: UUID?
 
     /// Select the current stop of the active session, if any.
     private func selectCurrentSnippetStop() {
         guard let stop = activeSnippetSession?.current else { return }
         editorSelectRequest = CMSelectRequest(
-            anchor: stop.offset, head: stop.offset + stop.length
+            anchor: stop.offset, head: stop.offset + stop.length,
+            target: snippetSessionTarget
         )
     }
 

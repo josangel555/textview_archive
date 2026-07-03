@@ -107,6 +107,17 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// gated on the parked CM6's text matching this pane's `text` (the live-state
     /// safety invariant — see `WarmEditorWebViewCache`).
     public let cacheKey: String?
+    /// TSK-1483: the tab this pane hosts. One-shot requests (`gotoLineRequest`
+    /// / `insertRequest` / `selectRequest`) are stamped with their target tab
+    /// at the model layer; the Coordinator applies a request ONLY when the
+    /// stamp matches this pane (see `CMOneShotRouting`). nil (legacy/tests)
+    /// disables target matching for this pane.
+    public let paneTabID: UUID?
+    /// TSK-1483: whether this pane is the ACTIVE (visible, interactive) pane
+    /// in the retained-pane ZStack. Untargeted one-shot requests and Int-nonce
+    /// channels (focus / find / replace) dispatch only on the active pane;
+    /// mounted-but-inactive siblings swallow them (record-without-dispatch).
+    public let isActivePane: Bool
     public let onTextChange: (String) -> Void
     public let onSaveRequested: () -> Void
     public let onCursorChange: ((CMCursorPosition) -> Void)?
@@ -174,6 +185,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         replaceAllRequest: Int = 0,
         initialSelection: CMSelectionSeed? = nil,
         cacheKey: String? = nil,
+        paneTabID: UUID? = nil,
+        isActivePane: Bool = true,
         onTextChange: @escaping (String) -> Void,
         onSaveRequested: @escaping () -> Void = {},
         onCursorChange: ((CMCursorPosition) -> Void)? = nil,
@@ -218,6 +231,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.replaceAllRequest = replaceAllRequest
         self.initialSelection = initialSelection
         self.cacheKey = cacheKey
+        self.paneTabID = paneTabID
+        self.isActivePane = isActivePane
         self.onTextChange = onTextChange
         self.onSaveRequested = onSaveRequested
         self.onCursorChange = onCursorChange
@@ -262,6 +277,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             context.coordinator.webView = webView
             webView.navigationDelegate = context.coordinator
             context.coordinator.bind(view: self)
+            // TSK-1483: stale nonce values must not fire into a re-attached
+            // pane (adoptState deliberately drops the nonce mirrors).
+            context.coordinator.baselineNonceChannels(from: self)
             CodeMirrorEditorRegistry.shared.register(webView)
             // Flush any state that changed while parked (theme/font/wrap/etc.) —
             // adopted `lastSent*` mirrors make unchanged state a no-op.
@@ -288,6 +306,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.bind(view: self)
+        // TSK-1483: a fresh Coordinator's nonce mirrors start at 0 — adopt the
+        // current app-global nonce values so they don't fire as "new" on mount.
+        context.coordinator.baselineNonceChannels(from: self)
         context.coordinator.loadHostHTML()
         // Register so the AppDelegate's Undo/Redo menu items can find
         // the active CM6 webview without walking the view hierarchy.
@@ -363,6 +384,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         /// `CodeMirrorEditorView.cacheKey` in make/update. nil ⇒ this pane opts
         /// out of the cache (real teardown on dismantle).
         var cacheKey: String?
+        /// TSK-1483: this pane's tab + active-pane flag, mirrored from the
+        /// representable on every `bind`. Drives `CMOneShotRouting` (targeted
+        /// one-shots) and the swallow-when-inactive rule for nonce channels.
+        var paneTabID: UUID?
+        var isActivePane: Bool = true
         /// Becomes `true` the first time the bundled host HTML finishes
         /// loading. Gates the navigation policy: the lone legitimate
         /// `file:` load is the one-shot `loadFileURL(codemirror.html)` (and
@@ -440,10 +466,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentReadOnly: Bool?
         private var lastSentLineNumbers: Bool?
         private var lastSentIndentation: CMIndentation?
-        private var lastAppliedGotoLine: CMGotoLineRequest?
         private var lastAppliedFocusRequest: Int = 0
-        private var lastAppliedInsert: CMInsertRequest?
-        private var lastAppliedSelect: CMSelectRequest?
         private var lastSentSnippetActive: Bool?
         private var lastSentShowInvisibles: Bool?
         private var lastSentIndentGuides: Bool?
@@ -468,6 +491,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         /// representable. Called from both `makeNSView` and every
         /// `updateNSView`.
         func bind(view: CodeMirrorEditorView) {
+            self.paneTabID = view.paneTabID
+            self.isActivePane = view.isActivePane
             self.onTextChange = view.onTextChange
             self.onSaveRequested = view.onSaveRequested
             self.onCursorChange = view.onCursorChange
@@ -512,6 +537,27 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingInitialSelection = view.initialSelection
         }
 
+        /// TSK-1483: adopt the CURRENT Int-nonce values as already-applied at
+        /// mount time. The nonce channels (`editorFocusRequest`, find/replace
+        /// next/prev/all) are app-global and never reset, so a freshly created
+        /// Coordinator (whose mirrors start at 0) would otherwise treat a
+        /// months-old nonce as a brand-new request and fire it into a pane the
+        /// user never asked to focus/search — the stale-replay half of the
+        /// one-shot routing bug. A nonce is only a request when it CHANGES
+        /// while this pane is mounted. Called from `makeNSView` on both the
+        /// fresh-build and warm-cache re-attach paths, before the first
+        /// `applyPendingState`. (The targeted one-shots — goto/insert/select —
+        /// don't baseline: `CMOneShotLedger` + tab stamps handle them, and a
+        /// baseline would break open-at-line, whose target pane mounts AFTER
+        /// the request is published.)
+        func baselineNonceChannels(from view: CodeMirrorEditorView) {
+            lastAppliedFocusRequest = view.editorFocusRequest
+            lastSentFindNextRequest = view.findNextRequest
+            lastSentFindPrevRequest = view.findPrevRequest
+            lastSentReplaceNextRequest = view.replaceNextRequest
+            lastSentReplaceAllRequest = view.replaceAllRequest
+        }
+
         /// Perf P1-followup (TSK-1047): the text the live CM6 currently holds, as
         /// mirrored by `lastSentText`. CM6 is the source of truth for the doc;
         /// `lastSentText` is updated on every JS `change`/`incrementalChange`
@@ -534,10 +580,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         ///
         /// Deliberately NOT copied: the SwiftUI callback closures (`onTextChange`
         /// etc. — the new representable supplies its own via `bind`) and the
-        /// per-tick request nonces (gotoLine/insert/select/find/focus — those
-        /// resync from the model on the next `applyPendingState`, and resetting
-        /// them to the parked values would wrongly suppress a request that arrives
-        /// on re-attach).
+        /// per-tick request nonces (TSK-1483: the targeted one-shots — goto/
+        /// insert/select — dedupe via the app-wide `CMOneShotLedger`, and the
+        /// Int-nonce channels are re-baselined by `baselineNonceChannels` on the
+        /// re-attach path, so a parked request can neither replay nor be
+        /// wrongly suppressed).
         func adoptState(from parked: Coordinator) {
             isReady = parked.isReady
             didFinishFirstLoad = parked.didFinishFirstLoad
@@ -687,21 +734,36 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                     webView: webView
                 )
             }
-            if let req = pendingGotoLine, req != lastAppliedGotoLine {
-                lastAppliedGotoLine = req
+            // TSK-1483: the targeted one-shots (goto / insert / select) apply
+            // on exactly ONE pane (the request's target tab; active pane for
+            // legacy untargeted requests) exactly ONCE app-wide (the shared
+            // consumed ledger). Before this, every mounted pane's private
+            // `lastApplied*` mirror made the request fire per-pane — a snippet
+            // insert landed in every MountedPanesLRU sibling, and a freshly
+            // (re)mounted pane REPLAYED the never-cleared request into the
+            // wrong document. See CMOneShotRouting / docs/FOCUS_ROUTING.md.
+            if let req = pendingGotoLine,
+               CMOneShotRouting.paneMayApply(
+                   target: req.target, paneTabID: paneTabID, isActivePane: isActivePane),
+               CMOneShotLedger.shared.consume(req.id) {
                 dispatch(
                     .gotoLine(line: req.line, column: req.column, select: req.select),
                     webView: webView
                 )
             }
-            if let req = pendingInsert, req != lastAppliedInsert {
-                lastAppliedInsert = req
+            if let req = pendingInsert,
+               CMOneShotRouting.paneMayApply(
+                   target: req.target, paneTabID: paneTabID, isActivePane: isActivePane),
+               CMOneShotLedger.shared.consume(req.id) {
                 dispatch(.insertAtCursor(text: req.text), webView: webView)
             }
-            // TSK-705: imperative selection (snippet tab-stop walk). Nonce-
-            // gated like insert so re-selecting the same range still fires.
-            if let req = pendingSelect, req != lastAppliedSelect {
-                lastAppliedSelect = req
+            // TSK-705: imperative selection (snippet tab-stop walk). Ledger-
+            // gated on the nonce `id`, so re-selecting the SAME range (fresh
+            // id) still fires.
+            if let req = pendingSelect,
+               CMOneShotRouting.paneMayApply(
+                   target: req.target, paneTabID: paneTabID, isActivePane: isActivePane),
+               CMOneShotLedger.shared.consume(req.id) {
                 dispatch(
                     .setSelection(anchor: req.anchor, head: req.head, scroll: req.scroll),
                     webView: webView
@@ -715,11 +777,16 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             }
             // TSK-906: refocus the editor after a palette dismiss (the overlay
             // left first responder nowhere). Nonce-gated so stable redraws don't
-            // steal focus; initial 0 == 0 is a no-op on mount.
+            // steal focus; the mount baseline (`baselineNonceChannels`) makes
+            // the first sighting a no-op. TSK-1483: only the ACTIVE pane may
+            // take first responder — an inactive MountedPanesLRU sibling
+            // records the nonce but must never steal focus.
             if pendingFocusRequest != lastAppliedFocusRequest {
                 lastAppliedFocusRequest = pendingFocusRequest
-                webView.window?.makeFirstResponder(webView)
-                dispatch(.focus, webView: webView)
+                if isActivePane {
+                    webView.window?.makeFirstResponder(webView)
+                    dispatch(.focus, webView: webView)
+                }
             }
             // Initial selection: applied exactly once after the text
             // is in the editor — using `setSelection` (anchor/head)
@@ -1196,8 +1263,20 @@ public struct CMGotoLineRequest: Equatable, Sendable {
     public let line: Int
     public let column: Int?
     public let select: Bool
-    public init(id: UUID = UUID(), line: Int, column: Int? = nil, select: Bool = false) {
+    /// TSK-1483: the tab this request targets. Stamped at the model layer
+    /// (`DocumentModel.editorGotoLine` setter); only the pane hosting this tab
+    /// may apply the request (`CMOneShotRouting`). nil = legacy/untargeted —
+    /// active pane only.
+    public let target: UUID?
+    public init(id: UUID = UUID(), line: Int, column: Int? = nil, select: Bool = false,
+                target: UUID? = nil) {
         self.id = id; self.line = line; self.column = column; self.select = select
+        self.target = target
+    }
+
+    /// Copy with a target stamp (same nonce `id` — stamping is not a re-fire).
+    public func stamped(target: UUID?) -> CMGotoLineRequest {
+        CMGotoLineRequest(id: id, line: line, column: column, select: select, target: target)
     }
 }
 
@@ -1208,8 +1287,10 @@ public struct CMGotoLineRequest: Equatable, Sendable {
 public struct CMInsertRequest: Equatable, Sendable {
     public let id: UUID
     public let text: String
-    public init(id: UUID = UUID(), text: String) {
-        self.id = id; self.text = text
+    /// TSK-1483: the tab this insert targets (see `CMGotoLineRequest.target`).
+    public let target: UUID?
+    public init(id: UUID = UUID(), text: String, target: UUID? = nil) {
+        self.id = id; self.text = text; self.target = target
     }
 }
 
@@ -1225,8 +1306,12 @@ public struct CMSelectRequest: Equatable, Sendable {
     public let anchor: Int
     public let head: Int
     public let scroll: Bool
-    public init(id: UUID = UUID(), anchor: Int, head: Int, scroll: Bool = true) {
+    /// TSK-1483: the tab this selection targets (see `CMGotoLineRequest.target`).
+    public let target: UUID?
+    public init(id: UUID = UUID(), anchor: Int, head: Int, scroll: Bool = true,
+                target: UUID? = nil) {
         self.id = id; self.anchor = anchor; self.head = head; self.scroll = scroll
+        self.target = target
     }
 }
 

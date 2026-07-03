@@ -287,15 +287,21 @@ final class EditorCoordinatorInteractionTests: XCTestCase {
         model.setCurrentViewMode(.editor)
         let req = CMGotoLineRequest(line: 2)
         model.editorGotoLine = req
+        // TSK-1483: the forwarder setter stamps the untargeted request with the
+        // active tab (one-shot routing) — same nonce id, same payload, plus the
+        // target. The invariant pinned here is unchanged: mode flips must not
+        // CLEAR the pending request.
+        let stamped = req.stamped(target: model.tabs.selected?.id)
+        XCTAssertNotNil(stamped.target, "an open tab means the goto gets a target stamp")
         // Flip mode away from editor and back; the request must still
         // be on the coordinator (the editor view re-mount reads it
         // on appear, that path is UI and not exercised here — the
         // contract pinned is that the coordinator retains the request).
         model.setCurrentViewMode(.source)
-        XCTAssertEqual(model.editorGotoLine, req,
+        XCTAssertEqual(model.editorGotoLine, stamped,
             "mode flip away must NOT clear pending goto-line")
         model.setCurrentViewMode(.editor)
-        XCTAssertEqual(model.editorGotoLine, req,
+        XCTAssertEqual(model.editorGotoLine, stamped,
             "mode flip back must NOT clear pending goto-line either")
     }
 

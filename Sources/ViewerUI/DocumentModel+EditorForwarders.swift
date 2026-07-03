@@ -15,9 +15,18 @@ import ViewerCore
 // Verbatim move — behavior is identical to the pre-split inline definitions.
 extension DocumentModel {
     /// Forwarder. New code should write `editor.editorGotoLine`.
+    /// TSK-1483: an untargeted request is stamped with the ACTIVE tab here —
+    /// the model is the one layer that knows which tab the goto is for — so
+    /// only that tab's pane may apply it (`CMOneShotRouting`; the fix for
+    /// one-shot requests fanning out to every mounted pane / replaying on
+    /// remount). The nonce `id` is preserved: stamping is not a re-fire.
     public var editorGotoLine: CMGotoLineRequest? {
         get { editor.editorGotoLine }
-        set { editor.editorGotoLine = newValue }
+        set {
+            editor.editorGotoLine = newValue.map {
+                $0.target == nil ? $0.stamped(target: tabs.selected?.id) : $0
+            }
+        }
     }
 
     /// Forwarder. Read at the `CodeMirrorEditorView` call site
@@ -31,7 +40,8 @@ extension DocumentModel {
     /// No-op unless the selected tab is in editor mode.
     public func insertDateAndTime() {
         guard currentViewMode == .editor else { return }
-        editor.insertIntoEditor(DateTimeStamp.string(for: Date()))
+        editor.insertIntoEditor(DateTimeStamp.string(for: Date()),
+                                target: tabs.selected?.id)
     }
 
     /// True when a snippet can be inserted — the active tab is in editor mode.
@@ -63,8 +73,11 @@ extension DocumentModel {
         // anchor (== head when collapsed) as the base. We read the last-known
         // caret from the editor cursor cache (fed by `cursorPositionChanged`).
         let base = tabs.selected.flatMap { editor.editorCursorByTab[$0.id]?.head } ?? 0
-        editor.insertIntoEditor(snippet.parsed.plainText)
-        editor.beginSnippetSession(snippet, insertedAt: base)
+        // TSK-1483: stamp the insert AND the session's tab-stop selections with
+        // the tab they are for, so only that pane applies them (never a
+        // mounted-but-inactive sibling, never a later-mounted pane).
+        editor.insertIntoEditor(snippet.parsed.plainText, target: tabs.selected?.id)
+        editor.beginSnippetSession(snippet, insertedAt: base, target: tabs.selected?.id)
         return true
     }
 

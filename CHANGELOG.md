@@ -2,6 +2,14 @@
 
 ## 2026-07-02
 
+### Fixed
+- **Snippets (and Insert Date & Time / Go to Line) no longer land in the wrong
+  document.** Inserting a snippet used to also insert into other recently-viewed
+  editor tabs kept warm in the background, and could replay an old insert or
+  line-jump into a tab you opened later. Every such action is now addressed to
+  the tab you fired it in, applied exactly once, only there. (Keyboard-focus
+  routing audit: docs/FOCUS_ROUTING.md.)
+
 ### Added
 - **Feed Reader (RSS) is now reachable — File → Feed Reader.** The built-in feed reader (subscriptions, OPML import, refresh, unread counts) was complete but had no way to open it; it now opens in a tab.
 - **Canvas Presentation mode:** build a themed slide deck entirely through the
