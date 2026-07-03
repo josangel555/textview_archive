@@ -64,6 +64,9 @@ extension CommandRegistry {
         // editor-buffer transform like Pretty-Print.
         CommandDescriptor(
             id: "edit.alignTables", title: "Align Markdown Tables", category: .format,
+            // TSK-1437: daily-driver markdown loop — ⌥⌘A ("align"; a/⌥ free in
+            // both the registry map and the menu bar). Menu binds the same key.
+            defaultShortcut: Shortcut(key: "a", modifiers: [.command, .option]),
             scriptVerb: "align-tables"),
         CommandDescriptor(
             id: "file.open", title: "Open…", category: .file,
@@ -311,6 +314,9 @@ extension CommandRegistry {
             scriptVerb: "edit-minify-json"),
         CommandDescriptor(
             id: "edit.insertTOC", title: "Insert Table of Contents", category: .format,
+            // TSK-1437: daily-driver markdown loop — ⌥⌘O ("outline"; ⌘O/⇧⌘O are
+            // open/open-folder, the ⌥ variant is free). Menu binds the same key.
+            defaultShortcut: Shortcut(key: "o", modifiers: [.command, .option]),
             scriptVerb: "edit-insert-toc"),
         CommandDescriptor(
             id: "edit.insertDate", title: "Insert Date and Time", category: .edit,
@@ -487,6 +493,9 @@ extension CommandRegistry {
         // TSK-1434: doc-quality tools — results in the shared panel.
         CommandDescriptor(
             id: "file.checkLinks", title: "Check Links", category: .file,
+            // TSK-1437: daily-driver doc-quality loop — ⇧⌘K ("linK-check"; k is
+            // unbound app-wide). Menu binds the same key.
+            defaultShortcut: Shortcut(key: "k", modifiers: [.command, .shift]),
             scriptVerb: "check-links"),
         CommandDescriptor(
             id: "file.lintMarkdown", title: "Lint Markdown", category: .file,

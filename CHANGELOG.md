@@ -11,6 +11,10 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Keyboard shortcuts for the daily markdown loop.** Check Links is now ⇧⌘K,
+  Align Markdown Tables ⌥⌘A, and Insert Table of Contents ⌥⌘O — shown in both
+  the menu bar and the command palette (which already displays every command's
+  key). The full reference stays at Help → Keyboard Shortcuts.
 - **Paste announces what it did — "Pasted as table — Undo".** Universal Paste
   (clipboard → new tab) used to be invisible magic; now a small notice says
   what the clipboard became (text, table, image, Markdown, rich text, or an

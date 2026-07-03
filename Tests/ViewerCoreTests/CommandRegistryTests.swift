@@ -425,6 +425,29 @@ final class CommandRegistryTests: XCTestCase {
         }
     }
 
+    // MARK: - Daily-driver shortcut coverage (TSK-1437)
+
+    /// The daily markdown/doc-quality loop carries default shortcuts (menu +
+    /// palette show the same key): Check Links ⇧⌘K, Align Markdown Tables ⌥⌘A,
+    /// Insert Table of Contents ⌥⌘O. Each must route to its own command — a
+    /// later declaration stealing the key via the last-wins shortcutMap fails
+    /// here. (The NSMenu side binds the identical keys; see main.swift.)
+    func test_dailyDriverCommands_carryConflictFreeShortcuts() {
+        let map = CommandRegistry.builtIn.shortcutMap()
+        let expected: [(id: String, shortcut: Shortcut)] = [
+            ("file.checkLinks", Shortcut(key: "k", modifiers: [.command, .shift])),
+            ("edit.alignTables", Shortcut(key: "a", modifiers: [.command, .option])),
+            ("edit.insertTOC", Shortcut(key: "o", modifiers: [.command, .option])),
+        ]
+        for (id, shortcut) in expected {
+            let cmd = CommandRegistry.builtIn.command(id: id)
+            XCTAssertEqual(cmd?.defaultShortcut, shortcut,
+                "\(id) must carry its daily-driver default shortcut")
+            XCTAssertEqual(map[shortcut], id,
+                "\(id)'s shortcut must route to it (no collision stole it)")
+        }
+    }
+
     // MARK: - Copy Reference binding (TSK-942)
 
     /// ⌘⌥⇧C copies an mdv:// reference (IntelliJ's "Copy Reference" chord), routed

@@ -2313,7 +2313,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         docStatsItem.target = self
         toolsMenu.addItem(docStatsItem)
         let checkLinksItem = NSMenuItem(title: "Check Links",
-                                        action: #selector(checkLinks(_:)), keyEquivalent: "")
+                                        action: #selector(checkLinks(_:)), keyEquivalent: "k")
+        // TSK-1437: ⇧⌘K — matches the registry's file.checkLinks defaultShortcut.
+        checkLinksItem.keyEquivalentModifierMask = [.command, .shift]
         checkLinksItem.target = self
         toolsMenu.addItem(checkLinksItem)
         let lintItem = NSMenuItem(title: "Lint Markdown",
@@ -2534,7 +2536,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // markdown tab with an editor buffer (validateMenuItem).
         let alignTablesItem = NSMenuItem(
             title: "Align Markdown Tables",
-            action: #selector(alignMarkdownTables(_:)), keyEquivalent: "")
+            action: #selector(alignMarkdownTables(_:)), keyEquivalent: "a")
+        // TSK-1437: ⌥⌘A — matches the registry's edit.alignTables defaultShortcut
+        // (palette/menu parity; pinned by CommandRegistryTests).
+        alignTablesItem.keyEquivalentModifierMask = [.command, .option]
         alignTablesItem.target = self
         formatMenu.addItem(alignTablesItem)
         // TSK-352: re-save the active file in a chosen text encoding. Tag =
@@ -2589,7 +2594,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // TSK-675: insert/refresh a Markdown table of contents from the file's
         // headings (idempotent via <!-- toc --> markers). Markdown files only.
         let tocItem = NSMenuItem(title: "Insert Table of Contents",
-                                 action: #selector(insertTableOfContents(_:)), keyEquivalent: "")
+                                 action: #selector(insertTableOfContents(_:)), keyEquivalent: "o")
+        // TSK-1437: ⌥⌘O — matches the registry's edit.insertTOC defaultShortcut.
+        tocItem.keyEquivalentModifierMask = [.command, .option]
         tocItem.target = self
         formatMenu.addItem(tocItem)
         // Shift all ATX heading levels (restructure a Markdown doc). Markdown only.
