@@ -35,6 +35,25 @@ public struct UniversalPastePlan: Equatable, Sendable {
         self.suggestedName = suggestedName
     }
 
+    /// TSK-1479: the human description of the paste OUTCOME, for the
+    /// "Pasted as X — Undo" feedback toast. Pure + host-tested per target.
+    /// `convertedToMarkdown` covers the TSK-1327 rich-text→Markdown path,
+    /// which diverges from the plan (the user should hear what actually
+    /// happened, not what the plan would have done).
+    public static func humanDescription(
+        for target: PasteDispatch.PasteTarget,
+        convertedToMarkdown: Bool = false
+    ) -> String {
+        if convertedToMarkdown { return "Pasted as Markdown" }
+        switch target {
+        case .fileURL:   return "Opened pasted file"
+        case .image:     return "Pasted as image"
+        case .table:     return "Pasted as table"
+        case .richText:  return "Pasted as rich text"
+        case .plainText: return "Pasted as text"
+        }
+    }
+
     /// The materialization plan for a resolved paste target.
     public static func plan(for target: PasteDispatch.PasteTarget) -> UniversalPastePlan {
         switch target {

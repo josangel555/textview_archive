@@ -11,6 +11,10 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Paste announces what it did — "Pasted as table — Undo".** Universal Paste
+  (clipboard → new tab) used to be invisible magic; now a small notice says
+  what the clipboard became (text, table, image, Markdown, rich text, or an
+  opened file) with an Undo button that closes the tab it created.
 - **Failures and long operations now surface on screen (toasts + progress).**
   A shared, non-blocking notice area (bottom-right) shows errors with their
   reason, success confirmations, and in-flight operation progress with Cancel

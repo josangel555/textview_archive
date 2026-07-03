@@ -89,6 +89,11 @@ public final class DocumentModel: ObservableObject {
     /// (design: `docs/research/perf-fix1-view-retention.md`, RISK #1).
     @Published public private(set) var mountedPanes = MountedPanesLRU(capacity: 4)
 
+    /// TSK-1436/1479: where user-visible feedback (paste announcements,
+    /// operation failures) surfaces. Defaults to the app-wide center; tests
+    /// inject a private one to assert postings without global state.
+    var toasts: ToastCenter = .shared
+
     /// The tabs whose panes are currently mounted, MRU-first (active first).
     /// Compact-maps `mountedPanes.ids` against the live tab list so an id for
     /// a tab closed out-of-band is simply not rendered (its pane unmounts).
@@ -2181,6 +2186,8 @@ public final class DocumentModel: ObservableObject {
                let mdURL = Self.writePasteTemp(Data(markdown.utf8), ext: "md",
                                                name: plan.suggestedName) {
                 openInNewTab(mdURL)
+                postPasteFeedback(
+                    UniversalPastePlan.humanDescription(for: target, convertedToMarkdown: true))
                 return true
             }
         }
@@ -2197,7 +2204,24 @@ public final class DocumentModel: ObservableObject {
         }
         guard let url else { NSSound.beep(); return false }
         openInNewTab(url)
+        postPasteFeedback(UniversalPastePlan.humanDescription(for: target))
         return true
+    }
+
+    /// TSK-1479: announce what the paste became ("Pasted as table") + offer a
+    /// one-click Undo that closes the tab the paste created. The tab id is
+    /// captured NOW; the undo re-resolves it at click time so it's a safe
+    /// no-op if the user already closed (or moved) the tab. (⌘Z is NOT routed
+    /// here — Edit→Undo belongs to the text-editing chain; the toast button
+    /// is the affordance.)
+    private func postPasteFeedback(_ description: String) {
+        guard let created = tabs.selected?.id else { return }
+        toasts.post(.success, description, actionLabel: "Undo") { [weak self] in
+            guard let self,
+                  let idx = self.tabs.tabs.firstIndex(where: { $0.id == created })
+            else { return }
+            self.closeTab(at: idx)
+        }
     }
 
     /// The file URL carried on the pasteboard (file-URLs only), or nil.
