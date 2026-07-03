@@ -217,4 +217,50 @@ final class UnifiedHistoryViewModel: ObservableObject {
         guard let primary = primaryVersion else { return nil }
         return source.content(of: primary)
     }
+
+    // MARK: - Size annotation (TSK-1462)
+
+    /// Timeline row annotation: this version's size plus its delta vs the
+    /// immediate predecessor, e.g. "2.1 KB (+340 B)". nil when the version
+    /// carries no size (git). The predecessor is the NEXT entry in the
+    /// newest-first list; the oldest version shows its plain size.
+    func sizeAnnotation(for version: VersionRef) -> String? {
+        guard let idx = versions.firstIndex(where: { $0.id == version.id }) else {
+            return Self.sizeAnnotation(bytes: version.byteSize, olderBytes: nil)
+        }
+        let olderBytes = idx + 1 < versions.count ? versions[idx + 1].byteSize : nil
+        return Self.sizeAnnotation(bytes: version.byteSize, olderBytes: olderBytes)
+    }
+
+    /// Pure formatting seam (host-tested): "size (±delta)". nil when `bytes`
+    /// is nil; the delta part is omitted when there is no older version, and
+    /// shows "(±0 B)" for an equal-size save so the row still reads as "this
+    /// save didn't change the size".
+    nonisolated static func sizeAnnotation(bytes: Int?, olderBytes: Int?) -> String? {
+        guard let bytes else { return nil }
+        guard let olderBytes else { return byteLabel(bytes) }
+        let delta = bytes - olderBytes
+        if delta == 0 { return "\(byteLabel(bytes)) (±0 B)" }
+        let sign = delta > 0 ? "+" : "−"
+        return "\(byteLabel(bytes)) (\(sign)\(byteLabel(abs(delta))))"
+    }
+
+    /// Deterministic, locale-independent compact byte label ("999 B",
+    /// "1.2 KB", "3.4 MB"). Hand-rolled instead of ByteCountFormatter so host
+    /// tests pin exact strings regardless of machine locale.
+    nonisolated static func byteLabel(_ n: Int) -> String {
+        if n < 1000 { return "\(n) B" }
+        let units = ["KB", "MB", "GB"]
+        var value = Double(n)
+        var unit = ""
+        for u in units {
+            value /= 1000
+            unit = u
+            if value < 1000 { break }
+        }
+        // One decimal below 10, whole numbers above ("1.2 KB", "34 KB").
+        return value < 10
+            ? String(format: "%.1f %@", value, unit)
+            : String(format: "%.0f %@", value, unit)
+    }
 }

@@ -11,6 +11,14 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Local History grew Restore — and File → Local History now opens the full
+  timeline.** The File-menu entry used to open a bare view-only list; it now
+  opens the same viewer as the context menus: timeline with per-save size
+  deltas ("2.1 KB (+340 B)"), diff-vs-current, range diffs, and a confirmed
+  Restore that works even when the file isn't open (it opens it for you).
+  Restore is safe by construction: your current file and any unsaved edits are
+  snapshotted into history first, the restored text arrives as a normal
+  undoable edit (⌘Z), and nothing touches the disk until you save.
 - **Snippet manager grew search, preview, and one-keystroke insert.** Edit →
   Manage Snippets now filters by name, id, or body as you type; shows a live
   preview of exactly what a snippet inserts (tab-stop markup stripped) with a

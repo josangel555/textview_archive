@@ -108,7 +108,10 @@ extension DocumentModel {
             source: source,
             kind: .localHistory,
             onRestore: { [weak self] text in
-                self?.updateEditorText(text, forTabID: tabID)
+                // TSK-1331/1462 — the unified restore path: backup-before-
+                // restore, select + editor mode, then an undoable buffer edit
+                // (never a disk write).
+                self?.restoreLocalHistoryVersion(text, at: url)
             })
         openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
     }
@@ -120,19 +123,21 @@ extension DocumentModel {
     }
 
     /// Open the unified Local-History viewer for a file URL (used by the sidebar
-    /// file context menu, which has a URL not a tab id). If a tab is already open
-    /// for `url`, Restore targets it (an undoable buffer edit); otherwise Restore
-    /// is unavailable (no editor to push into) but viewing/diffing still works.
+    /// file context menu, which has a URL not a tab id, and by File → Local
+    /// History). Restore is ALWAYS available (TSK-1331): with an open tab it's
+    /// an undoable buffer edit there; without one, `restoreLocalHistoryVersion`
+    /// opens the file first and then applies — never a direct disk write.
     public func openLocalHistory(for url: URL) {
         let path = url.standardizedFileURL.path
         let store = localHistoryStore
-        // Find an open editable tab for this url so Restore can target it.
-        let openTabID = tabs.tabs.first {
-            $0.url?.standardizedFileURL.path == path
-        }?.id
+        // Prefer an open tab's LIVE buffer for "diff vs current" so unsaved
+        // edits are reflected; fall back to disk. Resolved per-read (not
+        // captured) so a tab opened AFTER the viewer still wins.
         let currentContent: @Sendable () -> String? = { [weak self] in
             let read: @MainActor () -> String? = {
-                if let tabID = openTabID,
+                if let tabID = self?.tabs.tabs.first(where: {
+                       $0.url?.standardizedFileURL.path == path
+                   })?.id,
                    let text = self?.editorBuffer(forTabID: tabID)?.text {
                     return text
                 }
@@ -145,11 +150,109 @@ extension DocumentModel {
             store: store, path: path,
             displayName: url.lastPathComponent,
             currentContent: currentContent)
-        let onRestore: ((String) -> Void)? = openTabID.map { tabID in
-            { [weak self] text in self?.updateEditorText(text, forTabID: tabID) }
-        }
         let view = UnifiedHistoryView(
-            doc: self, source: source, kind: .localHistory, onRestore: onRestore)
+            doc: self, source: source, kind: .localHistory,
+            onRestore: { [weak self] text in
+                self?.restoreLocalHistoryVersion(text, at: url)
+            })
         openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
+    }
+
+    // MARK: - Restore (TSK-1331 / TSK-1462)
+
+    /// Outcome of `restoreLocalHistoryVersion` — Equatable so host tests pin
+    /// the exact path taken.
+    public enum LocalHistoryRestoreOutcome: Equatable {
+        /// Applied as an undoable edit to an already-open tab.
+        case appliedToOpenTab
+        /// No tab was open: the file was opened first, then applied.
+        case openedAndApplied
+        /// Nothing was changed. `reason` is user-facing (toasted by callers).
+        case failed(String)
+    }
+
+    /// Restore a Local History version's `text` for the file at `url` — the
+    /// data-safety-reviewed design (A) from TSK-1331: **open-then-apply, never
+    /// a direct disk write**, so the worst case is a no-op, not data loss.
+    ///
+    /// Steps:
+    /// 1. **Backup-before-restore:** snapshot the current DISK content, and a
+    ///    dirty open BUFFER's content if it differs, into Local History — so
+    ///    the pre-restore state is recoverable from the same timeline even
+    ///    after the user saves the restored text. Best-effort by the store's
+    ///    contract (dedup/caps/failures return nil); safe because the restore
+    ///    itself never touches the disk.
+    /// 2. Ensure a tab: reuse the open one, else `openPath(url)`. Files with
+    ///    history are ≤ the store's per-file cap (20 MB), far below the
+    ///    off-main open watermark (64 MiB), so the open + buffer seed are
+    ///    synchronous here.
+    /// 3. Select the tab and force **editor mode** — a buffer-only restore
+    ///    under a rendered pane is invisible state, the exact bug class the
+    ///    focus/one-shot audits killed. If the editor mode is refused (CM6
+    ///    50 MB cap) the restore FAILS honestly instead of mutating hidden
+    ///    state.
+    /// 4. Apply via `updateEditorText` — a normal, undoable (⌘Z) edit that the
+    ///    user must explicitly save (which snapshots the restored text as a
+    ///    new version via snapshot-on-save).
+    @discardableResult
+    public func restoreLocalHistoryVersion(
+        _ text: String, at url: URL
+    ) -> LocalHistoryRestoreOutcome {
+        let path = url.standardizedFileURL.path
+        // Fail fast on a vanished file — opening it would only produce an
+        // error tab. (Resurrecting a DELETED file from history is a distinct
+        // feature: it requires creating the file, i.e. a disk write this
+        // deliberately-write-free path must not grow silently.)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return restoreFailure("\(url.lastPathComponent) no longer exists on disk.")
+        }
+        let existingTabID = tabs.tabs.first {
+            $0.url?.standardizedFileURL.path == path
+        }?.id
+
+        // 1. Backup-before-restore: disk state first, then a dirty buffer's
+        //    unsaved state (both no-op via dedup when already the latest).
+        let now = Date()
+        if let disk = try? String(contentsOf: url, encoding: .utf8) {
+            localHistoryStore.snapshot(path: path, content: disk, at: now)
+        }
+        if let tabID = existingTabID,
+           let buf = editorBuffer(forTabID: tabID), buf.isDirty {
+            localHistoryStore.snapshot(path: path, content: buf.text, at: now)
+        }
+
+        // 2. Ensure a tab (sync for any history-bearing file; see doc above).
+        if existingTabID == nil { openPath(url) }
+        guard let tabID = tabs.tabs.first(where: {
+            $0.url?.standardizedFileURL.path == path
+        })?.id else {
+            return restoreFailure("\(url.lastPathComponent) couldn't be opened.")
+        }
+
+        // 3. Make the restore VISIBLE: select the tab + force editor mode.
+        if let idx = tabs.tabs.firstIndex(where: { $0.id == tabID }),
+           tabs.selectedIndex != idx {
+            selectTab(at: idx)
+        }
+        setCurrentViewMode(.editor)
+        guard tabs.tabs.first(where: { $0.id == tabID })?.viewMode == .editor,
+              editorBuffer(forTabID: tabID) != nil else {
+            return restoreFailure("\(url.lastPathComponent) can't be edited (still loading or too large for the editor).")
+        }
+
+        // 4. The undoable edit.
+        updateEditorText(text, forTabID: tabID)
+        ToastCenter.shared.post(
+            .success,
+            "Restored a version of \(url.lastPathComponent)",
+            detail: "⌘Z to undo · save to keep it")
+        return existingTabID != nil ? .appliedToOpenTab : .openedAndApplied
+    }
+
+    /// Failure helper: surface the reason as an error toast (the standard
+    /// async-outcome feedback lane) and return the outcome for callers/tests.
+    private func restoreFailure(_ reason: String) -> LocalHistoryRestoreOutcome {
+        ToastCenter.shared.postError("Restore failed", reason: reason)
+        return .failed(reason)
     }
 }

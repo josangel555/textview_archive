@@ -44,6 +44,7 @@ public struct LocalHistoryVersionSource: VersionSource {
                 timestamp: v.savedAt,
                 author: nil,
                 subject: nil,
+                byteSize: v.byteSize,
                 kind: .localHistory)
         }
     }

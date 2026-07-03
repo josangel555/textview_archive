@@ -22,6 +22,9 @@ import ViewerCore
 struct UnifiedHistoryView: View {
     @ObservedObject var doc: DocumentModel
     @StateObject private var model: UnifiedHistoryViewModel
+    /// TSK-1462 — Restore asks for confirmation (it replaces the whole editor
+    /// contents; undoable, but a whole-buffer swap shouldn't be one stray click).
+    @State private var showRestoreConfirm = false
 
     /// Called when the user clicks Restore on a selected version. Receives the
     /// version's full content; the host pushes it into the editor buffer as an
@@ -60,9 +63,18 @@ struct UnifiedHistoryView: View {
             if model.isLoadingVersions {
                 centeredPlaceholder("Loading history…")
             } else if model.versions.isEmpty {
-                centeredPlaceholder(model.sourceKind == .localHistory
-                    ? "No saved versions yet.\nVersions are recorded when you save edits."
-                    : "No history for this file.")
+                if model.sourceKind == .localHistory {
+                    // TSK-1462 — the shared empty-state component, explaining
+                    // when snapshots are taken (on save).
+                    VStack {
+                        Spacer()
+                        HostedEmptyStateView(EmptyStateCatalog.localHistory)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    centeredPlaceholder("No history for this file.")
+                }
             } else {
                 List(selection: Binding(
                     get: { model.primarySelection },
@@ -123,6 +135,12 @@ struct UnifiedHistoryView: View {
                         .font(.system(size: doc.uiSize(9)))
                         .foregroundStyle(.tertiary)
                 }
+            }
+            // TSK-1462 — size + delta vs the previous save ("2.1 KB (+340 B)").
+            if let size = model.sizeAnnotation(for: version) {
+                Text(size)
+                    .font(.system(size: doc.uiSize(9), design: .monospaced))
+                    .foregroundStyle(.tertiary)
             }
             if let subject = version.subject, !subject.isEmpty {
                 Text(subject)
@@ -216,9 +234,7 @@ struct UnifiedHistoryView: View {
     private var restoreButton: some View {
         if let onRestore {
             Button {
-                if let text = model.restoreCandidateContent() {
-                    onRestore(text)
-                }
+                showRestoreConfirm = true
             } label: {
                 Label("Restore", systemImage: "arrow.uturn.backward")
                     .font(.system(size: doc.uiSize(11)))
@@ -226,6 +242,23 @@ struct UnifiedHistoryView: View {
             .buttonStyle(.borderless)
             .help("Replace the current editor contents with this version (undoable — not saved until you save)")
             .accessibilityIdentifier("mdv.history.restore")
+            // TSK-1462 — confirm before swapping the whole buffer. The current
+            // state is snapshotted to Local History first (backup-before-
+            // restore, TSK-1331) and the swap is a normal undoable edit.
+            .confirmationDialog(
+                "Restore this version?",
+                isPresented: $showRestoreConfirm
+            ) {
+                Button("Restore \(model.primaryVersion?.shortLabel ?? "version")",
+                       role: .destructive) {
+                    if let text = model.restoreCandidateContent() {
+                        onRestore(text)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The editor contents are replaced with this version. You can undo with ⌘Z, and nothing is written to disk until you save.")
+            }
         }
     }
 

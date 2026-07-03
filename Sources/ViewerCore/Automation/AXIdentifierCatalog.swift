@@ -101,7 +101,10 @@ public enum AXIdentifierCatalog {
         Entry("mdv.terminal.pane", .tools, "Terminal pane (PTY tool window) surface."),
         Entry("mdv.settings.languages", .tools, "Settings: supported syntax-highlighting languages list."),
         Entry("mdv.review.composer", .tools, "Code-review comment composer."),
-        Entry("mdv.localHistory.list", .tools, "Local-history (file version timeline) list."),
+        // TSK-1462: the old minimal local-history list (mdv.localHistory.list)
+        // was replaced by the unified version viewer for ALL entry points.
+        Entry("mdv.history.versionList", .tools, "Version-history timeline list (Local History + git)."),
+        Entry("mdv.history.restore", .tools, "Version-history Restore button."),
         Entry("mdv.packageExplorer.list", .tools, "Dependency-package explorer list."),
         Entry("mdv.walkthrough.player", .tools, "The walkthrough player surface."),
         Entry("mdv.walkthroughs.browser", .tools, "The walkthrough catalog/browser."),

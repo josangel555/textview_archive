@@ -62,6 +62,15 @@ final class LocalHistoryVersionSourceTests: XCTestCase {
         XCTAssertTrue(versions.allSatisfy { $0.kind == .localHistory })
     }
 
+    func test_listVersions_carriesByteSize() {
+        // TSK-1462 — the timeline's size/delta annotation needs each ref to
+        // carry its snapshot's byte size.
+        store.snapshot(path: path, content: "12345\n", at: date(1000))       // 6 bytes
+        store.snapshot(path: path, content: "1234567890\n", at: date(2000))  // 11 bytes
+        let versions = source(current: "x").listVersions()   // newest-first
+        XCTAssertEqual(versions.map(\.byteSize), [11, 6])
+    }
+
     func test_content_ofVersion() {
         store.snapshot(path: path, content: "alpha\n", at: date(1000))
         let s = source(current: "alpha\n")

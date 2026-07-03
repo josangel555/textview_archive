@@ -36,9 +36,9 @@ final class UnifiedHistoryViewModelTests: XCTestCase {
         }
     }
 
-    private func ref(_ id: String, _ t: TimeInterval) -> VersionRef {
+    private func ref(_ id: String, _ t: TimeInterval, bytes: Int? = nil) -> VersionRef {
         VersionRef(id: id, shortLabel: id, timestamp: Date(timeIntervalSince1970: t),
-                   kind: .localHistory)
+                   byteSize: bytes, kind: .localHistory)
     }
 
     private func makeVM() -> UnifiedHistoryViewModel {
@@ -153,5 +153,43 @@ final class UnifiedHistoryViewModelTests: XCTestCase {
     func test_restoreCandidateContent_nilWhenNoSelection() {
         let vm = makeVM()
         XCTAssertNil(vm.restoreCandidateContent())
+    }
+
+    // MARK: - Size annotation (TSK-1462)
+
+    func test_byteLabel_deterministicUnits() {
+        XCTAssertEqual(UnifiedHistoryViewModel.byteLabel(0), "0 B")
+        XCTAssertEqual(UnifiedHistoryViewModel.byteLabel(999), "999 B")
+        XCTAssertEqual(UnifiedHistoryViewModel.byteLabel(1_200), "1.2 KB")
+        XCTAssertEqual(UnifiedHistoryViewModel.byteLabel(34_000), "34 KB")
+        XCTAssertEqual(UnifiedHistoryViewModel.byteLabel(3_400_000), "3.4 MB")
+    }
+
+    func test_sizeAnnotation_pureFormatting() {
+        // No size (git) → no annotation.
+        XCTAssertNil(UnifiedHistoryViewModel.sizeAnnotation(bytes: nil, olderBytes: 5))
+        // Oldest version (no predecessor) → plain size.
+        XCTAssertEqual(UnifiedHistoryViewModel.sizeAnnotation(bytes: 500, olderBytes: nil),
+                       "500 B")
+        // Growth / shrink / equal.
+        XCTAssertEqual(UnifiedHistoryViewModel.sizeAnnotation(bytes: 840, olderBytes: 500),
+                       "840 B (+340 B)")
+        XCTAssertEqual(UnifiedHistoryViewModel.sizeAnnotation(bytes: 488, olderBytes: 500),
+                       "488 B (−12 B)")
+        XCTAssertEqual(UnifiedHistoryViewModel.sizeAnnotation(bytes: 500, olderBytes: 500),
+                       "500 B (±0 B)")
+    }
+
+    func test_sizeAnnotation_usesPredecessorInNewestFirstList() {
+        let v1 = ref("v1", 1000, bytes: 100), v2 = ref("v2", 2000, bytes: 340),
+            v3 = ref("v3", 3000, bytes: 300)
+        let source = FakeSource(
+            versionsList: [v3, v2, v1],
+            contents: [:], current: "")
+        let vm = UnifiedHistoryViewModel(source: source, kind: .localHistory)
+        vm.reloadVersionsSync()
+        XCTAssertEqual(vm.sizeAnnotation(for: v3), "300 B (−40 B)")
+        XCTAssertEqual(vm.sizeAnnotation(for: v2), "340 B (+240 B)")
+        XCTAssertEqual(vm.sizeAnnotation(for: v1), "100 B", "oldest has no predecessor")
     }
 }

@@ -19,6 +19,10 @@ public struct VersionRef: Sendable, Equatable, Identifiable {
     public let author: String?
     /// Commit subject (git only); nil for Local History.
     public let subject: String?
+    /// Snapshot size in bytes (Local History only; nil for git — a commit has
+    /// no single "size"). Drives the timeline's size + size-delta annotation
+    /// (TSK-1462).
+    public let byteSize: Int?
     public let kind: Kind
 
     public enum Kind: Sendable, Equatable {
@@ -28,13 +32,15 @@ public struct VersionRef: Sendable, Equatable, Identifiable {
 
     public init(
         id: String, shortLabel: String, timestamp: Date?,
-        author: String? = nil, subject: String? = nil, kind: Kind
+        author: String? = nil, subject: String? = nil,
+        byteSize: Int? = nil, kind: Kind
     ) {
         self.id = id
         self.shortLabel = shortLabel
         self.timestamp = timestamp
         self.author = author
         self.subject = subject
+        self.byteSize = byteSize
         self.kind = kind
     }
 }

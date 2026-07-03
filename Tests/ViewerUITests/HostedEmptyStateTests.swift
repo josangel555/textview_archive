@@ -18,6 +18,8 @@ final class HostedEmptyStateTests: XCTestCase {
         "folderTreemap", "scriptConsole", "taskRunner", "taskRunner.output",
         // TSK-1461 — snippet manager (empty store / no search matches).
         "snippetManager", "snippetManager.noMatches",
+        // TSK-1462 — local history timeline before the first save.
+        "localHistory",
     ]
 
     func test_catalog_coversEveryRequiredSurface() {

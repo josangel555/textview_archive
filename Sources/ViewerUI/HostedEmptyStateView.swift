@@ -116,11 +116,17 @@ public enum EmptyStateCatalog {
         message: "No snippet name, id, or body matches your search.",
         actionLabel: "Clear Search")
 
+    public static let localHistory = EmptyStateSpec(
+        id: "localHistory",
+        icon: "clock.arrow.circlepath",
+        title: "No versions yet",
+        message: "Local History records a version of this file each time you save it in the editor. Save once and the timeline starts here.")
+
     /// Every spec (the completeness-test surface). ADD NEW SPECS HERE.
     public static let all: [EmptyStateSpec] = [
         feedReader, feedReaderItems, httpClient, sqliteBrowser,
         folderTreemap, scriptConsole, taskRunner, taskRunnerOutput,
-        snippetManager, snippetManagerNoMatches,
+        snippetManager, snippetManagerNoMatches, localHistory,
     ]
 }
 
