@@ -12,8 +12,10 @@ import ViewerCore
 ///   - The "Recent / Name / Created" menu picks the sort order.
 struct BookmarksSection: View {
     /// Stable placeholder strings — pinned via `BookmarksSectionEmptyTests`
-    /// so a casual edit doesn't blank the empty-state envelope.
-    static let emptyPlaceholder = "No bookmarks yet."
+    /// so a casual edit doesn't blank the empty-state envelope. The empty
+    /// copy carries the ⌘D hint (TSK-1464): the section doubles as the
+    /// feature's discoverability surface.
+    static let emptyPlaceholder = "No bookmarks yet — \u{2318}D bookmarks the current file."
     static let emptyFilterPlaceholder = "No bookmarks match this filter."
 
     @ObservedObject var model: DocumentModel
@@ -133,6 +135,12 @@ struct BookmarksSection: View {
                         }
                     }
                 }
+                Divider()
+                // TSK-1464 — sweep bookmarks whose targets were deleted/moved
+                // outside the app. Undoable (⌘Z); outcome is toasted.
+                Button("Remove Missing Bookmarks") {
+                    _ = model.pruneMissingBookmarks()
+                }
             } label: {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: model.uiSize(9)))
@@ -140,7 +148,8 @@ struct BookmarksSection: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .helpInfo(title: "Sort", description: "Sort by \(sortMode.rawValue)")
+            .helpInfo(title: "Sort & clean up",
+                      description: "Sort by \(sortMode.rawValue), or remove bookmarks whose files no longer exist")
             .accessibilityIdentifier("mdv.bookmarks.sort")
         }
         .sidebarHeaderRow(uiSize: model.uiSize)

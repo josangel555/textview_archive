@@ -121,6 +121,34 @@ public final class BookmarksStore {
         save()
     }
 
+    /// TSK-1464 — remove every bookmark whose target no longer exists on
+    /// disk (deleted / moved outside the app, where `relocate` couldn't
+    /// follow). Each removal is pushed onto the undo stack, so a prune is
+    /// reversible entry-by-entry via `undoLastRemoval` (⌘Z). Returns the
+    /// removed entries (empty = nothing was missing).
+    @discardableResult
+    public func pruneMissing(
+        fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+    ) -> [BookmarkEntry] {
+        var removed: [BookmarkEntry] = []
+        var idx = 0
+        while idx < entries.count {
+            if fileExists(entries[idx].url) {
+                idx += 1
+                continue
+            }
+            let entry = entries.remove(at: idx)
+            removalUndoStack.append((entry, idx))
+            if removalUndoStack.count > maxUndoDepth { removalUndoStack.removeFirst() }
+            removed.append(entry)
+        }
+        if !removed.isEmpty {
+            rebuildIndex()
+            save()
+        }
+        return removed
+    }
+
     /// True when there's a removal that `undoLastRemoval()` can restore.
     public var canUndoRemoval: Bool { !removalUndoStack.isEmpty }
 

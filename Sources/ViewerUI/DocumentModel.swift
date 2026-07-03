@@ -102,7 +102,8 @@ public final class DocumentModel: ObservableObject {
         mountedPanes.ids.compactMap { id in tabs.tabs.first { $0.id == id } }
     }
 
-    @Published public private(set) var recents: [HistoryEntry] = []
+    // internal(set): DocumentModel+Bookmarks' pruneMissingRecents refreshes it.
+    @Published public internal(set) var recents: [HistoryEntry] = []
 
     /// Newest-first recents for the empty-tab landing screen (TSK-745). The
     /// sidebar's Recent section scrolls the full list; the welcome screen shows

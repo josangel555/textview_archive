@@ -120,6 +120,20 @@ public final class HistoryStore {
         save()
     }
 
+    /// TSK-1464 — drop every recents entry whose target no longer exists on
+    /// disk. Returns the removed entries (empty = nothing was missing).
+    /// `fileExists` is injectable so host tests don't need real dead inodes.
+    @discardableResult
+    public func pruneMissing(
+        fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+    ) -> [HistoryEntry] {
+        let removed = entries.filter { !fileExists($0.url) }
+        guard !removed.isEmpty else { return [] }
+        entries.removeAll { entry in removed.contains { $0.url == entry.url } }
+        save()
+        return removed
+    }
+
     /// Returns entries ordered newest-first.
     public func recent(limit: Int = .max) -> [HistoryEntry] {
         Array(entries.prefix(limit))

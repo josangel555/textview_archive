@@ -8,8 +8,9 @@ import ViewerCore
 ///
 /// Mirrors `BookmarksSection`'s chrome so the accordion stays consistent.
 struct RecentlyOpenedSection: View {
-    /// Stable placeholder — pinned by `RecentlyOpenedSectionTests`.
-    static let emptyPlaceholder = "No recently-opened files."
+    /// Stable placeholder — pinned by `BookmarksSectionEmptyTests`. Carries
+    /// the what-fills-this hint (TSK-1464).
+    static let emptyPlaceholder = "No recent files yet — files and folders you open appear here."
 
     @ObservedObject var model: DocumentModel
     @State private var isExpanded = true
@@ -37,24 +38,41 @@ struct RecentlyOpenedSection: View {
     }
 
     private var header: some View {
-        Button(action: { isExpanded.toggle() }) {
-            HStack(spacing: 4) {
+        HStack(spacing: 4) {
+            Button(action: { isExpanded.toggle() }) {
                 SidebarSectionHeaderLabel(
                     title: "Recent",
                     isExpanded: isExpanded,
                     uiSize: model.uiSize,
                     dragKind: .recentlyOpened
                 )
-                Spacer()
-                if !model.recents.isEmpty {
-                    Text("\(model.recents.count)")
-                        .font(.system(size: model.uiSize(10), weight: .medium))
-                        .foregroundStyle(.tertiary)
-                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            Spacer()
+            if !model.recents.isEmpty {
+                Text("\(model.recents.count)")
+                    .font(.system(size: model.uiSize(10), weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+            // TSK-1464 — clean-up menu: drop entries whose files are gone.
+            // A SIBLING of the expand button (matching BookmarksSection's
+            // header layout) so it actually receives clicks.
+            Menu {
+                Button("Remove Missing Entries") {
+                    _ = model.pruneMissingRecents()
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: model.uiSize(9)))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .helpInfo(title: "Clean up",
+                      description: "Remove recents whose files no longer exist")
+            .accessibilityIdentifier("mdv.recentlyOpened.cleanup")
         }
-        .buttonStyle(.plain)
         .sidebarHeaderRow(uiSize: model.uiSize)
     }
 }
@@ -104,6 +122,9 @@ private struct RecentRow: View {
                 Pasteboard.copy(ElementRef.file(path: entry.url.path, line: nil, endLine: nil).serialized)
             }
             Button("Reveal in Finder") { Finder.reveal(entry.url) }
+            Divider()
+            // TSK-1464 — drop just this entry (the store API existed with no UI).
+            Button("Remove from Recents") { model.removeRecent(entry.url) }
         }
         .accessibilityIdentifier("mdv.recentlyOpened.row")
     }

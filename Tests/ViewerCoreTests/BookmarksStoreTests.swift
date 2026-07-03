@@ -39,6 +39,42 @@ final class BookmarksStoreTests: XCTestCase {
         XCTAssertEqual(s.all().count, 1)
     }
 
+    // MARK: - Prune missing (TSK-1464)
+
+    func test_pruneMissing_removesOnlyDeadTargets() {
+        let s = makeStore()
+        s.add(url: URL(fileURLWithPath: "/live/a.md"))
+        s.add(url: URL(fileURLWithPath: "/dead/b.md"))
+        s.add(url: URL(fileURLWithPath: "/live/c.md"), line: 12)
+        s.add(url: URL(fileURLWithPath: "/dead/d.md"), line: 3)
+
+        let removed = s.pruneMissing(fileExists: { $0.path.hasPrefix("/live/") })
+        XCTAssertEqual(Set(removed.map(\.url.path)), ["/dead/b.md", "/dead/d.md"])
+        XCTAssertEqual(Set(s.all().map(\.url.path)), ["/live/a.md", "/live/c.md"],
+                       "live targets survive, including line bookmarks")
+    }
+
+    func test_pruneMissing_isUndoable_perEntry() {
+        let s = makeStore()
+        s.add(url: URL(fileURLWithPath: "/dead/a.md"))
+        s.add(url: URL(fileURLWithPath: "/dead/b.md"))
+        XCTAssertEqual(s.pruneMissing(fileExists: { _ in false }).count, 2)
+        XCTAssertTrue(s.all().isEmpty)
+        // Prune pushes onto the SAME undo stack as manual removes.
+        XCTAssertTrue(s.canUndoRemoval)
+        XCTAssertNotNil(s.undoLastRemoval())
+        XCTAssertNotNil(s.undoLastRemoval())
+        XCTAssertEqual(s.all().count, 2, "both pruned bookmarks restored via undo")
+    }
+
+    func test_pruneMissing_nothingMissing_isNoOp() {
+        let s = makeStore()
+        s.add(url: URL(fileURLWithPath: "/live/a.md"))
+        XCTAssertTrue(s.pruneMissing(fileExists: { _ in true }).isEmpty)
+        XCTAssertEqual(s.all().count, 1)
+        XCTAssertFalse(s.canUndoRemoval, "a no-op prune must not pollute the undo stack")
+    }
+
     func test_remove_urlGone() {
         let s = makeStore()
         let u = URL(fileURLWithPath: "/tmp/a.md")

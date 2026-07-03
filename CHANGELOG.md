@@ -11,6 +11,11 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Bookmarks and Recents clean up after themselves.** Both sidebar panels
+  grew a "remove missing" action that sweeps entries whose files were deleted
+  or moved outside the app (bookmark pruning is undoable with ⌘Z), recents
+  rows gained "Remove from Recents", and the empty states now teach the
+  feature — "No bookmarks yet — ⌘D bookmarks the current file."
 - **File tree grew safe file operations — Move to Trash, New Folder, Move to
   Folder, and renames that open tabs follow.** Right-click a file or folder:
   Move to Trash asks first and is always recoverable (never a hard delete;

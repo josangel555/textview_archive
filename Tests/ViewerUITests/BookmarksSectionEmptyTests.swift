@@ -21,7 +21,17 @@ final class BookmarksSectionEmptyTests: XCTestCase {
     func test_emptyPlaceholder_stringIsStable() {
         // Pin the user-visible string so a casual edit doesn't silently
         // drop the panel's only visible content in the empty state.
-        XCTAssertEqual(BookmarksSection.emptyPlaceholder, "No bookmarks yet.")
+        // TSK-1464: the empty state doubles as the feature's discoverability
+        // surface, so it must carry the add-bookmark shortcut.
+        XCTAssertEqual(BookmarksSection.emptyPlaceholder,
+                       "No bookmarks yet — \u{2318}D bookmarks the current file.")
+    }
+
+    /// TSK-1464 — the recents panel's empty state explains what fills it.
+    func test_recentsEmptyPlaceholder_stringIsStable() {
+        XCTAssertEqual(RecentlyOpenedSection.emptyPlaceholder,
+                       "No recent files yet — files and folders you open appear here.")
+        XCTAssertFalse(RecentlyOpenedSection.emptyPlaceholder.isEmpty)
     }
 
     func test_emptyFilterPlaceholder_stringIsStable() {

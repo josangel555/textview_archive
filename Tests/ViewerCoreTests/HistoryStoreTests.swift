@@ -293,4 +293,25 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(entry("/a/x/readme.md").parentFolderLabel, "x")
         XCTAssertEqual(entry("/a/y/readme.md").parentFolderLabel, "y")
     }
+
+    // MARK: - Prune missing (TSK-1464)
+
+    func test_pruneMissing_removesDeadEntries_keepsOrder() {
+        let s = makeStore()
+        s.record(url: URL(fileURLWithPath: "/live/a.md"))
+        s.record(url: URL(fileURLWithPath: "/dead/b.md"))
+        s.record(url: URL(fileURLWithPath: "/live/c.md"))
+
+        let removed = s.pruneMissing(fileExists: { $0.path.hasPrefix("/live/") })
+        XCTAssertEqual(removed.map(\.url.path), ["/dead/b.md"])
+        XCTAssertEqual(s.recent().map(\.url.path), ["/live/c.md", "/live/a.md"],
+                       "survivors keep newest-first order")
+    }
+
+    func test_pruneMissing_nothingMissing_isNoOp() {
+        let s = makeStore()
+        s.record(url: URL(fileURLWithPath: "/live/a.md"))
+        XCTAssertTrue(s.pruneMissing(fileExists: { _ in true }).isEmpty)
+        XCTAssertEqual(s.count, 1)
+    }
 }

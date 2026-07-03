@@ -81,6 +81,50 @@ extension DocumentModel {
         publishBookmarksChange()
     }
 
+    /// TSK-1464 — remove bookmarks whose targets no longer exist on disk.
+    /// Each removal is undoable (⌘Z, same stack as a manual remove). Returns
+    /// how many were pruned; outcome is surfaced as a toast either way so the
+    /// menu action always visibly responds.
+    @discardableResult
+    public func pruneMissingBookmarks() -> Int {
+        let removed = bookmarksStore.pruneMissing()
+        if removed.isEmpty {
+            ToastCenter.shared.post(.info, "No missing bookmarks",
+                                    detail: "Every bookmark target still exists.")
+            return 0
+        }
+        publishBookmarksChange()
+        ToastCenter.shared.post(
+            .success,
+            "Removed \(removed.count) missing bookmark\(removed.count == 1 ? "" : "s")",
+            detail: "Undo with \u{2318}Z")
+        return removed.count
+    }
+
+    /// TSK-1464 — remove one entry from recents (the HistoryStore API existed
+    /// with no UI caller; the sidebar row's context menu is the first).
+    public func removeRecent(_ url: URL) {
+        history.remove(url: url)
+        recents = history.recent()
+    }
+
+    /// TSK-1464 — drop recents entries whose files/folders are gone. Returns
+    /// how many were pruned; outcome toasted either way.
+    @discardableResult
+    public func pruneMissingRecents() -> Int {
+        let removed = history.pruneMissing()
+        if removed.isEmpty {
+            ToastCenter.shared.post(.info, "No missing recent files",
+                                    detail: "Every recent entry still exists.")
+            return 0
+        }
+        recents = history.recent()
+        ToastCenter.shared.post(
+            .success,
+            "Removed \(removed.count) missing recent\(removed.count == 1 ? "" : "s")")
+        return removed.count
+    }
+
     // MARK: - Line bookmarks
 
     /// Bookmark (or unbookmark) the line the caret is currently on in the source
