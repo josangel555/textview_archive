@@ -61,6 +61,59 @@ public final class SnippetManagerModel {
         SnippetLibrary.builtIns.contains { $0.id == id }
     }
 
+    // MARK: - Search / preview / insert (TSK-1461)
+
+    /// Case-insensitive filter over the merged snippet set. Matches against
+    /// name, id, AND body (a body match is how you find "that snippet with the
+    /// front-matter block" whose name you forgot). Empty / whitespace-only
+    /// query returns everything, preserving the merged order (built-ins first).
+    public func filtered(query: String) -> [Snippet] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return allSnippets }
+        return allSnippets.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+                || $0.id.localizedCaseInsensitiveContains(q)
+                || $0.body.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    /// The snippet a one-keystroke insert (Return / the Insert button) should
+    /// target: the explicitly selected row if it survives the current filter,
+    /// else the FIRST filtered match (the type-to-filter → Return flow). Nil
+    /// when nothing matches.
+    public func insertCandidate(query: String, selectedID: String?) -> Snippet? {
+        let matches = filtered(query: query)
+        if let selectedID, let sel = matches.first(where: { $0.id == selectedID }) {
+            return sel
+        }
+        return matches.first
+    }
+
+    /// What `body` actually inserts into the buffer: the parsed expansion's
+    /// plain text (placeholder markup stripped, defaults kept). This is the
+    /// manager's preview-pane content — the same `ParsedSnippet.plainText` the
+    /// real insert path (`DocumentModel.insertSnippet`) uses, so preview and
+    /// insert can't drift.
+    public static func previewText(body: String) -> String {
+        SnippetExpansion.parse(body).plainText
+    }
+
+    /// One-line caption for the preview pane describing the tab-stop walk,
+    /// e.g. "2 tab stops + final caret", "1 tab stop", "No tab stops".
+    public static func tabStopSummary(body: String) -> String {
+        let order = SnippetExpansion.parse(body).tabStopOrder
+        let hasFinal = order.contains(0)
+        let stops = order.filter { $0 != 0 }.count
+        switch (stops, hasFinal) {
+        case (0, false): return "No tab stops"
+        case (0, true): return "Final caret only"
+        case (1, false): return "1 tab stop"
+        case (1, true): return "1 tab stop + final caret"
+        case (let n, false): return "\(n) tab stops"
+        case (let n, true): return "\(n) tab stops + final caret"
+        }
+    }
+
     // MARK: - Validation
 
     /// Validate a candidate snippet. `editingID` is the id of the snippet

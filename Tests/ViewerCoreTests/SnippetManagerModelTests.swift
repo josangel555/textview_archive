@@ -117,6 +117,96 @@ final class SnippetManagerModelTests: XCTestCase {
                        "built-in stays")
     }
 
+    // MARK: - Search / preview / insert candidate (TSK-1461)
+
+    func test_filtered_emptyQuery_returnsAllInMergedOrder() {
+        let m = makeModel()
+        XCTAssertEqual(m.filtered(query: "").map(\.id), m.allSnippets.map(\.id))
+        XCTAssertEqual(m.filtered(query: "   ").map(\.id), m.allSnippets.map(\.id),
+                       "whitespace-only query is an empty query")
+    }
+
+    func test_filtered_matchesName_caseInsensitively() {
+        let m = makeModel()
+        _ = m.save(id: "u.greet", name: "Greeting Block", body: "hello $0")
+        let hits = m.filtered(query: "greeting")
+        XCTAssertEqual(hits.map(\.id), ["u.greet"])
+    }
+
+    func test_filtered_matchesID() {
+        let m = makeModel()
+        _ = m.save(id: "u.zzz.unique", name: "Something", body: "x")
+        XCTAssertEqual(m.filtered(query: "ZZZ.UNI").map(\.id), ["u.zzz.unique"])
+    }
+
+    func test_filtered_matchesBody() {
+        let m = makeModel()
+        _ = m.save(id: "u.fm", name: "Front Matter", body: "---\ntitle: $1\n---\n$0")
+        // Find by remembered CONTENT, not name.
+        XCTAssertTrue(m.filtered(query: "title:").map(\.id).contains("u.fm"))
+    }
+
+    func test_filtered_noMatch_returnsEmpty() {
+        XCTAssertTrue(makeModel().filtered(query: "no-such-snippet-xyzzy").isEmpty)
+    }
+
+    func test_insertCandidate_selectedRowWins_whenItSurvivesFilter() {
+        let m = makeModel()
+        _ = m.save(id: "u.a", name: "Alpha note", body: "a")
+        _ = m.save(id: "u.b", name: "Beta note", body: "b")
+        // Both match "note"; the explicitly selected row is the candidate.
+        XCTAssertEqual(m.insertCandidate(query: "note", selectedID: "u.b")?.id, "u.b")
+    }
+
+    func test_insertCandidate_fallsBackToFirstMatch_whenSelectionFilteredOut() {
+        let m = makeModel()
+        _ = m.save(id: "u.a", name: "Alpha note", body: "a")
+        _ = m.save(id: "u.b", name: "Beta note", body: "b")
+        // Selection doesn't match the query → first filtered match wins
+        // (the type-to-filter → Return flow).
+        XCTAssertEqual(m.insertCandidate(query: "alpha", selectedID: "u.b")?.id, "u.a")
+    }
+
+    func test_insertCandidate_nilWhenNothingMatches() {
+        XCTAssertNil(makeModel().insertCandidate(query: "xyzzy-no-match", selectedID: nil))
+    }
+
+    func test_insertCandidate_emptyQuery_noSelection_isFirstSnippet() {
+        let m = makeModel()
+        XCTAssertEqual(m.insertCandidate(query: "", selectedID: nil)?.id,
+                       m.allSnippets.first?.id)
+    }
+
+    func test_previewText_stripsPlaceholderMarkup_keepsDefaults() {
+        XCTAssertEqual(
+            SnippetManagerModel.previewText(body: "Hello ${1:World}$0!"),
+            "Hello World!")
+        XCTAssertEqual(
+            SnippetManagerModel.previewText(body: "plain text"), "plain text")
+    }
+
+    func test_previewText_matchesRealInsertPath() {
+        // The preview MUST be the same text the insert path produces —
+        // preview/insert drift is the bug this pins.
+        for snip in SnippetLibrary.builtIns {
+            XCTAssertEqual(SnippetManagerModel.previewText(body: snip.body),
+                           snip.parsed.plainText, snip.id)
+        }
+    }
+
+    func test_tabStopSummary_wording() {
+        XCTAssertEqual(SnippetManagerModel.tabStopSummary(body: "plain"), "No tab stops")
+        XCTAssertEqual(SnippetManagerModel.tabStopSummary(body: "x$0"), "Final caret only")
+        XCTAssertEqual(SnippetManagerModel.tabStopSummary(body: "$1"), "1 tab stop")
+        XCTAssertEqual(SnippetManagerModel.tabStopSummary(body: "$1 and $0"),
+                       "1 tab stop + final caret")
+        XCTAssertEqual(SnippetManagerModel.tabStopSummary(body: "${1:a} $2"), "2 tab stops")
+        XCTAssertEqual(SnippetManagerModel.tabStopSummary(body: "${1:a} $2 $0"),
+                       "2 tab stops + final caret")
+        // Repeated occurrences of the same stop count once.
+        XCTAssertEqual(SnippetManagerModel.tabStopSummary(body: "$1 $1 $1"), "1 tab stop")
+    }
+
     func test_persistence_roundTrips() {
         let url = tmpDir.appendingPathComponent("rt.json")
         let store1 = SnippetStore(storeURL: url)

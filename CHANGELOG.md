@@ -11,6 +11,12 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Snippet manager grew search, preview, and one-keystroke insert.** Edit →
+  Manage Snippets now filters by name, id, or body as you type; shows a live
+  preview of exactly what a snippet inserts (tab-stop markup stripped) with a
+  tab-stop summary; and inserts into the active editor via double-click, the
+  Insert button, or plain Return (Save moved to ⌘S). Empty search results and
+  an empty library explain themselves with a next step.
 - **Keyboard shortcuts for the daily markdown loop.** Check Links is now ⇧⌘K,
   Align Markdown Tables ⌥⌘A, and Insert Table of Contents ⌥⌘O — shown in both
   the menu bar and the command palette (which already displays every command's

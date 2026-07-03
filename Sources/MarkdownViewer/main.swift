@@ -3348,10 +3348,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let managerModel = SnippetManagerModel(store: model.snippetStore)
         let host = NSHostingController(rootView: SnippetManagerView(
             model: managerModel,
+            onInsert: { [weak self] snippet in
+                // TSK-1461 — one-keystroke insert from the manager. Routed
+                // through the SAME command path as the Insert Snippet menu
+                // (stamped one-shot + tab-stop session, TSK-1483); outcome is
+                // surfaced via the standard toast feedback lane.
+                guard let self else { return }
+                if self.model.insertSnippet(snippet) {
+                    ToastCenter.shared.post(
+                        .success, "Inserted \u{201C}\(snippet.name)\u{201D}")
+                } else {
+                    ToastCenter.shared.postError(
+                        "Couldn\u{2019}t insert \u{201C}\(snippet.name)\u{201D}",
+                        reason: "Open a file in Editor mode first.")
+                }
+            },
             onDismiss: { [weak self] in self?.snippetManagerWindow?.close() }
         ))
         let win = makeToolWindow(
-            title: "Manage Snippets", contentSize: NSSize(width: 660, height: 460),
+            title: "Manage Snippets", contentSize: NSSize(width: 680, height: 540),
             autosave: "SnippetManagerWindow", controller: host
         )
         snippetManagerWindow = win

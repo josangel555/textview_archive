@@ -16,6 +16,8 @@ final class HostedEmptyStateTests: XCTestCase {
     private let requiredSurfaces = [
         "feedReader", "feedReader.items", "httpClient", "sqliteBrowser",
         "folderTreemap", "scriptConsole", "taskRunner", "taskRunner.output",
+        // TSK-1461 — snippet manager (empty store / no search matches).
+        "snippetManager", "snippetManager.noMatches",
     ]
 
     func test_catalog_coversEveryRequiredSurface() {

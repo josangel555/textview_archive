@@ -102,10 +102,25 @@ public enum EmptyStateCatalog {
         title: "No output yet",
         message: "Select a task and press Run — its live output streams here.")
 
+    public static let snippetManager = EmptyStateSpec(
+        id: "snippetManager",
+        icon: "text.badge.plus",
+        title: "No snippets",
+        message: "Snippets are reusable text blocks with $1/$2 tab stops, inserted from Edit → Insert Snippet or right here. Create your first one.",
+        actionLabel: "New Snippet")
+
+    public static let snippetManagerNoMatches = EmptyStateSpec(
+        id: "snippetManager.noMatches",
+        icon: "magnifyingglass",
+        title: "No matching snippets",
+        message: "No snippet name, id, or body matches your search.",
+        actionLabel: "Clear Search")
+
     /// Every spec (the completeness-test surface). ADD NEW SPECS HERE.
     public static let all: [EmptyStateSpec] = [
         feedReader, feedReaderItems, httpClient, sqliteBrowser,
         folderTreemap, scriptConsole, taskRunner, taskRunnerOutput,
+        snippetManager, snippetManagerNoMatches,
     ]
 }
 
