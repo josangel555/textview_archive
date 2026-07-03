@@ -385,6 +385,15 @@ public struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
 
+            // TSK-1436: the shared toast + long-operation progress overlay
+            // (bottom-trailing). Observes only ToastCenter (not DocumentModel)
+            // so a toast re-bodies just this overlay. `.compositingGroup()
+            // .zIndex(1)` per the LESSONS compositor rule — an opaque WebView
+            // pane sibling must not composite over it.
+            ToastOverlayView(center: .shared)
+                .compositingGroup()
+                .zIndex(1)
+
             // UX-H (#230): the custom floating tooltip overlay. Mounted
             // LAST so it sits at the top of the Z-order (above every
             // chrome bar + panel). It observes only the small, dedicated

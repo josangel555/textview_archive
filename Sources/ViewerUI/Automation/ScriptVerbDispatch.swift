@@ -799,6 +799,9 @@ public enum ScriptVerb {
         let status = TextToolRunner.run(verb, pasteboard: SystemPasteboard())
         Obs.shared.emit(ObsEvent(
             level: .info, subsystem: "tools", message: status))
+        // TSK-1436: the status used to be Logs-only — invisible unless the
+        // user had the Logs view open. The toast is the on-screen half.
+        ToastCenter.shared.post(.info, status)
     }
 
     /// Surface an explicit error when an `open-as` / `set-open-as` verb is

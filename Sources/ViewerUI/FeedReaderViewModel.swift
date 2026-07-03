@@ -26,9 +26,15 @@ public final class FeedReaderViewModel: ObservableObject {
     /// Refresh staleness threshold (seconds): a feed older than this is refetched.
     public var refreshInterval: TimeInterval = 1800
 
-    public init(store: FeedSubscriptionStore, fetcher: FeedFetching = FeedFetcher()) {
+    /// TSK-1436: where refresh failures surface. Defaults to the app-wide
+    /// center; tests inject a private one and assert the error toast.
+    private let toasts: ToastCenter
+
+    public init(store: FeedSubscriptionStore, fetcher: FeedFetching = FeedFetcher(),
+                toasts: ToastCenter = .shared) {
         self.store = store
         self.fetcher = fetcher
+        self.toasts = toasts
         recompute()
     }
 
@@ -70,6 +76,21 @@ public final class FeedReaderViewModel: ObservableObject {
         let fetched = await fetcher.refreshAll(due)
         for (url, feed) in fetched {
             ingestFetched(url: url, feed: feed, at: now)
+        }
+        // TSK-1436: failures used to vanish (`refreshAll` omits feeds that
+        // didn't fetch/parse; they'd silently retry next pass). Surface them —
+        // the user asked for a refresh and deserves the reason it's stale.
+        let failed = due.filter { fetched[$0] == nil }
+        if !failed.isEmpty {
+            let names = failed
+                .map { $0.host ?? $0.absoluteString }
+                .sorted()
+                .joined(separator: ", ")
+            toasts.postError(
+                failed.count == 1
+                    ? "Couldn't refresh feed"
+                    : "Couldn't refresh \(failed.count) feeds",
+                reason: names)
         }
     }
 

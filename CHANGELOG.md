@@ -11,6 +11,12 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Failures and long operations now surface on screen (toasts + progress).**
+  A shared, non-blocking notice area (bottom-right) shows errors with their
+  reason, success confirmations, and in-flight operation progress with Cancel
+  where supported. First wired: feed refreshes that fail now say which feeds
+  couldn't be reached (previously silent), and clipboard text tools confirm
+  what they did (previously visible only in the Logs view).
 - **Tool views now explain themselves when empty.** Feeds, HTTP Request, the
   SQLite browser, the folder size map, the script console, and the task runner
   used to open as a blank pane (or a terse "No feeds"); each now says what the
