@@ -124,6 +124,12 @@ extension CommandRegistry {
             // TSK-951: palette parity — pure model toggle (toggleSourceWordWrap).
             scriptVerb: "toggle-word-wrap"),
         CommandDescriptor(
+            id: "view.toggleSpellCheck", title: "Toggle Spell Check", category: .view,
+            scriptVerb: "toggle-spell-check"),
+        CommandDescriptor(
+            id: "view.toggleAutocomplete", title: "Toggle Autocomplete", category: .view,
+            scriptVerb: "toggle-autocomplete"),
+        CommandDescriptor(
             id: "view.toggleInvisibles", title: "Show Invisibles", category: .view,
             defaultShortcut: Shortcut(key: "i", modifiers: [.command, .option]),
             // TSK-951: palette parity — pure model toggle (toggleShowInvisibleChars).

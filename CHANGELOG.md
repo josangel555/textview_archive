@@ -11,6 +11,7 @@
   routing audit: docs/FOCUS_ROUTING.md.)
 
 ### Added
+- **Footer toggles for spell check and autocomplete.** Two new chips in the status bar turn the editor's spell-check squiggles and autocomplete on/off instantly (persisted) — the quick relief valve when typing feels slow in large text files. Also in the command palette (Toggle Spell Check / Toggle Autocomplete).
 - **Search in Files grew live progress, Stop, collapsible results, and a safe
   two-step replace.** While a big folder is scanned you now see "N scanned ·
   M found" with a Stop button that keeps whatever was already found; each

@@ -146,6 +146,8 @@ public enum ScriptVerb {
         case "document-stats":       _ = model.runDocStatsToPanel()
         case "csv-summary":          _ = model.runCSVSummaryToPanel()
         case "dismiss-tool-results": model.dismissToolResults()
+        case "toggle-spell-check":   model.editor.spellCheckEnabled.toggle()
+        case "toggle-autocomplete":  model.editor.autocompleteEnabled.toggle()
         case "copy-reference":
             // TSK-1256/942: copy an mdv:// reference to the current editor SELECTION
             // (a line range for a multi-line span, else the current line) to the

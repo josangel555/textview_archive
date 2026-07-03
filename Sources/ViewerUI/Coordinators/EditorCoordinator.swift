@@ -228,6 +228,44 @@ public final class EditorCoordinator: ObservableObject {
     /// `editorBlurred`; this flag gates whether Swift acts on it.
     @Published public var saveEditorOnBlur: Bool = false
 
+    // MARK: - Editor assists (spell / autocomplete) — footer-toggleable
+
+    static let spellCheckDefaultsKey = "MarkdownViewer.editor.spellCheckEnabled"
+    static let autocompleteDefaultsKey = "MarkdownViewer.editor.autocompleteEnabled"
+
+    /// Editor spell-check squiggles (TSK-1146). The whole-doc `NSSpellChecker`
+    /// pass runs per (debounced) edit ON THE MAIN ACTOR for prose files (md/txt)
+    /// — on a loaded machine / large txt that is felt as typing jank, so the
+    /// user can switch it off from the footer chip (persisted; default ON).
+    /// Turning it OFF clears existing squiggles immediately.
+    @Published public var spellCheckEnabled: Bool =
+        UserDefaults.standard.object(forKey: EditorCoordinator.spellCheckDefaultsKey) as? Bool ?? true
+    {
+        didSet {
+            guard oldValue != spellCheckEnabled else { return }
+            UserDefaults.standard.set(spellCheckEnabled, forKey: Self.spellCheckDefaultsKey)
+            if !spellCheckEnabled {
+                // Instant effect: clear every tab's spell layer (LSP survives the merge).
+                for id in spellEditorDiagnostics.keys where !(spellEditorDiagnostics[id] ?? []).isEmpty {
+                    setEditorSpellDiagnostics([], forTabID: id)
+                }
+            }
+        }
+    }
+
+    /// Editor autocomplete — gates BOTH LSP completions and the in-file
+    /// buffer-word fallback (which SCANS the whole buffer per completion
+    /// request: the txt typing-cost twin of the spell pass). Persisted;
+    /// default ON.
+    @Published public var autocompleteEnabled: Bool =
+        UserDefaults.standard.object(forKey: EditorCoordinator.autocompleteDefaultsKey) as? Bool ?? true
+    {
+        didSet {
+            guard oldValue != autocompleteEnabled else { return }
+            UserDefaults.standard.set(autocompleteEnabled, forKey: Self.autocompleteDefaultsKey)
+        }
+    }
+
     /// Last-known editor cursor position per tab. Used to restore the
     /// caret when the user switches tabs (CM6 view dismantles + remounts
     /// today; without persistence, every tab switch jumps to line 1).
@@ -678,6 +716,11 @@ public final class EditorCoordinator: ObservableObject {
     /// debounces text changes). Runs on the main actor — fine for the capped
     /// prose size; an off-main / visible-range pass is a perf follow-on.
     func runEditorSpellPass(text: String, url: URL?, forTabID id: UUID) {
+        // Footer toggle: spell-check off = no pass at all (and no stale layer).
+        guard spellCheckEnabled else {
+            setEditorSpellDiagnostics([], forTabID: id)
+            return
+        }
         guard Self.shouldSpellCheckEditor(url: url, textLength: text.utf16.count) else {
             setEditorSpellDiagnostics([], forTabID: id)
             return

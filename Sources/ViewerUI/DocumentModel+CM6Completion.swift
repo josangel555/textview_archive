@@ -62,6 +62,9 @@ extension DocumentModel {
     public func handleCompletionRequest(
         tabID: UUID, fileURL: URL, request: CMHoverRequest
     ) async -> [EditorCompletionItem] {
+        // Footer toggle: autocomplete off = empty reply, zero work (no buffer
+        // scan, no LSP dispatch) — the txt typing-cost relief valve.
+        guard editor.autocompleteEnabled else { return [] }
         let (lspLine, lspChar) = lspPosition(
             line: request.line, character: request.character)
         // TSK-1127: zero-server fallback. With NO LSP language configured, serve

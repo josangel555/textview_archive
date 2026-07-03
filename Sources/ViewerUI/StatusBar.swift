@@ -115,6 +115,9 @@ struct StatusBar: View {
                     }
                     metricsGroup
                 }
+                // Spell/autocomplete toggles: own view observing editor
+                // directly, so editor publishes re-body only the chips.
+                EditorAssistChips(editor: model.editor, fontSize: model.uiSize(10))
                 StatusBarMemoryChip(
                     tabContentBytes: currentMetrics?.byteCount,
                     fontSize: model.uiSize(10))

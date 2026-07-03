@@ -129,6 +129,8 @@ final class CommandRegistryTests: XCTestCase {
             "copy-csv-as-json", "copy-json-as-csv",
             // doc-quality tools routed to the shared results panel (TSK-1434)
             "check-links", "lint-markdown", "document-stats", "csv-summary",
+            // editor assist toggles (footer chips)
+            "toggle-spell-check", "toggle-autocomplete",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

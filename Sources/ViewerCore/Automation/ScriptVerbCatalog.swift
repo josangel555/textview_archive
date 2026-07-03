@@ -189,6 +189,9 @@ public enum ScriptVerbCatalog {
         ScriptVerb("document-stats", .files, .none, "Word/character/line counts (results panel)"),
         ScriptVerb("csv-summary", .files, .none, "Column profile of the active CSV (results panel)"),
         ScriptVerb("dismiss-tool-results", .files, .none, "Close the tool-results panel"),
+        // Editor assists (footer chips): per-keystroke cost relief valves.
+        ScriptVerb("toggle-spell-check", .editor, .none, "Toggle editor spell-check squiggles"),
+        ScriptVerb("toggle-autocomplete", .editor, .none, "Toggle editor autocomplete (LSP + in-file words)"),
         ScriptVerb("editor-set-text", .editor, .string, "Replace the active tab's editor buffer text"),
         ScriptVerb("editor-save", .editor, .none, "Save the active editor buffer (⌘S equivalent)"),
         ScriptVerb("editor-format", .editor, .none, "Whole-document LSP format of the active buffer"),
