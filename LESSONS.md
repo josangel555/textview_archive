@@ -3787,3 +3787,17 @@ The rendered-MD DOM-patch (kills the 2–9s loadHTMLString reload storm on same-
 rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed `0x9E37_79B9_7F4A_7C15`, `for _ in 0..N`, `MDV_FUZZ_SEED_BASE` for the nightly seed sweep) on most pure-logic engines (cm_edit/csv/diff/format/find_engine/hex/fuzzy/indent/markdown/json/outline/transcript/wire + highlight's folds/runs), PLUS the newer TSK-585 `proptest!` macro lane. They serve the SAME purpose (no-panic + invariants over random input). When checking whether an engine is property-tested, grep for **BOTH** `proptest!` AND `*_fuzz_*`/xorshift (`0x9E37`) — NOT just the macro. MISS this session: the empirical sweep grepped `proptest!` only, so I added a `runs_utf16` proptest that FULLY duplicated the existing `highlight_runs_fuzz_invariants_across_languages` (stronger — 12 langs, astral chars) and pulled an unnecessary proptest dev-dep into the highlight crate. Reverted (e604296b). Net: rust-core's property coverage is COMPREHENSIVE — every pure-logic engine has a DIY fuzz OR a proptest; the rust test vein is DONE.
 
 - **Rebuilding `rust-core/link/libmdvcore_ffi.a` does NOT trigger a SwiftPM relink** (2026-07-02). SwiftPM doesn't track the external staticlib's mtime, so `swift test` keeps using the OLD linked test bundle even after `build-rust-core.sh` restages a fresh `.a` — a Rust-core change silently appears to have NO effect. Fix: force a relink by removing the cached bundle (`find .build -name '*.xctest' -maxdepth 4 -exec rm -rf {} +`) then re-run. Touching the FFI-referencing Swift files alone is NOT enough. (Cost me a confusing 'my fix didn't work' loop on the frontmatter fix TSK-1433.)
+
+- **Session-usage limits kill agent fleets mid-flight — worktrees are the salvage net** (2026-07-04).
+  A 9-agent Opus workflow all died on "session limit" ~26 min in (2M tokens); ZERO results returned,
+  but every worktree survived with 7 complete per-ticket commits + uncommitted WIP. Salvage recipe:
+  `git worktree list` → per-worktree `git log main..HEAD` + `git status` → `git -C <wt> add -A &&
+  commit -m "wip(salvage): …"` on ITS branch → reap dirs, keep branches. Corollary: don't launch
+  big fleets when the limit window is near; single sequential agents fail smaller.
+- **The main loop and an inline (non-worktree) subagent share the git INDEX** (2026-07-03) — a
+  main-loop `git add`+`commit` while the agent has files staged will swallow the agent's staging.
+  Rule: zero main-loop repo writes while an inline agent runs (worktree-isolated agents are immune).
+- **Editor typing cost on txt = two whole-buffer passes** (2026-07-03): main-actor whole-doc
+  NSSpellChecker per debounced edit (EditorCoordinator.runEditorSpellPass, ≤200KB prose) + whole-buffer
+  word scan per completion request (InFileCompletion, no-LSP fallback). Footer toggles = relief valve
+  (92dec034); real fix = TSK-1504 (off-main/visible-range spell + word-index cache).

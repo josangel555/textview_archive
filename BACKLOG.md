@@ -118,3 +118,17 @@ TSK-687 deep agent integrations · 688 walkthrough-as-presentation · 689 PinBoa
 *Coverage now (2026-06-29): 69.74% region / 64.72% line (host) — the uncovered is render UI [VM-tested]; pure-logic is comprehensively covered. Full archive → `archive/BACKLOG_archive_2026-06-27.md`.*
 
 - **Image editor: non-destructive paint layer** (enh) — paint is currently a DESTRUCTIVE baked buffer, so tone-after-paint can't be re-derived (TSK-1420 gates the Tone controls once painting starts as the honest interim). A real fix = keep paint as a separate compositing layer over the live tonal/geometry render, so tone/paint are independently editable. Larger architecture change.
+
+## Usability-drain effort — PARKED (owner, 2026-07-04)
+
+The app-wide usability push (TSK-1411 tree) is parked mid-drain. Everything is persisted:
+- **State of record:** board tickets TSK-1434..1505 (epics 1450-1460; each child = a self-contained
+  subagent brief) + `docs/FEATURE_INVENTORY.md` + `docs/USABILITY_VALIDATION_PROTOCOL.md` (batch queue)
+  + `docs/WISHLIST_RECONCILE_2026-07-02.md`.
+- **Landed on main (verified):** batches 1-2 (11 tickets: 1483/1435/1436/1479/1437 + 1461/1462+1331/
+  1463/1464/1465) + tool-results panel (1434) + spell/autocomplete footer toggles (92dec034).
+- **SALVAGED, NOT INTEGRATED:** branches `worktree-wf_dadf7ab6-e88-{1..9}` — 7 complete per-ticket
+  commits (1439-export, 1466, 1467, 1446, 1447, 1498, 1484) + 9 `wip(salvage)` commits (NOT
+  gate-verified). Integration ticket: TSK-1506 (branch↔ticket map + rebase→gate→ff recipe).
+  Worktree DIRS reaped; branches kept.
+- **Resume =** work TSK-1506 first, then continue the protocol batch queue inline.
