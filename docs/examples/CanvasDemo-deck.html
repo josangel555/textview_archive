@@ -1,0 +1,63 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canvas Deck</title><style>html,body{margin:0;height:100%;background:#111;overflow:hidden}[data-cv-role="slide"]{position:absolute;inset:0;margin:auto}</style></head><body><style id="cv-theme">:root{
+--cv-base-black: #111111;
+--cv-base-blue: #0a84ff;
+--cv-base-gray-1: #f5f5f7;
+--cv-base-gray-2: #d2d2d7;
+--cv-base-gray-3: #6e6e73;
+--cv-base-green: #30d158;
+--cv-base-red: #ff453a;
+--cv-base-white: #ffffff;
+--cv-base-yellow: #ffd60a;
+--cv-color-accent: #0a84ff;
+--cv-color-bg: #ffffff;
+--cv-color-border: #d2d2d7;
+--cv-color-danger: #ff453a;
+--cv-color-fg: #111111;
+--cv-color-muted: #6e6e73;
+--cv-color-success: #30d158;
+--cv-color-surface: #f5f5f7;
+--cv-color-warning: #ffd60a;
+--cv-font-body: 400 14px -apple-system, sans-serif;
+--cv-font-h1: 700 28px -apple-system, sans-serif;
+--cv-font-h2: 600 20px -apple-system, sans-serif;
+--cv-font-mono: 400 13px ui-monospace, monospace;
+--cv-kit-starter: pin-b75e8118e0a5cc2eb1d8f58ba636e91ff6f6a3dc2c47cde2c830ca49d4094843;
+--cv-mode-presentation: active;
+--cv-radius-lg: 16px;
+--cv-radius-md: 8px;
+--cv-radius-sm: 4px;
+--cv-shadow-1: 0 1px 3px rgba(0,0,0,0.2);
+--cv-shadow-2: 0 4px 12px rgba(0,0,0,0.25);
+--cv-space-lg: 24px;
+--cv-space-md: 16px;
+--cv-space-sm: 8px;
+--cv-space-xl: 40px;
+--cv-space-xs: 4px;
+}</style><div data-cv-id="pg:1" data-cv-kind="page" style="display:flex;flex-direction:column;"><div data-cv-id="nd:slide-0" data-cv-kind="frame" data-cv-role="slide" style="display:flex;flex-direction:column;gap:16px;padding:var(--cv-space-xl);min-width:1280px;max-width:1280px;min-height:720px;max-height:720px;background:var(--cv-color-bg);"><div data-cv-id="nd:slide-0-todo" data-cv-kind="hole">design slide 1</div><div data-cv-id="nd:s0c" data-cv-kind="frame" style="display:flex;flex-direction:column;gap:12px;"><div data-cv-id="nd:1" data-cv-kind="text" style="color:var(--cv-color-accent);font:var(--cv-font-h1);">TextView Canvas</div><div data-cv-id="nd:2" data-cv-kind="text" style="color:var(--cv-color-muted);">authored end-to-end by Claude Code over the MCP surface</div></div></div><div data-cv-id="nd:slide-1" data-cv-kind="frame" data-cv-role="slide" style="display:flex;flex-direction:column;gap:16px;padding:var(--cv-space-xl);min-width:1280px;max-width:1280px;min-height:720px;max-height:720px;background:var(--cv-color-bg);"><div data-cv-id="nd:slide-1-todo" data-cv-kind="hole">design slide 2</div><div data-cv-id="nd:s1c" data-cv-kind="frame" style="display:flex;flex-direction:column;gap:10px;"><div data-cv-id="nd:3" data-cv-kind="text" style="font:var(--cv-font-h2);">What lands per step</div><div data-cv-id="nd:4" data-cv-kind="text" data-cv-step="1">step 1 — the engine: rust core, ops with inverses</div><div data-cv-id="nd:5" data-cv-kind="text" data-cv-step="2">step 2 — the agent surface: 11 canvas_* MCP tools</div><div data-cv-id="nd:6" data-cv-kind="text" data-cv-step="3">step 3 — this deck: saved + exported offline</div></div></div><div data-cv-id="nd:slide-2" data-cv-kind="frame" data-cv-role="slide" style="display:flex;flex-direction:column;gap:16px;padding:var(--cv-space-xl);min-width:1280px;max-width:1280px;min-height:720px;max-height:720px;background:var(--cv-color-bg);"><div data-cv-id="nd:slide-2-todo" data-cv-kind="hole">design slide 3</div><div data-cv-id="nd:s2c" data-cv-kind="frame" style="display:flex;flex-direction:column;gap:12px;"><div data-cv-id="nd:7" data-cv-kind="text" style="font:var(--cv-font-h2);">Design-system bits work too</div><div data-cv-id="nd:card1" data-cv-kind="component"><div data-cv-id="nd:card1/nd:kit-card-body" data-cv-kind="frame" style="display:flex;flex-direction:column;gap:8px;padding:var(--cv-space-md);background:var(--cv-color-surface);border-radius:var(--cv-radius-md);"><div data-cv-id="nd:card1/nd:kit-card-title" data-cv-kind="text" style="color:var(--cv-color-fg);font:var(--cv-font-h2);">Card title</div><div data-cv-id="nd:card1/nd:kit-card-copy" data-cv-kind="text" style="color:var(--cv-color-muted);">Card copy</div></div></div></div></div></div><script>
+(function(){
+  var root=document.body;
+  var deck={slide:0,step:0};
+  function slides(){return Array.prototype.slice.call(root.querySelectorAll('[data-cv-role="slide"]'));}
+  function maxStep(s){var m=0;if(!s)return 0;var n=s.querySelectorAll('[data-cv-step]');
+    for(var i=0;i<n.length;i++){var v=parseInt(n[i].getAttribute('data-cv-step'),10);if(v>m)m=v;}return m;}
+  function morphRects(s){var map={};if(!s)return map;var n=s.querySelectorAll('[data-cv-morph]');
+    for(var i=0;i<n.length;i++)map[n[i].getAttribute('data-cv-morph')]=n[i].getBoundingClientRect();return map;}
+  function runMorph(from,to){if(!to)return;var n=to.querySelectorAll('[data-cv-morph]');
+    for(var i=0;i<n.length;i++){var id=n[i].getAttribute('data-cv-morph');var f=from[id];if(!f)continue;
+      var t=n[i].getBoundingClientRect();var dx=f.left-t.left,dy=f.top-t.top;
+      var sx=t.width?f.width/t.width:1,sy=t.height?f.height/t.height:1;
+      if(n[i].animate)n[i].animate([{transformOrigin:'top left',transform:'translate('+dx+'px,'+dy+'px) scale('+sx+','+sy+')'},{transformOrigin:'top left',transform:'none'}],{duration:300,easing:'ease'});}}
+  function apply(){var s=slides();if(deck.slide<0)deck.slide=0;if(deck.slide>=s.length)deck.slide=Math.max(0,s.length-1);
+    for(var i=0;i<s.length;i++)s[i].style.display=(i===deck.slide)?'':'none';
+    var cur=s[deck.slide];if(cur){var n=cur.querySelectorAll('[data-cv-step]');
+      for(var j=0;j<n.length;j++){var st=parseInt(n[j].getAttribute('data-cv-step'),10);n[j].style.visibility=(st<=deck.step)?'':'hidden';}}}
+  function advance(d){var s=slides();var prev=deck.slide;var max=maxStep(s[deck.slide]);
+    if(d>0){if(deck.step<max)deck.step+=1;else if(deck.slide<s.length-1){deck.slide+=1;deck.step=0;}}
+    else{if(deck.step>0)deck.step-=1;else if(deck.slide>0){deck.slide-=1;deck.step=maxStep(s[deck.slide]);}}
+    if(deck.slide!==prev){var fr=morphRects(s[prev]);apply();runMorph(fr,slides()[deck.slide]);}else apply();}
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();advance(1);}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();advance(-1);}});
+  apply();
+})();
+</script></body></html>
