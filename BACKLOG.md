@@ -135,6 +135,16 @@ port them. Hosted as full WKWebView documents, NOT iframes (iframes are sanitize
   TCC/Keychain, PTY, NSSpellChecker, AX, menus, ~15-20k LOC); the rest of the 161.6k-vs-50.2k
   host/core skew is migration economics, not capability.
 
+## Rendering-stack policy — "web for content, native for chrome, brain in Rust" (owner-ratified 2026-07-04)
+
+Epic **TSK-1524** + children: owner-critical migrations M1-M5 (git diff **1525** [dep: @codemirror/merge],
+file diff/merge **1526**, CSV grid **1527** (consumes the rust windowed snapshot; also serves SQLite
+browser), XLSX **1528**, Word/.docx **1529**) + scan-found M6-M9 (read-only source→CM6 **1530** — the
+NSTextView-1MB-choke killer, likely FIRST as pattern-prover; hex **1531**; transcript/monitor/logs
+**1532**; git history/blame **1533**) + the anti-Electron allowlist guard **1534**. Rationale recorded
+in the epic (SwiftUI cross-element selection is structural; browser text stack already paid for;
+webviews = renderers, never chrome, never the app).
+
 ## Rust migration — plan-gap tickets filed (2026-07-04)
 
 Plan-vs-board-vs-code walk found the whole-core commitment ("do all", TSK-775) had no breakdown.
