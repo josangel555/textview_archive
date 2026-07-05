@@ -56,6 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// write it; private here would scope it to this file only.
     var diagnosticSignalSource: DispatchSourceSignal?
     private var mcpServer: MCPServer?
+    // TSK-1544: the GUI instance's own MCP endpoint — `--mcp-connect`
+    // bridges dial this so agents drive the RUNNING app, not a clone.
+    private var mcpSocketListener: MCPSocketListener?
     /// Captured at hosting-controller construction so the
     /// `--walkthrough PATH` flag can start playback against the
     /// SwiftUI-owned controller without rebuilding the view body.
@@ -174,6 +177,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             openClaudeMonitorWindow()
             return
         }
+
+        // TSK-1544: serve MCP from THIS running instance on a per-user unix
+        // socket (same framing + tool catalog as --mcp-stdio), so a
+        // `--mcp-connect` bridge (e.g. Claude Code's server config) drives
+        // the LIVE app — open documents, live canvas co-editing — instead of
+        // spawning a second headless instance. Failure is non-fatal: the app
+        // runs fine without the endpoint; bridges fall back to headless.
+        startMCPSocketListener()
 
         // Opt out of macOS's automatic window tabbing — we ship our own in-app
         // tab bar; the system "Show Tab Bar" menu item is confusing here.
@@ -627,6 +638,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // TSK-1544: close the MCP socket + unlink its node first — after
+        // this point the model is tearing down, so no new automation
+        // session may attach mid-flush.
+        mcpSocketListener?.stop()
+        mcpSocketListener = nil
+
         // Phase 1: drive a synchronous flush of the active session's
         // snapshot + index + legacy `_last.json` compat bridge.
         // `flushForTermination` drains the SessionStore's serial
@@ -3960,6 +3977,22 @@ extension AppDelegate {
     /// Spin up the MCP stdio server. Routes log lines to stderr (NEVER
     /// stdout — stdout is reserved for framed protocol bytes; any
     /// stray byte would desync the client's framing parser).
+    /// TSK-1544: start the GUI instance's socket MCP endpoint. Quiet on
+    /// success (stderr is the user's terminal only when launched by hand);
+    /// loud-but-non-fatal on failure — the app must never refuse to launch
+    /// because an automation socket couldn't bind.
+    @MainActor
+    fileprivate func startMCPSocketListener() {
+        let listener = MCPSocketListener(host: model)
+        do {
+            try listener.start()
+            mcpSocketListener = listener
+        } catch {
+            FileHandle.standardError.write(
+                Data("mcp: socket listener failed to start: \(error)\n".utf8))
+        }
+    }
+
     @MainActor
     fileprivate func startMCPServer() {
         let server = MCPServer(
@@ -4075,7 +4108,19 @@ let app = NSApplication.shared
 /// no menu bar, no windows. We still need to call `app.run()` because
 /// `@MainActor`-isolated DocumentModel state can only be mutated from
 /// the main thread's run loop, which `NSApp.run` services.
-let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio")
+// TSK-1544: `--mcp-connect` — bridge stdio to the RUNNING app's MCP socket.
+// A pure byte pump executed BEFORE any AppKit spin-up (this process is a
+// dumb pipe, it never becomes an app); exits when either side closes. When
+// no app is listening, fall through as a headless `--mcp-stdio` server so
+// one client config works whether or not the app is open.
+let mcpConnectMode = CommandLine.arguments.contains("--mcp-connect")
+if mcpConnectMode,
+   let sock = MCPSocketBridge.connect(path: MCPSocketListener.defaultSocketPath()) {
+    FileHandle.standardError.write(Data("mcp: bridged to the running app\n".utf8))
+    MCPSocketBridge.pump(localIn: .standardInput, localOut: .standardOutput, remote: sock)
+    exit(0)
+}
+let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio") || mcpConnectMode
 
 /// `--claude-monitor` opens ONLY the standalone read-only Claude session
 /// monitor PoC window (no document UI). Stays `.regular` so the window is

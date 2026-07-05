@@ -1,66 +1,59 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — usability drain PARKED; park + persist checkpoint (2026-07-04)
+# Handoff — mandates + web-for-content + stateful-core unblocked; MCP-into-running-app landing (2026-07-05)
 
-**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch:** main @ 92dec034 (gate-green)
+**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch:** main (gate-green through be2a170f; TSK-1544 committing)
 
-## Mission (parked)
-App-wide production-grade usability (owner: **built ≠ usable**; editor/vim/file-nav work, the rest
-needs the end-user layer). Umbrella **TSK-1411**. **PARKED by the owner 2026-07-04** — do not
-resume without an owner ask. Canvas M0–M6 also parked. Cron stopped. When work resumes: INLINE,
-one ticket at a time (no subagent batches unless the owner asks).
+## Mission
+Whole-core migration + rendering-stack policy + the four testing MANDATES, executed INLINE
+(owner). PM model is migrating to PinBoard v4 (worker loop: main agent grooms/gates, Sonnet
+executes; every ticket = complete contract with REQUIRED evidence classes — memory
+`project_pm_v4_worker_loop`). The old "usability drain" park is superseded by these newer asks.
 
-## Current state
-- **Done on main (gate-verified):** batch 1 (1483 focus-routing + docs/FOCUS_ROUTING.md · 1435
-  empty states · 1436 ToastCenter · 1479 paste toast · 1437 shortcuts), batch 2 (1461 snippets ·
-  1462+1331 local history · 1463 tree ops · 1464 bookmarks · 1465 cross-search), 1434 tool-results
-  panel, spell/autocomplete footer toggles (92dec034 — commit says TSK-1500, REAL ticket TSK-1503).
-  Release build installed → /Applications/TextView.app (2026-07-03 02:39, 72MB).
-- **Salvaged, NOT integrated:** branches `worktree-wf_dadf7ab6-e88-{1..9}` (dirs reaped, branches
-  kept) from the session-limit-killed 9-agent Opus workflow — 7 complete ticket commits
-  (1439-export · 1466 · 1467 · 1446 · 1447 · 1498 · 1484) + 9 `wip(salvage)` commits (NOT
-  gate-verified). **System of record: TSK-1506** (prio-1, full branch↔ticket map + recipe).
-- **Next action on resume:** work TSK-1506 — per branch: `git rebase main` → host gate →
-  `git merge --ff-only` → next; append-conflicts expected on ScriptVerbCatalog/Dispatch/
-  CommandRegistry (keep both sides); reconcile each ticket's board state against what lands;
-  then CHANGELOG roll-up + `git branch -d` merged branches + fresh release build.
+## What changed 2026-07-04→05 (all committed)
+- **Fold gate flipped ON** (74d01932); formula display DESIGNED + edit box SHIPPED (768030fb,
+  TSK-1215 fixed); Stage-B twin deletion UNBLOCKED — agent-driven UAT plan replaces soak
+  (docs/STAGE_B_DELETION_UAT_2026-07-04.md, f3a43e42). Owner resolved: no-soak, formula display,
+  eviction policy (TSK-589: dirty never evicts; clean LRU min(1–2GB, 200)).
+- **Four testing MANDATES** codified (6c8cbe42): TEST_PYRAMID §MANDATES + CLAUDE.md block —
+  per-surface matrix (TSK-1539), AX-everything (TSK-1543), agent-driven UAT, evidence-classes-in-
+  tickets. AX TCC on the VM GRANTED (owner click); System Events proven insufficient → native
+  AXUIElement adapter (TSK-1260/1261/1263) is the substrate.
+- **Policy epic TSK-1524** "web for content, native for chrome, brain in Rust" + M1-M9 migrations
+  (1525-1533: git diff/merge [dep: @codemirror/merge pending owner], CSV, XLSX, Word, TextDisplayView→CM6,
+  hex, transcript/logs, git history) + allowlist guard (1534). BACKLOG has the map (38021ddb).
+- **Stateful-core spike DONE** (TSK-1508→fixed, 6f955415): docs/research/stateful-core-spike-2026-07-04/
+  DESIGN.md; slices TSK-1516-1523 under TSK-1117 (S5/S6 SUPERVISED ~2.5-3.5h owner total).
+- **Meta-analysis** (be2a170f): docs/research/project-meta-analysis-2026-07-04/SYNTHESIS.md —
+  v4 assessment + 6 DLD gaps; process tax ⅓ of commits; review/validated piles = serializer.
+- **UAT findings:** TSK-1538 dark-theme scene paints nothing (owner: system-dark OK → likely
+  content-only-by-design or scene bug); fold WV suite 2/2 green on flipped build.
+- **MCP:** registered in ~/.claude.json (textview → --mcp-stdio). CanvasDemo built over MCP
+  (docs/examples/CanvasDemo.canvas + -deck.html, 4e487567). Canvas M0-M6 remains built+parked
+  for owner review (umbrellas 1344-1351 owner-decision).
+- **Build dirs:** cargo target → ~/Library/Caches/mdv-rust-target (durable); dist/bin gets
+  mdv-tui/web/serve via scripts/stage-frontends.sh; cargo aliases `cargo tui|web|serve` (67323303).
 
-## Key decisions
-- One-subagent-at-a-time → then INLINE (owner; overloaded fleets non-ideal — and the 9-agent
-  fleet died on session limits, validating the call).
-- e2e/VM/UAT validation DEFERRED to its own pass — docs/USABILITY_VALIDATION_PROTOCOL.md (rungs,
-  VM recipe, batch queue). Implement-time bar = host tests+teeth+command-path → `fixed`.
-- Context budgets have teeth: ContextBudgetTests (HANDOFF ≤12KB, CLAUDE.md ≤40KB) + the re-inject
-  hook truncates over-budget handoffs. HANDOFF is STATE, not a log.
+## IN FLIGHT — TSK-1544 (MCP into the RUNNING app)
+Implementation COMPLETE, suite 6/6 green + teeth RED-proven; full headless gate running at
+handoff-write. Files: Sources/ViewerCore/Automation/{MCPSocketListener,MCPSocketBridge}.swift,
+main.swift (listener start in GUI launch after claudeMonitor branch; stop in
+applicationWillTerminate; `--mcp-connect` early-pump at module scope + headless fallback),
+Tests/ViewerCoreTests/Automation/MCPSocketListenerTests.swift. NEXT: gate log
+tmp/gate-1544.log GATE_DONE rc=0 → commit all 4 files (TSK-1544, session trailer) →
+task_record fixed with checks → then a release build (`build-app.sh release --install`)
+gives the owner the socket endpoint + `claude mcp` config keeps working via fallback.
+LESSON (this slice): socketpair+FileHandle test rig gave garbage fds — test the pump through
+the REAL listener path; question the vehicle.
 
-## Gotchas (full list LESSONS.md)
-- Session limits kill fleets; worktrees are the salvage net (WIP-commit each, keep branches).
-- Inline subagents share the git index with the main loop — no main-loop commits while one runs.
-- Rebuilding rust-core/link/*.a does NOT relink SwiftPM — `rm -rf .build/*.xctest`.
-- Fresh worktrees lack the gitignored staticlib — `bash scripts/build-rust-core.sh` first.
-- FoldBench/MsgPack wall-clock benches are load-flaky (TSK-1499): only count non-bench failures.
-- Background gates: judge by the `GATE_DONE rc=` log marker, never the task exit code.
-
-## Files that matter
-- docs/FEATURE_INVENTORY.md — THE hierarchy (12 domains, Built/Logic/Usable, gap-ticket map).
-- docs/USABILITY_VALIDATION_PROTOCOL.md — validation rungs + the remaining batch queue.
-- docs/WISHLIST_RECONCILE_2026-07-02.md — OwnerWishlist↔board map (gaps = 1483..1497).
-- BACKLOG.md §Usability-drain PARKED — the park record.
-- Reusable components: ToastCenter.shared · EmptyStateCatalog/HostedEmptyStateView ·
-  ToolResults(Panel) · EditorAssistChips · CMOneShotRouting (docs/FOCUS_ROUTING.md).
-
-## Open questions / owner levers
-TSK-1334 pixel/AX grant · TSK-838 DOM-patch flip (felt latency) · finish-or-cut 1414/1418/1471/
-1491 · formula gate 788/1215 · hex-edit 1423 · paint persistence 1426 · git visualizer 1492 ·
-far-future 1497 · Canvas review · CLAUDE.md rules-vs-history restructure (proposed, ~9k→~4k tok).
-
-## Tracker
-- TSK-1411 (umbrella) — park comment with the full state · TSK-1506 — the integration ticket
-  (prio-1, deliberately-deferred) · batches 1-2 + 1434 + 1503 at `fixed`/`validated` ·
-  claude-mdv-w* agent records may be PARTIAL vs their branches (reconcile during 1506).
+## Owner levers open
+@codemirror/merge vendoring (unblocks M1/M2) · Canvas M0-M6 review · supervised sessions A/B
+(after shadow-quiet) · TSK-838 flip · TSK-1287 dep · CLAUDE.md restructure proposal.
 
 ## How to resume (cold)
-1. Read this file + BACKLOG.md §PARKED; `git log --oneline -15`; `git branch | grep wf_dadf7ab6`.
-2. `mcp__tasked__task_get TSK-1506` — it carries the branch↔ticket map + integration recipe.
-3. Integrate (rebase→gate→ff per branch), reconcile board, CHANGELOG roll-up, release build.
-4. Then the protocol batch queue INLINE, per-slice: verify-first → implement → tests+teeth →
-   gate → commit (Claude-Session trailer) → board to `fixed` (validation deferred).
+1. `git -C ~/Documents/workspaces/claude/markdown_viewer log --oneline -12` + `git status`.
+2. If 1544 uncommitted: check tmp/gate-1544.log for `GATE_DONE rc=`; green ⇒ commit the 4 files
+   + task_record TSK-1544 fixed; red ⇒ only non-bench failures count (TSK-1499 rule).
+3. Then per BACKLOG order: Stage-B deletions per the UAT plan (fuzzy first) · TSK-1516/S1
+   EditorSession · M6 TextDisplayView→CM6 (pattern-prover) · 1539 matrix guard.
+4. Write ALL new tickets as worker-executable contracts with REQUIRED evidence classes
+   (mandate #4; PM v4 memory). Work INLINE unless the owner says otherwise.
