@@ -21,6 +21,7 @@ final class EngineConsumptionGuardTests: XCTestCase {
         "RustCSVAdapter", "RustHexAdapter", "RustHexSearchAdapter",
         "RustFuzzyAdapter", "RustFindAdapter", "RustTranscriptAdapter",
         "RustMarkdownAdapter", "RustCMEditAdapter", "RustHighlightAdapter",
+        "RustFoldAdapter",
     ]
 
     func test_default_on_engines_have_app_consumers() {

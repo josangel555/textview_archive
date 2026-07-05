@@ -97,9 +97,11 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // TSK-1213: brand-new formula port — ships OFF until its own soak round
         // (parity proven against the Swift FormulaEngine first).
         case .formula: return false
-        // TSK-1202: brand-new fold port — ships OFF until its own soak round
-        // (parity proven against the Swift TreeSitterEngine folds first).
-        case .fold: return false
+        // TSK-1202 flip (2026-07-04, owner-resolved TSK-649: no calendar soak —
+        // single-user app; validation = docs/STAGE_B_DELETION_UAT_2026-07-04.md).
+        // 6-language parity proven vs the Swift TreeSitterEngine folds; consumed
+        // via RustFoldAdapter in DocumentModel. Off-switch: MDV_RUST_FOLD=0.
+        case .fold: return true
         }
     }
 }

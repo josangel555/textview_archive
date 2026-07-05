@@ -24,12 +24,11 @@ final class RustCoreSeamTests: XCTestCase {
         // ROUND 4 / STAGE A COMPLETE: every stage-A capability ships ON.
         // TSK-660 flip round (2026-06-12): highlight completed its ladder
         // (consumption + A/B + parity + the compile cache) and ships ON.
-        // TSK-1213: `formula` is the first NEW port since stage A — it ships OFF
-        // until its own soak round (cross-language parity proven against the Swift
-        // FormulaEngine first), so it is excluded from the all-on soak set.
-        // TSK-1202: `fold` is the next new port — also ships OFF until its soak
-        // (6-language parity proven against the Swift TreeSitterEngine folds first).
-        let soakSet = Set(RustCoreCapability.allCases).subtracting([.formula, .fold])
+        // TSK-1213: `formula` ships OFF until its consumption lands (TSK-1215 —
+        // owner-resolved display design 2026-07-04) and its UAT slice passes.
+        // TSK-1202: `fold` FLIPPED ON 2026-07-04 (owner resolved TSK-649: no
+        // calendar soak — deliberate validation per STAGE_B_DELETION_UAT doc).
+        let soakSet = Set(RustCoreCapability.allCases).subtracting([.formula])
         for cap in RustCoreCapability.allCases {
             XCTAssertEqual(
                 RustCoreGates.isEnabled(cap, defaults: defaults, environment: [:]),

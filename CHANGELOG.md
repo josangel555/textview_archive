@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-04
+
+### System work
+- rust-core migration unblocked end-to-end: owner resolved the TSK-649 flip gate (no calendar
+  soak — single-user; validation = the new Stage-B UAT plan, docs/STAGE_B_DELETION_UAT_2026-07-04.md),
+  the formula display design (TSK-1215: computed value in-grid + separate formula edit box), and
+  the eviction policy (TSK-589: dirty never evicts; clean LRU under min(1–2 GB, 200 files)).
+- fold gate flipped default-ON (TSK-1202 ladder complete; off-switch MDV_RUST_FOLD=0) — first
+  step of the Stage-B deletion sequence.
+- tracking: WebUI surface-sharing epic TSK-1507 + whole-core plan-gap tickets TSK-1508–1514 +
+  computed-cell marker TSK-1515 filed; BACKLOG carries both analyses.
+
 ## 2026-07-02
 
 ### Fixed
