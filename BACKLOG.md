@@ -119,6 +119,32 @@ TSK-687 deep agent integrations · 688 walkthrough-as-presentation · 689 PinBoa
 
 - **Image editor: non-destructive paint layer** (enh) — paint is currently a DESTRUCTIVE baked buffer, so tone-after-paint can't be re-derived (TSK-1420 gates the Tone controls once painting starts as the honest interim). A real fix = keep paint as a separate compositing layer over the live tonal/geometry render, so tone/paint are independently editable. Larger architecture change.
 
+## WebUI surface-sharing — analysis captured (2026-07-04)
+
+**Finding:** the CM6 editor / rendered-markdown / mermaid / Canvas surfaces are already browser-native
+JS (3.6MB of bundles in `Sources/ViewerUI/Resources/`) on an already-core-side HTML pipeline
+(`markdown.rs`/`html_patch.rs`/`mermaid.rs`/`theme.rs`/`canvas/`) — a WebUI reuses them, it doesn't
+port them. Hosted as full WKWebView documents, NOT iframes (iframes are sanitizer-dropped).
+- **Epic: TSK-1507** — mdv-serve serves the bundles + cmDispatch-over-WebSocket (TSK-662/664 duplex
+  infra); bridge schema into the wire contract (TSK-634 codegen precedent); single-source into core:
+  `HTMLSanitizer`/`HTMLDocumentPolicy` (security parity — top candidate), `RenderedBlockDiff`/
+  `BlockPatchJS` (twin of `html_patch.rs`), editor-assist policy (NSSpellChecker stays a native provider).
+- **Buffer-authority fork:** until TSK-1117 (stateful EditorBuffer/DocumentModel in Rust), a WebUI
+  editor is a separate instance, not a live view of the same document. Slices 1-4 of 1507 don't wait on it.
+- Blank-slate split verdict (for orientation): only OS-inherent stays Swift (WKWebView hosting,
+  TCC/Keychain, PTY, NSSpellChecker, AX, menus, ~15-20k LOC); the rest of the 161.6k-vs-50.2k
+  host/core skew is migration economics, not capability.
+
+## Rust migration — plan-gap tickets filed (2026-07-04)
+
+Plan-vs-board-vs-code walk found the whole-core commitment ("do all", TSK-775) had no breakdown.
+Filed: **TSK-1508** (the 1117 stateful-core spike — design + slices + supervised-cutover schedule;
+THE entry point) · TSK-1509/1510/1511/1512 (H-B domain placeholders under TSK-379: LSP, Git,
+Sessions, Automation verbs — re-scope from the spike, don't start independently) · TSK-1513
+(roadmap revision) · TSK-1514 (umbrella reconcile 379/538/651). Owner gates on the critical path:
+TSK-649 soak-window number (D1 + horizon already resolved — see the 2026-07-04 reconcile comment),
+TSK-1215 formula-display product call, TSK-589 eviction policy.
+
 ## Usability-drain effort — PARKED (owner, 2026-07-04)
 
 The app-wide usability push (TSK-1411 tree) is parked mid-drain. Everything is persisted:
