@@ -34,16 +34,41 @@ public enum MCPFraming {
     /// the read buffer.
     public static let maxBodyBytes: Int = 16 * 1024 * 1024
 
+    /// Wire mode of one message. TSK-1545: the MCP stdio spec delimits
+    /// messages by NEWLINES; real clients (Claude Code) write `{...}\n` and
+    /// hung against our Content-Length-only decode. We now sniff per
+    /// message — first byte `{` ⇒ `.ndjson`, else the LSP-style
+    /// `Content-Length` path (kept for back-compat with existing tooling)
+    /// — and the server replies IN KIND.
+    public enum Mode: Sendable, Equatable {
+        case contentLength
+        case ndjson
+    }
+
     // MARK: - Encode
 
     /// Serialise `body` as `Content-Length: N\r\n\r\n<body>` ready for
     /// stdout. Caller is responsible for the actual write.
     public static func encode(body: Data) -> Data {
-        var out = Data()
-        let header = "Content-Length: \(body.count)\r\n\r\n"
-        out.append(header.data(using: .utf8)!)
-        out.append(body)
-        return out
+        encode(body: body, mode: .contentLength)
+    }
+
+    /// Serialise `body` in the given wire mode. `.ndjson` requires the
+    /// body to be single-line JSON (our `JSONEncoder` output is compact —
+    /// never pretty-printed — so this holds by construction).
+    public static func encode(body: Data, mode: Mode) -> Data {
+        switch mode {
+        case .contentLength:
+            var out = Data()
+            let header = "Content-Length: \(body.count)\r\n\r\n"
+            out.append(header.data(using: .utf8)!)
+            out.append(body)
+            return out
+        case .ndjson:
+            var out = Data(body)
+            out.append(0x0A)
+            return out
+        }
     }
 
     // MARK: - Decode
@@ -63,18 +88,55 @@ public enum MCPFraming {
     /// Reads one framed JSON-RPC message. Returns nil cleanly at EOF
     /// (the only signal we use to terminate the server loop).
     public static func decode<R: ByteReader>(from reader: inout R) throws -> Data? {
-        // Scan the header block byte-by-byte until we see CRLF-CRLF
-        // (or LF-LF for hand-written clients). Headers are tiny — a
-        // single Content-Length line is the only one we need — so the
-        // byte-loop overhead is irrelevant.
-        var headerBytes = Data()
+        try decodeDetecting(from: &reader)?.body
+    }
+
+    /// Reads one message AND reports which wire mode it arrived in, so the
+    /// server can reply in kind (TSK-1545). Skips blank lines between
+    /// NDJSON messages; per-message sniff on the first significant byte.
+    public static func decodeDetecting<R: ByteReader>(
+        from reader: inout R
+    ) throws -> (body: Data, mode: Mode)? {
+        // Sniff: consume inter-message whitespace (NDJSON clients separate
+        // messages with newlines; tolerate stray blank lines), then branch
+        // on the first significant byte.
+        var first: UInt8
+        repeat {
+            guard let b = try reader.readByte() else { return nil }  // clean EOF
+            first = b
+        } while first == 0x0A || first == 0x0D || first == 0x20 || first == 0x09
+
+        if first == UInt8(ascii: "{") {
+            // NDJSON: the message is this line, terminated by LF. The body
+            // is compact JSON by spec; cap at maxBodyBytes like the framed
+            // path so a runaway line can't balloon the buffer.
+            var line = Data([first])
+            while true {
+                guard let b = try reader.readByte() else {
+                    // EOF mid-line: treat what we have as the final message
+                    // (a client that exits right after its last unterminated
+                    // line is within spec tolerance).
+                    return (line, .ndjson)
+                }
+                if b == 0x0A { break }
+                line.append(b)
+                if line.count > maxBodyBytes { throw DecodeError.bodyTooLarge(line.count) }
+            }
+            // Tolerate CRLF line endings.
+            if line.last == 0x0D { line.removeLast() }
+            return (line, .ndjson)
+        }
+
+        // Content-Length path (LSP-style). Scan the header block
+        // byte-by-byte until we see CRLF-CRLF (or LF-LF for hand-written
+        // clients). Headers are tiny — a single Content-Length line is the
+        // only one we need — so the byte-loop overhead is irrelevant.
+        var headerBytes = Data([first])
         let headerCap = 8 * 1024     // headers shouldn't exceed 8 KiB
         while headerBytes.count < headerCap {
             guard let b = try reader.readByte() else {
-                // Clean EOF before any header byte = end of session.
                 // Mid-header EOF = peer crashed; surface as error so the
                 // server loop can log it before exiting.
-                if headerBytes.isEmpty { return nil }
                 throw DecodeError.unexpectedEOF
             }
             headerBytes.append(b)
@@ -96,7 +158,7 @@ public enum MCPFraming {
             throw DecodeError.bodyTooLarge(length)
         }
         guard length > 0 else {
-            return Data()
+            return (Data(), .contentLength)
         }
         guard let body = try reader.read(exactly: length) else {
             throw DecodeError.unexpectedEOF
@@ -104,7 +166,7 @@ public enum MCPFraming {
         guard body.count == length else {
             throw DecodeError.unexpectedEOF
         }
-        return body
+        return (body, .contentLength)
     }
 
     // MARK: - Internals

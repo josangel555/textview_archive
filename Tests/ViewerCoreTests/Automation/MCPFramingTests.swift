@@ -129,3 +129,62 @@ final class MCPFramingTests: XCTestCase {
         XCTAssertEqual(try MCPFraming.decode(from: &reader), Data("xyz".utf8))
     }
 }
+
+// MARK: - TSK-1545: NDJSON (the real MCP stdio spec) + mode detection
+
+/// Real MCP clients (Claude Code) delimit messages by newlines, not
+/// Content-Length — the framing must accept both and REPORT which one
+/// arrived so the server can reply in kind. The owner hit a 30 s connect
+/// timeout against the Content-Length-only decode; these pin the fix.
+final class MCPFramingNDJSONTests: XCTestCase {
+
+    func test_decodeDetecting_ndjsonLine() throws {
+        let json = #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#
+        var r = MCPFraming.DataReader(Data((json + "\n").utf8))
+        let m = try XCTUnwrap(MCPFraming.decodeDetecting(from: &r))
+        XCTAssertEqual(m.mode, .ndjson)
+        XCTAssertEqual(String(decoding: m.body, as: UTF8.self), json)
+    }
+
+    func test_decodeDetecting_multipleNdjsonMessages_andBlankLines() throws {
+        let a = #"{"id":1}"#, b = #"{"id":2}"#
+        var r = MCPFraming.DataReader(Data((a + "\n\n" + b + "\r\n").utf8))
+        let m1 = try XCTUnwrap(MCPFraming.decodeDetecting(from: &r))
+        let m2 = try XCTUnwrap(MCPFraming.decodeDetecting(from: &r))
+        XCTAssertEqual(String(decoding: m1.body, as: UTF8.self), a)
+        XCTAssertEqual(String(decoding: m2.body, as: UTF8.self), b,
+                       "CRLF line ending must be tolerated")
+        XCTAssertNil(try MCPFraming.decodeDetecting(from: &r), "clean EOF after last message")
+    }
+
+    func test_decodeDetecting_unterminatedFinalLine_isDelivered() throws {
+        let json = #"{"id":9}"#
+        var r = MCPFraming.DataReader(Data(json.utf8))   // no trailing \n
+        let m = try XCTUnwrap(MCPFraming.decodeDetecting(from: &r))
+        XCTAssertEqual(String(decoding: m.body, as: UTF8.self), json)
+    }
+
+    func test_decodeDetecting_contentLength_reportsMode() throws {
+        let body = #"{"id":3}"#
+        var r = MCPFraming.DataReader(MCPFraming.encode(body: Data(body.utf8)))
+        let m = try XCTUnwrap(MCPFraming.decodeDetecting(from: &r))
+        XCTAssertEqual(m.mode, .contentLength)
+        XCTAssertEqual(String(decoding: m.body, as: UTF8.self), body)
+    }
+
+    func test_encode_ndjson_appendsExactlyOneNewline() {
+        let out = MCPFraming.encode(body: Data(#"{"a":1}"#.utf8), mode: .ndjson)
+        XCTAssertEqual(String(decoding: out, as: UTF8.self), "{\"a\":1}\n")
+    }
+
+    func test_ndjson_oversizeLine_throwsBodyTooLarge() {
+        var big = Data([UInt8(ascii: "{")])
+        big.append(Data(repeating: UInt8(ascii: "x"), count: MCPFraming.maxBodyBytes + 2))
+        var r = MCPFraming.DataReader(big)
+        XCTAssertThrowsError(try MCPFraming.decodeDetecting(from: &r)) { err in
+            guard case MCPFraming.DecodeError.bodyTooLarge = err as! MCPFraming.DecodeError else {
+                return XCTFail("expected bodyTooLarge, got \(err)")
+            }
+        }
+    }
+}

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-05
+
+### Added
+- **TextView now works as an MCP server for Claude Code (and any MCP client).** Register once
+  (`claude mcp add --scope user textview -- /Applications/TextView.app/Contents/MacOS/MarkdownViewer --mcp-connect`)
+  and agents get all 31 tools — open files, drive verbs, author Canvas docs. While the app is
+  running, agents drive the LIVE app over its new local socket (edits appear in your open
+  windows); when it's closed, the same config transparently falls back to a headless instance.
+
+### Fixed
+- **MCP clients timed out connecting (30 s).** The server only spoke LSP-style Content-Length
+  framing while the MCP spec (and Claude Code) use newline-delimited JSON. The server now
+  accepts both and replies in kind.
+
 ## 2026-07-04
 
 ### System work

@@ -65,6 +65,14 @@ public final class MCPServer: @unchecked Sendable {
     /// bytes with a response and corrupt the stream.
     private let writeLock = NSLock()
 
+    /// Wire mode of the CURRENT session, captured from each decoded
+    /// request so responses go back in kind (TSK-1545: real MCP clients
+    /// speak newline-delimited JSON; our own tooling speaks
+    /// Content-Length — both are served). Written by the reader thread
+    /// before dispatch, read under `writeLock` when sending — the
+    /// request/response pairing on the serial channel orders the two.
+    nonisolated(unsafe) private var wireMode: MCPFraming.Mode = .contentLength
+
     public init(
         host: AutomationHost,
         input: FileHandle = .standardInput,
@@ -115,19 +123,20 @@ public final class MCPServer: @unchecked Sendable {
         defer { fireExit() }
         var reader = MCPFraming.FileHandleReader(input)
         while !shouldStop {
-            let body: Data?
+            let message: (body: Data, mode: MCPFraming.Mode)?
             do {
-                body = try MCPFraming.decode(from: &reader)
+                message = try MCPFraming.decodeDetecting(from: &reader)
             } catch {
                 log("framing error: \(error). Closing.")
                 return
             }
-            guard let body else {
+            guard let message else {
                 // Clean EOF.
                 log("stdin EOF; server exiting")
                 return
             }
-            handle(requestBody: body)
+            writeLock.lock(); wireMode = message.mode; writeLock.unlock()
+            handle(requestBody: message.body)
         }
     }
 
@@ -408,9 +417,9 @@ public final class MCPServer: @unchecked Sendable {
         encoder.outputFormatting = [.sortedKeys]
         do {
             let body = try encoder.encode(response)
-            let framed = MCPFraming.encode(body: body)
             writeLock.lock()
             defer { writeLock.unlock() }
+            let framed = MCPFraming.encode(body: body, mode: wireMode)
             try output.write(contentsOf: framed)
         } catch {
             // A failed write means the response never reached the client.

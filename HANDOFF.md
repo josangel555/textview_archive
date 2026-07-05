@@ -33,15 +33,15 @@ executes; every ticket = complete contract with REQUIRED evidence classes — me
 - **Build dirs:** cargo target → ~/Library/Caches/mdv-rust-target (durable); dist/bin gets
   mdv-tui/web/serve via scripts/stage-frontends.sh; cargo aliases `cargo tui|web|serve` (67323303).
 
-## IN FLIGHT — TSK-1544 (MCP into the RUNNING app)
-Implementation COMPLETE, suite 6/6 green + teeth RED-proven; full headless gate running at
-handoff-write. Files: Sources/ViewerCore/Automation/{MCPSocketListener,MCPSocketBridge}.swift,
+## TSK-1544 (MCP into the RUNNING app) — COMMITTED 94549210, recorded fixed
+Suite 6/6 + teeth RED-proven + redirect-guard fix (socket path via TestStateRedirect).
+Belt-and-braces post-commit gate result: tmp/gate-1544-post.log (`GATE_DONE rc=`) — if red
+on a NON-bench test, bounce 1544 to progress and fix; bench-only = TSK-1499 flake rule. Files: Sources/ViewerCore/Automation/{MCPSocketListener,MCPSocketBridge}.swift,
 main.swift (listener start in GUI launch after claudeMonitor branch; stop in
 applicationWillTerminate; `--mcp-connect` early-pump at module scope + headless fallback),
-Tests/ViewerCoreTests/Automation/MCPSocketListenerTests.swift. NEXT: gate log
-tmp/gate-1544.log GATE_DONE rc=0 → commit all 4 files (TSK-1544, session trailer) →
-task_record fixed with checks → then a release build (`build-app.sh release --install`)
-gives the owner the socket endpoint + `claude mcp` config keeps working via fallback.
+Tests/ViewerCoreTests/Automation/MCPSocketListenerTests.swift. NEXT: release build (`build-app.sh release --install`) gives the owner the socket
+endpoint; then swap the registered MCP config to --mcp-connect (exact command in the
+TSK-1544 board record) + run the live E2E slice → task_validate.
 LESSON (this slice): socketpair+FileHandle test rig gave garbage fds — test the pump through
 the REAL listener path; question the vehicle.
 
@@ -51,8 +51,8 @@ the REAL listener path; question the vehicle.
 
 ## How to resume (cold)
 1. `git -C ~/Documents/workspaces/claude/markdown_viewer log --oneline -12` + `git status`.
-2. If 1544 uncommitted: check tmp/gate-1544.log for `GATE_DONE rc=`; green ⇒ commit the 4 files
-   + task_record TSK-1544 fixed; red ⇒ only non-bench failures count (TSK-1499 rule).
+2. Check tmp/gate-1544-post.log `GATE_DONE rc=` (1544 already committed/recorded); non-bench
+   red ⇒ bounce 1544 to progress and fix forward.
 3. Then per BACKLOG order: Stage-B deletions per the UAT plan (fuzzy first) · TSK-1516/S1
    EditorSession · M6 TextDisplayView→CM6 (pattern-prover) · 1539 matrix guard.
 4. Write ALL new tickets as worker-executable contracts with REQUIRED evidence classes

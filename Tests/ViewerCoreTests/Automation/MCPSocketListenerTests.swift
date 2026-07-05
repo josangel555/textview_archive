@@ -147,4 +147,40 @@ final class MCPSocketListenerTests: XCTestCase {
         XCTAssertTrue(reply.contains("\"TextView\""),
                       "initialize must round-trip stdio→pump→socket→server; got \(reply.prefix(200))")
     }
+
+    // MARK: - TSK-1545: the Claude-Code-shaped client (newline-delimited JSON)
+
+    /// Real MCP clients speak NDJSON on stdio — the exact shape that hit the
+    /// owner's 30 s connect timeout. Over the socket: `{...}\n` in must get
+    /// `{...}\n` back (reply-in-kind), not Content-Length framing.
+    func test_ndjsonClient_roundTrip_replyInKind() throws {
+        try startListener()
+        let sockPath = path!
+        let done = expectation(description: "ndjson round-trip")
+        nonisolated(unsafe) var raw = Data()
+
+        Thread.detachNewThread {
+            guard let conn = MCPSocketBridge.connect(path: sockPath) else {
+                done.fulfill(); return
+            }
+            try? conn.write(contentsOf: Data(
+                (#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"# + "\n").utf8))
+            // Read until the terminating newline (NDJSON reply) or EOF.
+            while true {
+                guard let byte = try? conn.read(upToCount: 1), !byte.isEmpty
+                else { break }
+                raw.append(byte)
+                if byte[byte.startIndex] == 0x0A { break }
+            }
+            try? conn.close()
+            done.fulfill()
+        }
+
+        wait(for: [done], timeout: 15)
+        let text = String(decoding: raw, as: UTF8.self)
+        XCTAssertTrue(text.hasPrefix("{"),
+                      "NDJSON client must get NDJSON back (no Content-Length header); got: \(text.prefix(80))")
+        XCTAssertTrue(text.hasSuffix("\n"), "NDJSON reply must be newline-terminated")
+        XCTAssertTrue(text.contains("\"TextView\""), "got: \(text.prefix(200))")
+    }
 }
