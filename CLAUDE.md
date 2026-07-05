@@ -536,3 +536,12 @@ continue", document blockers and move on):
   audit (synthesis.md = verdict + Phase 0-3 roadmap; epic TSK-538).
 - `docs/` — feature design docs (Mermaid impl, Walkthrough v2, Code
   Review, Sessions, LSP, Plugins v2, etc.).
+
+## macOS/zsh shell exemplars (QoL — the 29-error class from the session meta-analysis)
+
+- No GNU `timeout` on macOS — background the command or use a deadline inside the tool call.
+- `grep` a literal with special chars → `grep -F 'x[y]{z}'`; regex mode eats `[]{}()`.
+- `ps -p 1,2,3` does NOT combine with `-axo` (silently lists everything) — filter with `grep -E '^(pid1|pid2) '` instead.
+- zsh eats bare `==`/globs in echoed args — quote them (`echo "==="` not `echo ===`).
+- `git -C /path` beats `cd /path && git` (permission rules match whole command strings).
+- Heredocs into a remote shell: `ssh host 'bash -s' <<'EOS'` — single-quote the tag or $vars expand locally.
