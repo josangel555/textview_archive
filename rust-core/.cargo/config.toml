@@ -3,8 +3,12 @@
 # run — iCloud sync thrash + xattr re-stamping, the same class that breaks
 # codesign in this repo). This makes the mandate self-enforcing for every
 # cargo invocation in or below rust-core/; CARGO_TARGET_DIR still overrides.
+# 2026-07-04 (owner): moved OFF /private/tmp (reboot-wiped) to a DURABLE
+# non-synced location — the multi-GB intermediates cache now survives
+# restarts. Final front-end binaries are staged into the project's dist/bin
+# by scripts/stage-frontends.sh (small files: safe inside the synced tree).
 [build]
-target-dir = "/private/tmp/mdv-rust-target"
+target-dir = "/Users/me/Library/Caches/mdv-rust-target"
 
 # Canonical front-end launchers (2026-07-04): `cargo tui <path>`, `cargo web
 # [--port N] <root>`, `cargo serve <socket-args>` from anywhere in rust-core/.

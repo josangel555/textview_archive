@@ -135,6 +135,18 @@ port them. Hosted as full WKWebView documents, NOT iframes (iframes are sanitize
   TCC/Keychain, PTY, NSSpellChecker, AX, menus, ~15-20k LOC); the rest of the 161.6k-vs-50.2k
   host/core skew is migration economics, not capability.
 
+## Rust-core hygiene + front-end delivery (owner asks, 2026-07-04)
+
+- **TSK-1535 — doc-warning burn-down + FAIL THE BUILD ON WARNS:** backfill the 188 `missing_docs`
+  in `mdvcore-core` (+ 1 web, 2 serve warnings), fix the 2 cosmetic code warnings, then promote to
+  DENY in `rust-core-gate.sh` so warn-level lints can never rot silently again.
+- **Build dirs (done 2026-07-04):** cargo target-dir moved `/private/tmp` → `~/Library/Caches/`
+  `mdv-rust-target` (durable, survives reboot, still outside the iCloud tree per TSK-555);
+  `scripts/stage-frontends.sh` builds + stages `mdv-tui`/`mdv-web`/`mdv-serve` into **`dist/bin/`**.
+- **TSK-1536 — `mdv` CLI opener** (open files/folders/sessions in the running app from the shell);
+  **TSK-1537 — daemon-vs-instances design** (mdv-serve lifecycle, launchd agent, one backend for
+  WUI/TUI/App per TSK-1507/1523).
+
 ## Rendering-stack policy — "web for content, native for chrome, brain in Rust" (owner-ratified 2026-07-04)
 
 Epic **TSK-1524** + children: owner-critical migrations M1-M5 (git diff **1525** [dep: @codemirror/merge],
