@@ -29,6 +29,13 @@ struct CSVTableView: View {
     /// The cell currently being edited (FULL-grid coords: header is row 0,
     /// body rows are `1...`), or nil when not editing.
     @State private var editingCell: EditableCSVModel.Cell?
+    // TSK-1215: the dedicated formula edit box (owner design 2026-07-04 — the
+    // grid cell ALWAYS shows the computed value; a formula's raw "=" source is
+    // edited in this box, never in-cell). Grid coords like `editingCell`; at
+    // most one of the two edit states is non-nil at a time.
+    @State private var formulaEditingCell: EditableCSVModel.Cell?
+    @State private var formulaEditingText: String = ""
+    @FocusState private var formulaFieldFocused: Bool
     /// Live buffer for the inline `TextField` while a cell is being edited.
     @State private var editingText: String = ""
     // TSK-925: click a column header to sort by it (toggles asc/desc; a third
@@ -163,6 +170,10 @@ struct CSVTableView: View {
             if findVisible {
                 Divider()
                 findBar(header: result.header)
+            }
+            if formulaEditingCell != nil {
+                Divider()
+                formulaEditBox()
             }
             Divider()
             // Single shared horizontal+vertical ScrollView so the
@@ -419,8 +430,49 @@ struct CSVTableView: View {
     private func beginEditing(rowIndex: Int, column: Int) {
         guard editingAvailable, let model = editModel else { return }
         let gridR = Self.gridRow(forDisplayIndex: rowIndex)
-        editingText = model.getCell(row: gridR, column: column) ?? ""
-        editingCell = EditableCSVModel.Cell(row: gridR, column: column)
+        let raw = model.getCell(row: gridR, column: column) ?? ""
+        switch Self.editRoute(raw: raw, formulaDisplayOn: RustFormulaGate.isEnabled()) {
+        case .formulaBox:
+            formulaEditingText = raw
+            formulaEditingCell = EditableCSVModel.Cell(row: gridR, column: column)
+            editingCell = nil
+        case .inline:
+            editingText = raw
+            editingCell = EditableCSVModel.Cell(row: gridR, column: column)
+            formulaEditingCell = nil
+        }
+    }
+
+    /// TSK-1215: where a double-clicked cell's edit goes. A formula-backed cell
+    /// (raw begins "=", Excel semantics — a leading space makes it literal text)
+    /// edits its SOURCE in the dedicated formula box while the grid cell keeps
+    /// showing the computed value; everything else keeps the inline in-cell
+    /// TextField. With formula display off the legacy raw in-cell edit stands,
+    /// so the gate-off path is byte-identical. Pure → host-testable.
+    enum CSVEditRoute: Equatable { case inline, formulaBox }
+    static func editRoute(raw: String, formulaDisplayOn: Bool) -> CSVEditRoute {
+        formulaDisplayOn && raw.hasPrefix("=") ? .formulaBox : .inline
+    }
+
+    /// A1 label for the formula box: grid coords (header = row 0) → A1 space
+    /// (first data row = "1"), the same mapping as `formulaGridSnapshot`.
+    /// Pure → host-testable.
+    static func formulaBoxLabel(gridCell: EditableCSVModel.Cell) -> String {
+        CellReference(row: gridCell.row - 1, column: gridCell.column).a1
+    }
+
+    /// Commit the formula box's buffer into the model and close the box. The
+    /// model write re-runs `formulaValuesMap()` on the next render pass, so the
+    /// edited cell AND every dependent recompute together.
+    private func commitFormulaEditing() {
+        defer { formulaEditingCell = nil }
+        guard let cell = formulaEditingCell, editModel != nil else { return }
+        editModel?.setCell(row: cell.row, column: cell.column, to: formulaEditingText)
+    }
+
+    /// Close the formula box WITHOUT writing — the model stays untouched.
+    private func cancelFormulaEditing() {
+        formulaEditingCell = nil
     }
 
     /// Commit the in-progress edit into `editModel` and end editing. Folds the
@@ -522,6 +574,9 @@ struct CSVTableView: View {
             editModel = nil
         }
         editingCell = nil
+        // TSK-1215: the underlying text changed out from under the formula box
+        // too — abandon it the same way the inline edit is abandoned.
+        formulaEditingCell = nil
         // After re-parse, drop stale per-column entries (file shape
         // may have changed) and stale scope picks.
         let cols = result.header.count
@@ -904,6 +959,39 @@ struct CSVTableView: View {
             // rather than reading a bare value out of context.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Self.cellLabel(column: i, header: header, value: cell))
+    }
+
+    /// TSK-1215: the dedicated formula edit box — a bar above the grid holding
+    /// the active formula cell's RAW "=" source while the grid cell underneath
+    /// keeps showing its COMPUTED value (owner design 2026-07-04). Return
+    /// commits (model write → dependents recalc on the next render pass);
+    /// Esc / Cancel closes without writing.
+    @ViewBuilder
+    private func formulaEditBox() -> some View {
+        if let cell = formulaEditingCell {
+            HStack(spacing: 8) {
+                Text(Self.formulaBoxLabel(gridCell: cell))
+                    .font(.system(size: cellFontSize, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("mdv.csv.formulaBox.ref")
+                TextField("=formula", text: $formulaEditingText,
+                          onCommit: { commitFormulaEditing() })
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: cellFontSize, design: .monospaced))
+                    .focused($formulaFieldFocused)
+                    .onExitCommand { cancelFormulaEditing() }
+                    .accessibilityIdentifier("mdv.csv.formulaBox.field")
+                    .accessibilityLabel("Formula for cell \(Self.formulaBoxLabel(gridCell: cell))")
+                Button("Done") { commitFormulaEditing() }
+                    .accessibilityIdentifier("mdv.csv.formulaBox.done")
+                Button("Cancel") { cancelFormulaEditing() }
+                    .accessibilityIdentifier("mdv.csv.formulaBox.cancel")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .accessibilityIdentifier("mdv.csv.formulaBox")
+            .onAppear { formulaFieldFocused = true }
+        }
     }
 
     /// Column title for VoiceOver — falls back to "Column N" for blank
