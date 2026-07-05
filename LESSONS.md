@@ -3801,3 +3801,18 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   NSSpellChecker per debounced edit (EditorCoordinator.runEditorSpellPass, ≤200KB prose) + whole-buffer
   word scan per completion request (InFileCompletion, no-LSP fallback). Footer toggles = relief valve
   (92dec034); real fix = TSK-1504 (off-main/visible-range spell + word-index cache).
+
+- **The bridge-source TOUCH cannot force an exec RELINK — SwiftPM skips the link when
+  recompiled objects are byte-identical** (2026-07-05, TSK-1547). The TSK-626/848 recipe
+  (touch `Sources/RustCore/*.swift` after staging a fresh `libmdvcore_ffi.a`) recompiles the
+  module but produces identical objects → the driver content-hashes its link inputs (the
+  prebuilt `.a` is NOT one of them) → the executable is NOT relinked → the bundle ships the
+  OLD rust code while every step reports success. Caught only by `strings` on the installed
+  exec during the TSK-1546 canvas font fix ("[3/4] Compiling RustCore … Build complete!
+  (5.29s)" — a 64 MB exec cannot link in 5 s). FIX, now automatic: `build-rust-core.sh`
+  deletes the SwiftPM link products (debug+release execs + every `.xctest`) whenever the
+  staged `.a` content changes (objects stay cached — cost is link-only; this also retires
+  the manual `rm .build/*.xctest` recipe), and `build-app.sh` hard-fails on `staged .a
+  newer than built exec` ("STALE LINK" tooth). The touch remains correct for the HEADER/
+  recompile edge — it is only the LINK edge it never covered. Durable end-state: xcframework
+  binaryTarget (packaging plan Axis 1) makes the `.a` a tracked input natively.

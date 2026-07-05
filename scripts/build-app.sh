@@ -114,6 +114,21 @@ if [[ ! -x "$BIN_PATH" ]]; then
   exit 1
 fi
 
+# TSK-1547 freshness TOOTH: never bundle an exec older than the staged rust
+# staticlib. The staged `.a`'s mtime only moves on CONTENT change (TSK-848
+# cmp-gated restage), so `.a` newer than the exec means SwiftPM skipped the
+# relink (the touch-based guard can't force the link edge — identical
+# recompiled objects → link skipped) and the bundle would ship STALE rust
+# code while reporting success. Hard fail — build-rust-core.sh's product
+# deletion should make this unreachable; this guard catches any path around it.
+STAGED_A="$ROOT_DIR/rust-core/link/libmdvcore_ffi.a"
+if [[ -f "$STAGED_A" && "$STAGED_A" -nt "$BIN_PATH" ]]; then
+  echo "Error: STALE LINK — $STAGED_A is newer than the built executable." >&2
+  echo "       SwiftPM did not relink against the fresh staticlib. Delete the" >&2
+  echo "       link products (rm .build/*/$CONFIG/$EXEC_NAME) and rebuild." >&2
+  exit 1
+fi
+
 echo "==> Assembling $APP_DIR"
 rm -rf "$APP_DIR"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"

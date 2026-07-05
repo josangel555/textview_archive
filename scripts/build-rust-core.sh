@@ -144,6 +144,25 @@ if [[ -f "$LINK_DIR/libmdvcore_ffi.a" ]] && cmp -s "$STATICLIB" "$LINK_DIR/libmd
 else
   cp "$STATICLIB" "$LINK_DIR/libmdvcore_ffi.a"
 fi
+
+# TSK-1547: when the `.a` content changed, DELETE the SwiftPM link products
+# outright. The bridge-source touch below is NOT sufficient for the LINK edge:
+# SwiftPM recompiles the touched sources to byte-identical objects and then
+# SKIPS the executable relink (content-hash inputs unchanged; the prebuilt `.a`
+# is not a tracked link input) — caught live 2026-07-05 when a canvas engine
+# fix compiled+staged clean yet /Applications shipped the OLD rust code
+# ("[3/4] Compiling RustCore … Build complete! (5.29s)" — no link). Removing
+# the products forces the linker to run; compiled objects stay cached, so the
+# cost is link-only. Same treatment for xctest bundles (the historical manual
+# `rm .build/*.xctest` recipe, now automatic).
+if [[ "$STATICLIB_CHANGED" == "1" ]]; then
+  echo "==> staticlib CHANGED — deleting SwiftPM link products to force relink (TSK-1547)"
+  rm -f "$ROOT_DIR"/.build/debug/MarkdownViewer \
+        "$ROOT_DIR"/.build/release/MarkdownViewer \
+        "$ROOT_DIR"/.build/*/debug/MarkdownViewer \
+        "$ROOT_DIR"/.build/*/release/MarkdownViewer 2>/dev/null || true
+  find "$ROOT_DIR/.build" -maxdepth 3 -name '*.xctest' -prune -exec rm -rf {} + 2>/dev/null || true
+fi
 cp "$HEADER_SRC" "$LINK_DIR/mdvcore.h"
 
 # Stage the SwiftPM-imported header + run the staleness touches (TSK-626):
