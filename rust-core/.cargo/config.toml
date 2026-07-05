@@ -5,3 +5,11 @@
 # cargo invocation in or below rust-core/; CARGO_TARGET_DIR still overrides.
 [build]
 target-dir = "/private/tmp/mdv-rust-target"
+
+# Canonical front-end launchers (2026-07-04): `cargo tui <path>`, `cargo web
+# [--port N] <root>`, `cargo serve <socket-args>` from anywhere in rust-core/.
+# Release profile + the pinned target-dir above = warm-cache instant reruns.
+[alias]
+tui = "run --release -p mdvcore-tui --"
+web = "run --release -p mdvcore-web --"
+serve = "run --release -p mdvcore-serve --"
