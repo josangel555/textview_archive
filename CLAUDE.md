@@ -37,6 +37,18 @@ skill, NOT `swift test`). Two modes (do NOT conflate them):
   NEVER say "fixed" / move to `done` on model evidence alone. The acceptance
   criterion for a UI bug is the pixels/behavior the user sees.
 
+### The four testing MANDATES (OWNER 2026-07-04 — full text docs/TEST_PYRAMID.md §MANDATES)
+
+1. **Per-surface real-render matrix (TSK-1539):** every content surface needs ≥1 WV/T4/T5/AX
+   test; the matrix guard makes an unmapped surface a RED gate. No `fixed` without the guard
+   or an explicit exemption in the ticket.
+2. **AX interaction everywhere (TSK-1543):** every verb/command/element gets a real-event
+   interaction test on the native AXUIElement adapter (System Events proven insufficient).
+3. **UAT is AGENT-DRIVEN:** validation ladders agent-executable end-to-end; a human rung is
+   the exception (AX-blocked/broken-lane/product call) — human gates breed overclaiming.
+4. **Tickets name their required evidence classes at grooming** (e.g. "WV DOM + AX press +
+   T5 pixel"); workers implement to the named classes; the gate refuses `fixed` without them.
+
 ### Root-cause discipline — DIAGNOSE before you fix (OWNER DIRECTIVE 2026-06-23)
 
 Before implementing ANY bug fix, answer these — explicitly, in the ticket:

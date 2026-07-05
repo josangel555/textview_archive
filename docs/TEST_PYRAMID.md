@@ -92,6 +92,38 @@ adapter + driver executable + agent-driven entry are VM-tail subtasks
 TSK-1260/1261/1263). Element-reference sharing (TSK-1256) builds on the same
 addressing foundation.
 
+## MANDATES (owner-ratified 2026-07-04) — the enforcement layer
+
+The 2026-07-04 session diagnosis: ~30 content surfaces vs 24 real-UI test fns is the structural
+cause of repeated regressions + agent overclaiming. Mandates existed but nothing REQUIRED
+per-surface real-render coverage. These four rules close that, each with a MECHANICAL tooth:
+
+1. **Per-surface real-render matrix (TSK-1539).** Every content surface in the catalog must map
+   to ≥1 test in a real-render tier (WV/T4/T5/AX). Tooth: a host-side matrix guard test
+   (EngineConsumptionGuardTests pattern) — unmapped surface = RED merge gate. A feature ticket
+   is not `fixed` without its real-render guard or an explicit justified exemption IN the ticket.
+2. **AX interaction everywhere (TSK-1543).** Every action (~167 verbs + ~131 palette commands)
+   and every interactive UI element gets an INTERACTION test (real events + effect assert), not
+   just appearance. Substrate: the native AXUIElement adapter (TSK-1260/1261/1263) — System
+   Events proven insufficient 2026-07-04 (can't see SwiftUI AXIdentifiers, can't traverse
+   SwiftUI+WKWebView trees). Accessibility TCC on the VM: GRANTED 2026-07-04. Tooth: the matrix
+   guard extends to catalog-entry-without-interaction-test = RED.
+3. **UAT is AGENT-DRIVEN.** Validation ladders must be agent-executable end-to-end (host →
+   VM lanes → driven journey + machine-checked evidence → task_validate with checks). Human
+   involvement is the exception (AX-blocked observable, broken lane, product call) — never a
+   checklist. Rationale: human gates breed overclaiming (owner, 2026-07-04). SOP artifact:
+   docs/STAGE_B_DELETION_UAT_2026-07-04.md is the reference shape.
+4. **Tickets carry their test requirements.** The ticket contract names the REQUIRED evidence
+   classes (e.g. "WV DOM assert + AX press + T5 pixel") at grooming time, derived from the
+   surface catalog — workers implement to the named classes; the gate refuses `fixed` without
+   them. (This is the enforcement hook for the worker-loop PM model.)
+
+Evidence channels, in increasing realism — screenshot-eyeballing is the garnish, not the
+foundation: model asserts (host) → live-DOM asserts (WV `cmDispatch`) → machine-computed pixel
+asserts (T5) → PNG + agent vision (unknown-unknowns) → AX real-event interaction (pixel-free).
+Open levers: WV-on-host offscreen audit (TSK-1540 — would move 103 fns into the merge gate);
+Sequoia capture-nag mitigation (TSK-1542).
+
 ## Frameworks
 
 - **XCTest** — everything tier-based (the `TierBaseCases` hierarchy + the live tiers) and all existing suites.
