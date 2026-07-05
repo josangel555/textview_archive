@@ -734,7 +734,16 @@ pub fn lower_page(store: &Store, tokens: &TokenStore, page: &Id) -> String {
     let mut out = String::new();
     out.push_str("<style id=\"cv-theme\">:root{\n");
     out.push_str(&tokens.to_css_custom_props());
-    out.push_str("}</style>");
+    out.push_str("}\n");
+    // TSK-1546: apply the body font + fg color AT THE PAGE ROOT so every
+    // descendant inherits them unless it overrides. Without this rule the
+    // tokens exist as custom properties but nothing USES them for plain
+    // text — any node without an explicit font=/color= fell back to the
+    // UA default (Times New Roman in WebKit).
+    out.push_str(
+        "[data-cv-kind=\"page\"]{font:var(--cv-font-body);color:var(--cv-color-fg)}",
+    );
+    out.push_str("</style>");
     emit(store, page, &ExpandCtx::root(), &mut out);
     out
 }
@@ -821,6 +830,13 @@ mod tests {
         assert!(!html.contains("background:#f5f5f7"), "no baked literal");
         // The theme block carries the actual values once, at the root.
         assert!(html.contains("--cv-color-surface: #f5f5f7;"));
+        // TSK-1546: the page root APPLIES body font + fg color so plain text
+        // inherits them — without this rule unstyled text fell back to the
+        // UA serif default (Times New Roman).
+        assert!(
+            html.contains("[data-cv-kind=\"page\"]{font:var(--cv-font-body);color:var(--cv-color-fg)}"),
+            "page-root inheritance rule missing from the theme block"
+        );
     }
 
     #[test]
