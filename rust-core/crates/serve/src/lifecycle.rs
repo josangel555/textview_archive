@@ -78,6 +78,46 @@ pub fn resolve_exit(flush_ok: bool) -> ExitResolution {
     }
 }
 
+// ---------------------------------------------------------------------------
+// daemon.retire — version-skew handover (DAEMON_LIFECYCLE_DESIGN.md D4,
+// TSK-1555)
+// ---------------------------------------------------------------------------
+
+/// The `daemon.retire` accept/refuse decision. Scenario: the app updates, its
+/// NEWER client dials the still-running OLDER daemon, the hello reports wire
+/// skew — instead of a dead end, the new client asks the daemon to RETIRE
+/// (flush all sessions, close the listener, exit 0) so the client's retry
+/// connect makes launchd spawn the UPDATED binary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetireDecision {
+    /// Retire: flush everything, close the listener, exit 0. The requester
+    /// (and any same-expectation stragglers) re-dial and reach the new binary.
+    Accept,
+    /// Refuse: the requester is NOT newer than this daemon. An OLDER client
+    /// meeting a NEWER daemon keeps the existing hello hard-close (the
+    /// upgrade direction only ever retires forward — an old binary must not
+    /// be able to shoot down a new daemon).
+    RefuseNotNewer,
+    /// Refuse: another attached client expects a DIFFERENT wire version than
+    /// the requester (first-writer-wins — the attached population using this
+    /// daemon at its current version keeps it; stragglers re-dial when their
+    /// own connection closes naturally).
+    RefuseConflictingClients,
+}
+
+/// Decide a `daemon.retire` request. `requester` / `server` are wire
+/// versions; `other_clients` are the wire versions of the OTHER currently
+/// attached connections (the requester excluded).
+pub fn retire_decision(requester: u64, server: u64, other_clients: &[u64]) -> RetireDecision {
+    if requester <= server {
+        return RetireDecision::RefuseNotNewer;
+    }
+    if other_clients.iter().any(|&v| v != requester) {
+        return RetireDecision::RefuseConflictingClients;
+    }
+    RetireDecision::Accept
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +167,51 @@ mod tests {
     #[test]
     fn threshold_is_fifteen_minutes() {
         assert_eq!(IDLE_THRESHOLD_MS, 900_000);
+    }
+
+    // --- daemon.retire (TSK-1555) ---
+
+    #[test]
+    fn retire_newer_client_alone_accepts() {
+        // The upgrade handover: client v3 meets daemon v2, no other clients.
+        assert_eq!(retire_decision(3, 2, &[]), RetireDecision::Accept);
+    }
+
+    #[test]
+    fn retire_same_version_refuses() {
+        // No skew → nothing to hand over; a same-version retire is refused.
+        assert_eq!(retire_decision(2, 2, &[]), RetireDecision::RefuseNotNewer);
+    }
+
+    #[test]
+    fn retire_older_client_refuses() {
+        // Older-client-newer-daemon keeps the hard-close; an old binary must
+        // not be able to shoot down a new daemon.
+        assert_eq!(retire_decision(1, 2, &[]), RetireDecision::RefuseNotNewer);
+    }
+
+    #[test]
+    fn retire_with_conflicting_attached_client_refuses() {
+        // A v2 client is still attached and happy — first-writer-wins; the
+        // v3 requester must wait for it to drain.
+        assert_eq!(
+            retire_decision(3, 2, &[2]),
+            RetireDecision::RefuseConflictingClients
+        );
+    }
+
+    #[test]
+    fn retire_with_same_expectation_stragglers_accepts() {
+        // Every other attached client ALSO expects v3 (they're all the
+        // updated binary re-dialing) → retire proceeds; they re-dial on close.
+        assert_eq!(retire_decision(3, 2, &[3, 3]), RetireDecision::Accept);
+    }
+
+    #[test]
+    fn retire_mixed_population_refuses() {
+        assert_eq!(
+            retire_decision(3, 2, &[3, 2, 3]),
+            RetireDecision::RefuseConflictingClients
+        );
     }
 }
