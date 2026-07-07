@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Install dist/MarkdownViewer.app to /Applications so it's available
+# Install dist/TextView.app to /Applications so it's available
 # from Spotlight, Launchpad, the Dock, and Finder's Open With menu.
+# NOTE: the app's user-facing name is "TextView" (CFBundleName /
+# CFBundleDisplayName / the on-disk bundle are all TextView.app); only the
+# bundle identifier + executable keep the legacy "MarkdownViewer" token.
+# All user-facing guidance below MUST say TextView — never MarkdownViewer.
 # Optionally make it the default handler for common file types.
 #
 # Usage:
@@ -63,7 +67,7 @@ if [[ -d "$LEGACY_DEST" ]]; then
 fi
 
 # Re-register with LaunchServices at the new path so `open -a
-# MarkdownViewer` and Finder's Open With menu pick it up.
+# TextView` and Finder's Open With menu pick it up.
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -f "$DEST_APP" >/dev/null 2>&1 || true
@@ -72,11 +76,11 @@ fi
 echo "==> Installed."
 echo
 echo "Open via:"
-echo "  - Spotlight: ⌘Space, type 'MarkdownViewer'"
-echo "  - Finder: drag any file onto /Applications/MarkdownViewer.app"
-echo "  - Right-click a file → Open With → MarkdownViewer"
+echo "  - Spotlight: ⌘Space, type 'TextView'"
+echo "  - Finder: drag any file onto /Applications/TextView.app"
+echo "  - Right-click a file → Open With → TextView"
 echo "  - Make it the default for .md:"
-echo "    right-click a .md file → Get Info → 'Open with' → MarkdownViewer → Change All…"
+echo "    right-click a .md file → Get Info → 'Open with' → TextView → Change All…"
 
 # Optional: --default flag flips the default handler for common
 # document UTIs to us. Uses `duti` if installed; otherwise prints a
@@ -84,7 +88,7 @@ echo "    right-click a .md file → Get Info → 'Open with' → MarkdownViewer
 if [[ "${1:-}" == "--default" ]]; then
   if command -v duti >/dev/null 2>&1; then
     echo
-    echo "==> Setting MarkdownViewer as default handler for common types…"
+    echo "==> Setting TextView as default handler for common types…"
     for uti in \
         net.daringfireball.markdown \
         public.markdown \
