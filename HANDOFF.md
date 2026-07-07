@@ -21,12 +21,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   Batch in progress: B8 MCP/CLI/remote — ✅ 1536 mdv CLI (920d0d20) · ✅ 1552 self-healing
   MCP bridge (ca2a114a: serve() reconnect loop, requests queue while app restarts; + 3
   hardening finds incl. the availableData uncatchable-exception landmine → raw read(2)).
-  ✅ 1507-s1 assets+scaffold (069d49d4) · ✅ 1507-s2 WS bridge /ws/editor (ca429655) ·
-  ✅ 1192 who_calls + the ASYNC MCP tool lane (62d3ec0f: reader-thread dispatch, never
-  parks main; CodeNav closure-injected, host-tested 5/5; family slices who_consumes/
-  call_path/where_wired/find_unwired remain on the ticket; gate tmp/b8-5-gate.log).
-  LAST in B8: 1507-s3 codegen [XL] · 1537 daemon doc [XL] — design-heavy, take on a
-  FRESH-context tick; then B8 closes (board records + BACKLOG ✅ + CHANGELOG batch).
+  ✅ 1507-s1 assets+scaffold (069d49d4) · ✅ 1507-s2 WS bridge (ca429655) · ✅ 1192
+  who_calls + async MCP lane (62d3ec0f, gate GREEN) · ✅ 1537 daemon design
+  (a09fcd67: docs/DAEMON_LIFECYCLE_DESIGN.md, 8 decisions; slices TSK-1553..1558
+  filed). Board: 1536/1552/1192/1537/1507 all at fixed. LAST B8 item: 1507-s3
+  bridge-schema codegen [XL] — then B8 ✅ in BACKLOG + CHANGELOG batch entry.
   NOTE for owner: the self-healing MCP bridge takes effect after the next app INSTALL +
   Claude session restart (the running bridge process is the old pump).**
   RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
