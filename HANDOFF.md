@@ -22,10 +22,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
 - **B10–B16 ✅ · B17 ⛔ AGENT-BLOCKED (AX-driven tier, the sole off-limits lane; ElementRef host
   cores done) · B18 ✅ AGENT-COMPLETE (IMG model ~166 tests; 1320 parked owner a/b/c) · B19 ✅
   (1442) · B20 ✅ (1196) · B21 ✅ AGENT-DONE (891 ScrollSweep prep e3c462db; rest VM-blocked on
-  1550 + 1540 parked) · B22 ✅ (1490 footprint-in-dump 9559514b + 1428 reconciled).** NEXT BATCH:
-  B23 board/docs hygiene (8) — recon task_get FIRST; likely doc/board reconcile work (roadmap
-  revision, umbrella reconcile, board↔code sync) that IS agent-actionable. 1550 = master VM unlock
-  for the large render/perf-trace deferred pool. See BACKLOG §THE BATCHES for the B23 item list.
+  1550+1540 parked) · B22 ✅ · B23 ✅ (board honesty: 1514 umbrella reconcile + 1412 sweep; 379/538
+  restated, 651 evidence-commented — no code).** NEXT BATCH: B24 wishes/epics kickoff (pull when
+  B1-B23 drain) — recon task_get FIRST; these are big epics (action-history/richtext-WYSIWYG/
+  PlantUML-D2/etc), likely [XL]-flagged or design-first. 1550 = master VM unlock. See BACKLOG.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next

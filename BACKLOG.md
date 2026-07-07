@@ -212,10 +212,14 @@ persistent page (render, closes 598) · 1382 DocumentModel squeeze + 1490's reta
 attribution (measure-first, VM) · 1214 lazy grammars [XL design] · 1423 hex unsaved-edit search
 (engine done; fix = @State plumbing + AX-tier hex-keyboard-edit).
 
-### B23 Board/docs hygiene (8)
-TSK-1513 roadmap revision · TSK-1514 umbrella reconcile (379/538/651) · TSK-1412 board↔code
-sweep · TSK-590 owner bug-list re-verify · FEATURE_INVENTORY refresh · dated-design-docs archive
-pass (~35 files) · LESSONS→SOP distillation (v4 policy rows) · TSK-441–445 board/CI infra nits.
+### B23 Board/docs hygiene ✅ DONE 2026-07-07 (board honesty; no code)
+✅ TSK-1514 umbrella reconcile: 379 restated (live horizon-B umbrella, Stage A + stateful core done),
+538 rolled up (49/54 done; 5 open = dep-gated tooling + superseded cm_apply), 651 evidence-commented
+(fresh rust-core-gate GREEN, serve+loopback suites; left for owner validate) · ✅ TSK-1412 board↔code
+sweep agent-half done (BACKLOG↔code 9291260f + 20+ tick reconciles; ~417 board-close = owner).
+REMAINING (owner/doc-churn, low-value): 1513 roadmap revision · 590 owner bug-list re-verify ·
+FEATURE_INVENTORY refresh · dated-design-docs archive (~35 files) · LESSONS→SOP distillation · 441-445
+board/CI nits — doc maintenance, best folded into a doc-focused pass, not blocking.
 
 ### B24 Wishes/epics kickoff — pull when B1–B23 drain (8)
 TSK-703/1155 action-history view · TSK-706/1156 richtext WYSIWYG v1 · TSK-1157 PlantUML/D2 ·
