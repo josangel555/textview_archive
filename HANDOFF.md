@@ -21,12 +21,14 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   Batch in progress: B8 MCP/CLI/remote — ✅ 1536 mdv CLI (920d0d20) · ✅ 1552 self-healing
   MCP bridge (ca2a114a: serve() reconnect loop, requests queue while app restarts; + 3
   hardening finds incl. the availableData uncatchable-exception landmine → raw read(2)).
-  **B8 ✅ CLOSED (7 landings — see BACKLOG's B8 block for commits; board: 1536/1552/
-  1192/1537/1507 at fixed; CHANGELOG batch entry written). Final gate running
-  (tmp/b8-final-gate.log) — if RED, fix before starting B9. NEXT BATCH: B9 security &
-  data safety (7): TSK-1129 LSP spawn confirm · 1269 ExternalEditReconciler · 1165/1166
-  external-edit merge UX · 343 history-revert data safety · 1496 secret masking v1 ·
-  1203 trust-mode failure surfacing · 1194 resource-bounded test exec.**
+  **B8 ✅ CLOSED (7 landings; final gate green at c0984f7e after the census-pin fix).
+  Batch in progress: B9 security & data safety — ✅ 1129 LSP RCE guard ENFORCED
+  (e7f02825, owner's (a): prompt-first-then-block, fail-closed headless; 1129 fixed;
+  gate tmp/b9-gate.log). RECON: 1269/1165/1166 = render-VM buffer-mutating tails →
+  DEFER on TSK-1550 (slice-1 decision cores already done). NEXT in B9: 1496 secret
+  detector v1 (pure ViewerCore + corpus tests; badge = render tail) · 1194 bounded
+  test exec (script + peak-footprint report) · 343 history-revert safety (recon
+  task_get first) · 1203 trust-mode failure surfacing (recon first).**
   NOTE for owner: the self-healing MCP bridge takes effect after the next app INSTALL +
   Claude session restart (the running bridge process is the old pump).**
   RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
