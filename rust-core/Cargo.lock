@@ -507,6 +507,8 @@ version = "0.0.0"
 dependencies = [
  "mdvcore-core",
  "mdvcore-highlight",
+ "mdvcore-serve",
+ "serde",
 ]
 
 [[package]]
