@@ -23,10 +23,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   cores done) · B18 ✅ AGENT-COMPLETE (IMG model ~166 tests; 1320 parked owner a/b/c) · B19 ✅
   (1442) · B20 ✅ (1196) · B21 ✅ AGENT-DONE (891 ScrollSweep prep e3c462db; rest VM-blocked on
   1550+1540 parked) · B22 ✅ · B23 ✅ (board honesty: 1514 umbrella reconcile + 1412 sweep; 379/538
-  restated, 651 evidence-commented).** B24 ✅ (1169 settings-relocation model 408bef70). ONLY
-  B25 [XL] left (1507 WebUI single-sourcing — s3b codegen/s4 sanitizer/s5 iframe), then ALL
-  BATCHES ✅ → the loop enters §AFTER THE BATCHES: drain review+fixed with fresh evidence, then
-  the reported pool. 1550 = master VM unlock for the large render/perf-trace deferred pool.
+  restated, 651 commented).** B24 ✅ (1169) · B25 ✅ AGENT-DONE (sanitizer-policy single-source
+  89b02eee). ALL 25 BATCHES ✅✅✅ → the loop is now in §AFTER THE BATCHES: (1) drain review+fixed
+  with fresh evidence per self-validation policy [but the batch mandate said NO task_validate — so
+  the OWNER validates; agent surfaces fresh-evidence comments], (2) triage/work the reported pool
+  as new related batches, (3) re-curate. Most remaining work is render/VM/AX-tail (1550 = master
+  unlock) or owner-gated Need-me. NEXT tick: pull the reported pool for host-buildable cores.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next

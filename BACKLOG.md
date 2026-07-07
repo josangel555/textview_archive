@@ -229,9 +229,13 @@ DESIGN TAILS: 703/1155 action-history view · 706/1156 richtext WYSIWYG [XL] · 
 1164 per-language coverage matrix · 1171 3-way merge UI · 1488 FPS instrumentation · 1500/1503
 resurrect-from-history (#NNN mismatch noted — verify id first).
 
-### B25 [XL] 1507 WebUI single-sourcing (5)
-Sanitizer→core (HTMLSanitizer/HTMLDocumentPolicy parity) · RenderedBlockDiff/BlockPatchJS
-collapse into html_patch.rs · assist-policy→core · serve-backed WUI v1 page · canvas-in-WebUI.
+### B25 [XL] 1507 WebUI single-sourcing ✅ AGENT-DONE 2026-07-07 (1 host slice; rest rust-port/render)
+✅ Sanitizer POLICY single-sourced (89b02eee: HTMLSanitizerPolicy + schemas/html-sanitizer-policy.json
++ HTMLSanitizerPolicyGuardTests — the "byte-identical native vs web" security surface pinned; 3 guard
++ 38 sanitizer tests green). REMAINING (rust-port/render tails of TSK-1507 s4/s5): sanitizer ALGORITHM
+port to rust reading the contract · RenderedBlockDiff/BlockPatchJS→html_patch.rs collapse · assist-
+policy→core · serve-backed WUI v1 page (render) · canvas-in-WebUI (render) · s5 sandboxed-iframe
+strategy (browser security). The enforced contract makes the eventual rust port divergence-safe.
 
 ## OWNER ONE-WORD UNBLOCKS (not workable until decided)
 @codemirror/merge (→ M1/M2 git diff+merge) · TSK-810 hex carve-out (→ hex deletion) · Canvas
