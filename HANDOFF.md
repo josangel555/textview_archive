@@ -47,7 +47,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   (ed9ff36a — skewed-NEWER client gets a one-frame retire grace; older keeps the immediate hard
   close; attached-client registry + exit watcher; 2-connection socketpair integration test; 66
   serve tests; gate GREEN). Daemon tails left: TUI consumer refactor · web per-family WIRE
-  METHODS (multi-slice) · launchctl bootstrap live smoke.
+  METHODS (multi-slice) · launchctl bootstrap live smoke. T26: FileResurrection (05b01c4b,
+  TSK-1500 — resurrect-a-deleted-file from Local History: O_CREAT|O_EXCL never-overwrite,
+  workspace-fenced incl. sibling/../ traversal, parent recreation; 8 tests; entry-point UI =
+  render tail). Gate ran GREEN one-pass again (1559 fix holding).
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
