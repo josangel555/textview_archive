@@ -700,7 +700,10 @@
   // Bridge vim's mode (normal/insert/visual) to the Swift footer status bar.
   // `vim-mode-change` fires on every transition; attach once (the listener
   // lives on the cm5-compat object and survives compartment reconfigures).
+  // `currentVimMode` mirrors the latest mode for the Esc-swallow below
+  // (TSK-1252); "" = vim off.
   let vimModeListenerAttached = false;
+  let currentVimMode = "";
   function attachVimModeListener() {
     if (vimModeListenerAttached || typeof getCM !== "function") return;
     const cm = getCM(view);
@@ -708,10 +711,21 @@
     cm.on("vim-mode-change", function (e) {
       let m = (e && e.mode) || "normal";
       if (e && e.mode === "visual" && e.subMode) m = "visual-" + e.subMode;
+      currentVimMode = m;
       post("vimModeChanged", { mode: m });
     });
     vimModeListenerAttached = true;
   }
+
+  // TSK-1252: swallow the no-op Esc in vim NORMAL mode. When vim is already
+  // in normal mode, Esc is a no-op that vim does NOT consume, so the keydown
+  // falls through to WebKit as an unhandled key → the system "dub" beep.
+  // Registered AFTER vim() in the compartment so vim's real Esc transitions
+  // (insert→normal, visual→normal) keep winning; this only claims the
+  // leftover no-op case (run returns true ⇒ handled ⇒ no beep).
+  const vimEscSwallow = keymap.of([
+    { key: "Escape", run: function () { return currentVimMode === "normal"; } },
+  ]);
 
   function applySetVimMode(msg) {
     if (typeof vim !== "function") {
@@ -722,13 +736,15 @@
       return;
     }
     view.dispatch({
-      effects: vimCompartment.reconfigure(msg.enabled ? [vim()] : []),
+      effects: vimCompartment.reconfigure(msg.enabled ? [vim(), vimEscSwallow] : []),
     });
     if (msg.enabled) {
       setupVimExCommands();
       attachVimModeListener();
+      currentVimMode = "normal";                    // seed for the Esc-swallow
       post("vimModeChanged", { mode: "normal" });  // seed (no event for initial state)
     } else {
+      currentVimMode = "";                          // vim off ⇒ never swallow Esc
       post("vimModeChanged", { mode: "" });         // clear the footer indicator
     }
   }

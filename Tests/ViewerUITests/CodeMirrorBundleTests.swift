@@ -91,6 +91,27 @@ final class CodeMirrorBundleTests: XCTestCase {
         }
     }
 
+    /// TSK-1252: the no-op Esc in vim NORMAL mode must be SWALLOWED (a keymap
+    /// entry after vim() in the compartment returning true when the tracked
+    /// mode is "normal") so WebKit never emits the unhandled-key beep. Pins
+    /// the three load-bearing pieces: the swallow keymap, the mode tracking,
+    /// and the compartment wiring `[vim(), vimEscSwallow]`. The audible
+    /// non-beep itself is inherently unassertable; the consumed-keydown
+    /// behavior is the VM/AX tail on the ticket.
+    func testVimEscSwallowWiringSurvivesBuild() throws {
+        let htmlURL = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        for needle in [
+            "vimEscSwallow",
+            "currentVimMode === \"normal\"",
+            "[vim(), vimEscSwallow]",
+            "currentVimMode = \"\"",
+        ] {
+            XCTAssertTrue(html.contains(needle),
+                          "codemirror.html missing the TSK-1252 Esc swallow: \(needle)")
+        }
+    }
+
     /// TSK-917: the line-number gutter must be non-selectable + show the
     /// default (not I-beam) cursor. Pure-CSS appearance fix in the chrome
     /// theme; the rule must survive in the host HTML (live look = VM tail).

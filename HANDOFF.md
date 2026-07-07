@@ -13,10 +13,10 @@ decision/approval = task_park "Need me" gate with homework, then move on. After 
 drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER THE BATCHES).
 
 ## Current state
-- **B1 ✅ DONE (committed; 1517/1518/1519/543/fuzz fixed on board). Batch in progress: NONE —
-  next: B2 CM6 P0s, re-reconned to 891/910/1252/598 only** (1200 owner-parked, 1188/1271 in
-  review = owner lane, 1032 validated — see BACKLOG B2). Shadow-net run gate for S5/S6:
-  launch TextView with MDV_RUST_DOCSTORE=shadow; CoreDocShadow.divergenceCount must stay 0.
+- **B1 ✅ (3b86f720) · B2 ✅ (gate running, commit pending: 1252 Esc-swallow + 598→838
+  reconcile; 891→B21; rest were done/parked). Next batch: B3 Stage-B twin deletions** (per
+  docs/STAGE_B_DELETION_UAT_2026-07-04.md; hex waits on TSK-810 owner word, formula on B6).
+  Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount must stay 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).
 - Done this weekend (all recorded on board): S1 EditorSession 8e2771d8 (TSK-1516) · MCP-into-

@@ -38,11 +38,11 @@ pinned-dirty law) · ✅ TSK-1518 S3 shadow net (CoreDocStore + CoreDocShadow + 
 ✅ TSK-1519 S4 verified-snapshot mechanism (snapshot-site wiring = noted follow-up) ·
 ✅ TSK-543 closed-by-design (1124+1517) · ✅ adversarial no-panic proptest. Both gates green.
 
-### B2 CM6 editor P0 bugs (re-reconned 2026-07-07: several already in review/validated)
-TSK-891 Page-Up jank · TSK-910 commit-diff multi-line selection · TSK-1252 vim Esc beep ·
-TSK-598 re-measure open-lag post-fixes (expect 838 to close it). WV lane batch at end.
-SKIP (not workable): 1200 parked on owner Need-me · 1188 + 1271 in review (owner lane) ·
-1032 validated.
+### B2 CM6 editor P0 bugs ✅ DONE 2026-07-07 (batch collapsed on recon)
+✅ TSK-1252 vim Esc-beep swallowed (keymap after vim() consumes no-op normal-mode Esc; bundle
+pin test) · ✅ TSK-598 reconciled → rides TSK-838 (B22; ~334ms CA-commit root on record) ·
+TSK-891 → moved to B21 (measure-first per its own diagnoses) · 910 was already validated ·
+1200 owner-parked · 1188/1271 review lane · 1032 validated.
 
 ### B3 Stage-B twin deletions (7) — per docs/STAGE_B_DELETION_UAT_2026-07-04.md
 FuzzyMatcher · FindEngine · ClaudeLogParser · CSVParser/CSVFilter · CMEditApplier · markdown
@@ -141,11 +141,12 @@ browser automation · TSK-945 security-audit integration · TSK-318/1108 CR Q&A 
 TSK-537 slices ×2 (comments, cumulative diffs) · TSK-373 New▸CR/Agent/Project · TSK-942
 select-lines→agent-comment.
 
-### B21 QoL / VM / test-infra (10)
+### B21 QoL / VM / test-infra (11)
 TSK-1542 Sequoia nag storm · TSK-1540 WV-on-host audit · TSK-1541 rust coverage number ·
 TSK-1239 VM fd exhaustion · TSK-1247 VM webview-blank · TSK-1365 WebContent-termination
 hardening · TSK-1336 walkthrough T5 · TSK-1184 hover-synth trace · TSK-1180 search-scroll trace ·
-TSK-1185 git menu latency (+1179 palette trace rides).
+TSK-1185 git menu latency (+1179 palette trace rides) · TSK-891 Page-Up jank (add vm-profile
+scroll mode → trace → measured mitigation; moved from B2).
 
 ### B22 Perf & memory (5)
 TSK-838 DOM-patch persistent page (build to flip-ready; closes 598) · TSK-1490/382 memory-
