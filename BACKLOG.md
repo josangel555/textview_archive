@@ -3,7 +3,9 @@
 > Board (http://localhost:8787/) is the system of record for STATE; this file is the pre-sorted
 > selector. `task_get` any TSK before working it — the board moves, this file lags.
 > Prior curations: `archive/BACKLOG_archive_2026-07-07.md` (+ 2026-06-27). Repo (canonical):
-> `/Users/me/Local_Docs/local_workspace/markdown_viewer` — NEVER `~/Documents/...` (iCloud husk).
+> `/Users/me/Documents/workspaces/claude/markdown_viewer` — MOVED BACK 2026-07-07 after
+> verifying Desktop&Documents iCloud sync is OFF (plain local folder now; probe-tested).
+> ⚠️ If that sync is EVER re-enabled, relocate the repo out of ~/Documents FIRST.
 
 ## WORK-LOOP MANDATE (owner, 2026-07-07)
 
@@ -30,18 +32,17 @@ eyeball · TSK-1547 close · Canvas fixed-slices 1372/1374–1379/1360/1392 · t
 
 ## THE BATCHES (execution order)
 
-### B1 [XL] Stateful core S2–S4 + hardening — the forever-ABI (5)
-TSK-1517 S2 FFI family over CoreRuntime<EditorSession> + TSK-589 eviction constants +
-pinned-dirty law · TSK-1518 S3 shadow-mode differential net (MDV_RUST_DOCSTORE=shadow) ·
-TSK-1519 S4 snapshots-from-core (shadow-verified) · TSK-543 close-or-rescope vs the landed
-1124 delta seam · editor_session no-panic fuzz target (1223-class).
+### B1 [XL] Stateful core S2–S4 + hardening — the forever-ABI (5) ✅ DONE 2026-07-07
+✅ TSK-1517 S2 FFI family (doc_registry + ids 18-23 + MDV_CAP_DOC_STORE + eviction 1.5GB/200 +
+pinned-dirty law) · ✅ TSK-1518 S3 shadow net (CoreDocStore + CoreDocShadow + CM tap) ·
+✅ TSK-1519 S4 verified-snapshot mechanism (snapshot-site wiring = noted follow-up) ·
+✅ TSK-543 closed-by-design (1124+1517) · ✅ adversarial no-panic proptest. Both gates green.
 
-### B2 CM6 editor P0 bugs — diagnoses already on the tickets (8)
-TSK-1200 scroll-to-line no-op (fix: keep scrollDOM.scrollTop, wrap in view.requestMeasure) ·
-TSK-1188 click-after-scroll selection jump (defer re-entrant dispatch off 894/890 handlers) ·
-TSK-1271 rendered-MD find can't scroll past match (forward scroll keys) · TSK-891 Page-Up jank ·
-TSK-910 commit-diff multi-line selection · TSK-1032 video-in-HEX blank grid · TSK-1252 vim Esc
-beep · TSK-598 re-measure post-fixes (expect 838 to close it). WV lane batch at end.
+### B2 CM6 editor P0 bugs (re-reconned 2026-07-07: several already in review/validated)
+TSK-891 Page-Up jank · TSK-910 commit-diff multi-line selection · TSK-1252 vim Esc beep ·
+TSK-598 re-measure open-lag post-fixes (expect 838 to close it). WV lane batch at end.
+SKIP (not workable): 1200 parked on owner Need-me · 1188 + 1271 in review (owner lane) ·
+1032 validated.
 
 ### B3 Stage-B twin deletions (7) — per docs/STAGE_B_DELETION_UAT_2026-07-04.md
 FuzzyMatcher · FindEngine · ClaudeLogParser · CSVParser/CSVFilter · CMEditApplier · markdown

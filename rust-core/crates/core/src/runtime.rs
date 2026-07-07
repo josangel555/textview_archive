@@ -275,6 +275,16 @@ impl<D> CoreRuntime<D> {
         victims
     }
 
+    /// Refresh a doc's estimated resident bytes (TSK-1517: editor documents
+    /// grow/shrink with every edit batch — the admission-time estimate goes
+    /// stale, which would let a giant edited doc hide from the byte budget).
+    /// Missing id is a harmless no-op (evicted/closed).
+    pub fn update_estimate(&self, id: DocId, estimated_bytes: usize) {
+        if let Some(m) = write_guard(&self.meta).get_mut(&id) {
+            m.estimated_bytes = estimated_bytes;
+        }
+    }
+
     /// Diagnostics snapshot (the enumeration + size hook).
     pub fn stats(&self, _now_ms: u64) -> RuntimeStats {
         let budget = *read_guard(&self.budget);

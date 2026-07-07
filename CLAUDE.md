@@ -311,12 +311,13 @@ ViewerCoreTests is the unambiguous host-safe target).
   test spawns must be tagged (`MDV_TEST_INSTANCE=1`) and reaped by tag via
   `AppLauncher.killTestInstances`. If the owner says "something keeps
   closing my app," grep `killall` across `scripts/` + `Tests/` first.
-- **The repo lives under iCloud-synced `~/Documents`** → the file provider
-  re-stamps `com.apple.FinderInfo`/`fpfs#P` xattrs in real time, which trips
-  `codesign --options runtime`. `build-app.sh` signs in a non-synced TMPDIR
-  then swaps into `dist/`; `install-app.sh` `ditto --noextattr` + `xattr -cr`
-  the installed bundle. Do codesign/xattr-sensitive work outside the synced
-  tree, not in `dist/`.
+- **Repo location + iCloud history:** the repo lives at
+  `~/Documents/workspaces/claude/markdown_viewer`; Desktop&Documents iCloud sync
+  was verified OFF on 2026-07-07 (plain local folder — an earlier sync incident
+  emptied the tree; ⚠️ if that sync is EVER re-enabled, relocate the repo out of
+  `~/Documents` first). The xattr-defensive build path STAYS (cheap insurance,
+  and correct if sync returns): `build-app.sh` signs in a non-synced TMPDIR then
+  swaps into `dist/`; `install-app.sh` `ditto --noextattr` + `xattr -cr`.
 - **Persisted state lives under TWO Application Support subdirs** (verified
   2026-06-06): `~/Library/Application Support/MarkdownViewer/` (NO bundle-id
   prefix) holds `Sessions/` (index.json + per-session snapshots + trash),

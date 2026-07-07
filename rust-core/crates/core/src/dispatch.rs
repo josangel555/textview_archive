@@ -90,12 +90,27 @@ pub enum Method {
     /// renders into a `[Keep/Delete/Insert]` block patch for the persistent-WebView
     /// applier instead of a full `loadHTMLString` reload (TSK-838). Core-routable.
     HtmlBlockPatch = 17,
+    /// Stateful editor-doc open (`doc_registry::open_wire`) — the ONE full-text
+    /// transfer that starts a session; returns the doc id (TSK-1517).
+    DocOpen = 18,
+    /// Stateful delta apply against a resident doc (`doc_registry::apply_delta_wire`)
+    /// — the keystroke path: id + deltas in, changed region out.
+    DocApplyDelta = 19,
+    /// Full-text read of a resident doc (`doc_registry::text_wire`) — save path.
+    DocText = 20,
+    /// Windowed lossy read (`doc_registry::window_wire`) — viewer path.
+    DocWindow = 21,
+    /// Baseline reset after a host save (`doc_registry::mark_saved_wire`).
+    DocMarkSaved = 22,
+    /// Host pin/unpin (`pinned: bool`) or close (`pinned: null`) of a resident
+    /// doc (`doc_registry::pin_close_wire`).
+    DocPinClose = 23,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 18;
+    pub const NEXT_FREE_ID: u16 = 24;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -120,6 +135,12 @@ impl Method {
             15 => Some(Method::FoldRegions),
             16 => Some(Method::CmApplyDelta),
             17 => Some(Method::HtmlBlockPatch),
+            18 => Some(Method::DocOpen),
+            19 => Some(Method::DocApplyDelta),
+            20 => Some(Method::DocText),
+            21 => Some(Method::DocWindow),
+            22 => Some(Method::DocMarkSaved),
+            23 => Some(Method::DocPinClose),
             _ => None,
         }
     }
@@ -167,6 +188,14 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
         Method::FormulaEvaluate => crate::formula::evaluate_wire(req),
         Method::FormulaRecalc => crate::formula::recalc_wire(req),
         Method::HtmlBlockPatch => crate::html_patch::block_patch_wire(req),
+        // Stateful editor-doc family (TSK-1517) — routed to the process-global
+        // DocRegistry; `aux` is unused (deltas are small by construction).
+        Method::DocOpen => crate::doc_registry::open_wire(req),
+        Method::DocApplyDelta => crate::doc_registry::apply_delta_wire(req),
+        Method::DocText => crate::doc_registry::text_wire(req),
+        Method::DocWindow => crate::doc_registry::window_wire(req),
+        Method::DocMarkSaved => crate::doc_registry::mark_saved_wire(req),
+        Method::DocPinClose => crate::doc_registry::pin_close_wire(req),
         // Not routable from core (impl in mdvcore-highlight); the FFI layer
         // intercepts this id, same as HighlightRuns.
         Method::FoldRegions => Err(WireFault::Decode(
@@ -193,8 +222,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. HtmlBlockPatch is the current last id.
-        assert_eq!(Method::HtmlBlockPatch as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. DocPinClose is the current last id.
+        assert_eq!(Method::DocPinClose as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]

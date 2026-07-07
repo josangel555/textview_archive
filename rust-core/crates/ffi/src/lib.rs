@@ -212,6 +212,10 @@ pub const MDV_CAP_HIGHLIGHT: u64 = 1 << 14;
 /// CodeMirror edit-batch DELTA apply (envelope `MDV_METHOD_CM_APPLY_DELTA`) —
 /// TSK-543: returns only the changed region + new length, not the whole buffer.
 pub const MDV_CAP_CM_APPLY_DELTA: u64 = 1 << 15;
+/// Stateful editor-doc registry (envelope `MDV_METHOD_DOC_*`, TSK-1517): the
+/// session-keyed doc family — open once, deltas thereafter, TSK-589 eviction
+/// with the dirty⇒pinned law.
+pub const MDV_CAP_DOC_STORE: u64 = 1 << 16;
 
 /// The capability mask THIS build was compiled with. Reserved bits stay OFF
 /// until their engine's exports actually exist — turning a bit on is part of
@@ -226,7 +230,8 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
     | MDV_CAP_TRANSCRIPT
     | MDV_CAP_MARKDOWN
     | MDV_CAP_HIGHLIGHT
-    | MDV_CAP_CM_APPLY_DELTA;
+    | MDV_CAP_CM_APPLY_DELTA
+    | MDV_CAP_DOC_STORE;
 
 /// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
 /// — every gated feature disabled, never UB) if the guard trips. Callers must
@@ -282,6 +287,20 @@ pub const MDV_METHOD_CM_APPLY_DELTA: u16 = 16;
 /// `dispatch::call` (impl in core's `html_patch`): diff two renders → a
 /// `[Keep/Delete/Insert]` block patch for the persistent-WebView applier.
 pub const MDV_METHOD_HTML_BLOCK_PATCH: u16 = 17;
+/// Stateful editor-doc open (envelope) — TSK-1517: the ONE full-text transfer
+/// that starts a resident `EditorSession`; returns `{doc_id, evicted}`.
+pub const MDV_METHOD_DOC_OPEN: u16 = 18;
+/// Stateful delta apply against a resident doc (envelope) — TSK-1517: id +
+/// deltas in, changed region + rev/len/dirty out; the buffer never crosses.
+pub const MDV_METHOD_DOC_APPLY_DELTA: u16 = 19;
+/// Full-text read of a resident doc (envelope, save path) — TSK-1517.
+pub const MDV_METHOD_DOC_TEXT: u16 = 20;
+/// Windowed lossy read of a resident doc (envelope, viewer path) — TSK-1517.
+pub const MDV_METHOD_DOC_WINDOW: u16 = 21;
+/// Baseline reset after a host save (envelope) — TSK-1517.
+pub const MDV_METHOD_DOC_MARK_SAVED: u16 = 22;
+/// Host pin/unpin (`pinned: bool`) or close (`pinned: null`) — TSK-1517.
+pub const MDV_METHOD_DOC_PIN_CLOSE: u16 = 23;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore

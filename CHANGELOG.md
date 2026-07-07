@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-07
+
+### System work
+- **Stateful core S2–S4 (batch B1)**: rust-core now holds editor documents statefully — text
+  crosses the FFI once at open, keystrokes ship only deltas; owner-ratified eviction (1.5 GB /
+  200 docs, unsaved docs never evicted — law-tested); a shadow-mode differential net
+  (`MDV_RUST_DOCSTORE=shadow`) mirrors every CM6 edit into the core and counts divergences
+  (zero-divergence is the gate for the future authority flip). Adversarial no-panic property
+  tests; both gates green (9,659 tests).
+- Tracking: BACKLOG rewritten as the pre-sorted 25-batch queue; repo moved back to
+  `~/Documents` (iCloud sync verified off); 5-min batch-loop cron armed.
+
 ## 2026-07-05
 
 ### Added

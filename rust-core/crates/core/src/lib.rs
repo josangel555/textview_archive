@@ -27,6 +27,7 @@ pub mod cm_edit;
 pub mod csv;
 pub mod diff;
 pub mod dispatch;
+pub mod doc_registry;
 pub mod editor_session;
 pub mod filter;
 pub mod find;

@@ -177,6 +177,18 @@ impl EditorSession {
         self.doc.len_utf16()
     }
 
+    /// A windowed read: up to `len` UTF-16 units starting at `from`, decoded
+    /// LOSSILY (a window may split a surrogate pair at either edge; viewers
+    /// tolerate a replacement char at the seam). Out-of-range is clamped —
+    /// total by construction, never a panic.
+    #[must_use]
+    pub fn window(&self, from: usize, len: usize) -> String {
+        let total = self.doc.len_utf16();
+        let start = from.min(total);
+        let end = start.saturating_add(len).min(total);
+        self.doc.units_lossy(start, end)
+    }
+
     /// Content-based dirty: does the current content differ from the saved
     /// baseline? Reverting an edit byte-for-byte reads CLEAN again.
     #[must_use]
@@ -407,6 +419,38 @@ mod tests {
             let at = (batch_seed as usize) % (s.len_utf16() + 1);
             let _ = s.apply_delta(&[CmEdit::new(at as i64, at as i64, "Q")]);
             prop_assert_eq!(s.is_dirty(), s.text() != baseline_text);
+        }
+
+        /// TOTALITY (the fuzz lane's cheap twin, TSK-1223-class): ADVERSARIAL
+        /// batches — unclamped i64 offsets (negative, reversed, past-end,
+        /// overlapping), arbitrary unicode inserts, hostile window/compact
+        /// args — must never panic. A rejected batch (`None`) must also be a
+        /// true no-op: text, rev, and dirtiness unchanged (atomicity).
+        #[test]
+        fn prop_adversarial_inputs_are_total_and_rejections_atomic(
+            seed in ".{0,24}",
+            edits in proptest::collection::vec(
+                (any::<i64>(), any::<i64>(), ".{0,8}"), 0..5),
+            win in (any::<usize>(), any::<usize>()),
+            keep in any::<usize>(),
+        ) {
+            let mut s = EditorSession::new(&seed, EditorSessionMeta::default());
+            let before = (s.text(), s.rev(), s.is_dirty());
+            let batch: Vec<CmEdit> = edits
+                .into_iter()
+                .map(|(f, t, i)| CmEdit { from: f, to: t, insert: i })
+                .collect();
+            let applied = s.apply_delta(&batch); // must not panic
+            if applied.is_none() {
+                prop_assert_eq!(
+                    (s.text(), s.rev(), s.is_dirty()),
+                    before,
+                    "a rejected batch must be a perfect no-op"
+                );
+            }
+            let _ = s.window(win.0, win.1);      // total on any range
+            let _ = s.compact_log(keep);          // total on any keep
+            prop_assert_eq!(s.replay_from_log(), s.text(), "replay law holds after anything");
         }
     }
 }

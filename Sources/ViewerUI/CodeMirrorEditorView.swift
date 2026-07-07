@@ -361,6 +361,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         }
 
         coordinator.webView = nil
+        coordinator.docShadow.close()   // S3: real teardown releases the core doc
         #if DEBUG
         MountProbe.webViewDismantles += 1   // Fix#1 mount-count probe (TSK-108)
         #endif
@@ -402,6 +403,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         var didFinishFirstLoad: Bool = false
         var onTextChange: ((String) -> Void)?
         var onSaveRequested: (() -> Void)?
+        /// TSK-1518 (stateful-core S3): the shadow-mode differential net —
+        /// mirrors every applied edit batch into the rust-core doc registry
+        /// and diffs the two. No-op unless `MDV_RUST_DOCSTORE=shadow`.
+        let docShadow = CoreDocShadow()
         var onCursorChange: ((CMCursorPosition) -> Void)?
         var onVimModeChange: ((String) -> Void)?
         var onScrollChange: ((CMScrollPosition) -> Void)?
@@ -910,6 +915,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 applyPendingState()
             case .change(let text, _, _):
                 lastSentText = text  // echo-suppress: JS already has this
+                docShadow.noteFullReplace(text)  // S3: delta stream broken; resync
                 onTextChange?(text)
             case .incrementalChange(let edits, _, let contentLength):
                 // v2: apply edits to our mirror of the doc, then forward
@@ -927,6 +933,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 if let applied = RustCMEditAdapter.apply(edits, to: base),
                    contentLength < 0 || applied.utf16.count == contentLength {
                     lastSentText = applied
+                    docShadow.mirror(edits: edits, base: base, applied: applied)  // S3 net
                     onTextChange?(applied)
                 } else {
                     // Drift: ask JS to ship a full text. We do this by
@@ -939,6 +946,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                     }
                 }
             case .save:
+                // S3/S4: full-compare + core baseline reset on the save path.
+                docShadow.verifyOnSave(hostText: lastSentText ?? "")
                 onSaveRequested?()
             case .cursorPositionChanged(let line, let column, let head, let ranges):
                 onCursorChange?(CMCursorPosition(

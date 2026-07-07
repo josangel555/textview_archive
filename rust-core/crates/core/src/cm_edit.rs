@@ -167,6 +167,20 @@ impl CmDoc {
         self.units.len()
     }
 
+    /// Decode the unit range `[from, to)` LOSSILY (`String::from_utf16_lossy`)
+    /// — the windowed-read primitive (TSK-1517). A window may split a
+    /// surrogate pair at either seam; viewers tolerate the replacement char.
+    /// Bounds are re-clamped here so the accessor is total, never a panic.
+    #[must_use]
+    pub fn units_lossy(&self, from: usize, to: usize) -> String {
+        let end = to.min(self.units.len());
+        let start = from.min(end);
+        self.units
+            .get(start..end)
+            .map(String::from_utf16_lossy)
+            .unwrap_or_default()
+    }
+
     /// The current mirror decoded to a `String`, or `None` if the units form an
     /// ill-formed UTF-16 sequence (a lone surrogate — the same backstop
     /// [`apply`] applies). A clean mirror always decodes.

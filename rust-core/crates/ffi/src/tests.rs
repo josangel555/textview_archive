@@ -132,6 +132,7 @@ fn capability_bits_are_abi_and_never_renumber() {
     assert_eq!(MDV_CAP_SEARCH, 1 << 13);
     assert_eq!(MDV_CAP_HIGHLIGHT, 1 << 14);
     assert_eq!(MDV_CAP_CM_APPLY_DELTA, 1 << 15);
+    assert_eq!(MDV_CAP_DOC_STORE, 1 << 16);
 }
 
 #[test]
@@ -652,6 +653,12 @@ fn method_id_consts_match_the_dispatch_enum() {
     assert_eq!(MDV_METHOD_FOLD_REGIONS, Method::FoldRegions as u16);
     assert_eq!(MDV_METHOD_CM_APPLY_DELTA, Method::CmApplyDelta as u16);
     assert_eq!(MDV_METHOD_HTML_BLOCK_PATCH, Method::HtmlBlockPatch as u16);
+    assert_eq!(MDV_METHOD_DOC_OPEN, Method::DocOpen as u16);
+    assert_eq!(MDV_METHOD_DOC_APPLY_DELTA, Method::DocApplyDelta as u16);
+    assert_eq!(MDV_METHOD_DOC_TEXT, Method::DocText as u16);
+    assert_eq!(MDV_METHOD_DOC_WINDOW, Method::DocWindow as u16);
+    assert_eq!(MDV_METHOD_DOC_MARK_SAVED, Method::DocMarkSaved as u16);
+    assert_eq!(MDV_METHOD_DOC_PIN_CLOSE, Method::DocPinClose as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
@@ -661,11 +668,78 @@ fn method_id_consts_match_the_dispatch_enum() {
         MDV_METHOD_INDENT_DETECT, MDV_METHOD_HEX_RENDER,
         MDV_METHOD_FORMULA_EVALUATE, MDV_METHOD_FORMULA_RECALC,
         MDV_METHOD_FOLD_REGIONS, MDV_METHOD_CM_APPLY_DELTA,
-        MDV_METHOD_HTML_BLOCK_PATCH,
+        MDV_METHOD_HTML_BLOCK_PATCH, MDV_METHOD_DOC_OPEN,
+        MDV_METHOD_DOC_APPLY_DELTA, MDV_METHOD_DOC_TEXT, MDV_METHOD_DOC_WINDOW,
+        MDV_METHOD_DOC_MARK_SAVED, MDV_METHOD_DOC_PIN_CLOSE,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 18, "17 methods defined; next free id is 18");
+    assert_eq!(Method::NEXT_FREE_ID, 24, "23 methods defined; next free id is 24");
+}
+
+/// Call `mdvcore_call` expecting `Ok`; returns the response bytes.
+fn call_envelope_ok(method: u16, frame: &[u8]) -> Vec<u8> {
+    let mut buf = MdvBuf::empty();
+    let status = unsafe {
+        mdvcore_call(method, frame.as_ptr(), frame.len(), core::ptr::null(), 0, &mut buf)
+    };
+    assert_eq!(status, MdvStatus::Ok, "method {method} must succeed");
+    let bytes = unsafe { buf.as_slice() }.to_vec();
+    unsafe { mdvcore_buf_free(&mut buf) };
+    bytes
+}
+
+#[test]
+fn envelope_doc_family_round_trips_through_the_c_surface() {
+    // TSK-1517 TEETH through the REAL C ABI: open → delta → text via
+    // mdvcore_call, exercising registry + wire + envelope end-to-end.
+    #[derive(serde::Serialize)]
+    struct OpenReq<'a> {
+        text: &'a str,
+        url: Option<&'a str>,
+        language: Option<&'a str>,
+        now_ms: u64,
+    }
+    #[derive(serde::Deserialize)]
+    struct OpenResp {
+        doc_id: u64,
+    }
+    #[derive(serde::Serialize)]
+    struct EditReq<'a> { from: i64, to: i64, insert: &'a str }
+    #[derive(serde::Serialize)]
+    struct DeltaReq<'a> { doc_id: u64, now_ms: u64, edits: Vec<EditReq<'a>> }
+    #[derive(serde::Deserialize)]
+    struct DeltaResp { found: bool, dirty: bool, len_utf16: u64 }
+    #[derive(serde::Serialize)]
+    struct IdReq { doc_id: u64, now_ms: u64 }
+    #[derive(serde::Deserialize)]
+    struct TextResp { found: bool, text: Option<String> }
+
+    let open_frame =
+        mdvcore_core::wire::encode_frame(&OpenReq { text: "abi", url: None, language: None, now_ms: 1 })
+            .expect("encode open");
+    let open: OpenResp =
+        mdvcore_core::wire::decode_frame(&call_envelope_ok(MDV_METHOD_DOC_OPEN, &open_frame))
+            .expect("decode open");
+
+    let delta_frame = mdvcore_core::wire::encode_frame(&DeltaReq {
+        doc_id: open.doc_id,
+        now_ms: 2,
+        edits: vec![EditReq { from: 3, to: 3, insert: "-ok" }],
+    })
+    .expect("encode delta");
+    let delta: DeltaResp =
+        mdvcore_core::wire::decode_frame(&call_envelope_ok(MDV_METHOD_DOC_APPLY_DELTA, &delta_frame))
+            .expect("decode delta");
+    assert!(delta.found && delta.dirty);
+    assert_eq!(delta.len_utf16, 6);
+
+    let text_frame = mdvcore_core::wire::encode_frame(&IdReq { doc_id: open.doc_id, now_ms: 3 })
+        .expect("encode text req");
+    let text: TextResp =
+        mdvcore_core::wire::decode_frame(&call_envelope_ok(MDV_METHOD_DOC_TEXT, &text_frame))
+            .expect("decode text");
+    assert_eq!((text.found, text.text.as_deref()), (true, Some("abi-ok")));
 }
 
 #[test]
