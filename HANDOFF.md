@@ -25,10 +25,14 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   1550+1540 parked) · B22 ✅ · B23 ✅ (board honesty: 1514 umbrella reconcile + 1412 sweep; 379/538
   restated, 651 commented).** B24 ✅ (1169) · B25 ✅ AGENT-DONE (sanitizer-policy single-source
   89b02eee). ALL 25 BATCHES ✅✅✅ → the loop is now in §AFTER THE BATCHES: (1) drain review+fixed
-  with fresh evidence per self-validation policy [but the batch mandate said NO task_validate — so
-  the OWNER validates; agent surfaces fresh-evidence comments], (2) triage/work the reported pool
-  as new related batches, (3) re-curate. Most remaining work is render/VM/AX-tail (1550 = master
-  unlock) or owner-gated Need-me. NEXT tick: pull the reported pool for host-buildable cores.
+  with fresh evidence [OWNER validates; agent surfaces fresh-evidence comments], (2) triage/work
+  the reported pool, (3) re-curate. DRAIN TICK 1: reconciled 2 stale-reported-but-DONE items
+  (955 RSS/Atom feed reader fully built incl. OPML import/export → fixed; 589 session-eviction
+  SUPERSEDED by the B1 doc_registry EvictionBudget → fixed, value-default note 512/64-vs-1.5GB/200
+  left for owner). FINDING: the reported pool's clean host cores are DRAINED after 25 batches —
+  it's now dominated by owner-gated (810/831/835/852/508), epics/spikes (691/697/703/706/715/
+  764/943-945/956), and VM-perf (598/838/837). Drain work is now mostly board-honesty reconciles
+  (the #1 finding TSK-1412: board under-reports code) + owner-gated spikes. 1550 = master unlock.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
