@@ -68,13 +68,18 @@ FIXED a P1 (frame-cap → blank grid for >4MB CSVs post-Stage-B; windowed assemb
 (owner lane) · TSK-1205 → moved to B16 (extracted-doc = reading surface). Render tails ride
 TSK-1551 (CSV lens real-render suite, needs VM).
 
-### B6 Formula finish + spreadsheet (4)
-Formula gate flip prep + TSK-1468 editing-UX audit [owner formula-gate word] · TSK-788/1215
-spreadsheet-view consumption check · formula UAT batch slice · FormulaEngine deletion (closes B3).
+### B6 Formula finish ✅ DONE 2026-07-07 (gates green; the 7th twin deleted)
+✅ FLIP: MDV_RUST_FORMULA default ON (ed0b43c8; owner's 2026-07-04 chain complete; ALL
+capabilities now ship ON — Stage A closed) · ✅ UAT-slice pin (grid→recalc→display→ƒ→box) ·
+✅ FormulaEngine + FormulaParser deleted (f734db72, 1089→148 lines; PROPER ported to rust
+with .capitalized parity — the last tendon; 77 contract tests retargeted to the engine) ·
+1468 = owner hands-on audit (commented, stays owner-gated).
 
-### B7 [XL] Web-migrate wave 1 (4)
-TSK-1530 M6 TextDisplayView→CM6 read-only (pattern-prover) · TSK-1527 M3 CSV web grid (rides
-B5's paging) · TSK-1531 M7 hex web grid · TSK-1532 M8 transcript/logs streaming lists.
+### B7 [XL] Web-migrate wave 1 (4) — IN PROGRESS
+TSK-1530 M6: ✅ v1 gated route committed (4f3be49e — MDV_WEB_SOURCE=1 → read-only CM6;
+default flip needs VM slice TSK-1550 + parity slices: bookmarks/diff-marks/find-bar/scroll) ·
+NEXT: TSK-1527 M3 CSV web grid · TSK-1531 M7 hex web grid · TSK-1532 M8 transcript streaming.
+ALL render-heavy — VM lane (TSK-1550) caps validation until restored.
 
 ### B8 MCP/CLI/remote tail (7)
 TSK-1536 mdv CLI opener · MCP reconnect loop (file the TSK-665 follow-up + fix) · TSK-1507 s1

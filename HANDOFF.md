@@ -13,16 +13,15 @@ decision/approval = task_park "Need me" gate with homework, then move on. After 
 drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER THE BATCHES).
 
 ## Current state
-- **B1 ✅ · B2 ✅ · B3 ✅ (Stage-B deletions, gate green 9,544; RESIDUAL: VM WV slice blocked
-  on TSK-1550 VM-ssh-down — run + attach to TSK-649 on lane restore). Batch in progress:
-  B4 ✅ CLOSED except 1535 (commits 17bbd401 + c3240185; gate green; 1548/1534/1501/1539
-  fixed on board; gap ticket TSK-1551 = 4 lenses without real-render suites). B4 ✅ FULLY CLOSED
-  (incl. 1535: 188 docs→0 + #![deny], 6cd5210c). B5 ✅ CLOSED pending gate tail
-  (commits 8eb59eac + ed5e9689; 1472/1515/1139/1486 fixed on board; 1139's measurement
-  DENIED paging for perf AND caught+fixed the frame-cap blank-grid P1; 1205 → B16).
-  Batch in progress: NONE — next: B6 formula finish (gate-flip prep + 1468 [owner word] +
-  788/1215 consumption + formula UAT + FormulaEngine deletion closing B3's tail).**
-  Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
+- **B1–B6 ✅ ALL CLOSED (details in BACKLOG §THE BATCHES — each ✅ block carries its commits
+  + gate evidence). Highlights: 8 Swift twins deleted incl. formula (Stage A fully ON,
+  Stage B done except find TSK-1549 + hex TSK-810); frame-cap blank-grid P1 found+fixed;
+  CSV save flow existed-not-at-all → shipped. Batch in progress: B7 [XL] web-migrate —
+  1530 M6 v1 ✅ (4f3be49e, gated route MDV_WEB_SOURCE=1 → read-only CM6; default flip
+  needs VM TSK-1550 + parity slices). NEXT: 1527 M3 CSV grid · 1531 M7 hex grid · 1532 M8
+  transcript streaming — all render-heavy, VM caps validation.**
+  RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
+  TSK-649 when the VM returns. Shadow-net S5/S6 gate: MDV_RUST_DOCSTORE=shadow, div=0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).
 - Done this weekend (all recorded on board): S1 EditorSession 8e2771d8 (TSK-1516) · MCP-into-
