@@ -1,0 +1,7 @@
+{
+  "$comment": "TSK-1507 s4 — the HTML-sanitizer SECURITY POLICY as a single wire contract. The native Swift sanitizer (HTMLSanitizer via HTMLSanitizerPolicy) and the future WebUI (rust/JS) sanitizer MUST use these EXACT sets, or a divergence is a security hole. Pinned by HTMLSanitizerPolicyGuardTests: HTMLSanitizerPolicy.contract() must equal this file. trustedDroppedElements is DERIVED (droppedElements - trustedKeepsElements).",
+  "droppedElements": ["base", "button", "embed", "form", "iframe", "input", "link", "meta", "object", "script", "select", "style", "textarea"],
+  "trustedKeepsElements": ["script", "style"],
+  "urlBearingAttributes": ["action", "background", "formaction", "href", "poster", "src", "xlink:href"],
+  "dangerousSchemes": ["javascript", "vbscript"]
+}

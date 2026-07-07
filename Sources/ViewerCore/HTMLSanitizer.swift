@@ -41,25 +41,17 @@ import Foundation
 /// we're willing to live with for v1.
 public enum HTMLSanitizer {
 
-    /// Tags whose entire element (including descendants until the
-    /// matching close tag) is dropped. Names are lowercase; the
-    /// matching is case-insensitive at compare time.
-    private static let droppedElements: Set<String> = [
-        "script", "style", "iframe", "object", "embed",
-        "form", "input", "button", "select", "textarea",
-        "link", "meta", "base",
-    ]
+    /// Tags whose entire element (including descendants until the matching
+    /// close tag) is dropped. SINGLE-SOURCED from `HTMLSanitizerPolicy`
+    /// (TSK-1507 s4) so the native + WebUI render paths sanitize identically.
+    private static var droppedElements: Set<String> { HTMLSanitizerPolicy.droppedElements }
 
-    /// TSK-1189 trusted mode: a LOCAL, user-opted-in document keeps its own
-    /// `<script>` and `<style>` so a JS-render bundle can paint — but every
-    /// other drop stays (iframe/object/embed/form/.../base/meta), and event
-    /// handlers + `javascript:` URLs are STILL neutralized below. Modern
-    /// bundles wire up via `addEventListener`, not inline `on*=`, so this is the
-    /// minimal relaxation that fixes the JS-bundle case without widening the
-    /// inline-JS surface. The anti-exfiltration fence lives at L3
-    /// (`HTMLDocumentPolicy.csp(trusted:)` keeps `connect-src 'none'`), not here.
-    private static let trustedDroppedElements: Set<String> =
-        droppedElements.subtracting(["script", "style"])
+    /// TSK-1189 trusted mode (a LOCAL, user-opted-in document keeps its own
+    /// `<script>`/`<style>` so a JS-render bundle can paint; every other drop
+    /// + `javascript:`/`on*=` neutralization stays). Derived from the policy.
+    private static var trustedDroppedElements: Set<String> {
+        HTMLSanitizerPolicy.trustedDroppedElements
+    }
 
     /// Returns a sanitized copy of `raw`. Pure function — safe to call from any
     /// actor. `trusted` (default `false`, so any caller that forgets gets the
@@ -271,19 +263,13 @@ public enum HTMLSanitizer {
         }
     }
 
-    /// URL-bearing attribute names whose value can drive a navigation /
-    /// resource fetch — the ones worth scheme-checking.
-    private static let urlBearingAttrs: Set<String> = [
-        "href", "src", "xlink:href", "action",
-        "formaction", "background", "poster",
-    ]
+    /// URL-bearing attribute names whose value is scheme-checked. Single-
+    /// sourced from `HTMLSanitizerPolicy` (TSK-1507 s4).
+    private static var urlBearingAttrs: Set<String> { HTMLSanitizerPolicy.urlBearingAttributes }
 
-    /// Schemes that execute script (or render attacker HTML) when a
-    /// browser resolves the URL. Compared against the *decoded* leading
-    /// scheme token (lowercased, entities + control chars removed).
-    private static let dangerousSchemes: Set<String> = [
-        "javascript", "vbscript",
-    ]
+    /// Schemes that execute script when a browser resolves the URL (compared
+    /// against the decoded, lowercased leading scheme token). Single-sourced.
+    private static var dangerousSchemes: Set<String> { HTMLSanitizerPolicy.dangerousSchemes }
 
     /// Rewrite `href="javascript:…"` / `src="…"` etc. to `about:blank`.
     /// We don't rewrite all attribute values — just the URL-bearing
