@@ -13,6 +13,15 @@
 - Agent tooling: a `who_calls` MCP tool answers "who calls this symbol?" via the live
   language server (definition + up to 200 callers as `file:line`).
 
+### Security
+- **Hostile-repo protection**: opening a folder that ships its own language-server binary
+  (e.g. in `node_modules/.bin`) no longer runs it silently — TextView blocks it and asks
+  once ("Trust and Run" / "Block"); trust persists per binary. Headless contexts always
+  block. System-installed language servers are unaffected.
+- **Credential recognition (foundation)**: a detector for AWS keys, private-key blocks,
+  GitHub/Slack/Google tokens, JWTs and high-entropy `password=`/`token=` assignments —
+  the visible badge/mask arrives with the next render slice.
+
 ### Fixed
 - Quitting or relaunching TextView no longer kills a connected Claude Code MCP session —
   the bridge now reconnects automatically and requests queue while the app restarts.
@@ -50,6 +59,11 @@
 - **Guards + hygiene (B4/B5)**: per-surface real-render matrix guard, webview allowlist,
   no-resurrection tooth, color ratchet, 188 missing rustdoc comments → `#![deny]`;
   the CSV paging ask measured and denied on evidence (owner rule: measure first).
+- **Security batch (B9)**: the LSP spawn gate enforced at the real spawn site (fail-closed,
+  spawn-site tests with a node_modules/.bin threat fixture); `scripts/test-bounded.sh`
+  (memory+deadline watchdog for test runs, self-test-proven); secret-detector corpus with
+  pinned false-positive contract. External-edit auto-merge + trust-mode failure surfacing
+  deferred on the VM lane (buffer-mutating/render halves must not ship unwatched).
 - Tracking: BACKLOG rewritten as the pre-sorted 25-batch queue; repo moved back to
   `~/Documents` (iCloud sync verified off); 5-min batch-loop cron armed; B7's three
   from-scratch web surfaces deferred on the VM lane (TSK-1550).

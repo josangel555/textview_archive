@@ -13,26 +13,20 @@ decision/approval = task_park "Need me" gate with homework, then move on. After 
 drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER THE BATCHES).
 
 ## Current state
-- **B1–B6 ✅ ALL CLOSED (details in BACKLOG §THE BATCHES — each ✅ block carries its commits
-  + gate evidence). Highlights: 8 Swift twins deleted incl. formula (Stage A fully ON,
-  Stage B done except find TSK-1549 + hex TSK-810); frame-cap blank-grid P1 found+fixed;
-  CSV save flow existed-not-at-all → shipped. B7: 1530-v1 ✅ (4f3be49e gated route);
-  1527/1531/1532 DEFERRED on TSK-1550 (from-scratch web surfaces need a render lane).
-  Batch in progress: B8 MCP/CLI/remote — ✅ 1536 mdv CLI (920d0d20) · ✅ 1552 self-healing
-  MCP bridge (ca2a114a: serve() reconnect loop, requests queue while app restarts; + 3
-  hardening finds incl. the availableData uncatchable-exception landmine → raw read(2)).
-  **B8 ✅ CLOSED (7 landings; final gate green at c0984f7e after the census-pin fix).
-  Batch in progress: B9 security & data safety — ✅ 1129 LSP RCE guard ENFORCED
-  (e7f02825, gate green) · ✅ 1496 secret detector core + corpus (a95b0f40; badge/mask
-  = render tail on 1550) · ✅ 1194 bounded test runner (a95b0f40, teeth via --self-test;
-  usage: scripts/test-bounded.sh). Board: 1129/1496/1194 fixed. DEFERRED on 1550:
-  1269/1165/1166 (buffer-mutating render tails; decision cores done). REMAINING in B9:
-  343 history-revert data safety + 1203 trust-mode failure surfacing — recon task_get
-  FIRST (both may be stale). B9.2 gate running (tmp/b9-2-gate.log).**
-  NOTE for owner: the self-healing MCP bridge takes effect after the next app INSTALL +
-  Claude session restart (the running bridge process is the old pump).**
-  RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
-  TSK-649 when the VM returns. Shadow-net S5/S6 gate: MDV_RUST_DOCSTORE=shadow, div=0.
+- **B1–B9 ✅ ALL CLOSED** (every ✅ block in BACKLOG §THE BATCHES carries commits + gate
+  evidence). Day highlights: 8 Swift twins deleted (Stage A fully ON; Stage B done minus
+  find TSK-1549 + hex TSK-810) · frame-cap blank-grid P1 found+fixed · CSV save flow
+  shipped · mdv CLI + self-healing MCP bridge · remote-core groundwork (assets/WS/schema
+  + daemon design, slices 1553–1558) · who_calls + the async MCP lane · LSP RCE guard
+  ENFORCED · secret detector core · bounded test runner.
+- **NEXT BATCH: B10 paste & convert (6)**: 1322 paste-buggy repro+fix · 1327 smart
+  rich→markdown paste (+958/1163 dispatcher UI) · 1427 rich-paste tables/nested lists ·
+  1480 converters show current state · 1323 extract-audio · 1324/1325 audio+image convert
+  (host ffmpeg per TSK-528; +1473 presets). Recon task_get FIRST (ffmpeg policy rides).
+- VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
+  1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
+- NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
+  INSTALL + Claude session restart. Shadow-net S5/S6 gate: MDV_RUST_DOCSTORE=shadow, div=0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).
 - Done this weekend (all recorded on board): S1 EditorSession 8e2771d8 (TSK-1516) · MCP-into-

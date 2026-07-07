@@ -92,11 +92,14 @@ dispatch, $rawDispatchDebt) — s3b codegen/s4/s5 stay on the epic · ✅ TSK-15
 (a09fcd67: DAEMON_LIFECYCLE_DESIGN.md D1-D8; slices TSK-1553..1558 filed) · ✅ TSK-1192
 who_calls + the ASYNC MCP tool lane (62d3ec0f; family verbs remain on ticket).
 
-### B9 Security & data safety (7)
-TSK-1129 LSP spawn confirm (prompt-first) · TSK-1269 ExternalEditReconciler into dirty-reload ·
-TSK-1165/1166 external-edit merge UX + DiskConflict wiring · TSK-343 history Revert data-safety
-(unsaved-edit handling) · TSK-1496 secret masking v1 · TSK-1203 trust-mode failure surfacing ·
-TSK-1194 resource-bounded test exec.
+### B9 Security & data safety ✅ DONE 2026-07-07 (3 shipped / 4 VM-deferred / 1 review-lane)
+✅ TSK-1129 LSP RCE guard ENFORCED (e7f02825, owner's (a): block+one-time-confirm, fail-closed
+headless; spawn-site tests) · ✅ TSK-1496 secret detector core (a95b0f40: 6 shapes + entropy
+guard, corpus pins both directions; badge/mask = render tail) · ✅ TSK-1194 bounded test runner
+(a95b0f40, scripts/test-bounded.sh, teeth via --self-test). DEFERRED on TSK-1550 (VM):
+1269/1165/1166 (buffer-mutating merge tails; decision cores done) + 1203 (WKWebView failure
+banner + consent-net — render through and through). TSK-343: at REVIEW (main scope verified
+done; revert = child TSK-1331, also VM-gated) — owner lane, untouched per mandate.
 
 ### B10 Paste & convert cluster (6)
 TSK-1322 paste-buggy repro+fix · TSK-1327 smart rich→markdown paste (with 958/1163 dispatcher
