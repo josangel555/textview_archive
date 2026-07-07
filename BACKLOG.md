@@ -16,6 +16,13 @@ one shared checks artifact. NO per-item gates/commits/validation ceremony; NEVER
 this round (owner's validation look is separate). Blocked ⇒ park, next. Mark items ✅ here.
 [XL] batches = Fable/XL-model preferred (get-right-first-time). [dep]/[owner] = skip until word.
 
+**PURE AUTONOMY — NO INLINE QUESTIONS (owner reinforcement, 2026-07-07).** The agent NEVER asks
+the owner a question in chat/inline during autonomous work. Every question, decision, approval,
+or ambiguity becomes a BOARD ITEM with a "Need me" gate: `task_park(kind: decision/approval,
+question, context, options)` on the relevant ticket (or a new ticket), then MOVE ON to the next
+item. Asking inline = a mandate violation. Do the homework first (spike/compare/recommend in the
+park context) so the owner decides in one glance.
+
 ## FOR THE OWNER'S VALIDATION LOOK (excluded from the work queue)
 TSK-1544 live-app MCP E2E (relaunch TextView, then `/mcp`-driven session) · TSK-1546 font
 eyeball · TSK-1547 close · Canvas fixed-slices 1372/1374–1379/1360/1392 · the review-pile
@@ -175,3 +182,12 @@ TSK-1117 + docs/research/stateful-core-spike-2026-07-04/DESIGN.md · meta-analys
 docs/research/project-meta-analysis-2026-07-04/SYNTHESIS.md · usability inventory →
 docs/FEATURE_INVENTORY.md · Stage-B UAT → docs/STAGE_B_DELETION_UAT_2026-07-04.md.
 DONE history: archive/BACKLOG_archive_2026-07-07.md §✅.
+
+## AFTER THE BATCHES — the loop does not stop
+Once every batch above is ✅: the standing goal is unchanged — **DRAIN THE TICKETS**; the
+batches were only the curated front of the queue. Continue, in order: (1) the `review` + `fixed`
+lanes — re-verify each with FRESH evidence on current main and drain to validated/done per the
+standing self-validation policy (checks artifact that would fail on regression; render claims
+need their VM/journey slice); (2) the remaining `reported` pool — triage stale/superseded items
+closed, work the rest as new batches of related items under the same work-loop mandate;
+(3) re-curate: rebuild THE BATCHES from whatever is left and keep going.
