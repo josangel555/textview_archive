@@ -1,0 +1,132 @@
+{
+  "$comment": "TSK-1507 s3 \u2014 the CM6 bridge OUTBOUND message contract (single source). Every message the Swift shell can send and the JS host must handle: wire tag -> payload keys (envelope adds v + optional replyId). Drift pins: CMBridgeSchemaTests (Swift encoder + JS dispatcher scans).",
+  "version": 1,
+  "outbound": {
+    "appendText": [
+      "text"
+    ],
+    "applyEdits": [
+      "edits",
+      "version"
+    ],
+    "closeSearch": [],
+    "completionResponse": [
+      "items",
+      "replyId"
+    ],
+    "findNext": [],
+    "findPrev": [],
+    "flushChanges": [],
+    "focus": [],
+    "foldAll": [],
+    "getDocument": [
+      "replyId"
+    ],
+    "getScrollPosition": [
+      "replyId"
+    ],
+    "getSelection": [
+      "replyId"
+    ],
+    "gotoLine": [
+      "column",
+      "line",
+      "select"
+    ],
+    "hoverResponse": [
+      "contents",
+      "from",
+      "replyId",
+      "to"
+    ],
+    "insertAtCursor": [
+      "text"
+    ],
+    "openSearch": [
+      "query",
+      "replace"
+    ],
+    "redo": [],
+    "replaceAll": [],
+    "replaceNext": [],
+    "replaceRange": [
+      "from",
+      "insert",
+      "to",
+      "version"
+    ],
+    "setDiagnostics": [
+      "diagnostics"
+    ],
+    "setFoldingRanges": [
+      "ranges"
+    ],
+    "setFontFamily": [
+      "family"
+    ],
+    "setFontSize": [
+      "lineHeight",
+      "px"
+    ],
+    "setGutterMarkers": [
+      "markers"
+    ],
+    "setIndentGuides": [
+      "enabled"
+    ],
+    "setIndentation": [
+      "size",
+      "useTabs"
+    ],
+    "setLanguage": [
+      "lang"
+    ],
+    "setLineNumbers": [
+      "enabled"
+    ],
+    "setReadOnly": [
+      "enabled"
+    ],
+    "setSaveOnBlur": [
+      "enabled"
+    ],
+    "setSearchQuery": [
+      "caseSensitive",
+      "query",
+      "regex",
+      "replace"
+    ],
+    "setSelection": [
+      "anchor",
+      "head",
+      "scroll"
+    ],
+    "setShowInvisibles": [
+      "enabled"
+    ],
+    "setSnippetSessionActive": [
+      "active"
+    ],
+    "setText": [
+      "preserveSelection",
+      "resetHistory",
+      "text"
+    ],
+    "setTheme": [
+      "name",
+      "palette"
+    ],
+    "setVimMode": [
+      "enabled"
+    ],
+    "setWordWrap": [
+      "enabled"
+    ],
+    "undo": [],
+    "unfoldAll": [],
+    "scrollToLine": [
+      "line"
+    ]
+  },
+  "$rawDispatchDebt": "scrollToLine is dispatched from Swift as a RAW string (DocumentModel+ScrollPersistence.swift, ScriptVerbDispatch.swift), bypassing CMOutboundMessage and its version negotiation \u2014 the divergence class this schema exists to catch. Follow-up: promote it to a typed case; until then the schema carries it so the JS-side pin stays complete."
+}
