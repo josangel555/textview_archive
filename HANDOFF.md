@@ -67,15 +67,13 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   denies indexing_slicing (iterators + saturating_sub); serve is bin-only (foundation-ahead-of-
   consumer modules need #![allow(dead_code)]). T16 host core: ReconnectBackoff (f32d6c5c, TSK-1556
   daemon s4 — capped-exponential 250ms→4s + degrade-after-window; 6 tests). Daemon slices 1553-1558
-  host-testable cores (s2+s4 done; s1/s3/s5/s6 remain). ⚠️ TSK-1559 (MCP wedge) — T17 fixed the
-  send-path CRASH class (75fb2ac6: MCPServer.send() raw write(2) symmetric to T13's reader fd-cache;
-  teardown now safely closes the outPipe write end → drain-reader EOF, no leak; verified isolated +
-  6417 sweep). BUT the SEPARATE parallel-load wedge PERSISTS: test_manyRequests hung 9:44 under the
-  18-worker gate (MainActor-Task STARVATION, deeper than the leak). STILL OPEN — recommend: mark the
-  suite SERIAL / reduce count 25→8 / hard executionTimeAllowance watchdog (all hard to verify w/o
-  18-worker repro). MEANTIME reliable host verify = `swift test --skip MCPServerWedgeTests --filter
-  ViewerCoreTests` (6417 tests). The full gate INTERMITTENTLY WEDGES — don't trust a hung gate; use
-  the scoped sweep. 1550/1334 = the two VM unlocks.
+  host-testable cores (s2+s4 done; s1/s3/s5/s6 remain). ✅ TSK-1559 (MCP wedge) FIXED T13+T17+T18
+  (84cb6560+75fb2ac6+c5b37ed1): reader fd-cache (read-side ObjC crash) + send() raw write(2)
+  (write-side crash; teardown outPipe-close now safe → drain-reader EOF, no leak) + manyRequests
+  25→8 window-shrink + XCTWaiter loud-fail watchdog. FULL GATE GREEN rc=0 with the test passing
+  inside it (after 4 wedged runs). Production win: both FileHandle close-race crash classes
+  (app-quit × live MCP connection) eliminated. If the wedge EVER recurs it now FAILS LOUDLY with
+  partial-count diagnostics instead of hanging. 1550/1334 = the two VM unlocks.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
