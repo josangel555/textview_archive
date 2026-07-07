@@ -34,10 +34,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   764/943-945/956), and VM-perf (598/838/837). Drain work = board-honesty reconciles + no-dep
   foundations under owner-gated decisions + host slices under render-tail features. DRAIN:
   T2 DotGraphOutline (cece2c21, no-dep .dot outline foundation; 508 owner-decision parked).
-  T3 GalleryShape (a6908fb7, TSK-1085 Win7 shape-vertex geometry → the existing fillPolygon
-  rasterizer; picker+gesture = render tail). Pattern: each drain tick extracts one clean pure
-  core (geometry/model) under a render/owner-gated feature, host-tests it, parks/notes the tail.
-  1550 = master VM unlock.
+  T3 GalleryShape (a6908fb7, TSK-1085 Win7 shape-vertex geometry). T4 TerminalPanelEdgeBridge
+  (0fc30672, TSK-1123 terminal↔panel edge bijection — the "terminal unification" model seam;
+  Settings-matrix + move wiring = render tail). Pattern: each drain tick extracts one clean pure
+  core (geometry/model/bridge) under a render/owner-gated feature, host-tests it (+ a divergence
+  guard where an enum could drift), parks/notes the render tail. 1550 = master VM unlock.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
