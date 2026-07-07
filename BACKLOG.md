@@ -44,13 +44,14 @@ pin test) · ✅ TSK-598 reconciled → rides TSK-838 (B22; ~334ms CA-commit roo
 TSK-891 → moved to B21 (measure-first per its own diagnoses) · 910 was already validated ·
 1200 owner-parked · 1188/1271 review lane · 1032 validated.
 
-### B3 Stage-B twin deletions — per docs/STAGE_B_DELETION_UAT_2026-07-04.md (IN PROGRESS)
-✅ FuzzyMatcher (algorithm deleted, Match type kept; adapter → runRustOnly, degraded=unranked;
-A/B+differential suites retired, behavior pins kept) · ⛔ FindEngine PARKED → TSK-1549 Need-me
-(twin is LOAD-BEARING: ICU lookaround/backrefs fallback — decide accept-loss/fancy-regex/keep) ·
-NEXT: ClaudeLogParser (10-src/13-test radius — split types from parse) · CSVParser/CSVFilter ·
-CMEditApplier · markdown structural visitor · TreeSitterEngine folds. (hex waits TSK-810
-[owner]; formula waits B6.) Pattern: RustCoreFallback.runRustOnly + .degradedRustFault.
+### B3 Stage-B twin deletions ✅ DONE 2026-07-07 (~−3,300 lines; gate green 9,544 tests)
+✅ fuzzy (55470d33) · ✅ transcript projection (2edb6291) · ✅ CSV parser + CsvParseWith wire
+id 24 (c32b3480) · ✅ CMEditApplier (ee6f0712) · ✅ markdown visitor + rust `diagram` chunk
+closing TSK-713's dot/plantuml gap (4a95b00a) · ✅ folds + queries + cache (78c8e973) ·
+✅ TSK-1499 fixed as side effect. KEPT (not twins): CSVFilter, SystemRecords statics,
+HTMLVisitor utility surface. ⛔ find PARKED (TSK-1549 Need-me) · hex waits TSK-810 [owner] ·
+formula waits B6. RESIDUAL: VM WV/render slice blocked (TSK-1550 VM ssh down) — runs on
+lane restore, attaches to TSK-649.
 
 ### B4 Mandate guards + hygiene teeth (7)
 TSK-1539 surface catalog + matrix guard [XL semantics] · TSK-1534 webview allowlist guard ·

@@ -16,14 +16,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
 - **B1 ✅ · B2 ✅. Batch in progress: B3 twin deletions — fuzzy ✅ (55470d33), transcript ✅
   (2edb6291), CSV ✅ (committed: CSVParser algorithm deleted, Result type kept; NEW wire
   CsvParseWith id=24 carries forced delimiter + all four caps for the clipboard TSV path;
-  CSVFilter KEPT — live non-session view filter, NOT a twin), cmEdit ✅, markdown ✅
-  (+ NEW rust `diagram` chunk closes the TSK-713 dot/plantuml parity gap), folds ✅
-  (committed: TreeSitterEngine+Folds + 6 .scm queries + fold cache deleted; rust coverage
-  is a superset incl. Rust-lang; DocumentModel + adapter rust-only; cache/LRU/ATX tests
-  died with the machinery, behavior pins retargeted; FoldBench re-budgeted no-cache
-  ~28ms→150ms cliff guard), find ⛔ PARKED (TSK-1549). ALL SIX DELETIONS DONE.
-  REMAINING FOR B3 CLOSE: full gate (rust+headless, running) → VM WV lane (markdown IS
-  render-path) → board records on TSK-649 → BACKLOG ✅.** Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
+  B3 ✅ CLOSED (gate green 9,544; records on TSK-649; 1499 fixed; RESIDUAL: VM WV slice
+  blocked — TSK-1550, VM ssh down, runs on lane restore). Batch in progress: NONE —
+  next: B4 mandate guards (1539 matrix guard [XL semantics] · 1534 webview allowlist ·
+  consumption-guard extension · 1535 missing_docs burn-down→DENY · 1548 progress-log
+  rotation+budget · 1501 color sweep; 1499 already ✅).** Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
   (.degradedRustFault), retire A/B+differential suites, keep behavior pins.
   Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;

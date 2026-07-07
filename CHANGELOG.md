@@ -2,7 +2,20 @@
 
 ## 2026-07-07
 
+### Fixed
+- Vim mode no longer beeps when you press Esc while already in normal mode.
+- DOT/Graphviz and PlantUML code fences render as labeled diagram blocks again on the
+  (default) rust markdown path — previously that treatment only existed on the legacy
+  fallback renderer.
+
 ### System work
+- **Stage-B twin deletions (batch B3)**: six Swift engine twins deleted (~3,300 lines) —
+  fuzzy ranking, transcript projection, CSV parser, CM edit-applier, markdown visitor,
+  code folds — rust-core is now the ONLY engine for each, with observable degradation
+  instead of silent fallback. Behavior and security pins retargeted through the engines;
+  A/B parity suites retired with the twins they compared. Find-engine deletion parked on
+  an owner call (regex lookaround trade-off); a chronically-flaky fold bench fixed itself
+  by now measuring the rust engine.
 - **Stateful core S2–S4 (batch B1)**: rust-core now holds editor documents statefully — text
   crosses the FFI once at open, keystrokes ship only deltas; owner-ratified eviction (1.5 GB /
   200 docs, unsaved docs never evicted — law-tested); a shadow-mode differential net
