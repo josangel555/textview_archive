@@ -16,10 +16,13 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
 - **B1–B6 ✅ ALL CLOSED (details in BACKLOG §THE BATCHES — each ✅ block carries its commits
   + gate evidence). Highlights: 8 Swift twins deleted incl. formula (Stage A fully ON,
   Stage B done except find TSK-1549 + hex TSK-810); frame-cap blank-grid P1 found+fixed;
-  CSV save flow existed-not-at-all → shipped. Batch in progress: B7 [XL] web-migrate —
-  1530 M6 v1 ✅ (4f3be49e, gated route MDV_WEB_SOURCE=1 → read-only CM6; default flip
-  needs VM TSK-1550 + parity slices). NEXT: 1527 M3 CSV grid · 1531 M7 hex grid · 1532 M8
-  transcript streaming — all render-heavy, VM caps validation.**
+  CSV save flow existed-not-at-all → shipped. B7: 1530-v1 ✅ (4f3be49e gated route);
+  1527/1531/1532 DEFERRED on TSK-1550 (from-scratch web surfaces need a render lane).
+  Batch in progress: B8 MCP/CLI/remote — ✅ 1536 mdv CLI (920d0d20: files/folders +
+  `mdv session <name>` via the hardened URL scheme; --with-cli symlink; 1536 fixed).
+  NEXT in B8: MCP reconnect loop (file TSK-665 follow-up + fix) · 1507 s1 serve static
+  assets · s2 cmDispatch-over-WS · s3 codegen [XL] · 1537 daemon doc [XL] · 1192 code-nav
+  MCP tool. Gate for B8.1 running (tmp/b8-gate.log).**
   RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
   TSK-649 when the VM returns. Shadow-net S5/S6 gate: MDV_RUST_DOCSTORE=shadow, div=0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
