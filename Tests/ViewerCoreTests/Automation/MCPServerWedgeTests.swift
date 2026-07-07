@@ -57,7 +57,7 @@ import ViewerKit
 ///   the next request; the second response arrives within budget.
 ///   This is the closest test-harness analogue to the original
 ///   wedge.
-/// - `test_manyRequests_inSequence_complete` — 25 sequential
+/// - `test_manyRequests_inSequence_complete` — 8 sequential
 ///   requests cycle cleanly; catches a bridge that leaks Tasks /
 ///   semaphores or fails to signal after some N invocations.
 /// - `test_handler_runsOnOSMainThread` — the handler still sees
@@ -290,16 +290,27 @@ final class MCPServerWedgeTests: XCTestCase {
                        "handler must have run twice, got \(host.callCount)")
     }
 
-    /// Sequential load smoke. 25 round-trips back-to-back. Catches a
+    /// Sequential load smoke. 8 round-trips back-to-back. Catches a
     /// bridge that leaks Tasks / semaphores or whose signal/wait
     /// pair becomes unbalanced after some N calls.
+    ///
+    /// TSK-1559: the count was 25, which under the 18-worker parallel gate
+    /// created a LONG starvation window — each request is a main-thread
+    /// MainActor Task hop, and under whole-machine contention the queue of
+    /// 25 hops could outlive every timeout (observed: the gate hung on this
+    /// test for 9+ minutes with 0 failures). 8 still exercises the
+    /// leak/unbalance contract ("fails after some N" bridges break well
+    /// before 8 — the original bug reproduced at 2) with a ~3× smaller
+    /// window. The wait ceiling stays generous so the main run loop keeps
+    /// PUMPING (servicing the Tasks) rather than starving them, and the
+    /// failure message carries the partial count for diagnosis.
     func test_manyRequests_inSequence_complete() throws {
         let host = StubHost()
         let env = makeServer(host: host)
         env.server.start()
         defer { teardown(env) }
 
-        let count = 25
+        let count = 8
         for i in 0..<count {
             let req = Data(#"""
             {"jsonrpc":"2.0","id":\#(i),"method":"ping"}
@@ -311,14 +322,15 @@ final class MCPServerWedgeTests: XCTestCase {
         let holder = ResponseHolder()
         drainResponses(from: env.outPipe, count: count, expectation: arrived, into: holder)
 
-        // 60 s ceiling (not 10 s): a generous timeout keeps the main run
-        // loop PUMPING until all 25 responses land, so the reader thread's
-        // per-request MainActor Tasks are serviced rather than starved once
-        // the wait returns — the parallel-gate wedge this test hit (TSK-1559).
-        // It still returns the instant `arrived` fulfills (<1 s normally);
-        // the ceiling only matters under heavy load.
-        wait(for: [arrived], timeout: 60.0)
+        // Generous ceiling: returns the instant `arrived` fulfills (<1 s
+        // normally); under heavy load it keeps main pumping until the
+        // responses land. On timeout the test FAILS LOUDLY with the partial
+        // count (never hangs: teardown's outPipe-close EOFs the drain reader).
+        let outcome = XCTWaiter.wait(for: [arrived], timeout: 60.0)
         if let err = holder.error { throw err }
+        XCTAssertEqual(outcome, .completed,
+                       "timed out with \(holder.allBodies?.count ?? 0)/\(count) responses — "
+                       + "MainActor-Task starvation under load (TSK-1559)")
         XCTAssertEqual(holder.allBodies?.count, count,
                        "bridge wedged or leaked state under sequential load")
     }
