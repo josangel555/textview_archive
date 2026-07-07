@@ -21,9 +21,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   Batch in progress: B8 MCP/CLI/remote — ✅ 1536 mdv CLI (920d0d20) · ✅ 1552 self-healing
   MCP bridge (ca2a114a: serve() reconnect loop, requests queue while app restarts; + 3
   hardening finds incl. the availableData uncatchable-exception landmine → raw read(2)).
-  NEXT in B8: 1507 s1 serve static assets · s2 cmDispatch-over-WS · s3 codegen [XL] ·
-  1537 daemon doc [XL] · 1192 code-nav MCP tool. B8.2 gate running (tmp/b8-2-gate.log).
-  NOTE for owner: the self-healing bridge takes effect after the next app INSTALL +
+  ✅ 1507-s1 asset serving + editor scaffold (069d49d4, rust gate green; epic at progress).
+  NEXT in B8: 1507-s2 cmDispatch-over-WS (mount = /surface/editor) · s3 codegen [XL] ·
+  1537 daemon doc [XL] · 1192 code-nav MCP tool. All B8 gates green so far.
+  NOTE for owner: the self-healing MCP bridge takes effect after the next app INSTALL +
   Claude session restart (the running bridge process is the old pump).**
   RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
   TSK-649 when the VM returns. Shadow-net S5/S6 gate: MDV_RUST_DOCSTORE=shadow, div=0.
