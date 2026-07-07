@@ -186,11 +186,13 @@ round-trip verify = UAT/VM tail). ALREADY DONE (recon): 1326 walkthrough authori
 UAT/VM/RENDER TAILS: 1474 video-loop verify (UAT) · 1091–1096 audio engine/AU (model host-tested,
 live=VM) · 1119 walkthrough illustration overlay (render) · 377 illustrations residual (render).
 
-### B20 Agent tools & code review epic (8)
-TSK-1196 file-ownership dashboard · TSK-943 diagnostics→agent sharing · TSK-944 internal
-browser automation · TSK-945 security-audit integration · TSK-318/1108 CR Q&A UI + transport ·
-TSK-537 slices ×2 (comments, cumulative diffs) · TSK-373 New▸CR/Agent/Project · TSK-942
-select-lines→agent-comment.
+### B20 Agent tools & code review epic ✅ DONE 2026-07-07 (1 host core; rest render/MCP)
+✅ TSK-1196 cross-agent worktree overlap-detection core (f8e91e83: WorktreeOverlap who_touches/
+overlaps/report, merged-exclusion, 6 tests; git-scan + dashboard surfacing = thin shell tail).
+ALREADY DONE (recon): 942 select-lines→reference at REVIEW (line-range mdv:// ref via
+palette/menu/⌘⌥⇧C shipped; right-click editor menu + comment-to-agent = render tail). RENDER/MCP
+TAILS: 943 diagnostics→agent sharing · 944 internal browser automation · 945 security-audit
+integration · 318/1108 CR Q&A UI + transport · 537 comments/cumulative-diffs · 373 New▸CR/Agent/Project.
 
 ### B21 QoL / VM / test-infra (11)
 TSK-1542 Sequoia nag storm · TSK-1540 WV-on-host audit · TSK-1541 rust coverage number ·

@@ -21,9 +21,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   ENFORCED · secret detector core · bounded test runner.
 - **B10–B16 ✅ · B17 ⛔ AGENT-BLOCKED (AX-driven tier, the sole off-limits lane; ElementRef host
   cores done) · B18 ✅ AGENT-COMPLETE (IMG model ~166 tests; 1320 parked owner a/b/c) · B19 ✅
-  (1442 ffmpeg-guidance 6a2eb9ea).** NEXT BATCH: B20 — recon task_get FIRST (B11–B19 pattern:
-  much pre-done/render-tail/AX; extract clean host cores, park product calls, reconcile board-lag,
-  skip AX-driven). See BACKLOG §THE BATCHES for the B20 item list.
+  (1442 ffmpeg-guidance 6a2eb9ea) · B20 ✅ (1196 worktree-overlap core f8e91e83).** NEXT BATCH:
+  B21 — recon task_get FIRST (B11–B20 pattern: much pre-done/render-tail/AX; extract clean host
+  cores, park product calls, reconcile board-lag, skip AX-driven). B21 note in BACKLOG has "891".
+  See BACKLOG §THE BATCHES for the B21 item list.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
