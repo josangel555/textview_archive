@@ -36,10 +36,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   T2 DotGraphOutline (cece2c21, no-dep .dot outline foundation; 508 owner-decision parked).
   T3 GalleryShape (a6908fb7, TSK-1085 Win7 shape-vertex geometry). T4 TerminalPanelEdgeBridge
   (0fc30672, TSK-1123 terminal↔panel edge bijection). T5 PaletteCandidates.merge + Candidate-
-  Cache (160fb335, TSK-1179 — extracted+host-tested the per-keystroke merged() dedup, wired the
-  view to it, added a generation memo; cache-wiring + latency trace = render/VM tail). Pattern:
-  each drain tick extracts one clean pure core (geometry/model/bridge/memo) under a render/owner-
-  gated feature, host-tests it (+ a divergence
+  Cache (160fb335, TSK-1179 per-keystroke merge dedup + generation memo). T6 ChangeClassifier
+  (464e7c89, TSK-1195a — the host-vs-render "false-done killer": classify(paths:)→hostProvable|
+  renderPath|needsVM + aggregate hostCertifiable flag; 11 tests; part (b) render-check tool stays
+  owner-gated). Pattern: each drain tick extracts one clean pure core (geometry/model/bridge/memo/
+  classifier) under a render/owner-gated feature, host-tests it (+ a divergence
   guard where an enum could drift), parks/notes the render tail. 1550 = master VM unlock.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
