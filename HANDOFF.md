@@ -19,12 +19,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   shipped · mdv CLI + self-healing MCP bridge · remote-core groundwork (assets/WS/schema
   + daemon design, slices 1553–1558) · who_calls + the async MCP lane · LSP RCE guard
   ENFORCED · secret detector core · bounded test runner.
-- **B10 ✅ CLOSED** (recon-first: mostly pre-done). Shipped: 1480 format-state detectors
-  (711bb101). Reconciled: 1427 (3 gaps already on main). Pre-done: 1323/1324/1325 validated,
-  1327 review, 1322 owner-parked. NEXT BATCH: B11 chrome/menus/first-run (8): 1319 dynamic
-  per-tab menu · 1481 Settings IA · 1482 menu-bar audit · 1489 new-tab omnibox · 1448
-  first-run tour · 1449 consolidate overlapping surfaces · 1413 entry-point cohesion · 1340
-  palette param-input. Recon task_get FIRST — several are render/UI-heavy (VM-gated tails).
+- **B10 ✅ / B11 ✅ CLOSED.** B11 shipped 2 host cores (68ba6b33): 1340 palette param-input
+  flow + 1489 omnibox resolution table. 1413 menu-reorg parked Need-me for owner eyeball;
+  1319/1481/1482/1448/1449 = render/design tails. NEXT BATCH: B12 panes/nav/key-routing (7):
+  1315 key-event routing audit · 1314 side-nav toggle bug · 1316 shoulder bars on-drag ·
+  1313 pane size restrictions · 1317 terminal icon drag · 1312 terminal colors · 1249
+  terminal header row. Recon task_get FIRST (several are AppKit/render-coupled).
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next

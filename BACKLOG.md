@@ -110,10 +110,14 @@ end-to-end incl. VM webview lane) · 1327 at REVIEW (rich→md host+universalPas
 paste = render tail) · 1322 OWNER-PARKED (Need-me: which paste surface + repro). 1473 presets =
 not yet filed as its own actionable; folds into the convert panels when the owner wants presets.
 
-### B11 Chrome/menus/first-run usability (8)
-TSK-1319 dynamic per-tab menu · TSK-1481 Settings IA · TSK-1482 menu-bar audit (residual after
-the DONE 1318 reorg) · TSK-1489 new-tab omnibox · TSK-1448 first-run tour · TSK-1449 consolidate
-overlapping surfaces · TSK-1413 entry-point cohesion residual · TSK-1340 palette param-input.
+### B11 Chrome/menus/first-run usability ✅ DONE 2026-07-07 (2 host cores shipped; rest render/design/owner)
+✅ TSK-1340 palette param-input flow (68ba6b33: PaletteParamFlow — Go to Line/jq/encoding
+validation+dispatch, 6 tests) · ✅ TSK-1489 omnibox resolution table (68ba6b33: OmniResolver
+input→action, 8 tests incl. path-miss/C:\/‌.git edges). RECON DISPOSITION: TSK-1413 entry-point
+cohesion = substantially DONE (palette parity + env audit + full menu reorg all landed prior;
+PARKED Need-me for owner pixel-eyeball → validated). TSK-1319/1481/1482/1448/1449 = render/
+design-heavy tails (settings-catalog/menu-model/omnibox-view/first-run-tour/surface-consolidation
+spike) — their host cores are these two + future slices; VM/owner-gated for the on-screen work.
 
 ### B12 Panes/nav/key-routing intake cluster (7)
 TSK-1315 key-event routing audit (leaking keystrokes) · TSK-1314 side-nav shows file-nav when
