@@ -105,6 +105,21 @@ if [[ "${1:-}" == "--default" ]]; then
   fi
 fi
 
+# TSK-1536: opt-in CLI symlink — `install-app.sh --with-cli` links the mdv
+# opener into /usr/local/bin (sudo only if the dir isn't writable).
+for arg in "$@"; do
+  if [ "$arg" = "--with-cli" ]; then
+    CLI_SRC="$(cd "$(dirname "$0")" && pwd)/mdv"
+    CLI_DST="/usr/local/bin/mdv"
+    if [ -w "$(dirname "$CLI_DST")" ]; then
+      ln -sf "$CLI_SRC" "$CLI_DST"
+    else
+      sudo ln -sf "$CLI_SRC" "$CLI_DST"
+    fi
+    echo "==> mdv CLI linked: $CLI_DST → $CLI_SRC  (try: mdv --help)"
+  fi
+done
+
 echo
 echo "If you keep getting permission prompts on every rebuild:"
 echo "  1. Run once: bash scripts/setup-signing.sh"

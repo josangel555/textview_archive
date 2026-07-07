@@ -628,6 +628,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             startWalkthrough(at: safeURL.path)
+        case .session(let name):
+            // TSK-1536: `mdv session <name>` → textview://session?name=…
+            // A miss is a silent no-op (session switching is reversible; the
+            // CLI echoed the name it sent).
+            _ = sessions.activate(named: name)
         case nil:
             break
         }

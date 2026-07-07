@@ -244,6 +244,19 @@ public final class SessionsAppCoordinator: ObservableObject {
         core.activate(id: id)
     }
     public func activate(index n: Int) { core.activate(index: n) }
+
+    /// TSK-1536 (`mdv session <name>`): activate the saved session whose
+    /// name matches `name` — exact match first, then case-insensitive.
+    /// Returns false (no-op) when nothing matches.
+    @discardableResult
+    public func activate(named name: String) -> Bool {
+        let snaps = core.sessions
+        let match = snaps.first(where: { $0.displayName == name })
+            ?? snaps.first(where: { $0.displayName.lowercased() == name.lowercased() })
+        guard let match else { return false }
+        activate(id: match.id)
+        return true
+    }
     public func nextSession()     { core.nextSession() }
     public func previousSession() { core.previousSession() }
 

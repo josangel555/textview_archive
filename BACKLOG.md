@@ -75,11 +75,12 @@ capabilities now ship ON — Stage A closed) · ✅ UAT-slice pin (grid→recalc
 with .capitalized parity — the last tendon; 77 contract tests retargeted to the engine) ·
 1468 = owner hands-on audit (commented, stays owner-gated).
 
-### B7 [XL] Web-migrate wave 1 (4) — IN PROGRESS
-TSK-1530 M6: ✅ v1 gated route committed (4f3be49e — MDV_WEB_SOURCE=1 → read-only CM6;
-default flip needs VM slice TSK-1550 + parity slices: bookmarks/diff-marks/find-bar/scroll) ·
-NEXT: TSK-1527 M3 CSV web grid · TSK-1531 M7 hex web grid · TSK-1532 M8 transcript streaming.
-ALL render-heavy — VM lane (TSK-1550) caps validation until restored.
+### B7 [XL] Web-migrate wave 1 — v1 ✅ / rest DEFERRED-ON-VM (2026-07-07)
+✅ TSK-1530 M6 v1 gated route (4f3be49e — MDV_WEB_SOURCE=1 → read-only CM6; default flip
+needs VM + parity slices). DEFERRED pending TSK-1550 (VM ssh): TSK-1527 M3 CSV grid ·
+TSK-1531 M7 hex grid · TSK-1532 M8 transcript streaming — from-scratch WEB SURFACES; building
+three of them with NO render lane stacks unverified surface (built≠usable). They resume the
+moment the lane is back, validation interleaved. Loop continues at B8.
 
 ### B8 MCP/CLI/remote tail (7)
 TSK-1536 mdv CLI opener · MCP reconnect loop (file the TSK-665 follow-up + fix) · TSK-1507 s1

@@ -99,4 +99,29 @@ final class URLSchemeRouterTests: XCTestCase {
         XCTAssertTrue(main.contains("alert.runModal() == .alertFirstButtonReturn else { return }"),
                       "cancel must abort the start")
     }
+
+    // MARK: - TSK-1536: the session route (`mdv session <name>`)
+
+    func test_sessionRoute_parsesTheName() {
+        XCTAssertEqual(
+            URLSchemeRouter.route(URL(string: "textview://session?name=blog")!),
+            .session(name: "blog"))
+        // Percent-encoded names (the mdv CLI encodes) decode via URLComponents.
+        XCTAssertEqual(
+            URLSchemeRouter.route(URL(string: "textview://session?name=blog%20drafts")!),
+            .session(name: "blog drafts"))
+        // The back-compat scheme routes identically.
+        XCTAssertEqual(
+            URLSchemeRouter.route(URL(string: "markdownviewer://session?name=x")!),
+            .session(name: "x"))
+    }
+
+    func test_sessionRoute_rejectsEmptyAndMissingNames() {
+        XCTAssertNil(URLSchemeRouter.route(URL(string: "textview://session")!))
+        XCTAssertNil(URLSchemeRouter.route(URL(string: "textview://session?name=")!))
+        XCTAssertNil(URLSchemeRouter.route(URL(string: "textview://session?name=%20%20")!),
+                     "whitespace-only rejects")
+        XCTAssertNil(URLSchemeRouter.route(URL(string: "https://session?name=x")!),
+                     "foreign schemes never route")
+    }
 }

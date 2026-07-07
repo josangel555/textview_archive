@@ -19,6 +19,10 @@ public enum URLSchemeRoute: Equatable, Sendable {
     /// file — a drive-by web link must not auto-drive the app (the local
     /// `--walkthrough` CLI flag is the unprompted dev path).
     case walkthrough(URL)
+    /// `textview://session?name=…` — switch to the named saved session
+    /// (TSK-1536: the `mdv session <name>` CLI channel). A NAME, not a
+    /// path — nothing crosses the path policy on this route.
+    case session(name: String)
 }
 
 public enum URLSchemeRouter {
@@ -53,6 +57,11 @@ public enum URLSchemeRouter {
             guard let raw = q("path"),
                   let safe = URLSchemePolicy.containedPath(raw) else { return nil }
             return .walkthrough(safe)
+        case "session":
+            // TSK-1536: empty/whitespace-only names reject to nil.
+            guard let name = q("name")?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else { return nil }
+            return .session(name: name)
         default:
             return nil
         }

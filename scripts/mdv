@@ -1,0 +1,62 @@
+#!/bin/bash
+# mdv — open files/folders/sessions in TextView from the shell (TSK-1536).
+# The `code .` equivalent: paths route through Launch Services to the running
+# instance (no second instance); `session <name>` rides the textview:// URL
+# scheme. Staged into dist/bin by build-app.sh; symlinked to /usr/local/bin
+# by `install-app.sh --with-cli`.
+set -euo pipefail
+
+APP="TextView.app"
+
+usage() {
+  cat <<'EOF'
+mdv — open things in TextView
+
+Usage:
+  mdv <path>...          Open files and/or folders (folders open in folder mode)
+  mdv session <name>     Switch to the named saved session
+  mdv .                  Open the current directory
+  mdv --help             This help
+
+Examples:
+  mdv README.md src/
+  mdv session "blog drafts"
+EOF
+}
+
+case "${1:-}" in
+  ""|--help|-h)
+    usage
+    exit 0
+    ;;
+  session)
+    name="${2:-}"
+    if [ -z "$name" ]; then
+      echo "mdv: session requires a name (mdv session <name>)" >&2
+      exit 2
+    fi
+    # Percent-encode the name for the URL query (pure bash, no deps).
+    encoded=""
+    for (( i=0; i<${#name}; i++ )); do
+      c="${name:$i:1}"
+      case "$c" in
+        [a-zA-Z0-9.~_-]) encoded+="$c" ;;
+        *) encoded+=$(printf '%%%02X' "'$c") ;;
+      esac
+    done
+    exec open "textview://session?name=${encoded}"
+    ;;
+  *)
+    # Everything else: paths. Resolve to absolute so Launch Services never
+    # guesses relative to its own cwd; fail early on a missing path.
+    args=()
+    for p in "$@"; do
+      if [ ! -e "$p" ]; then
+        echo "mdv: no such file or directory: $p" >&2
+        exit 1
+      fi
+      args+=("$(cd "$(dirname "$p")" && pwd)/$(basename "$p")")
+    done
+    exec open -a "$APP" "${args[@]}"
+    ;;
+esac
