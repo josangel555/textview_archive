@@ -59,9 +59,14 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   lock). REMAINING salvage complete: f5c9d73f mermaid-err(1466, WebView→VM), 05506d01 invisibles
   (1484 partial) + 9 WIPs. T14 rust-core host core: changed_region_between (609f103f, TSK-1522 S7
   external-reload minimal-diff — common UTF-16 prefix/suffix → one ChangedRegion; 8 tests + round-
-  trip proptest; rust gate GREEN; watcher→reload→FFI→CM6 wiring = the shadow-soak-gated tail). NOTE:
-  rust-core cargo needs --manifest-path rust-core/Cargo.toml; clippy denies indexing_slicing (use
-  iterators + saturating_sub). 1550/1334 = the two VM unlocks.
+  trip proptest). T15 rust-core host core: serve/lifecycle.rs idle_decision (3b4a5402, TSK-1554
+  daemon s2 idle-exit — dirty pins the process, 15min threshold, injectable clock; 7 tests; rust
+  gate GREEN; tick-loop wiring = s1-dependent tail). TSK-1541 (rust coverage) BLOCKED: rustup
+  llvm-tools-preview download TIMES OUT (sandbox/network) — gate-wiring ready but unverifiable, do it
+  when network/VM allows. NOTE: rust-core cargo needs --manifest-path rust-core/Cargo.toml; clippy
+  denies indexing_slicing (iterators + saturating_sub); serve is bin-only (foundation-ahead-of-
+  consumer modules need #![allow(dead_code)]). Daemon slices 1553-1558 are host-testable cores (s2
+  done; s1/s3-s6 remain). 1550/1334 = the two VM unlocks.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
