@@ -13,15 +13,14 @@ decision/approval = task_park "Need me" gate with homework, then move on. After 
 drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER THE BATCHES).
 
 ## Current state
-- **B1 ✅ · B2 ✅. Batch in progress: B3 twin deletions — fuzzy ✅ (55470d33), transcript ✅
-  (2edb6291), CSV ✅ (committed: CSVParser algorithm deleted, Result type kept; NEW wire
-  CsvParseWith id=24 carries forced delimiter + all four caps for the clipboard TSV path;
-  B3 ✅ CLOSED (gate green 9,544; records on TSK-649; 1499 fixed; RESIDUAL: VM WV slice
-  blocked — TSK-1550, VM ssh down, runs on lane restore). Batch in progress: NONE —
-  next: B4 mandate guards (1539 matrix guard [XL semantics] · 1534 webview allowlist ·
-  consumption-guard extension · 1535 missing_docs burn-down→DENY · 1548 progress-log
-  rotation+budget · 1501 color sweep; 1499 already ✅).** Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
-  (.degradedRustFault), retire A/B+differential suites, keep behavior pins.
+- **B1 ✅ · B2 ✅ · B3 ✅ (Stage-B deletions, gate green 9,544; RESIDUAL: VM WV slice blocked
+  on TSK-1550 VM-ssh-down — run + attach to TSK-649 on lane restore). Batch in progress:
+  B4 mandate guards — ✅ 1548 (progress log rotated 1.46MB→10KB → archive/, 64KB budget
+  tooth in ContextBudgetTests) · ✅ 1534 (WebViewAllowlistTests: 5-file content-host
+  allowlist + stale-entry teeth) · ✅ 1501 (HardCodedColorRatchetTests: 28-match/11-file
+  shrink-only baseline). REMAINING: 1539 surface-coverage matrix guard → consumption-guard
+  extension → 1535 missing_docs burn-down→DENY (188 warnings; mechanical, big —
+  fresh-context friendly). Then B4's gate + commit + board batch.**
   Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).

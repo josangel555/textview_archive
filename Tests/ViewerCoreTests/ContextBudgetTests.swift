@@ -47,4 +47,16 @@ final class ContextBudgetTests: XCTestCase {
             "CLAUDE.md is \(size) B (> 40 KB). Keep rules crisp; move narrative/rationale "
             + "to docs/ (LESSONS.md / DIRECTIVES_HISTORY).")
     }
+
+    func test_autonomousProgress_rotated_underBudget() throws {
+        // TSK-1548: the progress log hit 15k lines (1.46 MB) — 17% of ALL
+        // commits were appends to it, and every autonomous firing re-reads it.
+        // Rotation policy: a red here means MOVE the older LOG entries to
+        // archive/AUTONOMOUS_PROGRESS_<range>.md (keep DECISIONS + the recent
+        // entries) — never bump the budget.
+        let size = try byteSize("docs/AUTONOMOUS_PROGRESS.md")
+        XCTAssertLessThanOrEqual(size, 64_000,
+            "docs/AUTONOMOUS_PROGRESS.md is \(size) B (> 64 KB) — ROTATE it "
+            + "(see the file's rotation note; history goes to archive/).")
+    }
 }
