@@ -170,7 +170,7 @@ pub fn handle_connection(
     result
 }
 
-fn dispatch(
+pub(crate) fn dispatch(
     id: u64,
     method: &str,
     body: &[u8],
@@ -253,7 +253,7 @@ fn dispatch(
 }
 
 /// u32-LE length prefix (the `wire::encode_frame` convention).
-fn frame_bytes(body: &[u8]) -> Vec<u8> {
+pub(crate) fn frame_bytes(body: &[u8]) -> Vec<u8> {
     let n = u32::try_from(body.len()).unwrap_or(u32::MAX);
     let mut out = Vec::with_capacity(body.len().saturating_add(4));
     out.extend_from_slice(&n.to_le_bytes());
@@ -263,7 +263,7 @@ fn frame_bytes(body: &[u8]) -> Vec<u8> {
 
 /// Strip the u32-LE prefix from a `*_wire` result (empty on malformed —
 /// the wire fns never produce malformed frames).
-fn unframe_or_empty(framed: Vec<u8>) -> Vec<u8> {
+pub(crate) fn unframe_or_empty(framed: Vec<u8>) -> Vec<u8> {
     framed.get(4..).map(<[u8]>::to_vec).unwrap_or_default()
 }
 

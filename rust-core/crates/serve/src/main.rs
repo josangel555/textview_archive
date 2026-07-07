@@ -1,29 +1,14 @@
-//! `mdv-serve` — the machine-API daemon (TSK-653), implementing
-//! `docs/REMOTE_PROTOCOL.md` v1: u32-LE length-prefixed MessagePack
-//! envelopes over a UNIX socket. The ssh tunnel is the auth/confidentiality
-//! boundary (owner ruling 2026-06-12) — this binary only ever binds a
-//! filesystem socket path.
-//!
-//! V1 surface: `hello` (wire-version hard-close + capability mask), `ping`,
-//! and the seven stateless engine methods, dispatched DIRECTLY to the same
-//! `*_wire` functions the FFI exports call (no FFI hop server-side). The
-//! envelope already carries subscription/event fields; the fs family and
-//! the push path land with TSK-654.
+//! `mdv-serve` — the machine-API daemon binary (TSK-653): a thin main() over
+//! the `mdvcore_serve` library (see `src/lib.rs` for the protocol surface).
+//! The ssh tunnel is the auth/confidentiality boundary (owner ruling
+//! 2026-06-12) — this binary only ever binds a filesystem socket path (or
+//! inherits one from launchd, TSK-1553).
 
-use std::io::{Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-mod envelope;
-mod fs;
-mod git;
-mod lifecycle;
-mod search;
-mod serve;
-mod transcript_list;
-mod watch;
-
-use serve::handle_connection;
+use mdvcore_serve::serve::handle_connection;
+use mdvcore_serve::{fs, lifecycle, transcript_list};
 
 /// Concurrent-connection cap (each connection = one thread).
 const MAX_CONNECTIONS: usize = 8;
@@ -95,33 +80,4 @@ fn main() {
             INFLIGHT.fetch_sub(1, Ordering::SeqCst);
         });
     }
-}
-
-/// Read one length-prefixed frame (None = clean EOF before a frame started).
-pub(crate) fn read_frame(stream: &mut &UnixStream) -> std::io::Result<Option<Vec<u8>>> {
-    let mut len_buf = [0u8; 4];
-    match stream.read_exact(&mut len_buf) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e),
-    }
-    let len = u32::from_le_bytes(len_buf) as usize;
-    if len > serve::MAX_FRAME_BYTES {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "frame exceeds the 16 MiB ceiling",
-        ));
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body)?;
-    Ok(Some(body))
-}
-
-/// Write one length-prefixed frame.
-pub(crate) fn write_frame(stream: &mut &UnixStream, body: &[u8]) -> std::io::Result<()> {
-    let len = u32::try_from(body.len())
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "frame too large"))?;
-    stream.write_all(&len.to_le_bytes())?;
-    stream.write_all(body)?;
-    stream.flush()
 }
