@@ -101,11 +101,14 @@ guard, corpus pins both directions; badge/mask = render tail) · ✅ TSK-1194 bo
 banner + consent-net — render through and through). TSK-343: at REVIEW (main scope verified
 done; revert = child TSK-1331, also VM-gated) — owner lane, untouched per mandate.
 
-### B10 Paste & convert cluster (6)
-TSK-1322 paste-buggy repro+fix · TSK-1327 smart rich→markdown paste (with 958/1163 dispatcher
-UI) · TSK-1427 rich-paste tables/nested lists (IR extension) · TSK-1480 converters show current
-state · TSK-1323 extract-audio-from-video · TSK-1324/1325 audio+image format/quality convert
-(host ffmpeg per TSK-528; +TSK-1473 presets).
+### B10 Paste & convert cluster ✅ DONE 2026-07-07 (mostly PRE-DONE; recon-first paid off)
+✅ TSK-1480 format-state detectors (711bb101: IndentStyleDetector + FileFormatState footer chip,
+7 host tests; footer/menu = render tail) · ✅ TSK-1427 rich-paste tables+nested-lists RECONCILED
+(all 3 gaps already fixed on main a2024d9b/a1abab17/f695857b; ticket was stuck at reported).
+ALREADY DONE (recon): 1323/1324/1325 VALIDATED (audio extract/convert + image convert, full
+end-to-end incl. VM webview lane) · 1327 at REVIEW (rich→md host+universalPaste done; CM6-editor
+paste = render tail) · 1322 OWNER-PARKED (Need-me: which paste surface + repro). 1473 presets =
+not yet filed as its own actionable; folds into the convert panels when the owner wants presets.
 
 ### B11 Chrome/menus/first-run usability (8)
 TSK-1319 dynamic per-tab menu · TSK-1481 Settings IA · TSK-1482 menu-bar audit (residual after

@@ -19,10 +19,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   shipped · mdv CLI + self-healing MCP bridge · remote-core groundwork (assets/WS/schema
   + daemon design, slices 1553–1558) · who_calls + the async MCP lane · LSP RCE guard
   ENFORCED · secret detector core · bounded test runner.
-- **NEXT BATCH: B10 paste & convert (6)**: 1322 paste-buggy repro+fix · 1327 smart
-  rich→markdown paste (+958/1163 dispatcher UI) · 1427 rich-paste tables/nested lists ·
-  1480 converters show current state · 1323 extract-audio · 1324/1325 audio+image convert
-  (host ffmpeg per TSK-528; +1473 presets). Recon task_get FIRST (ffmpeg policy rides).
+- **B10 ✅ CLOSED** (recon-first: mostly pre-done). Shipped: 1480 format-state detectors
+  (711bb101). Reconciled: 1427 (3 gaps already on main). Pre-done: 1323/1324/1325 validated,
+  1327 review, 1322 owner-parked. NEXT BATCH: B11 chrome/menus/first-run (8): 1319 dynamic
+  per-tab menu · 1481 Settings IA · 1482 menu-bar audit · 1489 new-tab omnibox · 1448
+  first-run tour · 1449 consolidate overlapping surfaces · 1413 entry-point cohesion · 1340
+  palette param-input. Recon task_get FIRST — several are render/UI-heavy (VM-gated tails).
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
