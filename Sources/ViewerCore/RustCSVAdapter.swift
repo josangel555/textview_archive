@@ -76,11 +76,25 @@ public enum RustCSVAdapter {
         ).value
     }
 
+    /// Above this input size the whole-table read would approach the FFI
+    /// frame cap (`MAX_FRAME_LEN` = 16 MiB; the msgpack table inflates ~2-4×
+    /// over the source), so `rustParse` assembles via WINDOWED snapshots
+    /// instead — same full materialization, never one giant frame. Found by
+    /// the TSK-1139 measurement: post-Stage-B a >cap CSV degraded to an
+    /// EMPTY grid (the deleted Swift parser had silently absorbed it).
+    static let wholeTableByteLimit = 4 * 1024 * 1024
+
+    /// Rows per windowed fetch during big-file assembly (bounded frames).
+    static let assemblyChunkRows = 20_000
+
     /// Drive the Rust core to parse `text` and map its `Table` onto a
     /// `CSVParser.Result`, bypassing the gate. Throws on any bridge error
     /// (caller decides fallback). Public so the A/B harness and diagnostics can
     /// force the Rust path regardless of the live flag.
     public static func rustParse(_ text: String) throws -> CSVParser.Result {
+        if text.utf8.count > Self.wholeTableByteLimit {
+            return try windowedAssemble(text)
+        }
         let session = try CsvSession(bytes: [UInt8](text.utf8))
         let table = try session.table()
         // The core returns the delimiter as a one-grapheme String; the Swift
@@ -93,6 +107,36 @@ public enum RustCSVAdapter {
             header: table.header,
             rows: table.rows,
             truncated: table.truncated
+        )
+    }
+
+    /// Big-file assembly: one session, the table pulled in bounded
+    /// `snapshotWindow` frames (header rides the first window). The delimiter
+    /// is sniffed on a small PREFIX table read — detection only consumes the
+    /// first record, so the prefix answer is the full-file answer.
+    private static func windowedAssemble(_ text: String) throws -> CSVParser.Result {
+        let prefix = String(text.prefix(64 * 1024))
+        let sniffed = try CsvSession(csv: prefix).table().delimiter
+        let session = try CsvSession(bytes: [UInt8](text.utf8))
+        let total = try session.filteredCount()
+        var header: [String] = []
+        var rows: [[String]] = []
+        rows.reserveCapacity(total)
+        var truncated = false
+        var offset = 0
+        while offset < total {
+            let w = try session.snapshotWindow(offset: offset, limit: Self.assemblyChunkRows)
+            if offset == 0 { header = w.header }
+            if w.rows.isEmpty { break }   // defensive: never spin on an empty window
+            rows.append(contentsOf: w.rows)
+            truncated = truncated || w.truncated
+            offset += w.rows.count
+        }
+        return CSVParser.Result(
+            delimiter: sniffed.first ?? ",",
+            header: header,
+            rows: rows,
+            truncated: truncated
         )
     }
 }
