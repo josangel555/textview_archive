@@ -53,7 +53,7 @@ final class AudioExportAccessory: NSObject {
             item.representedObject = fmt.rawValue
             if fmt == .mp3 && !mp3Available {
                 item.isEnabled = false
-                item.title = "MP3 (ffmpeg not found)"
+                item.title = FFmpegGuidance.disabledOptionTitle("MP3")
             }
             formatPopup.menu?.addItem(item)
         }

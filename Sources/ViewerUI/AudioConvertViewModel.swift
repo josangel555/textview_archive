@@ -59,7 +59,7 @@ public final class AudioConvertViewModel: ObservableObject {
 
     private static func describe(_ error: Error) -> String {
         if let e = error as? AudioExportError, case .mp3FFmpegNotFound = e {
-            return "ffmpeg isn't available — install it (e.g. `brew install ffmpeg`) to convert audio."
+            return FFmpegGuidance.unavailableMessage(action: "convert audio")
         }
         return "Audio conversion failed: \(error.localizedDescription)"
     }

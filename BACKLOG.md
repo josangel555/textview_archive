@@ -161,16 +161,23 @@ safe) · 1140 PDF reader · 1142 browser tab · 1145 DOCX/XLSX polish · 1147 de
 (network egress + sourceview) · 1172 notebooks · 1173 sticky-scroll overlay (model done TSK-719) ·
 1469 archive explorers.
 
-### B17 AX build-out + ElementRef (8)
-TSK-1260/1261 native AXUIElement adapter + driver · TSK-1263 agent AX harness entry · TSK-1543
-verb-slice (top-20) · chips/menu-bar slices · TSK-1264 ElementRef resolver · TSK-1265 Copy-
-Reference · TSK-1197/1199 uat-runner + journeys · TSK-1198 close-as-superseded.
+### B17 AX build-out + ElementRef ⛔ AGENT-BLOCKED (AX-DRIVEN TIER — the sole off-limits lane) 2026-07-07
+RECON: the AGENT-WORKABLE host cores are ALREADY DONE — ElementRef serialize/parse/resolution +
+ElementRefExecutor(target) all host-tested (slice 1a); TSK-1260 AXUIElement adapter host-part done
+(711c8b65, at review). The REMAINDER is the off-limits AX-driven-tests tier: TSK-1543 AX interaction
+matrix (OWNER MANDATE, real-event tests), TSK-1198 mac-computer-use MCP (AXUIElement+CGEvent
+automation), 1261/1263 driver+harness, 1197/1199 uat-runner+journeys, 1264 live resolver, 1265
+Copy-Reference (render). Per the standing directive (AX-driven = the sole off-limits tier): agent
+portion complete, live AX/UAT = owner/VM lane. SKIPPED to B18.
 
-### B18 Image editor epic wave (9)
-TSK-1048/1049/1055 perf foundation (off-main render, cached CIContext) · TSK-1114 selection UI
-(marquee/lasso) · TSK-1168 on-canvas vector editing · TSK-1302 pane-overlap layout · TSK-1303
-edit-state reset on session-switch · TSK-1304 hide file-property pane · TSK-1307 canvas resize ·
-TSK-1309 remove Draw Box button · TSK-1320 annotations-vs-shapes clarify (+1441 UX pass rides).
+### B18 Image editor epic wave ✅ AGENT-COMPLETE 2026-07-07 (model DONE ~166 tests; rest render/VM/owner)
+The IMG epic (TSK-1048) MODEL+VIEWMODEL is comprehensively host-verified (~166 tests: paint/shapes/
+selection/crop/resize/orientation/draw-ops). DISPOSITIONS: 1303 edit-state-on-switch VALIDATED ·
+1302 pane-overlap + 1309 remove-Draw-Box at REVIEW (host-tested, on-screen=T5 tail) · 1320
+annotations-vs-shapes PARKED Need-me (editability solved via TSK-1321; the 3-surface consolidation
+= owner a/b/c taste call). RENDER/VM/ARCH TAILS: 1049 off-main render · 1055 undoable-paint (op
+foundation exists; the buffer-shadows-ops rework is a corruption-trap arch slice, NOT a clean tick) ·
+1114 selection UI · 1168 vector editing · 1304 hide-property-pane · 1307 canvas resize. No host gap.
 
 ### B19 Media & misc features (6)
 TSK-1442 audio round-trip verify · TSK-1474 video loop verify · TSK-1091–1096 audio engine/AU
