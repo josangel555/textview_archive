@@ -67,12 +67,15 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   denies indexing_slicing (iterators + saturating_sub); serve is bin-only (foundation-ahead-of-
   consumer modules need #![allow(dead_code)]). T16 host core: ReconnectBackoff (f32d6c5c, TSK-1556
   daemon s4 — capped-exponential 250ms→4s + degrade-after-window; 6 tests). Daemon slices 1553-1558
-  host-testable cores (s2+s4 done; s1/s3/s5/s6 remain). ⚠️ TSK-1559 REOPENED: the T13 MCP-wedge fix
-  REDUCED but didn't ELIMINATE it — test_manyRequests still wedges under heavy load (drain-reader
-  leaks on timeout; the complete fix = make MCPServer.send() a raw write(2) symmetric to T13's
-  reader fd-cache, then teardown can close the outPipe write end safely). HARD-TO-VERIFY (needs the
-  loaded gate it fixes). MEANTIME VERIFY host changes via `swift test --skip MCPServerWedgeTests
-  --filter ViewerCoreTests` (6417 tests, reliable). 1550/1334 = the two VM unlocks.
+  host-testable cores (s2+s4 done; s1/s3/s5/s6 remain). ⚠️ TSK-1559 (MCP wedge) — T17 fixed the
+  send-path CRASH class (75fb2ac6: MCPServer.send() raw write(2) symmetric to T13's reader fd-cache;
+  teardown now safely closes the outPipe write end → drain-reader EOF, no leak; verified isolated +
+  6417 sweep). BUT the SEPARATE parallel-load wedge PERSISTS: test_manyRequests hung 9:44 under the
+  18-worker gate (MainActor-Task STARVATION, deeper than the leak). STILL OPEN — recommend: mark the
+  suite SERIAL / reduce count 25→8 / hard executionTimeAllowance watchdog (all hard to verify w/o
+  18-worker repro). MEANTIME reliable host verify = `swift test --skip MCPServerWedgeTests --filter
+  ViewerCoreTests` (6417 tests). The full gate INTERMITTENTLY WEDGES — don't trust a hung gate; use
+  the scoped sweep. 1550/1334 = the two VM unlocks.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
