@@ -1,23 +1,20 @@
 import Foundation
 import RustCore
 
-/// Routes the BATCH fuzzy-ranking API through the Rust core (TSK-646;
-/// engine port TSK-633) when the `.fuzzy` gate is on, falling back to the
-/// Swift `FuzzyMatcher` otherwise.
+/// The BATCH fuzzy-ranking API over the rust-core engine (port TSK-633).
 ///
-/// Scope: `filterWithMatches` (the command-palette batch rank) only. The
-/// per-node `FuzzyMatcher.match` used by `FileTreeFilter` deliberately
-/// stays Swift — one bridge round trip per tree node is wire-hostile; tree
-/// filtering migrates with the fs.tree family instead (TSK-654).
+/// STAGE-B (TSK-649, 2026-07-07): the Swift twin (`FuzzyMatcher`'s algorithm)
+/// is DELETED — rust is the only engine, routed via
+/// `RustCoreFallback.runRustOnly`. A bridge fault DEGRADES to the unranked
+/// input (every item, score 0, input order — the same shape as the empty
+/// query) and logs observably; it can no longer fall back to Swift.
 ///
-/// Documented divergence (identical on ASCII): the Rust core's
-/// `matchedIndices` are Unicode-SCALAR offsets, the Swift matcher's are
-/// grapheme (`Character`) indices — a highlight on a grapheme-cluster-heavy
-/// string may shift glyphs, never crash. Scores and ordering are exact
-/// (the engine port pins the scoring table + stable ties).
+/// Documented index semantics: the core's `matchedIndices` are Unicode-SCALAR
+/// offsets (grapheme-cluster-heavy strings may shift highlight glyphs, never
+/// crash). Scores and ordering are pinned by the rust engine's suites.
 public enum RustFuzzyAdapter {
 
-    /// `FuzzyMatcher.filterWithMatches` routed per the `.fuzzy` gate.
+    /// Rank + filter `items` against `query`, best first, stable ties.
     public static func filterWithMatches<T: Sendable>(
         _ items: [T],
         query: String,
@@ -26,23 +23,19 @@ public enum RustFuzzyAdapter {
         outcome(items, query: query, by: key).value
     }
 
-    /// Same, but also reporting which engine produced the result.
+    /// Same, but also reporting the result's provenance.
     public static func outcome<T: Sendable>(
         _ items: [T],
         query: String,
-        by key: (T) -> String,
-        defaults: UserDefaults = .standard,
-        environment: [String: String]? = nil
+        by key: (T) -> String
     ) -> CoreOutcome<[(item: T, match: FuzzyMatcher.Match)]> {
-        // Empty query: every item, score 0, in input order — identical on
-        // both engines by contract; skip the bridge round trip entirely.
+        // Empty query: every item, score 0, in input order — by contract;
+        // skip the bridge round trip entirely.
         if query.isEmpty {
-            return CoreOutcome(
-                value: items.map { ($0, FuzzyMatcher.Match(score: 0, matchedIndices: [])) },
-                source: .swiftBecauseGateOff)
+            return CoreOutcome(value: unranked(items), source: .rust)
         }
-        return RustCoreFallback.run(
-            .fuzzy, defaults: defaults, environment: environment,
+        return RustCoreFallback.runRustOnly(
+            .fuzzy,
             rust: {
                 let ranked = try mdvCoreFuzzyRank(query: query, candidates: items.map(key))
                 return ranked.compactMap { r in
@@ -53,7 +46,12 @@ public enum RustFuzzyAdapter {
                     )
                 }
             },
-            swift: { FuzzyMatcher.filterWithMatches(items, query: query, by: key) }
+            degraded: unranked(items)
         )
+    }
+
+    /// The degraded/empty-query shape: everything matches, score 0, input order.
+    private static func unranked<T>(_ items: [T]) -> [(item: T, match: FuzzyMatcher.Match)] {
+        items.map { ($0, FuzzyMatcher.Match(score: 0, matchedIndices: [])) }
     }
 }

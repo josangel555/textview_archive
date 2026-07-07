@@ -44,10 +44,13 @@ pin test) · ✅ TSK-598 reconciled → rides TSK-838 (B22; ~334ms CA-commit roo
 TSK-891 → moved to B21 (measure-first per its own diagnoses) · 910 was already validated ·
 1200 owner-parked · 1188/1271 review lane · 1032 validated.
 
-### B3 Stage-B twin deletions (7) — per docs/STAGE_B_DELETION_UAT_2026-07-04.md
-FuzzyMatcher · FindEngine · ClaudeLogParser · CSVParser/CSVFilter · CMEditApplier · markdown
-structural visitor · TreeSitterEngine folds. (hex pair waits on TSK-810 [owner]; formula waits
-on the flip after B6.) One deletion-batch commit + one UAT batch.
+### B3 Stage-B twin deletions — per docs/STAGE_B_DELETION_UAT_2026-07-04.md (IN PROGRESS)
+✅ FuzzyMatcher (algorithm deleted, Match type kept; adapter → runRustOnly, degraded=unranked;
+A/B+differential suites retired, behavior pins kept) · ⛔ FindEngine PARKED → TSK-1549 Need-me
+(twin is LOAD-BEARING: ICU lookaround/backrefs fallback — decide accept-loss/fancy-regex/keep) ·
+NEXT: ClaudeLogParser (10-src/13-test radius — split types from parse) · CSVParser/CSVFilter ·
+CMEditApplier · markdown structural visitor · TreeSitterEngine folds. (hex waits TSK-810
+[owner]; formula waits B6.) Pattern: RustCoreFallback.runRustOnly + .degradedRustFault.
 
 ### B4 Mandate guards + hygiene teeth (7)
 TSK-1539 surface catalog + matrix guard [XL semantics] · TSK-1534 webview allowlist guard ·

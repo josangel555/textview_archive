@@ -74,16 +74,16 @@ final class CommandPaletteRegistryTests: XCTestCase {
 
     func test_palette_emptyQueryListsAll() {
         let (model, _) = makeModelAndSessions()
-        // FuzzyMatcher with an empty query returns every item — the
-        // command list when the user has typed only `>`.
-        let all = FuzzyMatcher.filterWithMatches(
+        // Empty query returns every item — the command list when the user
+        // has typed only `>`. (Stage-B: routed via the rust-only adapter.)
+        let all = RustFuzzyAdapter.filterWithMatches(
             model.commandRegistry.commands, query: "") { $0.title }
         XCTAssertEqual(all.count, model.commandRegistry.commands.count)
     }
 
     func test_palette_fuzzyFilterNarrows() {
         let (model, _) = makeModelAndSessions()
-        let hits = FuzzyMatcher.filterWithMatches(
+        let hits = RustFuzzyAdapter.filterWithMatches(
             model.commandRegistry.commands, query: "sidebar") { $0.title }
         XCTAssertFalse(hits.isEmpty)
         XCTAssertLessThan(hits.count, model.commandRegistry.commands.count)

@@ -13,9 +13,11 @@ decision/approval = task_park "Need me" gate with homework, then move on. After 
 drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER THE BATCHES).
 
 ## Current state
-- **B1 ✅ (3b86f720) · B2 ✅ (gate running, commit pending: 1252 Esc-swallow + 598→838
-  reconcile; 891→B21; rest were done/parked). Next batch: B3 Stage-B twin deletions** (per
-  docs/STAGE_B_DELETION_UAT_2026-07-04.md; hex waits on TSK-810 owner word, formula on B6).
+- **B1 ✅ (3b86f720) · B2 ✅ (e1fc0090). Batch in progress: B3 twin deletions — fuzzy ✅
+  (committed), find ⛔ PARKED (TSK-1549 Need-me: ICU lookaround fallback is load-bearing),
+  NEXT: ClaudeLogParser → CSV → CMEditApplier → markdown visitor → folds.** Deletion pattern:
+  keep result TYPES, delete the algorithm, adapter → RustCoreFallback.runRustOnly (new;
+  .degradedRustFault provenance), retire A/B+differential suites, keep behavior pins.
   Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount must stay 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).

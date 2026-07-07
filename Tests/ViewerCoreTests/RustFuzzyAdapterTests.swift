@@ -2,53 +2,51 @@ import XCTest
 @testable import ViewerCore
 import RustCore
 
-/// RustFuzzyAdapter routing (TSK-646): gate OFF → Swift, gate ON → Rust
-/// with results matching the Swift `filterWithMatches` contract exactly on
-/// ASCII (scores, ordering incl. stable ties, matched indices), empty
-/// query short-circuits. Gate state injected via `environment`.
+/// RustFuzzyAdapter behavior pins (STAGE-B, TSK-649: the Swift twin is
+/// deleted — rust is the only engine, no gate). The expectations below are
+/// the CONTRACT the deleted A/B suite proved byte-identical before deletion:
+/// prefix > substring > scattered ranking, stable ties on input order,
+/// non-matches dropped, empty-query short-circuit, generic key closures.
 final class RustFuzzyAdapterTests: XCTestCase {
 
-    private let gateOn = ["MDV_RUST_FUZZY": "1"]
     private let corpus = [
         "src/main.rs", "Sources/ViewerCore/FuzzyMatcher.swift", "docs/DESIGN.md",
         "fuzzy_test", "FzyUtil", "a/b/fz", "unrelated", "fz-dup-a", "fz-dup-b",
     ]
 
-    private func swiftResults(_ query: String) -> [(item: String, match: FuzzyMatcher.Match)] {
-        FuzzyMatcher.filterWithMatches(corpus, query: query) { $0 }
+    func test_rustIsTheOnlyEngine_andRanksTheContract() {
+        let out = RustFuzzyAdapter.outcome(corpus, query: "fz", by: { $0 })
+        XCTAssertEqual(out.source, .rust, "twin deleted — rust must serve the rank")
+        let items = out.value.map(\.item)
+        // Every fz-subsequence candidate present, no non-matches.
+        XCTAssertFalse(items.contains("unrelated"))
+        XCTAssertFalse(items.contains("docs/DESIGN.md"))
+        // Stable tie: fz-dup-a (earlier input) before fz-dup-b (same score).
+        let ia = try? XCTUnwrap(items.firstIndex(of: "fz-dup-a"))
+        let ib = try? XCTUnwrap(items.firstIndex(of: "fz-dup-b"))
+        XCTAssertLessThan(ia ?? 0, ib ?? 0, "stable tie-break on input order")
+        // Prefix-ish candidates outrank the buried path segment.
+        XCTAssertLessThan(
+            items.firstIndex(of: "fz-dup-a") ?? .max,
+            items.firstIndex(of: "Sources/ViewerCore/FuzzyMatcher.swift") ?? .max,
+            "a leading fz outranks a scattered mid-path match")
     }
 
-    private func assertSame(
-        _ a: [(item: String, match: FuzzyMatcher.Match)],
-        _ b: [(item: String, match: FuzzyMatcher.Match)],
-        _ context: String, file: StaticString = #filePath, line: UInt = #line
-    ) {
-        XCTAssertEqual(a.map(\.item), b.map(\.item), "items diverged: \(context)",
-                       file: file, line: line)
-        XCTAssertEqual(a.map(\.match), b.map(\.match), "matches diverged: \(context)",
-                       file: file, line: line)
+    func test_scoresDescend_andMatchedIndicesPresent() {
+        let out = RustFuzzyAdapter.filterWithMatches(corpus, query: "fuzzy", by: { $0 })
+        XCTAssertFalse(out.isEmpty)
+        XCTAssertEqual(out.map(\.match.score), out.map(\.match.score).sorted(by: >),
+                       "results are best-first")
+        XCTAssertTrue(out.allSatisfy { $0.match.matchedIndices.count == 5 },
+                      "every result carries one matched index per query char")
     }
 
-    func test_gateOff_runsSwift() {
-        // Env-pinned OFF (the shipped default is ON since TSK-649 round 3).
-        let out = RustFuzzyAdapter.outcome(corpus, query: "fz", by: { $0 },
-                                           environment: ["MDV_RUST_FUZZY": "0"])
-        XCTAssertEqual(out.source, .swiftBecauseGateOff)
-        assertSame(out.value, swiftResults("fz"), "gate off")
-    }
-
-    func test_gateOn_runsRust_matchesSwiftContract() {
-        // Boundary/consecutive/prefix scoring, stable ties (fz-dup-a before
-        // fz-dup-b), non-matches dropped — the whole batch contract.
-        for query in ["fz", "fuzzy", "main", "xyz-no-hit", "f"] {
-            let out = RustFuzzyAdapter.outcome(corpus, query: query, by: { $0 }, environment: gateOn)
-            XCTAssertEqual(out.source, .rust, "gate ON must route rust for '\(query)'")
-            assertSame(out.value, swiftResults(query), "query '\(query)'")
-        }
+    func test_noHitQuery_returnsEmpty() {
+        XCTAssertTrue(RustFuzzyAdapter.filterWithMatches(corpus, query: "xyz-no-hit", by: { $0 }).isEmpty)
     }
 
     func test_emptyQuery_listsAllInInputOrder_withoutBridgeCall() {
-        let out = RustFuzzyAdapter.outcome(corpus, query: "", by: { $0 }, environment: gateOn)
+        let out = RustFuzzyAdapter.outcome(corpus, query: "", by: { $0 })
         XCTAssertEqual(out.value.map(\.item), corpus)
         XCTAssertTrue(out.value.allSatisfy { $0.match == FuzzyMatcher.Match(score: 0, matchedIndices: []) })
     }
@@ -56,7 +54,7 @@ final class RustFuzzyAdapterTests: XCTestCase {
     func test_genericItems_keyClosureDrivesTheRank() {
         struct Cmd: Sendable, Equatable { let title: String; let id: Int }
         let cmds = [Cmd(title: "Open File", id: 1), Cmd(title: "Close Tab", id: 2)]
-        let out = RustFuzzyAdapter.outcome(cmds, query: "of", by: { $0.title }, environment: gateOn)
+        let out = RustFuzzyAdapter.outcome(cmds, query: "of", by: { $0.title })
         XCTAssertEqual(out.source, .rust)
         XCTAssertEqual(out.value.map(\.item.id), [1], "only 'Open File' matches 'of'")
     }

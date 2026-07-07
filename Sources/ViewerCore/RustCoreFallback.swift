@@ -9,6 +9,9 @@ public enum CoreResultSource: Sendable, Equatable {
     case swiftFallback
     /// The gate was off, so Swift ran without ever calling Rust.
     case swiftBecauseGateOff
+    /// Stage-B (twin deleted): the bridge threw and there is no Swift twin —
+    /// the caller's documented degraded value was returned instead.
+    case degradedRustFault
 }
 
 /// A routed result plus its provenance.
@@ -65,6 +68,31 @@ public enum RustCoreFallback {
                 "\(capability.rawValue) fell back: \(error)",
                 fields: ["capability": capability.rawValue])
             return CoreOutcome(value: swift(), source: .swiftFallback)
+        }
+    }
+
+    /// Stage-B (TSK-649) variant for engines whose Swift twin is DELETED:
+    /// rust is the only engine, so there is no gate check and no fallback.
+    /// A bridge fault degrades to the caller's documented `degraded` value —
+    /// graceful and OBSERVABLE, never a crash. A `.panic` is escalated to
+    /// `.error` (the P0 class per the deletion safety note); anything else
+    /// logs `.warn`. The remaining safety net is the rust no-panic fuzz lanes
+    /// (TSK-1223/1232) + the typed-error FFI.
+    public static func runRustOnly<T: Sendable>(
+        _ capability: RustCoreCapability,
+        rust: () throws -> T,
+        degraded: @autoclosure () -> T
+    ) -> CoreOutcome<T> {
+        do {
+            return CoreOutcome(value: try rust(), source: .rust)
+        } catch {
+            let level: ObsLevel = (error as? CoreError) == .panic ? .error : .warn
+            Obs.shared.emit(
+                level,
+                "rust-core",
+                "\(capability.rawValue) DEGRADED (twin deleted): \(error)",
+                fields: ["capability": capability.rawValue])
+            return CoreOutcome(value: degraded(), source: .degradedRustFault)
         }
     }
 }
