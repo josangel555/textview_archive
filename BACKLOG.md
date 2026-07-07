@@ -179,10 +179,12 @@ annotations-vs-shapes PARKED Need-me (editability solved via TSK-1321; the 3-sur
 foundation exists; the buffer-shadows-ops rework is a corruption-trap arch slice, NOT a clean tick) ·
 1114 selection UI · 1168 vector editing · 1304 hide-property-pane · 1307 canvas resize. No host gap.
 
-### B19 Media & misc features (6)
-TSK-1442 audio round-trip verify · TSK-1474 video loop verify · TSK-1091–1096 audio engine/AU
-slices (pull 2–3) · TSK-1326 walkthrough authoring path · TSK-1119 walkthrough illustration
-overlay · TSK-377 illustrations residual.
+### B19 Media & misc features ✅ DONE 2026-07-07 (1 host core; rest UAT/VM/review)
+✅ TSK-1442 ffmpeg install-guidance consolidated (6a2eb9ea: FFmpegGuidance one source, 4 tests;
+round-trip verify = UAT/VM tail). ALREADY DONE (recon): 1326 walkthrough authoring at REVIEW
+(docs guide + in-app New-Walkthrough create both shipped, host-tested; button-click = AX tail).
+UAT/VM/RENDER TAILS: 1474 video-loop verify (UAT) · 1091–1096 audio engine/AU (model host-tested,
+live=VM) · 1119 walkthrough illustration overlay (render) · 377 illustrations residual (render).
 
 ### B20 Agent tools & code review epic (8)
 TSK-1196 file-ownership dashboard · TSK-943 diagnostics→agent sharing · TSK-944 internal
