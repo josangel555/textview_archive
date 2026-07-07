@@ -6,16 +6,16 @@
      launchd OWNS the socket (the Sockets key): the daemon is spawned
      ON-DEMAND on first connect and receives the already-listening fd via
      launch_activate_socket("mdv-serve") — single instance guaranteed.
-     NOTE: ProgramArguments points at the app-bundle-embedded binary; the
-     bundle embed of mdv-serve is a separate slice — until it lands, install
-     with -\-with-daemon only if the binary exists at that path. -->
+     NOTE: the daemon binary lives OUTSIDE the app bundle (at 30 MB, embedding
+     would bust the 80 MB bundle cap — an owner budget). install-app.sh
+     -\-with-daemon copies it from rust-core/link/ to the bin path below. -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.markdownviewer.mdv-serve</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/TextView.app/Contents/MacOS/mdv-serve</string>
+        <string>__HOME__/Library/Application Support/MarkdownViewer/bin/mdv-serve</string>
         <string>--socket</string>
         <string>__HOME__/Library/Application Support/MarkdownViewer/mdv-serve.sock</string>
     </array>

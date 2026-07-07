@@ -173,7 +173,20 @@ cp "$HEADER_SRC" "$LINK_DIR/mdvcore.h"
 # header in scripts/lib/restage-header.sh; pinned by RustCoreHeaderRestageTests.
 restage_core_header "$HEADER_SRC" "$CMOD_DIR/mdvcore.h" "$ROOT_DIR" "$STATICLIB_CHANGED"
 
+# Stage the mdv-serve daemon binary alongside the staticlib (TSK-1553).
+# NOT bundle-embedded: at 30 MB it would bust the 80 MB bundle cap (an owner
+# budget). install-app.sh --with-daemon copies it from here to
+# ~/Library/Application Support/MarkdownViewer/bin/ — and link/ rides the VM
+# rsync, same as the .a.
+SERVE_BIN="$CARGO_TARGET_DIR/$PROFILE/mdv-serve"
+if [[ -f "$SERVE_BIN" ]]; then
+  cp "$SERVE_BIN" "$LINK_DIR/mdv-serve"
+fi
+
 echo "==> staged:"
 echo "    $LINK_DIR/libmdvcore_ffi.a   ($(/usr/bin/du -h "$LINK_DIR/libmdvcore_ffi.a" | awk '{print $1}'))"
 echo "    $CMOD_DIR/mdvcore.h"
+if [[ -f "$LINK_DIR/mdv-serve" ]]; then
+  echo "    $LINK_DIR/mdv-serve   ($(/usr/bin/du -h "$LINK_DIR/mdv-serve" | awk '{print $1}'))"
+fi
 echo "==> Rust core ready ($PROFILE)."

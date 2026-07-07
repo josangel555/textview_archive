@@ -133,15 +133,21 @@ for arg in "$@"; do
   if [ "$arg" = "--with-daemon" ]; then
     PLIST_SRC="$SCRIPT_DIR/com.markdownviewer.mdv-serve.plist.template"
     PLIST_DST="$HOME/Library/LaunchAgents/com.markdownviewer.mdv-serve.plist"
-    DAEMON_BIN="$DEST_APP/Contents/MacOS/mdv-serve"
-    if [ ! -x "$DAEMON_BIN" ]; then
-      echo "==> --with-daemon: $DAEMON_BIN not present in the installed bundle" >&2
-      echo "    (the mdv-serve bundle embed is a separate slice). Skipping." >&2
+    # The daemon binary installs OUTSIDE the bundle (30 MB would bust the
+    # 80 MB bundle cap); build-rust-core.sh stages it in rust-core/link/.
+    DAEMON_SRC="$ROOT_DIR/rust-core/link/mdv-serve"
+    DAEMON_BIN_DIR="$HOME/Library/Application Support/MarkdownViewer/bin"
+    if [ ! -f "$DAEMON_SRC" ]; then
+      echo "==> --with-daemon: $DAEMON_SRC not staged" >&2
+      echo "    Run: bash scripts/build-rust-core.sh   (stages the daemon). Skipping." >&2
       continue
     fi
-    mkdir -p "$HOME/Library/LaunchAgents"
+    mkdir -p "$DAEMON_BIN_DIR" "$HOME/Library/LaunchAgents"
+    cp "$DAEMON_SRC" "$DAEMON_BIN_DIR/mdv-serve"
+    chmod 755 "$DAEMON_BIN_DIR/mdv-serve"
     sed "s|__HOME__|$HOME|g" "$PLIST_SRC" > "$PLIST_DST"
     plutil -lint "$PLIST_DST"
+    echo "==> Daemon installed: $DAEMON_BIN_DIR/mdv-serve"
     echo "==> Daemon agent installed: $PLIST_DST"
     echo "    Activate now: launchctl bootstrap gui/$(id -u) $PLIST_DST"
     echo "    (or it activates on next login; the daemon spawns on first connect)"
