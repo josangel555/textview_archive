@@ -19,10 +19,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   shipped · mdv CLI + self-healing MCP bridge · remote-core groundwork (assets/WS/schema
   + daemon design, slices 1553–1558) · who_calls + the async MCP lane · LSP RCE guard
   ENFORCED · secret detector core · bounded test runner.
-- **B10–B14 ✅ CLOSED.** B14: shipped 1485 edit-location ring + 1487 line-age coloring model
-  (0666e891, 14 host tests); 1146/463 validated; 1170/1504/1505/1494 render/perf tails. NEXT
-  BATCH: B15 — recon task_get FIRST (per the B11–B14 pattern, expect many pre-done or VM-tail;
-  build the clean host cores, park product calls, record render tails). See BACKLOG §THE BATCHES.
+- **B10–B15 ✅ CLOSED.** B15: shipped 1476 structural-search help (e487c0a4) + reconciled 1493
+  (run-config parsers pre-done as RunnableTaskDiscovery). NEXT BATCH: B16 — recon task_get FIRST
+  (B11–B15 pattern holds: much is pre-done/render-tail; extract clean host cores, park product
+  calls, reconcile board-lag to reality). See BACKLOG §THE BATCHES for the B16 item list.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next

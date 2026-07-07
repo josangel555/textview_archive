@@ -145,11 +145,13 @@ spell squiggles + LSP-diagnostic surfacing · 463/1136 LSP completion into CM6. 
 1170 snippets tab-stop (model done TSK-705) · 1504 cheap-assists word-index (perf lane) · 1505
 spelling verbs (NSSpellChecker main-affine + verb catalog) · 1494 cursor mode (WKWebView caret).
 
-### B15 Dev tools usability (9)
-TSK-1443 git panel core loop · TSK-1444 LSP status affordance · TSK-1445 code-review journey ·
-TSK-1475 terminal favorites mgmt · TSK-769 terminal UX bundle residual · TSK-1476 structural-
-search help · TSK-1477 claude-monitor polish · TSK-1493 run configurations · TSK-1470
-dep-graph interactive.
+### B15 Dev tools usability ✅ DONE 2026-07-07 (1 host core shipped + 1 reconciled; rest render)
+✅ TSK-1476 structural-search help layer (e487c0a4: StructuralSearchHelp — per-language examples
+that ALL parse + validationError surfacing, 4 tests; popover/error-label = render tail) ·
+✅ TSK-1493 run-configs RECONCILED (the npm/cargo/make parsers already exist as
+RunnableTaskDiscovery, TSK-722, 18 tests; TaskRunner UI + visible-terminal launch = render tail).
+RENDER/VM TAILS (host cores mostly pre-built): 1443 git panel · 1444 LSP status · 1445 code-review
+journey · 1475 terminal favorites · 769 terminal UX residual · 1477 claude-monitor · 1470 dep-graph.
 
 ### B16 Reading surfaces & viewers (9)
 TSK-1205 extracted-doc grid polish (from B5) · TSK-1140 PDF reader tail · TSK-1142 browser
