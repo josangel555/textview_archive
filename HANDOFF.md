@@ -19,12 +19,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   shipped · mdv CLI + self-healing MCP bridge · remote-core groundwork (assets/WS/schema
   + daemon design, slices 1553–1558) · who_calls + the async MCP lane · LSP RCE guard
   ENFORCED · secret detector core · bounded test runner.
-- **B10 ✅ / B11 ✅ / B12 ✅ CLOSED.** B12 (mostly pre-done): shipped 1249 terminal
-  header formatter (1265cb6a); 1314/1316/1313/1312 already validated; 1317 review; 1315
-  key-routing audit done → Need-me parked (coordinator vs targeted + repro). NEXT BATCH:
-  B13 sessions & windows (6): 1311 session state independent/persistent · 1308 session-switch
-  keeps music · 1104 second NSWindow mount · 1111 bookmarks open-in-new · 1152 per-filename
-  view-as lock · 1502 lens-memory prep. Recon task_get FIRST (window/session render-coupled).
+- **B10–B13 ✅ CLOSED.** B13: shipped 1502 remembered-lens mechanism behind a default-OFF
+  gate (8ba740ab) + parked its auto-vs-explicit flip; 1308 validated, 1152 review, 1104/1111
+  render tails on the done MultiWindow model, 1311 architecture umbrella. NEXT BATCH: B14
+  editor features & polish (8) — recon task_get FIRST (likely CM6/render-heavy; expect many
+  pre-done or VM-tail per the B11-B13 pattern). See BACKLOG §THE BATCHES for the B14 item list.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next

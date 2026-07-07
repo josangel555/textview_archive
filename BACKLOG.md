@@ -128,10 +128,14 @@ Settings-picker removal deferred). 1315 key-routing = audit DONE (root: fragment
 ruled out) → PARKED Need-me: coordinator-refactor vs targeted patches + repro-flow confirm (fix
 is render-VM, risky blind).
 
-### B13 Sessions & windows (6)
-TSK-1311 session state independent/persistent/online · TSK-1308 session-switch keeps music ·
-TSK-1104 second NSWindow mount · TSK-1111 bookmarks open-in-new · TSK-1152 per-filename view-as
-lock · TSK-1502 lens-memory prep.
+### B13 Sessions & windows ✅ DONE 2026-07-07 (1 gated mechanism + 1 Need-me; rest pre-done/render)
+✅ TSK-1502 remembered-lens mechanism behind a default-OFF gate (8ba740ab: RememberedLensStore
++ precedence resolver + RememberedLensGate, 7 tests) → PARKED Need-me for the auto-vs-explicit
+flip (Hex-trap trade-off). ALREADY DONE (recon): 1308 music-survives-session-switch VALIDATED;
+1152 per-file view-as lock at REVIEW (slices 1+2 built, badge/menu render tail). RENDER TAILS on
+the done MultiWindowRegistry model: 1104 second-NSWindow mount + 1111 bookmark open-in-new-window
+(openInNewWindow host-tested; window/button = VM). 1311 session-state independence = architecture
+umbrella (music symptom fixed; multi-stream/full-independence = render architecture, deferred).
 
 ### B14 Editor features & polish (8)
 TSK-1504 cheap editor assists (off-main spell + cached word index) · TSK-1505 spelling verbs
