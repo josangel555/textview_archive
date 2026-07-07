@@ -2,11 +2,26 @@
 
 ## 2026-07-07
 
+### Added
+- **`mdv` command line**: `mdv <file/folder>` opens things in TextView from the shell
+  (no second instance); `mdv session <name>` switches saved sessions. Opt-in install:
+  `bash scripts/install-app.sh --with-cli`.
+- **Spreadsheet formulas are now on by default** — computed values show in the grid
+  (with a subtle ƒ marker), the raw `=formula` edits in its own box, and grid edits
+  can actually be saved to disk (Save/Discard bar). Powered by the rust engine;
+  `PROPER()` joined the function set.
+- Agent tooling: a `who_calls` MCP tool answers "who calls this symbol?" via the live
+  language server (definition + up to 200 callers as `file:line`).
+
 ### Fixed
+- Quitting or relaunching TextView no longer kills a connected Claude Code MCP session —
+  the bridge now reconnects automatically and requests queue while the app restarts.
 - Vim mode no longer beeps when you press Esc while already in normal mode.
 - DOT/Graphviz and PlantUML code fences render as labeled diagram blocks again on the
   (default) rust markdown path — previously that treatment only existed on the legacy
   fallback renderer.
+- Very large CSVs (>4 MB) no longer open as a blank grid (a wire-size cap was silently
+  emptying the table; they now assemble in windows).
 
 ### System work
 - **Stage-B twin deletions (batch B3)**: six Swift engine twins deleted (~3,300 lines) —
@@ -22,8 +37,22 @@
   (`MDV_RUST_DOCSTORE=shadow`) mirrors every CM6 edit into the core and counts divergences
   (zero-divergence is the gate for the future authority flip). Adversarial no-panic property
   tests; both gates green (9,659 tests).
+- **Formula finish (B6)**: MDV_RUST_FORMULA flipped on (every rust-core capability now
+  ships enabled — Stage A closed); the Swift formula evaluator + parser deleted
+  (1,089→148 lines, the 7th twin); 77 contract tests retargeted to the rust engine.
+- **Remote-core groundwork (B8)**: mdv-web serves the shared surface bundles
+  (allowlist-only) + a `/surface/editor` scaffold + a hand-rolled RFC 6455 WebSocket
+  bridge (`/ws/editor`, real-socket E2E); the CM bridge's 42-message catalog extracted
+  into `schemas/cm-bridge.json` with two-sided drift pins (day-one catch: a raw-string
+  `scrollToLine` dispatch bypassing version negotiation); the daemon-vs-instances
+  lifecycle designed (`docs/DAEMON_LIFECYCLE_DESIGN.md`, slices TSK-1553–1558); the
+  first async MCP tool lane (LSP-backed tools never park the main actor).
+- **Guards + hygiene (B4/B5)**: per-surface real-render matrix guard, webview allowlist,
+  no-resurrection tooth, color ratchet, 188 missing rustdoc comments → `#![deny]`;
+  the CSV paging ask measured and denied on evidence (owner rule: measure first).
 - Tracking: BACKLOG rewritten as the pre-sorted 25-batch queue; repo moved back to
-  `~/Documents` (iCloud sync verified off); 5-min batch-loop cron armed.
+  `~/Documents` (iCloud sync verified off); 5-min batch-loop cron armed; B7's three
+  from-scratch web surfaces deferred on the VM lane (TSK-1550).
 
 ## 2026-07-05
 

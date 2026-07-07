@@ -82,10 +82,15 @@ TSK-1531 M7 hex grid · TSK-1532 M8 transcript streaming — from-scratch WEB SU
 three of them with NO render lane stacks unverified surface (built≠usable). They resume the
 moment the lane is back, validation interleaved. Loop continues at B8.
 
-### B8 MCP/CLI/remote tail (7)
-TSK-1536 mdv CLI opener · MCP reconnect loop (file the TSK-665 follow-up + fix) · TSK-1507 s1
-serve static assets · s2 cmDispatch-over-WebSocket · s3 bridge-schema codegen [XL] · TSK-1537
-daemon design doc [XL] · TSK-1192 semantic code-nav MCP tool.
+### B8 MCP/CLI/remote tail ✅ DONE 2026-07-07 (7 landings, all gates green)
+✅ TSK-1536 mdv CLI (920d0d20: files/folders + `mdv session` via the hardened URL scheme) ·
+✅ TSK-1552 self-healing MCP bridge (ca2a114a: reconnect loop + 3 hardening finds incl. the
+availableData uncatchable-exception landmine) · ✅ TSK-1507 s1 assets+scaffold (069d49d4) +
+s2 WS bridge /ws/editor (ca429655, RFC-pinned, real-socket E2E) + s3 schema contract
+(acbd4c28: 42-msg cm-bridge.json + two-sided drift pins; day-one catch = scrollToLine raw
+dispatch, $rawDispatchDebt) — s3b codegen/s4/s5 stay on the epic · ✅ TSK-1537 daemon design
+(a09fcd67: DAEMON_LIFECYCLE_DESIGN.md D1-D8; slices TSK-1553..1558 filed) · ✅ TSK-1192
+who_calls + the ASYNC MCP tool lane (62d3ec0f; family verbs remain on ticket).
 
 ### B9 Security & data safety (7)
 TSK-1129 LSP spawn confirm (prompt-first) · TSK-1269 ExternalEditReconciler into dirty-reload ·
