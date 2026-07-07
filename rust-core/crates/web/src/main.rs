@@ -43,6 +43,101 @@ use mdvcore_highlight::{Lang, Segment, TokenKind};
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
 /// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
 const PREVIEW_CAP: usize = 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// TSK-1507 s1 — shared-surface static assets.
+//
+// The app's web surfaces (CM6 editor, mermaid, canvas) are browser-native JS
+// bundles with zero macOS coupling; serving them from here lets a browser
+// shell render the SAME surfaces the app hosts in WKWebViews. Serving is
+// ALLOWLIST-ONLY (name → relative path): no general file serving, no path
+// from the request ever touches the filesystem — traversal is impossible by
+// construction.
+
+/// The assets root (the app's `Sources/ViewerUI/Resources`), resolved once
+/// at startup from `--assets` / `MDV_WEB_ASSETS` / an upward repo search.
+/// RwLock (not OnceLock) so tests can rebind it per-case.
+static ASSETS_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// name → (relative path under the assets root, content type). The complete
+/// catalog of what this server will ever hand a browser.
+fn asset_entry(name: &str) -> Option<(&'static str, &'static str)> {
+    const JS: &str = "text/javascript; charset=utf-8";
+    const CSS: &str = "text/css; charset=utf-8";
+    match name {
+        "codemirror.js" => Some(("codemirror/codemirror.js", JS)),
+        "codemirror.css" => Some(("codemirror/codemirror.css", CSS)),
+        "mermaid.min.js" => Some(("mermaid/mermaid.min.js", JS)),
+        "mermaid-shim.js" => Some(("mermaid/mermaid-shim.js", JS)),
+        "mermaid-shim.css" => Some(("mermaid/mermaid-shim.css", CSS)),
+        "canvas.js" => Some(("canvas/canvas.js", JS)),
+        _ => None,
+    }
+}
+
+/// Serve one allowlisted asset, or 404 (unknown name / no assets dir / file
+/// unreadable — indistinguishable on purpose).
+fn serve_asset(name: &str) -> (&'static str, &'static str, String) {
+    const TEXT: &str = "text/plain; charset=utf-8";
+    let Some((rel, ctype)) = asset_entry(name) else {
+        return ("404 Not Found", TEXT, "not found".into());
+    };
+    let dir = ASSETS_DIR.read().ok().and_then(|g| g.clone());
+    let Some(dir) = dir else {
+        return ("404 Not Found", TEXT, "assets not configured (--assets / MDV_WEB_ASSETS)".into());
+    };
+    match std::fs::read_to_string(dir.join(rel)) {
+        Ok(body) => ("200 OK", ctype, body),
+        Err(_) => ("404 Not Found", TEXT, "not found".into()),
+    }
+}
+
+/// Resolve the assets root: explicit flag → env → walk UP from cwd looking
+/// for `Sources/ViewerUI/Resources` (the repo checkout case). None = the
+/// /assets routes answer 404 with a hint.
+fn resolve_assets_dir(cli: Option<PathBuf>) -> Option<PathBuf> {
+    if let Some(d) = cli {
+        return d.is_dir().then_some(d);
+    }
+    if let Some(d) = std::env::var_os("MDV_WEB_ASSETS").map(PathBuf::from) {
+        return d.is_dir().then_some(d);
+    }
+    let mut cur = std::env::current_dir().ok()?;
+    loop {
+        let candidate = cur.join("Sources/ViewerUI/Resources");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+        if !cur.pop() {
+            return None;
+        }
+    }
+}
+
+/// The `/surface/editor` scaffold: a minimal page that loads the SAME CM6
+/// bundle the app's WKWebView hosts, themed from the shared core palette.
+/// The bridge transport (cmDispatch over WebSocket) is s2 — this page proves
+/// the asset path end-to-end and gives s2 its mount point.
+fn render_editor_surface(mode: Mode) -> String {
+    let bg = theme::css_hex(theme::Palette::for_mode(mode).color(Role::Background));
+    let fg = theme::css_hex(theme::Palette::for_mode(mode).color(Role::Text));
+    format!(
+        concat!(
+            "<!doctype html><html><head><meta charset=\"utf-8\">",
+            "<title>TextView editor surface</title>",
+            "<link rel=\"stylesheet\" href=\"/assets/codemirror.css\">",
+            "<style>body{{margin:0;background:{bg};color:{fg};",
+            "font:13px -apple-system,system-ui,sans-serif}}",
+            "#editor{{height:100vh}}</style></head><body>",
+            "<div id=\"editor\"></div>",
+            "<script src=\"/assets/codemirror.js\"></script>",
+            "<script>/* TSK-1507 s2 mounts cmDispatch-over-WebSocket here */</script>",
+            "</body></html>"
+        ),
+        bg = bg,
+        fg = fg
+    )
+}
 /// Bytes per HEX dump row — DERIVED from core's single source of truth (no
 /// longer a drifting literal mirror, TSK-571); offset→row math per TSK-206.
 const HEX_BYTES_PER_ROW: usize = mdvcore_core::view::HEX_WIDTH;
@@ -142,15 +237,23 @@ fn save_config(path: &Path, cfg: &WebConfig) {
 fn main() -> io::Result<()> {
     let mut port: u16 = 8765;
     let mut start: Option<PathBuf> = None;
+    let mut assets_cli: Option<PathBuf> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         if a == "--port" {
             if let Some(p) = args.next().and_then(|s| s.parse().ok()) {
                 port = p;
             }
+        } else if a == "--assets" {
+            // TSK-1507 s1: the shared-surface asset root (defaults to the
+            // repo's Sources/ViewerUI/Resources via env / upward search).
+            assets_cli = args.next().map(PathBuf::from);
         } else if !a.starts_with("--") {
             start = Some(PathBuf::from(a));
         }
+    }
+    if let Ok(mut g) = ASSETS_DIR.write() {
+        *g = resolve_assets_dir(assets_cli);
     }
     // Persistent session state (TSK-236): with no path arg, restore the last
     // served root from ~/.textview/wui/config (if it still exists); else cwd.
@@ -484,6 +587,16 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                 HTML,
                 render_cmd(root, query, view_path.as_deref(), sort, show_hidden),
             )
+        }
+        // TSK-1507 s1: allowlisted shared-surface assets + the editor
+        // scaffold. `strip_prefix` only ever yields a NAME looked up in the
+        // fixed catalog — no request-derived path reaches the filesystem.
+        _ if path.starts_with("/assets/") => {
+            serve_asset(path.strip_prefix("/assets/").unwrap_or(""))
+        }
+        "/surface/editor" => {
+            let mode = if q.get("mode").is_some_and(|m| m == "dark") { Mode::Dark } else { Mode::Light };
+            ("200 OK", HTML, render_editor_surface(mode))
         }
         _ => ("404 Not Found", TEXT, "not found".into()),
     }
@@ -3674,6 +3787,65 @@ mod tests {
         assert!(status.starts_with("404"), "unknown route → 404, got {status}");
         assert!(body.contains("not found"), "404 body: {body}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- TSK-1507 s1: shared-surface assets + the editor scaffold ---
+
+    #[test]
+    fn assets_allowlist_serves_and_rejects() {
+        let root = fixture();
+        // A fake assets tree with the one bundle this test exercises.
+        let assets = root.join("fake-assets");
+        fs::create_dir_all(assets.join("codemirror")).unwrap();
+        fs::write(assets.join("codemirror/codemirror.js"), "// cm6 bundle").unwrap();
+        *ASSETS_DIR.write().unwrap() = Some(assets.clone());
+
+        // Allowlisted + present → 200 with the JS content type.
+        let (status, ctype, body) = route("GET /assets/codemirror.js HTTP/1.1", &root);
+        assert!(status.starts_with("200"), "allowlisted asset must serve: {status}");
+        assert!(ctype.contains("javascript"), "ctype: {ctype}");
+        assert_eq!(body, "// cm6 bundle");
+
+        // Allowlisted name but missing on disk → 404 (never an error page).
+        let (status, _, _) = route("GET /assets/canvas.js HTTP/1.1", &root);
+        assert!(status.starts_with("404"), "missing file → 404: {status}");
+
+        // NOT in the catalog → 404, even though the file exists right there.
+        fs::write(assets.join("secrets.txt"), "nope").unwrap();
+        let (status, _, _) = route("GET /assets/secrets.txt HTTP/1.1", &root);
+        assert!(status.starts_with("404"), "non-catalog name must 404: {status}");
+
+        // Traversal shapes can never resolve: the request substring is a
+        // catalog KEY, not a path — `../` matches no catalog entry.
+        let (status, _, _) = route("GET /assets/../Cargo.toml HTTP/1.1", &root);
+        assert!(status.starts_with("404"), "traversal must 404: {status}");
+
+        *ASSETS_DIR.write().unwrap() = None;
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn assets_unconfigured_answers_hint_404() {
+        let root = fixture();
+        *ASSETS_DIR.write().unwrap() = None;
+        let (status, _, body) = route("GET /assets/codemirror.js HTTP/1.1", &root);
+        assert!(status.starts_with("404"), "unconfigured → 404: {status}");
+        assert!(body.contains("--assets"), "the 404 hints at configuration: {body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn editor_surface_scaffold_loads_the_shared_bundle_and_theme() {
+        let root = fixture();
+        let (status, ctype, body) = route("GET /surface/editor HTTP/1.1", &root);
+        assert!(status.starts_with("200"), "scaffold must render: {status}");
+        assert!(ctype.contains("html"));
+        assert!(body.contains("/assets/codemirror.js"), "loads the SHARED bundle");
+        assert!(body.contains("/assets/codemirror.css"));
+        // Theme tokens come from the shared core palette (light vs dark differ).
+        let (_, _, dark) = route("GET /surface/editor?mode=dark HTTP/1.1", &root);
+        assert_ne!(body, dark, "mode=dark must re-theme from the core palette");
+        let _ = fs::remove_dir_all(&root);
     }
 
     // --- TSK-250: in-app back/forward history (view_target + back_forward_dir) ---
