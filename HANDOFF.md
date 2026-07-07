@@ -50,7 +50,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   METHODS (multi-slice) · launchctl bootstrap live smoke. T26: FileResurrection (05b01c4b,
   TSK-1500 — resurrect-a-deleted-file from Local History: O_CREAT|O_EXCL never-overwrite,
   workspace-fenced incl. sibling/../ traversal, parent recreation; 8 tests; entry-point UI =
-  render tail). Gate ran GREEN one-pass again (1559 fix holding).
+  render tail). Gate ran GREEN one-pass again (1559 fix holding). T27: ArchiveEntryPreview (0c1b067a, TSK-1469 —
+  bytes→preview classification: magic-sniffed images, 2MiB peek cap w/ truncated text peeks +
+  torn-UTF-8 trim, binary guard, corrupt→unreadable mapping; 10 tests incl. real-zip e2e; pane +
+  Extract-via-OutputNaming = render tail).
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
