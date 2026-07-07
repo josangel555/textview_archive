@@ -59,7 +59,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   favorites-editor CRUD (8c659632, TSK-1475 — rename+move added to TerminalFavoritesStore,
   completing add/rename/reorder/delete; 3 tests appended to the EXISTING suite; editor UI = tail). T30: ClaudeMonitorListState (fe8d5e2b,
   TSK-1477 — empty-state classification rootMissing/notAClaudeDir/noTranscripts + refresh
-  fingerprint w/ no-op-poll guard; 6 tests incl. e2e vs the real index scan; pane/timer = tail).
+  fingerprint w/ no-op-poll guard; 6 tests incl. e2e vs the real index scan; pane/timer = tail). T31: VideoPlayability (f7d065f9,
+  TSK-1474 — native-vs-fallback second gate after FileCategory.video routing, failure-asymmetry
+  design, drift guard vs the live extension set; view branch = VM tail) + TSK-1471 LogPatterns
+  spiked+PARKED (premise stale — engine done; recommended FINISH ~S click-to-filter). Need-me
+  queue now 8.
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
