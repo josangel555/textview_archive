@@ -359,10 +359,148 @@ pub fn apply_delta_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFa
     crate::wire::encode_frame(&resp)
 }
 
+/// The one changed span plus its replacement text — the datum a disk-reload
+/// hands to a single CM6 dispatch. See [`changed_region_between`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReloadEdit {
+    /// The region of the OLD doc that changed (`from`/`removed` describe the
+    /// pre-edit span; `len_after` the replacement length).
+    pub region: ChangedRegion,
+    /// The UTF-16 replacement units for that region.
+    pub replacement: Vec<u16>,
+}
+
+/// The single-span minimal edit that turns `old` into `new` — the core of the
+/// S7 external-reload reconciliation (TSK-1522). When a file changes on disk,
+/// the naive path replaces the WHOLE editor doc (a full reload splice that
+/// nukes the selection/scroll and re-lays-out the world). Instead: keep the
+/// common UTF-16 prefix and suffix, and emit ONE [`ChangedRegion`] for the
+/// divergent middle so a single CM6 dispatch applies exactly what changed.
+///
+/// Offsets/lengths are UTF-16 code units (CM6-native, same as [`ChangedRegion`]
+/// and `apply_delta`). Returns `None` when `old == new` (no external change —
+/// no dispatch needed). A pure function: no IO, no session state.
+pub fn changed_region_between(old: &str, new: &str) -> Option<ReloadEdit> {
+    let o: Vec<u16> = old.encode_utf16().collect();
+    let n: Vec<u16> = new.encode_utf16().collect();
+    if o == n {
+        return None; // no external change
+    }
+    let shorter = o.len().min(n.len());
+    // Longest common UTF-16 prefix (zip stops at the shorter — panic-free).
+    let p = o.iter().zip(n.iter()).take_while(|&(a, b)| a == b).count();
+    // Longest common UTF-16 suffix, bounded by `shorter - p` so it can't
+    // overlap the prefix (also keeps `saturating_sub` exact below).
+    let s = o
+        .iter()
+        .rev()
+        .zip(n.iter().rev())
+        .take(shorter - p)
+        .take_while(|&(a, b)| a == b)
+        .count();
+    let len_after = n.len().saturating_sub(p + s);
+    let replacement: Vec<u16> = n.iter().skip(p).take(len_after).copied().collect();
+    Some(ReloadEdit {
+        region: ChangedRegion {
+            from: p,
+            len_after,
+            removed: o.len().saturating_sub(p + s),
+        },
+        replacement,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// Apply a `ReloadEdit` back onto `old` (UTF-16 splice) — the CM6 dispatch
+    /// the region describes — and decode to a `String`. Test-only reference.
+    fn apply_reload(old: &str, edit: &ReloadEdit) -> String {
+        let o: Vec<u16> = old.encode_utf16().collect();
+        let from = edit.region.from;
+        let removed = edit.region.removed;
+        let mut out: Vec<u16> = o.iter().take(from).copied().collect();
+        out.extend_from_slice(&edit.replacement);
+        out.extend(o.iter().skip(from + removed).copied());
+        String::from_utf16(&out).unwrap()
+    }
+
+    #[test]
+    fn reload_identical_is_none() {
+        assert_eq!(changed_region_between("same", "same"), None);
+        assert_eq!(changed_region_between("", ""), None);
+    }
+
+    #[test]
+    fn reload_middle_insert() {
+        // "hello world" -> "hello brave world": insert "brave " at offset 6.
+        let e = changed_region_between("hello world", "hello brave world").unwrap();
+        assert_eq!(e.region.from, 6);
+        assert_eq!(e.region.removed, 0);
+        assert_eq!(e.region.len_after, 6);
+        assert_eq!(apply_reload("hello world", &e), "hello brave world");
+    }
+
+    #[test]
+    fn reload_middle_delete() {
+        let e = changed_region_between("hello brave world", "hello world").unwrap();
+        assert_eq!(e.region.from, 6);
+        assert_eq!(e.region.removed, 6); // "brave " removed
+        assert_eq!(e.region.len_after, 0);
+        assert_eq!(apply_reload("hello brave world", &e), "hello world");
+    }
+
+    #[test]
+    fn reload_middle_replace() {
+        let e = changed_region_between("abcXYZdef", "abcQQdef").unwrap();
+        assert_eq!(e.region.from, 3);
+        assert_eq!(e.region.removed, 3); // XYZ
+        assert_eq!(e.region.len_after, 2); // QQ
+        assert_eq!(apply_reload("abcXYZdef", &e), "abcQQdef");
+    }
+
+    #[test]
+    fn reload_from_empty_and_to_empty() {
+        let e = changed_region_between("", "hello").unwrap();
+        assert_eq!(e.region.from, 0);
+        assert_eq!(e.region.removed, 0);
+        assert_eq!(apply_reload("", &e), "hello");
+        let e2 = changed_region_between("hello", "").unwrap();
+        assert_eq!(e2.region.from, 0);
+        assert_eq!(e2.region.removed, 5);
+        assert_eq!(apply_reload("hello", &e2), "");
+    }
+
+    #[test]
+    fn reload_prefix_suffix_dont_overlap_on_repeats() {
+        // "aaaa" -> "aa": prefix+suffix must not double-count shared 'a's.
+        let e = changed_region_between("aaaa", "aa").unwrap();
+        assert_eq!(apply_reload("aaaa", &e), "aa");
+        assert_eq!(e.region.removed, 2);
+        assert_eq!(e.region.len_after, 0);
+    }
+
+    #[test]
+    fn reload_astral_utf16_units() {
+        // 😀 is a surrogate pair (2 UTF-16 units); offsets stay in code units.
+        let e = changed_region_between("a😀b", "a😀😀b").unwrap();
+        assert_eq!(apply_reload("a😀b", &e), "a😀😀b");
+    }
+
+    proptest! {
+        /// ROUND-TRIP: applying the emitted region back onto `old` must
+        /// reconstruct `new`, for arbitrary strings — the S7 correctness
+        /// contract (one dispatch = the whole reload). `None` ⇔ old == new.
+        #[test]
+        fn reload_roundtrip_any(old in ".{0,80}", new in ".{0,80}") {
+            match changed_region_between(&old, &new) {
+                None => prop_assert_eq!(old, new),
+                Some(e) => prop_assert_eq!(apply_reload(&old, &e), new),
+            }
+        }
+    }
 
     proptest! {
         /// The optimized batch `apply` (prefix-sum offset tracking in
