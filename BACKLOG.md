@@ -137,11 +137,13 @@ the done MultiWindowRegistry model: 1104 second-NSWindow mount + 1111 bookmark o
 (openInNewWindow host-tested; window/button = VM). 1311 session-state independence = architecture
 umbrella (music symptom fixed; multi-stream/full-independence = render architecture, deferred).
 
-### B14 Editor features & polish (8)
-TSK-1504 cheap editor assists (off-main spell + cached word index) · TSK-1505 spelling verbs
-everywhere · TSK-1146 spell/grammar squiggles + LSP diagnostics surfacing · TSK-463/1136 LSP
-completion into CM6 [engine] · TSK-1485 edit-location history · TSK-1487 age coloring ·
-TSK-1494 cursor mode for view surfaces · TSK-1170 snippets tab-stop nav.
+### B14 Editor features & polish ✅ DONE 2026-07-07 (2 host cores shipped; rest validated/render)
+✅ TSK-1485 edit-location history ring (0666e891: EditLocationHistory, browser back/forward over
+edit sites, coalesce+snapshot, 8 tests) · ✅ TSK-1487 line-age coloring model (0666e891:
+LineAgeColoring age→ramp + blame-porcelain parse, 6 tests). ALREADY VALIDATED (recon): 1146
+spell squiggles + LSP-diagnostic surfacing · 463/1136 LSP completion into CM6. RENDER TAILS:
+1170 snippets tab-stop (model done TSK-705) · 1504 cheap-assists word-index (perf lane) · 1505
+spelling verbs (NSSpellChecker main-affine + verb catalog) · 1494 cursor mode (WKWebView caret).
 
 ### B15 Dev tools usability (9)
 TSK-1443 git panel core loop · TSK-1444 LSP status affordance · TSK-1445 code-review journey ·
