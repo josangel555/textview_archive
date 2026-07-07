@@ -70,4 +70,73 @@ final class HTTPClientViewModelTests: XCTestCase {
         // The hosted-view registry knows about the new tab's view.
         XCTAssertNotNil(model.hostedView(forID: id))
     }
+
+    // MARK: - TSK-1447: history + save wiring
+
+    private func makeTempStore() -> HTTPRequestStore {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-httpvm-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return HTTPRequestStore(
+            historyURL: dir.appendingPathComponent("history.json"),
+            savedURL: dir.appendingPathComponent("saved.json"))
+    }
+
+    func test_recordHistory_mirrorsStoreIntoPublished() {
+        let vm = HTTPClientViewModel(store: makeTempStore())
+        XCTAssertTrue(vm.history.isEmpty)
+        vm.recordHistory(HTTPRequestModel(urlString: "https://a.example"), status: 200)
+        XCTAssertEqual(vm.history.count, 1, "history mirror updated (teeth)")
+        XCTAssertEqual(vm.history.first?.request.urlString, "https://a.example")
+        XCTAssertEqual(vm.history.first?.status, 200)
+    }
+
+    func test_saveCurrent_savesEditorRequest_andLoadRestoresIt() {
+        let vm = HTTPClientViewModel(store: makeTempStore())
+        vm.request = HTTPRequestModel(method: .post, urlString: "https://save.example", body: "hi")
+        vm.saveCurrent(name: "MySave")
+        XCTAssertEqual(vm.saved.map(\.name), ["MySave"], "saved mirror updated")
+
+        // Change the editor, then load the saved one back.
+        vm.request = HTTPRequestModel(urlString: "https://other.example")
+        vm.load(vm.saved[0].request)
+        XCTAssertEqual(vm.request.urlString, "https://save.example")
+        XCTAssertEqual(vm.request.method, .post)
+        XCTAssertEqual(vm.request.body, "hi")
+    }
+
+    func test_saveCurrent_blankNameIsNoOp() {
+        let vm = HTTPClientViewModel(store: makeTempStore())
+        vm.request = HTTPRequestModel(urlString: "https://a.example")
+        vm.saveCurrent(name: "   ")
+        XCTAssertTrue(vm.saved.isEmpty, "blank save name does not create an entry")
+    }
+
+    func test_deleteSaved_updatesMirror() {
+        let store = makeTempStore()
+        let vm = HTTPClientViewModel(store: store)
+        vm.request = HTTPRequestModel(urlString: "https://a.example")
+        vm.saveCurrent(name: "A")
+        let id = vm.saved[0].id
+        vm.deleteSaved(id: id)
+        XCTAssertTrue(vm.saved.isEmpty)
+    }
+
+    func test_clearHistory_updatesMirror() {
+        let vm = HTTPClientViewModel(store: makeTempStore())
+        vm.recordHistory(HTTPRequestModel(urlString: "https://a.example"), status: 200)
+        XCTAssertFalse(vm.history.isEmpty)
+        vm.clearHistory()
+        XCTAssertTrue(vm.history.isEmpty)
+    }
+
+    func test_init_loadsExistingStoreState() {
+        let store = makeTempStore()
+        store.recordHistory(HTTPRequestModel(urlString: "https://seed.example"), status: 200)
+        store.save(name: "Seed", request: HTTPRequestModel(urlString: "https://seed.example"))
+        // A fresh VM over the same store surfaces the pre-existing state.
+        let vm = HTTPClientViewModel(store: store)
+        XCTAssertEqual(vm.history.first?.request.urlString, "https://seed.example")
+        XCTAssertEqual(vm.saved.map(\.name), ["Seed"])
+    }
 }

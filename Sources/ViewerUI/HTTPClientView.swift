@@ -12,6 +12,9 @@ import ViewerCore
 /// rules (host can't prove SwiftUI pixels).
 struct HTTPClientView: View {
     @StateObject private var model = HTTPClientViewModel()
+    /// TSK-1447 — save-request popover state (view-local).
+    @State private var showSavePopover = false
+    @State private var saveName = ""
 
     var body: some View {
         VSplitView {
@@ -48,6 +51,8 @@ struct HTTPClientView: View {
                     .accessibilityIdentifier("mdv.http.send")
             }
 
+            savedAndHistoryBar
+
             headersEditor
 
             if model.request.method.allowsBody {
@@ -65,6 +70,71 @@ struct HTTPClientView: View {
             }
         }
         .padding(12)
+    }
+
+    /// TSK-1447 — the request-builder ergonomics bar: Save the current request
+    /// under a name, and a Load menu recalling saved + recent (history) requests.
+    private var savedAndHistoryBar: some View {
+        HStack(spacing: 8) {
+            Button("Save…") { showSavePopover = true }
+                .accessibilityIdentifier("mdv.http.save")
+                .popover(isPresented: $showSavePopover, arrowEdge: .bottom) { savePopover }
+
+            Menu("Load") {
+                if model.saved.isEmpty && model.history.isEmpty {
+                    Text("No saved or recent requests")
+                }
+                if !model.saved.isEmpty {
+                    Section("Saved") {
+                        ForEach(model.saved) { s in
+                            Button(s.name) { model.load(s.request) }
+                        }
+                    }
+                }
+                if !model.history.isEmpty {
+                    Section("Recent") {
+                        ForEach(model.history) { h in
+                            Button(h.displayLabel) { model.load(h.request) }
+                        }
+                        Divider()
+                        Button("Clear History") { model.clearHistory() }
+                    }
+                }
+            }
+            .fixedSize()
+            .disabled(model.saved.isEmpty && model.history.isEmpty)
+            .accessibilityIdentifier("mdv.http.load")
+
+            Spacer()
+        }
+    }
+
+    /// The Save popover: name the current request, then Save (disabled on empty).
+    private var savePopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Save request").font(.headline)
+            TextField("Name", text: $saveName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 220)
+                .accessibilityIdentifier("mdv.http.saveName")
+                .onSubmit(commitSave)
+            HStack {
+                Spacer()
+                Button("Cancel") { showSavePopover = false }
+                Button("Save", action: commitSave)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(saveName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(12)
+    }
+
+    private func commitSave() {
+        let trimmed = saveName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        model.saveCurrent(name: trimmed)
+        saveName = ""
+        showSavePopover = false
     }
 
     private var headersEditor: some View {
@@ -170,6 +240,20 @@ final class HTTPClientViewModel: ObservableObject {
     @Published private(set) var response: HTTPResponseModel?
     @Published private(set) var errorMessage: String?
     @Published private(set) var isSending = false
+    /// TSK-1447 — recent sent requests (auto-recorded) + user-saved named requests,
+    /// mirrored from the store so the Load menu binds them.
+    @Published private(set) var history: [HTTPHistoryEntry] = []
+    @Published private(set) var saved: [HTTPSavedRequest] = []
+
+    /// Persisted history/saved store (defaults to the on-disk one; tests inject a
+    /// temp-dir store). TSK-1447.
+    private let store: HTTPRequestStore
+
+    init(store: HTTPRequestStore = HTTPRequestStore()) {
+        self.store = store
+        self.history = store.history
+        self.saved = store.saved
+    }
 
     func addHeader() {
         request.headers.append(HTTPHeader(name: "", value: ""))
@@ -177,6 +261,37 @@ final class HTTPClientViewModel: ObservableObject {
 
     func removeHeader(id: UUID) {
         request.headers.removeAll { $0.id == id }
+    }
+
+    // MARK: - TSK-1447: history + save
+
+    /// Record a sent request in history (dedup on content) and refresh the
+    /// published mirror. Called on send completion (status known on success).
+    func recordHistory(_ request: HTTPRequestModel, status: Int?) {
+        store.recordHistory(request, status: status)
+        history = store.history
+    }
+
+    /// Save the CURRENT request under `name` (no-op on an empty name) and refresh
+    /// the saved mirror.
+    func saveCurrent(name: String) {
+        guard store.save(name: name, request: request) != nil else { return }
+        saved = store.saved
+    }
+
+    /// Load a stored request (from history or saved) back into the editor.
+    func load(_ request: HTTPRequestModel) {
+        self.request = request
+    }
+
+    func deleteSaved(id: UUID) {
+        store.deleteSaved(id: id)
+        saved = store.saved
+    }
+
+    func clearHistory() {
+        store.clearHistory()
+        history = store.history
     }
 
     func send() {
@@ -187,10 +302,19 @@ final class HTTPClientViewModel: ObservableObject {
         Task { @MainActor in
             do {
                 let result = try await HTTPClientCore.send(snapshot)
+                recordHistory(snapshot, status: result.statusCode)
                 applyResult(.success(result))
             } catch let httpError as HTTPRequestError {
+                // Record only genuine send attempts — a pure build-validation
+                // failure (empty/invalid/unsupported URL) never left the app, so
+                // it doesn't belong in history.
+                switch httpError {
+                case .transport, .nonHTTPResponse: recordHistory(snapshot, status: nil)
+                case .emptyURL, .invalidURL, .unsupportedScheme: break
+                }
                 applyResult(.failure(httpError))
             } catch {
+                recordHistory(snapshot, status: nil)
                 applyResult(.failure(.transport(code: -1, message: error.localizedDescription)))
             }
         }
