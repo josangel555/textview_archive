@@ -59,11 +59,14 @@ suites) · ✅ TSK-1534 webview allowlist · ✅ consumption-guard + no-resurrec
 ✅ TSK-1548 progress log rotated 1.46MB→10KB + 64KB budget tooth · ✅ TSK-1499 (via B3) ·
 ✅ TSK-1501 color ratchet (28-match shrink-only baseline). ✅ TSK-1535 missing_docs 188→0 + #![deny] flip (6cd5210c).
 
-### B5 Data-grid views — models DONE, wire the views (7)
-TSK-924 CSV multi-cell select/copy view · TSK-1139 CSV viewport paging (CSVViewportPager→view;
-pre-work for M3) · TSK-1141 xlsx sheet UI + recalc wiring · TSK-1486 grid keyboard nav ·
-TSK-1472 CSV edit affordances + save flow · TSK-1515 computed-cell marker · TSK-1205
-extracted-doc grid polish. WV/render batch at end.
+### B5 Data-grid views ✅ DONE 2026-07-07 (gate green)
+✅ TSK-1472 SAVE FLOW (edits could never reach disk! dirty bar + saveCSVEdits via the editor
+chokepoint; row-ops = follow-up, overlay-rebase design needed) · ✅ TSK-1515 ƒ marker ·
+✅ TSK-1139 measured per owner resolution → paging DENIED for perf; the measurement CAUGHT +
+FIXED a P1 (frame-cap → blank grid for >4MB CSVs post-Stage-B; windowed assembly ed5e9689) ·
+✅ TSK-1486 reconciled (all asks already built: 1102/1187/925) · 924 review + 1141 validated
+(owner lane) · TSK-1205 → moved to B16 (extracted-doc = reading surface). Render tails ride
+TSK-1551 (CSV lens real-render suite, needs VM).
 
 ### B6 Formula finish + spreadsheet (4)
 Formula gate flip prep + TSK-1468 editing-UX audit [owner formula-gate word] · TSK-788/1215
@@ -118,8 +121,9 @@ TSK-1475 terminal favorites mgmt · TSK-769 terminal UX bundle residual · TSK-1
 search help · TSK-1477 claude-monitor polish · TSK-1493 run configurations · TSK-1470
 dep-graph interactive.
 
-### B16 Reading surfaces & viewers (8)
-TSK-1140 PDF reader tail · TSK-1142 browser tab surface · TSK-1145 DOCX/XLSX viewer polish ·
+### B16 Reading surfaces & viewers (9)
+TSK-1205 extracted-doc grid polish (from B5) · TSK-1140 PDF reader tail · TSK-1142 browser
+tab surface · TSK-1145 DOCX/XLSX viewer polish ·
 TSK-1147 dep-source browse · TSK-1172 notebooks (1440 outputs first) · TSK-1173 sticky scroll ·
 TSK-1469 archive explorers · TSK-1495 archive-as-folder in tree.
 
