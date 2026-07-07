@@ -119,11 +119,14 @@ PARKED Need-me for owner pixel-eyeball → validated). TSK-1319/1481/1482/1448/1
 design-heavy tails (settings-catalog/menu-model/omnibox-view/first-run-tour/surface-consolidation
 spike) — their host cores are these two + future slices; VM/owner-gated for the on-screen work.
 
-### B12 Panes/nav/key-routing intake cluster (7)
-TSK-1315 key-event routing audit (leaking keystrokes) · TSK-1314 side-nav shows file-nav when
-toggled off · TSK-1316 shoulder bars only-on-drag · TSK-1313 remove pane size restrictions ·
-TSK-1317 terminal icon drag + setting removal · TSK-1312 terminal colors under claude-code ·
-TSK-1249 terminal header row.
+### B12 Panes/nav/key-routing intake cluster ✅ DONE 2026-07-07 (mostly pre-done; 1 new host core)
+✅ TSK-1249 terminal header-string formatter (1265cb6a: TerminalHeader.format + home-abbrev, 3
+tests; header row = render tail). ALREADY VALIDATED (recon): 1314 side-nav file-nav toggle ·
+1316 shoulder-bars-only-on-drag · 1313 pane size caps lifted · 1312 terminal colors (Classic
+xterm picker). 1317 terminal-icon drag = REVIEW (drop-action host-done; literal drag = AX tier;
+Settings-picker removal deferred). 1315 key-routing = audit DONE (root: fragmented focus, monitors
+ruled out) → PARKED Need-me: coordinator-refactor vs targeted patches + repro-flow confirm (fix
+is render-VM, risky blind).
 
 ### B13 Sessions & windows (6)
 TSK-1311 session state independent/persistent/online · TSK-1308 session-switch keeps music ·
