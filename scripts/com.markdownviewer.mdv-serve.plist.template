@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- mdv-serve LaunchAgent (DAEMON_LIFECYCLE_DESIGN.md D2, TSK-1553).
+     TEMPLATE: install-app.sh substitutes __HOME__ with the real home
+     directory at install time (launchd does NOT expand ~ in SockPathName).
+     launchd OWNS the socket (the Sockets key): the daemon is spawned
+     ON-DEMAND on first connect and receives the already-listening fd via
+     launch_activate_socket("mdv-serve") — single instance guaranteed.
+     NOTE: ProgramArguments points at the app-bundle-embedded binary; the
+     bundle embed of mdv-serve is a separate slice — until it lands, install
+     with -\-with-daemon only if the binary exists at that path. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.markdownviewer.mdv-serve</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/TextView.app/Contents/MacOS/mdv-serve</string>
+        <string>--socket</string>
+        <string>__HOME__/Library/Application Support/MarkdownViewer/mdv-serve.sock</string>
+    </array>
+    <key>Sockets</key>
+    <dict>
+        <key>mdv-serve</key>
+        <dict>
+            <key>SockPathName</key>
+            <string>__HOME__/Library/Application Support/MarkdownViewer/mdv-serve.sock</string>
+            <key>SockPathMode</key>
+            <integer>384</integer>
+        </dict>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

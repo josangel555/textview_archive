@@ -58,16 +58,28 @@ fn main() {
         }
     };
     let transcript_ctx = transcript_list::TranscriptCtx::new(claude_dir.as_deref());
-    // A stale socket file from a previous run refuses the bind; remove it
-    // (the path is ours by contract).
-    let _ = std::fs::remove_file(&socket_path);
-    let listener = match UnixListener::bind(&socket_path) {
-        Ok(l) => l,
+    // TSK-1553 (daemon s1): under a LaunchAgent, launchd owns the socket
+    // (the plist `Sockets` key, name "mdv-serve") and hands us the listening
+    // fd — single-instance guaranteed by launchd. A plain CLI run gets no
+    // activation fds and falls back to self-binding — today's path, unchanged.
+    let activated = mdvcore_ffi::launchd::launchd_activation_listeners("mdv-serve")
+        .into_iter()
+        .next();
+    let (listener, origin) = match lifecycle::select_listener(activated, || {
+        // A stale socket file from a previous run refuses the bind; remove it
+        // (the path is ours by contract — launchd-owned paths never get here).
+        let _ = std::fs::remove_file(&socket_path);
+        UnixListener::bind(&socket_path)
+    }) {
+        Ok(pair) => pair,
         Err(e) => {
             eprintln!("mdv-serve: bind {socket_path}: {e}");
             std::process::exit(1);
         }
     };
+    if origin == lifecycle::ListenerOrigin::Launchd {
+        eprintln!("mdv-serve: launchd-activated listener (socket owned by launchd)");
+    }
     eprintln!("mdv-serve: listening on {socket_path}");
     for conn in listener.incoming() {
         let Ok(stream) = conn else { continue };

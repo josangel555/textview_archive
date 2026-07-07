@@ -79,6 +79,36 @@ pub fn resolve_exit(flush_ok: bool) -> ExitResolution {
 }
 
 // ---------------------------------------------------------------------------
+// Listener acquisition — launchd activation vs self-bind
+// (DAEMON_LIFECYCLE_DESIGN.md D2, TSK-1553)
+// ---------------------------------------------------------------------------
+
+/// Where the listening socket came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListenerOrigin {
+    /// launchd owns the socket (the plist `Sockets` key) and handed us the
+    /// already-listening fd — single-instance is guaranteed by launchd.
+    Launchd,
+    /// We bound the socket path ourselves — the dev/CLI/Linux path
+    /// (today's behavior, unchanged).
+    SelfBind,
+}
+
+/// The fd-inheritance branch: prefer a launchd-activated listener; fall back
+/// to `bind` (self-binding) only when activation yielded nothing. Injectable
+/// on both sides, so the precedence is host-tested with real listeners on
+/// temp paths — no launchd required.
+pub fn select_listener(
+    launchd: Option<std::os::unix::net::UnixListener>,
+    bind: impl FnOnce() -> std::io::Result<std::os::unix::net::UnixListener>,
+) -> std::io::Result<(std::os::unix::net::UnixListener, ListenerOrigin)> {
+    if let Some(l) = launchd {
+        return Ok((l, ListenerOrigin::Launchd));
+    }
+    bind().map(|l| (l, ListenerOrigin::SelfBind))
+}
+
+// ---------------------------------------------------------------------------
 // daemon.retire — version-skew handover (DAEMON_LIFECYCLE_DESIGN.md D4,
 // TSK-1555)
 // ---------------------------------------------------------------------------
@@ -213,5 +243,49 @@ mod tests {
             retire_decision(3, 2, &[3, 2, 3]),
             RetireDecision::RefuseConflictingClients
         );
+    }
+
+    // --- listener acquisition (TSK-1553) ---
+
+    fn temp_sock(tag: &str) -> std::path::PathBuf {
+        // Unique per process; short enough for the sun_path limit.
+        std::env::temp_dir().join(format!("mdv-1553-{}-{tag}.sock", std::process::id()))
+    }
+
+    #[test]
+    fn launchd_listener_wins_and_bind_is_not_called() {
+        let a = temp_sock("a");
+        let _ = std::fs::remove_file(&a);
+        let launchd = std::os::unix::net::UnixListener::bind(&a).unwrap();
+        let mut bind_ran = false;
+        let (l, origin) = select_listener(Some(launchd), || {
+            bind_ran = true;
+            Err(std::io::Error::other("must not run"))
+        })
+        .unwrap();
+        assert!(!bind_ran, "bind must not run when launchd handed us a listener");
+        assert_eq!(origin, ListenerOrigin::Launchd);
+        assert!(l.local_addr().is_ok());
+        let _ = std::fs::remove_file(&a);
+    }
+
+    #[test]
+    fn no_activation_falls_back_to_self_bind() {
+        let b = temp_sock("b");
+        let _ = std::fs::remove_file(&b);
+        let path = b.clone();
+        let (l, origin) =
+            select_listener(None, || std::os::unix::net::UnixListener::bind(&path)).unwrap();
+        assert_eq!(origin, ListenerOrigin::SelfBind);
+        assert!(l.local_addr().is_ok());
+        let _ = std::fs::remove_file(&b);
+    }
+
+    #[test]
+    fn bind_failure_propagates_when_no_activation() {
+        let err = select_listener(None, || {
+            Err(std::io::Error::other("bind refused"))
+        });
+        assert!(err.is_err());
     }
 }

@@ -124,6 +124,30 @@ for arg in "$@"; do
   fi
 done
 
+# TSK-1553 (daemon s1): opt-in LaunchAgent — `install-app.sh --with-daemon`
+# installs the mdv-serve socket-activation plist. launchd owns the 0600
+# per-user socket and spawns the daemon on first connect. The template's
+# __HOME__ is substituted here because launchd does NOT expand ~ in
+# SockPathName.
+for arg in "$@"; do
+  if [ "$arg" = "--with-daemon" ]; then
+    PLIST_SRC="$SCRIPT_DIR/com.markdownviewer.mdv-serve.plist.template"
+    PLIST_DST="$HOME/Library/LaunchAgents/com.markdownviewer.mdv-serve.plist"
+    DAEMON_BIN="$DEST_APP/Contents/MacOS/mdv-serve"
+    if [ ! -x "$DAEMON_BIN" ]; then
+      echo "==> --with-daemon: $DAEMON_BIN not present in the installed bundle" >&2
+      echo "    (the mdv-serve bundle embed is a separate slice). Skipping." >&2
+      continue
+    fi
+    mkdir -p "$HOME/Library/LaunchAgents"
+    sed "s|__HOME__|$HOME|g" "$PLIST_SRC" > "$PLIST_DST"
+    plutil -lint "$PLIST_DST"
+    echo "==> Daemon agent installed: $PLIST_DST"
+    echo "    Activate now: launchctl bootstrap gui/$(id -u) $PLIST_DST"
+    echo "    (or it activates on next login; the daemon spawns on first connect)"
+  fi
+done
+
 echo
 echo "If you keep getting permission prompts on every rebuild:"
 echo "  1. Run once: bash scripts/setup-signing.sh"

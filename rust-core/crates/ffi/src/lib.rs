@@ -49,6 +49,7 @@ pub mod buf;
 pub mod canvas_handle;
 pub mod guard;
 pub mod handle;
+pub mod launchd;
 pub mod status;
 
 use mdvcore_core::canvas;
