@@ -138,11 +138,14 @@ public enum ClipboardTableExtractor {
     public static func tsvToRows(_ text: String,
                                  limits: Limits = Limits()) -> [[String]] {
         guard !text.isEmpty else { return [] }
-        let parsed = CSVParser.parse(
+        // Stage-B (TSK-649): forced-delimiter parse through the rust core
+        // (the Swift CSVParser algorithm is deleted); quoting semantics are
+        // pinned by the engine's grammar tests + the wire-seam test.
+        let parsed = RustCSVAdapter.parseWith(
             text,
             delimiter: "\t",
-            limits: CSVParser.Limits(maxCellChars: limits.maxCellChars,
-                                     maxCellsPerRow: limits.maxCellsPerRow)
+            maxCellChars: limits.maxCellChars,
+            maxCellsPerRow: limits.maxCellsPerRow
         )
         guard !parsed.header.isEmpty || !parsed.rows.isEmpty else { return [] }
         var grid = [parsed.header]

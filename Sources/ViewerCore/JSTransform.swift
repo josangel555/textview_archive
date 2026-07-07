@@ -114,7 +114,7 @@ public enum JSTransform {
                   let s = String(data: data, encoding: .utf8) else { return "[]" }
             return s
         case .csv:
-            let parsed = CSVParser.parse(content)
+            let parsed = RustCSVAdapter.parse(content)
             let objects: [[String: String]] = parsed.rows.map { row in
                 var obj: [String: String] = [:]
                 for (i, key) in parsed.header.enumerated() where i < row.count { obj[key] = row[i] }

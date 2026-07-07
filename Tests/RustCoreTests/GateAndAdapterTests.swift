@@ -48,26 +48,22 @@ final class GateAndAdapterTests: XCTestCase {
 
     // MARK: - Adapter routing
 
-    func testAdapterParseAlwaysReturnsValidResultRegardlessOfGate() {
-        // Whether or not the gate is on for THIS process, the public
-        // `parse(_:)` must produce a usable result (it consults the live gate;
-        // we just assert it doesn't blow up and matches Swift content).
+    func testAdapterParseAlwaysReturnsValidResult() {
+        // Stage-B: rust is the only engine; pin the parsed content directly.
         let input = "a,b\n1,2\n3,4\n"
         let result = RustCSVAdapter.parse(input)
-        let swift = CSVParser.parse(input)
-        XCTAssertEqual(result.header, swift.header)
-        XCTAssertEqual(result.rows, swift.rows)
+        XCTAssertEqual(result.header, ["a", "b"])
+        XCTAssertEqual(result.rows, [["1", "2"], ["3", "4"]])
     }
 
-    func testAdapterRustParseProducesSwiftIdenticalResult() throws {
-        // Direct exercise of the Rust path (bypasses the gate) — proves the
-        // Table → CSVParser.Result mapping is faithful.
+    func testAdapterRustParseMappingIsFaithful() throws {
+        // Direct exercise of the rust path — proves the Table →
+        // CSVParser.Result mapping (delimiter Character, header, rows) holds.
         let input = "x;y;z\n1;2;3\n4;5;6\n"
         let rust = try RustCSVAdapter.rustParse(input)
-        let swift = CSVParser.parse(input)
-        XCTAssertEqual(rust.delimiter, swift.delimiter)
-        XCTAssertEqual(rust.header, swift.header)
-        XCTAssertEqual(rust.rows, swift.rows)
-        XCTAssertEqual(rust.truncated, swift.truncated)
+        XCTAssertEqual(rust.delimiter, ";")
+        XCTAssertEqual(rust.header, ["x", "y", "z"])
+        XCTAssertEqual(rust.rows, [["1", "2", "3"], ["4", "5", "6"]])
+        XCTAssertFalse(rust.truncated)
     }
 }

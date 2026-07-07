@@ -301,6 +301,9 @@ pub const MDV_METHOD_DOC_WINDOW: u16 = 21;
 pub const MDV_METHOD_DOC_MARK_SAVED: u16 = 22;
 /// Host pin/unpin (`pinned: bool`) or close (`pinned: null`) — TSK-1517.
 pub const MDV_METHOD_DOC_PIN_CLOSE: u16 = 23;
+/// One-shot CSV parse with a FORCED delimiter + explicit caps (Stage-B,
+/// TSK-649: the clipboard TSV path that must not sniff).
+pub const MDV_METHOD_CSV_PARSE_WITH: u16 = 24;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore

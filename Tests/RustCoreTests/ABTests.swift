@@ -4,149 +4,61 @@ import XCTest
 import CMdvCore
 import ViewerCore
 
-/// The A/B: the Rust core vs the SHIPPING Swift `CSVParser` / `CSVFilter` (the
-/// real ones in ViewerCore — not a vendored copy, unlike the PoC). Two
-/// dimensions:
-///   1. CORRECTNESS parity — same delimiter / header / rows on shared inputs.
-///   2. PERFORMANCE — wall-clock parse of a generated CSV, both impls, ratio
-///      logged.
-///
-/// NOTE: the Rust path here includes the FULL FFI cost (handle alloc + parse +
-/// MessagePack encode + length-framing + Swift-side MessagePack decode), so it
-/// is a pessimistic, whole-pipeline comparison — not just the raw parse loop.
-/// Deliberate: it measures what a real projection pays.
+/// CSV engine contract pins (STAGE-B, TSK-649: the Swift CSVParser twin is
+/// deleted — rust is the only engine). The expectations below are the
+/// CONTRACT the retired A/B suite proved byte-identical across both engines
+/// before deletion: delimiter sniffing (incl. quote-aware), RFC-4180 quoting,
+/// ragged-row normalization, CR/CRLF framing, and the wire/envelope plumbing.
 final class ABTests: XCTestCase {
 
-    /// Inputs where both impls must agree exactly.
-    static let sharedCases: [String] = [
-        "a,b,c\n1,2,3\n4,5,6\n",
-        "a;b;c\n1;2;3\n",
-        "a\tb\tc\n1\t2\t3\n",
-        "a|b|c\n1|2|3\n",
-        "a,b\n\"x,y\",z\n",
-        "a,b\n\"she said \"\"hi\"\"\",z\n",
-        "a,b\r\n1,2\r\n3,4\r\n",
-        "a,b,c\n1,2,3,4\n5,6\n",  // ragged: long truncated, short padded
-        "name,emoji\nJosé,🎉\n",
-        "\"a,b,c\";x;y\n1;2;3\n",  // quote-aware delimiter detection
-        "a,b\n\"line1\nline2\",z\n",  // quoted newline
-        "a,b\r1,2\r3,4\r",  // bare CR (Mac classic)
-        "a,b,c\n",  // header only
-        "",  // empty input
+    /// (input, expected delimiter, expected header, expected first row or nil)
+    /// — the distinctive grammar cases from the retired parity corpus.
+    static let contractCases: [(String, String, [String], [String]?)] = [
+        ("a,b,c\n1,2,3\n4,5,6\n", ",", ["a", "b", "c"], ["1", "2", "3"]),
+        ("a;b;c\n1;2;3\n", ";", ["a", "b", "c"], ["1", "2", "3"]),
+        ("a\tb\tc\n1\t2\t3\n", "\t", ["a", "b", "c"], ["1", "2", "3"]),
+        ("a|b|c\n1|2|3\n", "|", ["a", "b", "c"], ["1", "2", "3"]),
+        ("a,b\n\"x,y\",z\n", ",", ["a", "b"], ["x,y", "z"]),
+        ("a,b\n\"she said \"\"hi\"\"\",z\n", ",", ["a", "b"], ["she said \"hi\"", "z"]),
+        ("a,b\r\n1,2\r\n3,4\r\n", ",", ["a", "b"], ["1", "2"]),
+        // Ragged: long row truncated to header width, short row padded.
+        ("a,b,c\n1,2,3,4\n5,6\n", ",", ["a", "b", "c"], ["1", "2", "3"]),
+        ("name,emoji\nJosé,🎉\n", ",", ["name", "emoji"], ["José", "🎉"]),
+        // Quote-aware sniff: the comma inside quotes must not win.
+        ("\"a,b,c\";x;y\n1;2;3\n", ";", ["a,b,c", "x", "y"], ["1", "2", "3"]),
+        ("a,b\n\"line1\nline2\",z\n", ",", ["a", "b"], ["line1\nline2", "z"]),
+        ("a,b\r1,2\r3,4\r", ",", ["a", "b"], ["1", "2"]),
+        ("a,b,c\n", ",", ["a", "b", "c"], nil),
     ]
 
-    func testCorrectnessParity() throws {
-        for input in Self.sharedCases {
-            let swift = CSVParser.parse(input)
-            let session = try CsvSession(csv: input)
-            let rust = try session.table()
+    func testEngineGrammarContract() throws {
+        for (input, delim, header, firstRow) in Self.contractCases {
+            // Both production paths: the session read and the adapter mapping.
+            let rust = try CsvSession(csv: input).table()
+            XCTAssertEqual(rust.delimiter, delim, "sniff: \(input.debugDescription)")
+            XCTAssertEqual(rust.header, header, "header: \(input.debugDescription)")
+            XCTAssertEqual(rust.rows.first, firstRow, "row0: \(input.debugDescription)")
+            XCTAssertFalse(rust.truncated)
 
-            XCTAssertEqual(
-                String(swift.delimiter), rust.delimiter,
-                "delimiter mismatch for input: \(input.debugDescription)")
-            XCTAssertEqual(
-                swift.header, rust.header,
-                "header mismatch for input: \(input.debugDescription)")
-            XCTAssertEqual(
-                swift.rows, rust.rows,
-                "rows mismatch for input: \(input.debugDescription)")
-            XCTAssertEqual(
-                swift.truncated, rust.truncated,
-                "truncated mismatch for input: \(input.debugDescription)")
+            let adapted = RustCSVAdapter.parse(input)
+            XCTAssertEqual(String(adapted.delimiter), delim)
+            XCTAssertEqual(adapted.header, header)
+            XCTAssertEqual(adapted.rows.first, firstRow)
         }
+        // Empty input parses to an empty table, never a fault.
+        let empty = RustCSVAdapter.parse("")
+        XCTAssertTrue(empty.header.isEmpty && empty.rows.isEmpty)
     }
 
-    /// Same correctness parity, but through the production adapter with the
-    /// gate FORCED ON via env — exercises the exact code path the app runs when
-    /// the flag is set, including the Table → CSVParser.Result mapping.
-    func testAdapterParityWhenForcedOn() {
-        let env = ["MDV_RUST_CSV": "1"]
-        XCTAssertTrue(RustCSVGate.isEnabled(environment: env))
-        for input in Self.sharedCases {
-            let swift = CSVParser.parse(input)
-            let viaAdapter = (try? RustCSVAdapter.rustParse(input))
-            XCTAssertNotNil(viaAdapter, "adapter rustParse threw for \(input.debugDescription)")
-            guard let rust = viaAdapter else { continue }
-            XCTAssertEqual(swift.delimiter, rust.delimiter,
-                           "adapter delimiter mismatch: \(input.debugDescription)")
-            XCTAssertEqual(swift.header, rust.header,
-                           "adapter header mismatch: \(input.debugDescription)")
-            XCTAssertEqual(swift.rows, rust.rows,
-                           "adapter rows mismatch: \(input.debugDescription)")
-            XCTAssertEqual(swift.truncated, rust.truncated,
-                           "adapter truncated mismatch: \(input.debugDescription)")
-        }
-    }
-
-    /// Generate a sizeable CSV for the perf comparison.
-    private func makeBigCSV(rows: Int) -> String {
-        var s = "id,name,city,score,note\n"
-        s.reserveCapacity(rows * 40)
-        for i in 0..<rows {
-            s += "\(i),Person\(i),City\(i % 100),\(i * 7 % 1000),\"a, quoted note \(i)\"\n"
-        }
-        return s
-    }
-
-    func testPerformanceAB() throws {
-        let rowCount = 20_000
-        let input = makeBigCSV(rows: rowCount)
-        let inputBytes = [UInt8](input.utf8)
-
-        // Warm up both paths once (allocator / code cache).
-        _ = CSVParser.parse(input)
-        _ = try CsvSession(bytes: inputBytes).table()
-
-        let iterations = 5
-
-        // --- Swift baseline (parse only) ---
-        let swiftStart = DispatchTime.now()
-        var swiftRows = 0
-        for _ in 0..<iterations {
-            let r = CSVParser.parse(input)
-            swiftRows = r.rows.count
-        }
-        let swiftNanos = DispatchTime.now().uptimeNanoseconds - swiftStart.uptimeNanoseconds
-
-        // --- Rust via full FFI pipeline (open + parse + wire + decode) ---
-        let rustStart = DispatchTime.now()
-        var rustRows = 0
-        for _ in 0..<iterations {
-            let session = try CsvSession(bytes: inputBytes)
-            let t = try session.table()
-            rustRows = t.rows.count
-        }
-        let rustNanos = DispatchTime.now().uptimeNanoseconds - rustStart.uptimeNanoseconds
-
-        XCTAssertEqual(swiftRows, rowCount)
-        XCTAssertEqual(rustRows, rowCount)
-
-        let swiftMs = Double(swiftNanos) / 1_000_000 / Double(iterations)
-        let rustMs = Double(rustNanos) / 1_000_000 / Double(iterations)
-        let ratio = rustMs / swiftMs
-
-        // Not an assertion on a target — we want the NUMBER in the test log.
-        print(
-            """
-            === CSV A/B (\(rowCount) rows, \(iterations) iters avg) ===
-            Swift CSVParser (parse only):        \(String(format: "%.2f", swiftMs)) ms
-            Rust core (open+parse+wire+decode):  \(String(format: "%.2f", rustMs)) ms
-            ratio (rust/swift, full pipeline):   \(String(format: "%.2fx", ratio))
-            NOTE: rust figure includes MessagePack encode + Swift-side decode;
-            the raw Rust parse is a fraction of this.
-            """)
-    }
-
-    func testFilterParityWithSwiftFilter() throws {
-        // The Rust session's global-query filter must agree with the shipping
-        // Swift CSVFilter's global substring semantics on a shared input.
+    func testFilterAgainstEngineParse() throws {
+        // The rust session's global-query filter and the (still-Swift, still
+        // live) CSVFilter view-model must agree on the engine's parse.
         let input = "name,city\nAlice,Paris\nBob,Parma\nCarol,Berlin\n"
         let session = try CsvSession(csv: input)
         try session.setFilter("par")
         let snap = try session.snapshot()
 
-        // Drive the REAL CSVFilter (not a hand-rolled mirror) as the oracle.
-        let parsed = CSVParser.parse(input)
+        let parsed = RustCSVAdapter.parse(input)
         let filter = CSVFilter(globalQuery: "par", globalScope: .all)
         let expected = filter.apply(to: parsed)
         XCTAssertEqual(snap.rows, expected.rows)

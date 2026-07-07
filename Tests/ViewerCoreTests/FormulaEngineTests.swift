@@ -281,14 +281,14 @@ final class FormulaEngineTests: XCTestCase {
 
     func test_csvBridge_a1SkipsHeaderRow() {
         // Grid: header a,b ; data rows. A1 = first DATA row col A.
-        let model = EditableCSVModel(CSVParser.parse("a,b\n10,20\n30,40"))
+        let model = EditableCSVModel(RustCSVAdapter.parse("a,b\n10,20\n30,40"))
         // A1 -> grid (row 1, col 0) = "10"; B2 -> grid (row 2, col 1) = "40".
         XCTAssertEqual(model.evaluateFormulaCell(at: CellReference(a1: "A1")!), .number(10))
         XCTAssertEqual(model.evaluateFormulaCell(at: CellReference(a1: "B2")!), .number(40))
     }
 
     func test_csvBridge_resolverFeedsFormula() {
-        let model = EditableCSVModel(CSVParser.parse("x,y\n1,2\n3,4"))
+        let model = EditableCSVModel(RustCSVAdapter.parse("x,y\n1,2\n3,4"))
         var visiting = Set<CellReference>()
         let v = FormulaEngine.evaluateFormula("SUM(A1:A2) + B2",
                                               resolve: model.formulaResolver(),
@@ -299,7 +299,7 @@ final class FormulaEngineTests: XCTestCase {
 
     func test_csvBridge_formulaCellEvaluates() {
         // A data cell that is itself a formula resolves through the bridge.
-        let model = EditableCSVModel(CSVParser.parse("a,b\n5,=A1*2"))
+        let model = EditableCSVModel(RustCSVAdapter.parse("a,b\n5,=A1*2"))
         // B1 -> grid (row 1, col 1) = "=A1*2" ; A1 -> "5" → 10.
         XCTAssertEqual(model.evaluateFormulaCell(at: CellReference(a1: "B1")!), .number(10))
     }

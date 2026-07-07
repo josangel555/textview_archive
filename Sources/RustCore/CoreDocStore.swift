@@ -168,3 +168,39 @@ public enum CoreDocStore {
         return try reader.decode().mapValue()
     }
 }
+
+/// Stage-B (TSK-649): one-shot CSV parse with a FORCED delimiter + explicit
+/// caps over the envelope (`MDV_METHOD_CSV_PARSE_WITH`) — the clipboard TSV
+/// path that must not sniff. Returns the same `Table` shape as the
+/// session `table()` read.
+public enum CoreCsvParseWith {
+    public static func parse(
+        _ text: String,
+        delimiter: Character,
+        maxCellChars: Int? = nil,
+        maxCellsPerRow: Int? = nil,
+        maxTotalCells: Int? = nil,
+        maxInputScalars: Int? = nil
+    ) throws -> Table {
+        let req = MsgPackValue.map([
+            MsgPackPair(.string("text"), .string(text)),
+            MsgPackPair(.string("delimiter"), .string(String(delimiter))),
+            MsgPackPair(.string("max_cell_chars"),
+                        maxCellChars.map { .uint(UInt64($0)) } ?? .nilValue),
+            MsgPackPair(.string("max_cells_per_row"),
+                        maxCellsPerRow.map { .uint(UInt64($0)) } ?? .nilValue),
+            MsgPackPair(.string("max_total_cells"),
+                        maxTotalCells.map { .uint(UInt64($0)) } ?? .nilValue),
+            MsgPackPair(.string("max_input_scalars"),
+                        maxInputScalars.map { .uint(UInt64($0)) } ?? .nilValue),
+        ]).frame()
+        let resp = try CoreEnvelope.call(method: UInt16(MDV_METHOD_CSV_PARSE_WITH), req: req)
+        var reader = MsgPackReader(resp, startingAt: try CsvSession.frameBodyStart(resp))
+        let map = try reader.decode().mapValue()
+        return Table(
+            delimiter: try map.require("delimiter").stringValue(),
+            header: try map.require("header").stringArray(),
+            rows: try map.require("rows").stringMatrix(),
+            truncated: (try? map.require("truncated").boolValue()) ?? false)
+    }
+}

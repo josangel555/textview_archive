@@ -56,7 +56,7 @@ final class DocumentModelCSVExportTests: XCTestCase {
         let model = makeModel()
         let url = try writeFile("data.csv", csv)
         model.open(url: url)
-        let r = CSVParser.parse(csv)
+        let r = RustCSVAdapter.parse(csv)
         let expected = CsvConvert.toMarkdownTable(header: r.header, rows: r.rows)
         let got = model.activeCSVAsMarkdownTable()
         XCTAssertEqual(got, expected, "model must route the active CSV through CsvConvert.toMarkdownTable")
@@ -70,7 +70,7 @@ final class DocumentModelCSVExportTests: XCTestCase {
         let model = makeModel()
         let url = try writeFile("data.csv", csv)
         model.open(url: url)
-        let r = CSVParser.parse(csv)
+        let r = RustCSVAdapter.parse(csv)
         XCTAssertEqual(model.activeCSVAsJSON(),
                        CsvConvert.toJSON(header: r.header, rows: r.rows))
     }
@@ -81,7 +81,7 @@ final class DocumentModelCSVExportTests: XCTestCase {
         let model = makeModel()
         let url = try writeFile("data.csv", csv)
         model.open(url: url)
-        let r = CSVParser.parse(csv)
+        let r = RustCSVAdapter.parse(csv)
         XCTAssertEqual(model.activeCSVSummary(),
                        CsvSummary.report(header: r.header, rows: r.rows))
     }

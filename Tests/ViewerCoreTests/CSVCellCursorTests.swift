@@ -183,7 +183,7 @@ final class CSVCellCursorTests: XCTestCase {
         let csv = "h0,h1,h2\n"
             + "plain,\"a,b\",\"say \"\"hi\"\"\"\n"
             + "\"line1\nline2\",x,y"
-        let result = CSVParser.parse(csv)
+        let result = RustCSVAdapter.parse(csv)
         XCTAssertEqual(result.header, ["h0", "h1", "h2"])
         XCTAssertEqual(result.rows.count, 2)
 

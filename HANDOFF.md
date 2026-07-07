@@ -14,16 +14,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
 
 ## Current state
 - **B1 ✅ · B2 ✅. Batch in progress: B3 twin deletions — fuzzy ✅ (55470d33), transcript ✅
-  (2edb6291), find ⛔ PARKED (TSK-1549 Need-me). NEXT = CSV, recon DONE (map below) →
-  CMEditApplier → markdown visitor → folds → B3's ONE full gate + board records.**
-  CSV surgery map (verified this tick): CSVParser.Result TYPE survives (UI/adapter contract);
-  CSVFilter struct = filter STATE + apply() still LIVE at CSVTableView.swift:160 (check
-  whether the session/rust filter path supersedes before touching); two non-adapter parse
-  callers to retarget: JSTransform.swift:117 (plain — adapter-ready) and
-  ClipboardTableExtractor.swift:141 (FORCED delimiter "\t" + custom Limits — core HAS
-  parse_arena_with(text,delimiter,limits) at csv.rs:158 but it is NOT wire-exposed: add an
-  optional {delimiter,limits} to the csv parse wire first, then retarget, then delete
-  CSVParser's algorithm). Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
+  (2edb6291), CSV ✅ (committed: CSVParser algorithm deleted, Result type kept; NEW wire
+  CsvParseWith id=24 carries forced delimiter + all four caps for the clipboard TSV path;
+  CSVFilter KEPT — its apply() is the live non-session view filter, supersession = B5/B7
+  view migration, NOT a twin), find ⛔ PARKED (TSK-1549 Need-me). NEXT: CMEditApplier →
+  markdown structural visitor → TreeSitterEngine folds → B3's ONE full gate + board
+  records.** Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
   (.degradedRustFault), retire A/B+differential suites, keep behavior pins.
   Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;

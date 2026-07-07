@@ -105,12 +105,15 @@ pub enum Method {
     /// Host pin/unpin (`pinned: bool`) or close (`pinned: null`) of a resident
     /// doc (`doc_registry::pin_close_wire`).
     DocPinClose = 23,
+    /// One-shot CSV parse with a FORCED delimiter + explicit caps
+    /// (`csv::parse_with_wire`) — the clipboard TSV path (Stage-B, TSK-649).
+    CsvParseWith = 24,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 24;
+    pub const NEXT_FREE_ID: u16 = 25;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -141,6 +144,7 @@ impl Method {
             21 => Some(Method::DocWindow),
             22 => Some(Method::DocMarkSaved),
             23 => Some(Method::DocPinClose),
+            24 => Some(Method::CsvParseWith),
             _ => None,
         }
     }
@@ -196,6 +200,7 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
         Method::DocWindow => crate::doc_registry::window_wire(req),
         Method::DocMarkSaved => crate::doc_registry::mark_saved_wire(req),
         Method::DocPinClose => crate::doc_registry::pin_close_wire(req),
+        Method::CsvParseWith => crate::csv::parse_with_wire(req),
         // Not routable from core (impl in mdvcore-highlight); the FFI layer
         // intercepts this id, same as HighlightRuns.
         Method::FoldRegions => Err(WireFault::Decode(
@@ -222,8 +227,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. DocPinClose is the current last id.
-        assert_eq!(Method::DocPinClose as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. CsvParseWith is the current last id.
+        assert_eq!(Method::CsvParseWith as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]

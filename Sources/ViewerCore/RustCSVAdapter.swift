@@ -34,18 +34,46 @@ public enum RustCSVAdapter {
     }
 
     /// Same as `parse(_:)` but returns which engine produced the result.
-    /// Exposed for the A/B harness and any diagnostics that want to know
-    /// whether the Rust path actually ran.
+    /// Exposed for diagnostics that want to know the provenance.
     public static func parseDetailed(_ text: String) -> Outcome {
-        // Delegates to the generalized try-Rust / fall-back-to-Swift seam.
-        // Same behaviour as before: gate off → Swift; Rust ok → Rust; Rust
-        // throws → Swift. A bridge fault never blanks the CSV view.
-        let outcome = RustCoreFallback.run(
+        // Stage-B (TSK-649): the Swift CSVParser algorithm is deleted — rust
+        // is the only engine. A bridge fault degrades to an EMPTY table
+        // (observable via the runRustOnly log), never a crash.
+        let outcome = RustCoreFallback.runRustOnly(
             .csv,
             rust: { try rustParse(text) },
-            swift: { CSVParser.parse(text) }
+            degraded: CSVParser.Result(delimiter: ",", header: [], rows: [])
         )
         return Outcome(result: outcome.value, usedRust: outcome.usedRust)
+    }
+
+    /// Stage-B (TSK-649): one-shot parse with a FORCED delimiter + explicit
+    /// caps — the clipboard TSV path that must not sniff. Routed over the
+    /// envelope (`CoreCsvParseWith`); a bridge fault degrades to an EMPTY
+    /// table (observable), which the extractor treats as "no grid".
+    public static func parseWith(
+        _ text: String,
+        delimiter: Character,
+        maxCellChars: Int? = nil,
+        maxCellsPerRow: Int? = nil,
+        maxTotalCells: Int? = nil,
+        maxInputScalars: Int? = nil
+    ) -> CSVParser.Result {
+        RustCoreFallback.runRustOnly(
+            .csv,
+            rust: {
+                let table = try CoreCsvParseWith.parse(
+                    text, delimiter: delimiter,
+                    maxCellChars: maxCellChars, maxCellsPerRow: maxCellsPerRow,
+                    maxTotalCells: maxTotalCells, maxInputScalars: maxInputScalars)
+                return CSVParser.Result(
+                    delimiter: table.delimiter.first ?? delimiter,
+                    header: table.header,
+                    rows: table.rows,
+                    truncated: table.truncated)
+            },
+            degraded: CSVParser.Result(delimiter: delimiter, header: [], rows: [])
+        ).value
     }
 
     /// Drive the Rust core to parse `text` and map its `Table` onto a

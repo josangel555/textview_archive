@@ -659,6 +659,7 @@ fn method_id_consts_match_the_dispatch_enum() {
     assert_eq!(MDV_METHOD_DOC_WINDOW, Method::DocWindow as u16);
     assert_eq!(MDV_METHOD_DOC_MARK_SAVED, Method::DocMarkSaved as u16);
     assert_eq!(MDV_METHOD_DOC_PIN_CLOSE, Method::DocPinClose as u16);
+    assert_eq!(MDV_METHOD_CSV_PARSE_WITH, Method::CsvParseWith as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
@@ -671,10 +672,11 @@ fn method_id_consts_match_the_dispatch_enum() {
         MDV_METHOD_HTML_BLOCK_PATCH, MDV_METHOD_DOC_OPEN,
         MDV_METHOD_DOC_APPLY_DELTA, MDV_METHOD_DOC_TEXT, MDV_METHOD_DOC_WINDOW,
         MDV_METHOD_DOC_MARK_SAVED, MDV_METHOD_DOC_PIN_CLOSE,
+        MDV_METHOD_CSV_PARSE_WITH,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 24, "23 methods defined; next free id is 24");
+    assert_eq!(Method::NEXT_FREE_ID, 25, "24 methods defined; next free id is 25");
 }
 
 /// Call `mdvcore_call` expecting `Ok`; returns the response bytes.

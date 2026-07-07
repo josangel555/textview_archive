@@ -179,18 +179,19 @@ final class G5ParserHardeningTests: XCTestCase {
 
     func test_csv_detectDelimiter_ignores_delims_inside_quotes() {
         // The empirical payload: a quoted first field full of commas,
-        // real delimiter is the semicolon.
-        XCTAssertEqual(CSVParser.detectDelimiter(in: "\"a,b,c\";x;y"), ";")
+        // real delimiter is the semicolon. (Stage-B: the sniff lives
+        // rust-side; assert it through the parse it drives.)
+        XCTAssertEqual(RustCSVAdapter.parse("\"a,b,c\";x;y").delimiter, ";")
     }
 
     func test_csv_detectDelimiter_quoted_newline_spans_first_record() {
         // A quoted field containing a newline must not end the record.
         let text = "\"line1\nline2\";col2;col3\n"
-        XCTAssertEqual(CSVParser.detectDelimiter(in: text), ";")
+        XCTAssertEqual(RustCSVAdapter.parse(text).delimiter, ";")
     }
 
     func test_csv_parse_with_quoted_semicolons_keeps_first_cell_intact() {
-        let r = CSVParser.parse("\"a,b,c\";x;y")
+        let r = RustCSVAdapter.parse("\"a,b,c\";x;y")
         XCTAssertEqual(r.delimiter, ";")
         XCTAssertEqual(r.header, ["a,b,c", "x", "y"])
     }
@@ -199,9 +200,10 @@ final class G5ParserHardeningTests: XCTestCase {
 
     func test_csv_unterminated_quote_is_bounded_and_flagged() {
         // One open quote, then a megabyte of 'x' with no closing quote
-        // and no delimiter → previously one unbounded field.
+        // and no delimiter → previously one unbounded field. (Stage-B: the
+        // caps ride the forced-delimiter wire.)
         let blob = "\"" + String(repeating: "x", count: 200_000)
-        let r = CSVParser.parse(blob, limits: CSVParser.Limits(maxCellChars: 1000))
+        let r = RustCSVAdapter.parseWith(blob, delimiter: ",", maxCellChars: 1000)
         XCTAssertTrue(r.truncated, "runaway cell must flip truncated")
         // The single cell is clamped to ~maxCellChars (+ the … marker).
         let cell = (r.header.first ?? "")
@@ -212,19 +214,19 @@ final class G5ParserHardeningTests: XCTestCase {
     func test_csv_no_delimiter_huge_single_column_is_bounded() {
         // No delimiter at all — many one-cell rows. Cap on total cells.
         let many = (0..<10_000).map { "row\($0)" }.joined(separator: "\n")
-        let r = CSVParser.parse(many, limits: CSVParser.Limits(maxTotalCells: 100))
+        let r = RustCSVAdapter.parseWith(many, delimiter: ",", maxTotalCells: 100)
         XCTAssertTrue(r.truncated)
         XCTAssertLessThanOrEqual(r.rows.count + 1, 101)
     }
 
     func test_csv_input_scalar_cap_stops_parsing() {
         let big = String(repeating: "a,b,c\n", count: 10_000)
-        let r = CSVParser.parse(big, limits: CSVParser.Limits(maxInputScalars: 50))
+        let r = RustCSVAdapter.parseWith(big, delimiter: ",", maxInputScalars: 50)
         XCTAssertTrue(r.truncated)
     }
 
     func test_csv_normal_input_not_flagged_truncated() {
-        let r = CSVParser.parse("a,b,c\n1,2,3\n4,5,6\n")
+        let r = RustCSVAdapter.parse("a,b,c\n1,2,3\n4,5,6\n")
         XCTAssertFalse(r.truncated)
         XCTAssertEqual(r.header, ["a", "b", "c"])
         XCTAssertEqual(r.rows.count, 2)

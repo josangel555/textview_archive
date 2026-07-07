@@ -162,6 +162,43 @@ pub fn parse_arena_with(text: &str, delimiter: char, limits: Limits) -> TableAre
     sink.finish(delimiter, truncated, last_field_quoted)
 }
 
+/// Stage-B (TSK-649) wire seam: one-shot parse with a FORCED delimiter and
+/// explicit cell/row caps — the clipboard TSV path
+/// (`ClipboardTableExtractor`) that must NOT sniff. Request map:
+/// `{text, delimiter, max_cell_chars?, max_cells_per_row?}` (absent caps =
+/// defaults; `delimiter` uses its first char, empty ⇒ ','); response = the
+/// same [`Table`] map the session `table()` frame carries.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a malformed/oversized frame.
+pub fn parse_with_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    #[derive(serde::Deserialize)]
+    struct Req {
+        text: String,
+        delimiter: String,
+        max_cell_chars: Option<u64>,
+        max_cells_per_row: Option<u64>,
+        max_total_cells: Option<u64>,
+        max_input_scalars: Option<u64>,
+    }
+    let req: Req = crate::wire::decode_frame(req_frame)?;
+    let delim = req.delimiter.chars().next().unwrap_or(',');
+    let mut limits = Limits::default();
+    if let Some(c) = req.max_cell_chars {
+        limits.max_cell_chars = usize::try_from(c).unwrap_or(usize::MAX);
+    }
+    if let Some(c) = req.max_cells_per_row {
+        limits.max_cells_per_row = usize::try_from(c).unwrap_or(usize::MAX);
+    }
+    if let Some(c) = req.max_total_cells {
+        limits.max_total_cells = usize::try_from(c).unwrap_or(usize::MAX);
+    }
+    if let Some(c) = req.max_input_scalars {
+        limits.max_input_scalars = usize::try_from(c).unwrap_or(usize::MAX);
+    }
+    crate::wire::encode_frame(&parse_with(&req.text, delim, limits))
+}
+
 /// Parse with an explicit delimiter and explicit limits, into the wire DTO.
 #[must_use]
 pub(crate) fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
@@ -647,6 +684,49 @@ impl CsvSink for ArenaSink {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// Stage-B (TSK-649): the forced-delimiter wire seam — a tab-separated
+    /// grid that a SNIFF could misread must parse as TSV when forced, caps
+    /// riding the request. This is the clipboard TSV path's contract.
+    #[test]
+    fn parse_with_wire_forces_the_delimiter_and_applies_caps() {
+        #[derive(serde::Serialize)]
+        struct Req<'a> {
+            text: &'a str,
+            delimiter: &'a str,
+            max_cell_chars: Option<u64>,
+            max_cells_per_row: Option<u64>,
+        }
+        // A comma inside the first cell would win a sniff; forcing '\t'
+        // must keep it as cell content.
+        let text = "a,x\tb\nc\td\n";
+        let frame = crate::wire::encode_frame(&Req {
+            text,
+            delimiter: "\t",
+            max_cell_chars: None,
+            max_cells_per_row: None,
+        })
+        .expect("encode");
+        let resp = parse_with_wire(&frame).expect("parse");
+        let table: Table = crate::wire::decode_frame(&resp).expect("decode");
+        assert_eq!(table.delimiter, "\t");
+        assert_eq!(table.header, vec!["a,x", "b"]);
+        assert_eq!(table.rows, vec![vec!["c", "d"]]);
+        assert!(!table.truncated);
+
+        // Caps: a 2-char cell cap truncates with the … marker + flags it.
+        let capped_frame = crate::wire::encode_frame(&Req {
+            text,
+            delimiter: "\t",
+            max_cell_chars: Some(2),
+            max_cells_per_row: None,
+        })
+        .expect("encode capped");
+        let capped: Table =
+            crate::wire::decode_frame(&parse_with_wire(&capped_frame).expect("parse capped"))
+                .expect("decode capped");
+        assert!(capped.truncated, "the cell cap must flag truncation");
+    }
 
     /// TSK-585 (proptest lane): CSV parser split-correctness. Generates a
     /// rectangular grid of "safe" cells (alnum only — no delimiter / quote /

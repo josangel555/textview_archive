@@ -9,7 +9,7 @@ final class EditableCSVModelTests: XCTestCase {
 
     /// Parse via the Swift parser directly (gate-independent) and wrap.
     private func model(_ csv: String) -> EditableCSVModel {
-        EditableCSVModel(CSVParser.parse(csv))
+        EditableCSVModel(RustCSVAdapter.parse(csv))
     }
 
     // MARK: geometry
@@ -196,7 +196,7 @@ final class EditableCSVModelTests: XCTestCase {
         m.setCell(row: 2, column: 2, to: "trailing,")
 
         let serialized = m.serialize()
-        let reparsed = EditableCSVModel(CSVParser.parse(serialized))
+        let reparsed = EditableCSVModel(RustCSVAdapter.parse(serialized))
 
         // Every current cell survives the parse → serialize → parse cycle.
         for r in 0..<m.rowCount {
@@ -214,7 +214,7 @@ final class EditableCSVModelTests: XCTestCase {
         let m = model("a,b,c\n,,\n1,,3")
         XCTAssertEqual(m.serialize(), "a,b,c\r\n,,\r\n1,,3")
 
-        var empty = EditableCSVModel(CSVParser.parse(""))
+        var empty = EditableCSVModel(RustCSVAdapter.parse(""))
         XCTAssertTrue(empty.isEmpty)
         XCTAssertEqual(empty.serialize(), "")
         XCTAssertFalse(empty.setCell(row: 0, column: 0, to: "x"), "no cells to edit")
@@ -254,10 +254,10 @@ final class EditableCSVModelTests: XCTestCase {
 
     func test_wasTruncated_surfacedFromParse() {
         // Force a tiny cap so the parse truncates, and confirm the flag rides
-        // through to the model (the save path gates on it).
-        var limits = CSVParser.Limits()
-        limits.maxTotalCells = 2
-        let result = CSVParser.parse("a,b,c\n1,2,3\n4,5,6", limits: limits)
+        // through to the model (the save path gates on it). Stage-B: the cap
+        // rides the forced-delimiter wire (per-row cells cap).
+        let result = RustCSVAdapter.parseWith(
+            "a,b,c\n1,2,3\n4,5,6", delimiter: ",", maxCellsPerRow: 2)
         XCTAssertTrue(result.truncated)
         let m = EditableCSVModel(result)
         XCTAssertTrue(m.wasTruncated)
