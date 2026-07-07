@@ -14,12 +14,18 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
 
 ## Current state
 - **B1 ✅ · B2 ✅. Batch in progress: B3 twin deletions — fuzzy ✅ (55470d33), transcript ✅
-  (committed: projection deleted 353→105 lines; types + SystemRecords classification/redaction
-  statics + dir conveniences survive; adapter rust-only w/ lossy-decode tolerance), find ⛔
-  PARKED (TSK-1549 Need-me). NEXT: CSVParser/CSVFilter → CMEditApplier → markdown visitor →
-  folds, then B3's ONE full gate + board records.** Pattern: keep TYPES, delete algorithm,
-  adapter → runRustOnly (.degradedRustFault), retire A/B+differential suites, keep behavior
-  pins. Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
+  (2edb6291), find ⛔ PARKED (TSK-1549 Need-me). NEXT = CSV, recon DONE (map below) →
+  CMEditApplier → markdown visitor → folds → B3's ONE full gate + board records.**
+  CSV surgery map (verified this tick): CSVParser.Result TYPE survives (UI/adapter contract);
+  CSVFilter struct = filter STATE + apply() still LIVE at CSVTableView.swift:160 (check
+  whether the session/rust filter path supersedes before touching); two non-adapter parse
+  callers to retarget: JSTransform.swift:117 (plain — adapter-ready) and
+  ClipboardTableExtractor.swift:141 (FORCED delimiter "\t" + custom Limits — core HAS
+  parse_arena_with(text,delimiter,limits) at csv.rs:158 but it is NOT wire-exposed: add an
+  optional {delimiter,limits} to the csv parse wire first, then retarget, then delete
+  CSVParser's algorithm). Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
+  (.degradedRustFault), retire A/B+differential suites, keep behavior pins.
+  Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).
 - Done this weekend (all recorded on board): S1 EditorSession 8e2771d8 (TSK-1516) · MCP-into-
