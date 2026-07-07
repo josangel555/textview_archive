@@ -131,7 +131,7 @@ fn render_editor_surface(mode: Mode) -> String {
             "#editor{{height:100vh}}</style></head><body>",
             "<div id=\"editor\"></div>",
             "<script src=\"/assets/codemirror.js\"></script>",
-            "<script>/* TSK-1507 s2 mounts cmDispatch-over-WebSocket here */</script>",
+            "<script>/* bridge endpoint: ws://<host>/ws/editor (TSK-1507 s2; NDJSON RPC) */</script>",
             "</body></html>"
         ),
         bg = bg,
@@ -375,8 +375,18 @@ fn handle_conn(
     // Cap the bytes consumed parsing the request line + headers so an endless
     // (or giant) header stream is cut off here instead of growing to OOM.
     let mut reader = BufReader::new(stream.try_clone()?.take(MAX_HEADER_BYTES));
-    let (status, ctype, body) = match read_request_head(&mut reader, REQUEST_HEAD_DEADLINE) {
-        Ok((req_line, host)) if host_allowed(&host) => {
+    let head = read_request_head(&mut reader, REQUEST_HEAD_DEADLINE);
+    // TSK-1507 s2: WebSocket upgrade — the bridge transport for the shared
+    // surfaces. Same Host wall as HTTP (anti DNS-rebinding), then the
+    // connection leaves the request/response world for the frame loop.
+    if let Ok((req_line, host, Some(key))) = &head {
+        if host_allowed(host) && req_line.starts_with("GET /ws/editor") {
+            drop(reader); // the head cap must not strangle the frame stream
+            return ws_session(stream, key, root);
+        }
+    }
+    let (status, ctype, body) = match head {
+        Ok((req_line, host, _)) if host_allowed(&host) => {
             // Record a successfully-confined /view into the recents MRU, then
             // either serve the /recent page or fall through to the pure router.
             if let Some(p) = viewed_path(&req_line, root) {
@@ -445,7 +455,7 @@ fn handle_conn(
 /// per read. A trip answers `TimedOut` → 400, releasing the worker slot.
 /// Parameterized (production passes [`REQUEST_HEAD_DEADLINE`]) so the test can
 /// trip it without a multi-second sleep.
-fn read_request_head<R: BufRead>(reader: &mut R, deadline: Duration) -> io::Result<(String, String)> {
+fn read_request_head<R: BufRead>(reader: &mut R, deadline: Duration) -> io::Result<(String, String, Option<String>)> {
     let start = std::time::Instant::now();
     let mut req_line = String::new();
     if reader.read_line(&mut req_line)? == 0 {
@@ -457,6 +467,7 @@ fn read_request_head<R: BufRead>(reader: &mut R, deadline: Duration) -> io::Resu
         return Err(io::Error::new(io::ErrorKind::InvalidData, "request line too large"));
     }
     let mut host = String::new();
+    let mut ws_key: Option<String> = None;
     loop {
         if start.elapsed() > deadline {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "request head deadline exceeded"));
@@ -474,8 +485,13 @@ fn read_request_head<R: BufRead>(reader: &mut R, deadline: Duration) -> io::Resu
         if let Some(v) = h.to_ascii_lowercase().strip_prefix("host:") {
             host = v.trim().to_string();
         }
+        // TSK-1507 s2: the WebSocket upgrade key (value is case-SENSITIVE
+        // base64 — take it from the raw line, not the lowered copy).
+        if h.to_ascii_lowercase().starts_with("sec-websocket-key:") {
+            ws_key = Some(h[18..].trim().to_string());
+        }
     }
-    Ok((req_line, host))
+    Ok((req_line, host, ws_key))
 }
 
 /// Pure routing: request line → (status, content-type, body). Separated from the
@@ -2106,6 +2122,252 @@ fn image_html(name: &str, raw: &[u8], info: Option<ImageInfo>, truncated: bool) 
     s
 }
 
+// ---------------------------------------------------------------------------
+// TSK-1507 s2 — the WebSocket bridge transport (RFC 6455, hand-rolled like
+// base64 below: the web tier stays dependency-free).
+//
+// Browsers cannot speak the mdv-serve unix-socket envelope, so the shared
+// surfaces get their duplex channel here: `GET /ws/editor` upgrades, then
+// NDJSON-shaped RPC frames flow both ways ({"id":N,"method":...,"params":...}
+// -> {"id":N,"result":...} | {"id":N,"error":...}). s2 ships the transport +
+// two proving methods (ping, doc.load with the SAME root confinement as
+// /view); the full cmDispatch schema lands with the s3 codegen contract.
+
+/// SHA-1 (RFC 3174). ONLY for the RFC 6455 handshake accept-key — the spec
+/// pins SHA-1 there (it is not a security boundary; the key is not secret).
+fn sha1(data: &[u8]) -> [u8; 20] {
+    let mut h: [u32; 5] = [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0];
+    let ml = (data.len() as u64) * 8;
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&ml.to_be_bytes());
+    for chunk in msg.chunks_exact(64) {
+        let mut w = [0u32; 80];
+        for (i, word) in chunk.chunks_exact(4).enumerate() {
+            w[i] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        }
+        for i in 16..80 {
+            w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
+        }
+        let (mut a, mut b, mut c, mut d, mut e) = (h[0], h[1], h[2], h[3], h[4]);
+        for (i, &wi) in w.iter().enumerate() {
+            let (f, k) = match i {
+                0..=19 => ((b & c) | ((!b) & d), 0x5A82_7999u32),
+                20..=39 => (b ^ c ^ d, 0x6ED9_EBA1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC),
+                _ => (b ^ c ^ d, 0xCA62_C1D6),
+            };
+            let tmp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(wi);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = tmp;
+        }
+        h[0] = h[0].wrapping_add(a);
+        h[1] = h[1].wrapping_add(b);
+        h[2] = h[2].wrapping_add(c);
+        h[3] = h[3].wrapping_add(d);
+        h[4] = h[4].wrapping_add(e);
+    }
+    let mut out = [0u8; 20];
+    for (i, word) in h.iter().enumerate() {
+        out[i * 4..i * 4 + 4].copy_from_slice(&word.to_be_bytes());
+    }
+    out
+}
+
+/// RFC 6455 §4.2.2: accept = base64(sha1(key + GUID)).
+fn ws_accept_key(client_key: &str) -> String {
+    const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    let mut buf = Vec::with_capacity(client_key.len() + GUID.len());
+    buf.extend_from_slice(client_key.as_bytes());
+    buf.extend_from_slice(GUID.as_bytes());
+    base64_encode(&sha1(&buf))
+}
+
+/// One parsed frame: (opcode, payload). Client frames MUST be masked
+/// (RFC 6455 §5.1 — unmasked input is a protocol error → None closes).
+/// Payloads are capped so a hostile length prefix cannot balloon memory.
+const WS_MAX_PAYLOAD: u64 = 16 * 1024 * 1024;
+
+fn ws_read_frame<R: io::Read>(r: &mut R) -> Option<(u8, Vec<u8>)> {
+    let mut hdr = [0u8; 2];
+    r.read_exact(&mut hdr).ok()?;
+    let opcode = hdr[0] & 0x0F;
+    let masked = hdr[1] & 0x80 != 0;
+    let mut len = u64::from(hdr[1] & 0x7F);
+    if len == 126 {
+        let mut ext = [0u8; 2];
+        r.read_exact(&mut ext).ok()?;
+        len = u64::from(u16::from_be_bytes(ext));
+    } else if len == 127 {
+        let mut ext = [0u8; 8];
+        r.read_exact(&mut ext).ok()?;
+        len = u64::from_be_bytes(ext);
+    }
+    if !masked || len > WS_MAX_PAYLOAD {
+        return None;
+    }
+    let mut mask = [0u8; 4];
+    r.read_exact(&mut mask).ok()?;
+    let mut payload = vec![0u8; len as usize];
+    r.read_exact(&mut payload).ok()?;
+    for (i, b) in payload.iter_mut().enumerate() {
+        *b ^= mask[i % 4];
+    }
+    Some((opcode, payload))
+}
+
+/// Server frames are unmasked (RFC 6455 §5.1). FIN always set (no
+/// fragmentation server-side — every reply fits one frame under the cap).
+fn ws_write_frame<W: Write>(w: &mut W, opcode: u8, payload: &[u8]) -> io::Result<()> {
+    let mut head = vec![0x80 | (opcode & 0x0F)];
+    let len = payload.len();
+    if len < 126 {
+        head.push(len as u8);
+    } else if len <= u16::MAX as usize {
+        head.push(126);
+        head.extend_from_slice(&(len as u16).to_be_bytes());
+    } else {
+        head.push(127);
+        head.extend_from_slice(&(len as u64).to_be_bytes());
+    }
+    w.write_all(&head)?;
+    w.write_all(payload)?;
+    w.flush()
+}
+
+/// Minimal JSON string escape for the RPC replies this session writes.
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Answer one RPC text frame. The tiny hand parser pulls `id` (integer),
+/// `method` (string) and `params.path` (string) — enough for the s2 proving
+/// methods; the schema-generated codec replaces this in s3.
+fn ws_rpc_reply(text: &str, root: &Path) -> String {
+    fn field_str(text: &str, key: &str) -> Option<String> {
+        let pat = format!("\"{key}\":");
+        let at = text.find(&pat)? + pat.len();
+        let rest = text[at..].trim_start();
+        let rest = rest.strip_prefix('"')?;
+        let mut out = String::new();
+        let mut esc = false;
+        for c in rest.chars() {
+            if esc {
+                out.push(match c {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    other => other,
+                });
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                return Some(out);
+            } else {
+                out.push(c);
+            }
+        }
+        None
+    }
+    let id: i64 = {
+        let pat = "\"id\":";
+        text.find(pat)
+            .and_then(|at| {
+                text[at + pat.len()..]
+                    .trim_start()
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '-')
+                    .collect::<String>()
+                    .parse()
+                    .ok()
+            })
+            .unwrap_or(0)
+    };
+    match field_str(text, "method").as_deref() {
+        Some("ping") => format!("{{\"id\":{id},\"result\":{{}}}}"),
+        Some("doc.load") => {
+            let path = field_str(text, "path").unwrap_or_default();
+            match confined(root, Path::new(&path)) {
+                Some(p) => match std::fs::read_to_string(&p) {
+                    Ok(body) if body.len() <= PREVIEW_CAP => format!(
+                        "{{\"id\":{id},\"result\":{{\"text\":\"{}\"}}}}",
+                        json_escape(&body)
+                    ),
+                    Ok(_) => format!(
+                        "{{\"id\":{id},\"error\":\"file exceeds the preview cap\"}}"
+                    ),
+                    Err(_) => format!("{{\"id\":{id},\"error\":\"unreadable\"}}"),
+                },
+                // The SAME wall /view enforces: nothing outside root, ever.
+                None => format!("{{\"id\":{id},\"error\":\"path is outside the served root\"}}"),
+            }
+        }
+        Some(other) => format!(
+            "{{\"id\":{id},\"error\":\"unknown method: {}\"}}",
+            json_escape(other)
+        ),
+        None => format!("{{\"id\":{id},\"error\":\"malformed request\"}}"),
+    }
+}
+
+/// The upgraded connection: 101 handshake, then the frame loop (text=RPC,
+/// ping→pong, close→close). Idle timeout is relaxed from the 15 s HTTP
+/// read timeout to 5 min — an editor surface legitimately sits idle; the
+/// slot cap still bounds total connections.
+fn ws_session(stream: TcpStream, client_key: &str, root: &Path) -> io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(300)))?;
+    let mut writer = stream.try_clone()?;
+    let resp = format!(
+        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",
+        ws_accept_key(client_key)
+    );
+    writer.write_all(resp.as_bytes())?;
+    writer.flush()?;
+    let mut reader = BufReader::new(stream);
+    loop {
+        let Some((opcode, payload)) = ws_read_frame(&mut reader) else {
+            return Ok(()); // EOF / protocol error / oversize → drop
+        };
+        match opcode {
+            0x1 => {
+                let text = String::from_utf8_lossy(&payload);
+                let reply = ws_rpc_reply(&text, root);
+                ws_write_frame(&mut writer, 0x1, reply.as_bytes())?;
+            }
+            0x9 => ws_write_frame(&mut writer, 0xA, &payload)?, // ping → pong
+            0x8 => {
+                let _ = ws_write_frame(&mut writer, 0x8, &[]);
+                return Ok(());
+            }
+            _ => {} // binary/continuation/pong: ignored in s2
+        }
+    }
+}
+
 /// Standard base64 (RFC 4648) with `=` padding. Hand-rolled to keep the web tier
 /// dependency-free; only used to inline a capped (≤1 MiB) image as a data URI.
 fn base64_encode(data: &[u8]) -> String {
@@ -2450,7 +2712,7 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::TimedOut);
         // The same head parses fine under the real (generous) budget.
         let mut ok = io::Cursor::new(head.to_vec());
-        let (line, host) = read_request_head(&mut ok, REQUEST_HEAD_DEADLINE).unwrap();
+        let (line, host, _) = read_request_head(&mut ok, REQUEST_HEAD_DEADLINE).unwrap();
         assert!(line.starts_with("GET /"));
         assert_eq!(host, "localhost");
     }
@@ -3822,6 +4084,149 @@ mod tests {
 
         *ASSETS_DIR.write().unwrap() = None;
         let _ = fs::remove_dir_all(&root);
+    }
+
+    // --- TSK-1507 s2: the WebSocket bridge transport ---
+
+    #[test]
+    fn sha1_matches_rfc3174_vectors() {
+        fn hex(b: &[u8]) -> String {
+            b.iter().map(|x| format!("{x:02x}")).collect()
+        }
+        assert_eq!(hex(&sha1(b"abc")), "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(hex(&sha1(b"")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        assert_eq!(
+            hex(&sha1(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")),
+            "84983e441c3bd26ebaae4aa1f95129e5e54670f1"
+        );
+    }
+
+    #[test]
+    fn ws_accept_key_matches_the_rfc6455_example() {
+        // RFC 6455 §1.3's worked example.
+        assert_eq!(
+            ws_accept_key("dGhlIHNhbXBsZSBub25jZQ=="),
+            "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        );
+    }
+
+    /// Build a MASKED client frame the way a browser does.
+    fn client_frame(opcode: u8, payload: &[u8]) -> Vec<u8> {
+        let mut f = vec![0x80 | opcode];
+        let mask = [7u8, 42, 99, 3];
+        let len = payload.len();
+        if len < 126 {
+            f.push(0x80 | len as u8);
+        } else {
+            f.push(0x80 | 126);
+            f.extend_from_slice(&(len as u16).to_be_bytes());
+        }
+        f.extend_from_slice(&mask);
+        f.extend(payload.iter().enumerate().map(|(i, b)| b ^ mask[i % 4]));
+        f
+    }
+
+    #[test]
+    fn ws_frame_codec_roundtrips_and_enforces_masking() {
+        // A masked client text frame decodes to its payload.
+        let raw = client_frame(0x1, b"{\"id\":1,\"method\":\"ping\"}");
+        let (op, payload) = ws_read_frame(&mut &raw[..]).expect("frame decodes");
+        assert_eq!(op, 0x1);
+        assert_eq!(payload, b"{\"id\":1,\"method\":\"ping\"}");
+        // An UNMASKED client frame is a protocol error (RFC 6455 §5.1).
+        let mut unmasked = vec![0x81, 4];
+        unmasked.extend_from_slice(b"nope");
+        assert!(ws_read_frame(&mut &unmasked[..]).is_none());
+        // Server frames write unmasked and parse back by hand.
+        let mut out = Vec::new();
+        ws_write_frame(&mut out, 0x1, b"hello").unwrap();
+        assert_eq!(out[0], 0x81);
+        assert_eq!(out[1], 5, "no mask bit on server frames");
+        assert_eq!(&out[2..], b"hello");
+    }
+
+    #[test]
+    fn ws_rpc_confines_doc_load_like_view() {
+        // Canonicalized root — confined() compares canonical candidate
+        // against root verbatim (main() canonicalizes the served root; the
+        // macOS temp dir is a /var -> /private/var symlink).
+        let root = fixture().canonicalize().unwrap();
+        fs::write(root.join("note.md"), "hello ws").unwrap();
+        let ok = ws_rpc_reply(
+            &format!("{{\"id\":7,\"method\":\"doc.load\",\"params\":{{\"path\":\"{}\"}}}}",
+                     root.join("note.md").display()),
+            &root,
+        );
+        assert!(ok.contains("\"id\":7") && ok.contains("hello ws"), "reply: {ok}");
+        let escape = ws_rpc_reply(
+            "{\"id\":8,\"method\":\"doc.load\",\"params\":{\"path\":\"/etc/passwd\"}}",
+            &root,
+        );
+        assert!(escape.contains("outside the served root"), "the /view wall applies: {escape}");
+        let unknown = ws_rpc_reply("{\"id\":9,\"method\":\"nope\"}", &root);
+        assert!(unknown.contains("unknown method"), "{unknown}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// End-to-end over a REAL socket: upgrade handshake → RPC frame →
+    /// reply frame → close. Exercises the same handle_conn the server runs.
+    #[test]
+    fn ws_end_to_end_upgrade_rpc_close() {
+        use std::io::Read;
+        let root = fixture().canonicalize().unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server_root = root.clone();
+        let server = std::thread::spawn(move || {
+            let (conn, _) = listener.accept().unwrap();
+            let recents = Mutex::new(Vec::new());
+            let history = Mutex::new(nav::NavHistory::new());
+            let _ = handle_conn(conn, &server_root, &recents, &history);
+        });
+
+        let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        c.write_all(
+            b"GET /ws/editor HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+        )
+        .unwrap();
+        // Read the 101 head up to the blank line.
+        let mut head = Vec::new();
+        let mut byte = [0u8; 1];
+        while !head.ends_with(b"\r\n\r\n") {
+            c.read_exact(&mut byte).unwrap();
+            head.push(byte[0]);
+        }
+        let head = String::from_utf8(head).unwrap();
+        assert!(head.starts_with("HTTP/1.1 101"), "handshake: {head}");
+        assert!(head.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="), "accept key: {head}");
+
+        // One RPC round-trip.
+        c.write_all(&client_frame(0x1, b"{\"id\":1,\"method\":\"ping\"}")).unwrap();
+        let (op, payload) = ws_read_frame_unmasked_for_test(&mut c).expect("reply frame");
+        assert_eq!(op, 0x1);
+        let text = String::from_utf8(payload).unwrap();
+        assert!(text.contains("\"id\":1") && text.contains("result"), "reply: {text}");
+
+        // Close handshake winds the session down.
+        c.write_all(&client_frame(0x8, &[])).unwrap();
+        server.join().unwrap();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Parse an UNMASKED server frame (test-side counterpart of the codec).
+    fn ws_read_frame_unmasked_for_test<R: std::io::Read>(r: &mut R) -> Option<(u8, Vec<u8>)> {
+        let mut hdr = [0u8; 2];
+        r.read_exact(&mut hdr).ok()?;
+        let opcode = hdr[0] & 0x0F;
+        let mut len = u64::from(hdr[1] & 0x7F);
+        if len == 126 {
+            let mut ext = [0u8; 2];
+            r.read_exact(&mut ext).ok()?;
+            len = u64::from(u16::from_be_bytes(ext));
+        }
+        let mut payload = vec![0u8; len as usize];
+        r.read_exact(&mut payload).ok()?;
+        Some((opcode, payload))
     }
 
     #[test]
