@@ -42,13 +42,14 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   TSK-1318 — flat command list → category-ordered menu sections; 8 tests). T8 NotebookOutputParser
   (54612246, TSK-1440 — parse .ipynb cell outputs to typed .stream/.text/.image/.error/.unknown;
   9 tests). T9 OutputNaming (25a73b37, TSK-1473 — reusable collision-safe "never overwrite; write
-  a sibling" primitive nonColliding(desired:exists:); 8 tests; serves convert/extract/HTTP-save
-  render tails). Also noted: 1269 slice-1 "decision" already = ExternalEditReconciler.reconcile;
-  FULL menu-bar reorg landed via 1413 so T7 MenuOrganizer is a model under a shipped render feature.
-  Pattern: each drain tick extracts one clean pure core (geometry/model/bridge/memo/classifier/menu/
-  parser/primitive) under a render/owner-gated feature, host-tests it, parks/notes the render tail.
-  Reported pool from ~offset 100 = the TSK-1411 usability-audit families (mostly render/VM/owner,
-  seeded with occasional pure slices). 1550 = master VM unlock; 1334 = T5-pixel Screen-Rec grant.
+  a sibling" primitive; 8 tests). T10 SALVAGE INTEGRATION START (284aac73, TSK-1447 via TSK-1506):
+  cherry-picked salvage commit 2b40e78e (HTTP history/save, HTTPRequestStore) — CLEAN, central gate
+  GREEN (27 tests). KEY FINDING: the 9 worktree-wf_dadf7ab6-e88-* branches are REAPED but their
+  commits SURVIVE in the object DB (cat-file resolves) — recipe = cherry-pick SHA→central gate→
+  commit, ONE per tick. Remaining complete commits on TSK-1506: 56e5600e install-naming(1498),
+  7684fd36 lens-table(1467), 4577ce95 feeds-loop(1446), f5c9d73f mermaid-err(1466,WebView), 58f0a775
+  sqlite-export(1439), 05506d01 invisibles(1484) + 9 WIPs. Pattern: drain tick = extract one pure
+  host core OR integrate one salvage commit, central-gate it, record. 1550/1334 = the two VM unlocks.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
