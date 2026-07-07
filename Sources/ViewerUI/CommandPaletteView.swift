@@ -253,13 +253,14 @@ struct CommandPaletteView: View {
     /// star.fill icon when `isBookmark` is true — no need to prefix
     /// the displayName here.
     private func merged() -> [HistoryEntry] {
-        let bookmarkURLs = Set(model.bookmarks.map { $0.url })
+        // Dedup logic lives in the host-tested PaletteCandidates.merge (TSK-1179);
+        // caching this query-independent list across keystrokes is the render-tail
+        // perf slice (PaletteCandidateCache keyed on a palette-open generation).
         let bookmarkAsEntries = model.bookmarks.map {
             HistoryEntry(url: $0.url, kind: .file, lastOpenedAt: $0.addedAt,
                          displayName: $0.displayName)
         }
-        let extraRecents = model.recents.filter { !bookmarkURLs.contains($0.url) }
-        return bookmarkAsEntries + extraRecents
+        return PaletteCandidates.merge(bookmarkEntries: bookmarkAsEntries, recents: model.recents)
     }
 
     private var paletteIcon: String {
