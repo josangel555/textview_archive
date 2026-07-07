@@ -180,3 +180,129 @@ The app-wide usability push (TSK-1411 tree) is parked mid-drain. Everything is p
   gate-verified). Integration ticket: TSK-1506 (branch↔ticket map + rebase→gate→ff recipe).
   Worktree DIRS reaped; branches kept.
 - **Resume =** work TSK-1506 first, then continue the protocol batch queue inline.
+
+## THE 200-QUEUE (owner-ratified 2026-07-07) — batch work-loop edition
+
+**WORK-LOOP MANDATE (owner, 2026-07-07 — hyper-efficiency round):** pull 5–15 RELATED items
+as ONE batch → implement code+unit tests in one go (minimal interleaved checks, targeted
+tests only) → ONE full gate pass for the batch → THEN batch the higher-order tests (WV/AX/
+T4/T5) for the whole batch — run the VM UI lane ONLY if the batch genuinely changed render
+behavior → ONE commit per batch (all TSK ids in the message + Claude-Session trailer) →
+board records to `fixed` as a batch with evidence. Do NOT babysit one change per gate/commit.
+Do NOT pull from review/validated lanes (owner runs the validation look separately). Blocked
+item ⇒ park it, take the next. Mark finished items ✅ in this list each tick.
+
+### TIER 0 — Fable/XL only (get-right-first-time; do NOT hand to workers)
+F1. ✅ TSK-1516 S1 EditorSession core (shipped 8e2771d8)
+F2. TSK-1517 S2 stateful FFI family + eviction wiring (the forever-ABI)
+F3. TSK-1518 S3 shadow-mode differential net (gates the supervised cutovers)
+F4. TSK-1530 M6 TextDisplayView→CM6 read-only (pattern-prover for all M-migrations)
+F5. TSK-1539 surface catalog + matrix guard semantics (mandate enforcement design)
+F6. TSK-1537 daemon-vs-instances design (lifecycle/activation/skew)
+F7. TSK-1507 slice-3 bridge schema → wire-contract codegen
+F8. TSK-1538 dark-theme diagnosis (product-vs-test judgment)
+F9. TSK-1214 lazy-grammar architecture (dlopen × hardened-runtime/codesign)
+F10. v4 DLD gap-closure inputs (6 gaps from the meta-analysis synthesis)
+
+### #1–10 finish-in-flight
+1. TSK-1544 live-app MCP E2E (after owner relaunches TextView) · 2. TSK-1546 close ·
+3. TSK-1547 close · 4. fold UAT journey slice (VM) · 5. TSK-1513 roadmap revision ·
+6. TSK-1514 umbrella reconcile 379/538/651 · 7. TSK-1412 board↔code sweep ·
+8. Canvas fixed-slice validation batch A (1372/1374/1375) · 9. batch B (1376/1377/1378/1379/1360/1392) ·
+10. TSK-1365 WebContent-termination hardening
+
+### #11–19 Stage-B twin deletions (per docs/STAGE_B_DELETION_UAT_2026-07-04.md, agent-driven)
+11. FuzzyMatcher · 12. FindEngine · 13. ClaudeLogParser · 14. hex pair [needs TSK-810 call] ·
+15. CSVParser/CSVFilter · 16. CMEditApplier · 17. markdown structural visitor ·
+18. TreeSitterEngine folds · 19. formula: flip → UAT → delete FormulaEngine
+
+### #20–27 stateful core (S-slices; S5/S6 SUPERVISED — schedule with owner)
+20. TSK-1516 ✅ · 21. TSK-1517 · 22. TSK-1518 · 23. TSK-1519 · 24. TSK-1522 · 25. TSK-1523 ·
+26. TSK-1520 [supervised] · 27. TSK-1521 [supervised]
+
+### #28–36 mandate guards + AX lane
+28. TSK-1539 · 29. TSK-1534 webview allowlist · 30. TSK-1260/1261 native AXUIElement adapter ·
+31. TSK-1263 agent AX harness · 32. TSK-1543 slice: top-20 verbs interaction tests ·
+33. slice: footer/statusbar chips · 34. slice: menu-bar sweep · 35. TSK-1197/1199 uat-runner ·
+36. TSK-1198 reconcile/close (superseded by native adapter)
+
+### #37–45 web-for-content migrations (TSK-1524 epic)
+37. TSK-1530 M6 (first) · 38. TSK-1527 M3 CSV grid · 39. TSK-1528 M4 XLSX · 40. TSK-1531 M7 hex ·
+41. TSK-1532 M8 transcripts/logs · 42. TSK-1533 M9 git history/blame · 43. TSK-1529 M5 docx ·
+44. TSK-1525 M1 git diff [dep: @codemirror/merge] · 45. TSK-1526 M2 merge UX [same dep]
+
+### #46–52 MCP / remote tail
+46. TSK-1536 mdv CLI opener · 47. MCP reconnect loop (file + fix; TSK-665 recorded follow-up) ·
+48. TSK-1507 s1 serve static assets · 49. s2 cmDispatch-over-WebSocket · 50. s3 schema codegen ·
+51. TSK-1537 daemon design · 52. TSK-1192 semantic code-nav MCP
+
+### #53–68 high-value bugs & felt perf
+53. TSK-1538 · 54. TSK-1423 hex unsaved-edit search · 55. TSK-1428 outline false headings ·
+56. TSK-1499 fold-bench budget · 57. TSK-598 MD-open lag · 58. TSK-838 DOM-patch persistent page ·
+59. TSK-891 Page-Up jank · 60. TSK-1490 memory-release audit · 61. TSK-1318 menu reorg ·
+62. TSK-1322 paste repro+fix · 63. TSK-1311 session-state independence · 64. TSK-1200 scroll-to-line verb ·
+65. TSK-1214 lazy grammars · 66. TSK-543 reconcile-vs-1124 · 67. TSK-1179 palette trace · 68. TSK-1185 git menu latency
+
+### #69–90 usability drain (self-contained briefs on each ticket)
+69. TSK-1481 · 70. TSK-1482 · 71. TSK-1472 · 72. TSK-1486 · 73. TSK-1515 · 74. TSK-1438 ·
+75. TSK-1440 · 76. TSK-1443 · 77. TSK-1444 · 78. TSK-1445 · 79. TSK-1475 · 80. TSK-1476 ·
+81. TSK-1477 · 82. TSK-1478 · 83. TSK-1480 · 84. TSK-1473 · 85. TSK-1474 · 86. TSK-1469 ·
+87. TSK-1495 · 88. TSK-1485 · 89. TSK-1448 · 90. TSK-1489
+
+### #91–100 QoL / test-infra
+91. TSK-1542 nag storm · 92. TSK-1548 progress rotation · 93. TSK-1535 warnings→deny ·
+94. TSK-1540 WV-on-host · 95. TSK-1541 rust coverage · 96. TSK-1239 VM fd exhaustion ·
+97. TSK-1247 VM webview-blank · 98. TSK-1504 cheap editor assists · 99. TSK-1505 spelling verbs ·
+100. TSK-1501 color-literal sweep
+
+### #101–200 the next hundred
+**Security & data safety (101–108):** 101. TSK-1129 LSP spawn confirm · 102. TSK-1269 ExternalEditReconciler
+into dirty-reload · 103. TSK-1165 external-edit merge UX wiring · 104. TSK-1496 secret masking ·
+105. TSK-1203 trust-mode failure-surfacing · 106. TSK-628-class advisory sweep refresh ·
+107. TSK-1194 resource-bounded test exec · 108. TSK-945 security-audit integration
+**Agent tools (109–114):** 109. TSK-1192 (dup of 52 — skip if done) · 110. TSK-1196 file-ownership
+dashboard · 111. TSK-943 LSP/diagnostics→Claude sharing · 112. TSK-944 internal browser automation ·
+113. TSK-1108 CR Q&A UI + transport · 114. TSK-1340 palette param-input step
+**Feature tails — reading surfaces (115–126):** 115. TSK-1140 PDF reader tail · 116. TSK-1142 browser tab ·
+117. TSK-1149 feeds UI · 118. TSK-1147 dep-source browse · 119. TSK-1172 notebooks kernel/UI ·
+120. TSK-1440 (dup of 75) · 121. TSK-1173 sticky scroll · 122. TSK-1170 snippets tab-stops ·
+123. TSK-1156 richtext WYSIWYG v1 · 124. TSK-1157 PlantUML/D2 renderers · 125. TSK-1158 profiling viewers ·
+126. TSK-1205 extracted-doc grid polish
+**Editor & UI tails (127–140):** 127. TSK-1111 bookmark open-in-new · 128. TSK-1123 tool-window placement tail ·
+129. TSK-1249 terminal header row · 130. TSK-1252 vim Esc beep · 131. TSK-1319 dynamic per-tab menu ·
+132. TSK-1114 paint selection UI · 133. TSK-1168 vector overlay editing · 134. TSK-1427 rich-paste tables/nested lists ·
+135. TSK-1164 per-language coverage matrix · 136. TSK-1169 ~/.textview settings relocation ·
+137. TSK-1171 3-way merge 3-pane UI · 138. TSK-1155 unified action history wiring ·
+139. TSK-1494 cursor mode (view-only surfaces) · 140. TSK-1502 lens memory decision-prep
+**AX epic build-out (141–148):** 141. TSK-1543 slice: file-nav tree · 142. slice: palette + dialogs ·
+143. slice: editor chrome (find bar, gutter) · 144. slice: tool windows/panels · 145. slice: CSV grid ·
+146. TSK-1264 ElementRef resolver · 147. TSK-1265 Copy-Reference surfaces · 148. TSK-1266 element picker
+**1507 WebUI build-out (149–154):** 149. sanitizer→core single-source · 150. RenderedBlockDiff/BlockPatchJS
+collapse into html_patch.rs · 151. assist-policy→core (ties TSK-1504) · 152. WebUI auth/session hardening pass ·
+153. WebUI serve-backed WUI v1 page · 154. canvas-in-WebUI slice
+**Code review & image editor epics (155–166):** 155–158. TSK-537 slices: diff viewer→comments→cumulative
+diffs→export · 159–163. TSK-1048 slices: brush engine perf → shapes/arrows → selection tools → layers v1 →
+save-format · 164. TSK-1441 image editor UX pass · 165. TSK-1442 audio round-trip verify · 166. TSK-1426 prep
+(paint persistence options doc for owner)
+**Test-infra & perf traces (167–178):** 167. TSK-1336 walkthrough T5 · 168. TSK-1184 hover-synth trace mode ·
+169. TSK-1180 search result-scroll trace · 170. TSK-1244 coverage CI wire (reconcile) · 171. TSK-1130-class
+Swift-Testing expansion batch · 172. TSK-1195 render-classifier prep doc · 173. per-engine consumption-guard
+extension to new adapters · 174. TSK-1223-class fuzz for editor_session + new FFI · 175. FoldBench/MsgPack
+bench re-budget (with 1499) · 176. VM lane parallel-split investigation (WV shards) · 177. mem-profile
+scenario refresh post-relocation · 178. giga-uat smoke catalog refresh
+**Board & docs hygiene (179–186):** 179. TSK-1411/1450–1460 epic-state reconcile after drain ·
+180. TSK-1413 entry-point cohesion audit · 181. TSK-1449 consolidate overlapping surfaces ·
+182. TSK-590 owner bug-list re-verify sweep · 183. FEATURE_INVENTORY refresh · 184. LESSONS→SOP distillation
+(for v4 policy rows) · 185. archive dated design docs pass (~35 files) · 186. TSK-1329/1330 tracker-nit
+INT tickets
+**Wishes worth pulling when reached (187–200):** 187. TSK-955 RSS reader epic v1 · 188. TSK-1157 (dup guard) ·
+189. TSK-703/1155 action-history view · 190. TSK-706/1156 richtext (dup guard) · 191. TSK-715 profiling epic
+kickoff · 192. TSK-1147 (dup guard) · 193. TSK-697 agent-services search slice · 194. TSK-1493 run
+configurations · 195. TSK-1470 dep-graph interactive · 196. TSK-1487 age coloring · 197. TSK-1488 FPS
+instrumentation · 198. TSK-1500 resurrect deleted from history · 199. TSK-891 (dup guard) ·
+200. TSK-1497-prep: debugger scoping doc for the owner decision
+
+### Owner one-word unblocks (not in the queue until decided)
+@codemirror/merge (→44/45) · TSK-810 hex carve-out (→14) · Canvas M0–M6 review + TSK-1349 ·
+TSK-1506 salvage resume · finish-or-cut: 1414/1418/1471/1491/1426 · formula gate 1468/788 ·
+TSK-831/852 build opt-ins · TSK-1287 crypto dep · supervised sessions for #26/27.
