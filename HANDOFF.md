@@ -75,9 +75,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   there; verified end-to-end; only the manual launchctl bootstrap smoke remains. T22 s5 DONE
   (fbb81053, TSK-1557): serve→lib+bin split + transport::CoreTransport (InProcess routes through
   the SAME serve::dispatch; Socket = connect+hello, same envelope; MDV_REMOTE_SOCKET from_env) —
-  SAME contract suite vs BOTH arms (Socket vs a real handle_connection socketpair); 63 serve tests,
-  rust gate GREEN 20 suites. Tails: TUI consumer refactor + env smoke. s6 (mdv-web thin-client,
-  TSK-1558) now UNBLOCKED — the last daemon slice. NOTE: adding an ffi
+  SAME contract suite vs BOTH arms; 63 serve tests, rust gate GREEN 20 suites. T23 s6 SLICE-1 DONE
+  (ffafcc73, TSK-1558): mdv-web markdown route via the seam (env-selected, fail-safe fallback;
+  both-transport byte-identical tests incl. a real socketpair e2e; + Send bound, encode/decode_body,
+  Socket::from_connected). ALL SIX daemon slices now have landed cores ✅. Remaining daemon tails:
+  TUI consumer refactor · web's other route families need per-family WIRE METHODS (protocol
+  expansion, multi-slice) · wiring loops (idle tick, retire envelope) · launchctl bootstrap smoke. NOTE: adding an ffi
   module trips the cbindgen staleness check — run build-rust-core.sh to restage. ✅ TSK-1559
   (MCP wedge) FIXED T13+T17+T18
   (84cb6560+75fb2ac6+c5b37ed1): reader fd-cache (read-side ObjC crash) + send() raw write(2)
