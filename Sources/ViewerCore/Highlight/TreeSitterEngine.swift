@@ -47,16 +47,9 @@ public final class TreeSitterEngine: @unchecked Sendable {
     /// we don't re-try on every call (rare; usually a missing .scm).
     private var failed: Set<HighlightLanguage> = []
 
-    // MARK: Fold storage
-    //
-    // Lives alongside the highlight cache rather than as a separate
-    // actor: cheaper than a hop and the lock is only held across
-    // dictionary ops (never across parsing). All mutation happens
-    // through the `TreeSitterEngine+Folds.swift` extension.
-    internal let foldLock = NSLock()
-    internal var foldBundles: [HighlightLanguage: FoldBundle] = [:]
-    internal var foldFailed:  Set<HighlightLanguage> = []
-    internal var foldCache:   [HighlightLanguage: FoldCacheEntry] = [:]
+    // Stage-B (TSK-649): the fold twin (`TreeSitterEngine+Folds.swift`, its
+    // per-language `.scm` queries, and the fold cache that lived here) is
+    // DELETED — folds are served by the rust engine via `RustFoldAdapter`.
 
     /// Tokenize `text` using `language`. Returns NSRange-keyed runs
     /// (UTF-16 offsets) suitable for direct application to AppKit /

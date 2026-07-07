@@ -1244,18 +1244,12 @@ public final class DocumentModel: ObservableObject {
             // `regions` too — sticky scroll (TSK-719) reasons in lines.
             let result = await Task.detached(priority: .userInitiated)
                 { () -> (regions: [FoldRegion], cm: [CMFoldRange]) in
-                // TSK-1202: route folds through the rust core when `.fold` is on
-                // (fail-safe to the cached Swift computeFolds on a bridge throw).
-                // Gate OFF (the shipped default) keeps the incumbent cached path
-                // EXACTLY — zero-risk until the soak flips it on.
-                let regions: [FoldRegion]
-                if RustCoreGates.isEnabled(.fold),
-                   let rust = try? RustFoldAdapter.rustFolds(text, language: lang) {
-                    regions = rust
-                } else {
-                    // Gate OFF, or a rust bridge throw → the incumbent cached path.
-                    regions = await TreeSitterEngine.shared.computeFolds(text: text, language: lang)
-                }
+                // Stage-B (TSK-649/TSK-1202): the Swift fold twin is deleted —
+                // rust is the only fold engine (language coverage is a strict
+                // superset of the deleted queries). A bridge fault degrades to
+                // no folds for this pass (gutter empty, observable), never a
+                // crash; the next text change retries.
+                let regions = RustFoldAdapter.foldRegions(text, language: lang)
                 let cm = SyntaxFoldRangeMapping.cmFoldRanges(from: regions, documentText: text)
                 return (regions, cm)
             }.value

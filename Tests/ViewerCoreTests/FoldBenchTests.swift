@@ -31,9 +31,8 @@ final class FoldBenchTests: XCTestCase {
         var coldBest = Double.greatestFiniteMagnitude
         var regionCount = 0
         for _ in 0..<3 {
-            TreeSitterEngine.shared._testOnly_clearFoldCaches()
             let t0 = Date()
-            let regions = TreeSitterEngine.shared.computeFoldsSync(text: b, language: .json)
+            let regions = foldsViaEngine(text: b, language: .json)
             coldBest = min(coldBest, Date().timeIntervalSince(t0) * 1000)
             regionCount = regions.count
         }
@@ -46,25 +45,25 @@ final class FoldBenchTests: XCTestCase {
         XCTAssertLessThan(coldBest, 250)
     }
 
-    func testWarmCacheIsConstantTime() async {
+    func testRepeatFoldStaysBounded() async {
+        // Stage-B (TSK-649): the Swift fold CACHE died with the twin — every
+        // pass re-parses in the rust engine (off-main in production, so a
+        // repeat pass costs parse time, not a cache hit). Bound the repeat
+        // cost on a 5K-line doc: measured ~28 ms; 150 ms is the cliff guard.
         var b = "[\n"
         for i in 0..<1000 {
             b += "  {\"id\":\(i),\"v\":[\n1,\n2,\n3\n]},\n"
         }
         b += "  null\n]\n"
 
-        TreeSitterEngine.shared._testOnly_clearFoldCaches()
-        _ = await TreeSitterEngine.shared.computeFolds(text: b, language: .json)  // warm it
-        // TSK-952: best-of-5 warm lookups. A single sample at a <5 ms threshold
-        // is extremely spike-prone (one scheduler hiccup → red); the min of a
-        // pure cache hit is stable and still catches a real warm-path regression.
-        var warmBest = Double.greatestFiniteMagnitude
+        _ = foldsViaEngine(text: b, language: .json)  // warm allocator/grammar
+        var best = Double.greatestFiniteMagnitude
         for _ in 0..<5 {
             let t0 = Date()
-            _ = await TreeSitterEngine.shared.computeFolds(text: b, language: .json)
-            warmBest = min(warmBest, Date().timeIntervalSince(t0) * 1000)
+            _ = foldsViaEngine(text: b, language: .json)
+            best = min(best, Date().timeIntervalSince(t0) * 1000)
         }
-        print("[FoldBench] warm-cache lookup (best-of-5): \(warmBest) ms")
-        XCTAssertLessThan(warmBest, 5)
+        print("[FoldBench] repeat fold, no cache (best-of-5): \(best) ms")
+        XCTAssertLessThan(best, 150)
     }
 }
