@@ -18,11 +18,13 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   Stage B done except find TSK-1549 + hex TSK-810); frame-cap blank-grid P1 found+fixed;
   CSV save flow existed-not-at-all → shipped. B7: 1530-v1 ✅ (4f3be49e gated route);
   1527/1531/1532 DEFERRED on TSK-1550 (from-scratch web surfaces need a render lane).
-  Batch in progress: B8 MCP/CLI/remote — ✅ 1536 mdv CLI (920d0d20: files/folders +
-  `mdv session <name>` via the hardened URL scheme; --with-cli symlink; 1536 fixed).
-  NEXT in B8: MCP reconnect loop (file TSK-665 follow-up + fix) · 1507 s1 serve static
-  assets · s2 cmDispatch-over-WS · s3 codegen [XL] · 1537 daemon doc [XL] · 1192 code-nav
-  MCP tool. Gate for B8.1 running (tmp/b8-gate.log).**
+  Batch in progress: B8 MCP/CLI/remote — ✅ 1536 mdv CLI (920d0d20) · ✅ 1552 self-healing
+  MCP bridge (ca2a114a: serve() reconnect loop, requests queue while app restarts; + 3
+  hardening finds incl. the availableData uncatchable-exception landmine → raw read(2)).
+  NEXT in B8: 1507 s1 serve static assets · s2 cmDispatch-over-WS · s3 codegen [XL] ·
+  1537 daemon doc [XL] · 1192 code-nav MCP tool. B8.2 gate running (tmp/b8-2-gate.log).
+  NOTE for owner: the self-healing bridge takes effect after the next app INSTALL +
+  Claude session restart (the running bridge process is the old pump).**
   RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
   TSK-649 when the VM returns. Shadow-net S5/S6 gate: MDV_RUST_DOCSTORE=shadow, div=0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
