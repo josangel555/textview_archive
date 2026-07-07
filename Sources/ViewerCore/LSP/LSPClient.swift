@@ -146,22 +146,33 @@ public actor LSPClient {
             throw LSPError.serverBinaryNotFound(config.executable.path)
         }
 
-        // TSK-1129 (security): consult the workspace-local-binary trust guard
-        // before spawning. A repo-local server binary (node_modules/.bin/…, or a
-        // workspace lsp.json `command` override) is an RCE-on-browse vector. For
-        // now this EMITS a warning when an UNTRUSTED workspace-local binary is
-        // about to spawn — the vector is visible (observability) and the persisted
-        // trust-store seam is consulted. The BLOCK + one-time confirm prompt are
-        // the owner-gated UX slice (block-by-default breaks legit local servers
-        // until the prompt ships). Non-blocking: spawn behavior is unchanged.
+        // TSK-1129 (security, owner-resolved 2026-07-07: prompt-first-then-
+        // block). A repo-local server binary (node_modules/.bin/…, or a
+        // workspace lsp.json `command` override) is an RCE-on-browse vector.
+        // An UNTRUSTED workspace-local binary now BLOCKS unless the user
+        // confirms via the one-time prompt (LSPTrustPrompt.confirmHandler,
+        // installed by the app shell); confirm grants persistent trust, and
+        // headless contexts with no handler FAIL CLOSED.
         if LSPTrustStore.shared.decision(
             binary: config.executable, workspaceRoot: config.workspaceRoot) == .needsTrust {
-            Obs.shared.emit(ObsEvent(
-                level: .warn, subsystem: "lsp",
-                message: "spawning UNTRUSTED workspace-local LSP server binary "
-                       + "(potential RCE-on-browse; TSK-1129 confirm-prompt pending)",
-                fields: ["binary": config.executable.path,
-                         "workspace": config.workspaceRoot.path]))
+            let confirmed = LSPTrustPrompt.confirm(
+                binary: config.executable, workspace: config.workspaceRoot)
+            if confirmed {
+                _ = LSPTrustStore.shared.grant(config.executable)
+                Obs.shared.emit(ObsEvent(
+                    level: .info, subsystem: "lsp",
+                    message: "workspace-local LSP server binary TRUSTED by one-time confirm",
+                    fields: ["binary": config.executable.path,
+                             "workspace": config.workspaceRoot.path]))
+            } else {
+                Obs.shared.emit(ObsEvent(
+                    level: .warn, subsystem: "lsp",
+                    message: "BLOCKED untrusted workspace-local LSP server binary "
+                           + "(declined / no prompt handler — RCE-on-browse guard)",
+                    fields: ["binary": config.executable.path,
+                             "workspace": config.workspaceRoot.path]))
+                throw LSPError.untrustedBinary(config.executable.path)
+            }
         }
 
         let p = Process()

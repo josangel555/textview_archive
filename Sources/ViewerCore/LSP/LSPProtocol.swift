@@ -442,6 +442,10 @@ public enum LSPRequestID: Hashable, Sendable, Codable {
 
 public enum LSPError: Error, Sendable, CustomStringConvertible {
     case serverBinaryNotFound(String)
+    /// TSK-1129: an untrusted workspace-local server binary was BLOCKED
+    /// (the user declined the one-time confirm, or no prompt handler is
+    /// installed — headless contexts fail closed).
+    case untrustedBinary(String)
     case spawnFailed(String)
     case transportClosed
     case framingError(String)
@@ -453,6 +457,8 @@ public enum LSPError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .serverBinaryNotFound(let path): return "LSP server binary not found: \(path)"
+        case .untrustedBinary(let path):
+            return "LSP server binary blocked (untrusted workspace-local): \(path)"
         case .spawnFailed(let m):              return "LSP spawn failed: \(m)"
         case .transportClosed:                 return "LSP transport closed"
         case .framingError(let m):             return "LSP framing error: \(m)"

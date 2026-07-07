@@ -120,6 +120,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // the launch sequence twice.
         if Self.launchSequenceRan { return }
         Self.launchSequenceRan = true
+        // TSK-1129 (owner-resolved: prompt-first-then-block): the one-time
+        // confirm for untrusted workspace-local LSP server binaries — the
+        // RCE-on-browse guard. Without this handler the guard FAILS CLOSED
+        // (headless/automation never silently runs a repo-shipped binary).
+        // The pool spawns off-main, so hop to main for the modal.
+        LSPTrustPrompt.confirmHandler = { binary, _ in
+            let run: () -> Bool = {
+                let alert = NSAlert()
+                alert.messageText = "Run this folder's language server?"
+                alert.informativeText =
+                    "This folder ships its own language-server binary:\n\n"
+                    + binary.path
+                    + "\n\nRunning it executes code from the folder. "
+                    + "Trust it only if you trust this folder."
+                alert.addButton(withTitle: "Trust and Run")
+                alert.addButton(withTitle: "Block")
+                return alert.runModal() == .alertFirstButtonReturn
+            }
+            return Thread.isMainThread ? run() : DispatchQueue.main.sync(execute: run)
+        }
         // TSK-1247 diagnostic (env-gated, MDV_WINDOW_DIAG=1): dump the
         // NSApplication window list ~3s after launch to root the spawned-app
         // "no visible window" issue on the launchctl-asuser-root VM GUI lane —
