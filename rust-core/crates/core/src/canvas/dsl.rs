@@ -47,15 +47,35 @@ use super::store::{Id, Position, RecordKind};
 /// op engine; renames are deprecate-and-alias underneath.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenStatement {
-    Set { path: String, css: String },
-    Alias { path: String, target: String },
-    Rename { old: String, new: String },
+    /// Set a token to a literal CSS value.
+    Set {
+        /// Token path (`color.accent`).
+        path: String,
+        /// The CSS value.
+        css: String,
+    },
+    /// Point a token at another token.
+    Alias {
+        /// Token path being defined.
+        path: String,
+        /// The token it references.
+        target: String,
+    },
+    /// Rename a token (references follow).
+    Rename {
+        /// Existing path.
+        old: String,
+        /// New path.
+        new: String,
+    },
 }
 
 /// Parse fault: line (1-based) + a teaching message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DslError {
+    /// 1-based source line of the fault.
     pub line: usize,
+    /// A teaching message (what was expected).
     pub message: String,
 }
 

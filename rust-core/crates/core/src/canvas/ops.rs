@@ -20,26 +20,44 @@ pub enum CanvasOp {
     /// Create a component DEFINITION root (M4.S3): a `cmp:*` Frame subtree
     /// root the DSL's `component #name { … }` block targets. Idempotent
     /// replay: an existing empty-or-identical-kind root is an Ok no-op.
-    DefineComponent { id: Id },
+    DefineComponent {
+        /// The `cmp:*` definition-root id.
+        id: Id,
+    },
+    /// Create a new element under `parent` at `pos`.
     Insert {
         /// Caller-supplied id (idempotent retries) or None to mint.
         id: Option<Id>,
+        /// Element kind of the new record.
         kind: RecordKind,
+        /// Parent the new element attaches under.
         parent: Id,
+        /// Sibling position within the parent.
         pos: Position,
+        /// Initial property assignments.
         props: Vec<(PropKey, Value)>,
     },
+    /// Set/unset properties on an existing element.
     Update {
+        /// Target element.
         id: Id,
+        /// Properties to set (key → new value).
         set: Vec<(PropKey, Value)>,
+        /// Properties to remove.
         unset: Vec<PropKey>,
     },
+    /// Re-parent / re-position an existing element.
     Move {
+        /// Target element.
         id: Id,
+        /// New parent.
         parent: Id,
+        /// New sibling position within the parent.
         pos: Position,
     },
+    /// Remove an element (and its subtree).
     Remove {
+        /// Target element.
         id: Id,
     },
 }
@@ -48,16 +66,25 @@ pub enum CanvasOp {
 /// restores EXACT places/props, never re-mints indexes).
 #[derive(Debug, Clone)]
 pub enum UndoOp {
+    /// Undo an Insert: remove the record it created.
     RemoveInserted(Id),
+    /// Undo an Update: restore the exact prior property state.
     RestoreProps {
+        /// Target element.
         id: Id,
+        /// Properties to set back to their prior values.
         set: Vec<(PropKey, Value)>,
+        /// Properties that did not exist before (remove again).
         unset: Vec<PropKey>,
     },
+    /// Undo a Move: restore the exact prior placement.
     RestorePlace {
+        /// Target element.
         id: Id,
+        /// Prior place (None = it was a root).
         place: Option<Place>,
     },
+    /// Undo a Remove: re-insert the removed subtree's records verbatim.
     Resurrect(Vec<Record>),
 }
 
@@ -65,8 +92,13 @@ pub enum UndoOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ApplyError {
     /// Stale `base_rev` — the caller must re-query and retry (02 §4).
-    Conflict { current: u64 },
+    Conflict {
+        /// The document's actual current revision.
+        current: u64,
+    },
+    /// A structural-fence violation (kind/nesting rules).
     Fence(FenceError),
+    /// A store-level fault (unknown id, cycle, …).
     Store(StoreError),
     /// Insert id collision with DIFFERENT content (not an idempotent replay).
     IdInUse(String),
@@ -87,21 +119,36 @@ impl From<StoreError> for ApplyError {
 /// input; an idempotent replay is `Noop` and must yield zero patches).
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppliedEffect {
+    /// Idempotent replay — nothing changed, zero patches.
     Noop,
     /// A definition root was created — never rendered, never patched.
     Defined(Id),
     /// The RESOLVED id (supplied or minted) + the DOM anchor (next sibling)
     /// captured AT APPLY TIME — a later op in the same batch may invalidate
     /// final-state anchors, so the planner must not recompute them.
-    Inserted { id: Id, before: Option<Id> },
+    Inserted {
+        /// The resolved (supplied or minted) element id.
+        id: Id,
+        /// The apply-time next-sibling anchor (None = append).
+        before: Option<Id>,
+    },
+    /// Properties changed on `Id`.
     Updated(Id),
-    Moved { id: Id, before: Option<Id> },
+    /// Element re-placed; anchor captured at apply time like `Inserted`.
+    Moved {
+        /// The moved element.
+        id: Id,
+        /// The apply-time next-sibling anchor (None = append).
+        before: Option<Id>,
+    },
+    /// Element (and subtree) removed.
     Removed(Id),
 }
 
 /// A successfully applied batch.
 #[derive(Debug)]
 pub struct Applied {
+    /// The document revision AFTER the batch (unchanged on a full no-op).
     pub rev: u64,
     /// Inverses in REVERSE apply order — running them front-to-back undoes
     /// the batch exactly.
@@ -117,6 +164,7 @@ pub struct Applied {
 /// A revisioned canvas document: the store + its monotonic revision.
 #[derive(Debug, Default)]
 pub struct DocState {
+    /// The element store (records + tree + props).
     pub store: Store,
     rev: u64,
     /// Inverses of the most recent mutating batch (the doc facade moves
@@ -125,6 +173,7 @@ pub struct DocState {
 }
 
 impl DocState {
+    /// An empty document at revision 0.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -146,6 +195,7 @@ impl DocState {
         self.last_inverses.take()
     }
 
+    /// The current document revision.
     #[must_use]
     pub fn rev(&self) -> u64 {
         self.rev

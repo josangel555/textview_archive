@@ -24,10 +24,15 @@ pub enum LintSeverity {
 
 /// One finding. `code` is stable vocabulary (tests + agents key on it).
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One lint finding.
 pub struct Lint {
+    /// How strongly to surface it.
     pub severity: LintSeverity,
+    /// Stable rule code (greppable).
     pub code: &'static str,
+    /// The offending element, when element-scoped.
     pub id: Option<Id>,
+    /// Human-readable finding.
     pub message: String,
 }
 

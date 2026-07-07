@@ -42,8 +42,10 @@ pub struct EvictionBudget {
 impl EvictionBudget {
     /// Owner-ratified in-process defaults (TSK-589, 2026-06-19).
     pub const DEFAULT_MAX_BYTES: usize = 512 * 1024 * 1024;
+    /// Owner-ratified in-process default count cap (TSK-589, 2026-06-19).
     pub const DEFAULT_MAX_COUNT: usize = 64;
 
+    /// Construct an explicit budget (tests force tiny ones).
     pub fn new(max_bytes: usize, max_count: usize, ttl_ms: u64) -> Self {
         Self { max_bytes, max_count, ttl_ms }
     }
@@ -65,6 +67,7 @@ impl Default for EvictionBudget {
 /// testable rather than reading a wall clock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DocMeta {
+    /// The registry-assigned document id.
     pub id: DocId,
     /// Estimated resident bytes (text buffer + offset table + filter cache).
     pub estimated_bytes: usize,
@@ -153,9 +156,13 @@ pub fn eviction_plan(docs: &[DocMeta], budget: &EvictionBudget, now_ms: u64) -> 
 /// close tabs), since unpinned docs are evicted to stay under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RuntimeStats {
+    /// Resident document count.
     pub doc_count: usize,
+    /// Sum of the residents' estimated bytes.
     pub total_bytes: usize,
+    /// True when pinned docs alone exceed the byte budget.
     pub over_budget: bool,
+    /// The active eviction budget.
     pub budget: EvictionBudget,
 }
 
@@ -191,6 +198,7 @@ fn write_guard<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
 }
 
 impl<D> CoreRuntime<D> {
+    /// An empty registry with `budget`.
     pub fn new(budget: EvictionBudget) -> Self {
         Self {
             docs: RwLock::new(HashMap::new()),
@@ -205,6 +213,7 @@ impl<D> CoreRuntime<D> {
         *write_guard(&self.budget) = budget;
     }
 
+    /// Number of resident documents.
     pub fn doc_count(&self) -> usize {
         read_guard(&self.docs).len()
     }

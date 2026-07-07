@@ -28,7 +28,9 @@ pub enum TokenValue {
 
 /// One token definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One token definition.
 pub struct TokenDef {
+    /// Literal CSS or an alias to another token.
     pub value: TokenValue,
     /// Deprecated tokens STILL RESOLVE (via their alias/value) but carry the
     /// replacement path so lint can steer authors off them.
@@ -40,6 +42,7 @@ pub struct TokenDef {
 pub enum TokenError {
     /// Path isn't `seg(.seg)*` of `[a-z0-9-]`.
     BadPath(String),
+    /// No token at this path.
     Unknown(String),
     /// An alias chain revisited a path (or exceeded the depth cap).
     Cycle(String),
@@ -68,21 +71,25 @@ pub struct TokenStore {
 }
 
 impl TokenStore {
+    /// An empty store.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Number of defined tokens.
     #[must_use]
     pub fn len(&self) -> usize {
         self.defs.len()
     }
 
+    /// True when no tokens are defined.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.defs.is_empty()
     }
 
+    /// True when a token exists at `path`.
     #[must_use]
     pub fn exists(&self, path: &str) -> bool {
         self.defs.contains_key(path)

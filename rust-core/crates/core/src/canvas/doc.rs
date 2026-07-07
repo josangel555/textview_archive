@@ -15,8 +15,11 @@ const UNDO_DEPTH: usize = 64;
 /// The engine-side document: revisioned op state + theme + root page.
 #[derive(Debug)]
 pub struct CanvasDoc {
+    /// The revisioned element store.
     pub state: DocState,
+    /// The design-token store.
     pub tokens: TokenStore,
+    /// The root page id.
     pub root: Id,
     /// Inverse batches, most recent last (bounded to [`UNDO_DEPTH`]).
     undo_stack: Vec<Vec<UndoOp>>,

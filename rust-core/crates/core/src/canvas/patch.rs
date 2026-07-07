@@ -14,22 +14,77 @@ use super::store::Id;
 /// One DOM mutation instruction (the applier's vocabulary).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Patch {
-    SetText { id: Id, text: String },
-    SetStyle { id: Id, prop: &'static str, value: String },
-    RemoveStyle { id: Id, prop: &'static str },
-    SetAttr { id: Id, attr: &'static str, value: String },
-    /// `before: None` = append at the end of `parent`.
-    InsertNode { parent: Id, before: Option<Id>, html: String },
-    RemoveNode { id: Id },
-    MoveNode { id: Id, parent: Id, before: Option<Id> },
+    /// Replace the node's text content.
+    SetText {
+        /// Target node.
+        id: Id,
+        /// New text content.
+        text: String,
+    },
+    /// Set one inline-style declaration.
+    SetStyle {
+        /// Target node.
+        id: Id,
+        /// CSS property name (from the shared `css_decl` table).
+        prop: &'static str,
+        /// CSS value.
+        value: String,
+    },
+    /// Remove one inline-style declaration.
+    RemoveStyle {
+        /// Target node.
+        id: Id,
+        /// CSS property name to clear.
+        prop: &'static str,
+    },
+    /// Set one HTML attribute.
+    SetAttr {
+        /// Target node.
+        id: Id,
+        /// Attribute name.
+        attr: &'static str,
+        /// Attribute value.
+        value: String,
+    },
+    /// Insert a rendered fragment. `before: None` = append at the end of `parent`.
+    InsertNode {
+        /// Parent node to insert under.
+        parent: Id,
+        /// Next-sibling anchor (None = append).
+        before: Option<Id>,
+        /// The lowered HTML fragment.
+        html: String,
+    },
+    /// Remove the node (and subtree).
+    RemoveNode {
+        /// Target node.
+        id: Id,
+    },
+    /// Re-place an existing node.
+    MoveNode {
+        /// Target node.
+        id: Id,
+        /// New parent.
+        parent: Id,
+        /// Next-sibling anchor (None = append).
+        before: Option<Id>,
+    },
     /// Re-render one node in place (outerHTML swap) — the definition-edit
     /// verb (M4.S1c): an edit INSIDE a cmp:* subtree re-lowers every visible
     /// instance instead of patching ids that don't exist bare in the DOM.
-    ReplaceNode { id: Id, html: String },
+    ReplaceNode {
+        /// Target node (outerHTML-swapped in place).
+        id: Id,
+        /// The re-lowered HTML fragment.
+        html: String,
+    },
     /// Swap the root theme block's custom properties (M4.S4) — the ZERO-OP
     /// retheme: token edits repaint the whole document through the var()
     /// indirection with ONE patch and no re-lower.
-    SetTheme { css: String },
+    SetTheme {
+        /// The full replacement CSS custom-property block.
+        css: String,
+    },
 }
 
 /// Map one prop mutation to its patch (shared-table style mapping; `text` and

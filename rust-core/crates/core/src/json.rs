@@ -27,13 +27,17 @@ pub const MAX_DEPTH: u32 = 128;
 /// A parsed JSON value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
+    /// JSON `null`.
     Null,
+    /// JSON boolean.
     Bool(bool),
     /// Integral number that fits i64.
     Int(i64),
     /// Any other finite number.
     Float(f64),
+    /// JSON string.
     Str(String),
+    /// JSON array.
     Array(Vec<JsonValue>),
     /// Pair order preserved; duplicates kept (see [`JsonValue::get`]).
     Object(Vec<(String, JsonValue)>),
@@ -73,7 +77,9 @@ impl JsonValue {
 /// Parse failure: what + byte offset (into the document).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonError {
+    /// Human-readable parse fault.
     pub message: String,
+    /// Byte offset the fault was detected at.
     pub offset: usize,
 }
 
@@ -345,10 +351,12 @@ pub fn parse(text: &str) -> Result<JsonValue, JsonError> {
 /// transcript contract), or blank.
 #[derive(Debug, PartialEq)]
 pub enum JsonlLine {
+    /// A well-formed line's parsed value.
     Value(JsonValue),
     /// Malformed line — the consumer SKIPS it (a torn tail line during a
     /// live append must never fail the whole transcript).
     Skipped(JsonError),
+    /// An empty/whitespace-only line.
     Blank,
 }
 

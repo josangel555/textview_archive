@@ -15,9 +15,13 @@ use super::store::RecordKind;
 
 /// Resource caps (02 §4 fence; DoS-shaped input fails as data).
 pub const MAX_PROPS_PER_RECORD: usize = 64;
+/// Cap on a `text` prop's length (bytes).
 pub const MAX_TEXT_LEN: usize = 64 * 1024;
+/// Cap on any other string prop's length (bytes).
 pub const MAX_STRING_LEN: usize = 4 * 1024;
+/// Cap on one parent's direct children.
 pub const MAX_CHILDREN_PER_PARENT: usize = 4096;
+/// Cap on total records in one document.
 pub const MAX_RECORDS_PER_DOC: usize = 100_000;
 
 /// Fence faults — every rejection names itself.
@@ -26,11 +30,26 @@ pub enum FenceError {
     /// The key is not in the closed table at all.
     UnknownProp(String),
     /// The key exists but this kind doesn't take it (with a teaching hint).
-    PropNotAllowed { kind: &'static str, prop: &'static str },
+    PropNotAllowed {
+        /// The record kind.
+        kind: &'static str,
+        /// The rejected property.
+        prop: &'static str,
+    },
     /// Wrong value shape/range for the key.
-    BadValue { prop: &'static str, why: &'static str },
+    BadValue {
+        /// The property.
+        prop: &'static str,
+        /// What was expected.
+        why: &'static str,
+    },
     /// An op targeted a kind that can't take it (the frame-wipe rule).
-    KindMismatch { kind: &'static str, why: &'static str },
+    KindMismatch {
+        /// The record kind.
+        kind: &'static str,
+        /// Why the op doesn't apply.
+        why: &'static str,
+    },
     /// A resource cap fired.
     CapExceeded(&'static str),
     /// Store-dependent fence failures whose teaching message needs runtime

@@ -65,8 +65,11 @@ pub struct Baseline {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Verdict {
     /// Within tolerance (faster, equal, or only marginally slower). Carries the
-    /// observed ratio `current / baseline` (1.0 = unchanged, <1 = faster).
-    Ok { ratio: f64 },
+    /// Within tolerance of the baseline.
+    Ok {
+        /// Observed ratio `current / baseline` (1.0 = unchanged, <1 = faster).
+        ratio: f64,
+    },
     /// Slower than `baseline * (1 + tolerance)` — a real regression. Carries
     /// the baseline ns, the current ns, and the observed ratio.
     Regressed {

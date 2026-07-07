@@ -75,8 +75,11 @@ pub fn visible_at(store: &Store, slide: &Id, step: u16) -> Vec<Id> {
 
 /// One step's declarative snapshot: the step index + the visible id set.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Which ids are visible at a build step (M6 presentation).
 pub struct StepState {
+    /// The 0-based build step.
     pub step: u16,
+    /// Ids visible at this step, sorted.
     pub visible_ids: Vec<String>,
 }
 
@@ -195,9 +198,13 @@ pub fn timeline_json(store: &Store) -> String {
 /// in BOTH slides — the paired node animates (FLIP) from its slide-A box to
 /// its slide-B box.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One morph correspondence between two slides.
 pub struct MorphPair {
+    /// The shared morphId.
     pub morph_id: String,
+    /// Element id on the FROM slide.
     pub from: String,
+    /// Element id on the TO slide.
     pub to: String,
 }
 
@@ -207,8 +214,11 @@ pub struct MorphPair {
 /// sorted for determinism. The JS runs the FLIP; this is the authority.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MorphPlan {
+    /// morphIds present on both slides (FLIP-animate).
     pub pairs: Vec<MorphPair>,
+    /// morphIds only on the TO slide (fade in).
     pub entering: Vec<String>,
+    /// morphIds only on the FROM slide (fade out).
     pub leaving: Vec<String>,
 }
 

@@ -19,7 +19,8 @@
 //! run either in-process (FFI) or, eventually, over a wire (remote).
 
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
+// TSK-1535: burned 188→0 on 2026-07-07 — new pub items document or don't compile.
+#![deny(missing_docs)]
 
 pub mod bench;
 pub mod canvas;

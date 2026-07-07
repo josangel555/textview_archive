@@ -149,7 +149,9 @@ const ID_PREFIXES: &[&str] = &["nd", "pg", "cmp", "tok", "dat", "tl"];
 /// Errors from id validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdError {
+    /// Not `<prefix>:<suffix>`, empty suffix, or a namespaced expansion id.
     BadShape,
+    /// The prefix is not one of the legal id families.
     UnknownPrefix,
 }
 
@@ -205,7 +207,9 @@ mod id_fence_tests {
 /// construction: there is no way to update one without the other).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Place {
+    /// The containing parent.
     pub parent: Id,
+    /// Fractional sibling index within the parent.
     pub index: FracIndex,
 }
 
@@ -213,13 +217,21 @@ pub struct Place {
 /// distinction "can parent" for structural rules).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordKind {
+    /// A root page.
     Page,
+    /// A container frame (can parent).
     Frame,
+    /// A text element.
     Text,
+    /// An image element (`src` prop).
     Image,
+    /// A vector shape.
     Shape,
+    /// A component instance (`use #name`).
     Component,
+    /// An embedded external resource.
     Embed,
+    /// A component slot placeholder.
     Hole,
     /// Tabular data (M4.S7a): rows/cells from a JSON `data` prop, lowered
     /// to a real `<table>`.
@@ -245,7 +257,9 @@ impl RecordKind {
 /// One stored record: identity, kind, placement, and the S2 prop bag.
 #[derive(Debug, Clone)]
 pub struct Record {
+    /// Stable identity.
     pub id: Id,
+    /// Element kind.
     pub kind: RecordKind,
     /// `None` = a root record (a page). Everything else is placed.
     pub place: Option<Place>,
@@ -256,16 +270,22 @@ pub struct Record {
 /// Where to insert/move within a parent's sibling list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Position {
+    /// First among the parent's children.
     First,
+    /// Last among the parent's children.
     Last,
+    /// Immediately before the anchor sibling.
     Before(Id),
+    /// Immediately after the anchor sibling.
     After(Id),
 }
 
 /// Store faults — typed, never panics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
+    /// No live record with this id.
     UnknownId(String),
+    /// An insert reused a live id.
     DuplicateId(String),
     /// The id was used before and removed — ids are never reused.
     TombstonedId(String),
@@ -275,6 +295,7 @@ pub enum StoreError {
     CycleMove(String),
     /// A Before/After anchor is not a child of the target parent.
     BadAnchor(String),
+    /// A fractional-index fault.
     Index(IndexError),
 }
 
@@ -294,21 +315,25 @@ pub struct Store {
 }
 
 impl Store {
+    /// An empty store.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Number of live records.
     #[must_use]
     pub fn len(&self) -> usize {
         self.records.len()
     }
 
+    /// True when no live records exist.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
     }
 
+    /// The live record for `id`, if any.
     #[must_use]
     pub fn get(&self, id: &Id) -> Option<&Record> {
         self.records.get(id)

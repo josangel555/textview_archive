@@ -11,24 +11,35 @@ use crate::json::{self, JsonValue};
 
 /// One parsed datum.
 #[derive(Debug, Clone, PartialEq)]
+/// One labeled data point.
 pub struct Datum {
+    /// Category / x label.
     pub label: String,
+    /// Numeric value.
     pub value: f64,
 }
 
 /// The parsed subset spec.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChartSpec {
+    /// Chart type.
     pub mark: Mark,
+    /// The data points, in order.
     pub values: Vec<Datum>,
+    /// Render width (px).
     pub width: f64,
+    /// Render height (px).
     pub height: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The supported chart types.
 pub enum Mark {
+    /// Vertical bars.
     Bar,
+    /// A connected line.
     Line,
+    /// A pie of value shares.
     Pie,
 }
 

@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 /// One match result: the score plus the matched char (scalar) indices.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Match {
+    /// Rank score (higher = better).
     pub score: i64,
     /// Scalar-value indices into the target (see the unit caveat above).
     pub indices: Vec<u32>,

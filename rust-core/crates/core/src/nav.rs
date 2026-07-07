@@ -352,6 +352,7 @@ pub struct NavHistory {
 }
 
 impl NavHistory {
+    /// An empty history.
     pub fn new() -> Self {
         Self::default()
     }
@@ -361,10 +362,12 @@ impl NavHistory {
         self.entries.get(self.cursor).map(String::as_str)
     }
 
+    /// Number of history entries.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// True when nothing has been navigated yet.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -384,10 +387,12 @@ impl NavHistory {
         self.cursor = self.entries.len() - 1;
     }
 
+    /// True when a Back navigation is possible.
     pub fn can_back(&self) -> bool {
         self.cursor > 0 && !self.entries.is_empty()
     }
 
+    /// True when a Forward navigation is possible.
     pub fn can_forward(&self) -> bool {
         self.cursor + 1 < self.entries.len()
     }

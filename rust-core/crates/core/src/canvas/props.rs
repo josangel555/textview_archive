@@ -83,8 +83,11 @@ impl PropKey {
 /// lint reason about literal-vs-token structurally.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// A string value.
     Str(String),
+    /// A numeric value.
     Num(f64),
+    /// A boolean value.
     Bool(bool),
     /// A design-token reference (`$color.accent` in the DSL; `{token: "..."}`
     /// on the wire).
@@ -99,21 +102,25 @@ pub struct PropBag {
 }
 
 impl PropBag {
+    /// An empty bag.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Number of properties present.
     #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// True when no properties are set.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
+    /// The value for `key`, if set.
     #[must_use]
     pub fn get(&self, key: PropKey) -> Option<&Value> {
         self.entries

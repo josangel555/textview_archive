@@ -40,7 +40,9 @@ pub struct EngineMatch {
 /// Literal (escaped) vs user regex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryKind {
+    /// Match the pattern bytes verbatim.
     Literal,
+    /// Compile the pattern as a regex.
     Regex,
 }
 

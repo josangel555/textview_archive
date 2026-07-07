@@ -13,12 +13,16 @@
 /// A 24-bit color. Front-ends map this onto their native color type.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Rgb {
+    /// Red channel.
     pub r: u8,
+    /// Green channel.
     pub g: u8,
+    /// Blue channel.
     pub b: u8,
 }
 
 impl Rgb {
+    /// Construct from the three channels.
     #[must_use]
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Rgb { r, g, b }
@@ -31,14 +35,18 @@ impl Rgb {
 /// that need the channel (theme imports, CSS color tokens).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Rgba {
+    /// Red channel.
     pub r: u8,
+    /// Green channel.
     pub g: u8,
+    /// Blue channel.
     pub b: u8,
     /// 0 = fully transparent, 255 = fully opaque.
     pub a: u8,
 }
 
 impl Rgba {
+    /// Construct from the four channels.
     #[must_use]
     pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Rgba { r, g, b, a }
@@ -57,7 +65,9 @@ impl Rgba {
 /// the front-end, not here).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
+    /// Light appearance.
     Light,
+    /// Dark appearance.
     Dark,
 }
 
@@ -141,6 +151,7 @@ impl Palette {
         Palette { mode }
     }
 
+    /// The theme's light/dark mode.
     #[must_use] 
     pub const fn mode(&self) -> Mode {
         self.mode

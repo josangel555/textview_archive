@@ -251,6 +251,7 @@ pub fn hex_search_frame(
 /// match the zero-copy spirit (the query itself is tiny either way).
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct SearchAuxRequest<'a> {
+    /// The search pattern (ASCII text or hex byte pairs per `mode`).
     pub query: &'a str,
     /// `1` = ASCII/raw bytes, else hex-byte-pair (mirrors `mdvcore_hex_search`).
     pub mode: u32,
