@@ -929,7 +929,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 let base = lastSentText ?? ""
                 // Routed through the `.cmEdit` gate (TSK-649 A0 — the last
                 // unconsumed adapter): Rust reducer when on, Swift
-                // CMEditApplier otherwise; both signal "resync" as nil.
+                // rust reducer (the only engine, Stage-B); nil = "resync".
                 if let applied = RustCMEditAdapter.apply(edits, to: base),
                    contentLength < 0 || applied.utf16.count == contentLength {
                     lastSentText = applied

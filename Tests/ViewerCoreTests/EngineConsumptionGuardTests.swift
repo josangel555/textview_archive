@@ -42,6 +42,44 @@ final class EngineConsumptionGuardTests: XCTestCase {
         }
     }
 
+    /// Stage-B no-resurrection tooth (TSK-649, B4): the deleted Swift twins
+    /// must STAY deleted — nobody re-adds a "small Swift fallback" for a
+    /// surface whose only engine is rust-core. These are the algorithm entry
+    /// symbols that died in B3; any reappearance in Sources is red. (The
+    /// TYPE shells — FuzzyMatcher.Match, CSVParser.Result, ClaudeEvent,
+    /// HTMLVisitor's utility fns — are alive by design and not listed.)
+    func test_deletedTwins_stayDeleted() {
+        let deadSymbols = [
+            "FuzzyMatcher.match(",            // fuzzy algorithm (rust fuzzy.rs)
+            "FuzzyMatcher.filterWithMatches(", // fuzzy batch rank
+            "CSVParser.parse(",               // CSV tokenizer (rust csv.rs)
+            "ClaudeLogParser().parse",        // transcript projection (rust transcript.rs)
+            "parseRedacted(",                 // transcript redacting projection
+            "CMEditApplier",                  // CM edit reducer (rust cm_edit.rs)
+            "renderSwiftPath(",               // markdown visitor (rust markdown.rs)
+            "computeFolds",                   // fold engine (rust folds.rs)
+        ]
+        let sources = packageRoot().appendingPathComponent("Sources")
+        for url in enumerateSwift(sources) {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            // CODE-only scan: strip //-comment content per line so doc notes
+            // ("the twin X is deleted") don't trip their own tooth.
+            let code = text.split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> Substring in
+                    if let slashes = line.range(of: "//") { return line[..<slashes.lowerBound] }
+                    return line
+                }
+                .joined(separator: "\n")
+            for symbol in deadSymbols where code.contains(symbol) {
+                XCTFail(
+                    "\(url.lastPathComponent) references the DELETED twin symbol "
+                    + "'\(symbol)' — Stage-B (TSK-649) removed it; route through "
+                    + "the rust adapter instead of resurrecting Swift fallbacks."
+                )
+            }
+        }
+    }
+
     /// Package root, derived from this test file's location (Tests/ViewerCoreTests/…)
     /// so it is independent of the test runner's working directory.
     private func packageRoot() -> URL {
