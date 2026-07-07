@@ -55,7 +55,9 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   torn-UTF-8 trim, binary guard, corrupt→unreadable mapping; 10 tests incl. real-zip e2e; pane +
   Extract-via-OutputNaming = render tail). T28: SettingsCatalog (8ff19739, TSK-1481 — the Settings
   IA as a host-tested model: 22 rows, canonical 8 sections, filter(); DRIFT GUARD parses the live
-  SettingsView AX ids so a new row can't skip the catalog; view re-render = tail).
+  SettingsView AX ids so a new row can't skip the catalog; view re-render = tail). T29:
+  favorites-editor CRUD (8c659632, TSK-1475 — rename+move added to TerminalFavoritesStore,
+  completing add/rename/reorder/delete; 3 tests appended to the EXISTING suite; editor UI = tail).
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
