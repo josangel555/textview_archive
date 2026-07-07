@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ViewerCore
 import ViewerKit
@@ -125,6 +126,12 @@ public struct SQLiteBrowserView: View {
                 // recursive CTE) can be interrupted instead of freezing
                 // the UI. `model.cancelQuery()` flips the reader's
                 // cancel flag → SQLITE_INTERRUPT on the next step.
+                // TSK-1439: export the current result grid (CSV / Markdown /
+                // JSON) — copy to clipboard or save to a file. Disabled until a
+                // query has produced a result. Reuses `SQLiteResultExport` +
+                // `CsvConvert` so the browser, CSV viewer, and future grids share
+                // one serializer.
+                exportMenu
                 if model.isRunning {
                     ProgressView()
                         .controlSize(.small)
@@ -145,6 +152,50 @@ public struct SQLiteBrowserView: View {
                 .padding(.horizontal, 4)
         }
         .background(Palette.windowBackground)
+    }
+
+    /// TSK-1439: Export ▾ menu — copy the result grid to the clipboard in any of
+    /// the three formats, or save it to a file. Disabled until a query has run.
+    private var exportMenu: some View {
+        Menu {
+            ForEach(SQLiteResultExport.Format.allCases, id: \.self) { format in
+                Button("Copy as \(format.menuLabel)") { model.copyResult(format) }
+            }
+            Divider()
+            ForEach(SQLiteResultExport.Format.allCases, id: \.self) { format in
+                Button("Save as \(format.menuLabel)…") { saveResult(format) }
+            }
+        } label: {
+            Label("Export", systemImage: "square.and.arrow.up")
+                .font(.system(size: 11 * uiScale))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(!model.canExport)
+        .help("Export the query result as CSV, a Markdown table, or JSON")
+        .accessibilityIdentifier("mdv.sqlite.export")
+    }
+
+    /// Present a save panel and write the serialized result. Save-panel plumbing
+    /// is UI-only (VM/UAT lane); the serialization it writes is the host-tested
+    /// `model.exportedText(_:)`.
+    private func saveResult(_ format: SQLiteResultExport.Format) {
+        guard let text = model.exportedText(format) else {
+            ToastCenter.shared.postError("Nothing to export", reason: "Run a query first.")
+            return
+        }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(url.deletingPathExtension().lastPathComponent)-export.\(format.fileExtension)"
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let dest = panel.url else { return }
+            do {
+                try text.write(to: dest, atomically: true, encoding: .utf8)
+                ToastCenter.shared.post(.success, "Saved \(dest.lastPathComponent)")
+            } catch {
+                ToastCenter.shared.postError("Couldn't save export", reason: "\(error.localizedDescription)")
+            }
+        }
     }
 
     @ViewBuilder
@@ -183,8 +234,11 @@ public struct SQLiteBrowserView: View {
     }
 }
 
+// Internal (not file-private) so host tests can drive `exportedText(_:)` and the
+// select/seed behavior directly (TSK-1439). Still a view-owned model — nothing
+// outside this file constructs it in the app.
 @MainActor
-private final class SQLiteBrowserModel: ObservableObject {
+final class SQLiteBrowserModel: ObservableObject {
     let url: URL
     @Published var openError: String?
     @Published var tables: [String] = []
@@ -296,6 +350,34 @@ private final class SQLiteBrowserModel: ObservableObject {
     func cancelQuery() {
         runToken &+= 1
         reader?.cancel()
+    }
+
+    // MARK: - Export (TSK-1439)
+
+    /// True when there's a materialized result to export.
+    var canExport: Bool { queryResult != nil }
+
+    /// Serialize the current result in `format`, or nil when there's nothing to
+    /// export. Pure delegation to `SQLiteResultExport` — the meaningful logic is
+    /// host-tested there; this is the exact string an Export menu item copies.
+    func exportedText(_ format: SQLiteResultExport.Format) -> String? {
+        guard let result = queryResult else { return nil }
+        return SQLiteResultExport.serialize(result, as: format)
+    }
+
+    /// Copy the current result to the pasteboard in `format` and post a toast.
+    /// No-op (with an error toast) when there's no result. The pasteboard is
+    /// injectable so the copy path is host-testable end-to-end.
+    func copyResult(_ format: SQLiteResultExport.Format,
+                    to pasteboard: NSPasteboard = .general) {
+        guard let text = exportedText(format) else {
+            ToastCenter.shared.postError("Nothing to export", reason: "Run a query first.")
+            return
+        }
+        Pasteboard.copy(text, to: pasteboard)
+        let rowCount = queryResult?.rows.count ?? 0
+        ToastCenter.shared.post(.success,
+            "Copied \(rowCount) row\(rowCount == 1 ? "" : "s") as \(format.menuLabel)")
     }
 }
 

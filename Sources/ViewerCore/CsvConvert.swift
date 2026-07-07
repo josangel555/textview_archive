@@ -62,6 +62,37 @@ public enum CsvConvert {
         return "[\n" + objects.joined(separator: ",\n") + "\n]"
     }
 
+    /// A GitHub-flavoured pipe table is lossy for round-tripping (it collapses
+    /// newlines, pads columns). This is the loss-LESS writer: RFC-4180 CSV, LF
+    /// row separator (macOS-native; our parser accepts CRLF too), fields quoted
+    /// only when they contain `,`/`"`/CR/LF with `"` doubled. Completes
+    /// `CsvConvert`'s export set (it could already read CSV → md/json but not
+    /// WRITE CSV — the natural "export a result grid" format). Rows shorter than
+    /// the header are padded with empty cells; the column count is the max of the
+    /// header width and the widest row. Empty input → "".
+    ///
+    /// TSK-1439: the SQLite browser exports query results through this.
+    public static func toCSV(header: [String], rows: [[String]]) -> String {
+        let columns = Swift.max(header.count, rows.map(\.count).max() ?? 0)
+        guard columns > 0 else { return "" }
+        func pad(_ row: [String]) -> [String] {
+            var r = row
+            while r.count < columns { r.append("") }
+            return r
+        }
+        let all = ([header] + rows).map(pad)
+        return all.map { $0.map(csvField).joined(separator: ",") }.joined(separator: "\n")
+    }
+
+    /// RFC-4180 field quoting: a field with a comma, a double-quote, or an
+    /// embedded CR/LF is wrapped in double-quotes with each `"` doubled.
+    private static func csvField(_ s: String) -> String {
+        guard s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r") else {
+            return s
+        }
+        return "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
     /// Minimal, correct JSON string literal (quoted + escaped).
     private static func jsonEscape(_ s: String) -> String {
         var out = "\""
