@@ -86,6 +86,31 @@ public final class TerminalFavoritesStore {
         }
     }
 
+    /// TSK-1475 (favorites editor) — rename the favorite whose command
+    /// matches: sets its display title IN PLACE (order kept; an empty title
+    /// clears back to showing the command). No-op false when absent.
+    @discardableResult
+    public func rename(command: String, to title: String) -> Bool {
+        guard let i = items.firstIndex(where: { $0.command == command }) else { return false }
+        items[i] = Favorite(title: title, command: command)
+        save()
+        return true
+    }
+
+    /// TSK-1475 (favorites editor) — move the favorite whose command matches
+    /// to `index` (clamped to the list bounds), the drag-reorder primitive.
+    /// No-op false when absent; a same-position move persists nothing.
+    @discardableResult
+    public func move(command: String, to index: Int) -> Bool {
+        guard let from = items.firstIndex(where: { $0.command == command }) else { return false }
+        let clamped = min(max(index, 0), items.count - 1)
+        guard clamped != from else { return true }
+        let fav = items.remove(at: from)
+        items.insert(fav, at: clamped)
+        save()
+        return true
+    }
+
     /// Re-read from disk — used after the user hand-edits the JSON file.
     public func reload() { load() }
 

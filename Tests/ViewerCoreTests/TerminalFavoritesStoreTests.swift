@@ -82,4 +82,52 @@ final class TerminalFavoritesStoreTests: XCTestCase {
         XCTAssertEqual(s.all.map(\.command), ["a", "b"],
             "blanks dropped, command-dupes collapsed (first wins)")
     }
+
+    // MARK: - TSK-1475 favorites editor: rename + reorder
+
+    func test_rename_setsTitleInPlace_keepsOrder() {
+        let s = store()
+        s.add(command: "c1"); s.add(command: "c2"); s.add(command: "c3")
+        // order: c3, c2, c1
+        XCTAssertTrue(s.rename(command: "c2", to: "Build the thing"))
+        XCTAssertEqual(s.all.map(\.command), ["c3", "c2", "c1"], "order unchanged")
+        XCTAssertEqual(s.all[1].displayLabel, "Build the thing")
+        // An empty title clears back to showing the command.
+        XCTAssertTrue(s.rename(command: "c2", to: ""))
+        XCTAssertEqual(s.all[1].displayLabel, "c2")
+        XCTAssertFalse(s.rename(command: "nope", to: "x"), "absent command → false")
+    }
+
+    func test_move_reorders_andClamps() {
+        let s = store()
+        s.add(command: "c1"); s.add(command: "c2"); s.add(command: "c3")
+        // order: c3, c2, c1 → move c1 to the front
+        XCTAssertTrue(s.move(command: "c1", to: 0))
+        XCTAssertEqual(s.all.map(\.command), ["c1", "c3", "c2"])
+        // An out-of-range index clamps to the end.
+        XCTAssertTrue(s.move(command: "c1", to: 99))
+        XCTAssertEqual(s.all.map(\.command), ["c3", "c2", "c1"])
+        // A negative index clamps to the front.
+        XCTAssertTrue(s.move(command: "c2", to: -5))
+        XCTAssertEqual(s.all.map(\.command), ["c2", "c3", "c1"])
+        XCTAssertFalse(s.move(command: "nope", to: 0))
+    }
+
+    func test_fullEditorCRUD_persistenceRoundTrip() {
+        // add + rename + reorder + delete all survive a fresh store instance
+        // — the TSK-1475 "favorites editor" persistence bar in one flow.
+        let s = store()
+        s.add(command: "keep me")
+        s.add(command: "rename me")
+        s.add(command: "delete me")
+        s.rename(command: "rename me", to: "Renamed")
+        s.move(command: "keep me", to: 0)
+        s.remove(command: "delete me")
+        s.flush()
+
+        let reloaded = store()
+        XCTAssertEqual(reloaded.all.map(\.command), ["keep me", "rename me"])
+        XCTAssertEqual(reloaded.all.map(\.displayLabel), ["keep me", "Renamed"],
+                       "the rename survived the round-trip")
+    }
 }
