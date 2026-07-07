@@ -67,9 +67,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   denies indexing_slicing (iterators + saturating_sub); serve is bin-only (foundation-ahead-of-
   consumer modules need #![allow(dead_code)]). T16 host core: ReconnectBackoff (f32d6c5c, TSK-1556
   daemon s4 — capped-exponential 250ms→4s + degrade-after-window; 6 tests). Daemon slices 1553-1558
-  host-testable cores (s2+s3+s4 done — T19 added retire_decision c0ae3043, TSK-1555: newer-only +
-  first-writer-wins arbiter, 6 tests, rust gate GREEN; s1/s5/s6 remain). ✅ TSK-1559 (MCP wedge)
-  FIXED T13+T17+T18
+  host-testable cores (s1+s2+s3+s4 done — T19 retire_decision c0ae3043; T20 s1 socket-activation
+  6c083f95, TSK-1553: ffi::launchd safe wrapper + select_listener seam + plist template +
+  install-app.sh --with-daemon; 16 lifecycle tests, rust gate GREEN; mdv-serve BUNDLE EMBED =
+  remaining tail; s5 CoreTransport trait + s6 mdv-web thin-client remain). NOTE: adding an ffi
+  module trips the cbindgen staleness check — run build-rust-core.sh to restage. ✅ TSK-1559
+  (MCP wedge) FIXED T13+T17+T18
   (84cb6560+75fb2ac6+c5b37ed1): reader fd-cache (read-side ObjC crash) + send() raw write(2)
   (write-side crash; teardown outPipe-close now safe → drain-reader EOF, no leak) + manyRequests
   25→8 window-shrink + XCTWaiter loud-fail watchdog. FULL GATE GREEN rc=0 with the test passing
