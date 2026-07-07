@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import PDFKit
+import ViewerCore
 import WebKit
 
 /// Runtime introspection of the realized NSView/CALayer/NSTextView tree.
@@ -73,6 +74,11 @@ public enum DiagnosticDump {
             // of crashing the dump (CR-06).
             out["recursiveDescription"] = Self.recursiveDescription(of: cv)
         }
+        // TSK-1490: the memory footprint (phys_footprint + WebKit helpers) so
+        // a before/after open-close-tabs comparison reads the retained
+        // footprint straight from two dumps. The sample walks the process
+        // list, so it's off the hot path here (a --diagnose / SIGUSR1 dump).
+        out["memory"] = ProcessMemory.sample().diagnosticFields()
         return out
     }
 

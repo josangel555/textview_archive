@@ -70,6 +70,43 @@ public struct ProcessMemorySample: Sendable, Equatable {
         self.webKitHelperCount = webKitHelperCount
         self.helpersComplete = helpersComplete
     }
+
+    /// App footprint + WebKit helpers (`nil` app footprint contributes 0).
+    /// The single number the "retained after close" audit (TSK-1490) reads.
+    public var totalBytes: UInt64 {
+        (appFootprintBytes ?? 0) + webKitHelperBytes
+    }
+
+    /// TSK-1490 — a footprint SECTION for the diagnostics dump (`--diagnose`
+    /// / SIGUSR1). A stable, machine-readable shape so a before/after
+    /// open-close-tabs comparison can read the retained footprint straight
+    /// from two dumps. Pure; the dump wiring just splices this in.
+    public func diagnosticFields() -> [String: Any] {
+        [
+            "appFootprintBytes": appFootprintBytes.map { Int($0) } as Any,
+            "webKitHelperBytes": Int(webKitHelperBytes),
+            "webKitHelperCount": webKitHelperCount,
+            "helpersComplete": helpersComplete,
+            "totalBytes": Int(totalBytes),
+            "summary": summaryLine,
+        ]
+    }
+
+    /// A one-line human summary for a log / footer / dump header:
+    /// "app 128.0 MB + 3 WebKit helpers 96.0 MB = 224.0 MB" (≈ when the
+    /// helper enumeration was truncated).
+    public var summaryLine: String {
+        let approx = helpersComplete ? "" : "≈"
+        let app = appFootprintBytes.map(Self.mb) ?? "—"
+        let helpers = Self.mb(webKitHelperBytes)
+        let total = Self.mb(totalBytes)
+        return "app \(app) + \(webKitHelperCount) WebKit helpers \(approx)\(helpers) "
+             + "= \(approx)\(total)"
+    }
+
+    static func mb(_ bytes: UInt64) -> String {
+        String(format: "%.1f MB", Double(bytes) / (1024 * 1024))
+    }
 }
 
 /// Samples OS-level memory for the current process and its WebKit XPC
