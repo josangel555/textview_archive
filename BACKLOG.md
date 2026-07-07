@@ -53,14 +53,11 @@ HTMLVisitor utility surface. ⛔ find PARKED (TSK-1549 Need-me) · hex waits TSK
 formula waits B6. RESIDUAL: VM WV/render slice blocked (TSK-1550 VM ssh down) — runs on
 lane restore, attaches to TSK-649.
 
-### B4 Mandate guards + hygiene teeth ✅ DONE 2026-07-07 except 1535 (gate green)
+### B4 Mandate guards + hygiene teeth ✅ DONE 2026-07-07 (gate green incl. deny flip)
 ✅ TSK-1539 matrix guard (+ gap ticket TSK-1551: formatted/hex/CSV-table/diff lack real-render
 suites) · ✅ TSK-1534 webview allowlist · ✅ consumption-guard + no-resurrection tooth ·
 ✅ TSK-1548 progress log rotated 1.46MB→10KB + 64KB budget tooth · ✅ TSK-1499 (via B3) ·
-✅ TSK-1501 color ratchet (28-match shrink-only baseline). REMAINING: TSK-1535 missing_docs
-burn-down→DENY — 188 warnings (147 in canvas/*: ops 40, patch 26, store 25, dsl 11, registry
-10, chart 10; theme 11, runtime 9, json 8, nav 5) — mechanical, fresh-context-friendly;
-do as its own slice then flip missing_docs to deny in lib.rs.
+✅ TSK-1501 color ratchet (28-match shrink-only baseline). ✅ TSK-1535 missing_docs 188→0 + #![deny] flip (6cd5210c).
 
 ### B5 Data-grid views — models DONE, wire the views (7)
 TSK-924 CSV multi-cell select/copy view · TSK-1139 CSV viewport paging (CSVViewportPager→view;

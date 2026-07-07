@@ -16,10 +16,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
 - **B1 ✅ · B2 ✅ · B3 ✅ (Stage-B deletions, gate green 9,544; RESIDUAL: VM WV slice blocked
   on TSK-1550 VM-ssh-down — run + attach to TSK-649 on lane restore). Batch in progress:
   B4 ✅ CLOSED except 1535 (commits 17bbd401 + c3240185; gate green; 1548/1534/1501/1539
-  fixed on board; gap ticket TSK-1551 = 4 lenses without real-render suites). Batch in
-  progress: NONE — next: TSK-1535 missing_docs burn-down (188 warnings, count-map in
-  BACKLOG B4) as a solo slice, THEN B5 data-grid views (NOTE: B5's WV/render half needs
-  the VM — TSK-1550 still down; do model/view code + host tests, cap render claims).**
+  fixed on board; gap ticket TSK-1551 = 4 lenses without real-render suites). B4 ✅ FULLY CLOSED
+  (incl. 1535: 188 docs→0 + #![deny], 6cd5210c). Batch in progress: NONE — next: B5
+  data-grid views (924/1139/1141/1486/1472/1515/1205; NOTE: B5's WV/render half needs the
+  VM — TSK-1550 still down; do model/view code + host tests, cap render claims).**
   Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).
