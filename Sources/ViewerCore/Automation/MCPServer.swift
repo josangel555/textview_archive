@@ -21,6 +21,16 @@ public final class MCPServer: @unchecked Sendable {
     private let host: AutomationHost
     private let input: FileHandle
     private let output: FileHandle
+    /// The output descriptor, captured ONCE at init while `output` is open
+    /// (TSK-1559). `send` writes via a raw `write(2)` on this cached fd rather
+    /// than `output.write(contentsOf:)`, because `FileHandle.write` raises an
+    /// UNCATCHABLE (from Swift) ObjC `NSFileHandleOperationException` when the
+    /// handle is closed concurrently (teardown / app-quit / a peer close) —
+    /// the same landmine the reader's fd-cache fixed. `write(2)` returns
+    /// -1/EPIPE/EBADF instead, which `send` handles as a dead transport. This
+    /// makes closing the output end safe, so a blocked response reader can be
+    /// released with a clean EOF instead of leaking.
+    private let outputFD: Int32
     private let logger: ((String) -> Void)?
 
     /// Upper bound on how long the reader thread will park waiting for a
@@ -84,6 +94,7 @@ public final class MCPServer: @unchecked Sendable {
         self.host = host
         self.input = input
         self.output = output
+        self.outputFD = output.fileDescriptor   // safe: output is open here
         self.logger = logger
         self.onExit = onExit
         self.mainActorDeadline = mainActorDeadline
@@ -481,47 +492,60 @@ public final class MCPServer: @unchecked Sendable {
     private func send(response: MCP.Response) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
+        let body: Data
         do {
-            let body = try encoder.encode(response)
-            writeLock.lock()
-            defer { writeLock.unlock() }
-            let framed = MCPFraming.encode(body: body, mode: wireMode)
-            try output.write(contentsOf: framed)
+            body = try encoder.encode(response)
         } catch {
-            // A failed write means the response never reached the client.
-            // Encoding errors (a non-Encodable `MCP.Response` is unreachable
-            // here) we just log, but a *transport* write failure means stdout
-            // is gone: in the half-closed case the client closed the read end
-            // of our stdout while keeping our stdin open, so every subsequent
-            // response would silently fail and the read loop would keep
-            // dispatching requests it can never answer — the orphaned
-            // headless-server hang the `onExit` wiring exists to prevent.
-            //
-            // Treat a dead-transport write error as fatal: `stop()` flips
-            // `stopFlag` and closes stdin, which unblocks the read loop into
-            // EOF → `fireExit()` → terminate. EPIPE/EBADF/ENOTCONN/ECONNRESET
-            // are unambiguously a dead pipe; for anything else we still tear
-            // down (a write that fails for a non-transient reason can't be
-            // retried in-order on a serial stream), but we log the distinction.
-            if Self.isDeadTransport(error) {
-                log("send error (dead transport): \(error); stopping")
-            } else {
-                log("send error: \(error); stopping")
+            // A non-Encodable `MCP.Response` is unreachable here; log + return
+            // (an encoding failure is not a transport failure — don't tear down).
+            log("send encode error: \(error)")
+            return
+        }
+        let framed = MCPFraming.encode(body: body, mode: wireMode)
+        writeLock.lock()
+        let err = Self.writeAll(fd: outputFD, framed)
+        writeLock.unlock()
+        guard err != 0 else { return }
+        // A failed write means the response never reached the client. A
+        // transport failure means stdout is gone: in the half-closed case the
+        // client closed the read end of our stdout while keeping our stdin
+        // open, so every subsequent response would silently fail and the read
+        // loop would keep dispatching requests it can never answer — the
+        // orphaned headless-server hang the `onExit` wiring exists to prevent.
+        // `stop()` closes stdin → the read loop hits EOF → `fireExit()` →
+        // terminate. Raw `write(2)` yields an errno (never an ObjC exception),
+        // so a concurrent output close (teardown) is a clean EPIPE/EBADF here.
+        log("send error (\(Self.isDeadTransport(errno: err) ? "dead transport" : "errno \(err)")); stopping")
+        stop()
+    }
+
+    /// Write every byte of `data` to `fd` via raw `write(2)` (retrying EINTR),
+    /// returning `0` on success or the failing `errno`. Used instead of
+    /// `FileHandle.write` so a closed descriptor surfaces as EPIPE/EBADF —
+    /// inspectable — rather than an uncatchable ObjC exception (TSK-1559).
+    private static func writeAll(fd: Int32, _ data: Data) -> Int32 {
+        if data.isEmpty { return 0 }
+        return data.withUnsafeBytes { raw -> Int32 in
+            guard let base = raw.baseAddress else { return 0 }
+            var off = 0
+            let total = raw.count
+            while off < total {
+                let n = Darwin.write(fd, base + off, total - off)
+                if n < 0 {
+                    if errno == EINTR { continue }
+                    return errno
+                }
+                if n == 0 { return EIO }  // unexpected on a pipe/socket
+                off += n
             }
-            stop()
+            return 0
         }
     }
 
-    /// Classify a `FileHandle.write` error as an unrecoverable transport
-    /// failure (the peer is gone). `FileHandle` surfaces the underlying
-    /// `write(2)` failure as an `NSError` in `NSPOSIXErrorDomain` whose
-    /// `code` is the raw `errno`. EPIPE (peer closed read end), EBADF (fd
-    /// closed under us), ENOTCONN and ECONNRESET all mean the channel is
-    /// dead and no retry can succeed.
-    private static func isDeadTransport(_ error: Error) -> Bool {
-        let ns = error as NSError
-        guard ns.domain == NSPOSIXErrorDomain else { return false }
-        switch Int32(ns.code) {
+    /// Whether a `write(2)` `errno` means the channel is dead (no retry can
+    /// succeed): peer closed the read end, fd closed under us, or reset.
+    private static func isDeadTransport(errno err: Int32) -> Bool {
+        switch err {
         case EPIPE, EBADF, ENOTCONN, ECONNRESET:
             return true
         default:

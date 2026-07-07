@@ -152,6 +152,22 @@ final class MCPServerWedgeTests: XCTestCase {
         return (server, inPipe, outPipe)
     }
 
+    /// Tear down a server env so NO reader thread leaks past the test
+    /// (TSK-1559 — a leaked drain reader kept the whole `swift test --parallel`
+    /// worker alive for minutes when fewer than N responses arrived, hanging
+    /// the gate). Two threads must release: (1) the server's stdio reader —
+    /// `stop()` closes its input so the blocked read hits EOF; (2) the
+    /// background `drainResponses` reader — closing the outPipe WRITE end
+    /// delivers it EOF so it exits instead of blocking forever on
+    /// `MCPFraming.decode`. Closing the write end is now SAFE: the server's
+    /// `send` writes via raw `write(2)`, so a concurrent close is a clean
+    /// EPIPE (→ stop), not the uncatchable ObjC exception that made this
+    /// unsafe before the send-path fix.
+    private func teardown(_ env: (server: MCPServer, inPipe: Pipe, outPipe: Pipe)) {
+        env.server.stop()
+        try? env.outPipe.fileHandleForWriting.close()
+    }
+
     /// Pull `n` framed responses off `outPipe`, fulfilling
     /// `expectation` when done. Uses a background dispatch queue so
     /// the main run loop can pump (which the new bridge's
@@ -202,7 +218,7 @@ final class MCPServerWedgeTests: XCTestCase {
         let host = StubHost()
         let env = makeServer(host: host)
         env.server.start()
-        defer { env.server.stop() }
+        defer { teardown(env) }
 
         let req = Data(#"""
         {"jsonrpc":"2.0","id":1,"method":"ping"}
@@ -251,7 +267,7 @@ final class MCPServerWedgeTests: XCTestCase {
         let host = SleepingHost(sleepFor: 0.1)
         let env = makeServer(host: host)
         env.server.start()
-        defer { env.server.stop() }
+        defer { teardown(env) }
 
         for i in 1...2 {
             let req = Data(#"""
@@ -281,7 +297,7 @@ final class MCPServerWedgeTests: XCTestCase {
         let host = StubHost()
         let env = makeServer(host: host)
         env.server.start()
-        defer { env.server.stop() }
+        defer { teardown(env) }
 
         let count = 25
         for i in 0..<count {
@@ -336,7 +352,7 @@ final class MCPServerWedgeTests: XCTestCase {
         let host = CheckingHost()
         let env = makeServer(host: host)
         env.server.start()
-        defer { env.server.stop() }
+        defer { teardown(env) }
 
         let req = Data(#"""
         {"jsonrpc":"2.0","id":1,"method":"tools/call",
@@ -486,7 +502,7 @@ final class MCPServerWedgeTests: XCTestCase {
             mainActorDeadline: .milliseconds(200)
         )
         server.start()
-        defer { server.stop() }
+        defer { server.stop(); try? outPipe.fileHandleForWriting.close() }
 
         let req = Data(#"""
         {"jsonrpc":"2.0","id":7,"method":"tools/call",
