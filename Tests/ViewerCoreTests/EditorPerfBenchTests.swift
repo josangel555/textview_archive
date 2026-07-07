@@ -149,7 +149,7 @@ final class EditorPerfBenchTests: XCTestCase {
             XCTAssertLessThanOrEqual(e.to, base.utf16.count)
             XCTAssertGreaterThanOrEqual(e.to, lastTo, "selection range grows monotonically")
             lastTo = e.to
-            XCTAssertNotNil(CMEditApplier.apply(batch, to: base),
+            XCTAssertNotNil(RustCMEditAdapter.apply(batch, to: base),
                 "every scripted drag-select edit must apply cleanly")
         }
     }

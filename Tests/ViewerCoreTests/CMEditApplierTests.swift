@@ -1,10 +1,11 @@
 import XCTest
 @testable import ViewerCore
 
-/// Unit tests for the Phase 4 (v2) incremental-edit applier — the
-/// Swift-side reducer that consumes the JS `incrementalChange`
-/// payload. These mirror the contract `codemirror.html`'s emitter
-/// promises:
+/// Contract tests for the incremental-edit reducer that consumes the JS
+/// `incrementalChange` payload. STAGE-B (TSK-649): the Swift twin
+/// (`CMEditApplier`) is deleted — these rules now pin the RUST engine
+/// through the production adapter, exactly as `codemirror.html`'s emitter
+/// promises them:
 ///
 ///   - Edits are pre-batch frame, sorted ascending by `from`.
 ///   - Offsets index UTF-16 code units (matches CM6 `EditorState.doc`).
@@ -19,17 +20,17 @@ final class CMEditApplierTests: XCTestCase {
     // MARK: - No-ops
 
     func testEmptyBatchReturnsBaseUnchanged() {
-        XCTAssertEqual(CMEditApplier.apply([], to: "hello"), "hello")
+        XCTAssertEqual(RustCMEditAdapter.apply([], to: "hello"), "hello")
     }
 
     func testEmptyBatchOnEmptyBaseStaysEmpty() {
-        XCTAssertEqual(CMEditApplier.apply([], to: ""), "")
+        XCTAssertEqual(RustCMEditAdapter.apply([], to: ""), "")
     }
 
     // MARK: - Single edits
 
     func testPureInsertAtStart() {
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 0, to: 0, insert: "X")],
             to: "abc"
         )
@@ -38,7 +39,7 @@ final class CMEditApplierTests: XCTestCase {
 
     func testPureInsertAtEnd() {
         let base = "abc"
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 3, to: 3, insert: "X")],
             to: base
         )
@@ -46,7 +47,7 @@ final class CMEditApplierTests: XCTestCase {
     }
 
     func testPureDeleteInTheMiddle() {
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 1, to: 3, insert: "")],
             to: "abcde"
         )
@@ -54,7 +55,7 @@ final class CMEditApplierTests: XCTestCase {
     }
 
     func testReplaceShrinksDoc() {
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 0, to: 5, insert: "x")],
             to: "abcde"
         )
@@ -62,7 +63,7 @@ final class CMEditApplierTests: XCTestCase {
     }
 
     func testReplaceWholeDoc() {
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 0, to: 5, insert: "totally new")],
             to: "abcde"
         )
@@ -75,7 +76,7 @@ final class CMEditApplierTests: XCTestCase {
         // Both edits reference the original "abc" frame — insert "X" at
         // start AND "Y" at end. The second edit's `from: 3` is the
         // pre-batch length, not the post-first-edit length.
-        let r = CMEditApplier.apply([
+        let r = RustCMEditAdapter.apply([
             CMEdit(from: 0, to: 0, insert: "X"),
             CMEdit(from: 3, to: 3, insert: "Y"),
         ], to: "abc")
@@ -83,7 +84,7 @@ final class CMEditApplierTests: XCTestCase {
     }
 
     func testThreeNonOverlappingReplaces() {
-        let r = CMEditApplier.apply([
+        let r = RustCMEditAdapter.apply([
             CMEdit(from: 0, to: 2, insert: "AA"),
             CMEdit(from: 4, to: 6, insert: "BB"),
             CMEdit(from: 8, to: 10, insert: "CC"),
@@ -94,7 +95,7 @@ final class CMEditApplierTests: XCTestCase {
     func testEditsAcceptedOutOfOrderAndStableSorted() {
         // Caller may have collected edits in dispatch order; the
         // applier must sort and produce the canonical result.
-        let r = CMEditApplier.apply([
+        let r = RustCMEditAdapter.apply([
             CMEdit(from: 4, to: 6, insert: "BB"),
             CMEdit(from: 0, to: 2, insert: "AA"),
         ], to: "012345")
@@ -108,7 +109,7 @@ final class CMEditApplierTests: XCTestCase {
         // must reject the whole batch so the caller falls back to
         // full-text rather than silently producing something neither
         // editor agrees on.
-        let r = CMEditApplier.apply([
+        let r = RustCMEditAdapter.apply([
             CMEdit(from: 1, to: 3, insert: "X"),
             CMEdit(from: 2, to: 4, insert: "Y"),
         ], to: "abcde")
@@ -116,7 +117,7 @@ final class CMEditApplierTests: XCTestCase {
     }
 
     func testNegativeFromReturnsNil() {
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: -1, to: 0, insert: "X")],
             to: "abc"
         )
@@ -124,7 +125,7 @@ final class CMEditApplierTests: XCTestCase {
     }
 
     func testFromGreaterThanToReturnsNil() {
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 4, to: 2, insert: "X")],
             to: "abcde"
         )
@@ -132,7 +133,7 @@ final class CMEditApplierTests: XCTestCase {
     }
 
     func testToBeyondDocLengthReturnsNil() {
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 0, to: 999, insert: "")],
             to: "abc"
         )
@@ -150,7 +151,7 @@ final class CMEditApplierTests: XCTestCase {
         //   3..4: 😁  (surrogate pair)
         let base = "😀 😁"
         XCTAssertEqual(base.utf16.count, 5)
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 2, to: 3, insert: "")],
             to: base
         )
@@ -160,7 +161,7 @@ final class CMEditApplierTests: XCTestCase {
     func testInsertingEmojiAtUTF16BoundaryProducesValidString() {
         // Insert a 4-code-unit emoji-with-modifier between two ASCII chars.
         let payload = "👨‍💻" // ZWJ sequence — 5 UTF-16 units
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 1, to: 1, insert: payload)],
             to: "ab"
         )
@@ -194,7 +195,7 @@ final class CMEditApplierTests: XCTestCase {
         }
         XCTAssertEqual(version, 7)
         XCTAssertEqual(length, 5)
-        let applied = CMEditApplier.apply(edits, to: "abc")
+        let applied = RustCMEditAdapter.apply(edits, to: "abc")
         XCTAssertEqual(applied, "XabcY")
         XCTAssertEqual(applied?.utf16.count, length)
     }
@@ -209,7 +210,7 @@ final class CMEditApplierTests: XCTestCase {
         // and permanently corrupting the buffer.
         let base = "😀"
         XCTAssertEqual(base.utf16.count, 2)
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 0, to: 1, insert: "")],
             to: base
         )
@@ -220,7 +221,7 @@ final class CMEditApplierTests: XCTestCase {
     func testInsertingLoneSurrogateViaUnpairedTailReturnsNil() {
         // Delete the LOW surrogate [1..2], leaving a lone high surrogate.
         let base = "😀"
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 1, to: 2, insert: "")],
             to: base
         )
@@ -233,22 +234,24 @@ final class CMEditApplierTests: XCTestCase {
         // intact must still decode (no false rejection from the
         // validating decoder).
         let base = "a😀b"
-        let r = CMEditApplier.apply(
+        let r = RustCMEditAdapter.apply(
             [CMEdit(from: 0, to: 1, insert: "X")],  // replace 'a' with 'X'
             to: base
         )
         XCTAssertEqual(r, "X😀b")
     }
 
-    func testDecodeValidatingUTF16_rejectsLoneSurrogate() {
-        // Directly exercise the validating decoder helper.
-        let loneHigh: [UTF16.CodeUnit] = [0xD83D]       // unpaired high
-        let loneLow: [UTF16.CodeUnit] = [0xDE00]        // unpaired low
-        let wellFormed: [UTF16.CodeUnit] = Array("hi 😀".utf16)
-        XCTAssertNil(CMEditApplier.decodeValidatingUTF16(loneHigh))
-        XCTAssertNil(CMEditApplier.decodeValidatingUTF16(loneLow))
-        XCTAssertEqual(CMEditApplier.decodeValidatingUTF16(wellFormed), "hi 😀")
-        XCTAssertEqual(CMEditApplier.decodeValidatingUTF16([]), "")
+    func testSurrogateSplittingEditIsRejected() {
+        // Stage-B: the validating-decode rule is pinned through the public
+        // reducer — an edit whose offsets SPLIT a surrogate pair must reject
+        // the batch (nil ⇒ resync), never emit a torn string.
+        let base = "a😀b"   // 😀 occupies UTF-16 units 1–2
+        XCTAssertNil(RustCMEditAdapter.apply([CMEdit(from: 2, to: 2, insert: "x")], to: base),
+                     "inserting between the surrogate halves must reject")
+        XCTAssertNil(RustCMEditAdapter.apply([CMEdit(from: 1, to: 2, insert: "")], to: base),
+                     "deleting half a pair must reject")
+        XCTAssertEqual(RustCMEditAdapter.apply([CMEdit(from: 1, to: 3, insert: "")], to: base),
+                       "ab", "deleting the WHOLE pair is fine")
     }
 
     func testDecoderRejectsBatchWithNegativeFrom() throws {

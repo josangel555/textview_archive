@@ -16,10 +16,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
 - **B1 ✅ · B2 ✅. Batch in progress: B3 twin deletions — fuzzy ✅ (55470d33), transcript ✅
   (2edb6291), CSV ✅ (committed: CSVParser algorithm deleted, Result type kept; NEW wire
   CsvParseWith id=24 carries forced delimiter + all four caps for the clipboard TSV path;
-  CSVFilter KEPT — its apply() is the live non-session view filter, supersession = B5/B7
-  view migration, NOT a twin), find ⛔ PARKED (TSK-1549 Need-me). NEXT: CMEditApplier →
-  markdown structural visitor → TreeSitterEngine folds → B3's ONE full gate + board
-  records.** Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
+  CSVFilter KEPT — live non-session view filter, NOT a twin), cmEdit ✅ (committed:
+  CMEditApplier deleted; 22-rule contract suite retargeted to the rust engine incl. the
+  surrogate-split rule via the public reducer; perf bench measures rust now), find ⛔
+  PARKED (TSK-1549 Need-me). NEXT: markdown structural visitor → TreeSitterEngine folds →
+  B3's ONE full gate + board records.** Pattern: keep TYPES, delete algorithm, adapter → runRustOnly
   (.degradedRustFault), retire A/B+differential suites, keep behavior pins.
   Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;

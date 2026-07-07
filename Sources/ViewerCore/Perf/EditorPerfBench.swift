@@ -255,9 +255,10 @@ public enum EditorPerfBench {
             // FFI traffic this op would cost (analytic, exact wire size).
             ffiBytesTotal += cmApplyRequestFrameBytes(base: base, edits: edits)
 
-            // Model edit-apply wall-clock (the deterministic Swift reducer).
+            // Model edit-apply wall-clock (Stage-B: the rust reducer via the
+            // production adapter — the only engine).
             let t0 = Date()
-            let applied = CMEditApplier.apply(edits, to: base)
+            let applied = RustCMEditAdapter.apply(edits, to: base)
             let dt = Date().timeIntervalSince(t0) * 1000
             totalMs += dt
             bestMs = min(bestMs, dt)

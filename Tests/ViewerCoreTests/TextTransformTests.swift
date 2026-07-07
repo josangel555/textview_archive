@@ -45,7 +45,7 @@ final class TextTransformTests: XCTestCase {
         let edit = TextTransform.edit(for: .uppercase, in: text, from: 0, to: 5)
         XCTAssertEqual(edit, CMEdit(from: 0, to: 5, insert: "HELLO"))
         // Applying it yields the whole expected buffer.
-        XCTAssertEqual(CMEditApplier.apply([edit!], to: text), "HELLO WORLD")
+        XCTAssertEqual(RustCMEditAdapter.apply([edit!], to: text), "HELLO WORLD")
     }
 
     func testEditTransformsInteriorSelection() {
@@ -53,7 +53,7 @@ final class TextTransformTests: XCTestCase {
         // Capitalize "quick brown" (offsets 4..<15).
         let edit = TextTransform.edit(for: .capitalize, in: text, from: 4, to: 15)
         XCTAssertNotNil(edit)
-        XCTAssertEqual(CMEditApplier.apply([edit!], to: text), "the Quick Brown fox")
+        XCTAssertEqual(RustCMEditAdapter.apply([edit!], to: text), "the Quick Brown fox")
     }
 
     // MARK: edit() — empty selection → whole document
@@ -63,7 +63,7 @@ final class TextTransformTests: XCTestCase {
         // from == to (caret, no selection) → uppercase the whole buffer.
         let edit = TextTransform.edit(for: .uppercase, in: text, from: 3, to: 3)
         XCTAssertEqual(edit, CMEdit(from: 0, to: text.utf16.count, insert: "MIXED CASE TEXT"))
-        XCTAssertEqual(CMEditApplier.apply([edit!], to: text), "MIXED CASE TEXT")
+        XCTAssertEqual(RustCMEditAdapter.apply([edit!], to: text), "MIXED CASE TEXT")
     }
 
     // MARK: edit() — no-op / identity / bounds
@@ -96,7 +96,7 @@ final class TextTransformTests: XCTestCase {
         let text = "café 😀 end"
         let edit = TextTransform.edit(for: .uppercase, in: text, from: 0, to: 0)
         XCTAssertNotNil(edit)
-        let result = CMEditApplier.apply([edit!], to: text)
+        let result = RustCMEditAdapter.apply([edit!], to: text)
         XCTAssertEqual(result, "CAFÉ 😀 END")
     }
 
@@ -105,7 +105,7 @@ final class TextTransformTests: XCTestCase {
         let text = "😀abc"
         let edit = TextTransform.edit(for: .uppercase, in: text, from: 2, to: 5)
         XCTAssertEqual(edit, CMEdit(from: 2, to: 5, insert: "ABC"))
-        XCTAssertEqual(CMEditApplier.apply([edit!], to: text), "😀ABC")
+        XCTAssertEqual(RustCMEditAdapter.apply([edit!], to: text), "😀ABC")
     }
 
     // MARK: round-trip — lowercase reverses uppercase
@@ -113,10 +113,10 @@ final class TextTransformTests: XCTestCase {
     func testLowercaseReversesUppercaseRoundTrip() throws {
         let original = "Hello, World!"
         let upEdit = try XCTUnwrap(TextTransform.edit(for: .uppercase, in: original, from: 0, to: 0))
-        let upped = try XCTUnwrap(CMEditApplier.apply([upEdit], to: original))
+        let upped = try XCTUnwrap(RustCMEditAdapter.apply([upEdit], to: original))
         XCTAssertEqual(upped, "HELLO, WORLD!")
         let downEdit = try XCTUnwrap(TextTransform.edit(for: .lowercase, in: upped, from: 0, to: 0))
-        let downed = try XCTUnwrap(CMEditApplier.apply([downEdit], to: upped))
+        let downed = try XCTUnwrap(RustCMEditAdapter.apply([downEdit], to: upped))
         XCTAssertEqual(downed, "hello, world!")
     }
 }

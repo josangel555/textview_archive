@@ -60,7 +60,7 @@ final class CMV2IntegrationTests: XCTestCase {
                 return XCTFail("decode failed for batch \(batch)")
             }
             let next = try XCTUnwrap(
-                CMEditApplier.apply(edits, to: buffer.text))
+                RustCMEditAdapter.apply(edits, to: buffer.text))
             XCTAssertEqual(next.utf16.count, len,
                            "Swift mirror diverged from JS contentLength")
             buffer.setText(next)
@@ -89,7 +89,7 @@ final class CMV2IntegrationTests: XCTestCase {
                 CMBridgeCodec.decodeInbound(body) else {
             return XCTFail("decode")
         }
-        let next = try XCTUnwrap(CMEditApplier.apply(edits, to: buffer.text))
+        let next = try XCTUnwrap(RustCMEditAdapter.apply(edits, to: buffer.text))
         XCTAssertEqual(next, "the lazy fox")
     }
 
@@ -112,7 +112,7 @@ final class CMV2IntegrationTests: XCTestCase {
                 CMBridgeCodec.decodeInbound(body) else {
             return XCTFail("decode")
         }
-        let next = try XCTUnwrap(CMEditApplier.apply(edits, to: buffer.text))
+        let next = try XCTUnwrap(RustCMEditAdapter.apply(edits, to: buffer.text))
         XCTAssertNotEqual(next.utf16.count, claimedLen,
                           "applier output should disagree with bogus length")
         // Caller policy (mirrored in CodeMirrorEditorView coordinator):
