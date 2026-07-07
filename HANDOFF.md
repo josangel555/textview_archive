@@ -43,8 +43,11 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   cap — installs to ~/Library/Application Support/MarkdownViewer/bin/) · s2 idle-exit core+ticker
   (3b4a5402+e90e6593, launchd-gated, CLOCK-FREE ACTIVITY_GEN) · s3 retire arbiter (c0ae3043) · s4
   ReconnectBackoff (f32d6c5c) · s5 CoreTransport lib+bin split (fbb81053, both-arm contract tests)
-  · s6 web markdown-via-seam slice1 (ffafcc73). Daemon tails: TUI consumer refactor · web
-  per-family WIRE METHODS (multi-slice) · retire envelope wiring · bootstrap smoke.
+  · s6 web markdown-via-seam slice1 (ffafcc73). T25: retire WIRING done
+  (ed9ff36a — skewed-NEWER client gets a one-frame retire grace; older keeps the immediate hard
+  close; attached-client registry + exit watcher; 2-connection socketpair integration test; 66
+  serve tests; gate GREEN). Daemon tails left: TUI consumer refactor · web per-family WIRE
+  METHODS (multi-slice) · launchctl bootstrap live smoke.
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
