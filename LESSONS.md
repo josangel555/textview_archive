@@ -3833,3 +3833,20 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   stdio spec is newline-delimited JSON, so the first REAL client (Claude Code) timed out at 30s.
   Fix = dual-mode sniff + reply-in-kind. Rule: validate a protocol surface with a SPEC-shaped
   client, not with a probe derived from the implementation.
+
+- **`FileHandle.fileDescriptor` / `.availableData` ACCESSORS raise an uncatchable ObjC
+  `NSFileHandleOperationException` when the handle is closed under a blocked reader (TSK-1559,
+  2026-07-07).** A raw `Darwin.read(handle.fileDescriptor, …)` does NOT dodge it — the
+  `.fileDescriptor` *accessor* throws BEFORE the syscall (this was the incomplete half of
+  TSK-1552's raw-read switch). It's a real crash: app-quit closing a live MCP connection, and the
+  headless gate hanging on `MCPServerWedgeTests` (the crashed xctest worker leaves an orphan
+  holding `.build-gate`, self-reinforcing the wedge). FIX: cache `handle.fileDescriptor` ONCE at
+  reader init (while open), read(2) the cached fd; external close → EBADF → treat as EOF. Retain
+  the handle so the fd stays yours; a post-close recycle degrades to a frame-error→EOF, never a
+  crash. Swift `try?`/`catch` CANNOT catch ObjC exceptions — you must avoid throwing accessors.
+- **Don't `kill -9` a `swift test --parallel` gate worker mid-run (2026-07-07).** It orphans the
+  xctest child, which keeps holding the `.build-gate` SwiftPM lock + any test socket/server →
+  the next gate wedges behind it. Kill the ROOT `bash scripts/test-headless-gate` wrapper (children
+  die with it), or let it finish. To verify a change while ONE suite wedges, use a scoped
+  `swift test --skip <WedgingSuite> --filter <module>` on the default `.build` (separate from
+  `.build-gate`) — a clean signal without the heavy tail.

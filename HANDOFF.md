@@ -50,10 +50,14 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   SURVIVE in the object DB though branches reaped (cat-file resolves) — recipe = cherry-pick SHA→
   central gate→commit. REMAINING complete: f5c9d73f mermaid-err(1466, WebView→VM, not host-landable),
   05506d01 invisibles(1484 partial) + 9 WIPs (verb-adders → ScriptVerbCatalog/Dispatch/CommandRegistry
-  conflicts, keep-both). ⚠️ GATE FLAKE TSK-1559: MCPServerWedgeTests.test_manyRequests_inSequence_
-  complete WEDGES the host gate at ~9740/9742 (0 failures otherwise); verify via `--skip
-  MCPServerWedgeTests` scoped sweep (6577 ViewerCore+Kit 0 failures = clean). DON'T kill-9 gate
-  workers (leaves MCP-socket orphans → re-wedge). 1550/1334 = the two VM unlocks.
+  conflicts, keep-both). T13 GATE FIX TSK-1559 ✅ FIXED (84cb6560): the MCPServerWedgeTests host-gate
+  wedge was TWO bugs — (1) a PRODUCTION crash (MCPFraming.FileHandleReader called the throwing
+  handle.fileDescriptor/.availableData accessors per-iteration; cached the fd once at init +
+  read(2) it), (2) a parallel-load wedge (post-wait main-pump starvation × 20s deadline; bounded to
+  5s + generous drain-wait ceilings). Full central gate now GREEN rc=0 in one pass (was wedging 6×).
+  LESSONS.md updated (FileHandle accessor landmine + don't kill-9 gate workers → orphan holds the
+  lock). REMAINING salvage complete: f5c9d73f mermaid-err(1466, WebView→VM), 05506d01 invisibles
+  (1484 partial) + 9 WIPs. 1550/1334 = the two VM unlocks.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
