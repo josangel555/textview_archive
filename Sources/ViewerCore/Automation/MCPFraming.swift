@@ -260,6 +260,21 @@ extension MCPFraming {
     /// expects to be parked in `read(2)` between messages.
     public struct FileHandleReader: ByteReader {
         private let handle: FileHandle
+        /// The raw descriptor, captured ONCE at init while `handle` is
+        /// guaranteed open (TSK-1559). We must NOT re-read `handle
+        /// .fileDescriptor` on every refill: that ACCESSOR itself raises an
+        /// uncatchable (from Swift) ObjC `NSFileHandleOperationException`
+        /// when the handle has been CLOSED under a blocked reader — exactly
+        /// the app-quit / test-teardown race that closes a live connection
+        /// while this reader is parked mid-read (the crash TSK-1552's raw
+        /// `read(2)` switch was meant to dodge but didn't, because it still
+        /// went through the throwing accessor per iteration). Reading the
+        /// cached fd instead: after an external close, `read(2)` returns
+        /// -1/EBADF which we already treat as EOF below — no exception.
+        /// `handle` is retained so the descriptor stays ours until that
+        /// external close; a post-close fd recycle would at worst frame-
+        /// error into EOF, never crash.
+        private let fd: Int32
         /// Small look-ahead buffer so per-byte header scanning doesn't
         /// pay a syscall per byte. Body reads bypass this and call
         /// `read(exactly:)` directly which still works correctly because
@@ -291,7 +306,10 @@ extension MCPFraming {
         /// resets to 0.
         private var cursor: Int = 0
 
-        public init(_ handle: FileHandle) { self.handle = handle }
+        public init(_ handle: FileHandle) {
+            self.handle = handle
+            self.fd = handle.fileDescriptor   // safe: handle is open here
+        }
 
         public mutating func readByte() throws -> UInt8? {
             if cursor >= buffer.count {
@@ -306,7 +324,7 @@ extension MCPFraming {
                 var tmp = [UInt8](repeating: 0, count: 64 * 1024)
                 var n: Int
                 repeat {
-                    n = Darwin.read(handle.fileDescriptor, &tmp, tmp.count)
+                    n = Darwin.read(fd, &tmp, tmp.count)
                 } while n < 0 && errno == EINTR
                 if n <= 0 { return nil }          // EOF, or a closed/dead fd
                 buffer = Data(tmp[0..<n])
@@ -336,12 +354,24 @@ extension MCPFraming {
                 cursor = 0
             }
             while out.count < count {
-                let chunk = handle.availableData
-                if chunk.isEmpty {
-                    // EOF before all bytes arrived → caller treats as
-                    // unexpectedEOF.
+                // RAW read(2) on the cached fd — NOT `handle.availableData`,
+                // which raises the same uncatchable ObjC exception as
+                // `.fileDescriptor` when the handle is closed under a blocked
+                // reader (TSK-1559). read(2) returns -1/EBADF instead, which
+                // we treat as EOF. Chunked (≤64 KiB) so a 16 MiB body doesn't
+                // over-allocate; the outer loop reassembles.
+                let want = Swift.min(count - out.count, 64 * 1024)
+                var tmp = [UInt8](repeating: 0, count: want)
+                var n: Int
+                repeat {
+                    n = Darwin.read(fd, &tmp, want)
+                } while n < 0 && errno == EINTR
+                if n <= 0 {
+                    // EOF (or a closed/dead fd) before all bytes arrived →
+                    // caller treats as unexpectedEOF.
                     return nil
                 }
+                let chunk = Data(tmp[0..<n])
                 let needed = count - out.count
                 if chunk.count <= needed {
                     out.append(chunk)

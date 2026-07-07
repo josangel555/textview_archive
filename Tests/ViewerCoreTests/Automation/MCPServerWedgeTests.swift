@@ -130,7 +130,14 @@ final class MCPServerWedgeTests: XCTestCase {
 
     /// Set up a live server with the given host. Caller is responsible
     /// for `start()` + a deferred `stop()`.
-    private func makeServer(host: AutomationHost)
+    ///
+    /// `deadline` is bounded (5 s, not the 20 s default): under heavy
+    /// parallel-gate load, once a test's `wait()` returns the main thread
+    /// stops pumping the run loop, so the reader thread's remaining
+    /// per-request MainActor Tasks are starved and each parks up to the
+    /// deadline. 5 s caps that drain 4× shorter than 20 s (TSK-1559).
+    private func makeServer(host: AutomationHost,
+                            deadline: DispatchTimeInterval = .seconds(5))
         -> (server: MCPServer, inPipe: Pipe, outPipe: Pipe)
     {
         let inPipe = Pipe()
@@ -139,7 +146,8 @@ final class MCPServerWedgeTests: XCTestCase {
             host: host,
             input: inPipe.fileHandleForReading,
             output: outPipe.fileHandleForWriting,
-            logger: nil
+            logger: nil,
+            mainActorDeadline: deadline
         )
         return (server, inPipe, outPipe)
     }
@@ -207,7 +215,7 @@ final class MCPServerWedgeTests: XCTestCase {
 
         // 1 s budget for a sub-millisecond operation. A wedge or a
         // serious scheduler stall would blow through this.
-        wait(for: [arrived], timeout: 1.0)
+        wait(for: [arrived], timeout: 10.0)  // generous ceiling; pumps under load (TSK-1559)
 
         if let err = holder.error { throw err }
         XCTAssertEqual(holder.allBodies?.count, 1)
@@ -257,9 +265,8 @@ final class MCPServerWedgeTests: XCTestCase {
         let holder = ResponseHolder()
         drainResponses(from: env.outPipe, count: 2, expectation: arrived, into: holder)
 
-        // 2 × 100 ms handler + bridge overhead + scheduler latency.
-        // 3 s is forgiving; a wedge would never complete.
-        wait(for: [arrived], timeout: 3.0)
+        // Generous ceiling; keeps main pumping under gate load (TSK-1559).
+        wait(for: [arrived], timeout: 15.0)
 
         XCTAssertEqual(holder.allBodies?.count, 2,
                        "second request never got through; bridge wedged behind first long handler")
@@ -288,7 +295,13 @@ final class MCPServerWedgeTests: XCTestCase {
         let holder = ResponseHolder()
         drainResponses(from: env.outPipe, count: count, expectation: arrived, into: holder)
 
-        wait(for: [arrived], timeout: 10.0)
+        // 60 s ceiling (not 10 s): a generous timeout keeps the main run
+        // loop PUMPING until all 25 responses land, so the reader thread's
+        // per-request MainActor Tasks are serviced rather than starved once
+        // the wait returns — the parallel-gate wedge this test hit (TSK-1559).
+        // It still returns the instant `arrived` fulfills (<1 s normally);
+        // the ceiling only matters under heavy load.
+        wait(for: [arrived], timeout: 60.0)
         if let err = holder.error { throw err }
         XCTAssertEqual(holder.allBodies?.count, count,
                        "bridge wedged or leaked state under sequential load")
@@ -334,7 +347,7 @@ final class MCPServerWedgeTests: XCTestCase {
         let arrived = XCTestExpectation(description: "response arrives")
         let holder = ResponseHolder()
         drainResponses(from: env.outPipe, count: 1, expectation: arrived, into: holder)
-        wait(for: [arrived], timeout: 2.0)
+        wait(for: [arrived], timeout: 10.0)  // generous ceiling; pumps under load (TSK-1559)
 
         host.lock.lock(); defer { host.lock.unlock() }
         XCTAssertTrue(host.sawMainThread,
