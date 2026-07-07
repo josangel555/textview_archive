@@ -545,3 +545,8 @@ continue", document blockers and move on):
 - zsh eats bare `==`/globs in echoed args — quote them (`echo "==="` not `echo ===`).
 - `git -C /path` beats `cd /path && git` (permission rules match whole command strings).
 - Heredocs into a remote shell: `ssh host 'bash -s' <<'EOS'` — single-quote the tag or $vars expand locally.
+- **File content goes through Write/Edit (Read-first), NOT bash heredocs/redirection** — shell
+  writes bypass harness file-tracking ("modified externally" churn), lose file-history/undo,
+  and invite quoting bugs. Bash `>>` is acceptable ONLY for logs and genuine appends to large
+  append-only files (LESSONS/MEMORY pointers); post-compaction "File has not been read yet"
+  means Read it again, not switch to shell.
