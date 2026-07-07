@@ -65,8 +65,14 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   llvm-tools-preview download TIMES OUT (sandbox/network) — gate-wiring ready but unverifiable, do it
   when network/VM allows. NOTE: rust-core cargo needs --manifest-path rust-core/Cargo.toml; clippy
   denies indexing_slicing (iterators + saturating_sub); serve is bin-only (foundation-ahead-of-
-  consumer modules need #![allow(dead_code)]). Daemon slices 1553-1558 are host-testable cores (s2
-  done; s1/s3-s6 remain). 1550/1334 = the two VM unlocks.
+  consumer modules need #![allow(dead_code)]). T16 host core: ReconnectBackoff (f32d6c5c, TSK-1556
+  daemon s4 — capped-exponential 250ms→4s + degrade-after-window; 6 tests). Daemon slices 1553-1558
+  host-testable cores (s2+s4 done; s1/s3/s5/s6 remain). ⚠️ TSK-1559 REOPENED: the T13 MCP-wedge fix
+  REDUCED but didn't ELIMINATE it — test_manyRequests still wedges under heavy load (drain-reader
+  leaks on timeout; the complete fix = make MCPServer.send() a raw write(2) symmetric to T13's
+  reader fd-cache, then teardown can close the outPipe write end safely). HARD-TO-VERIFY (needs the
+  loaded gate it fixes). MEANTIME VERIFY host changes via `swift test --skip MCPServerWedgeTests
+  --filter ViewerCoreTests` (6417 tests, reliable). 1550/1334 = the two VM unlocks.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
