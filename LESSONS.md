@@ -3816,3 +3816,20 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   newer than built exec` ("STALE LINK" tooth). The touch remains correct for the HEADER/
   recompile edge — it is only the LINK edge it never covered. Durable end-state: xcframework
   binaryTarget (packaging plan Axis 1) makes the `.a` a tracked input natively.
+
+- **iCloud trees wedge full traversal; `git clone` is the rescue path** (2026-07-07). After the
+  Desktop&Documents-sync incident emptied `~/Documents/workspaces/...`, every full-tree operation
+  (du/find/rsync) blocked in the file provider on dataless files — but the repo's `.git` stayed
+  materialized, so `git clone <icloud-path> <local>` rebuilt the working tree locally in seconds.
+  Copy untracked files from a LOCAL backup, never the cloud tree. Canonical repo now
+  `/Users/me/Local_Docs/local_workspace/markdown_viewer`; remote `icloud-backup` = the CloudDocs
+  copy (renamed from origin so nothing pushes/pulls it by reflex).
+- **A fresh clone lacks every gitignored dir the scripts assume** (2026-07-07): `tmp/` (background
+  `> tmp/x.log` redirects fail SILENTLY as exit-1 before the command runs — bit twice),
+  `rust-core/link/*.a` + `Sources/CMdvCore/mdvcore.h` (run `bash scripts/build-rust-core.sh`),
+  `dist/`. `mkdir -p tmp` first in any fresh checkout.
+- **The self-referential-oracle bit the MCP transport** (2026-07-05, TSK-1545): every hand-rolled
+  probe of the MCP server false-passed because it matched OUR Content-Length framing; the MCP
+  stdio spec is newline-delimited JSON, so the first REAL client (Claude Code) timed out at 30s.
+  Fix = dual-mode sniff + reply-in-kind. Rule: validate a protocol surface with a SPEC-shaped
+  client, not with a probe derived from the implementation.
