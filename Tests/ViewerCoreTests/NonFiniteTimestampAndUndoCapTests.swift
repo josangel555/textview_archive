@@ -3,24 +3,14 @@ import XCTest
 
 /// Host regression coverage for two host-fixable findings from the
 /// 2026-06-18 adversarial review:
-///  - TSK-1013: `ClaudeLogParser`/`ClaudeMonitorLog.parseTimestamp` must reject
-///    non-finite (NaN / ±Inf) seconds instead of minting a garbage/distant Date.
+///  - TSK-1013: `ClaudeMonitorLog.parseTimestamp` must reject non-finite
+///    (NaN / ±Inf) seconds instead of minting a garbage/distant Date.
+///    (The transcript-projection half of this pin moved rust-side with the
+///    Stage-B twin deletion — the core's timestamp parser is fuzz-hardened
+///    and pinned by the rust suites.)
 ///  - TSK-1004: `HexEditBuffer.undoStack` must be bounded so a long edit
 ///    session can't grow undo history without limit.
 final class NonFiniteTimestampTests: XCTestCase {
-
-    func test_logParser_parseTimestamp_rejectsNonFinite() {
-        XCTAssertNil(ClaudeLogParser.parseTimestamp(Double.nan))
-        XCTAssertNil(ClaudeLogParser.parseTimestamp(Double.infinity))
-        XCTAssertNil(ClaudeLogParser.parseTimestamp(-Double.infinity))
-    }
-
-    func test_logParser_parseTimestamp_acceptsFinite() {
-        XCTAssertEqual(
-            ClaudeLogParser.parseTimestamp(1_700_000_000.0),
-            Date(timeIntervalSince1970: 1_700_000_000.0)
-        )
-    }
 
     func test_monitorLog_parseTimestamp_rejectsNonFinite() {
         XCTAssertNil(ClaudeMonitorLog.parseTimestamp(NSNumber(value: Double.nan)))

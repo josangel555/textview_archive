@@ -131,41 +131,34 @@ final class DataSliceOffsetDefenseTests: XCTestCase {
         XCTAssertEqual(freshRest, payload.suffix(from: 5))
     }
 
-    // MARK: - ClaudeLogParser
+    // MARK: - Transcript projection (Stage-B: via RustTranscriptAdapter)
 
-    func test_claudeLogParser_parse_handlesOffsetSliceData() {
+    func test_transcriptProjection_handlesOffsetSliceData() {
         let line1 = #"{"type":"user","timestamp":"2026-05-29T12:00:00Z","message":{"role":"user","content":"hello"}}"#
         let line2 = #"{"type":"assistant","timestamp":"2026-05-29T12:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"world"}]}}"#
         let jsonl = (line1 + "\n" + line2 + "\n").data(using: .utf8)!
         let sliced = offsetSlice(of: jsonl, prefix: 11)
 
-        let parser = ClaudeLogParser()
-        let fresh = parser.parse(jsonl)
-        let offset = parser.parse(sliced)
+        let fresh = RustTranscriptAdapter.parse(jsonl, redacting: false)
+        let offset = RustTranscriptAdapter.parse(sliced, redacting: false)
 
         XCTAssertEqual(fresh.count, 2)
         XCTAssertEqual(offset.count, fresh.count,
-                       "parser must yield the same event count for an offset slice")
+                       "the projection must yield the same events for an offset slice")
         for (l, r) in zip(fresh, offset) {
-            // Event IDs from `uuid`/`id` fields are stable; comparing
-            // the kind directly is the load-bearing assertion — if the
-            // slice-offset bug were triggering, the slice case would
-            // see corrupt JSON bytes and yield zero events (or wrong
-            // text payloads).
+            // If a slice-offset bug were triggering, the slice case would see
+            // corrupt bytes and yield zero events (or wrong text payloads).
             XCTAssertEqual(l.kind, r.kind)
         }
     }
 
-    func test_claudeLogParser_parse_trailingLineWithoutNewline_handlesOffsetSlice() {
-        // The trailing-line branch of `parse` is a separate
-        // `data.subdata(in:)` call; cover it explicitly.
+    func test_transcriptProjection_trailingLineWithoutNewline_handlesOffsetSlice() {
         let only = #"{"type":"user","message":{"role":"user","content":"trailing"}}"#
         let jsonl = only.data(using: .utf8)!
         let sliced = offsetSlice(of: jsonl, prefix: 3)
 
-        let parser = ClaudeLogParser()
-        let fresh = parser.parse(jsonl)
-        let offset = parser.parse(sliced)
+        let fresh = RustTranscriptAdapter.parse(jsonl, redacting: false)
+        let offset = RustTranscriptAdapter.parse(sliced, redacting: false)
 
         XCTAssertEqual(fresh.count, 1)
         XCTAssertEqual(offset.count, fresh.count)

@@ -308,12 +308,10 @@ struct ClaudeTimelineSection: View {
     /// does.
     nonisolated static func timelineEvents(
         from url: URL,
-        parser: ClaudeLogParser = ClaudeLogParser(),
         cap: Int = 200
     ) -> [ClaudeEvent] {
-        // Routed through the `.transcript` gate (TSK-647); redaction holds
-        // on both engines. `parser` is kept for call-site compatibility.
-        _ = parser
+        // Stage-B: rust is the only projection engine; redaction is pinned
+        // core-side and re-asserted by ClaudeTimelineRedactionTests.
         var parsed = (try? RustTranscriptAdapter.redactedEvents(from: url)) ?? []
         parsed.reverse()                                    // most recent first
         if parsed.count > cap { parsed = Array(parsed.prefix(cap)) }

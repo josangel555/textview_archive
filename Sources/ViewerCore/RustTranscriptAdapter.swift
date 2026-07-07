@@ -1,25 +1,24 @@
 import Foundation
 import RustCore
 
-/// Routes Claude-transcript EVENT PROJECTION through the Rust core
-/// (TSK-647; engine port TSK-632) when the `.transcript` gate is on,
-/// falling back to the Swift `ClaudeLogParser` otherwise.
+/// Claude-transcript EVENT PROJECTION over the rust-core engine (port
+/// TSK-632).
+///
+/// STAGE-B (TSK-649, 2026-07-07): the Swift twin (`ClaudeLogParser`'s
+/// projection) is DELETED — rust is the only engine, routed via
+/// `RustCoreFallback.runRustOnly`. Non-UTF-8 bytes are decoded LOSSILY
+/// before the String-typed wire (replacement chars inside string content;
+/// structurally-corrupt lines are skipped by the fuzz-hardened core parser)
+/// — equivalent-or-better tolerance than the deleted per-line Swift path. A
+/// bridge fault degrades to `[]` with an observable log.
 ///
 /// Scope: the projection consumers (timeline section, transcript search,
-/// monitor detail). `ClaudeSessionIndex` deliberately stays Swift — it
-/// streams per-line record CLASSIFICATION (`recordCwd` / `titleRecord` /
-/// `userPromptText`), a different surface that migrates with the
-/// transcript.list family (TSK-658).
-///
-/// Documented divergence (recorded on the ticket): a record with neither
-/// `uuid` nor `id` gets a deterministic `line-<n>` id from the core vs the
-/// Swift parser's random UUID — consumers only require Identifiable
-/// stability, which the core's ids provide *better*.
+/// monitor detail). `ClaudeSessionIndex` stays on the Swift record-
+/// CLASSIFICATION statics (`ClaudeLogParser+SystemRecords`), a different
+/// surface that migrates with the transcript.list family (TSK-658).
 public enum RustTranscriptAdapter {
 
-    /// `ClaudeLogParser.parse` / `parseRedacted` routed per the gate.
-    /// Non-UTF-8 data can't cross the String-typed wire — it falls back to
-    /// the Swift parser (whose per-line JSONSerialization tolerates it).
+    /// Project a JSONL transcript into events (redaction per `redacting`).
     public static func parse(
         _ data: Data,
         redacting: Bool,
@@ -28,28 +27,22 @@ public enum RustTranscriptAdapter {
         outcome(data, redacting: redacting, maxEvents: maxEvents).value
     }
 
-    /// Same, but also reporting which engine produced the result.
+    /// Same, but also reporting the result's provenance.
     public static func outcome(
         _ data: Data,
         redacting: Bool,
-        maxEvents: Int? = nil,
-        defaults: UserDefaults = .standard,
-        environment: [String: String]? = nil
+        maxEvents: Int? = nil
     ) -> CoreOutcome<[ClaudeEvent]> {
-        let swiftParser = maxEvents.map { ClaudeLogParser(maxEvents: $0) } ?? ClaudeLogParser()
-        return RustCoreFallback.run(
-            .transcript, defaults: defaults, environment: environment,
+        RustCoreFallback.runRustOnly(
+            .transcript,
             rust: {
-                guard let text = String(data: data, encoding: .utf8) else {
-                    throw CoreError.badUTF8
-                }
-                return try mdvCoreTranscriptParse(
-                    text: text, redacting: redacting, maxEvents: maxEvents
+                try mdvCoreTranscriptParse(
+                    text: String(decoding: data, as: UTF8.self),
+                    redacting: redacting,
+                    maxEvents: maxEvents
                 ).map(Self.clientEvent)
             },
-            swift: {
-                redacting ? swiftParser.parseRedacted(data) : swiftParser.parse(data)
-            }
+            degraded: []
         )
     }
 

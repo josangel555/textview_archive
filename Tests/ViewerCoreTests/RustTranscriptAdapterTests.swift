@@ -2,18 +2,16 @@ import XCTest
 @testable import ViewerCore
 import RustCore
 
-/// RustTranscriptAdapter routing (TSK-647): gate OFF → Swift parser
-/// untouched, gate ON → Rust core with ClaudeEvent-equal results
-/// (ids, timestamps, kinds, redaction), the maxEvents cap riding the
-/// wire, and non-UTF-8 input falling back to Swift. Gate state injected
-/// via `environment`.
+/// RustTranscriptAdapter behavior pins (STAGE-B, TSK-649: the Swift
+/// projection twin is deleted — rust is the only engine, no gate). The
+/// expectations below are the CONTRACT the deleted A/B suite proved
+/// event-equal before deletion: kinds/order/ids, the redaction barrier,
+/// the maxEvents cap, tolerant framing (garbage + torn lines skipped),
+/// lossy non-UTF-8 decode, and the file-error contract.
 final class RustTranscriptAdapterTests: XCTestCase {
 
-    private let gateOn = ["MDV_RUST_TRANSCRIPT": "1"]
-
-    /// uuid-bearing fixture (the documented missing-id divergence is out of
-    /// corpus by design): plain messages, blocks, a tool pair, a secret to
-    /// redact, garbage + torn tail lines for the tolerant framing.
+    /// uuid-bearing fixture: plain messages, blocks, a tool pair, a secret
+    /// to redact, garbage + torn tail lines for the tolerant framing.
     private let log = """
         {"uuid":"u1","type":"user","timestamp":"2026-06-12T03:14:15.926Z","message":{"role":"user","content":"hello"}}
         {"uuid":"a1","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"},{"type":"thinking","thinking":"hmm","signature":"SECRET-BLOB"},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls","signature":"SECRET-BLOB"}}]}}
@@ -24,30 +22,26 @@ final class RustTranscriptAdapterTests: XCTestCase {
 
     private var data: Data { Data(log.utf8) }
 
-    func test_gateOff_runsSwift() {
-        // Env-pinned OFF (the shipped default is ON since TSK-649 round 3).
-        let out = RustTranscriptAdapter.outcome(
-            data, redacting: true, environment: ["MDV_RUST_TRANSCRIPT": "0"])
-        XCTAssertEqual(out.source, .swiftBecauseGateOff)
-        XCTAssertEqual(out.value, ClaudeLogParser().parseRedacted(data))
-    }
-
-    func test_gateOn_runsRust_eventsEqualSwift_redactedAndNot() {
-        for redacting in [true, false] {
-            let out = RustTranscriptAdapter.outcome(
-                data, redacting: redacting, environment: gateOn)
-            XCTAssertEqual(out.source, .rust, "gate ON must route rust")
-            let swift = redacting
-                ? ClaudeLogParser().parseRedacted(data)
-                : ClaudeLogParser().parse(data)
-            XCTAssertEqual(out.value, swift, "redacting=\(redacting)")
-            XCTAssertFalse(out.value.isEmpty)
+    func test_rustIsTheOnlyEngine_projectionContractHolds() {
+        let out = RustTranscriptAdapter.outcome(data, redacting: true)
+        XCTAssertEqual(out.source, .rust, "twin deleted — rust must serve the projection")
+        // The fixture's well-formed records project in order; garbage +
+        // torn lines are skipped, never fatal.
+        let kinds = out.value.map(\.kind)
+        XCTAssertEqual(out.value.first?.id, "u1")
+        guard case .userMessage(let hello)? = kinds.first else {
+            return XCTFail("first event must be the user message, got \(kinds)")
         }
+        XCTAssertEqual(hello, "hello")
+        XCTAssertTrue(kinds.contains { if case .toolResult(let id, _) = $0 { return id == "t1" }; return false },
+                      "the tool pair round-trips")
+        XCTAssertTrue(kinds.contains { if case .thinking = $0 { return true }; return false })
+        // Timestamp parses on the stamped record.
+        XCTAssertNotNil(out.value.first?.timestamp)
     }
 
-    func test_gateOn_redactionBarrierHolds() {
-        let out = RustTranscriptAdapter.outcome(data, redacting: true, environment: gateOn)
-        XCTAssertEqual(out.source, .rust)
+    func test_redactionBarrierHolds() {
+        let out = RustTranscriptAdapter.outcome(data, redacting: true)
         // The secret must not survive anywhere in any projected event: the
         // `signature` key is scrubbed wherever it nests — incl. inside a
         // tool_use input, where the projection DOES surface the value.
@@ -60,22 +54,34 @@ final class RustTranscriptAdapterTests: XCTestCase {
             XCTAssertFalse(event.summary.contains("SECRET-BLOB"))
         }
         XCTAssertTrue(sawScrubbedInput, "fixture must exercise the input scrub")
+        // Unredacted mode keeps the raw value (the redaction is the barrier,
+        // not the parser) — surfacing consumers must pass redacting: true.
+        let raw = RustTranscriptAdapter.parse(data, redacting: false)
+        XCTAssertTrue(raw.contains { event in
+            if case .toolUse(_, _, let input) = event.kind {
+                return input["signature"] == "SECRET-BLOB"
+            }
+            return false
+        })
     }
 
-    func test_gateOn_maxEventsCapAppliesAndMatchesSwift() {
-        let rust = RustTranscriptAdapter.outcome(
-            data, redacting: true, maxEvents: 2, environment: gateOn)
-        XCTAssertEqual(rust.source, .rust)
-        XCTAssertEqual(rust.value, ClaudeLogParser(maxEvents: 2).parseRedacted(data))
-        XCTAssertEqual(rust.value.count, 2)
+    func test_maxEventsCapApplies() {
+        let out = RustTranscriptAdapter.outcome(data, redacting: true, maxEvents: 2)
+        XCTAssertEqual(out.source, .rust)
+        XCTAssertEqual(out.value.count, 2, "the cap rides the wire")
     }
 
-    func test_nonUTF8_fallsBackToSwift() {
+    func test_nonUTF8_decodesLossilyAndStillProjects() {
+        // Stage-B: invalid bytes decode lossily (replacement chars) instead
+        // of falling back to the deleted Swift parser; well-formed lines
+        // still project.
         var bad = Data(log.utf8)
         bad.append(contentsOf: [0xFF, 0xFE])  // invalid UTF-8 tail
-        let out = RustTranscriptAdapter.outcome(bad, redacting: true, environment: gateOn)
-        XCTAssertEqual(out.source, .swiftFallback)
-        XCTAssertEqual(out.value, ClaudeLogParser().parseRedacted(bad))
+        let out = RustTranscriptAdapter.outcome(bad, redacting: true)
+        XCTAssertEqual(out.source, .rust)
+        XCTAssertEqual(out.value.map(\.id),
+                       RustTranscriptAdapter.parse(data, redacting: true).map(\.id),
+                       "a corrupt tail must not cost the well-formed events")
     }
 
     func test_redactedEventsFromURL_fileErrorContract() {
@@ -93,6 +99,7 @@ final class RustTranscriptAdapterTests: XCTestCase {
         let file = dir.appendingPathComponent("s.jsonl")
         try? data.write(to: file)
         let events = (try? RustTranscriptAdapter.redactedEvents(from: file)) ?? []
-        XCTAssertEqual(events, ClaudeLogParser().parseRedacted(data))
+        XCTAssertEqual(events, RustTranscriptAdapter.parse(data, redacting: true))
+        XCTAssertFalse(events.isEmpty)
     }
 }

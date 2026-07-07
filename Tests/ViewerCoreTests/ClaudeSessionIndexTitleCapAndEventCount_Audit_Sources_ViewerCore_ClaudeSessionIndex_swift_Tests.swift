@@ -114,25 +114,22 @@ final class ClaudeSessionIndexTitleCapAndEventCountAuditTests: XCTestCase {
         ]
         let url = try writeTranscript(dir, stem: "s", lines: lines)
 
-        // Expected: independently parse every line through parseRecord and sum
-        // the emitted-event counts — exactly the semantics eventCount mirrors.
+        // Expected: independently project every line through the rust engine
+        // (Stage-B: the reference the Swift parseRecord used to provide) and
+        // sum the emitted-event counts — the semantics eventCount mirrors.
         var expected = 0
         for line in lines {
             let data = Data(line.utf8)
-            let obj = try XCTUnwrap(
-                JSONSerialization.jsonObject(with: data) as? [String: Any]
-            )
-            expected += ClaudeLogParser.parseRecord(obj).count
+            let raw = RustTranscriptAdapter.parse(data, redacting: false).count
+            expected += raw
             // Redaction must not change the count (no block added/removed).
             XCTAssertEqual(
-                ClaudeLogParser.parseRecord(ClaudeLogParser.redact(obj)).count,
-                ClaudeLogParser.parseRecord(obj).count
-            )
+                RustTranscriptAdapter.parse(data, redacting: true).count, raw)
         }
         XCTAssertEqual(expected, 1 + 3 + 1 + 1 + 0)
 
         let summary = try index.summary(for: url)
         XCTAssertEqual(summary.eventCount, expected,
-                       "streaming eventCount must match summed parseRecord counts")
+                       "streaming eventCount must match the engine's per-line counts")
     }
 }

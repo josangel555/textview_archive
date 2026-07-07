@@ -13,12 +13,13 @@ decision/approval = task_park "Need me" gate with homework, then move on. After 
 drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER THE BATCHES).
 
 ## Current state
-- **B1 ✅ (3b86f720) · B2 ✅ (e1fc0090). Batch in progress: B3 twin deletions — fuzzy ✅
-  (committed), find ⛔ PARKED (TSK-1549 Need-me: ICU lookaround fallback is load-bearing),
-  NEXT: ClaudeLogParser → CSV → CMEditApplier → markdown visitor → folds.** Deletion pattern:
-  keep result TYPES, delete the algorithm, adapter → RustCoreFallback.runRustOnly (new;
-  .degradedRustFault provenance), retire A/B+differential suites, keep behavior pins.
-  Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount must stay 0.
+- **B1 ✅ · B2 ✅. Batch in progress: B3 twin deletions — fuzzy ✅ (55470d33), transcript ✅
+  (committed: projection deleted 353→105 lines; types + SystemRecords classification/redaction
+  statics + dir conveniences survive; adapter rust-only w/ lossy-decode tolerance), find ⛔
+  PARKED (TSK-1549 Need-me). NEXT: CSVParser/CSVFilter → CMEditApplier → markdown visitor →
+  folds, then B3's ONE full gate + board records.** Pattern: keep TYPES, delete algorithm,
+  adapter → runRustOnly (.degradedRustFault), retire A/B+differential suites, keep behavior
+  pins. Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).
 - Done this weekend (all recorded on board): S1 EditorSession 8e2771d8 (TSK-1516) · MCP-into-

@@ -70,11 +70,12 @@ public struct ClaudeTranscriptSearch: Sendable {
 
     public enum SearchError: Error, Equatable { case invalidRegex }
 
-    private let parser: ClaudeLogParser
     private let index: ClaudeSessionIndex
 
     public init(maxLineBytes: Int = 4 * 1024 * 1024, maxEvents: Int = 200_000) {
-        self.parser = ClaudeLogParser(maxLineBytes: maxLineBytes, maxEvents: maxEvents)
+        // Stage-B: projection routes through RustTranscriptAdapter (the rust
+        // core enforces its own line/event caps); only the index keeps a cap.
+        _ = maxEvents
         self.index = ClaudeSessionIndex(maxLineBytes: maxLineBytes)
     }
 
