@@ -192,41 +192,70 @@ public enum ViewModeOptions {
         return avail.contains(pinned) ? pinned : builtin
     }
 
+    /// THE canonical, single source of truth for a file CATEGORY's default lens
+    /// (TSK-1467). Every "what lens does a `<category>` open in" decision routes
+    /// through this one table so the three view-mode surfaces
+    /// (`ViewModeOptions`, `ViewModeControl`, `FileCategory`) can never drift
+    /// apart — previously the category→lens mapping was re-derived ad-hoc in
+    /// `builtinDefaultMode` (and mirrored implicitly in `ViewModeControl.present`),
+    /// which is exactly the "feels arbitrary" divergence the ticket names.
+    ///
+    /// This is a pure CATEGORY→lens map. Two refinements layer ON TOP of it in
+    /// `builtinDefaultMode` and are deliberately NOT expressed here because they
+    /// key on the EXTENSION, not the category (csv/tsv and diff/patch are both
+    /// `.plainText`):
+    ///   1. `.diff`/`.patch` → `.diff`, `.csv`/`.tsv`/`.xlsx`/`.ods` → `.table`.
+    ///   2. the content-sniff hint (TSK-332) upgrades a `.hex` default to
+    ///      `.source` when a category-less file's bytes decode as text.
+    /// The per-category (`preferred`, TSK-671) and per-file (`remembered`,
+    /// TSK-1467) overrides then layer on top of the whole thing in `defaultMode`.
+    public static func canonicalDefaultLens(for category: FileCategory) -> ViewMode {
+        switch category {
+        // WYSIWYG/rich text families open in their rendered lens.
+        case .markdown, .mermaid, .canvas:
+            return .rendered
+        // Text families open in Source (html's Rendered lens is an explicit
+        // opt-in, never the default — untrusted HTML stays conservative).
+        case .plainText, .code, .html:
+            return .source
+        // Media / structured-binary families with a first-class native preview.
+        case .image, .audio, .video, .pdf, .sqlite, .archive:
+            return .preview
+        // No text representation and no native preview → the raw byte grid.
+        case .binary, .unknown:
+            return .hex
+        }
+    }
+
     /// The built-in (extension/category-derived) default mode, before any user
     /// per-category override (TSK-671). Kept separate so `defaultMode` layers
-    /// the override on top while this stays the pure baseline.
+    /// the override on top while this stays the pure baseline. Delegates the
+    /// category decision to `canonicalDefaultLens` (TSK-1467 single source of
+    /// truth); only the extension refinements + the sniff-hint upgrade live here.
     private static func builtinDefaultMode(
         for url: URL?, forcedCategory: FileCategory? = nil,
         isRenderableText: Bool? = nil
     ) -> ViewMode {
         guard let url else { return .source }
         if let forced = forcedCategory {
-            // Native-preview categories render through `.preview` and default
-            // to the first-class Preview lens; binary/unknown default to HEX.
-            if !hasTextRepresentation(forced) {
-                if hasNativePreview(forced) { return .preview }
-                return isRenderableText == true ? .source : .hex
-            }
-            if forced == .markdown || forced == .mermaid || forced == .canvas {
-                return .rendered
-            }
-            return .source
+            // An explicit "Open As…" category ignores the file's extension, so
+            // no diff/table refinement — just the canonical lens for the chosen
+            // category, with the sniff-hint upgrade for a category-less binary.
+            let lens = canonicalDefaultLens(for: forced)
+            if lens == .hex, isRenderableText == true { return .source }
+            return lens
         }
+        // Extension refinements first (csv/tsv → Table, diff/patch → Diff);
+        // these override the category default because the extension is more
+        // specific than the `.plainText` category they classify as.
         if Self.supportsDiff(url) { return .diff }
         if Self.supportsTable(url) { return .table }
         let cat = FileTypeDetector.category(for: url)
-        if cat == .markdown || cat == .mermaid || cat == .canvas { return .rendered }
-        // Native-preview categories default to the Preview lens (native
-        // MediaPreviewView). Binary / unknown have no native preview, so they
-        // default straight into HEX (bug3) — opening into a usable view rather
-        // than a now-unavailable Source — UNLESS the content-sniff hint
-        // (TSK-332) says the bytes are renderable text, in which case the
-        // unknown-extension-but-text file resolves to `.source`.
-        if !hasTextRepresentation(cat) {
-            if hasNativePreview(cat) { return .preview }
-            return isRenderableText == true ? .source : .hex
-        }
-        return .source
+        let lens = canonicalDefaultLens(for: cat)
+        // Content-sniff hint (TSK-332): a category-less HEX default whose bytes
+        // decode as renderable text opens into Source instead of the byte grid.
+        if lens == .hex, isRenderableText == true { return .source }
+        return lens
     }
 
     /// True for categories that have a real plain-text / source rendering.
