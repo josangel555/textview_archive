@@ -78,6 +78,23 @@ pub fn resolve_exit(flush_ok: bool) -> ExitResolution {
     }
 }
 
+/// One composed tick of the idle-exit loop: decide, and when eligible run
+/// `flush` — returns `true` (caller exits 0) only when the decision said
+/// [`IdleDecision::ReadyToFlush`] AND the flush succeeded. A failed flush
+/// aborts (per [`resolve_exit`]); every stay-reason returns `false`. The
+/// per-minute ticker in `main` is a thin loop over this, so the whole
+/// exit-eligibility path is host-tested here.
+pub fn idle_tick(
+    state: IdleState,
+    threshold_ms: u64,
+    flush: impl FnOnce() -> bool,
+) -> bool {
+    match idle_decision(state, threshold_ms) {
+        IdleDecision::ReadyToFlush => resolve_exit(flush()) == ExitResolution::Exit,
+        _ => false,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Listener acquisition — launchd activation vs self-bind
 // (DAEMON_LIFECYCLE_DESIGN.md D2, TSK-1553)
@@ -243,6 +260,33 @@ mod tests {
             retire_decision(3, 2, &[3, 2, 3]),
             RetireDecision::RefuseConflictingClients
         );
+    }
+
+    // --- idle_tick composition (TSK-1554 wiring) ---
+
+    #[test]
+    fn tick_exits_only_on_ready_plus_successful_flush() {
+        // Eligible + flush ok → exit.
+        assert!(idle_tick(st(0, 0, IDLE_THRESHOLD_MS), IDLE_THRESHOLD_MS, || true));
+        // Eligible but the flush FAILS (disk full) → abort, stay.
+        assert!(!idle_tick(st(0, 0, IDLE_THRESHOLD_MS), IDLE_THRESHOLD_MS, || false));
+    }
+
+    #[test]
+    fn tick_never_runs_flush_when_pinned() {
+        // A connection/dirty pin must not even ATTEMPT the flush.
+        let mut flushed = false;
+        assert!(!idle_tick(st(1, 0, IDLE_THRESHOLD_MS), IDLE_THRESHOLD_MS, || {
+            flushed = true;
+            true
+        }));
+        assert!(!flushed, "flush must not run while a connection pins the process");
+        let mut flushed2 = false;
+        assert!(!idle_tick(st(0, 3, IDLE_THRESHOLD_MS), IDLE_THRESHOLD_MS, || {
+            flushed2 = true;
+            true
+        }));
+        assert!(!flushed2, "flush must not run while dirty sessions pin the process");
     }
 
     // --- listener acquisition (TSK-1553) ---
