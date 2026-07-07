@@ -23,12 +23,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   hardening finds incl. the availableData uncatchable-exception landmine → raw read(2)).
   **B8 ✅ CLOSED (7 landings; final gate green at c0984f7e after the census-pin fix).
   Batch in progress: B9 security & data safety — ✅ 1129 LSP RCE guard ENFORCED
-  (e7f02825, owner's (a): prompt-first-then-block, fail-closed headless; 1129 fixed;
-  gate tmp/b9-gate.log). RECON: 1269/1165/1166 = render-VM buffer-mutating tails →
-  DEFER on TSK-1550 (slice-1 decision cores already done). NEXT in B9: 1496 secret
-  detector v1 (pure ViewerCore + corpus tests; badge = render tail) · 1194 bounded
-  test exec (script + peak-footprint report) · 343 history-revert safety (recon
-  task_get first) · 1203 trust-mode failure surfacing (recon first).**
+  (e7f02825, gate green) · ✅ 1496 secret detector core + corpus (a95b0f40; badge/mask
+  = render tail on 1550) · ✅ 1194 bounded test runner (a95b0f40, teeth via --self-test;
+  usage: scripts/test-bounded.sh). Board: 1129/1496/1194 fixed. DEFERRED on 1550:
+  1269/1165/1166 (buffer-mutating render tails; decision cores done). REMAINING in B9:
+  343 history-revert data safety + 1203 trust-mode failure surfacing — recon task_get
+  FIRST (both may be stale). B9.2 gate running (tmp/b9-2-gate.log).**
   NOTE for owner: the self-healing MCP bridge takes effect after the next app INSTALL +
   Claude session restart (the running bridge process is the old pump).**
   RESIDUALS for lane-restore: B3's WV slice + the CSV-lens suite (TSK-1551) attach to
