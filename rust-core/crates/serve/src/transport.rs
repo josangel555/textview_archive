@@ -27,11 +27,36 @@ pub enum TransportFault {
 
 /// The shell-agnostic core-call seam: invoke `method` with a request `body`
 /// (the unframed msgpack payload; empty for body-less methods like `ping`),
-/// get the response body back.
-pub trait CoreTransport {
+/// get the response body back. `Send` so a front-end can hold the seam in a
+/// shared/global slot across its worker threads (both arms are Send).
+pub trait CoreTransport: Send {
     /// Invoke one core method. `aux` is the bulk side-channel some methods
     /// (e.g. `indent_detect`) use for large payloads; pass `&[]` otherwise.
     fn call(&mut self, method: &str, body: &[u8], aux: &[u8]) -> Result<Vec<u8>, TransportFault>;
+}
+
+/// Encode a typed request into the UNFRAMED body [`CoreTransport::call`]
+/// takes (named-map msgpack per the wire convention, length prefix stripped).
+pub fn encode_body<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, TransportFault> {
+    mdvcore_core::wire::encode_frame(value)
+        .map(crate::serve::unframe_or_empty)
+        .map_err(|e| TransportFault::Wire(WireError {
+            code: "encode_error".into(),
+            text: format!("request encode failed: {e:?}"),
+        }))
+}
+
+/// Decode a typed response from the body [`CoreTransport::call`] returned.
+/// Named-map msgpack: unknown fields are ignored, so a client may decode a
+/// subset of the response (e.g. just `{html}` out of `{html, chunks}`).
+pub fn decode_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, TransportFault> {
+    let framed = crate::serve::frame_bytes(body);
+    mdvcore_core::wire::decode_frame(&framed).map_err(|e| {
+        TransportFault::Wire(WireError {
+            code: "decode_error".into(),
+            text: format!("response decode failed: {e:?}"),
+        })
+    })
 }
 
 /// Today's path: the method dispatches directly in this process — no socket,
@@ -80,11 +105,18 @@ impl Socket {
     /// (wire-version handshake). A skewed server answers the hello with
     /// `wire_version_skew` — surfaced as [`TransportFault::Wire`].
     pub fn connect(path: &str) -> Result<Self, TransportFault> {
+        let stream = UnixStream::connect(path).map_err(TransportFault::Io)?;
+        Self::from_connected(stream)
+    }
+
+    /// Wrap an ALREADY-CONNECTED stream (a socketpair in tests, an inherited
+    /// fd) and perform the hello — the same path `connect` takes after the
+    /// dial.
+    pub fn from_connected(stream: UnixStream) -> Result<Self, TransportFault> {
         #[derive(serde::Serialize)]
         struct HelloRequest {
             wire_version: u64,
         }
-        let stream = UnixStream::connect(path).map_err(TransportFault::Io)?;
         let mut sock = Self { stream, next_id: 0 };
         let hello = mdvcore_core::wire::encode_frame(&HelloRequest {
             wire_version: u64::from(mdvcore_ffi::MDV_WIRE_VERSION),

@@ -1398,8 +1398,57 @@ fn md_wants_rendered(name: &str, mode_param: Option<&str>) -> bool {
     outline::is_markdown(name) && !matches!(mode_param, Some("text") | Some("hex"))
 }
 
+/// The core-call seam (daemon s6 slice 1, TSK-1558): markdown rendering goes
+/// through `CoreTransport` — InProcess when `MDV_REMOTE_SOCKET` is unset
+/// (today's behavior, byte-identical: same `markdown_render` dispatch), the
+/// mdv-serve socket when set (mdv-web becomes a THIN CLIENT of the daemon for
+/// this route). One seam, held once; poisoned/failed seams fall back to the
+/// direct in-process render so a daemon hiccup can never 500 a page.
+fn core_seam() -> &'static std::sync::Mutex<Option<Box<dyn mdvcore_serve::transport::CoreTransport>>> {
+    static SEAM: std::sync::OnceLock<
+        std::sync::Mutex<Option<Box<dyn mdvcore_serve::transport::CoreTransport>>>,
+    > = std::sync::OnceLock::new();
+    SEAM.get_or_init(|| {
+        std::sync::Mutex::new(mdvcore_serve::transport::from_env().ok())
+    })
+}
+
+/// Render markdown through a specific transport (the testable inner —
+/// route tests run this against BOTH arms). `{text}` → `{html, …}`; we decode
+/// only the `html` field (named-map msgpack ignores the rest).
+fn render_markdown_via(
+    t: &mut dyn mdvcore_serve::transport::CoreTransport,
+    text: &str,
+) -> Result<String, mdvcore_serve::transport::TransportFault> {
+    #[derive(serde::Serialize)]
+    struct Req<'a> {
+        text: &'a str,
+    }
+    #[derive(serde::Deserialize)]
+    struct Resp {
+        html: String,
+    }
+    let body = mdvcore_serve::transport::encode_body(&Req { text })?;
+    let out = t.call("markdown_render", &body, &[])?;
+    Ok(mdvcore_serve::transport::decode_body::<Resp>(&out)?.html)
+}
+
+/// Seam-backed markdown render with the fail-safe: any seam/transport fault
+/// falls back to the direct in-process render (identical output — the seam's
+/// InProcess arm dispatches to the same fn).
+fn render_markdown_html(text: &str) -> String {
+    if let Ok(mut guard) = core_seam().lock() {
+        if let Some(t) = guard.as_mut() {
+            if let Ok(html) = render_markdown_via(t.as_mut(), text) {
+                return html;
+            }
+        }
+    }
+    mdvcore_core::markdown::render(text).html
+}
+
 fn markdown_rendered_body(raw: &[u8], name: &str, href: &str, total: usize, truncated: bool) -> String {
-    let html = mdvcore_core::markdown::render(&String::from_utf8_lossy(raw)).html;
+    let html = render_markdown_html(&String::from_utf8_lossy(raw));
     let trunc = if truncated { " · TRUNCATED" } else { "" };
     format!(
         "<div class=\"modes\"><b>Rendered</b> \
@@ -3076,6 +3125,47 @@ mod tests {
         assert!(!body.contains("javascript:"), "sanitizer drops the javascript: URL:\n{body}");
         assert!(body.contains(">Source</a>"), "offers a Source toggle back to the raw view");
         assert!(body.contains(">Hex</a>"), "offers a Hex toggle");
+    }
+
+    /// TSK-1558 (daemon s6 slice 1): the markdown route through the seam is
+    /// byte-identical to the direct render on BOTH transport arms — mdv-web
+    /// as a thin client cannot be told apart from mdv-web in-process.
+    #[test]
+    fn markdown_route_via_in_process_transport_matches_direct() {
+        let text = "# T\n\n- a\n- b\n\n`code` and **bold**.";
+        let direct = mdvcore_core::markdown::render(text).html;
+        #[allow(clippy::unwrap_used, reason = "test setup")]
+        let mut t = mdvcore_serve::transport::InProcess::new().unwrap();
+        #[allow(clippy::unwrap_used, reason = "test assertion")]
+        let via = render_markdown_via(&mut t, text).unwrap();
+        assert_eq!(via, direct, "InProcess seam must be byte-identical to direct render");
+    }
+
+    #[test]
+    fn markdown_route_via_socket_transport_matches_direct() {
+        // A REAL mdv-serve connection loop on a socketpair — the thin-client
+        // path end-to-end (hello + markdown_render over the envelope).
+        use std::os::unix::net::UnixStream;
+        let text = "## Remote\n\nrendered [ok](https://example.com).";
+        let direct = mdvcore_core::markdown::render(text).html;
+
+        #[allow(clippy::unwrap_used, reason = "test setup")]
+        let (client, server) = UnixStream::pair().unwrap();
+        let handle = std::thread::spawn(move || {
+            #[allow(clippy::unwrap_used, reason = "test setup")]
+            let fs_ctx = mdvcore_serve::fs::FsCtx::new(None).unwrap();
+            let tctx = mdvcore_serve::transcript_list::TranscriptCtx::new(None);
+            let _ = mdvcore_serve::serve::handle_connection(&client, &fs_ctx, &tctx);
+        });
+
+        #[allow(clippy::unwrap_used, reason = "test setup")]
+        let mut t = mdvcore_serve::transport::Socket::from_connected(server).unwrap();
+        #[allow(clippy::unwrap_used, reason = "test assertion")]
+        let via = render_markdown_via(&mut t, text).unwrap();
+        assert_eq!(via, direct, "Socket seam must be byte-identical to direct render");
+
+        drop(t);
+        let _ = handle.join();
     }
 
     #[test]

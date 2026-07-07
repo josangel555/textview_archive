@@ -16,6 +16,11 @@ path = "src/main.rs"
 
 [dependencies]
 mdvcore-core = { path = "../core" }
+# The CoreTransport seam (daemon s6, TSK-1558): web routes call core through
+# mdvcore-serve's transport (InProcess | Socket via MDV_REMOTE_SOCKET) — one
+# protocol impl shared with the daemon, no client-side envelope duplication.
+mdvcore-serve = { path = "../serve" }
+serde = { workspace = true }
 # Source syntax highlighting (TSK-257, owner-approved tree-sitter). Its own crate
 # so the unsafe grammar FFI stays out of core/ffi + the merge gate (web isn't in
 # default-members either, so neither enters the macOS app build).
