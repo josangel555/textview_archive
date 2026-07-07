@@ -65,7 +65,9 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   spiked+PARKED (premise stale — engine done; recommended FINISH ~S click-to-filter). Need-me
   queue now 8. T32: PluginLifecycle (09fd4be3, TSK-1478 — install validate-before-copy + dup
   refusals; remove w/ injectable Trash-default remover; 6 tests incl. full cycle vs the real
-  registry; pane UI + trust prompt = render tail).
+  registry; pane UI + trust prompt = render tail). T33: DependencyGraphInteraction (d5600a26,
+  TSK-1470 — hit-test nearest-wins, zoom/pan Transform w/ anchor-fixed pinch contract + clamps,
+  fit-to-view, >300 cap; 11 tests incl. composed click-through-transform; gestures = render tail).
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
