@@ -1,78 +1,64 @@
 import XCTest
 @testable import ViewerCore
 
-/// Security coverage for `HTMLVisitor.safeURL(_:for:)` (in HTMLRenderer.swift)
-/// — the scheme
-/// allowlist that rewrites dangerous `href`/`src` values to `about:blank`
-/// so a malicious markdown can't smuggle `javascript:`/`vbscript:`/`data:`
-/// even if WKWebView's nav-policy delegate is bypassed on the bootstrap
-/// load. The helper had zero direct tests; `render()` only exercises it
-/// incidentally. This pins the full matrix (context × scheme + the
-/// `data:image/*` sub-rule + relative/fragment/authority forms +
-/// case-insensitivity).
+/// Security coverage for markdown link/image URL-scheme safety (S5 / F-06).
+///
+/// STAGE-B (TSK-649): the Swift `HTMLVisitor.safeURL` helper died with the
+/// visitor twin — the policy is enforced by the RUST engine (markdown.rs
+/// `safe_url`, mirrored from this contract when the port landed), so these
+/// pins assert THROUGH the rendered HTML: a blocked scheme must not survive
+/// into `href`/`src`. The rendered-page CSP is the second barrier; this is
+/// the first.
 final class HTMLRendererSafeURLTests: XCTestCase {
 
-    private func link(_ s: String) -> String { HTMLVisitor.safeURL(s, for: .link) }
-    private func image(_ s: String) -> String { HTMLVisitor.safeURL(s, for: .image) }
-    private let blank = "about:blank"
-
-    // MARK: - scheme-independent forms (both contexts pass through)
-
-    func test_emptyOrWhitespace_isBlank() {
-        XCTAssertEqual(link(""), blank)
-        XCTAssertEqual(link("   "), blank)
-        XCTAssertEqual(image("\n\t "), blank)
-    }
-
-    func test_fragment_relative_and_authorityRelative_passThrough() {
-        XCTAssertEqual(link("#section"), "#section")
-        XCTAssertEqual(link("docs/guide.md"), "docs/guide.md")
-        XCTAssertEqual(link("/abs/path"), "/abs/path")
-        // "//host/x" has no colon before the slashes → not a scheme → kept.
-        XCTAssertEqual(link("//cdn.example.com/a.js"), "//cdn.example.com/a.js")
-    }
-
-    func test_colonInNonSchemeText_isNotTreatedAsScheme() {
-        // A space in the prefix means it isn't a URL scheme; keep verbatim.
-        XCTAssertEqual(link("see foo:bar"), "see foo:bar")
+    private func render(_ md: String) -> String {
+        HTMLRenderer().render(md, authorHTML: .escape)
     }
 
     // MARK: - link context
 
     func test_link_allowsWebAndMailto() {
-        XCTAssertEqual(link("https://example.com/x"), "https://example.com/x")
-        XCTAssertEqual(link("http://example.com"), "http://example.com")
-        XCTAssertEqual(link("mailto:a@b.com"), "mailto:a@b.com")
+        let html = render("[a](https://example.com/x) [b](http://example.com) [c](mailto:a@b.com)")
+        XCTAssertTrue(html.contains("href=\"https://example.com/x\""))
+        XCTAssertTrue(html.contains("href=\"http://example.com\""))
+        XCTAssertTrue(html.contains("href=\"mailto:a@b.com\""))
     }
 
     func test_link_blocksDangerousAndDisallowedSchemes() {
-        XCTAssertEqual(link("javascript:alert(1)"), blank)
-        XCTAssertEqual(link("vbscript:msgbox(1)"), blank)
-        XCTAssertEqual(link("file:///etc/passwd"), blank, "links don't allow file:")
-        XCTAssertEqual(link("data:image/png;base64,AAAA"), blank, "links don't allow data:")
-        XCTAssertEqual(link("customapp://do/thing"), blank)
+        for bad in ["javascript:alert(1)", "vbscript:msgbox(1)",
+                    "file:///etc/passwd", "data:image/png;base64,AAAA",
+                    "customapp://do/thing"] {
+            let html = render("[click](\(bad))")
+            XCTAssertFalse(html.contains("href=\"\(bad)"),
+                           "\(bad) must not survive into an href:\n\(html)")
+            XCTAssertTrue(html.contains("click"), "the link TEXT stays visible")
+        }
     }
 
     // MARK: - image context
 
     func test_image_allowsWebFileAndImageData() {
-        XCTAssertEqual(image("https://example.com/a.png"), "https://example.com/a.png")
-        XCTAssertEqual(image("file:///tmp/a.png"), "file:///tmp/a.png")
-        XCTAssertEqual(image("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA")
+        for ok in ["https://example.com/a.png", "file:///tmp/a.png",
+                   "data:image/png;base64,AAAA"] {
+            let html = render("![alt](\(ok))")
+            XCTAssertTrue(html.contains("src=\"\(ok)\""), "\(ok) must pass:\n\(html)")
+        }
     }
 
     func test_image_rejectsNonImageDataAndScripts() {
-        XCTAssertEqual(image("data:text/html,<script>"), blank, "only image/* data URLs allowed")
-        XCTAssertEqual(image("data:application/json,{}"), blank)
-        XCTAssertEqual(image("javascript:alert(1)"), blank)
-        XCTAssertEqual(image("mailto:a@b.com"), blank, "images don't allow mailto:")
+        for bad in ["data:text/html,<script>", "data:application/json,{}",
+                    "javascript:alert(1)", "mailto:a@b.com"] {
+            let html = render("![alt](\(bad))")
+            XCTAssertFalse(html.contains("src=\"\(bad)"),
+                           "\(bad) must not survive into a src:\n\(html)")
+        }
     }
 
     // MARK: - case-insensitivity (scheme compared lowercased)
 
     func test_schemeMatchingIsCaseInsensitive() {
-        XCTAssertEqual(link("HTTPS://example.com"), "HTTPS://example.com")
-        XCTAssertEqual(link("JavaScript:alert(1)"), blank)
-        XCTAssertEqual(image("DATA:image/png;base64,AA"), "DATA:image/png;base64,AA")
+        XCTAssertFalse(render("[x](JavaScript:alert(1))").contains("href=\"JavaScript:"),
+                       "scheme blocking must be case-insensitive")
+        XCTAssertTrue(render("[x](HTTPS://example.com)").contains("href=\"HTTPS://example.com\""))
     }
 }

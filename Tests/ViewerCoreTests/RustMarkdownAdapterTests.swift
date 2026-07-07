@@ -2,24 +2,15 @@ import XCTest
 @testable import ViewerCore
 import RustCore
 
-/// RustMarkdownAdapter routing (TSK-648): gate OFF → the Swift visitor path
-/// untouched, gate ON → rust structural render + production splice with
-/// byte-equal output, the PARSE-03 divergence as the rust-route behavioral
-/// proof, and the version-skew escape hatch. Gate state injected via
-/// `environment`.
+/// RustMarkdownAdapter behavior pins (STAGE-B, TSK-649: the Swift visitor
+/// twin is deleted — rust is the only engine, no gate). The expectations
+/// below are the CONTRACT the retired byte-equality A/B proved before
+/// deletion: structural render + production splice (sanitized raw html,
+/// highlighted fences, in-core mermaid host), iterative deep-nesting
+/// behavior, and the version-skew escape hatch.
 final class RustMarkdownAdapterTests: XCTestCase {
 
-    private let gateOn = ["MDV_RUST_MARKDOWN": "1"]
-
-    func test_gateOff_runsSwiftPath() {
-        // Env-pinned OFF (the shipped default is ON since TSK-649 round 3).
-        let md = "# T\n\npara with *em*"
-        let out = RustMarkdownAdapter.outcome(md, environment: ["MDV_RUST_MARKDOWN": "0"])
-        XCTAssertEqual(out.source, .swiftBecauseGateOff)
-        XCTAssertEqual(out.value, HTMLRenderer.renderSwiftPath(md))
-    }
-
-    func test_gateOn_runsRust_byteEqualAcrossKinds() {
+    func test_rustIsTheOnlyEngine_spliceSurfaceHolds() {
         // Structure + sanitized raw html + highlighted fence + in-core
         // mermaid — the whole splice surface in one document.
         let md = """
@@ -35,28 +26,29 @@ final class RustMarkdownAdapterTests: XCTestCase {
         A-->B
         ```
         """
-        let out = RustMarkdownAdapter.outcome(md, environment: gateOn)
-        XCTAssertEqual(out.source, .rust)
-        XCTAssertEqual(out.value, HTMLRenderer.renderSwiftPath(md))
-        XCTAssertFalse(out.value.contains("<script>"), "sanitizer holds on the spliced path")
+        let out = RustMarkdownAdapter.outcome(md)
+        XCTAssertEqual(out.source, .rust, "twin deleted — rust must serve the render")
+        let html = out.value
+        XCTAssertTrue(html.contains("<h1 id=\"doc\">Doc</h1>"), "structure + slug:\n\(html)")
+        XCTAssertTrue(html.contains("<b>bold</b>"), "benign author html survives sanitize")
+        XCTAssertFalse(html.contains("<script>"), "sanitizer holds on the spliced path")
+        XCTAssertTrue(html.contains("tok-"), "the swift fence carries highlight spans")
+        XCTAssertTrue(html.contains("mdv-mermaid"), "the mermaid host div is emitted in-core")
     }
 
-    func test_renderEntryPoint_routesThroughTheGate() {
-        // With the round-3 default ON this compares the RUST route against
-        // the Swift path — byte-equality IS the A/B guarantee, so the assert
-        // holds in both worlds and regresses if either route or parity breaks.
-        let md = "- a\n- b"
-        XCTAssertEqual(HTMLRenderer().render(md), HTMLRenderer.renderSwiftPath(md))
+    func test_renderEntryPoint_servesTheEngine() {
+        // The engine's documented list shape (own-suite pin): items wrap
+        // their inline content in <p> (markdown.rs synth-para rule).
+        let html = HTMLRenderer().render("- a\n- b")
+        XCTAssertTrue(html.contains("<ul>") && html.contains("<li><p>a</p>"),
+                      "engine list shape:\n\(html)")
     }
 
-    func test_gateOn_nestingBomb_rendersInsteadOfTruncating() {
-        // The PARSE-03 guard is Swift-path-only: rust (iterative pulldown)
-        // renders a 6000-deep blockquote bomb fully. This doubles as the
-        // proof that gate ON genuinely routes rust — the Swift path would
-        // return the truncation marker.
+    func test_nestingBomb_rendersFullyIteratively() {
+        // pulldown-cmark is an iterative pull parser: a 6000-deep blockquote
+        // bomb renders fully — no stack to blow, no truncation marker.
         let bomb = String(repeating: ">", count: 6000) + " x"
-        XCTAssertEqual(HTMLRenderer.renderSwiftPath(bomb), HTMLVisitor.truncationMarker)
-        let out = RustMarkdownAdapter.outcome(bomb, environment: gateOn)
+        let out = RustMarkdownAdapter.outcome(bomb)
         XCTAssertEqual(out.source, .rust)
         XCTAssertTrue(out.value.hasPrefix("<blockquote>"))
         XCTAssertFalse(out.value.contains("truncated"))

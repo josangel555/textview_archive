@@ -58,6 +58,12 @@ pub enum ChunkKind {
     RawHtml,
     /// Highlight (or plain-escape) the fence body and splice.
     Code,
+    /// A diagram-source fence (dot/graphviz/plantuml/puml): the host splices
+    /// its labeled `<figure class="mdv-diagram">` block via its
+    /// DiagramRegistry. Emitted WITHOUT a structural `<pre><code>` wrapper —
+    /// the figure IS the block (Stage-B, TSK-649/TSK-713: parity with the
+    /// deleted Swift visitor's diagram routing).
+    Diagram,
 }
 
 impl ChunkKind {
@@ -67,8 +73,18 @@ impl ChunkKind {
         match self {
             ChunkKind::RawHtml => "raw_html",
             ChunkKind::Code => "code",
+            ChunkKind::Diagram => "diagram",
         }
     }
+}
+
+/// Fence info strings the host's DiagramRegistry routes as diagram-source
+/// blocks (mermaid is NOT here — it renders its full host div in core).
+fn is_diagram_fence(info: &str) -> bool {
+    info.eq_ignore_ascii_case("dot")
+        || info.eq_ignore_ascii_case("graphviz")
+        || info.eq_ignore_ascii_case("plantuml")
+        || info.eq_ignore_ascii_case("puml")
 }
 
 /// Rendered output: structural html + the enrichment chunks.
@@ -415,6 +431,11 @@ impl Writer {
                     // TSK-661: the full host div renders in core — no chunk.
                     let host = crate::mermaid::render_host(&code);
                     self.out(&host);
+                } else if is_diagram_fence(&info) {
+                    // Diagram-source fences splice as a whole labeled figure
+                    // host-side — no structural wrapper here (TSK-713 parity
+                    // with the deleted Swift visitor's diagram routing).
+                    self.push_chunk(ChunkKind::Diagram, &info, code);
                 } else {
                     self.out(&format!("<pre><code class=\"language-{}\">", escape(&info)));
                     self.push_chunk(ChunkKind::Code, &info, code);

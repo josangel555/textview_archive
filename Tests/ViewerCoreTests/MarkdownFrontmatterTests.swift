@@ -3,8 +3,8 @@ import XCTest
 
 /// A leading YAML (`---`) / TOML (`+++`) frontmatter block must be HIDDEN when
 /// rendering markdown (Jekyll/Hugo/Obsidian docs) — not shown as an `<hr>` + a
-/// giant setext `<h2>` of the raw key/values. Covers the live rust path AND the
-/// swift fallback, which must agree.
+/// giant setext `<h2>` of the raw key/values. Stage-B (TSK-649): the Swift
+/// visitor twin is deleted — every pin here exercises the rust engine.
 final class MarkdownFrontmatterTests: XCTestCase {
     private let doc = "---\ntitle: Hello World\ntags: [a, b]\n---\n\n# Body\n\nText."
 
@@ -27,20 +27,17 @@ final class MarkdownFrontmatterTests: XCTestCase {
         XCTAssertTrue(html.contains("<hr"), "mid-doc --- is still a rule:\n\(html)")
     }
 
-    func test_swiftFallback_hidesFrontmatter() {
-        let html = HTMLRenderer.renderSwiftPath(doc, authorHTML: .escape)
-        XCTAssertFalse(html.contains("title: Hello World"), "swift fallback must also hide it:\n\(html)")
+    func test_renderEntryPoint_hidesFrontmatter() {
+        let html = HTMLRenderer().render(doc, authorHTML: .escape)
+        XCTAssertFalse(html.contains("title: Hello World"), "the public entry hides it too:\n\(html)")
         XCTAssertTrue(html.contains("Body"))
     }
 
-    func test_stripHelper_unterminatedNotStripped() {
-        // A doc that merely opens with `---` and never closes is NOT frontmatter.
-        let src = "---\nnot really frontmatter\n\n# Body"
-        XCTAssertEqual(HTMLRenderer.strippingLeadingFrontmatter(src), src)
-    }
-
-    func test_stripHelper_nonLeadingNotStripped() {
-        let src = "# A\n\n---\n\nB"
-        XCTAssertEqual(HTMLRenderer.strippingLeadingFrontmatter(src), src)
+    func test_unterminatedFenceIsNotFrontmatter() {
+        // A doc that merely opens with `---` and never closes is NOT
+        // frontmatter — its content must survive into the HTML.
+        let html = HTMLRenderer().render("---\nnot really frontmatter\n\n# Body")
+        XCTAssertTrue(html.contains("not really frontmatter"))
+        XCTAssertTrue(html.contains("Body"))
     }
 }

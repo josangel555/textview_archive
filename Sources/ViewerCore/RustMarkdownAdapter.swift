@@ -31,20 +31,22 @@ public enum RustMarkdownAdapter {
         outcome(markdown, authorHTML: authorHTML).value
     }
 
-    /// Same, but also reporting which engine produced the html.
+    /// Same, but also reporting the result's provenance.
+    ///
+    /// STAGE-B (TSK-649): the Swift visitor twin is DELETED — rust is the
+    /// only engine. A bridge fault degrades to the whole document escaped
+    /// inside `<pre>` (readable, never raw-injected) with an observable log.
     public static func outcome(
         _ markdown: String,
-        authorHTML: HTMLRenderer.AuthorHTMLDisposition = .sanitize,
-        defaults: UserDefaults = .standard,
-        environment: [String: String]? = nil
+        authorHTML: HTMLRenderer.AuthorHTMLDisposition = .sanitize
     ) -> CoreOutcome<String> {
-        RustCoreFallback.run(
-            .markdown, defaults: defaults, environment: environment,
+        RustCoreFallback.runRustOnly(
+            .markdown,
             rust: {
                 let rendered = try mdvCoreMarkdownRender(text: markdown)
                 return rendered.spliced { enrich($0, authorHTML: authorHTML) }
             },
-            swift: { HTMLRenderer.renderSwiftPath(markdown, authorHTML: authorHTML) }
+            degraded: "<pre>" + HTMLVisitor().htmlEscape(markdown) + "</pre>"
         )
     }
 
@@ -63,6 +65,18 @@ public enum RustMarkdownAdapter {
             case .sanitize: return HTMLSanitizer.sanitize(chunk.payload)
             case .escape:   return visitor.htmlEscape(chunk.payload)
             }
+        case "diagram":
+            // Diagram-source fences (dot/graphviz/plantuml/puml): the core
+            // emits the chunk WITHOUT a structural wrapper; the labeled
+            // figure IS the block (TSK-713 parity). Unknown to the registry
+            // (custom renderer unregistered) → plain escaped fence.
+            if let renderer = DiagramRegistry.standard.renderer(forLanguage: chunk.lang) {
+                let descriptor = renderer.descriptor(
+                    for: chunk.payload, language: chunk.lang.lowercased())
+                return visitor.renderDiagramSourceBlock(descriptor)
+            }
+            return "<pre><code class=\"language-\(visitor.htmlEscape(chunk.lang))\">"
+                + visitor.htmlEscape(chunk.payload) + "</code></pre>\n"
         case "code":
             // NOTE (TSK-713): diagram routing for dot/plantuml fences on the
             // rust render path is NOT done here. The rust core emits a `code`

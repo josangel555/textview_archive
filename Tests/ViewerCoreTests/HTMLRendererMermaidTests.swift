@@ -98,7 +98,7 @@ final class HTMLRendererMermaidTests: XCTestCase {
 
     func test_dotFence_emitsLabeledDiagramBlock() {
         let md = "```dot\ndigraph G {\n  a -> b;\n}\n```\n"
-        let html = HTMLRenderer.renderSwiftPath(md)
+        let html = HTMLRenderer().render(md)
         XCTAssertTrue(html.contains("data-mdv-diagram=\"dot\""),
                       "dot fence should route to the labeled diagram block")
         XCTAssertTrue(html.contains("Graphviz DOT (digraph)"),
@@ -109,7 +109,7 @@ final class HTMLRendererMermaidTests: XCTestCase {
 
     func test_plantUMLFence_emitsLabeledDiagramBlock() {
         let md = "```plantuml\n@startuml\nAlice -> Bob\n@enduml\n```\n"
-        let html = HTMLRenderer.renderSwiftPath(md)
+        let html = HTMLRenderer().render(md)
         XCTAssertTrue(html.contains("data-mdv-diagram=\"plantuml\""))
         XCTAssertTrue(html.contains("PlantUML (uml)"),
                       "caption should name PlantUML + detected diagram type")
@@ -118,13 +118,13 @@ final class HTMLRendererMermaidTests: XCTestCase {
 
     func test_pumlAlias_routesToPlantUML() {
         let md = "```puml\n@startuml\nA -> B\n@enduml\n```\n"
-        let html = HTMLRenderer.renderSwiftPath(md)
+        let html = HTMLRenderer().render(md)
         XCTAssertTrue(html.contains("data-mdv-diagram=\"plantuml\""))
     }
 
     func test_unknownFence_unaffectedByRegistry() {
         let md = "```rust\nfn main() {}\n```\n"
-        let html = HTMLRenderer.renderSwiftPath(md)
+        let html = HTMLRenderer().render(md)
         XCTAssertFalse(html.contains("mdv-diagram"),
                        "a non-diagram language must not route to a diagram block")
     }

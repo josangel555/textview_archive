@@ -279,31 +279,18 @@ final class G5ParserHardeningTests: XCTestCase {
         XCTAssertEqual(matches[0].column, 1)
     }
 
-    // MARK: - PARSE-03: deep-nesting guard
+    // MARK: - PARSE-03: deep nesting (Stage-B: rust engine, iterative)
 
     func test_html_render_5000_deep_blockquote_does_not_crash() {
-        // The PARSE-03 guard lives on the SWIFT path (the rust route renders
-        // deep nesting fully — pinned by RustMarkdownAdapterTests' bomb test).
+        // Stage-B: the recursive Swift visitor (and its PARSE-03 guard) is
+        // deleted. pulldown-cmark is an ITERATIVE pull parser — the nesting
+        // bomb renders fully with no C stack to blow. The pin is now
+        // "no crash + full render", not the truncation marker.
         let deep = String(repeating: "> ", count: 5000) + "boom\n"
-        let html = HTMLRenderer.renderSwiftPath(deep)
+        let html = HTMLRenderer().render(deep)
         XCTAssertFalse(html.isEmpty)
         XCTAssertTrue(html.contains("blockquote"))
-        XCTAssertTrue(html.contains("truncated"),
-                      "should emit the depth truncation marker")
-    }
-
-    func test_html_render_deeply_nested_blockquote_emits_truncation_marker() {
-        // PARSE-03 is specifically about the *visitor* recursing past
-        // the stack budget. Build a tree deeper than `maxDepth` (512)
-        // but well under cmark-gfm's own parser recursion limit (the
-        // C library traps on pathologically deep *list* indentation
-        // during parsing, which is out of this renderer's control and
-        // belongs to the off-main render hop in G1). 700 `>` nests the
-        // blockquote tree past our guard.
-        let deep = String(repeating: "> ", count: 700) + "x\n"
-        let html = HTMLRenderer.renderSwiftPath(deep)
-        XCTAssertTrue(html.contains("truncated"),
-                      "visitor must stop descending and emit the marker")
+        XCTAssertTrue(html.contains("boom"), "the content survives, untruncated")
     }
 
     func test_html_render_shallow_doc_unaffected_by_guard() {

@@ -7,18 +7,18 @@ import XCTest
 final class MarkdownTaskListTests: XCTestCase {
 
     func test_checkedItem_rendersDisabledCheckedCheckbox() {
-        let html = HTMLRenderer.renderSwiftPath("- [x] done")
+        let html = HTMLRenderer().render("- [x] done")
         XCTAssertTrue(html.contains("<input type=\"checkbox\" disabled checked/> done"),
             "checked task item must emit a disabled+checked checkbox before the text; got: \(html)")
     }
 
     func test_uncheckedItem_rendersDisabledCheckbox_notChecked() {
-        let html = HTMLRenderer.renderSwiftPath("- [ ] todo")
+        let html = HTMLRenderer().render("- [ ] todo")
         XCTAssertTrue(html.contains("<input type=\"checkbox\" disabled/> todo"), html)
         XCTAssertFalse(html.contains("checked"), "an unchecked item must not be checked")
     }
 
     func test_plainListItem_hasNoCheckbox() {
-        XCTAssertFalse(HTMLRenderer.renderSwiftPath("- plain").contains("<input"))
+        XCTAssertFalse(HTMLRenderer().render("- plain").contains("<input"))
     }
 }
