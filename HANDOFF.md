@@ -53,7 +53,9 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   render tail). Gate ran GREEN one-pass again (1559 fix holding). T27: ArchiveEntryPreview (0c1b067a, TSK-1469 —
   bytes→preview classification: magic-sniffed images, 2MiB peek cap w/ truncated text peeks +
   torn-UTF-8 trim, binary guard, corrupt→unreadable mapping; 10 tests incl. real-zip e2e; pane +
-  Extract-via-OutputNaming = render tail).
+  Extract-via-OutputNaming = render tail). T28: SettingsCatalog (8ff19739, TSK-1481 — the Settings
+  IA as a host-tested model: 22 rows, canonical 8 sections, filter(); DRIFT GUARD parses the live
+  SettingsView AX ids so a new row can't skip the catalog; view re-render = tail).
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
