@@ -14,4 +14,16 @@ final class CSVFormulaDisplayTests: XCTestCase {
         XCTAssertEqual(CSVTableView.formulaCellDisplay(raw: "=A1+1", computed: n), n.display)
         XCTAssertEqual(CSVTableView.formulaCellDisplay(raw: "=UPPER(\"hi\")", computed: .text("HI")), "HI")
     }
+
+    /// TSK-1515: the subtle "ƒ" computed marker — only on formula-backed cells
+    /// that actually resolved (a typed 42 and a broken formula are unmarked).
+    func test_computedMarker_onlyOnResolvedFormulaCells() {
+        XCTAssertTrue(CSVTableView.showsComputedMarker(raw: "=A1+1", hasComputed: true))
+        XCTAssertFalse(CSVTableView.showsComputedMarker(raw: "42", hasComputed: false),
+                       "a typed literal is unmarked")
+        XCTAssertFalse(CSVTableView.showsComputedMarker(raw: "42", hasComputed: true),
+                       "a non-formula cell can't be computed — never mark it")
+        XCTAssertFalse(CSVTableView.showsComputedMarker(raw: "=BROKEN(", hasComputed: false),
+                       "an unresolved formula shows raw source, unmarked")
+    }
 }

@@ -17,9 +17,14 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   on TSK-1550 VM-ssh-down — run + attach to TSK-649 on lane restore). Batch in progress:
   B4 ✅ CLOSED except 1535 (commits 17bbd401 + c3240185; gate green; 1548/1534/1501/1539
   fixed on board; gap ticket TSK-1551 = 4 lenses without real-render suites). B4 ✅ FULLY CLOSED
-  (incl. 1535: 188 docs→0 + #![deny], 6cd5210c). Batch in progress: NONE — next: B5
-  data-grid views (924/1139/1141/1486/1472/1515/1205; NOTE: B5's WV/render half needs the
-  VM — TSK-1550 still down; do model/view code + host tests, cap render claims).**
+  (incl. 1535: 188 docs→0 + #![deny], 6cd5210c). Batch in progress: B5 data-grid views —
+  ✅ 1472 (SAVE FLOW: CSV edits could never reach disk before! saveCSVEdits via the editor
+  chokepoint + dirty bar Save/Discard/⌘S + pencil affordance; disk round-trip test) ·
+  ✅ 1515 (subtle ƒ marker on resolved formula cells; showsComputedMarker + tests) ·
+  RECON: 924 in review + 1141 validated (skip) · 1486 ALREADY BUILT (cursor/rect/⌘C/⌘V/
+  sort all live in CSVTableView — record as shipped w/ evidence). REMAINING: 1139 viewport
+  paging wire · 1205 extracted-doc grid · board records · batch gate. WV/render half capped
+  until TSK-1550 (VM ssh) restores.**
   Shadow-net run gate for S5/S6: MDV_RUST_DOCSTORE=shadow; divergenceCount stays 0.
 - Cron armed: job 12fe9636, every 5 min (2-57/5), SELF-SUFFICIENT prompt (survives compaction;
   DIES if this session exits — re-arm with the same prompt from BACKLOG mandates).

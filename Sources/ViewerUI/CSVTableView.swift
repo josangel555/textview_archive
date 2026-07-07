@@ -454,6 +454,13 @@ struct CSVTableView: View {
         formulaDisplayOn && raw.hasPrefix("=") ? .formulaBox : .inline
     }
 
+    /// TSK-1515: a cell shows the subtle "ƒ" computed marker iff it is
+    /// formula-backed AND the recalc actually produced a value for it (a
+    /// broken formula shows its raw source, unmarked — the error is visible).
+    static func showsComputedMarker(raw: String, hasComputed: Bool) -> Bool {
+        hasComputed && raw.hasPrefix("=")
+    }
+
     /// A1 label for the formula box: grid coords (header = row 0) → A1 space
     /// (first data row = "1"), the same mapping as `formulaGridSnapshot`.
     /// Pure → host-testable.
@@ -516,6 +523,15 @@ struct CSVTableView: View {
         guard RustFormulaGate.isEnabled(), sortColumn == nil, debouncedFilter.isEmpty,
               let m = editModel else { return [:] }
         return m.recalcAllFormulas()
+    }
+
+    /// TSK-1472: write the edited overlay to disk through the editor save
+    /// chokepoint. On success the file watcher reloads `text` → `reparse()`
+    /// rebuilds a CLEAN `editModel` from the saved base (no overlay flash,
+    /// no state to reset here).
+    private func saveEdits() {
+        guard let m = editModel, m.isDirty else { return }
+        _ = model.saveCSVEdits(m.serialize(), forTabID: tabID)
     }
 
     /// 200 ms debounce on filter commits — typing into the global
@@ -656,6 +672,38 @@ struct CSVTableView: View {
             .accessibilityIdentifier("mdv.csvFind.toggle")
 
             Spacer()
+
+            // TSK-1472: the EXPLICIT save flow — cell edits are an overlay
+            // until saved; this is the only path that writes them to disk
+            // (through the editor save chokepoint: safe write + local-history
+            // snapshot + diff/LSP refresh).
+            if let m = editModel, m.isDirty {
+                Text("\(m.editedCells.count) edited")
+                    .font(.system(size: cellFontSize))
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("mdv.csvEdit.dirtyCount")
+                Button("Save") { saveEdits() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .keyboardShortcut("s", modifiers: [.command])
+                    .helpInfo(title: "Save edits",
+                              description: "Write the edited cells back to the file (⌘S)")
+                    .accessibilityIdentifier("mdv.csvEdit.save")
+                Button("Discard") {
+                    if var m = editModel { m.discardEdits(); editModel = m }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("mdv.csvEdit.discard")
+            } else if editingAvailable {
+                // TSK-1472: the edit AFFORDANCE — editing is double-click, which
+                // is invisible; say so.
+                Label("Double-click a cell to edit", systemImage: "pencil")
+                    .font(.system(size: cellFontSize * 0.9))
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+                    .accessibilityIdentifier("mdv.csvEdit.affordance")
+            }
 
             if !currentFilter.isEmpty {
                 Button {
@@ -927,6 +975,23 @@ struct CSVTableView: View {
                         ?? Color.clear)
             .overlay(alignment: .trailing) {
                 Rectangle().fill(Palette.separator).frame(width: 0.5)
+            }
+            // TSK-1515 (owner design 2026-07-04): a tiny, subtle "ƒ" marks a
+            // cell whose displayed value is FORMULA-COMPUTED (the raw "="
+            // source lives in the formula edit box, TSK-1215) — so a computed
+            // 42 is distinguishable from a typed 42 at a glance.
+            .overlay(alignment: .topTrailing) {
+                if Self.showsComputedMarker(
+                    raw: cell,
+                    hasComputed: formulaValues[CellReference(row: rowIndex, column: i)] != nil) {
+                    Text("ƒ")
+                        .font(.system(size: cellFontSize * 0.62, design: .serif).italic())
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .padding(.trailing, 3)
+                        .padding(.top, 1)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)   // VoiceOver reads the raw "=" source
+                }
             }
             // TSK-1102: focus ring on the keyboard-cursor cell, shown only while
             // the grid is focused (the browse-state cell cursor).

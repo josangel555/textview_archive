@@ -102,4 +102,16 @@ extension DocumentModel {
     public func discardEditorBuffer(forTabID id: UUID) {
         editor.discardEditorBuffer(forTabID: id)
     }
+
+    /// TSK-1472: the CSV grid's explicit save — write the serialized edited
+    /// table through the EDITOR save chokepoint so it inherits the whole safe
+    /// path for free: atomic write + re-stat, local-history snapshot, git
+    /// diff-marks refresh, and the LSP didSave. The grid view calls this with
+    /// `EditableCSVModel.serialize()` output; on success the file watcher
+    /// reloads the tab and the grid reparses clean.
+    @discardableResult
+    public func saveCSVEdits(_ serialized: String, forTabID id: UUID) -> Bool {
+        editor.updateEditorText(serialized, forTabID: id)
+        return saveEditor(forTabID: id)
+    }
 }
