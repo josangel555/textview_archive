@@ -153,11 +153,13 @@ RunnableTaskDiscovery, TSK-722, 18 tests; TaskRunner UI + visible-terminal launc
 RENDER/VM TAILS (host cores mostly pre-built): 1443 git panel · 1444 LSP status · 1445 code-review
 journey · 1475 terminal favorites · 769 terminal UX residual · 1477 claude-monitor · 1470 dep-graph.
 
-### B16 Reading surfaces & viewers (9)
-TSK-1205 extracted-doc grid polish (from B5) · TSK-1140 PDF reader tail · TSK-1142 browser
-tab surface · TSK-1145 DOCX/XLSX viewer polish ·
-TSK-1147 dep-source browse · TSK-1172 notebooks (1440 outputs first) · TSK-1173 sticky scroll ·
-TSK-1469 archive explorers · TSK-1495 archive-as-folder in tree.
+### B16 Reading surfaces & viewers ✅ DONE 2026-07-07 (1 host core shipped; rest render/VM tails)
+✅ TSK-1495 archive→sidebar tree-expansion model (83824a84: ArchiveTree.build, flat entries →
+nested read-only nodes + cap/truncate, 7 tests; sidebar wiring + preview = render tail). RENDER/VM
+TAILS (host cores mostly pre-built): 1205 extracted-doc grid+lens-forcing (viewer read-only already
+safe) · 1140 PDF reader · 1142 browser tab · 1145 DOCX/XLSX polish · 1147 dep-source fetch/browse
+(network egress + sourceview) · 1172 notebooks · 1173 sticky-scroll overlay (model done TSK-719) ·
+1469 archive explorers.
 
 ### B17 AX build-out + ElementRef (8)
 TSK-1260/1261 native AXUIElement adapter + driver · TSK-1263 agent AX harness entry · TSK-1543
