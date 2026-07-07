@@ -78,9 +78,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   SAME contract suite vs BOTH arms; 63 serve tests, rust gate GREEN 20 suites. T23 s6 SLICE-1 DONE
   (ffafcc73, TSK-1558): mdv-web markdown route via the seam (env-selected, fail-safe fallback;
   both-transport byte-identical tests incl. a real socketpair e2e; + Send bound, encode/decode_body,
-  Socket::from_connected). ALL SIX daemon slices now have landed cores ✅. Remaining daemon tails:
-  TUI consumer refactor · web's other route families need per-family WIRE METHODS (protocol
-  expansion, multi-slice) · wiring loops (idle tick, retire envelope) · launchctl bootstrap smoke. NOTE: adding an ffi
+  Socket::from_connected). ALL SIX daemon slices now have landed cores ✅. T24: idle-tick WIRING
+  landed (e90e6593 — launchd-gated; CLOCK-FREE via ACTIVITY_GEN + the ticker's own sleeps as the
+  clock [clippy disallows Instant::now — Clock-port discipline; `gen` is RESERVED in edition 2024];
+  lifecycle::idle_tick composition +2 tests, 18 total; gate GREEN 20). Remaining daemon tails: TUI
+  consumer refactor · web per-family WIRE METHODS (multi-slice) · retire envelope wiring ·
+  bootstrap smoke. NOTE: adding an ffi
   module trips the cbindgen staleness check — run build-rust-core.sh to restage. ✅ TSK-1559
   (MCP wedge) FIXED T13+T17+T18
   (84cb6560+75fb2ac6+c5b37ed1): reader fd-cache (read-side ObjC crash) + send() raw write(2)
