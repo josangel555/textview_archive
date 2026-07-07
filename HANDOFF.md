@@ -39,12 +39,13 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   Cache (160fb335, TSK-1179 per-keystroke merge dedup + generation memo). T6 ChangeClassifier
   (464e7c89, TSK-1195a — the host-vs-render "false-done killer": classify(paths:)→hostProvable|
   renderPath|needsVM + aggregate hostCertifiable flag; 11 tests). T7 MenuOrganizer (31b4ce13,
-  TSK-1318 — groups the flat command list into category-ordered menu sections; 8 tests incl. vs
-  real registry; NSMenu build = render tail; 1319 dynamic menus reuse it). Also noted 1269 slice-1
-  "decision" already satisfied by ExternalEditReconciler.reconcile (render tail only). Pattern:
-  each drain tick extracts one clean pure core (geometry/model/bridge/memo/classifier/menu) under
-  a render/owner-gated feature, host-tests it (+ a divergence
-  guard where an enum could drift), parks/notes the render tail. 1550 = master VM unlock.
+  TSK-1318 — flat command list → category-ordered menu sections; 8 tests). T8 NotebookOutputParser
+  (54612246, TSK-1440 — parse .ipynb cell outputs to typed .stream/.text/.image/.error/.unknown;
+  9 tests; SwiftUI render + view-wiring = tail). Also noted: 1269 slice-1 "decision" already =
+  ExternalEditReconciler.reconcile (render tail only); the FULL menu-bar reorg already landed via
+  1413 (Tools/Export/Format menus) so T7 MenuOrganizer is a model under a shipped render feature.
+  Pattern: each drain tick extracts one clean pure core (geometry/model/bridge/memo/classifier/menu/
+  parser) under a render/owner-gated feature, host-tests it, parks/notes the render tail. 1550 = VM unlock.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
