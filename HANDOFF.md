@@ -32,9 +32,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   left for owner). FINDING: the reported pool's clean host cores are DRAINED after 25 batches —
   it's now dominated by owner-gated (810/831/835/852/508), epics/spikes (691/697/703/706/715/
   764/943-945/956), and VM-perf (598/838/837). Drain work = board-honesty reconciles + no-dep
-  foundations under owner-gated decisions. DRAIN TICK 2: shipped DotGraphOutline (cece2c21,
-  8 tests) — the no-dep adjacency/outline foundation for TSK-508 .dot phase-2, parked the
-  outline-vs-graphical(+dep) owner decision (foundation de-risks either path). 1550 = master unlock.
+  foundations under owner-gated decisions + host slices under render-tail features. DRAIN:
+  T2 DotGraphOutline (cece2c21, no-dep .dot outline foundation; 508 owner-decision parked).
+  T3 GalleryShape (a6908fb7, TSK-1085 Win7 shape-vertex geometry → the existing fillPolygon
+  rasterizer; picker+gesture = render tail). Pattern: each drain tick extracts one clean pure
+  core (geometry/model) under a render/owner-gated feature, host-tests it, parks/notes the tail.
+  1550 = master VM unlock.
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
