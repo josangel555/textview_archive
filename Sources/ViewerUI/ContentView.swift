@@ -1232,6 +1232,26 @@ struct SourceModeView: View {
             if isActive && model.isSourceFindBarPresented {
                 SourceFindBar(find: model.find, uiSize: model.uiSize)
             }
+            // TSK-1530 (M6, gated OFF): the web route — read-only CM6 replaces
+            // the NSTextView stack (virtualized rendering, rust highlights,
+            // CM6's own gutter/find/folds). The AppKit branch below stays the
+            // shipped default until the VM render slice validates the swap.
+            if WebSourceViewGate.isEnabled() {
+                CodeMirrorEditorView(
+                    text: displayed,
+                    fontSize: model.effectiveContentFontSize,
+                    language: lang,
+                    isDarkTheme: model.activeTheme.name == .xcodeDark,
+                    themePalette: model.activeThemeCMPalette,
+                    fontFamily: FontPreference.cssFamily(for: model.sourceFontName),
+                    wordWrap: model.sourceWordWrap,
+                    readOnly: true,
+                    lineNumbers: true,
+                    showInvisibles: model.showInvisibleChars,
+                    paneTabID: tabID,
+                    onTextChange: { _ in }   // read-only: no edits arrive
+                )
+            } else {
             HStack(spacing: 0) {
                 SourceGutterView(
                     state: sourceView.sourceScrollState,
@@ -1393,6 +1413,7 @@ struct SourceModeView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }   // TSK-1530: end of the AppKit (default) source branch
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
