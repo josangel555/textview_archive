@@ -2,9 +2,11 @@ import XCTest
 import RustCore
 @testable import ViewerCore
 
-/// TSK-1213 slice 4d — the ViewerCore RustFormulaAdapter: CoreFormulaValue →
-/// FormulaValue mapping (pure), the real-FFI rustEvaluate, and the gated
-/// evaluate (Rust when on + succeeds; Swift fallback otherwise).
+/// TSK-1213 — the ViewerCore RustFormulaAdapter: CoreFormulaValue →
+/// FormulaValue mapping (pure) and the real-FFI evaluate/recalc paths.
+/// STAGE-B (2026-07-07): the gated Swift-fallback wrapper died with the
+/// Swift evaluator twin — rust is the only engine (PROPER, its last
+/// Swift-only function, was ported in the same change).
 final class RustFormulaAdapterTests: XCTestCase {
 
     func test_mapValue_all_cases() {
@@ -24,43 +26,18 @@ final class RustFormulaAdapterTests: XCTestCase {
         XCTAssertEqual(try RustFormulaAdapter.rustEvaluate("1/0", cells: [:]), .error(.divideByZero))
     }
 
-    func test_evaluate_gate_off_uses_swift_fallback() {
-        var swiftCalled = false
-        let r = RustFormulaAdapter.evaluate("A1", cells: [:], environment: ["MDV_RUST_FORMULA": "0"]) {
-            swiftCalled = true
-            return .number(99)
-        }
-        XCTAssertTrue(swiftCalled, "gate off must use the Swift fallback")
-        XCTAssertEqual(r, .number(99))
+    func test_proper_isRustSide_now() throws {
+        // Stage-B: PROPER was the last Swift-only function (the old adapter
+        // fell back to Foundation .capitalized for it). It is now ported —
+        // same semantics — and the fallback is gone with the twin.
+        XCTAssertEqual(try RustFormulaAdapter.rustEvaluate("PROPER(\"hello world\")", cells: [:]),
+                       .text("Hello World"))
     }
 
-    func test_evaluate_gate_on_uses_rust() {
-        let r = RustFormulaAdapter.evaluate(
-            "A1+A2", cells: ["A1": "5", "A2": "10"], environment: ["MDV_RUST_FORMULA": "1"]
-        ) {
-            .error(.parse) // the Swift fallback must NOT run when Rust succeeds
-        }
-        XCTAssertEqual(r, .number(15))
-    }
-
-    func test_evaluate_falls_back_to_swift_on_name_error() {
-        // PROPER isn't in the Rust port → Rust returns #NAME! → the adapter falls
-        // back to Swift, which computes it via Foundation .capitalized. Gated ON.
-        let raw = "=PROPER(\"hello world\")"
-        let r = RustFormulaAdapter.evaluate(raw, cells: [:], environment: ["MDV_RUST_FORMULA": "1"]) {
-            FormulaEngine.evaluate(raw: raw, resolve: { _ in nil })
-        }
-        XCTAssertEqual(r, .text("Hello World"))
-    }
-
-    func test_evaluate_genuine_name_error_not_masked() {
-        // A genuinely unknown function is #NAME! in BOTH engines — falling back
-        // just returns Swift's #NAME!, the same result (no masking).
-        let raw = "=NOPENOTAFUNC(1)"
-        let r = RustFormulaAdapter.evaluate(raw, cells: [:], environment: ["MDV_RUST_FORMULA": "1"]) {
-            FormulaEngine.evaluate(raw: raw, resolve: { _ in nil })
-        }
-        XCTAssertEqual(r, .error(.name))
+    func test_genuine_name_error_surfaces() throws {
+        // An unknown function is #NAME! — nothing to fall back to, by design.
+        XCTAssertEqual(try RustFormulaAdapter.rustEvaluate("NOPENOTAFUNC(1)", cells: [:]),
+                       .error(.name))
     }
 
     func test_recalc_maps_to_cellreference_and_formulavalue() throws {

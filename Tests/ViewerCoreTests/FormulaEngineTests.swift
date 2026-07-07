@@ -1,24 +1,31 @@
 import XCTest
 @testable import ViewerCore
 
-/// TSK-673 — teeth for the sheet formula-evaluation engine (calculation core).
-/// Pure value logic: A1 addressing, tokenize/parse/evaluate, builtin functions,
-/// spreadsheet error propagation, and cycle detection. No UI / no I/O.
+/// TSK-673 — teeth for the sheet formula-evaluation CONTRACT. STAGE-B
+/// (TSK-649/1213, 2026-07-07): the Swift evaluator twin is deleted — every
+/// rule below now pins the RUST engine through the production adapter
+/// (formula planted in a grid cell, recalced, the cell's value asserted).
+/// A1 addressing, builtin functions, error propagation, cycle detection.
 final class FormulaEngineTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Evaluate a formula body (no leading `=`) with no grid.
-    private func eval(_ body: String) -> FormulaValue {
-        var visiting = Set<CellReference>()
-        return FormulaEngine.evaluateFormula(body, visiting: &visiting)
-    }
+    /// The A1 slot the formula-under-test is planted at — far from the
+    /// fixtures' A1:D4 neighborhoods so grids never collide with it.
+    private static let probe = "ZZ99"
 
-    /// Evaluate against a small in-memory grid keyed by A1 text.
-    private func eval(_ body: String, grid: [String: String]) -> FormulaValue {
-        var visiting = Set<CellReference>()
-        let resolve: CellResolver = { ref in grid[ref.a1] }
-        return FormulaEngine.evaluateFormula(body, resolve: resolve, visiting: &visiting)
+    /// Evaluate a formula body (no leading `=`) against an optional small
+    /// grid keyed by A1 text — through the RUST recalc engine.
+    private func eval(_ body: String, grid: [String: String] = [:]) -> FormulaValue {
+        var cells = grid
+        cells[Self.probe] = "=" + body
+        guard let out = try? RustFormulaAdapter.recalc(cells: cells),
+              let ref = CellReference(a1: Self.probe),
+              let value = out[ref] else {
+            XCTFail("rust recalc produced no value for =\(body)")
+            return .blank
+        }
+        return value
     }
 
     private func num(_ v: FormulaValue, _ file: StaticString = #filePath, _ line: UInt = #line) -> Double? {
@@ -81,20 +88,12 @@ final class FormulaEngineTests: XCTestCase {
 
     // MARK: - Literals
 
-    func test_isFormula_detection() {
-        XCTAssertTrue(FormulaEngine.isFormula("=1+1"))
-        XCTAssertTrue(FormulaEngine.isFormula("  =SUM(A1:A2)"))   // leading ws tolerated
-        XCTAssertFalse(FormulaEngine.isFormula("1+1"))
-        XCTAssertFalse(FormulaEngine.isFormula("hello"))
-    }
-
-    func test_evaluate_nonFormulaIsLiteral() {
-        XCTAssertEqual(FormulaEngine.evaluate(raw: "42"), .number(42))
-        XCTAssertEqual(FormulaEngine.evaluate(raw: "3.5"), .number(3.5))
-        XCTAssertEqual(FormulaEngine.evaluate(raw: "hello"), .text("hello"))
-        XCTAssertEqual(FormulaEngine.evaluate(raw: ""), .blank)
-        // Bare TRUE as a cell value is text, not boolean.
-        XCTAssertEqual(FormulaEngine.evaluate(raw: "TRUE"), .text("TRUE"))
+    func test_literalCells_coerceThroughTheEngine() {
+        // Stage-B: literal handling pinned through the engine — a formula
+        // referencing a literal cell sees its coerced value.
+        XCTAssertEqual(num(eval("A1+0", grid: ["A1": "42"])), 42)
+        XCTAssertEqual(num(eval("A1+0", grid: ["A1": "3.5"])), 3.5)
+        XCTAssertEqual(eval("A1&\"\"", grid: ["A1": "hello"]), .text("hello"))
     }
 
     // MARK: - Arithmetic + precedence
@@ -230,30 +229,21 @@ final class FormulaEngineTests: XCTestCase {
     }
 
     func test_directSelfReference_isCycle() {
-        // A1 = A1 — origin seeds the visiting set.
-        let g = ["A1": "=A1"]
-        let v = FormulaEngine.evaluate(
-            raw: g["A1"]!, origin: CellReference(a1: "A1")!,
-            resolve: { g[$0.a1] })
-        XCTAssertEqual(v, .error(.cycle))
+        // A1 = A1 (the probe references the grid's self-cycle).
+        XCTAssertEqual(eval("A1+0", grid: ["A1": "=A1"]), .error(.cycle))
     }
 
     func test_indirectCycle_isCycle() {
         // A1 -> B1 -> A1.
-        let g = ["A1": "=B1+1", "B1": "=A1+1"]
-        let v = FormulaEngine.evaluate(
-            raw: g["A1"]!, origin: CellReference(a1: "A1")!,
-            resolve: { g[$0.a1] })
-        XCTAssertEqual(v, .error(.cycle))
+        XCTAssertEqual(eval("A1+0", grid: ["A1": "=B1+1", "B1": "=A1+1"]),
+                       .error(.cycle))
     }
 
     func test_diamondReference_notACycle() {
         // A1 -> B1, A1 -> C1, both -> D1. Shared dep is fine (not a cycle).
-        let g = ["A1": "=B1+C1", "B1": "=D1", "C1": "=D1", "D1": "5"]
-        let v = FormulaEngine.evaluate(
-            raw: g["A1"]!, origin: CellReference(a1: "A1")!,
-            resolve: { g[$0.a1] })
-        XCTAssertEqual(v, .number(10))
+        XCTAssertEqual(
+            eval("A1", grid: ["A1": "=B1+C1", "B1": "=D1", "C1": "=D1", "D1": "5"]),
+            .number(10))
     }
 
     // MARK: - Value coercion / formatting
@@ -279,29 +269,15 @@ final class FormulaEngineTests: XCTestCase {
 
     // MARK: - EditableCSVModel bridge
 
-    func test_csvBridge_a1SkipsHeaderRow() {
-        // Grid: header a,b ; data rows. A1 = first DATA row col A.
-        let model = EditableCSVModel(RustCSVAdapter.parse("a,b\n10,20\n30,40"))
-        // A1 -> grid (row 1, col 0) = "10"; B2 -> grid (row 2, col 1) = "40".
-        XCTAssertEqual(model.evaluateFormulaCell(at: CellReference(a1: "A1")!), .number(10))
-        XCTAssertEqual(model.evaluateFormulaCell(at: CellReference(a1: "B2")!), .number(40))
-    }
-
-    func test_csvBridge_resolverFeedsFormula() {
-        let model = EditableCSVModel(RustCSVAdapter.parse("x,y\n1,2\n3,4"))
-        var visiting = Set<CellReference>()
-        let v = FormulaEngine.evaluateFormula("SUM(A1:A2) + B2",
-                                              resolve: model.formulaResolver(),
-                                              visiting: &visiting)
-        // A1+A2 = 1+3 = 4 ; B2 = 4 → 8.
-        XCTAssertEqual(v, .number(8))
-    }
-
-    func test_csvBridge_formulaCellEvaluates() {
-        // A data cell that is itself a formula resolves through the bridge.
-        let model = EditableCSVModel(RustCSVAdapter.parse("a,b\n5,=A1*2"))
-        // B1 -> grid (row 1, col 1) = "=A1*2" ; A1 -> "5" → 10.
-        XCTAssertEqual(model.evaluateFormulaCell(at: CellReference(a1: "B1")!), .number(10))
+    func test_csvBridge_a1SkipsHeaderRow_andRecalcResolves() {
+        // Grid: header a,b ; data rows. A1 = first DATA row col A. The bridge
+        // snapshot + rust recalc resolve formula cells against that space.
+        let model = EditableCSVModel(RustCSVAdapter.parse("a,b\n10,=A1*2\n30,=SUM(A1:A2)"))
+        let out = model.recalcAllFormulas(environment: [:])
+        XCTAssertEqual(out[CellReference(a1: "B1")!], .number(20), "=A1*2 over A1=10")
+        XCTAssertEqual(out[CellReference(a1: "B2")!], .number(40), "=SUM(10,30)")
+        // Literal cells are not in the recalc output (formula cells only).
+        XCTAssertNil(out[CellReference(a1: "A1")!])
     }
 
     // MARK: - TSK-1141 added builtins (LEFT/RIGHT/MID, ROUNDUP/DOWN, CEILING/FLOOR, IFERROR)

@@ -2,13 +2,18 @@ import XCTest
 @testable import ViewerCore
 
 /// TSK-1141 — teeth for the formula functions added on top of the base set:
-/// MEDIAN, SIGN, EXP/LN/LOG10, TRUNC, PROPER, EXACT, REPT, SUBSTITUTE. Pure-logic
-/// (CSV `=` cells consume these via FormulaEngine; advances the sheet epic 673).
+/// MEDIAN, SIGN, EXP/LN/LOG10, TRUNC, PROPER, EXACT, REPT, SUBSTITUTE.
+/// STAGE-B: pinned through the RUST engine (the Swift evaluator is deleted).
 final class FormulaEngineMoreFunctionsTests: XCTestCase {
 
     private func eval(_ body: String) -> FormulaValue {
-        var visiting = Set<CellReference>()
-        return FormulaEngine.evaluateFormula(body, visiting: &visiting)
+        let cells = ["ZZ99": "=" + body]
+        guard let out = try? RustFormulaAdapter.recalc(cells: cells),
+              let value = out[CellReference(a1: "ZZ99")!] else {
+            XCTFail("rust recalc produced no value for =\(body)")
+            return .blank
+        }
+        return value
     }
     private func num(_ v: FormulaValue, _ f: StaticString = #filePath, _ l: UInt = #line) -> Double {
         guard case .number(let n) = v else { XCTFail("expected number, got \(v)", file: f, line: l); return .nan }
@@ -74,9 +79,14 @@ final class FormulaEngineMoreFunctionsTests: XCTestCase {
     // MARK: - Conditional aggregates (range + criterion)
 
     private func eval(_ body: String, _ grid: [String: String]) -> FormulaValue {
-        var visiting = Set<CellReference>()
-        let resolve: CellResolver = { ref in grid[ref.a1] }
-        return FormulaEngine.evaluateFormula(body, resolve: resolve, visiting: &visiting)
+        var cells = grid
+        cells["ZZ99"] = "=" + body
+        guard let out = try? RustFormulaAdapter.recalc(cells: cells),
+              let value = out[CellReference(a1: "ZZ99")!] else {
+            XCTFail("rust recalc produced no value for =\(body)")
+            return .blank
+        }
+        return value
     }
 
     func test_countif_numericAndComparison() {

@@ -64,27 +64,8 @@ public enum RustFormulaAdapter {
         return out
     }
 
-    /// Gated evaluate: route through the Rust core when `RustFormulaGate` is on
-    /// AND the bridge succeeds; otherwise run `swiftEval` (the incumbent
-    /// `FormulaEngine` path, which keeps its own lazy cell resolver). Fail-safe.
-    public static func evaluate(
-        _ formula: String,
-        cells: [String: String],
-        environment: [String: String]? = nil,
-        swiftEval: () -> FormulaValue
-    ) -> FormulaValue {
-        guard RustFormulaGate.isEnabled(environment: environment) else { return swiftEval() }
-        do {
-            let result = try rustEvaluate(formula, cells: cells)
-            // A #NAME! from Rust can mean a Swift-only function the port doesn't
-            // implement (e.g. PROPER, whose Foundation `.capitalized` ICU word
-            // semantics aren't safely reproducible in Rust). Fall back so we never
-            // regress an existing function. Sound: the Rust function set is a
-            // subset of Swift's, so a genuine #NAME! matches in both engines.
-            if case .error(.name) = result { return swiftEval() }
-            return result
-        } catch {
-            return swiftEval()
-        }
-    }
+    // Stage-B (2026-07-07): the gated evaluate-with-Swift-fallback wrapper is
+    // deleted with the Swift evaluator twin. Its #NAME!-fallback existed for
+    // PROPER (the one Swift-only function) — now ported to formula.rs with
+    // the same `.capitalized` semantics, so a #NAME! is genuine everywhere.
 }

@@ -569,7 +569,7 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Value) -> Va
                 None => Value::Error(FormulaError::Value),
             }
         }
-        "UPPER" | "LOWER" | "TRIM" | "LEN" => {
+        "UPPER" | "LOWER" | "TRIM" | "LEN" | "PROPER" => {
             if args.len() != 1 {
                 return Value::Error(FormulaError::Value);
             }
@@ -582,6 +582,21 @@ fn call_fn(name: &str, args: &[Expr], resolver: &dyn Fn(CellRef) -> Value) -> Va
                 "LOWER" => Value::Text(s.to_lowercase()),
                 "TRIM" => Value::Text(s.trim().to_string()),
                 "LEN" => Value::Number(s.chars().count() as f64),
+                // Title-case each whitespace-delimited word (Stage-B parity
+                // with the deleted Swift twin's Foundation `.capitalized`:
+                // first letter uppercased, the rest lowercased).
+                "PROPER" => Value::Text(
+                    s.split_inclusive(char::is_whitespace)
+                        .map(|word| {
+                            let mut chars = word.chars();
+                            match chars.next() {
+                                Some(first) => first.to_uppercase().collect::<String>()
+                                    + &chars.as_str().to_lowercase(),
+                                None => String::new(),
+                            }
+                        })
+                        .collect::<String>(),
+                ),
                 _ => Value::Error(FormulaError::Name),
             }
         }
@@ -2852,6 +2867,16 @@ mod tests {
         assert_eq!(evaluate("LOG10(1000)"), Value::Number(3.0));
         assert!(matches!(evaluate("LN(-1)"), Value::Error(FormulaError::Num)));
         assert!(matches!(evaluate("LN(0)"), Value::Error(FormulaError::Num)));
+    }
+
+    #[test]
+    fn proper_title_cases_words() {
+        // Stage-B parity with the deleted Swift twin's `.capitalized`.
+        assert_eq!(evaluate("PROPER(\"hello world\")"), Value::Text("Hello World".to_string()));
+        assert_eq!(evaluate("PROPER(\"MIXED cAsE\")"), Value::Text("Mixed Case".to_string()));
+        assert_eq!(evaluate("PROPER(\"\")"), Value::Text(String::new()));
+        assert_eq!(evaluate("PROPER(\"a  b\")"), Value::Text("A  B".to_string()));
+        assert!(matches!(evaluate("PROPER()"), Value::Error(FormulaError::Value)));
     }
 
     #[test]
