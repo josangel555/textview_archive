@@ -183,4 +183,69 @@ final class MCPSocketListenerTests: XCTestCase {
         XCTAssertTrue(text.hasSuffix("\n"), "NDJSON reply must be newline-terminated")
         XCTAssertTrue(text.contains("\"TextView\""), "got: \(text.prefix(200))")
     }
+
+    /// TSK-1552 — the self-healing bridge: kill the app-side listener
+    /// mid-session, bring a NEW one up on the same path, and the SAME
+    /// client session keeps working (a request sent while down queues in
+    /// the pipe and answers after the reconnect). Closing the client's
+    /// stdin ends serve().
+    func test_bridgeServe_survivesListenerRestart() throws {
+        try startListener()
+        let sockPath = path!
+
+        // The client side of the bridge: two pipes play stdin/stdout.
+        let toBridge = Pipe()      // test writes → bridge stdin
+        let fromBridge = Pipe()    // bridge stdout → test reads
+        guard let first = MCPSocketBridge.connect(path: sockPath) else {
+            return XCTFail("initial connect failed")
+        }
+        let served = expectation(description: "serve returned")
+        Thread.detachNewThread {
+            MCPSocketBridge.serve(
+                localIn: toBridge.fileHandleForReading,
+                localOut: fromBridge.fileHandleForWriting,
+                socketPath: sockPath,
+                initialRemote: first,
+                note: { _ in })
+            served.fulfill()
+        }
+
+        // Round 1 against listener A.
+        nonisolated(unsafe) var reply1 = Data()
+        let got1 = expectation(description: "reply 1")
+        Thread.detachNewThread {
+            var reader = MCPFraming.FileHandleReader(fromBridge.fileHandleForReading)
+            reply1 = (try? MCPFraming.decode(from: &reader)) ?? Data()
+            got1.fulfill()
+        }
+        try toBridge.fileHandleForWriting.write(contentsOf: MCPFraming.encode(
+            body: Data(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.utf8)))
+        wait(for: [got1], timeout: 15)
+        XCTAssertTrue(String(decoding: reply1, as: UTF8.self).contains("\"id\":1"),
+                      "round 1 must answer over listener A")
+
+        // Kill listener A; restart on the SAME path (the app relaunching).
+        listener.stop()
+        // Send round 2 while DOWN — it must queue, not vanish.
+        try toBridge.fileHandleForWriting.write(contentsOf: MCPFraming.encode(
+            body: Data(#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#.utf8)))
+        Thread.sleep(forTimeInterval: 0.6)   // let the bridge notice + start retrying
+        try startListener()
+
+        nonisolated(unsafe) var reply2 = Data()
+        let got2 = expectation(description: "reply 2")
+        Thread.detachNewThread {
+            var reader = MCPFraming.FileHandleReader(fromBridge.fileHandleForReading)
+            reply2 = (try? MCPFraming.decode(from: &reader)) ?? Data()
+            got2.fulfill()
+        }
+        wait(for: [got2], timeout: 20)
+        XCTAssertTrue(String(decoding: reply2, as: UTF8.self).contains("\"id\":2"),
+                      "the queued round-2 request must answer after the reconnect; "
+                      + "got \(String(decoding: reply2, as: UTF8.self).prefix(120))")
+
+        // Client closes stdin → serve returns.
+        try toBridge.fileHandleForWriting.close()
+        wait(for: [served], timeout: 10)
+    }
 }

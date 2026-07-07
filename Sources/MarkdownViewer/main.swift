@@ -4122,7 +4122,14 @@ let mcpConnectMode = CommandLine.arguments.contains("--mcp-connect")
 if mcpConnectMode,
    let sock = MCPSocketBridge.connect(path: MCPSocketListener.defaultSocketPath()) {
     FileHandle.standardError.write(Data("mcp: bridged to the running app\n".utf8))
-    MCPSocketBridge.pump(localIn: .standardInput, localOut: .standardOutput, remote: sock)
+    // TSK-1552: the SELF-HEALING loop — an app quit/relaunch no longer kills
+    // the client's MCP session; the bridge reconnects with capped backoff
+    // (requests queue unread in the pipe while disconnected) and returns
+    // only when the CLIENT closes stdin.
+    MCPSocketBridge.serve(
+        localIn: .standardInput, localOut: .standardOutput,
+        socketPath: MCPSocketListener.defaultSocketPath(),
+        initialRemote: sock)
     exit(0)
 }
 let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio") || mcpConnectMode

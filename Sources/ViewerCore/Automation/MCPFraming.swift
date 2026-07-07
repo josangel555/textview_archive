@@ -295,12 +295,21 @@ extension MCPFraming {
 
         public mutating func readByte() throws -> UInt8? {
             if cursor >= buffer.count {
-                // Buffer drained — refill. Rebase via `Data(_:)` so the
-                // refilled buffer has a 0-based `startIndex` (macOS-26
-                // slice-offset invariant) and reset the cursor.
-                let chunk = handle.availableData
-                if chunk.isEmpty { return nil }   // EOF
-                buffer = Data(chunk)
+                // Buffer drained — refill via RAW read(2), not
+                // `availableData`: the FileHandle API raises an UNCATCHABLE
+                // (from Swift) ObjC NSFileHandleOperationException when the
+                // descriptor is closed under a blocked reader — exactly what
+                // happens when the listener/app shuts a live connection
+                // (TSK-1552 found it as a test crash; the app quit path had
+                // the same landmine). read(2) returns -1/EBADF instead,
+                // which we treat as EOF. EINTR retries.
+                var tmp = [UInt8](repeating: 0, count: 64 * 1024)
+                var n: Int
+                repeat {
+                    n = Darwin.read(handle.fileDescriptor, &tmp, tmp.count)
+                } while n < 0 && errno == EINTR
+                if n <= 0 { return nil }          // EOF, or a closed/dead fd
+                buffer = Data(tmp[0..<n])
                 cursor = 0
             }
             // O(1): index the live region without copying or shifting.

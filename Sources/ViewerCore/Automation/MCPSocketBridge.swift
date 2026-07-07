@@ -34,16 +34,19 @@ public enum MCPSocketBridge {
             }
         }
         guard rc == 0 else { close(fd); return nil }
+        // A write to a dead socket must fail with EPIPE, not raise SIGPIPE
+        // (the default would kill the bridge process mid-reconnect).
+        var one: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one,
+                       socklen_t(MemoryLayout<Int32>.size))
         return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     }
 
+
     /// Pump bytes both ways until EITHER side reaches EOF or dies, then
-    /// close both. Blocking; run it on the launch thread of a bridge-only
-    /// process (no AppKit needed) and `exit` afterwards.
-    ///
-    /// Two plain threads, 64 KiB reads. `read(2)`/`write(2)` via FileHandle;
-    /// a zero-length read is EOF. Closing the opposite handle unblocks the
-    /// sibling thread's read, so one EOF winds down the whole bridge.
+    /// close both. Blocking; the one-round primitive (tests exercise it
+    /// through the real listener). For the resilient client loop use
+    /// `serve` below.
     public static func pump(
         localIn: FileHandle,
         localOut: FileHandle,
@@ -89,5 +92,152 @@ public enum MCPSocketBridge {
         copyLoop(fromFD: remote.fileDescriptor, toFD: localOut.fileDescriptor,
                  thenClosing: [localOut])
         group.wait()
+    }
+
+    /// TSK-1552 — the SELF-HEALING client loop: bridge stdio to the app's
+    /// socket and, when the APP goes away (quit/relaunch), keep the client
+    /// session alive by reconnecting with capped backoff — FOREVER, until
+    /// the client closes stdin. Safe because the app-side MCP server is
+    /// STATELESS (tools/list & tools/call are not gated on `initialize`),
+    /// so a fresh socket serves the same session without a new handshake.
+    ///
+    /// While disconnected, stdin is deliberately NOT read: client requests
+    /// queue in the OS pipe buffer and deliver after the reconnect — no
+    /// message loss across an app restart. (A request already mid-write
+    /// when the socket dies is re-sent to the next socket: the write
+    /// position is tracked per message buffer.)
+    ///
+    /// Returns when the CLIENT closes stdin (the only terminal condition).
+    public static func serve(
+        localIn: FileHandle,
+        localOut: FileHandle,
+        socketPath: String,
+        initialRemote: FileHandle,
+        note: (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+    ) {
+        let state = ServeState(remote: initialRemote)
+
+        // The single long-lived stdin reader: read a chunk, then write it
+        // to WHICHEVER socket is current — waiting out reconnect gaps and
+        // re-sending the unsent remainder after a socket swap.
+        Thread.detachNewThread {
+            var buf = [UInt8](repeating: 0, count: 64 * 1024)
+            while true {
+                let n = read(localIn.fileDescriptor, &buf, buf.count)
+                if n == 0 { state.clientClosed(); return }
+                if n < 0 { if errno == EINTR { continue }; state.clientClosed(); return }
+                var off = 0
+                while off < n {
+                    // Hold the retained HANDLE across the write: the fd can
+                    // never be closed+recycled out from under the syscall
+                    // (fd-reuse hazard) — sockets close via ARC when the
+                    // LAST holder releases (connect() sets closeOnDealloc).
+                    guard let handle = state.waitForRemote() else { return } // client gone
+                    let w = buf.withUnsafeBytes { raw in
+                        write(handle.fileDescriptor, raw.baseAddress! + off, n - off)
+                    }
+                    if w < 0 {
+                        if errno == EINTR { continue }
+                        state.remoteDied(handle)      // re-send remainder to the next socket
+                        continue
+                    }
+                    off += w
+                }
+            }
+        }
+
+        // The socket→stdout loop, one round per connection; reconnect between.
+        var buf = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            guard let handle = state.currentRemote() else {
+                if state.isClientGone() { return }
+                // Reconnect with capped backoff until the app returns or the
+                // client goes away. 250ms → 4s cap: fast for a relaunch,
+                // cheap when the app stays closed for hours.
+                var delay: UInt32 = 250_000
+                while !state.isClientGone() {
+                    if let fresh = connect(path: socketPath) {
+                        state.adopt(fresh)
+                        note("mcp: re-bridged to the running app")
+                        break
+                    }
+                    usleep(delay)
+                    delay = min(delay * 2, 4_000_000)
+                }
+                continue
+            }
+            let n = read(handle.fileDescriptor, &buf, buf.count)
+            if n == 0 || (n < 0 && errno != EINTR) {
+                state.remoteDied(handle)
+                note("mcp: app side closed — holding the session for a reconnect")
+                continue
+            }
+            if n < 0 { continue }   // EINTR
+            var off = 0
+            while off < n {
+                let w = buf.withUnsafeBytes { raw in
+                    write(localOut.fileDescriptor, raw.baseAddress! + off, n - off)
+                }
+                if w < 0 { if errno == EINTR { continue }; state.clientClosed(); return }
+                off += w
+            }
+        }
+    }
+
+    /// Shared connection state for `serve`: the current remote handle and
+    /// the client-gone flag, guarded by one condition (the stdin thread
+    /// waits on it during reconnect gaps).
+    private final class ServeState: @unchecked Sendable {
+        private let cond = NSCondition()
+        private var remote: FileHandle?
+        private var clientGone = false
+
+        init(remote: FileHandle) { self.remote = remote }
+
+        func currentRemote() -> FileHandle? {
+            cond.lock(); defer { cond.unlock() }
+            return remote
+        }
+
+        func isClientGone() -> Bool {
+            cond.lock(); defer { cond.unlock() }
+            return clientGone
+        }
+
+        /// Block until a live remote exists (nil = the client went away).
+        func waitForRemote() -> FileHandle? {
+            cond.lock(); defer { cond.unlock() }
+            while remote == nil && !clientGone { cond.wait() }
+            return clientGone ? nil : remote
+        }
+
+        /// The given socket died: DROP the reference (only when it is still
+        /// the current one — a stale double-report must not kill a fresh
+        /// replacement). No explicit close: ARC closes when the last
+        /// holding thread releases, which is what makes the fd un-recyclable
+        /// while any syscall is still in flight.
+        func remoteDied(_ handle: FileHandle) {
+            cond.lock(); defer { cond.unlock() }
+            if remote === handle { remote = nil }
+        }
+
+        func adopt(_ fresh: FileHandle) {
+            cond.lock(); defer { cond.unlock() }
+            remote = fresh
+            cond.broadcast()
+        }
+
+        func clientClosed() {
+            cond.lock(); defer { cond.unlock() }
+            clientGone = true
+            // shutdown(2), not close(): it UNBLOCKS the main loop's
+            // in-flight read with EOF (closing a unix-socket fd under a
+            // blocked reader does not reliably wake it on macOS) and keeps
+            // the fd number alive until ARC releases the last hold — no
+            // recycle hazard.
+            if let r = remote { shutdown(r.fileDescriptor, SHUT_RDWR) }
+            remote = nil
+            cond.broadcast()
+        }
     }
 }
