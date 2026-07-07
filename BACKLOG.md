@@ -194,12 +194,14 @@ palette/menu/⌘⌥⇧C shipped; right-click editor menu + comment-to-agent = re
 TAILS: 943 diagnostics→agent sharing · 944 internal browser automation · 945 security-audit
 integration · 318/1108 CR Q&A UI + transport · 537 comments/cumulative-diffs · 373 New▸CR/Agent/Project.
 
-### B21 QoL / VM / test-infra (11)
-TSK-1542 Sequoia nag storm · TSK-1540 WV-on-host audit · TSK-1541 rust coverage number ·
-TSK-1239 VM fd exhaustion · TSK-1247 VM webview-blank · TSK-1365 WebContent-termination
-hardening · TSK-1336 walkthrough T5 · TSK-1184 hover-synth trace · TSK-1180 search-scroll trace ·
-TSK-1185 git menu latency (+1179 palette trace rides) · TSK-891 Page-Up jank (add vm-profile
-scroll mode → trace → measured mitigation; moved from B2).
+### B21 QoL / VM / test-infra ✅ AGENT-DONE 2026-07-07 (1 host prep core; rest VM-blocked/owner)
+✅ TSK-891 ScrollSweep page-jump schedule (e3c462db: the measure-prep the ticket asks for, 5
+tests; jank itself UNFIXED — verb+vm-profile mode+trace+mitigation = VM tail, stays at progress
+per measure-don't-guess). PARKED: TSK-1540 WV-on-host audit = approval Need-me (executing runs
+WKWebViews on the host — the no-UI-on-host directive forbids without sign-off). VM-BLOCKED on
+TSK-1550 (VM down): 1542 Sequoia nag (VM plist) · 1239 fd exhaustion · 1247 webview-blank · 1365
+WebContent hardening · 1336 walkthrough-T5 · perf traces 1184/1180/1179/1185 (measure-first, need
+the VM profiler). 1541 rust coverage = coverage.sh exists (Swift); a rust number needs llvm-cov tooling.
 
 ### B22 Perf & memory (5)
 TSK-838 DOM-patch persistent page (build to flip-ready; closes 598) · TSK-1490/382 memory-
