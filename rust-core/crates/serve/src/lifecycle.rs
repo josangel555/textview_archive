@@ -165,6 +165,54 @@ pub fn retire_decision(requester: u64, server: u64, other_clients: &[u64]) -> Re
     RetireDecision::Accept
 }
 
+// --- the retire wiring state (TSK-1555 tail) ---
+
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Wire versions of the currently-attached (hello-accepted) connections —
+/// the `other_clients` input to [`retire_decision`]. Connections register
+/// after a successful hello and deregister on close.
+static CLIENT_VERSIONS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+/// Set once a `daemon.retire` was ACCEPTED; the binary's watcher thread
+/// polls this and exits 0 (launchd then respawns the updated binary on the
+/// next connect). A flag + watcher rather than in-handler `process::exit` so
+/// the accept path stays TESTABLE (a test asserting the flag doesn't kill
+/// the test process).
+pub(crate) static RETIRE_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Record an attached client's hello wire version.
+pub fn register_client(version: u64) {
+    if let Ok(mut v) = CLIENT_VERSIONS.lock() {
+        v.push(version);
+    }
+}
+
+/// Remove ONE instance of an attached client's version (connection closed).
+pub fn deregister_client(version: u64) {
+    if let Ok(mut v) = CLIENT_VERSIONS.lock()
+        && let Some(i) = v.iter().position(|&x| x == version)
+    {
+        v.swap_remove(i);
+    }
+}
+
+/// The versions of the currently-attached connections.
+pub fn attached_versions() -> Vec<u64> {
+    CLIENT_VERSIONS.lock().map(|v| v.clone()).unwrap_or_default()
+}
+
+/// Flag the accepted retire (the watcher exits the process).
+pub fn request_retire() {
+    RETIRE_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Whether an accepted retire is pending (polled by the binary's watcher).
+pub fn retire_requested() -> bool {
+    RETIRE_REQUESTED.load(Ordering::SeqCst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -114,6 +114,21 @@ fn main() {
         });
     }
 
+    // TSK-1555 (daemon s3): the retire watcher — an ACCEPTED daemon.retire
+    // (a newer client's version-skew handover, arbitrated in
+    // handle_connection) flags lifecycle::retire_requested; this thread
+    // notices and exits 0 so launchd respawns the UPDATED binary on the
+    // requester's retry connect. A flag + watcher rather than in-handler
+    // exit keeps the accept path testable. Runs on BOTH origins (retire is
+    // an EXPLICIT request, unlike the time-based idle exit).
+    std::thread::spawn(|| loop {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if lifecycle::retire_requested() {
+            eprintln!("mdv-serve: retire accepted (version handover); exiting for respawn");
+            std::process::exit(0);
+        }
+    });
+
     eprintln!("mdv-serve: listening on {socket_path}");
     for conn in listener.incoming() {
         let Ok(stream) = conn else { continue };

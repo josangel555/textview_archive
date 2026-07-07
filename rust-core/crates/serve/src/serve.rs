@@ -67,8 +67,7 @@ pub fn handle_connection(
     };
     let client_version = hello_wire_version(&hello.1);
     if client_version != Some(u64::from(MDV_WIRE_VERSION)) {
-        // Version skew is a HARD CLOSE (the ABI-skew rule, networked) — but
-        // tell the client why first.
+        // Version skew: tell the client why first.
         let resp = Frame::Response {
             id: hello.0,
             body: None,
@@ -80,6 +79,42 @@ pub fn handle_connection(
             }),
         };
         let _ = write_locked(&resp);
+        // TSK-1555 (daemon s3): a NEWER client isn't a dead end — it may
+        // follow the skew error with `daemon.retire` (flush, close, exit 0;
+        // launchd respawns the UPDATED binary on its retry connect). Read
+        // exactly ONE more frame; anything else keeps the hard close. An
+        // OLDER or undecodable client keeps the IMMEDIATE hard close (the
+        // existing contract — an old binary must never shoot down a new
+        // daemon; the arbiter would refuse it anyway, but it doesn't even
+        // get the grace read).
+        if let Some(requester) = client_version.filter(|&v| v > u64::from(MDV_WIRE_VERSION))
+            && let Some(next) = read_frame(&mut reader)?
+            && let Ok(Frame::Request { id, method, .. }) = envelope::decode(&next)
+            && method == "daemon.retire"
+        {
+            let decision = crate::lifecycle::retire_decision(
+                requester,
+                u64::from(MDV_WIRE_VERSION),
+                &crate::lifecycle::attached_versions(),
+            );
+            let resp = match decision {
+                crate::lifecycle::RetireDecision::Accept => {
+                    // No stateful sessions to flush yet (the doc.* family is
+                    // S8) — flag the watcher and confirm to the client.
+                    crate::lifecycle::request_retire();
+                    Frame::Response { id, body: Some(Vec::new()), error: None }
+                }
+                refused => Frame::Response {
+                    id,
+                    body: None,
+                    error: Some(WireError {
+                        code: "retire_refused".into(),
+                        text: format!("{refused:?}"),
+                    }),
+                },
+            };
+            let _ = write_locked(&resp);
+        }
         return Ok(());
     }
     // MDV_CAPABILITIES already carries MDV_CAP_INDENT (it is a staticlib
@@ -97,6 +132,10 @@ pub fn handle_connection(
     .map(unframe_or_empty)
     .unwrap_or_default();
     write_locked(&Frame::Response { id: hello.0, body: Some(hello_body), error: None })?;
+    // Attached-client registry (TSK-1555): the retire arbiter's
+    // `other_clients` input. Registered only AFTER a successful hello;
+    // deregistered on every connection exit below.
+    crate::lifecycle::register_client(u64::from(MDV_WIRE_VERSION));
 
     // --- watcher thread (the push half, §5) ---
     // One per connection; ticks at MIN_TICK_MS and lets the hub's per-sub
@@ -167,6 +206,7 @@ pub fn handle_connection(
     // Subscriptions die with the connection.
     hub.stop();
     let _ = watcher.join();
+    crate::lifecycle::deregister_client(u64::from(MDV_WIRE_VERSION));
     result
 }
 
@@ -616,6 +656,9 @@ mod tests {
 
     #[test]
     fn wire_version_skew_hard_closes_with_error() {
+        // An OLDER client (version 0 < server) keeps the IMMEDIATE hard
+        // close — no retire grace (TSK-1555 gives that only to NEWER
+        // clients; see daemon_retire_refuses_with_attached_client_then_accepts).
         let (client, server) = connected_pair();
         let h = serve_on(server);
         #[derive(serde::Serialize)]
@@ -623,7 +666,7 @@ mod tests {
             wire_version: u64,
         }
         #[allow(clippy::unwrap_used, reason = "test fixture")]
-        let body = unframe_or_empty(wire::encode_frame(&H { wire_version: 999 }).unwrap());
+        let body = unframe_or_empty(wire::encode_frame(&H { wire_version: 0 }).unwrap());
         send(&client, &req(1, "hello", body));
         let Frame::Response { error: Some(e), .. } = recv(&client) else {
             #[allow(clippy::panic, reason = "test assertion")]
@@ -696,5 +739,101 @@ mod tests {
         let eof = crate::read_frame(&mut r).unwrap();
         assert!(eof.is_none(), "server must drop the connection on an oversized frame");
         let _ = h.join();
+    }
+
+    /// A hello body claiming an arbitrary wire version (the skew fixtures).
+    fn hello_body_v(version: u64) -> Vec<u8> {
+        #[derive(serde::Serialize)]
+        struct H {
+            wire_version: u64,
+        }
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let framed = wire::encode_frame(&H { wire_version: version }).unwrap();
+        unframe_or_empty(framed)
+    }
+
+    /// TSK-1555 (daemon s3): the two-connection retire integration — refuse
+    /// while a same-version client is attached (first-writer-wins), then
+    /// accept once it detaches. ONE sequential test because the retire flag
+    /// + client registry are process-global (parallel siblings would race).
+    #[test]
+    fn daemon_retire_refuses_with_attached_client_then_accepts() {
+        let newer = u64::from(MDV_WIRE_VERSION) + 1;
+
+        // Client 1: a NORMAL same-version client, attached (registered).
+        let (c1, s1) = connected_pair();
+        let h1 = serve_on(s1);
+        send(&c1, &req(1, "hello", hello_body()));
+        let Frame::Response { error: None, .. } = recv(&c1) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("client 1 hello must succeed");
+            }
+        };
+
+        // Client 2: a skewed-NEWER client — hello answers with the skew
+        // error, then daemon.retire is REFUSED (c1 conflicts).
+        let (c2, s2) = connected_pair();
+        let h2 = serve_on(s2);
+        send(&c2, &req(1, "hello", hello_body_v(newer)));
+        let Frame::Response { error: Some(skew), .. } = recv(&c2) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("skewed hello must answer with the skew error");
+            }
+        };
+        assert_eq!(skew.code, "wire_version_skew");
+        send(&c2, &req(2, "daemon.retire", vec![]));
+        let Frame::Response { error: Some(refused), .. } = recv(&c2) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("retire with an attached conflicting client must be refused");
+            }
+        };
+        assert_eq!(refused.code, "retire_refused");
+        assert!(
+            !crate::lifecycle::retire_requested(),
+            "a refused retire must not flag the exit watcher"
+        );
+        drop(c2);
+        let _ = h2.join();
+
+        // Detach client 1 (deregisters) …
+        drop(c1);
+        let _ = h1.join();
+
+        // Parallel-suite tolerance: OTHER tests' transient connections also
+        // register (any successful hello does). Wait briefly for the
+        // registry to drain so the accept phase sees no conflicting client;
+        // bounded so a future long-lived-connection test fails this loudly
+        // rather than hanging.
+        for _ in 0..100 {
+            if crate::lifecycle::attached_versions().is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        // … then a fresh skewed-newer client's retire is ACCEPTED.
+        let (c3, s3) = connected_pair();
+        let h3 = serve_on(s3);
+        send(&c3, &req(1, "hello", hello_body_v(newer)));
+        let _skew = recv(&c3);
+        send(&c3, &req(2, "daemon.retire", vec![]));
+        let Frame::Response { body: Some(ok), error: None, .. } = recv(&c3) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("retire with no attached clients must be accepted");
+            }
+        };
+        assert!(ok.is_empty(), "retire confirms with an empty body");
+        assert!(
+            crate::lifecycle::retire_requested(),
+            "an accepted retire flags the exit watcher"
+        );
+        // Reset the process-global flag so no other test/process state leaks.
+        crate::lifecycle::RETIRE_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
+        drop(c3);
+        let _ = h3.join();
     }
 }

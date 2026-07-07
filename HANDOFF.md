@@ -26,72 +26,29 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   restated, 651 commented).** B24 ✅ (1169) · B25 ✅ AGENT-DONE (sanitizer-policy single-source
   89b02eee). ALL 25 BATCHES ✅✅✅ → the loop is now in §AFTER THE BATCHES: (1) drain review+fixed
   with fresh evidence [OWNER validates; agent surfaces fresh-evidence comments], (2) triage/work
-  the reported pool, (3) re-curate. DRAIN TICK 1: reconciled 2 stale-reported-but-DONE items
-  (955 RSS/Atom feed reader fully built incl. OPML import/export → fixed; 589 session-eviction
-  SUPERSEDED by the B1 doc_registry EvictionBudget → fixed, value-default note 512/64-vs-1.5GB/200
-  left for owner). FINDING: the reported pool's clean host cores are DRAINED after 25 batches —
-  it's now dominated by owner-gated (810/831/835/852/508), epics/spikes (691/697/703/706/715/
-  764/943-945/956), and VM-perf (598/838/837). Drain work = board-honesty reconciles + no-dep
-  foundations under owner-gated decisions + host slices under render-tail features. DRAIN:
-  T2 DotGraphOutline (cece2c21, no-dep .dot outline foundation; 508 owner-decision parked).
-  T3 GalleryShape (a6908fb7, TSK-1085 Win7 shape-vertex geometry). T4 TerminalPanelEdgeBridge
-  (0fc30672, TSK-1123 terminal↔panel edge bijection). T5 PaletteCandidates.merge + Candidate-
-  Cache (160fb335, TSK-1179 per-keystroke merge dedup + generation memo). T6 ChangeClassifier
-  (464e7c89, TSK-1195a — the host-vs-render "false-done killer": classify(paths:)→hostProvable|
-  renderPath|needsVM + aggregate hostCertifiable flag; 11 tests). T7 MenuOrganizer (31b4ce13,
-  TSK-1318 — flat command list → category-ordered menu sections; 8 tests). T8 NotebookOutputParser
-  (54612246, TSK-1440 — parse .ipynb cell outputs to typed .stream/.text/.image/.error/.unknown;
-  9 tests). T9 OutputNaming (25a73b37, TSK-1473 — reusable collision-safe "never overwrite; write
-  a sibling" primitive; 8 tests). T10-12 SALVAGE INTEGRATION (TSK-1506): 4 complete commits landed,
-  each verified — 284aac73 HTTP-history(1447), 37ed9efb lens-table(1467), 4a190bbf install-naming
-  (1498), 96984d9e SQLite-export(1439). ABORTED 4577ce95 feeds-loop(1446): SUPERSEDED — main evolved
-  past the fork + already has feed-refresh feedback (quiet-on-success ToastCenterTests). KEY LESSON:
-  CHECK MAIN for an existing/evolved impl BEFORE cherry-picking (branches forked days ago). Commits
-  SURVIVE in the object DB though branches reaped (cat-file resolves) — recipe = cherry-pick SHA→
-  central gate→commit. REMAINING complete: f5c9d73f mermaid-err(1466, WebView→VM, not host-landable),
-  05506d01 invisibles(1484 partial) + 9 WIPs (verb-adders → ScriptVerbCatalog/Dispatch/CommandRegistry
-  conflicts, keep-both). T13 GATE FIX TSK-1559 ✅ FIXED (84cb6560): the MCPServerWedgeTests host-gate
-  wedge was TWO bugs — (1) a PRODUCTION crash (MCPFraming.FileHandleReader called the throwing
-  handle.fileDescriptor/.availableData accessors per-iteration; cached the fd once at init +
-  read(2) it), (2) a parallel-load wedge (post-wait main-pump starvation × 20s deadline; bounded to
-  5s + generous drain-wait ceilings). Full central gate now GREEN rc=0 in one pass (was wedging 6×).
-  LESSONS.md updated (FileHandle accessor landmine + don't kill-9 gate workers → orphan holds the
-  lock). REMAINING salvage complete: f5c9d73f mermaid-err(1466, WebView→VM), 05506d01 invisibles
-  (1484 partial) + 9 WIPs. T14 rust-core host core: changed_region_between (609f103f, TSK-1522 S7
-  external-reload minimal-diff — common UTF-16 prefix/suffix → one ChangedRegion; 8 tests + round-
-  trip proptest). T15 rust-core host core: serve/lifecycle.rs idle_decision (3b4a5402, TSK-1554
-  daemon s2 idle-exit — dirty pins the process, 15min threshold, injectable clock; 7 tests; rust
-  gate GREEN; tick-loop wiring = s1-dependent tail). TSK-1541 (rust coverage) BLOCKED: rustup
-  llvm-tools-preview download TIMES OUT (sandbox/network) — gate-wiring ready but unverifiable, do it
-  when network/VM allows. NOTE: rust-core cargo needs --manifest-path rust-core/Cargo.toml; clippy
-  denies indexing_slicing (iterators + saturating_sub); serve is bin-only (foundation-ahead-of-
-  consumer modules need #![allow(dead_code)]). T16 host core: ReconnectBackoff (f32d6c5c, TSK-1556
-  daemon s4 — capped-exponential 250ms→4s + degrade-after-window; 6 tests). Daemon slices 1553-1558
-  host-testable cores (s1+s2+s3+s4 done — T19 retire_decision c0ae3043; T20 s1 socket-activation
-  6c083f95, TSK-1553: ffi::launchd safe wrapper + select_listener seam + plist template +
-  install-app.sh --with-daemon; 16 lifecycle tests, rust gate GREEN). T21 s1-TAIL DONE (4b702938):
-  mdv-serve NOT bundle-embedded (30MB would bust the 80MB cap ~72 used) — staged to rust-core/link/
-  + installed to ~/Library/Application Support/MarkdownViewer/bin/ by --with-daemon; plist points
-  there; verified end-to-end; only the manual launchctl bootstrap smoke remains. T22 s5 DONE
-  (fbb81053, TSK-1557): serve→lib+bin split + transport::CoreTransport (InProcess routes through
-  the SAME serve::dispatch; Socket = connect+hello, same envelope; MDV_REMOTE_SOCKET from_env) —
-  SAME contract suite vs BOTH arms; 63 serve tests, rust gate GREEN 20 suites. T23 s6 SLICE-1 DONE
-  (ffafcc73, TSK-1558): mdv-web markdown route via the seam (env-selected, fail-safe fallback;
-  both-transport byte-identical tests incl. a real socketpair e2e; + Send bound, encode/decode_body,
-  Socket::from_connected). ALL SIX daemon slices now have landed cores ✅. T24: idle-tick WIRING
-  landed (e90e6593 — launchd-gated; CLOCK-FREE via ACTIVITY_GEN + the ticker's own sleeps as the
-  clock [clippy disallows Instant::now — Clock-port discipline; `gen` is RESERVED in edition 2024];
-  lifecycle::idle_tick composition +2 tests, 18 total; gate GREEN 20). Remaining daemon tails: TUI
-  consumer refactor · web per-family WIRE METHODS (multi-slice) · retire envelope wiring ·
-  bootstrap smoke. NOTE: adding an ffi
-  module trips the cbindgen staleness check — run build-rust-core.sh to restage. ✅ TSK-1559
-  (MCP wedge) FIXED T13+T17+T18
-  (84cb6560+75fb2ac6+c5b37ed1): reader fd-cache (read-side ObjC crash) + send() raw write(2)
-  (write-side crash; teardown outPipe-close now safe → drain-reader EOF, no leak) + manyRequests
-  25→8 window-shrink + XCTWaiter loud-fail watchdog. FULL GATE GREEN rc=0 with the test passing
-  inside it (after 4 wedged runs). Production win: both FileHandle close-race crash classes
-  (app-quit × live MCP connection) eliminated. If the wedge EVER recurs it now FAILS LOUDLY with
-  partial-count diagnostics instead of hanging. 1550/1334 = the two VM unlocks.
+  the reported pool, (3) re-curate.
+- **DRAIN PHASE (T1-T24), all committed + gated — compact log:** T1 reconciles (955 feed-reader
+  DONE, 589 eviction SUPERSEDED). Host cores: T2 DotGraphOutline(508 parked) · T3 GalleryShape
+  (1085) · T4 TerminalPanelEdgeBridge(1123) · T5 PaletteCandidates+Cache(1179) · T6
+  ChangeClassifier(1195a) · T7 MenuOrganizer(1318) · T8 NotebookOutputParser(1440) · T9
+  OutputNaming(1473) · T14 changed_region_between(1522 S7 reload-diff). SALVAGE (TSK-1506,
+  T10-12): 4 landed verified (1447 HTTP-history 284aac73 · 1467 lens-table · 1498 install-naming ·
+  1439 SQLite-export 96984d9e); 1446 feeds ABORTED-SUPERSEDED (main evolved — CHECK MAIN before
+  cherry-picking); remaining: f5c9d73f mermaid(1466, VM-only) + 05506d01 invisibles(1484) + 9 WIPs
+  (verb-adders conflict on ScriptVerbCatalog/Dispatch/CommandRegistry — keep-both). ✅ TSK-1559 MCP
+  gate-wedge FIXED T13+T17+T18 (reader fd-cache + send raw-write(2) + 25→8&loud-fail watchdog;
+  full gate GREEN; production win: both FileHandle close-race crashes killed; recurrence now FAILS
+  LOUDLY not hangs). DAEMON EPIC T15-T24 — ALL SIX slices have cores + key wiring: s1 socket-
+  activation+plist+--with-daemon (6c083f95+4b702938; mdv-serve NOT bundle-embedded — 30MB vs 80MB
+  cap — installs to ~/Library/Application Support/MarkdownViewer/bin/) · s2 idle-exit core+ticker
+  (3b4a5402+e90e6593, launchd-gated, CLOCK-FREE ACTIVITY_GEN) · s3 retire arbiter (c0ae3043) · s4
+  ReconnectBackoff (f32d6c5c) · s5 CoreTransport lib+bin split (fbb81053, both-arm contract tests)
+  · s6 web markdown-via-seam slice1 (ffafcc73). Daemon tails: TUI consumer refactor · web
+  per-family WIRE METHODS (multi-slice) · retire envelope wiring · bootstrap smoke.
+- RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
+  Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
+  edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
+  TSK-1541 rust-coverage BLOCKED on llvm-tools download timeout (wire when network/VM allows).
 - VM-DEFERRED pool (all on TSK-1550): B7's 1527/1531/1532 · merge tails 1269/1165/1166 ·
   1203 trust-banner · B3's WV slice + TSK-1551 render suites · 1331 history-revert.
 - NOTE for owner: the self-healing MCP bridge + RCE prompt take effect after the next
