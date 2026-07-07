@@ -72,8 +72,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   install-app.sh --with-daemon; 16 lifecycle tests, rust gate GREEN). T21 s1-TAIL DONE (4b702938):
   mdv-serve NOT bundle-embedded (30MB would bust the 80MB cap ~72 used) — staged to rust-core/link/
   + installed to ~/Library/Application Support/MarkdownViewer/bin/ by --with-daemon; plist points
-  there; verified end-to-end; only the manual launchctl bootstrap smoke remains. s5 CoreTransport
-  trait + s6 mdv-web thin-client remain. NOTE: adding an ffi
+  there; verified end-to-end; only the manual launchctl bootstrap smoke remains. T22 s5 DONE
+  (fbb81053, TSK-1557): serve→lib+bin split + transport::CoreTransport (InProcess routes through
+  the SAME serve::dispatch; Socket = connect+hello, same envelope; MDV_REMOTE_SOCKET from_env) —
+  SAME contract suite vs BOTH arms (Socket vs a real handle_connection socketpair); 63 serve tests,
+  rust gate GREEN 20 suites. Tails: TUI consumer refactor + env smoke. s6 (mdv-web thin-client,
+  TSK-1558) now UNBLOCKED — the last daemon slice. NOTE: adding an ffi
   module trips the cbindgen staleness check — run build-rust-core.sh to restage. ✅ TSK-1559
   (MCP wedge) FIXED T13+T17+T18
   (84cb6560+75fb2ac6+c5b37ed1): reader fd-cache (read-side ObjC crash) + send() raw write(2)
