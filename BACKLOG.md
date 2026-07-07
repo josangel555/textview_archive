@@ -203,10 +203,14 @@ TSK-1550 (VM down): 1542 Sequoia nag (VM plist) · 1239 fd exhaustion · 1247 we
 WebContent hardening · 1336 walkthrough-T5 · perf traces 1184/1180/1179/1185 (measure-first, need
 the VM profiler). 1541 rust coverage = coverage.sh exists (Swift); a rust number needs llvm-cov tooling.
 
-### B22 Perf & memory (5)
-TSK-838 DOM-patch persistent page (build to flip-ready; closes 598) · TSK-1490/382 memory-
-release audit + DocumentModel squeeze (mem-profile skill) · TSK-1214 lazy grammars [XL design] ·
-TSK-1423 hex unsaved-edit search · TSK-1428 outline false headings.
+### B22 Perf & memory ✅ DONE 2026-07-07 (1 host slice + 1 reconcile; rest VM/render/XL)
+✅ TSK-1490 memory footprint in the diagnostics dump (9559514b: ProcessMemorySample summary +
+DiagnosticDump memory section, 6 tests; caches verified already-bounded; measurement RUN = VM tail)
+· ✅ TSK-1428 outline false-headings RECONCILED (fixed on main 03d5e658+00dde184, 23 tests;
+indented-code + HTML-comment `#` no longer false headings). VM/RENDER/XL TAILS: 838 DOM-patch
+persistent page (render, closes 598) · 1382 DocumentModel squeeze + 1490's retained-block
+attribution (measure-first, VM) · 1214 lazy grammars [XL design] · 1423 hex unsaved-edit search
+(engine done; fix = @State plumbing + AX-tier hex-keyboard-edit).
 
 ### B23 Board/docs hygiene (8)
 TSK-1513 roadmap revision · TSK-1514 umbrella reconcile (379/538/651) · TSK-1412 board↔code
