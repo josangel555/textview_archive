@@ -221,11 +221,13 @@ REMAINING (owner/doc-churn, low-value): 1513 roadmap revision · 590 owner bug-l
 FEATURE_INVENTORY refresh · dated-design-docs archive (~35 files) · LESSONS→SOP distillation · 441-445
 board/CI nits — doc maintenance, best folded into a doc-focused pass, not blocking.
 
-### B24 Wishes/epics kickoff — pull when B1–B23 drain (8)
-TSK-703/1155 action-history view · TSK-706/1156 richtext WYSIWYG v1 · TSK-1157 PlantUML/D2 ·
-TSK-1158/715 profiling viewers · TSK-697 agent-services search slice · TSK-1164 per-language
-coverage matrix · TSK-1169 ~/.textview relocation · TSK-1171 3-way merge UI · TSK-1488 FPS
-instrumentation · TSK-1500 resurrect-deleted-from-history.
+### B24 Wishes/epics kickoff ✅ DONE 2026-07-07 (1 host core; rest render/XL/design)
+✅ TSK-1169 ~/.textview settings-relocation migration model (408bef70: SettingsRelocation
+migrationPlan+readPath, 5 tests; file-move + store wiring = data-safety live tail). RENDER/XL/
+DESIGN TAILS: 703/1155 action-history view · 706/1156 richtext WYSIWYG [XL] · 1157 PlantUML/D2
+(render-gated WebView markdown path) · 1158/715 profiling viewers · 697 agent-services search ·
+1164 per-language coverage matrix · 1171 3-way merge UI · 1488 FPS instrumentation · 1500/1503
+resurrect-from-history (#NNN mismatch noted — verify id first).
 
 ### B25 [XL] 1507 WebUI single-sourcing (5)
 Sanitizer→core (HTMLSanitizer/HTMLDocumentPolicy parity) · RenderedBlockDiff/BlockPatchJS
