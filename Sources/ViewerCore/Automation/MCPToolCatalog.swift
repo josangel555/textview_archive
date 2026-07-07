@@ -55,6 +55,7 @@ public enum MCPToolCatalog {
         canvasExportDescriptor,
         canvasKitImportDescriptor,
         canvasTimelineDescriptor,
+        whoCallsDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -221,6 +222,55 @@ public enum MCPToolCatalog {
     }
 
     // MARK: - find
+
+    // MARK: TSK-1192 — code nav (the ASYNC tool lane)
+
+    private static let whoCallsDescriptor = MCP.ToolDescriptor(
+        name: "who_calls",
+        description: "Semantic code nav: resolve a symbol via the live LSP and "
+            + "return its definition plus every caller (file:line, capped at 200). "
+            + "Requires a running language server for the symbol's language.",
+        inputSchema: schema([
+            "symbol": .object(["type": .string("string")]),
+        ], required: ["symbol"])
+    )
+
+    /// Tools that MUST run on the server's reader thread (an LSP round-trip
+    /// can take seconds — parking the main actor would freeze the UI).
+    public nonisolated static func isAsyncTool(_ name: String) -> Bool {
+        name == "who_calls"
+    }
+
+    /// Carries the host existential across the async-tool boundary.
+    /// @unchecked: the async lane only calls `automationWhoCalls`, whose
+    /// live implementation is `nonisolated` and hops to the right actors
+    /// (the LSP pool) internally — no host state is touched off-actor.
+    public struct AsyncHostBox: @unchecked Sendable {
+        public let host: AutomationHost
+        public init(_ host: AutomationHost) { self.host = host }
+    }
+
+    /// The async lane's dispatcher — the counterpart of `dispatch` for
+    /// `isAsyncTool` names.
+    public nonisolated static func dispatchAsync(
+        name: String,
+        args: MCP.Value,
+        host: AsyncHostBox
+    ) async throws -> MCP.Value {
+        switch name {
+        case "who_calls":
+            let symbol = try args.string("symbol")
+            guard let result = await host.host.automationWhoCalls(symbol: symbol) else {
+                throw MCPError.toolFailed(
+                    "no definition found for '\(symbol)' — check the spelling, "
+                    + "and that a language server is running for that language "
+                    + "(open a file of that type to warm the LSP pool)")
+            }
+            return CodeNav.format(result)
+        default:
+            throw MCPError.notFound("unknown async tool: \(name)")
+        }
+    }
 
     private static let findDescriptor = MCP.ToolDescriptor(
         name: "find",

@@ -180,6 +180,19 @@ public final class MCPServer: @unchecked Sendable {
             return
         }
 
+        // TSK-1192: ASYNC tools (LSP-backed code nav) bypass the main-actor
+        // bridge — an LSP round-trip can take seconds, and parking main for
+        // it would freeze the UI. They run on THIS reader thread behind
+        // their own semaphore; the handler hops actors internally only
+        // where it must (the LSP pool).
+        if request.method == "tools/call",
+           case .object(let o)? = request.params,
+           case .string(let toolName)? = o["name"],
+           MCPToolCatalog.isAsyncTool(toolName) {
+            send(response: runAsyncToolCall(id: id, name: toolName, params: request.params))
+            return
+        }
+
         // Dispatch on the main actor — every handler touches
         // DocumentModel. We previously used `DispatchQueue.main.sync`
         // which wedges if any main-actor handler (or anything it
@@ -375,6 +388,59 @@ public final class MCPServer: @unchecked Sendable {
             "tools": .array(try tools.map { try Self.encodeValue($0) })
         ])
         return payload
+    }
+
+    /// TSK-1192 — run an ASYNC tool on the calling (reader) thread: spawn
+    /// the async handler as a detached Task, park on a semaphore with a
+    /// deadline sized for an LSP round-trip (the pool's per-request timeout
+    /// is 8 s; two hops + slack = 20 s). Same ToolCallResult wrapping as
+    /// the sync lane; a deadline trip answers a definite tool error.
+    private nonisolated func runAsyncToolCall(id: MCP.ID, name: String, params: MCP.Value?) -> MCP.Response {
+        let args: MCP.Value = {
+            if case .object(let o)? = params, let a = o["arguments"] { return a }
+            return .object([:])
+        }()
+        let sem = DispatchSemaphore(value: 0)
+        // Single-producer box: written once by the Task, read after wait().
+        let box = ResultBox()
+        let host = MCPToolCatalog.AsyncHostBox(self.host)
+        Task.detached {
+            do {
+                box.value = .success(try await MCPToolCatalog.dispatchAsync(
+                    name: name, args: args, host: host))
+            } catch let e as MCPError {
+                box.value = .failure(e)
+            } catch {
+                box.value = .failure(MCPError.toolFailed("\(error)"))
+            }
+            sem.signal()
+        }
+        guard sem.wait(timeout: .now() + 20) == .success else {
+            log("async tool '\(name)' deadline (20s); returning tool error")
+            let r = MCP.ToolCallResult(
+                text: "'\(name)' timed out — the language server may be starting or wedged",
+                isError: true)
+            return MCP.Response(id: id, result: (try? Self.encodeValue(r)) ?? .object([:]))
+        }
+        switch box.value {
+        case .success(let v):
+            let json = (try? Self.jsonString(v)) ?? "{}"
+            let r = MCP.ToolCallResult(text: json, isError: false)
+            return MCP.Response(id: id, result: (try? Self.encodeValue(r)) ?? .object([:]))
+        case .failure(let e):
+            let r = MCP.ToolCallResult(text: e.message, isError: true)
+            return MCP.Response(id: id, result: (try? Self.encodeValue(r)) ?? .object([:]))
+        case nil:
+            let r = MCP.ToolCallResult(text: "internal: async tool returned no result", isError: true)
+            return MCP.Response(id: id, result: (try? Self.encodeValue(r)) ?? .object([:]))
+        }
+    }
+
+    /// The write-once cell `runAsyncToolCall` hands its Task (class, so the
+    /// concurrently-executing Task can mutate it; the semaphore orders the
+    /// read after the write).
+    private final class ResultBox: @unchecked Sendable {
+        var value: Result<MCP.Value, MCPError>?
     }
 
     @MainActor

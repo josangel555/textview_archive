@@ -63,6 +63,21 @@ extension DocumentModel: AutomationHost {
         return ScriptVerb.apply(verb: verbLine, to: self, sessions: sessions)
     }
 
+    public nonisolated func automationWhoCalls(symbol: String) async -> CodeNav.WhoCalls? {
+        // TSK-1192: the live LSP wiring — workspace-symbol across every
+        // running server, references routed by the definition's file.
+        // Positions are LSP-native (0-based) end to end. nonisolated: the
+        // MCP server calls this from its reader thread; only the pool
+        // property read touches the model.
+        let pool = await lspPool
+        return await CodeNav.whoCalls(
+            query: symbol,
+            workspaceSymbol: { try await pool.workspaceSymbol(query: $0) },
+            references: { url, line, character in
+                try await pool.references(fileURL: url, line: line, character: character)
+            })
+    }
+
     public func automationSetZoom(_ zoom: Double) {
         // The catalog already clamped to [minZoom, maxZoom]; assign
         // verbatim. `zoom`'s didSet persists it through PreferencesStore

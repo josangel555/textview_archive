@@ -89,6 +89,15 @@ public protocol AutomationHost: AnyObject {
     /// whether it was handled. The caller (`MCPToolCatalog.run_verb`) validates
     /// the token against `ScriptVerbCatalog` first; this just runs it.
     func automationRunVerb(_ verbLine: String) -> Bool
+
+    // MARK: Code nav (TSK-1192 — the ASYNC tool lane)
+
+    /// `who_calls`: resolve `symbol` via the live LSP and return its
+    /// definition + callers. `nil` = unresolvable (no matching symbol, or
+    /// no language server running for the workspace). Async by nature (an
+    /// LSP round-trip); the MCP server runs it on its reader thread, never
+    /// parked on the main actor.
+    func automationWhoCalls(symbol: String) async -> CodeNav.WhoCalls?
 }
 
 public extension AutomationHost {
@@ -96,6 +105,9 @@ public extension AutomationHost {
     /// doubles). The live host (`DocumentModel`) overrides to dispatch through
     /// `ScriptVerb.apply`; a recording test host may override to capture.
     func automationRunVerb(_ verbLine: String) -> Bool { false }
+
+    /// Default: no code-nav backend (test doubles / headless hosts).
+    func automationWhoCalls(symbol: String) async -> CodeNav.WhoCalls? { nil }
 }
 
 // MARK: - Plain DTOs (ViewerCore, no UI types)

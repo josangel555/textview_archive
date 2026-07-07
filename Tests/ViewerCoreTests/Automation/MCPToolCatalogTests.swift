@@ -50,6 +50,9 @@ final class FakeAutomationHost: AutomationHost {
     func automationVisibleText() -> String { visibleTextResult }
     var ranVerb: String?
     func automationRunVerb(_ verbLine: String) -> Bool { ranVerb = verbLine; return true }
+    // TSK-1192: canned who_calls answer (nil = the default miss path).
+    nonisolated(unsafe) var whoCallsResult: CodeNav.WhoCalls?
+    func automationWhoCalls(symbol: String) async -> CodeNav.WhoCalls? { whoCallsResult }
     func automationCurrentState() -> AutomationState { stateResult }
     func automationToggleBookmark(line: Int?) {
         toggleBookmarkLine = (true, line)
