@@ -15,6 +15,30 @@ final class CSVFormulaDisplayTests: XCTestCase {
         XCTAssertEqual(CSVTableView.formulaCellDisplay(raw: "=UPPER(\"hi\")", computed: .text("HI")), "HI")
     }
 
+    /// B6 UAT slice (host half): a real grid end-to-end through the DEFAULT
+    /// path — which, post-flip (2026-07-07), is the RUST formula engine. One
+    /// scenario exercises recalc → in-grid computed display → ƒ marker →
+    /// formula-box edit routing, the whole owner-designed surface.
+    func test_endToEnd_formulaGrid_computesDisplaysAndRoutes() {
+        XCTAssertTrue(RustFormulaGate.isEnabled(environment: [:]),
+                      "the flip: formula ships ON by default")
+        let model = EditableCSVModel(
+            RustCSVAdapter.parse("a,b,sum\n1,2,=A1+B1\n3,4,=A2+B2\n"))
+        let values = model.recalcAllFormulas(environment: [:])
+        let s1 = values[CellReference(row: 0, column: 2)]
+        let s2 = values[CellReference(row: 1, column: 2)]
+        XCTAssertEqual(s1, .number(3), "=A1+B1 over 1,2")
+        XCTAssertEqual(s2, .number(7), "=A2+B2 over 3,4")
+        // The grid cell shows the COMPUTED value…
+        XCTAssertEqual(CSVTableView.formulaCellDisplay(raw: "=A1+B1", computed: s1),
+                       FormulaValue.number(3).display)
+        // …carries the subtle ƒ marker…
+        XCTAssertTrue(CSVTableView.showsComputedMarker(raw: "=A1+B1", hasComputed: true))
+        // …and a double-click edits the RAW source in the formula box.
+        XCTAssertEqual(CSVTableView.editRoute(raw: "=A1+B1", formulaDisplayOn: true),
+                       .formulaBox)
+    }
+
     /// TSK-1515: the subtle "ƒ" computed marker — only on formula-backed cells
     /// that actually resolved (a typed 42 and a broken formula are unmarked).
     func test_computedMarker_onlyOnResolvedFormulaCells() {

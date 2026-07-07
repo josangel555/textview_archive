@@ -94,9 +94,14 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // It also FIXES the TSK-410 class (predicates evaluated). Off-switch
         // unchanged: MDV_RUST_HIGHLIGHT=0 / the Settings toggle.
         case .highlight: return true
-        // TSK-1213: brand-new formula port — ships OFF until its own soak round
-        // (parity proven against the Swift FormulaEngine first).
-        case .formula: return false
+        // TSK-1213 → FLIPPED ON 2026-07-07 (B6) per the owner's 2026-07-04
+        // resolution chain ("consumption slice next, then formula flip"):
+        // the consumption slice landed (TSK-1215 display+edit box, TSK-1515
+        // marker, TSK-1472 save flow) and the parity evidence is green
+        // (FormulaParityTests + FormulaDifferentialFuzzTests + adapter
+        // suites, 100 tests with the gate forced on). Off-switch unchanged:
+        // MDV_RUST_FORMULA=0 / the Settings toggle.
+        case .formula: return true
         // TSK-1202 flip (2026-07-04, owner-resolved TSK-649: no calendar soak —
         // single-user app; validation = docs/STAGE_B_DELETION_UAT_2026-07-04.md).
         // 6-language parity proven vs the Swift TreeSitterEngine folds; consumed
