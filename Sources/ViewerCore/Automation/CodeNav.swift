@@ -132,4 +132,63 @@ public enum CodeNav {
             "locations": .array(n.locations.map { .string("\($0.path):\($0.line)") }),
         ])
     }
+
+    // MARK: - rename (TSK-1561: rename_symbol, dry-run default)
+
+    /// The `rename_symbol` answer. Dry-run carries the WorkspaceEdit
+    /// SUMMARY only (what WOULD change); an applied run additionally says
+    /// which files' open buffers took the edits and which files were
+    /// SKIPPED because they aren't open (the standard rename policy:
+    /// unopened files are never written — the agent can `open_path` them
+    /// and re-run).
+    public struct RenameOutcome: Sendable, Equatable {
+        public struct FileEdits: Sendable, Equatable {
+            public let path: String
+            public let editCount: Int
+            public init(path: String, editCount: Int) {
+                self.path = path
+                self.editCount = editCount
+            }
+        }
+        public let files: [FileEdits]
+        public let applied: Bool
+        public let appliedPaths: [String]
+        public let skippedPaths: [String]
+        public init(files: [FileEdits], applied: Bool,
+                    appliedPaths: [String] = [], skippedPaths: [String] = []) {
+            self.files = files
+            self.applied = applied
+            self.appliedPaths = appliedPaths
+            self.skippedPaths = skippedPaths
+        }
+    }
+
+    /// Summarize a WorkspaceEdit (uri → edits) into per-file edit counts:
+    /// file URIs only, sorted by path for a stable payload.
+    public static func renameSummary(
+        from workspaceEdit: [String: [LSPTextEdit]]
+    ) -> [RenameOutcome.FileEdits] {
+        workspaceEdit.compactMap { uri, edits -> RenameOutcome.FileEdits? in
+            guard !edits.isEmpty, let u = URL(string: uri), u.isFileURL else { return nil }
+            return RenameOutcome.FileEdits(path: u.path, editCount: edits.count)
+        }
+        .sorted { $0.path < $1.path }
+    }
+
+    /// The `rename_symbol` tool payload.
+    public static func formatRename(_ r: RenameOutcome) -> MCP.Value {
+        var obj: [String: MCP.Value] = [
+            "applied": .bool(r.applied),
+            "fileCount": .int(r.files.count),
+            "totalEdits": .int(r.files.reduce(0) { $0 + $1.editCount }),
+            "files": .array(r.files.map {
+                .object(["path": .string($0.path), "edits": .int($0.editCount)])
+            }),
+        ]
+        if r.applied {
+            obj["appliedFiles"] = .array(r.appliedPaths.map { .string($0) })
+            obj["skippedFiles"] = .array(r.skippedPaths.map { .string($0) })
+        }
+        return .object(obj)
+    }
 }

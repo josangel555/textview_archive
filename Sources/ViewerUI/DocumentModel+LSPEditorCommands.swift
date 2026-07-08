@@ -180,14 +180,20 @@ extension DocumentModel {
     /// `renameActiveEditorSymbolViaLSP`; `applyCodeAction` shares it).
     /// internal: shared with the code-action commands that stay on DocumentModel
     /// (TSK-1110 — they call this cross-file until they move too).
+    /// Returns which file paths took edits and which were skipped (not open
+    /// as a tab / no buffer) — the `rename_symbol` tool reports both
+    /// (TSK-1561); UI callers ignore the result.
+    @discardableResult
     func applyWorkspaceEditToOpenTabs(
         _ workspaceEdit: [String: [LSPTextEdit]],
         dispatchTabID: UUID,
         dispatchSnapshot: String
-    ) {
+    ) -> (applied: [String], skipped: [String]) {
         #if DEBUG
         _lastRenameSkippedURIs = []
         #endif
+        var applied: [String] = []
+        var skipped: [String] = []
         for (uri, edits) in workspaceEdit {
             guard !edits.isEmpty,
                   let editURL = URL(string: uri), editURL.isFileURL else { continue }
@@ -200,18 +206,24 @@ extension DocumentModel {
                 #if DEBUG
                 _lastRenameSkippedURIs.append(uri)
                 #endif
+                skipped.append(editPath)
                 continue
             }
             if target.id == dispatchTabID {
                 // Snapshot guard: the user typed while the server worked —
                 // their text wins, the stale edits drop.
-                guard buffer.text == dispatchSnapshot else { continue }
+                guard buffer.text == dispatchSnapshot else {
+                    skipped.append(editPath)
+                    continue
+                }
             }
             let updated = LSPTextEditApplier.apply(edits, to: buffer.text, encoding: .utf16)
             if updated != buffer.text {
                 updateEditorText(updated, forTabID: target.id)
             }
+            applied.append(editPath)
         }
+        return (applied.sorted(), skipped.sorted())
     }
 
     #if DEBUG

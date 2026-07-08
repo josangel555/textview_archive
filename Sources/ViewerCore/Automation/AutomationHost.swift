@@ -109,6 +109,16 @@ public protocol AutomationHost: AnyObject {
     /// position (declaration included). Same conventions as
     /// `automationDefinition`.
     func automationReferences(file: String, line: Int, character: Int) async -> CodeNav.NavLocations?
+
+    /// `rename_symbol` (TSK-1561): rename the symbol at a position.
+    /// `apply == false` (the DEFAULT) returns the WorkspaceEdit summary
+    /// only — nothing is mutated; `apply == true` applies through the
+    /// standard rename policy (open-tab buffers only; unopened files are
+    /// reported skipped, never written). Positions LSP-native 0-based.
+    /// `nil` = no server routed.
+    func automationRenameSymbol(
+        file: String, line: Int, character: Int, newName: String, apply: Bool
+    ) async -> CodeNav.RenameOutcome?
 }
 
 public extension AutomationHost {
@@ -125,6 +135,11 @@ public extension AutomationHost {
 
     /// Default: no position-nav backend (test doubles / headless hosts).
     func automationReferences(file: String, line: Int, character: Int) async -> CodeNav.NavLocations? { nil }
+
+    /// Default: no rename backend (test doubles / headless hosts).
+    func automationRenameSymbol(
+        file: String, line: Int, character: Int, newName: String, apply: Bool
+    ) async -> CodeNav.RenameOutcome? { nil }
 }
 
 // MARK: - Plain DTOs (ViewerCore, no UI types)

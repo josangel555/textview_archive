@@ -64,6 +64,15 @@ final class FakeAutomationHost: AutomationHost {
         navCall = ("references", file, line, character)
         return navResult
     }
+    // TSK-1561: canned rename answer + captured args.
+    nonisolated(unsafe) var renameResult: CodeNav.RenameOutcome?
+    nonisolated(unsafe) var renameCall: (file: String, line: Int, character: Int, newName: String, apply: Bool)?
+    func automationRenameSymbol(
+        file: String, line: Int, character: Int, newName: String, apply: Bool
+    ) async -> CodeNav.RenameOutcome? {
+        renameCall = (file, line, character, newName, apply)
+        return renameResult
+    }
     func automationCurrentState() -> AutomationState { stateResult }
     func automationToggleBookmark(line: Int?) {
         toggleBookmarkLine = (true, line)
@@ -91,7 +100,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 34)  // +11 canvas_* + who_calls (TSK-1192) + goto_definition/find_references (TSK-1560)
+        XCTAssertEqual(names.count, 35)  // +11 canvas_* + the async code-nav lane (who_calls TSK-1192, goto_definition/find_references TSK-1560, rename_symbol TSK-1561)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -105,8 +114,8 @@ final class MCPToolCatalogTests: XCTestCase {
             "canvas_new", "canvas_open", "canvas_save", "canvas_apply",
             "canvas_read", "canvas_vocab", "canvas_lint", "canvas_undo",
             "canvas_export", "canvas_kit_import", "canvas_timeline",
-            // Code nav, the async lane (TSK-1192 + TSK-1560):
-            "who_calls", "goto_definition", "find_references",
+            // Code nav, the async lane (TSK-1192 + TSK-1560 + TSK-1561):
+            "who_calls", "goto_definition", "find_references", "rename_symbol",
         ]
         XCTAssertEqual(names, expected)
     }

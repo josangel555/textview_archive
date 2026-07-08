@@ -58,6 +58,7 @@ public enum MCPToolCatalog {
         whoCallsDescriptor,
         gotoDefinitionDescriptor,
         findReferencesDescriptor,
+        renameSymbolDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -264,10 +265,30 @@ public enum MCPToolCatalog {
         ], required: ["file", "line", "column"])
     )
 
+    /// TSK-1561 — the refactor-rename tool (agent-services s2). DRY-RUN BY
+    /// DEFAULT: without `apply:true` it only reports what would change.
+    private static let renameSymbolDescriptor = MCP.ToolDescriptor(
+        name: "rename_symbol",
+        description: "Refactor: rename the symbol at file:line:column "
+            + "(1-based) to new_name via the live LSP. DRY-RUN by default — "
+            + "returns the per-file edit summary without changing anything; "
+            + "pass apply:true to apply to OPEN tabs (files not open are "
+            + "reported in skippedFiles and never written — open them and "
+            + "re-run). Requires a running language server.",
+        inputSchema: schema([
+            "file":     .object(["type": .string("string")]),
+            "line":     .object(["type": .string("integer")]),
+            "column":   .object(["type": .string("integer")]),
+            "new_name": .object(["type": .string("string")]),
+            "apply":    .object(["type": .string("boolean")]),
+        ], required: ["file", "line", "column", "new_name"])
+    )
+
     /// Tools that MUST run on the server's reader thread (an LSP round-trip
     /// can take seconds — parking the main actor would freeze the UI).
     public nonisolated static func isAsyncTool(_ name: String) -> Bool {
         name == "who_calls" || name == "goto_definition" || name == "find_references"
+            || name == "rename_symbol"
     }
 
     /// Carries the host existential across the async-tool boundary.
@@ -318,6 +339,28 @@ public enum MCPToolCatalog {
                     + "that type to warm the LSP pool, then retry")
             }
             return CodeNav.formatNav(nav)
+        case "rename_symbol":
+            let file = try args.string("file")
+            let line = try args.int("line")
+            let column = try args.int("column")
+            let newName = try args.string("new_name")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let apply = (try? args.bool("apply")) ?? false
+            guard line >= 1, column >= 1 else {
+                throw MCPError.invalidParams("line and column are 1-based (got \(line):\(column))")
+            }
+            guard !newName.isEmpty else {
+                throw MCPError.invalidParams("new_name must be a non-blank identifier")
+            }
+            guard let outcome = await host.host.automationRenameSymbol(
+                file: file, line: line - 1, character: column - 1,
+                newName: newName, apply: apply)
+            else {
+                throw MCPError.toolFailed(
+                    "no language server routed for '\(file)' — open a file of "
+                    + "that type to warm the LSP pool, then retry")
+            }
+            return CodeNav.formatRename(outcome)
         default:
             throw MCPError.notFound("unknown async tool: \(name)")
         }

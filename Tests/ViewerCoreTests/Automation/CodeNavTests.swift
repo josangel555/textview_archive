@@ -194,4 +194,79 @@ final class CodeNavTests: XCTestCase {
             XCTAssertTrue(e.message.contains("language server"), "hint: \(e.message)")
         }
     }
+
+    // MARK: - TSK-1561: rename_symbol (dry-run default)
+
+    func test_renameSummary_fileURIsOnly_sortedByPath() {
+        let edit: [String: [LSPTextEdit]] = [
+            "file:///z.swift": [makeEdit(), makeEdit()],
+            "file:///a.swift": [makeEdit()],
+            "untitled:scratch": [makeEdit()],   // non-file: dropped
+            "file:///empty.swift": [],          // no edits: dropped
+        ]
+        let summary = CodeNav.renameSummary(from: edit)
+        XCTAssertEqual(summary, [
+            CodeNav.RenameOutcome.FileEdits(path: "/a.swift", editCount: 1),
+            CodeNav.RenameOutcome.FileEdits(path: "/z.swift", editCount: 2),
+        ])
+    }
+
+    private func makeEdit() -> LSPTextEdit {
+        LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                            end: LSPPosition(line: 0, character: 1)),
+            newText: "x")
+    }
+
+    @MainActor
+    func test_renameSymbol_dryRunByDefault_applyPassesThrough_blankNameRejected() async throws {
+        XCTAssertTrue(MCPToolCatalog.isAsyncTool("rename_symbol"))
+        let fake = FakeAutomationHost()
+        fake.renameResult = CodeNav.RenameOutcome(
+            files: [.init(path: "/a.swift", editCount: 3)], applied: false)
+        let box = MCPToolCatalog.AsyncHostBox(fake)
+
+        // DRY-RUN is the default: no `apply` arg → host sees apply=false.
+        let value = try await MCPToolCatalog.dispatchAsync(
+            name: "rename_symbol",
+            args: .object(["file": .string("/a.swift"), "line": .int(5),
+                           "column": .int(2), "new_name": .string("renamed")]),
+            host: box)
+        XCTAssertEqual(fake.renameCall?.apply, false, "dry-run is the DEFAULT")
+        XCTAssertEqual(fake.renameCall?.line, 4, "1-based tool input → 0-based LSP")
+        XCTAssertEqual(fake.renameCall?.newName, "renamed")
+        guard case .object(let o) = value else { return XCTFail("object result") }
+        XCTAssertEqual(o["applied"], .bool(false))
+        XCTAssertEqual(o["totalEdits"], .int(3))
+        XCTAssertNil(o["appliedFiles"], "dry-run carries no applied/skipped lists")
+
+        // apply:true passes through and the payload carries both lists.
+        fake.renameResult = CodeNav.RenameOutcome(
+            files: [.init(path: "/a.swift", editCount: 3)], applied: true,
+            appliedPaths: ["/a.swift"], skippedPaths: ["/closed.swift"])
+        let appliedValue = try await MCPToolCatalog.dispatchAsync(
+            name: "rename_symbol",
+            args: .object(["file": .string("/a.swift"), "line": .int(1), "column": .int(1),
+                           "new_name": .string("renamed"), "apply": .bool(true)]),
+            host: box)
+        XCTAssertEqual(fake.renameCall?.apply, true)
+        guard case .object(let a) = appliedValue else { return XCTFail("object result") }
+        XCTAssertEqual(a["appliedFiles"], .array([.string("/a.swift")]))
+        XCTAssertEqual(a["skippedFiles"], .array([.string("/closed.swift")]),
+                       "unopened files are REPORTED, never silently dropped")
+
+        // A blank new_name is invalid params, before any host call.
+        fake.renameCall = nil
+        do {
+            _ = try await MCPToolCatalog.dispatchAsync(
+                name: "rename_symbol",
+                args: .object(["file": .string("/a.swift"), "line": .int(1), "column": .int(1),
+                               "new_name": .string("   ")]),
+                host: box)
+            XCTFail("blank new_name must be rejected")
+        } catch let e as MCPError {
+            XCTAssertTrue(e.message.contains("non-blank"), "hint: \(e.message)")
+            XCTAssertNil(fake.renameCall, "rejected before reaching the host")
+        }
+    }
 }

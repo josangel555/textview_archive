@@ -101,6 +101,35 @@ extension DocumentModel: AutomationHost {
         return CodeNav.navLocations(from: lsp)
     }
 
+    public nonisolated func automationRenameSymbol(
+        file: String, line: Int, character: Int, newName: String, apply: Bool
+    ) async -> CodeNav.RenameOutcome? {
+        // TSK-1561: dry-run by default — the summary is computed from the
+        // server's WorkspaceEdit without touching any buffer. apply:true
+        // routes through the SAME applyWorkspaceEditToOpenTabs the menu
+        // rename uses (open-tab buffers only; unopened files reported
+        // skipped, never written). The dispatchTabID is a fresh UUID that
+        // matches no tab, so the typed-while-waiting snapshot guard —
+        // which protects the INTERACTIVE dispatching tab — never
+        // misfires here.
+        let pool = await lspPool
+        let url = URL(fileURLWithPath: file)
+        guard let edit = try? await pool.rename(
+            fileURL: url, line: line, character: character, newName: newName)
+        else { return nil }
+        let summary = CodeNav.renameSummary(from: edit)
+        guard apply else {
+            return CodeNav.RenameOutcome(files: summary, applied: false)
+        }
+        let (applied, skipped) = await MainActor.run {
+            self.applyWorkspaceEditToOpenTabs(
+                edit, dispatchTabID: UUID(), dispatchSnapshot: "")
+        }
+        return CodeNav.RenameOutcome(
+            files: summary, applied: true,
+            appliedPaths: applied, skippedPaths: skipped)
+    }
+
     public func automationSetZoom(_ zoom: Double) {
         // The catalog already clamped to [minZoom, maxZoom]; assign
         // verbatim. `zoom`'s didSet persists it through PreferencesStore
