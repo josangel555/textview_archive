@@ -4127,21 +4127,22 @@ func activateIfForeground() {
 // then sees them. Absent in prod ⇒ no-op.
 AppDelegate.applyLaunchConfigFileIfPresent()
 
-let app = NSApplication.shared
-
-/// `--mcp-stdio` puts the process in headless RPC mode: no Dock icon,
-/// no menu bar, no windows. We still need to call `app.run()` because
-/// `@MainActor`-isolated DocumentModel state can only be mutated from
-/// the main thread's run loop, which `NSApp.run` services.
 // TSK-1544: `--mcp-connect` — bridge stdio to the RUNNING app's MCP socket.
-// A pure byte pump executed BEFORE any AppKit spin-up (this process is a
-// dumb pipe, it never becomes an app); exits when either side closes. When
-// no app is listening, fall through as a headless `--mcp-stdio` server so
-// one client config works whether or not the app is open.
+// A pure byte pump. ⚠️ THIS BRANCH MUST RUN BEFORE `NSApplication.shared`
+// (below): touching AppKit registers this process with LaunchServices as an
+// instance of TextView.app, and Finder then tries to ACTIVATE the windowless
+// bridge instead of launching the real app — `open` fails with -600 and the
+// owner "can't open" the app (P0 incident 2026-07-07; guarded by
+// MCPBridgeLaunchOrderTests). When no app is listening, fall through as a
+// headless `--mcp-stdio` server so one client config works either way.
 let mcpConnectMode = CommandLine.arguments.contains("--mcp-connect")
 if mcpConnectMode,
    let sock = MCPSocketBridge.connect(path: MCPSocketListener.defaultSocketPath()) {
     FileHandle.standardError.write(Data("mcp: bridged to the running app\n".utf8))
+    // P0 zombie guard: orphan-held pipe ends can keep stdin from EOFing
+    // after the client dies — self-reap when the parent goes away, so
+    // stale bridges never accumulate.
+    MCPSocketBridge.exitWhenOrphaned()
     // TSK-1552: the SELF-HEALING loop — an app quit/relaunch no longer kills
     // the client's MCP session; the bridge reconnects with capped backoff
     // (requests queue unread in the pipe while disconnected) and returns
@@ -4152,6 +4153,13 @@ if mcpConnectMode,
         initialRemote: sock)
     exit(0)
 }
+
+let app = NSApplication.shared
+
+/// `--mcp-stdio` puts the process in headless RPC mode: no Dock icon,
+/// no menu bar, no windows. We still need to call `app.run()` because
+/// `@MainActor`-isolated DocumentModel state can only be mutated from
+/// the main thread's run loop, which `NSApp.run` services.
 let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio") || mcpConnectMode
 
 /// `--claude-monitor` opens ONLY the standalone read-only Claude session
@@ -4186,10 +4194,9 @@ func runResourceSelfCheck() -> Bool {
           Bundle.viewerUIResources.url(forResource: "markdown", withExtension: "css"))
     check("mermaid.min.js",
           Bundle.viewerUIResources.url(forResource: "mermaid.min", withExtension: "js"))
-    // ViewerCore bundle (tree-sitter Queries/*.scm).
-    check("swift-folds.scm",
-          Bundle.viewerCoreResources.url(
-            forResource: "swift-folds", withExtension: "scm", subdirectory: "Queries"))
+    // (The ViewerCore Queries/*.scm bundle was DELETED with the Swift fold
+    // twin — B3.6, 78c8e973; fold queries are baked into the rust core's
+    // static lib now, so there is no on-disk resource left to check.)
     emit(ok ? "OK    all resource bundles resolved from the app bundle\n"
             : "FAIL  resource self-check failed — app would crash on a clean machine\n")
     return ok

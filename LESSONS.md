@@ -3874,3 +3874,21 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   pattern), and record the render tail on the ticket. Primitives compose across tickets
   (OutputNaming → convert/extract/sample-write). A spike that finds the ticket's premise STALE
   (LogPatterns "thin logic") parks with the corrected picture, not the stale one.
+
+- **LaunchServices -600 launch-wedge from bundle-exec'd helper processes (P0, 2026-07-07,
+  TSK-1566).** Any process exec'd from a bundle's main executable that touches AppKit
+  (`NSApplication.shared` — even just top-level `let app =`) REGISTERS with LaunchServices as a
+  running instance of that app. Finder/`open` then tries to ACTIVATE the windowless helper
+  instead of launching the real app → `-600 procNotFound`, "can't open the app", no crash
+  report, no error dialog. Symptom fingerprint: binary runs fine when exec'd directly, codesign
+  clean, `open -a` fails -600, `ps` shows headless same-bundle processes (here: `--mcp-connect`
+  bridges). Fixes: (1) helper-mode branches in main.swift must run BEFORE the first AppKit
+  touch (drift-guarded by MCPBridgeLaunchOrderTests source-parse); (2) helpers need an orphan
+  watchdog (`getppid()==1` poll → exit) — stdin-EOF alone is NOT a reliable terminal condition
+  because orphaned grandchildren can hold the pipe write-end open for days. Immediate remedy on
+  a wedged machine: kill the headless same-bundle PIDs; `open` recovers instantly.
+- **Resource self-check entries must die with their resources (2026-07-07).** B3.6 deleted the
+  ViewerCore Queries/*.scm bundle (folds → rust core) but `--verify-resources` still demanded
+  swift-folds.scm → build-app.sh --install rc=8, so the P0 fix could not even INSTALL until the
+  stale check was dropped. When deleting a shipped resource, grep `runResourceSelfCheck` in
+  main.swift for its check entry.

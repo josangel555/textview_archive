@@ -184,6 +184,26 @@ public enum MCPSocketBridge {
         }
     }
 
+    /// P0 zombie guard (the /Applications launch-wedge incident,
+    /// 2026-07-07): a bridge whose spawning client died can survive when an
+    /// orphaned grandchild still holds the stdin pipe's write end — stdin
+    /// never EOFs, the bridge lives for days. Poll the parent: when the
+    /// direct parent exits, PPID re-parents to 1 (launchd) — exit. Call
+    /// ONLY from the bridge PROCESS entry (never from tests: it exits the
+    /// process).
+    public static func exitWhenOrphaned(pollSeconds: UInt32 = 5) {
+        Thread.detachNewThread {
+            while true {
+                if getppid() == 1 {
+                    FileHandle.standardError.write(
+                        Data("mcp: client parent exited — bridge shutting down\n".utf8))
+                    exit(0)
+                }
+                sleep(pollSeconds)
+            }
+        }
+    }
+
     /// Shared connection state for `serve`: the current remote handle and
     /// the client-gone flag, guarded by one condition (the stdin thread
     /// waits on it during reconnect gaps).
