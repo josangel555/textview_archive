@@ -93,4 +93,43 @@ public enum CodeNav {
             "callers": .array(w.callers.map { .string("\($0.path):\($0.line)") }),
         ])
     }
+
+    // MARK: - position-based nav (TSK-1560: goto_definition / find_references)
+
+    /// The position-nav answer: the resolved locations, capped.
+    public struct NavLocations: Sendable, Equatable {
+        public let locations: [Location]
+        public let truncated: Bool
+        public init(locations: [Location], truncated: Bool) {
+            self.locations = locations
+            self.truncated = truncated
+        }
+    }
+
+    /// Convert LSP locations (0-based lines, uri strings) into editor-facing
+    /// `Location`s (1-based lines, paths): non-file URIs are skipped, and the
+    /// list caps at [`maxCallers`] with `truncated` set when the cap cut real
+    /// results (skipped non-file URIs don't count as truncation).
+    public static func navLocations(from lsp: [LSPLocation]) -> NavLocations {
+        var out: [Location] = []
+        var truncated = false
+        for l in lsp {
+            guard let u = URL(string: l.uri), u.isFileURL else { continue }
+            if out.count == maxCallers {
+                truncated = true
+                break
+            }
+            out.append(Location(path: u.path, line: l.range.start.line + 1))
+        }
+        return NavLocations(locations: out, truncated: truncated)
+    }
+
+    /// The `goto_definition` / `find_references` tool payload.
+    public static func formatNav(_ n: NavLocations) -> MCP.Value {
+        .object([
+            "count": .int(n.locations.count),
+            "truncated": .bool(n.truncated),
+            "locations": .array(n.locations.map { .string("\($0.path):\($0.line)") }),
+        ])
+    }
 }

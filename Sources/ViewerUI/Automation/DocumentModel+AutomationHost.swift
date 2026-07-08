@@ -78,6 +78,29 @@ extension DocumentModel: AutomationHost {
             })
     }
 
+    public nonisolated func automationDefinition(
+        file: String, line: Int, character: Int
+    ) async -> CodeNav.NavLocations? {
+        // TSK-1560: position-based nav on the same async lane as who_calls.
+        // `nil` when no server routes for the file (vs an EMPTY answer from
+        // a live server, which maps to zero locations).
+        let pool = await lspPool
+        let url = URL(fileURLWithPath: file)
+        guard let lsp = try? await pool.definition(fileURL: url, line: line, character: character)
+        else { return nil }
+        return CodeNav.navLocations(from: lsp)
+    }
+
+    public nonisolated func automationReferences(
+        file: String, line: Int, character: Int
+    ) async -> CodeNav.NavLocations? {
+        let pool = await lspPool
+        let url = URL(fileURLWithPath: file)
+        guard let lsp = try? await pool.references(fileURL: url, line: line, character: character)
+        else { return nil }
+        return CodeNav.navLocations(from: lsp)
+    }
+
     public func automationSetZoom(_ zoom: Double) {
         // The catalog already clamped to [minZoom, maxZoom]; assign
         // verbatim. `zoom`'s didSet persists it through PreferencesStore

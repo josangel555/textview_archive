@@ -56,6 +56,8 @@ public enum MCPToolCatalog {
         canvasKitImportDescriptor,
         canvasTimelineDescriptor,
         whoCallsDescriptor,
+        gotoDefinitionDescriptor,
+        findReferencesDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -235,10 +237,37 @@ public enum MCPToolCatalog {
         ], required: ["symbol"])
     )
 
+    /// TSK-1560 — position-based nav (the agent-services s1 slice). Inputs
+    /// are EDITOR-facing 1-based line/column; the handler converts to
+    /// LSP-native 0-based.
+    private static let gotoDefinitionDescriptor = MCP.ToolDescriptor(
+        name: "goto_definition",
+        description: "Semantic code nav: the definition location(s) of the "
+            + "symbol at file:line:column (1-based). Requires a running "
+            + "language server for the file's language.",
+        inputSchema: schema([
+            "file":   .object(["type": .string("string")]),
+            "line":   .object(["type": .string("integer")]),
+            "column": .object(["type": .string("integer")]),
+        ], required: ["file", "line", "column"])
+    )
+
+    private static let findReferencesDescriptor = MCP.ToolDescriptor(
+        name: "find_references",
+        description: "Semantic code nav: every reference to the symbol at "
+            + "file:line:column (1-based; declaration included, capped at "
+            + "200). Requires a running language server for the file's language.",
+        inputSchema: schema([
+            "file":   .object(["type": .string("string")]),
+            "line":   .object(["type": .string("integer")]),
+            "column": .object(["type": .string("integer")]),
+        ], required: ["file", "line", "column"])
+    )
+
     /// Tools that MUST run on the server's reader thread (an LSP round-trip
     /// can take seconds — parking the main actor would freeze the UI).
     public nonisolated static func isAsyncTool(_ name: String) -> Bool {
-        name == "who_calls"
+        name == "who_calls" || name == "goto_definition" || name == "find_references"
     }
 
     /// Carries the host existential across the async-tool boundary.
@@ -267,6 +296,28 @@ public enum MCPToolCatalog {
                     + "(open a file of that type to warm the LSP pool)")
             }
             return CodeNav.format(result)
+        case "goto_definition", "find_references":
+            let file = try args.string("file")
+            let line = try args.int("line")
+            let column = try args.int("column")
+            guard line >= 1, column >= 1 else {
+                throw MCPError.invalidParams("line and column are 1-based (got \(line):\(column))")
+            }
+            // Convert to LSP-native 0-based for the host.
+            let result: CodeNav.NavLocations?
+            if name == "goto_definition" {
+                result = await host.host.automationDefinition(
+                    file: file, line: line - 1, character: column - 1)
+            } else {
+                result = await host.host.automationReferences(
+                    file: file, line: line - 1, character: column - 1)
+            }
+            guard let nav = result else {
+                throw MCPError.toolFailed(
+                    "no language server routed for '\(file)' — open a file of "
+                    + "that type to warm the LSP pool, then retry")
+            }
+            return CodeNav.formatNav(nav)
         default:
             throw MCPError.notFound("unknown async tool: \(name)")
         }

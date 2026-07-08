@@ -115,4 +115,83 @@ final class CodeNavTests: XCTestCase {
             XCTAssertTrue(e.message.contains("language server"), "hint: \(e.message)")
         }
     }
+
+    // MARK: - TSK-1560: position-based nav (goto_definition / find_references)
+
+    func test_navLocations_maps1based_skipsNonFileURIs_capsWithTruncation() {
+        func loc(_ uri: String, _ line0: Int) -> LSPLocation {
+            LSPLocation(uri: uri, range: LSPRange(
+                start: LSPPosition(line: line0, character: 0),
+                end: LSPPosition(line: line0, character: 1)))
+        }
+        // 1-basing + non-file skip.
+        let mixed = CodeNav.navLocations(from: [
+            loc("file:///a.swift", 0),
+            loc("untitled:scratch", 3),   // non-file: skipped, not truncation
+            loc("file:///b.swift", 9),
+        ])
+        XCTAssertEqual(mixed.locations, [
+            CodeNav.Location(path: "/a.swift", line: 1),
+            CodeNav.Location(path: "/b.swift", line: 10),
+        ])
+        XCTAssertFalse(mixed.truncated, "skipped URIs are not truncation")
+
+        // The cap: 200 kept, the 201st real result flags truncation.
+        let many = (0..<(CodeNav.maxCallers + 1)).map { loc("file:///f\($0).swift", $0) }
+        let capped = CodeNav.navLocations(from: many)
+        XCTAssertEqual(capped.locations.count, CodeNav.maxCallers)
+        XCTAssertTrue(capped.truncated)
+    }
+
+    @MainActor
+    func test_asyncLane_dispatchesPositionNav_1basedIn_0basedToHost() async throws {
+        XCTAssertTrue(MCPToolCatalog.isAsyncTool("goto_definition"))
+        XCTAssertTrue(MCPToolCatalog.isAsyncTool("find_references"))
+        let fake = FakeAutomationHost()
+        fake.navResult = CodeNav.NavLocations(
+            locations: [CodeNav.Location(path: "/def.swift", line: 12)], truncated: false)
+        let box = MCPToolCatalog.AsyncHostBox(fake)
+
+        // goto_definition: the tool takes 1-based; the host must see 0-based.
+        let value = try await MCPToolCatalog.dispatchAsync(
+            name: "goto_definition",
+            args: .object(["file": .string("/def.swift"), "line": .int(10), "column": .int(4)]),
+            host: box)
+        XCTAssertEqual(fake.navCall?.name, "definition")
+        XCTAssertEqual(fake.navCall?.line, 9, "1-based tool input → 0-based LSP")
+        XCTAssertEqual(fake.navCall?.character, 3)
+        guard case .object(let o) = value else { return XCTFail("object result") }
+        XCTAssertEqual(o["count"], .int(1))
+        XCTAssertEqual(o["locations"], .array([.string("/def.swift:12")]))
+
+        // find_references routes to the references hook.
+        _ = try await MCPToolCatalog.dispatchAsync(
+            name: "find_references",
+            args: .object(["file": .string("/def.swift"), "line": .int(1), "column": .int(1)]),
+            host: box)
+        XCTAssertEqual(fake.navCall?.name, "references")
+
+        // 0/negative positions are invalid params, not a silent off-by-one.
+        do {
+            _ = try await MCPToolCatalog.dispatchAsync(
+                name: "goto_definition",
+                args: .object(["file": .string("/x"), "line": .int(0), "column": .int(1)]),
+                host: box)
+            XCTFail("0-based input must be rejected")
+        } catch let e as MCPError {
+            XCTAssertTrue(e.message.contains("1-based"), "hint: \(e.message)")
+        }
+
+        // The no-server miss path carries the actionable hint.
+        fake.navResult = nil
+        do {
+            _ = try await MCPToolCatalog.dispatchAsync(
+                name: "find_references",
+                args: .object(["file": .string("/x.zig"), "line": .int(1), "column": .int(1)]),
+                host: box)
+            XCTFail("no-server must throw")
+        } catch let e as MCPError {
+            XCTAssertTrue(e.message.contains("language server"), "hint: \(e.message)")
+        }
+    }
 }

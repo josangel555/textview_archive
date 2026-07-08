@@ -98,6 +98,17 @@ public protocol AutomationHost: AnyObject {
     /// LSP round-trip); the MCP server runs it on its reader thread, never
     /// parked on the main actor.
     func automationWhoCalls(symbol: String) async -> CodeNav.WhoCalls?
+
+    /// `goto_definition` (TSK-1560): the definition location(s) of the symbol
+    /// at a POSITION — `line`/`character` are LSP-native 0-based (the catalog
+    /// converts from the tool's 1-based inputs). `nil` = no server routed for
+    /// the file; an EMPTY result = the server answered "no definition".
+    func automationDefinition(file: String, line: Int, character: Int) async -> CodeNav.NavLocations?
+
+    /// `find_references` (TSK-1560): every reference to the symbol at a
+    /// position (declaration included). Same conventions as
+    /// `automationDefinition`.
+    func automationReferences(file: String, line: Int, character: Int) async -> CodeNav.NavLocations?
 }
 
 public extension AutomationHost {
@@ -108,6 +119,12 @@ public extension AutomationHost {
 
     /// Default: no code-nav backend (test doubles / headless hosts).
     func automationWhoCalls(symbol: String) async -> CodeNav.WhoCalls? { nil }
+
+    /// Default: no position-nav backend (test doubles / headless hosts).
+    func automationDefinition(file: String, line: Int, character: Int) async -> CodeNav.NavLocations? { nil }
+
+    /// Default: no position-nav backend (test doubles / headless hosts).
+    func automationReferences(file: String, line: Int, character: Int) async -> CodeNav.NavLocations? { nil }
 }
 
 // MARK: - Plain DTOs (ViewerCore, no UI types)

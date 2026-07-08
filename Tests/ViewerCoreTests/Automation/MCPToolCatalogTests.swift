@@ -53,6 +53,17 @@ final class FakeAutomationHost: AutomationHost {
     // TSK-1192: canned who_calls answer (nil = the default miss path).
     nonisolated(unsafe) var whoCallsResult: CodeNav.WhoCalls?
     func automationWhoCalls(symbol: String) async -> CodeNav.WhoCalls? { whoCallsResult }
+    // TSK-1560: canned position-nav answers + captured args.
+    nonisolated(unsafe) var navResult: CodeNav.NavLocations?
+    nonisolated(unsafe) var navCall: (name: String, file: String, line: Int, character: Int)?
+    func automationDefinition(file: String, line: Int, character: Int) async -> CodeNav.NavLocations? {
+        navCall = ("definition", file, line, character)
+        return navResult
+    }
+    func automationReferences(file: String, line: Int, character: Int) async -> CodeNav.NavLocations? {
+        navCall = ("references", file, line, character)
+        return navResult
+    }
     func automationCurrentState() -> AutomationState { stateResult }
     func automationToggleBookmark(line: Int?) {
         toggleBookmarkLine = (true, line)
@@ -80,7 +91,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 32)  // +11 canvas_* + who_calls (TSK-1192)
+        XCTAssertEqual(names.count, 34)  // +11 canvas_* + who_calls (TSK-1192) + goto_definition/find_references (TSK-1560)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -94,8 +105,8 @@ final class MCPToolCatalogTests: XCTestCase {
             "canvas_new", "canvas_open", "canvas_save", "canvas_apply",
             "canvas_read", "canvas_vocab", "canvas_lint", "canvas_undo",
             "canvas_export", "canvas_kit_import", "canvas_timeline",
-            // Code nav, the async lane (TSK-1192):
-            "who_calls",
+            // Code nav, the async lane (TSK-1192 + TSK-1560):
+            "who_calls", "goto_definition", "find_references",
         ]
         XCTAssertEqual(names, expected)
     }
