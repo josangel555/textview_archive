@@ -43,6 +43,8 @@ public enum MCPToolCatalog {
         listBookmarksDescriptor,
         snapshotWindowDescriptor,
         listRunnableTasksDescriptor,
+        getReviewContextDescriptor,
+        listReviewCommentsDescriptor,
         processMemoryDescriptor,
         canvasNewDescriptor,
         canvasOpenDescriptor,
@@ -90,6 +92,8 @@ public enum MCPToolCatalog {
         case "list_bookmarks":    return try listBookmarks(args, host)
         case "snapshot_window":   return try snapshotWindow(args, host)
         case "list_runnable_tasks": return try listRunnableTasks(args, host)
+        case "get_review_context":  return try getReviewContext(args)
+        case "list_review_comments": return try listReviewComments(args)
         case "process_memory":    return try processMemory(args, host)
         case "canvas_new":         return try canvasNew(args, host)
         case "canvas_open":        return try canvasOpen(args, host)
@@ -958,6 +962,117 @@ public enum MCPToolCatalog {
         return .object([
             "count": .int(tasks.count),
             "tasks": .array(items),
+        ])
+    }
+
+    // MARK: - review read-tools (TSK-1563, agent-services s4 — READ-ONLY)
+
+    private static let getReviewContextDescriptor = MCP.ToolDescriptor(
+        name: "get_review_context",
+        description: "READ-ONLY: the assembled Q&A context for a code review "
+            + "(title, scope, every comment with its severity, anchor, body, "
+            + "and frozen diff hunk — size-bounded). Defaults to the most "
+            + "recently updated review; pass review_id to pick one. The "
+            + "payload lists the other available reviews.",
+        inputSchema: schema([
+            "review_id":  .object(["type": .string("string")]),
+            "question":   .object(["type": .string("string"),
+                                   "description": .string("Optional question to frame the context for")]),
+            "store_path": .object(["type": .string("string"),
+                                   "description": .string("Optional review-store directory override (defaults to the app store)")]),
+        ], required: [])
+    )
+
+    private static let listReviewCommentsDescriptor = MCP.ToolDescriptor(
+        name: "list_review_comments",
+        description: "READ-ONLY: the raw comment list of a code review "
+            + "(including replies), with ids, anchors, severities, and "
+            + "resolved flags. Defaults to the most recently updated review.",
+        inputSchema: schema([
+            "review_id":  .object(["type": .string("string")]),
+            "store_path": .object(["type": .string("string")]),
+        ], required: [])
+    )
+
+    /// The store to read: an explicit (jail-validated) override, else the
+    /// app's default directory.
+    private static func reviewStore(from args: MCP.Value) throws -> ReviewStore {
+        if let p = try? args.string("store_path") {
+            return ReviewStore(directory: try validatedExistingURL(from: p))
+        }
+        return ReviewStore()
+    }
+
+    /// Resolve the target review: explicit id, else the most recently
+    /// updated. Failures name what IS available.
+    private static func resolveReview(_ args: MCP.Value, store: ReviewStore) throws -> Review {
+        let summaries = store.list()
+        if let id = try? args.string("review_id") {
+            guard let r = store.load(id: id) else {
+                let available = summaries.map(\.id).joined(separator: ", ")
+                throw MCPError.toolFailed(
+                    "no review '\(id)' in the store — available: "
+                    + (available.isEmpty ? "(none)" : available))
+            }
+            return r
+        }
+        guard let latest = summaries.max(by: { $0.updatedAt < $1.updatedAt }),
+              let r = store.load(id: latest.id) else {
+            throw MCPError.toolFailed("no reviews in the store")
+        }
+        return r
+    }
+
+    private static func getReviewContext(_ args: MCP.Value) throws -> MCP.Value {
+        let store = try reviewStore(from: args)
+        let review = try resolveReview(args, store: store)
+        let question = (try? args.string("question")) ?? "What does this review contain?"
+        let ctx = ReviewQAContext.build(review: review, question: question)
+        let others = store.list().filter { $0.id != review.id }
+        return .object([
+            "reviewID": .string(ctx.reviewID),
+            "title": .string(ctx.reviewTitle),
+            "description": .string(ctx.reviewDescription ?? ""),
+            "scope": .string(ctx.scopeSummary),
+            "repoRoot": .string(ctx.repoRoot),
+            "commentCount": .int(ctx.comments.count),
+            "droppedComments": .int(ctx.droppedCommentCount),
+            "comments": .array(ctx.comments.map { item in
+                .object([
+                    "id": .string(item.commentID),
+                    "file": .string(item.filePath),
+                    "severity": .string(item.severity.rawValue),
+                    "resolved": .bool(item.resolved),
+                    "lines": .string("\(item.anchor.startLine)-\(item.anchor.endLine) (\(item.anchor.side.rawValue))"),
+                    "body": .string(item.body),
+                    "hunkHeader": .string(item.hunkHeader),
+                    "hunk": .string(item.hunkText),
+                ])
+            }),
+            "availableReviews": .array(others.map {
+                .object(["id": .string($0.id), "title": .string($0.title)])
+            }),
+        ])
+    }
+
+    private static func listReviewComments(_ args: MCP.Value) throws -> MCP.Value {
+        let store = try reviewStore(from: args)
+        let review = try resolveReview(args, store: store)
+        return .object([
+            "reviewID": .string(review.id),
+            "title": .string(review.title),
+            "count": .int(review.comments.count),
+            "comments": .array(review.comments.map { c in
+                .object([
+                    "id": .string(c.id),
+                    "parentId": .string(c.parentId ?? ""),
+                    "file": .string(c.filePath),
+                    "severity": .string(c.severity.rawValue),
+                    "resolved": .bool(c.resolved),
+                    "lines": .string("\(c.anchor.startLine)-\(c.anchor.endLine) (\(c.anchor.side.rawValue))"),
+                    "body": .string(c.body),
+                ])
+            }),
         ])
     }
 

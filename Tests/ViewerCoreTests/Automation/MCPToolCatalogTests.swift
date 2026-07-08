@@ -100,7 +100,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 36)  // +11 canvas_* + the async lane (who_calls TSK-1192, goto/find TSK-1560, rename_symbol TSK-1561, run_task TSK-1562)
+        XCTAssertEqual(names.count, 38)  // +11 canvas_* + the async lane (TSK-1192/1560/1561/1562) + review read-tools (TSK-1563)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -118,6 +118,8 @@ final class MCPToolCatalogTests: XCTestCase {
             "who_calls", "goto_definition", "find_references", "rename_symbol",
             // Task runner (TSK-1562):
             "run_task",
+            // Review read-tools (TSK-1563):
+            "get_review_context", "list_review_comments",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -815,6 +817,97 @@ final class MCPToolCatalogTests: XCTestCase {
         } catch let e as MCPError {
             XCTAssertTrue(e.message.contains("list_runnable_tasks"), "points at the allowlist")
             XCTAssertTrue(e.message.contains("makefile:hello"), "names what IS runnable")
+        }
+    }
+
+    // MARK: - review read-tools (TSK-1563)
+
+    /// A temp review store with two reviews (distinct updatedAt so
+    /// "most recent" is deterministic).
+    private func makeReviewStore() throws -> (dir: URL, store: ReviewStore) {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-review-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = ReviewStore(directory: dir)
+
+        func comment(_ id: String, body: String, parent: String? = nil,
+                     resolved: Bool = false) -> ReviewComment {
+            ReviewComment(
+                id: id, parentId: parent, filePath: "src/a.swift",
+                anchor: LineAnchor(side: .new, startLine: 10, endLine: 12, blobSha: nil),
+                severity: .issue, body: body,
+                createdAt: Date(timeIntervalSince1970: 1000),
+                updatedAt: Date(timeIntervalSince1970: 1000),
+                resolved: resolved,
+                hunkContext: HunkContext(
+                    hunkHeader: "@@ -10,3 +10,4 @@", preLines: [],
+                    anchoredLines: [DiffLine(kind: .added, oldLineNo: nil,
+                                             newLineNo: 10, content: "MARKER-LINE")],
+                    postLines: []))
+        }
+        func review(id: String, title: String, at: TimeInterval,
+                    comments: [ReviewComment]) -> Review {
+            Review(id: id, createdAt: Date(timeIntervalSince1970: at),
+                   updatedAt: Date(timeIntervalSince1970: at),
+                   title: title, description: "d",
+                   scope: .branch(branch: "feat/x", base: "main"),
+                   repoRoot: "/repo", baseSha: "b0", headSha: "h0",
+                   state: .inReview, comments: comments,
+                   author: ReviewAuthor(name: "t", email: "t@x"))
+        }
+        XCTAssertTrue(store.save(review(
+            id: "01OLDOLDOLDOLDOLDOLDOLDOLD", title: "Old review", at: 1000,
+            comments: [comment("C1", body: "old body")])))
+        XCTAssertTrue(store.save(review(
+            id: "01NEWNEWNEWNEWNEWNEWNEWNEW", title: "New review", at: 2000,
+            comments: [comment("C2", body: "top-level body"),
+                       comment("C3", body: "a reply", parent: "C2", resolved: true)])))
+        return (dir, store)
+    }
+
+    func test_getReviewContext_defaultsToMostRecent_listsOthers() throws {
+        let (dir, _) = try makeReviewStore()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let result = try MCPToolCatalog.dispatch(
+            name: "get_review_context",
+            args: .object(["store_path": .string(dir.path)]), host: host)
+        guard case .object(let o) = result else { return XCTFail("object") }
+        XCTAssertEqual(o["title"], .string("New review"), "most recently updated wins")
+        guard case .array(let comments)? = o["comments"],
+              case .object(let first)? = comments.first else { return XCTFail("comments") }
+        XCTAssertEqual(first["severity"], .string("issue"))
+        guard case .string(let hunk)? = first["hunk"] else { return XCTFail("hunk") }
+        XCTAssertTrue(hunk.contains("MARKER-LINE"), "the frozen hunk text surfaces")
+        guard case .array(let others)? = o["availableReviews"],
+              case .object(let other)? = others.first else { return XCTFail("others") }
+        XCTAssertEqual(other["title"], .string("Old review"), "discovery rides along")
+    }
+
+    func test_listReviewComments_includesReplies_unknownIdRefusesNamingAvailable() throws {
+        let (dir, _) = try makeReviewStore()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let result = try MCPToolCatalog.dispatch(
+            name: "list_review_comments",
+            args: .object(["store_path": .string(dir.path),
+                           "review_id": .string("01NEWNEWNEWNEWNEWNEWNEWNEW")]), host: host)
+        guard case .object(let o) = result, case .array(let comments)? = o["comments"]
+        else { return XCTFail("shape") }
+        XCTAssertEqual(comments.count, 2, "raw list INCLUDES replies")
+        let hasReply = comments.contains { c in
+            guard case .object(let obj) = c else { return false }
+            return obj["parentId"] == .string("C2") && obj["resolved"] == .bool(true)
+        }
+        XCTAssertTrue(hasReply, "the reply carries parentId + resolved")
+
+        XCTAssertThrowsError(try MCPToolCatalog.dispatch(
+            name: "list_review_comments",
+            args: .object(["store_path": .string(dir.path),
+                           "review_id": .string("01GHOSTGHOSTGHOSTGHOSTGHOS")]), host: host)
+        ) { error in
+            guard case .toolFailed(let msg)? = error as? MCPError else {
+                return XCTFail("expected toolFailed, got \(error)")
+            }
+            XCTAssertTrue(msg.contains("01NEWNEWNEWNEWNEWNEWNEWNEW"), "names available ids")
         }
     }
 }
