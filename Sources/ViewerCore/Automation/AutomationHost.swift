@@ -119,6 +119,13 @@ public protocol AutomationHost: AnyObject {
     func automationRenameSymbol(
         file: String, line: Int, character: Int, newName: String, apply: Bool
     ) async -> CodeNav.RenameOutcome?
+
+    /// `move_file` (TSK-1565): move a file with LSP import fixup where the
+    /// server supports `workspace/willRenameFiles` (ts-ls, jdtls) and an
+    /// HONEST `importFixup: "unsupported"` fallback where it doesn't.
+    /// Dry-run (`apply == false`, the default) never touches disk or
+    /// buffers. `nil` = no backend (test doubles).
+    func automationMoveFile(from: String, to: String, apply: Bool) async -> CodeNav.MoveOutcome?
 }
 
 public extension AutomationHost {
@@ -140,6 +147,9 @@ public extension AutomationHost {
     func automationRenameSymbol(
         file: String, line: Int, character: Int, newName: String, apply: Bool
     ) async -> CodeNav.RenameOutcome? { nil }
+
+    /// Default: no move backend (test doubles / headless hosts).
+    func automationMoveFile(from: String, to: String, apply: Bool) async -> CodeNav.MoveOutcome? { nil }
 }
 
 // MARK: - Plain DTOs (ViewerCore, no UI types)

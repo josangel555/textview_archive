@@ -62,6 +62,7 @@ public enum MCPToolCatalog {
         findReferencesDescriptor,
         renameSymbolDescriptor,
         runTaskDescriptor,
+        moveFileDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -318,11 +319,29 @@ public enum MCPToolCatalog {
     nonisolated static let runTaskDefaultTimeout: TimeInterval = 120
     nonisolated static let runTaskMaxTimeout: TimeInterval = 600
 
+    /// TSK-1565 — the move-file refactor tool (agent-services s5). DRY-RUN
+    /// BY DEFAULT; `importFixup` is honest about server support.
+    private static let moveFileDescriptor = MCP.ToolDescriptor(
+        name: "move_file",
+        description: "Refactor: move a file, with import fixup where the "
+            + "language server supports workspace/willRenameFiles "
+            + "(TypeScript/JS, Java) and an honest importFixup:\"unsupported\" "
+            + "plain move otherwise. DRY-RUN by default — returns the edit "
+            + "summary without touching disk or buffers; pass apply:true to "
+            + "apply edits to open tabs, move (never overwrites an existing "
+            + "destination), and notify the server.",
+        inputSchema: schema([
+            "from":  .object(["type": .string("string")]),
+            "to":    .object(["type": .string("string")]),
+            "apply": .object(["type": .string("boolean")]),
+        ], required: ["from", "to"])
+    )
+
     /// Tools that MUST run on the server's reader thread (an LSP round-trip
     /// can take seconds — parking the main actor would freeze the UI).
     public nonisolated static func isAsyncTool(_ name: String) -> Bool {
         name == "who_calls" || name == "goto_definition" || name == "find_references"
-            || name == "rename_symbol" || name == "run_task"
+            || name == "rename_symbol" || name == "run_task" || name == "move_file"
     }
 
     /// Carries the host existential across the async-tool boundary.
@@ -397,6 +416,31 @@ public enum MCPToolCatalog {
             return CodeNav.formatRename(outcome)
         case "run_task":
             return try await runTask(args)
+        case "move_file":
+            let from = try args.string("from")
+            let to = try args.string("to")
+            let apply = (try? args.bool("apply")) ?? false
+            // Both endpoints jail-validated: the source must exist; for the
+            // destination (which doesn't exist yet — that's the point, and
+            // the mover creates intermediate dirs) validate the DEEPEST
+            // EXISTING ancestor.
+            _ = try validatedExistingURL(from: from)
+            let toURL = URL(fileURLWithPath: (to as NSString).expandingTildeInPath)
+            var ancestor = toURL.deletingLastPathComponent()
+            while !FileManager.default.fileExists(atPath: ancestor.path),
+                  ancestor.pathComponents.count > 1 {
+                ancestor = ancestor.deletingLastPathComponent()
+            }
+            _ = try validatedExistingURL(from: ancestor.path)
+            guard from != to else {
+                throw MCPError.invalidParams("from and to are the same path")
+            }
+            guard let outcome = await host.host.automationMoveFile(
+                from: from, to: toURL.path, apply: apply)
+            else {
+                throw MCPError.toolFailed("move backend unavailable on this host")
+            }
+            return CodeNav.formatMove(outcome)
         default:
             throw MCPError.notFound("unknown async tool: \(name)")
         }

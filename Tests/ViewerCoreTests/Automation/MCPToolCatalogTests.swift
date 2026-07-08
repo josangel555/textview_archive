@@ -73,6 +73,13 @@ final class FakeAutomationHost: AutomationHost {
         renameCall = (file, line, character, newName, apply)
         return renameResult
     }
+    // TSK-1565: canned move answer + captured args.
+    nonisolated(unsafe) var moveResult: CodeNav.MoveOutcome?
+    nonisolated(unsafe) var moveCall: (from: String, to: String, apply: Bool)?
+    func automationMoveFile(from: String, to: String, apply: Bool) async -> CodeNav.MoveOutcome? {
+        moveCall = (from, to, apply)
+        return moveResult
+    }
     func automationCurrentState() -> AutomationState { stateResult }
     func automationToggleBookmark(line: Int?) {
         toggleBookmarkLine = (true, line)
@@ -100,7 +107,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 38)  // +11 canvas_* + the async lane (TSK-1192/1560/1561/1562) + review read-tools (TSK-1563)
+        XCTAssertEqual(names.count, 39)  // +11 canvas_* + the async lane (TSK-1192/1560/1561/1562/1565) + review read-tools (TSK-1563)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -120,6 +127,8 @@ final class MCPToolCatalogTests: XCTestCase {
             "run_task",
             // Review read-tools (TSK-1563):
             "get_review_context", "list_review_comments",
+            // Move-file refactor (TSK-1565):
+            "move_file",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -908,6 +917,110 @@ final class MCPToolCatalogTests: XCTestCase {
                 return XCTFail("expected toolFailed, got \(error)")
             }
             XCTAssertTrue(msg.contains("01NEWNEWNEWNEWNEWNEWNEWNEW"), "names available ids")
+        }
+    }
+
+    // MARK: - move_file (TSK-1565, the async lane)
+
+    func test_moveFile_dryRunDefault_applyPassthrough_sameSourceDestRejected() async throws {
+        XCTAssertTrue(MCPToolCatalog.isAsyncTool("move_file"))
+        // A real source file so the jail validation passes.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-move-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let src = dir.appendingPathComponent("a.ts")
+        try "import './b'".write(to: src, atomically: true, encoding: .utf8)
+        let dst = dir.appendingPathComponent("moved/a.ts")
+
+        host.moveResult = CodeNav.MoveOutcome(
+            edits: [.init(path: "/dep.ts", editCount: 2)],
+            importFixup: "summary", moved: false)
+        let box = MCPToolCatalog.AsyncHostBox(host)
+
+        // Dry-run is the DEFAULT (no apply arg → host sees apply=false).
+        let value = try await MCPToolCatalog.dispatchAsync(
+            name: "move_file",
+            args: .object(["from": .string(src.path), "to": .string(dst.path)]),
+            host: box)
+        XCTAssertEqual(host.moveCall?.apply, false, "dry-run is the DEFAULT")
+        XCTAssertEqual(host.moveCall?.to, dst.path)
+        guard case .object(let o) = value else { return XCTFail("object result") }
+        XCTAssertEqual(o["moved"], .bool(false))
+        XCTAssertEqual(o["importFixup"], .string("summary"))
+        XCTAssertEqual(o["editFileCount"], .int(1))
+
+        // apply:true passes through; payload carries the applied/skipped lists.
+        host.moveResult = CodeNav.MoveOutcome(
+            edits: [], importFixup: "unsupported", moved: true,
+            movedTo: dst.path, appliedPaths: [], skippedPaths: [])
+        let applied = try await MCPToolCatalog.dispatchAsync(
+            name: "move_file",
+            args: .object(["from": .string(src.path), "to": .string(dst.path),
+                           "apply": .bool(true)]),
+            host: box)
+        XCTAssertEqual(host.moveCall?.apply, true)
+        guard case .object(let a) = applied else { return XCTFail("object result") }
+        XCTAssertEqual(a["moved"], .bool(true))
+        XCTAssertEqual(a["movedTo"], .string(dst.path))
+        XCTAssertEqual(a["importFixup"], .string("unsupported"),
+                       "the fallback is HONEST — a plain move never claims fixup")
+
+        // from == to is invalid params.
+        do {
+            _ = try await MCPToolCatalog.dispatchAsync(
+                name: "move_file",
+                args: .object(["from": .string(src.path), "to": .string(src.path)]),
+                host: box)
+            XCTFail("same-path move must be rejected")
+        } catch let e as MCPError {
+            XCTAssertTrue(e.message.contains("same path"), "hint: \(e.message)")
+        }
+    }
+}
+
+/// TSK-1565 — the full-path FileMover form (the tool's FS primitive).
+final class FileMoverPathFormTests: XCTestCase {
+
+    private var dir: URL!
+
+    override func setUpWithError() throws {
+        dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-fmv-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    func test_move_renamesAndCreatesParents() throws {
+        let src = dir.appendingPathComponent("a.txt")
+        try "content".write(to: src, atomically: true, encoding: .utf8)
+        let dst = dir.appendingPathComponent("deep/nested/b.txt")
+        let moved = try FileMover.move(from: src, toPath: dst)
+        XCTAssertEqual(moved.path, dst.path)
+        XCTAssertEqual(try String(contentsOf: dst, encoding: .utf8), "content")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: src.path))
+    }
+
+    func test_move_neverClobbers_andRefusesMissingSource() throws {
+        let src = dir.appendingPathComponent("a.txt")
+        try "new".write(to: src, atomically: true, encoding: .utf8)
+        let dst = dir.appendingPathComponent("b.txt")
+        try "precious".write(to: dst, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try FileMover.move(from: src, toPath: dst)) { error in
+            guard case .targetExists? = error as? FileMover.MoveError else {
+                return XCTFail("expected targetExists, got \(error)")
+            }
+        }
+        XCTAssertEqual(try String(contentsOf: dst, encoding: .utf8), "precious",
+                       "the occupant is untouched")
+        XCTAssertThrowsError(try FileMover.move(
+            from: dir.appendingPathComponent("ghost.txt"), toPath: dst)) { error in
+            guard case .sourceMissing? = error as? FileMover.MoveError else {
+                return XCTFail("expected sourceMissing, got \(error)")
+            }
         }
     }
 }

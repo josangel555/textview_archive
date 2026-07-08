@@ -599,6 +599,31 @@ public actor LSPPool {
         }
     }
 
+    /// `workspace/willRenameFiles` (TSK-1565) routed by the file being moved.
+    public func willRenameFiles(
+        fileURL: URL, newURL: URL,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [String: [LSPTextEdit]] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.willRenameFiles(
+                oldURL: fileURL, newURL: newURL, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    /// `workspace/didRenameFiles` (TSK-1565) — post-move index notify;
+    /// best-effort (a failure here must not undo the move).
+    public func didRenameFiles(fileURL: URL, newURL: URL) async {
+        guard let (client, _) = try? await routedClient(for: fileURL) else { return }
+        try? await client.didRenameFiles(oldURL: fileURL, newURL: newURL)
+    }
+
     /// `textDocument/codeAction` (TSK-640) routed through the pool.
     public func codeActions(
         fileURL: URL, range: LSPRange,

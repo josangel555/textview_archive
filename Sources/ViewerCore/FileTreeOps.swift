@@ -105,6 +105,34 @@ public enum FileMover {
         }
         return dest
     }
+
+    /// Full-path form (TSK-1565, the move_file tool): move `from` to the
+    /// exact path `to` (which may rename), creating `to`'s parent
+    /// directories as needed. Same never-clobber doctrine — anything
+    /// already at `to` (checked via lstat, so a dangling symlink counts)
+    /// refuses the move.
+    @discardableResult
+    public static func move(from: URL, toPath to: URL) throws -> URL {
+        guard FileManager.default.fileExists(atPath: from.path) else {
+            throw MoveError.sourceMissing(from.path)
+        }
+        let src = from.standardizedFileURL
+        let dest = to.standardizedFileURL
+        guard dest.path != src.path else { throw MoveError.sameLocation }
+        if dest.path.hasPrefix(src.path + "/") { throw MoveError.intoItself }
+        var st = stat()
+        if dest.path.withCString({ lstat($0, &st) }) == 0 {
+            throw MoveError.targetExists(dest.path)
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: src, to: dest)
+        } catch {
+            throw MoveError.failed(String(describing: error))
+        }
+        return dest
+    }
 }
 
 /// URL rebasing after a rename/move: where does `url` point once `oldURL`

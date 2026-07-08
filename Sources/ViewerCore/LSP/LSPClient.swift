@@ -600,7 +600,14 @@ public actor LSPClient {
                     ],
                 ],
                 "workspace": [
-                    "workspaceFolders": true
+                    "workspaceFolders": true,
+                    // TSK-1565: file-operation edits (move_file import
+                    // fixup) — servers gate workspace/willRenameFiles on
+                    // the client advertising this.
+                    "fileOperations": [
+                        "willRename": true,
+                        "didRename": true
+                    ]
                 ],
                 "general": [
                     // Accept all three; server picks. We translate at the
@@ -895,6 +902,33 @@ public actor LSPClient {
             method: "textDocument/rename", params: params,
             timeout: .seconds(10), token: token)
         return Self.decodeWorkspaceEdit(raw)
+    }
+
+    /// `workspace/willRenameFiles` (TSK-1565) — the server's import-fixup
+    /// edits for a PENDING file move, as the same per-file uri → TextEdit
+    /// map `rename` returns. Empty = no edits (servers without the
+    /// capability error or return null; both decode to empty here).
+    public func willRenameFiles(
+        oldURL: URL, newURL: URL,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [String: [LSPTextEdit]] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "files": [["oldUri": oldURL.absoluteString, "newUri": newURL.absoluteString]],
+        ]
+        let raw = try await request(
+            method: "workspace/willRenameFiles", params: params,
+            timeout: .seconds(10), token: token)
+        return Self.decodeWorkspaceEdit(raw)
+    }
+
+    /// `workspace/didRenameFiles` (TSK-1565) — notify after the move
+    /// actually happened so the server updates its index.
+    public func didRenameFiles(oldURL: URL, newURL: URL) throws {
+        guard initialized else { throw LSPError.notInitialized }
+        try notify(method: "workspace/didRenameFiles", params: [
+            "files": [["oldUri": oldURL.absoluteString, "newUri": newURL.absoluteString]],
+        ])
     }
 
     /// WorkspaceEdit decode: the `changes` map (uri → TextEdit[]) plus the

@@ -175,6 +175,49 @@ public enum CodeNav {
         .sorted { $0.path < $1.path }
     }
 
+    // MARK: - move-file (TSK-1565: move_file, dry-run default)
+
+    /// The `move_file` answer. `importFixup` is HONEST about what the
+    /// server could do: "summary" (dry-run, edits available), "applied"
+    /// (edits applied), or "unsupported" (no server / no fileOperations —
+    /// the move is a plain move, imports untouched).
+    public struct MoveOutcome: Sendable, Equatable {
+        public let edits: [RenameOutcome.FileEdits]
+        public let importFixup: String
+        public let moved: Bool
+        public let movedTo: String?
+        public let appliedPaths: [String]
+        public let skippedPaths: [String]
+        public init(edits: [RenameOutcome.FileEdits], importFixup: String,
+                    moved: Bool, movedTo: String? = nil,
+                    appliedPaths: [String] = [], skippedPaths: [String] = []) {
+            self.edits = edits
+            self.importFixup = importFixup
+            self.moved = moved
+            self.movedTo = movedTo
+            self.appliedPaths = appliedPaths
+            self.skippedPaths = skippedPaths
+        }
+    }
+
+    /// The `move_file` tool payload.
+    public static func formatMove(_ m: MoveOutcome) -> MCP.Value {
+        var obj: [String: MCP.Value] = [
+            "importFixup": .string(m.importFixup),
+            "moved": .bool(m.moved),
+            "editFileCount": .int(m.edits.count),
+            "edits": .array(m.edits.map {
+                .object(["path": .string($0.path), "edits": .int($0.editCount)])
+            }),
+        ]
+        if let to = m.movedTo { obj["movedTo"] = .string(to) }
+        if m.moved {
+            obj["appliedFiles"] = .array(m.appliedPaths.map { .string($0) })
+            obj["skippedFiles"] = .array(m.skippedPaths.map { .string($0) })
+        }
+        return .object(obj)
+    }
+
     /// The `rename_symbol` tool payload.
     public static func formatRename(_ r: RenameOutcome) -> MCP.Value {
         var obj: [String: MCP.Value] = [

@@ -130,6 +130,47 @@ extension DocumentModel: AutomationHost {
             appliedPaths: applied, skippedPaths: skipped)
     }
 
+    public nonisolated func automationMoveFile(
+        from: String, to: String, apply: Bool
+    ) async -> CodeNav.MoveOutcome? {
+        // TSK-1565: willRenameFiles edits where the server supports file
+        // operations; HONEST "unsupported" otherwise (no server routed, or
+        // the server errored/declined — both decode to no edits). The move
+        // itself is FileMover (never-overwrite doctrine); didRenameFiles
+        // fires only after a real move.
+        let pool = await lspPool
+        let fromURL = URL(fileURLWithPath: from)
+        let toURL = URL(fileURLWithPath: to)
+        let edits = (try? await pool.willRenameFiles(fileURL: fromURL, newURL: toURL)) ?? [:]
+        let summary = CodeNav.renameSummary(from: edits)
+        let fixup = summary.isEmpty ? "unsupported" : "summary"
+        guard apply else {
+            return CodeNav.MoveOutcome(edits: summary, importFixup: fixup, moved: false)
+        }
+        // Apply the import edits FIRST (they reference the old path's open
+        // buffers), then move, then notify.
+        let (applied, skipped) = await MainActor.run {
+            self.applyWorkspaceEditToOpenTabs(
+                edits, dispatchTabID: UUID(), dispatchSnapshot: "")
+        }
+        do {
+            let dest = try FileMover.move(from: fromURL, toPath: toURL)
+            await pool.didRenameFiles(fileURL: fromURL, newURL: toURL)
+            return CodeNav.MoveOutcome(
+                edits: summary,
+                importFixup: summary.isEmpty ? "unsupported" : "applied",
+                moved: true, movedTo: dest.path,
+                appliedPaths: applied, skippedPaths: skipped)
+        } catch {
+            // The move refused/failed (never-clobber, missing source, IO) —
+            // report un-moved. Buffer edits already applied are undoable
+            // and reference the unchanged old path; nothing is torn on disk.
+            return CodeNav.MoveOutcome(
+                edits: summary, importFixup: fixup, moved: false,
+                appliedPaths: applied, skippedPaths: skipped)
+        }
+    }
+
     public func automationSetZoom(_ zoom: Double) {
         // The catalog already clamped to [minZoom, maxZoom]; assign
         // verbatim. `zoom`'s didSet persists it through PreferencesStore
