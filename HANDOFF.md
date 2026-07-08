@@ -41,9 +41,12 @@ validates). One gate + one commit + board-record per work unit.
   RenameFiles client+pool, FileMover full-path form (extended the existing primitive), honest
   importFixup, dry-run default, census 39. THE AGENT-SERVICES EPIC IS BUILD-COMPLETE (7 new MCP
   tools this drain, census 32→39). Env-gated tail: live ts-ls/jdtls confirm (not installed here).
-- **Next action:** the host-workable queue is DRAINED AGAIN. Options per the pool map: class-3
-  spikes (691 agent-harness · 703/1155 action-history · 706 richtext · 713 diagrams · 715
-  profiling — each spike auto-approved), waiting-lane reconciles, or TSK-697 epic-close summary.
+- **T44: FlameInteraction shipped (a9d10244, TSK-1158 slice)** — flame-chart hit-test/zoom/
+  search/tooltip math over the existing FlameProfile+FlameLayout; 5 tests; canvas = render tail.
+- **CRON STOPPED by the owner at T44 (2026-07-07 ~21:45).** The batch-loop cron (12fe9636) is
+  deleted. 44 drain ticks total, all committed + recorded; tree clean at a9d10244 + this doc
+  commit. Next session: resume per the pool map (class-3 spikes remain: 691 agent-harness ·
+  706 richtext · 713 diagrams · 715 rest-of-scope; render tails await TSK-1550/1334).
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
