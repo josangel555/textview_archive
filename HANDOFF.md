@@ -25,9 +25,11 @@ validates). One gate + one commit + board-record per work unit.
 - **T38: TSK-1560 s1 DONE (5b5d6bc0)** — goto_definition + find_references on the async lane;
   CodeNav.navLocations pure mapping; 1-based agent inputs → 0-based LSP pinned by test; census
   32→34; the "Semantic/LSP code search" service is COMPLETE.
-- **Next action:** TSK-1561 (rename_symbol — dry-run default, apply:true via the standard save
-  path; shares the s1 async-lane plumbing; LSPService/LSPClient textDocument/rename exists from
-  TSK-640). Then 1562 run_task · 1563 review read-tools · 1564 move-file spike.
+- **T39: TSK-1561 s2 DONE (630b23c1)** — rename_symbol, dry-run default; apply via the standard
+  TSK-640 path now returning (applied,skipped); payload reports skippedFiles; census 35.
+  Refactor:rename service COMPLETE.
+- **Next action:** TSK-1562 (run_task — allowlisted to list_runnable_tasks, output capture,
+  bounded runtime). Then 1563 review read-tools · 1564 move-file spike.
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
