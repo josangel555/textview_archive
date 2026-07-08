@@ -292,3 +292,9 @@ remaining ~85 reported items partition into FOUR classes — the host-workable c
 NEXT ACTIONABLE when unlocks land: VM up → burn class 1 top-down (each has its model tests
 named in the ticket); owner passes → the 9 cards are one-read decisions. Until then the loop's
 marginal value is in class 3 spikes (design docs) or waiting-lane reconciles.
+
+**T37 replenishment:** the TSK-697 Agent-Services spike (docs/AGENT_SERVICES_DESIGN_2026-07-07.md)
+filed FIVE new HOST-WORKABLE slices — TSK-1560 goto_definition/find_references tools · 1561
+rename_symbol (dry-run default) · 1562 run_task (allowlisted) · 1563 review read-tools · 1564
+move-file spike. These are the drain's next actionable queue (s1→s2 share async-lane plumbing;
+each host-testable via FakeLSP/fixtures per the who_calls precedent).

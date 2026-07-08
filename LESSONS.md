@@ -3850,3 +3850,27 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   die with it), or let it finish. To verify a change while ONE suite wedges, use a scoped
   `swift test --skip <WedgingSuite> --filter <module>` on the default `.build` (separate from
   `.build-gate`) — a clean signal without the heavy tail.
+
+- **rust-core lint discipline cheat-sheet (2026-07-07, learned across drain T14-T25).** `cargo`
+  needs `--manifest-path rust-core/Cargo.toml` from the repo root (no workspace toml at root).
+  Clippy denies: `indexing_slicing` (use iterators + `saturating_sub`), `Instant::now`/
+  `SystemTime::now` ("inject a Clock port" — the sanctioned pattern is a ticker whose own sleeps
+  ARE the clock, accumulating vs a generation counter; see serve/main.rs idle ticker),
+  `unwrap/expect/panic` in non-test code, one-unsafe-op-per-block (split `*ptr.add(i)` into two
+  blocks), `collapsible_if` (use edition-2024 let-chains). `gen` is a RESERVED keyword in edition
+  2024. Adding ANY module to the ffi crate trips the cbindgen staleness gate — run
+  `bash scripts/build-rust-core.sh` to restage (header content may be unchanged; it's a
+  freshness check). Converting a bin crate to lib+bin is safe lint-wise (no missing_docs in the
+  workspace lints — core's doc-lint is crate-local).
+- **Salvage/cherry-pick discipline (2026-07-07, the feeds abort + WIP supersede).** Before
+  cherry-picking any old branch/commit: CHECK MAIN for an existing or evolved implementation —
+  branches fork and main moves (4577ce95 feeds-toast would have regressed main's tested
+  quiet-on-success contract; wf-5/6/7 WIPs were fully superseded by cleaner re-implementations).
+  Reaped worktree branches' commits SURVIVE in the object DB (`git cat-file -t <sha>`) until GC —
+  cherry-pick by SHA works long after `git worktree remove`.
+- **The drain-tick pattern that worked (2026-07-07, T1-T37).** When a feature is render-gated or
+  owner-gated, extract the PURE decision/model/geometry core beneath it, host-test it (add a
+  source-parsing DRIFT GUARD when the model mirrors a live file — SettingsCatalog/VideoPlayability
+  pattern), and record the render tail on the ticket. Primitives compose across tickets
+  (OutputNaming → convert/extract/sample-write). A spike that finds the ticket's premise STALE
+  (LogPatterns "thin logic") parks with the corrected picture, not the stale one.
