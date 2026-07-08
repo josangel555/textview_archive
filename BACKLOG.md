@@ -262,3 +262,33 @@ standing self-validation policy (checks artifact that would fail on regression; 
 need their VM/journey slice); (2) the remaining `reported` pool — triage stale/superseded items
 closed, work the rest as new batches of related items under the same work-loop mandate;
 (3) re-curate: rebuild THE BATCHES from whatever is left and keep going.
+
+### RE-CURATED POOL MAP (2026-07-07, drain ticks T1-T36 — the state of the reported lane)
+The 36-tick drain shipped 20 host cores, integrated 4 salvage features, closed the daemon epic's
+6 slices (cores+wiring), fixed the MCP crash/gate-wedge class, and parked 9 owner calls. The
+remaining ~85 reported items partition into FOUR classes — the host-workable class is DRAINED:
+
+1. **VM/RENDER TAILS (blocked on TSK-1550 VM restore; pixel slices also on TSK-1334 grant).**
+   The largest class, now sitting on TESTED models: outline panel binding(1438) · monitor pane
+   (1477) · plugins pane(1478) · settings re-render(1481) · favorites editor UI(1475) · archive
+   preview pane + Extract(1469) · video fallback branch(1474) · dep-graph gestures(1470) ·
+   first-run wiring + Help entries(1448) · resurrection entry point(1500) · Win7 shape picker
+   (1085) · terminal Settings row(1123) · notebook outputs render(1440) · menu-bar-from-catalog
+   (1318 tail) · plus the older pool: 1104 second window · 1111/1114/1165/1168/1170/1171/1172/
+   1173/1203/1205 · UAT/AX lane 1197/1198/1199/1200/1247/1261/1263-1266 · perf traces 598/838/
+   837/891/1180/1184/1185/1047 · web-migrations M1-M9 (1524-1533, M1/M2 also dep-gated).
+2. **OWNER-GATED (9 Need-me cards + dep/decision blockers).** 508 dot-view · 810 hex carve-out ·
+   831 index-build · 835 nextest · 852 CI cache · 1137 cargo-mutants · 1138 Tier-D ratify ·
+   1149 feeds UI q · 1155 action-history architecture · 1200 editor-scroll real-vs-harness ·
+   1322 paste repro · 1413 menu eyeball · 1449 surfaces · 1471 log-patterns · 1540 WV-host ·
+   1549 find-regex · 1550 VM restore (MASTER UNLOCK) · 1334 T5 grant.
+3. **EPICS/SPIKES (design-first, several XL).** 691 agent-harness · 697 agent-services · 703/
+   1155 action-history · 706/1156 richtext · 713/1157 diagrams · 715/1158 profiling · 764 git-
+   reconcile · 956+1091-1096 AU hosting · 1048+children image-parity P5/P6 · 1108 CR-Q&A ·
+   1117+1509-1512 rust H-B ports (spike-gated) · 943-945 agent integrations · 1147 dep-source.
+4. **FOREIGN/INFRA (tasked-tool itself or CI):** 441-445 · 1239 VM fds · 1214 bundle-size ·
+   1164 language matrix (large audit) · 590/537 umbrella reconciles · 1191 (rides M9/1533).
+
+NEXT ACTIONABLE when unlocks land: VM up → burn class 1 top-down (each has its model tests
+named in the ticket); owner passes → the 9 cards are one-read decisions. Until then the loop's
+marginal value is in class 3 spikes (design docs) or waiting-lane reconciles.

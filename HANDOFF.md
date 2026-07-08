@@ -73,7 +73,12 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   spiked+PARKED (pair-1 FALSE overlap→rename; pair-2 unify entry keep engines; pair-3 ratify
   existing 1191/1533 plan). Need-me queue now 9. T35: FirstRunExperience (dc6950d9, TSK-1448 —
   one-shot offer + self-demonstrating sample doc (feeds the real outline extractor) + writeSample
-  via OutputNaming never-overwrite; 4 tests; launch wiring + Help entries = render tail).
+  via OutputNaming never-overwrite; 4 tests; launch wiring + Help entries = render tail). T36 RE-CURATE: the reported pool (~85)
+  mapped into 4 classes in BACKLOG §RE-CURATED POOL MAP — (1) VM/render tails on TESTED models
+  (the big class, unlocked by 1550+1334), (2) 9 owner cards + dep gates, (3) design-first epics,
+  (4) foreign/infra. HOST-WORKABLE CLASS = DRAINED. TSK-1506 WIPs reconciled: wf-5/6/7 SUPERSEDED
+  by my landed cores (1475/1477/1478/1481) — do NOT integrate those WIPs; wf-1/2/3/4/8/9 still
+  potentially valuable (verify vs main first).
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
