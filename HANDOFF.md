@@ -71,7 +71,9 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   (490a2a97, TSK-1438 — scroll-highlight binary search + keyboard stepping w/ edge semantics +
   diacritic filter w/ preserved indices; 7 tests; panel binding = VM tail) + TSK-1449 surfaces
   spiked+PARKED (pair-1 FALSE overlap→rename; pair-2 unify entry keep engines; pair-3 ratify
-  existing 1191/1533 plan). Need-me queue now 9.
+  existing 1191/1533 plan). Need-me queue now 9. T35: FirstRunExperience (dc6950d9, TSK-1448 —
+  one-shot offer + self-demonstrating sample doc (feeds the real outline extractor) + writeSample
+  via OutputNaming never-overwrite; 4 tests; launch wiring + Help entries = render tail).
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
