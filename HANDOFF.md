@@ -71,7 +71,10 @@ validates). One gate + one commit + board-record per work unit.
   (let-chains); `gen` RESERVED in edition 2024; new ffi module → build-rust-core.sh restage.
 
 ## Files that matter
-- `BACKLOG.md` §RE-CURATED POOL MAP + §T37 replenishment — the queue map.
+- `BACKLOG.md` — REWRITTEN 2026-07-07 post-run: PENDING ONLY (4 queue classes; B1-B25 ledger →
+  archive/BACKLOG_batches_2026-07-07.md). UAT CASES are stamped ON the 22 render-tail tickets
+  (task_record 2026-07-07): the agent must EXECUTE them (VM/AX) + attach evidence before
+  claiming complete.
 - `docs/AGENT_SERVICES_DESIGN_2026-07-07.md` — the design the next slices implement.
 - `Sources/ViewerCore/Automation/MCPToolCatalog.swift` — where s1-s4 tools land (who_calls
   precedent at :229, isAsyncTool :240).
