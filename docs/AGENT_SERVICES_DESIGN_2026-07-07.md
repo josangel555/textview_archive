@@ -46,3 +46,33 @@ therefore *extend `MCPToolCatalog`*, not build a suite.
 Sequencing: s1→s2 share the async-lane plumbing; s3, s4 independent; s5 last.
 Each slice is host-testable (FakeLSP server for s1/s2; temp task stores for
 s3; fixture reviews for s4).
+
+---
+
+## s5 audit result — move-file `willRenameFiles` support (2026-07-07, TSK-1564)
+
+**Configured servers** (`LSPLanguage` — the app's whole LSP surface):
+
+| Server | Language | `workspace/willRenameFiles` | Value of import-fixup-on-move |
+| --- | --- | --- | --- |
+| typescript-language-server | TS/TSX/JS/JSX | **YES** (tsserver `getEditsForFileRename`) | **HIGH** — relative-path imports break on every move |
+| jdtls | Java | **YES** (package decl + import updates) | **HIGH** — package/path coupling is structural |
+| sourcekit-lsp | Swift | **NO** (no `fileOperations` server capability) | LOW — Swift has no per-file imports; in-module moves need no fixup (cross-module moves are a build-system concern, not LSP) |
+| pyright | Python | **NO** (OSS pyright doesn't expose file-rename edits; that's Pylance-proprietary) | would be MODERATE, but unavailable |
+
+**Client-side gap found during the audit**: `LSPClient`'s initialize does NOT
+advertise `workspace.fileOperations.willRename` — required before any server
+serves the request. (Support levels per my knowledge cutoff — the build
+slice's first step is to CONFIRM empirically against the live servers, since
+this can drift.)
+
+**Design (the build slice):** `move_file(from, to, apply?)` on the async lane —
+(1) `workspace/willRenameFiles` → WorkspaceEdit (dry-run returns its summary,
+the s2 pattern); (2) `apply:true`: apply edits via the standard open-tabs
+path → perform the FS move (refuse-overwrite, the OutputNaming doctrine) →
+`workspace/didRenameFiles` notify. **Honest fallback**: when the server lacks
+the capability (Swift/Python), the tool reports `importFixup: "unsupported"`
+and only moves on an explicit `apply` — never a silent half-refactor.
+
+**Verdict**: buildable, M-sized, value concentrated in TS/JS + Java. Filed as
+TSK-1565 (not owner-gated — standard slice; FakeLSP-testable end to end).

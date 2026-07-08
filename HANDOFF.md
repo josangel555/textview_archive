@@ -34,8 +34,11 @@ validates). One gate + one commit + board-record per work unit.
 - **T41: TSK-1563 s4 DONE (a7f0097c)** — review read-tools over ReviewQAContext/ReviewStore;
   most-recent default + availableReviews discovery; census 38. ALL FIVE services' buildable
   scope SHIPPED.
-- **Next action:** TSK-1564 (s5 move-file SPIKE — per-server willRenameFiles audit, NO build) —
-  closes the agent-services epic. Then back to the pool map (class-3 spikes / reconciles).
+- **T42: TSK-1564 s5 audit DONE** — willRenameFiles: YES ts-ls+jdtls / NO sourcekit+pyright;
+  client gap (fileOperations not advertised) found; build slice filed TSK-1565 (M). The
+  agent-services epic is FULLY DISPATCHED (s1-s4 shipped, s5 audited+broken down).
+- **Next action:** TSK-1565 (move_file build — step 0 empirical per-server confirm) OR back to
+  the pool map (class-3 spikes / waiting-lane reconciles) — 1565 is the last host-workable item.
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
