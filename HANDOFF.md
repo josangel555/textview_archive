@@ -78,7 +78,10 @@ drain review/fixed with fresh evidence, then the reported pool (BACKLOG §AFTER 
   (the big class, unlocked by 1550+1334), (2) 9 owner cards + dep gates, (3) design-first epics,
   (4) foreign/infra. HOST-WORKABLE CLASS = DRAINED. TSK-1506 WIPs reconciled: wf-5/6/7 SUPERSEDED
   by my landed cores (1475/1477/1478/1481) — do NOT integrate those WIPs; wf-1/2/3/4/8/9 still
-  potentially valuable (verify vs main first).
+  potentially valuable (verify vs main first). T37 SPIKE: TSK-697 Agent Services delivered
+  (docs/AGENT_SERVICES_DESIGN_2026-07-07.md — 2 of 5 services already exist as MCP tools; 3 are
+  exposure gaps over existing engines; children TSK-1560-1564 filed, each host-testable via
+  FakeLSP/fixtures). Those 5 slices are NEW HOST-WORKABLE items — the drain continues there.
 - RUST GOTCHAS: cargo needs --manifest-path rust-core/Cargo.toml · clippy denies indexing_slicing/
   Instant::now (Clock-port; iterators+saturating_sub) · one-unsafe-op-per-block · `gen` RESERVED in
   edition 2024 · new ffi module trips the cbindgen staleness check (build-rust-core.sh restages) ·
