@@ -28,8 +28,11 @@ validates). One gate + one commit + board-record per work unit.
 - **T39: TSK-1561 s2 DONE (630b23c1)** — rename_symbol, dry-run default; apply via the standard
   TSK-640 path now returning (applied,skipped); payload reports skippedFiles; census 35.
   Refactor:rename service COMPLETE.
-- **Next action:** TSK-1562 (run_task — allowlisted to list_runnable_tasks, output capture,
-  bounded runtime). Then 1563 review read-tools · 1564 move-file spike.
+- **T40: TSK-1562 s3 DONE (537f6878)** — run_task: allowlist-by-construction, shell-free env+argv
+  spawn, 120/600s + 64KB bounds; e2e vs real make targets incl. hostile-id refusal. Census 36.
+  Test-runner service COMPLETE.
+- **Next action:** TSK-1563 (get_review_context + list_review_comments, read-only — fixture-review
+  command-path tests). Then 1564 move-file spike (audit only).
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
