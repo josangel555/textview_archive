@@ -22,10 +22,12 @@ validates). One gate + one commit + board-record per work unit.
   (1) VM/render tails sitting on TESTED models (unlock: TSK-1550 VM + TSK-1334 T5 grant),
   (2) 9 owner Need-me cards + dep gates, (3) design-first epics, (4) foreign/infra.
 - **In flight:** nothing uncommitted; tree clean.
-- **Next action:** TSK-1560 (goto_definition + find_references MCP tools) — the top of the
-  replenished host queue; s1→s2 (1561 rename_symbol) share the async-lane plumbing. Pattern:
-  copy the who_calls precedent (MCPToolCatalog entry + isAsyncTool + HeadlessHarness
-  command-path test against MDVFakeLSPServer).
+- **T38: TSK-1560 s1 DONE (5b5d6bc0)** — goto_definition + find_references on the async lane;
+  CodeNav.navLocations pure mapping; 1-based agent inputs → 0-based LSP pinned by test; census
+  32→34; the "Semantic/LSP code search" service is COMPLETE.
+- **Next action:** TSK-1561 (rename_symbol — dry-run default, apply:true via the standard save
+  path; shares the s1 async-lane plumbing; LSPService/LSPClient textDocument/rename exists from
+  TSK-640). Then 1562 run_task · 1563 review read-tools · 1564 move-file spike.
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
