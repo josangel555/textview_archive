@@ -37,8 +37,13 @@ validates). One gate + one commit + board-record per work unit.
 - **T42: TSK-1564 s5 audit DONE** — willRenameFiles: YES ts-ls+jdtls / NO sourcekit+pyright;
   client gap (fileOperations not advertised) found; build slice filed TSK-1565 (M). The
   agent-services epic is FULLY DISPATCHED (s1-s4 shipped, s5 audited+broken down).
-- **Next action:** TSK-1565 (move_file build — step 0 empirical per-server confirm) OR back to
-  the pool map (class-3 spikes / waiting-lane reconciles) — 1565 is the last host-workable item.
+- **T43: TSK-1565 s5-build DONE (17f145da)** — move_file: fileOperations advertised, will/did-
+  RenameFiles client+pool, FileMover full-path form (extended the existing primitive), honest
+  importFixup, dry-run default, census 39. THE AGENT-SERVICES EPIC IS BUILD-COMPLETE (7 new MCP
+  tools this drain, census 32→39). Env-gated tail: live ts-ls/jdtls confirm (not installed here).
+- **Next action:** the host-workable queue is DRAINED AGAIN. Options per the pool map: class-3
+  spikes (691 agent-harness · 703/1155 action-history · 706 richtext · 713 diagrams · 715
+  profiling — each spike auto-approved), waiting-lane reconciles, or TSK-697 epic-close summary.
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
