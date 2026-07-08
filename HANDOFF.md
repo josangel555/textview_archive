@@ -31,8 +31,11 @@ validates). One gate + one commit + board-record per work unit.
 - **T40: TSK-1562 s3 DONE (537f6878)** — run_task: allowlist-by-construction, shell-free env+argv
   spawn, 120/600s + 64KB bounds; e2e vs real make targets incl. hostile-id refusal. Census 36.
   Test-runner service COMPLETE.
-- **Next action:** TSK-1563 (get_review_context + list_review_comments, read-only — fixture-review
-  command-path tests). Then 1564 move-file spike (audit only).
+- **T41: TSK-1563 s4 DONE (a7f0097c)** — review read-tools over ReviewQAContext/ReviewStore;
+  most-recent default + availableReviews discovery; census 38. ALL FIVE services' buildable
+  scope SHIPPED.
+- **Next action:** TSK-1564 (s5 move-file SPIKE — per-server willRenameFiles audit, NO build) —
+  closes the agent-services epic. Then back to the pool map (class-3 spikes / reconciles).
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
