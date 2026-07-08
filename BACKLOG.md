@@ -289,9 +289,13 @@ remaining ~85 reported items partition into FOUR classes — the host-workable c
 4. **FOREIGN/INFRA (tasked-tool itself or CI):** 441-445 · 1239 VM fds · 1214 bundle-size ·
    1164 language matrix (large audit) · 590/537 umbrella reconciles · 1191 (rides M9/1533).
 
-NEXT ACTIONABLE when unlocks land: VM up → burn class 1 top-down (each has its model tests
-named in the ticket); owner passes → the 9 cards are one-read decisions. Until then the loop's
-marginal value is in class 3 spikes (design docs) or waiting-lane reconciles.
+NEXT ACTIONABLE — **OWNER CORRECTION 2026-07-07: host-workability was a PRIORITY, not a
+mandate.** Class 1 is BUILD-NOW workable on the host: write the render/view code, host-test the
+model half, and leave each at `review` as "model-fixed, on-screen UNVERIFIED — needs VM" per the
+render-confirm protocol. TSK-1550 gates only the VALIDATION rung (T4/T5/WV runs), which batches
+up once the VM returns — it does NOT gate the build. So the queue is: class 1 top-down (build +
+UNVERIFIED-flag), THEN VM-validate the accumulated stack when 1550 lands; owner passes → the 9
+cards are one-read decisions.
 
 **T37 replenishment:** the TSK-697 Agent-Services spike (docs/AGENT_SERVICES_DESIGN_2026-07-07.md)
 filed FIVE new HOST-WORKABLE slices — TSK-1560 goto_definition/find_references tools · 1561

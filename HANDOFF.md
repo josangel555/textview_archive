@@ -45,8 +45,10 @@ validates). One gate + one commit + board-record per work unit.
   search/tooltip math over the existing FlameProfile+FlameLayout; 5 tests; canvas = render tail.
 - **CRON STOPPED by the owner at T44 (2026-07-07 ~21:45).** The batch-loop cron (12fe9636) is
   deleted. 44 drain ticks total, all committed + recorded; tree clean at a9d10244 + this doc
-  commit. Next session: resume per the pool map (class-3 spikes remain: 691 agent-harness ·
-  706 richtext · 713 diagrams · 715 rest-of-scope; render tails await TSK-1550/1334).
+  commit. Next session — OWNER CORRECTION: host-workability was a PRIORITY not a mandate. The ~50
+  class-1 render tails are BUILD-NOW work: write the views/wiring on the host, leave each at
+  `review` "model-fixed, on-screen UNVERIFIED"; TSK-1550 gates only the batched VM validation.
+  Resume there (top of the class-1 list), not the class-3 spikes.
 
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
