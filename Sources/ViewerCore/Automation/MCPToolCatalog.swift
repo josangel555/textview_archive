@@ -59,6 +59,7 @@ public enum MCPToolCatalog {
         gotoDefinitionDescriptor,
         findReferencesDescriptor,
         renameSymbolDescriptor,
+        runTaskDescriptor,
     ]
 
     /// Dispatch a tool call. Returns the structured tool-result value
@@ -284,11 +285,40 @@ public enum MCPToolCatalog {
         ], required: ["file", "line", "column", "new_name"])
     )
 
+    /// TSK-1562 — the test/task-runner tool (agent-services s3). The
+    /// ALLOWLIST is discovery itself: only a task id that
+    /// `list_runnable_tasks` reports for that project can run — there is no
+    /// way to express an arbitrary command. Spawn is shell-free
+    /// (/usr/bin/env + tokenized argv), output-capped, and wall-clock
+    /// bounded.
+    private static let runTaskDescriptor = MCP.ToolDescriptor(
+        name: "run_task",
+        description: "Run ONE discovered task by id (from list_runnable_tasks "
+            + "on the same path) and return its exit code + captured output. "
+            + "Only listed tasks can run — arbitrary commands are not "
+            + "expressible. Bounded: timeout_seconds (default 120, max 600), "
+            + "output capped at 64KB.",
+        inputSchema: schema([
+            "path": .object(["type": .string("string"),
+                             "description": .string("Project root (the same path given to list_runnable_tasks)")]),
+            "id":   .object(["type": .string("string"),
+                             "description": .string("Task id exactly as reported by list_runnable_tasks (e.g. \"makefile:test\")")]),
+            "timeout_seconds": .object(["type": .string("integer")]),
+        ], required: ["path", "id"])
+    )
+
+    /// run_task's bounds: the output cap keeps a noisy build from flooding
+    /// the wire; the timeout ceiling keeps an agent from parking a runner
+    /// for an hour. nonisolated: read from the async lane.
+    nonisolated static let runTaskMaxOutputBytes = 64 * 1024
+    nonisolated static let runTaskDefaultTimeout: TimeInterval = 120
+    nonisolated static let runTaskMaxTimeout: TimeInterval = 600
+
     /// Tools that MUST run on the server's reader thread (an LSP round-trip
     /// can take seconds — parking the main actor would freeze the UI).
     public nonisolated static func isAsyncTool(_ name: String) -> Bool {
         name == "who_calls" || name == "goto_definition" || name == "find_references"
-            || name == "rename_symbol"
+            || name == "rename_symbol" || name == "run_task"
     }
 
     /// Carries the host existential across the async-tool boundary.
@@ -361,9 +391,55 @@ public enum MCPToolCatalog {
                     + "that type to warm the LSP pool, then retry")
             }
             return CodeNav.formatRename(outcome)
+        case "run_task":
+            return try await runTask(args)
         default:
             throw MCPError.notFound("unknown async tool: \(name)")
         }
+    }
+
+    /// TSK-1562 — resolve the id against a FRESH discovery pass (the
+    /// allowlist), spawn shell-free through /usr/bin/env, and return the
+    /// bounded outcome. Runs detached so a long task never blocks the MCP
+    /// reader's executor thread.
+    private nonisolated static func runTask(_ args: MCP.Value) async throws -> MCP.Value {
+        let path = try args.string("path")
+        let id = try args.string("id")
+        let requested = TimeInterval((try? args.int("timeout_seconds")) ?? Int(runTaskDefaultTimeout))
+        let timeout = min(max(requested, 1), runTaskMaxTimeout)
+        let root = try validatedExistingURL(from: path)
+        let tasks = RunnableTaskDiscovery.discover(projectRoot: root)
+        guard let task = tasks.first(where: { $0.id == id }) else {
+            let available = tasks.map(\.id).sorted().joined(separator: ", ")
+            throw MCPError.toolFailed(
+                "no runnable task '\(id)' at \(root.path) — only tasks reported "
+                + "by list_runnable_tasks can run. Available: "
+                + (available.isEmpty ? "(none discovered)" : available))
+        }
+        let spec = RunSpec.build(for: task)
+        let result = try await Task.detached(priority: .utility) {
+            let process = Process()
+            // Shell-free spawn: /usr/bin/env resolves the driver on PATH and
+            // execs the tokenized argv — no shell ever interprets anything.
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = spec.argv
+            process.currentDirectoryURL = spec.workingDirectory
+            if !spec.environment.isEmpty {
+                process.environment = ProcessInfo.processInfo.environment
+                    .merging(spec.environment) { _, new in new }
+            }
+            return try ProcessRunner.run(
+                process, timeout: timeout, maxOutputBytes: runTaskMaxOutputBytes)
+        }.value
+        return .object([
+            "id": .string(task.id),
+            "command": .string(spec.shellCommandLine),
+            "exitCode": .int(Int(result.terminationStatus)),
+            "timedOut": .bool(result.timedOut),
+            "truncated": .bool(result.truncated),
+            "stdout": .string(String(decoding: result.stdout, as: UTF8.self)),
+            "stderr": .string(String(decoding: result.stderr, as: UTF8.self)),
+        ])
     }
 
     private static let findDescriptor = MCP.ToolDescriptor(
@@ -913,7 +989,9 @@ public enum MCPToolCatalog {
     ///   - must be inside the user's home directory (rejects /etc/...,
     ///     /System/..., other users' homes — the viewer is for the
     ///     current user's files only).
-    private static func validatedExistingURL(from path: String) throws -> URL {
+    /// nonisolated: pure path/filesystem logic — shared by the sync
+    /// dispatch AND the async lane's `run_task` (TSK-1562).
+    private nonisolated static func validatedExistingURL(from path: String) throws -> URL {
         let expanded = (path as NSString).expandingTildeInPath
         // Resolve symlinks so the containment check is physical-to-physical.
         // `standardizedFileURL` only collapses `..`/`.` LEXICALLY; an in-jail

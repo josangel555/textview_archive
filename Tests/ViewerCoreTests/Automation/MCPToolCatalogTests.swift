@@ -100,7 +100,7 @@ final class MCPToolCatalogTests: XCTestCase {
     func test_allDescriptors_haveUniqueNames() {
         let names = MCPToolCatalog.all.map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names.count, 35)  // +11 canvas_* + the async code-nav lane (who_calls TSK-1192, goto_definition/find_references TSK-1560, rename_symbol TSK-1561)
+        XCTAssertEqual(names.count, 36)  // +11 canvas_* + the async lane (who_calls TSK-1192, goto/find TSK-1560, rename_symbol TSK-1561, run_task TSK-1562)
     }
 
     func test_allDescriptors_includeAllSpecifiedTools() {
@@ -116,6 +116,8 @@ final class MCPToolCatalogTests: XCTestCase {
             "canvas_export", "canvas_kit_import", "canvas_timeline",
             // Code nav, the async lane (TSK-1192 + TSK-1560 + TSK-1561):
             "who_calls", "goto_definition", "find_references", "rename_symbol",
+            // Task runner (TSK-1562):
+            "run_task",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -752,6 +754,67 @@ final class MCPToolCatalogTests: XCTestCase {
             guard case .toolFailed = error as? MCPError else {
                 XCTFail("expected .toolFailed, got \(error)"); return
             }
+        }
+    }
+
+    // MARK: - run_task (TSK-1562, the async lane)
+
+    /// A temp project with a Makefile — the allowlist's source of truth.
+    private func makeTaskProject(makefile: String) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-runtask-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try makefile.write(to: dir.appendingPathComponent("Makefile"),
+                           atomically: true, encoding: .utf8)
+        return dir
+    }
+
+    func test_runTask_runsAListedTask_capturesOutputAndExit() async throws {
+        XCTAssertTrue(MCPToolCatalog.isAsyncTool("run_task"))
+        let dir = try makeTaskProject(makefile: "hello:\n\t@echo hi-from-task\n")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let box = MCPToolCatalog.AsyncHostBox(host)
+        let value = try await MCPToolCatalog.dispatchAsync(
+            name: "run_task",
+            args: .object(["path": .string(dir.path), "id": .string("makefile:hello")]),
+            host: box)
+        guard case .object(let o) = value else { return XCTFail("object result") }
+        XCTAssertEqual(o["exitCode"], .int(0))
+        XCTAssertEqual(o["timedOut"], .bool(false))
+        guard case .string(let out)? = o["stdout"] else { return XCTFail("stdout") }
+        XCTAssertTrue(out.contains("hi-from-task"), "captured: \(out)")
+    }
+
+    func test_runTask_timeout_terminatesAndReports() async throws {
+        let dir = try makeTaskProject(makefile: "slow:\n\t@sleep 30\n")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let box = MCPToolCatalog.AsyncHostBox(host)
+        let start = Date()
+        let value = try await MCPToolCatalog.dispatchAsync(
+            name: "run_task",
+            args: .object(["path": .string(dir.path), "id": .string("makefile:slow"),
+                           "timeout_seconds": .int(1)]),
+            host: box)
+        guard case .object(let o) = value else { return XCTFail("object result") }
+        XCTAssertEqual(o["timedOut"], .bool(true), "the wall-clock bound fired")
+        XCTAssertLessThan(Date().timeIntervalSince(start), 15,
+                          "terminated promptly, not after the full sleep")
+    }
+
+    func test_runTask_unlistedId_refusesAndNamesTheAllowlist() async throws {
+        let dir = try makeTaskProject(makefile: "hello:\n\t@echo hi\n")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let box = MCPToolCatalog.AsyncHostBox(host)
+        do {
+            _ = try await MCPToolCatalog.dispatchAsync(
+                name: "run_task",
+                args: .object(["path": .string(dir.path),
+                               "id": .string("makefile:rm -rf /")]),
+                host: box)
+            XCTFail("an unlisted id must refuse")
+        } catch let e as MCPError {
+            XCTAssertTrue(e.message.contains("list_runnable_tasks"), "points at the allowlist")
+            XCTAssertTrue(e.message.contains("makefile:hello"), "names what IS runnable")
         }
     }
 }
