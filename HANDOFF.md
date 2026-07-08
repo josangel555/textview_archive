@@ -50,6 +50,15 @@ validates). One gate + one commit + board-record per work unit.
   `review` "model-fixed, on-screen UNVERIFIED"; TSK-1550 gates only the batched VM validation.
   Resume there (top of the class-1 list), not the class-3 spikes.
 
+## P0 INCIDENT RESOLVED (2026-07-07 ~23:15, TSK-1566 → fixed, 12f6e392)
+Owner: "can't open the /Applications build" → LS -600. Root: --mcp-connect bridges ran AFTER
+`NSApplication.shared` in main.swift → every bridge registered with LaunchServices as the app;
+Finder activated a windowless bridge instead of launching. + zombie bridges (one 1-day-old;
+orphan-held stdin). FIX (installed 22:25): branch hoisted above AppKit (drift-guarded by
+MCPBridgeLaunchOrderTests), exitWhenOrphaned PPID watchdog, stale swift-folds.scm resource
+check dropped (was blocking install rc=8). Empirically verified: incident repro passes, open
+works with live bridges, orphans reap <10s, self-heal re-bridge intact. APP OPENS NOW.
+
 ## Key decisions & rationale
 - Drain-tick pattern: extract the PURE core under render/owner-gated features, host-test (+ a
   source-parsing DRIFT GUARD when mirroring a live file), record the render tail — never blind
