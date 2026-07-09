@@ -36,7 +36,7 @@ crash the frontend). If the dep cache is ever damaged: ship it from host — `rs
 .build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/` +
 `swift package resolve` (or build `--disable-automatic-resolution`).
 
-CURRENT (2026-07-09): FRESH DIST BUILT on the VM ✅ (dist/TextView.app rebuilt with 6.3 offline,
+CURRENT (2026-07-09): ★ VM UAT LANE FULLY OPERATIONAL. Fresh dist BUILT on the VM ✅ (dist/TextView.app rebuilt with 6.3 offline,
 my render-tail code in it). The offline saga is documented in LESSONS ("Offline VM dist build
 recipe") — TSK-1568. build-app.sh now supports MDV_SWIFT_OFFLINE=1. App LAUNCHES on the VM GUI
 lane (menu bar confirmed). REMAINING GAP (TSK-1569): screencapture shows the menu bar but NO

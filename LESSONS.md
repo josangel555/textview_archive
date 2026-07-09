@@ -3938,3 +3938,15 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   protocol.file.allow always`; (5) `swift build -c debug --disable-automatic-resolution` (don't
   re-resolve/refetch). THEN `build-app.sh debug`. The `insteadOf`+`protocol.file.allow` git configs
   are global + persist, so future builds are fine. BEST PREVENTION: never rm -rf .build on the VM.
+
+- **VM window capture: use vm-uitest.sh, NOT screencapture -x (2026-07-09, TSK-1569).** macOS 15
+  REDACTS windows of ssh-spawned processes to blank when captured with full-screen
+  `screencapture -x` (you get the desktop + menu bar, no window). The working path is
+  `scripts/vm-uitest.sh run <scene>` — a LaunchAgent (com.markdownviewer.uitest, already
+  installed+bootstrapped+Screen-Recording-granted on the VM) runs the capture INSIDE the Aqua
+  session and captures BY WINDOW-ID (the app writes its CGWindowID to
+  `$(getconf DARWIN_USER_TEMP_DIR)com.markdownviewer.MarkdownViewer.windowid`), so WindowServer
+  hands over real pixels. `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh run folder-only` →
+  real window PNG at /tmp/mdv-vm-ui/<scene>.png. To UAT a NEW surface: add a scene to
+  UISceneRegistry (or use MDV_PREVIEW_FILE for media/archive), then run it. `setup`/`teardown`
+  are owner-gated (LaunchAgent install + TCC grant); `run` is not.
