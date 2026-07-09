@@ -145,4 +145,35 @@ final class PluginLifecycleTests: XCTestCase {
         XCTAssertTrue(PluginRegistry.shared.loadAll(from: pluginsDir).isEmpty,
                       "a fresh load after removal sees nothing")
     }
+
+    // MARK: - outcome → banner messages (TSK-1478 pane wiring)
+
+    func test_installOutcome_messages_reflectSuccessAndReason() {
+        XCTAssertTrue(PluginLifecycle.InstallOutcome.installed(id: "com.x", folder: "/p").isSuccess)
+        XCTAssertTrue(PluginLifecycle.InstallOutcome
+            .installed(id: "com.x", folder: "/p").userMessage.contains("com.x"))
+
+        let dup = PluginLifecycle.InstallOutcome.refusedDuplicate(id: "com.x")
+        XCTAssertFalse(dup.isSuccess)
+        XCTAssertTrue(dup.userMessage.lowercased().contains("already installed"))
+
+        let invalid = PluginLifecycle.InstallOutcome.refusedInvalid(reason: "missing plugin.json")
+        XCTAssertFalse(invalid.isSuccess)
+        XCTAssertTrue(invalid.userMessage.contains("missing plugin.json"),
+                      "the refusal reason is surfaced verbatim")
+
+        XCTAssertFalse(PluginLifecycle.InstallOutcome.failed("io").isSuccess)
+    }
+
+    func test_removeOutcome_messages_reflectSuccessAndReason() {
+        XCTAssertTrue(PluginLifecycle.RemoveOutcome.removed(id: "com.x", folder: "/p").isSuccess)
+        XCTAssertTrue(PluginLifecycle.RemoveOutcome
+            .removed(id: "com.x", folder: "/p").userMessage.lowercased().contains("trash"))
+
+        let nf = PluginLifecycle.RemoveOutcome.notFound(id: "com.x")
+        XCTAssertFalse(nf.isSuccess)
+        let failed = PluginLifecycle.RemoveOutcome.failed("locked")
+        XCTAssertFalse(failed.isSuccess)
+        XCTAssertTrue(failed.userMessage.contains("locked"))
+    }
 }

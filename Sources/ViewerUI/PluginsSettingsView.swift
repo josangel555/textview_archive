@@ -11,8 +11,12 @@ import ViewerCore
 public struct PluginsSettingsView: View {
 
     /// Snapshot of the registry, captured at render time. Re-renders
-    /// after every action (toggle, revoke) by bumping `tick`.
+    /// after every action (toggle, revoke, install, remove) by bumping `tick`.
     @State private var tick: Int = 0
+    /// TSK-1478 — the last install/remove outcome, shown as a banner.
+    @State private var banner: Banner?
+
+    private struct Banner: Equatable { let ok: Bool; let text: String }
 
     public init() {}
 
@@ -22,9 +26,19 @@ public struct PluginsSettingsView: View {
                 Text("Installed plugins")
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
+                Button("Install…") { installPlugin() }
+                    .help("Choose a plugin folder to install")
+                    .accessibilityIdentifier("mdv.plugins.install")
                 Button("Show Log") { openAuditLog() }
                     .disabled(!auditLogExists)
                     .help("Open the plugins audit log in a new tab")
+            }
+            if let banner {
+                Text(banner.text)
+                    .font(.system(size: 11))
+                    .foregroundStyle(banner.ok ? Color.secondary : Color.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("mdv.plugins.banner")
             }
             Divider()
             if plugins.isEmpty {
@@ -40,12 +54,15 @@ public struct PluginsSettingsView: View {
                         }
                     }
                 }
+                // Rebuild ONLY the list on action (the registry snapshot is a
+                // plain computed read, not observable). Kept off the outer
+                // VStack so the `banner` @State survives the refresh.
+                .id(tick)
             }
             Spacer(minLength: 0)
         }
         .padding(16)
         .frame(width: 460, height: 540)
-        .id(tick)  // Force rebuild on action.
     }
 
     // MARK: - Rows
@@ -101,9 +118,15 @@ public struct PluginsSettingsView: View {
                 .toggleStyle(.switch)
                 .accessibilityIdentifier("mdv.pluginToggle.\(row.id)")
                 if !row.isBundled {
-                    Button("Revoke") { revoke(row) }
-                        .font(.system(size: 10))
-                        .help("Forget user decisions; the plugin will re-prompt on next load")
+                    HStack(spacing: 6) {
+                        Button("Revoke") { revoke(row) }
+                            .font(.system(size: 10))
+                            .help("Forget user decisions; the plugin will re-prompt on next load")
+                        Button("Remove") { removePlugin(row) }
+                            .font(.system(size: 10))
+                            .help("Move this plugin to the Trash")
+                            .accessibilityIdentifier("mdv.plugins.remove.\(row.id)")
+                    }
                 }
             }
         }
@@ -118,6 +141,41 @@ public struct PluginsSettingsView: View {
     private func revoke(_ row: PluginRow) {
         PluginRegistry.shared.grantStore.revoke(pluginID: row.id)
         PluginRegistry.shared.setEnabled(row.id, enabled: false)
+        tick += 1
+    }
+
+    /// TSK-1478 — Install…: pick a plugin folder, run the validated install
+    /// (validate-before-copy + refuse-duplicate, host-tested), then load it
+    /// into the running registry. The outcome message drives the banner.
+    private func installPlugin() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Install"
+        panel.message = "Choose a plugin folder (must contain plugin.json)"
+        guard panel.runModal() == .OK, let src = panel.url else { return }
+        let outcome = PluginLifecycle.install(from: src, into: PluginRegistry.defaultPluginsDir())
+        if case .installed(_, let folder) = outcome {
+            _ = PluginRegistry.shared.reloadOne(folder: URL(fileURLWithPath: folder))
+        }
+        banner = Banner(ok: outcome.isSuccess, text: outcome.userMessage)
+        tick += 1
+    }
+
+    /// TSK-1478 — Remove: confirm, then Trash the plugin's folder
+    /// (recoverable) and unload it from the running registry.
+    private func removePlugin(_ row: PluginRow) {
+        let alert = NSAlert()
+        alert.messageText = "Remove “\(row.name)”?"
+        alert.informativeText = "The plugin folder will be moved to the Trash. "
+            + "You can restore it from there."
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let outcome = PluginLifecycle.remove(id: row.id, from: PluginRegistry.defaultPluginsDir())
+        if outcome.isSuccess { PluginRegistry.shared.unload(row.id) }
+        banner = Banner(ok: outcome.isSuccess, text: outcome.userMessage)
         tick += 1
     }
 

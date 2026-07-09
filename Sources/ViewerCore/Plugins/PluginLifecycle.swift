@@ -117,3 +117,40 @@ public enum PluginLifecycle {
         return nil
     }
 }
+
+// MARK: - user-facing outcome messages (host-tested; the pane just renders them)
+
+public extension PluginLifecycle.InstallOutcome {
+    /// Whether the install landed (drives a success vs error banner).
+    var isSuccess: Bool { if case .installed = self { return true }; return false }
+
+    /// The line the plugins pane shows after an Install… attempt.
+    var userMessage: String {
+        switch self {
+        case .installed(let id, _):
+            return "Installed “\(id)”. Enable it below to grant its capabilities."
+        case .refusedInvalid(let reason):
+            return "Not a valid plugin — \(reason)"
+        case .refusedDuplicate(let id):
+            return "“\(id)” is already installed — remove it first to reinstall."
+        case .failed(let reason):
+            return "Install failed: \(reason)"
+        }
+    }
+}
+
+public extension PluginLifecycle.RemoveOutcome {
+    var isSuccess: Bool { if case .removed = self { return true }; return false }
+
+    /// The line the plugins pane shows after a Remove attempt.
+    var userMessage: String {
+        switch self {
+        case .removed(let id, _):
+            return "Moved “\(id)” to the Trash."
+        case .notFound(let id):
+            return "“\(id)” isn't an installed (removable) plugin."
+        case .failed(let reason):
+            return "Remove failed: \(reason)"
+        }
+    }
+}
