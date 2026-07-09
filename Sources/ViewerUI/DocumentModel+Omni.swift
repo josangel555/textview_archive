@@ -33,4 +33,30 @@ extension DocumentModel {
         }
         return action
     }
+
+    /// TSK-1572 — the launchpad's sections (Recent Files / Recent Folders /
+    /// Bookmarks) built from the model's recents + bookmarks. Host-testable bridge
+    /// the EmptyStateView renders; `LaunchpadSelection` flattens it for arrow-nav.
+    public func launchpadSections(limit: Int = 8) -> [LaunchpadSections.Section] {
+        let recentItems = recents.map {
+            LaunchpadSections.Item(
+                title: $0.url.lastPathComponent, path: $0.url.path,
+                isDirectory: $0.kind == .folder)
+        }
+        let bookmarkItems = bookmarks.map { bm in
+            LaunchpadSections.Item(
+                title: bm.displayName.isEmpty ? bm.url.lastPathComponent : bm.displayName,
+                path: bm.url.path, isDirectory: false)   // sectioning ignores this for bookmarks
+        }
+        return LaunchpadSections.build(recents: recentItems, bookmarks: bookmarkItems, limit: limit)
+    }
+
+    /// TSK-1572 — the clone plan for a git remote (as `OmniResolver` classifies a
+    /// `.gitRemote`), targeting the current workspace root's PARENT (so the clone
+    /// lands beside the open project) or home. Host-testable; the `git clone`
+    /// execution + opening the checkout are the render/IO tail (TSK-1582).
+    public func gitClonePlan(forRemote remote: String) -> GitClonePlan? {
+        let parent = sidebar.rootURL?.deletingLastPathComponent().path ?? NSHomeDirectory()
+        return GitClonePlan.make(fromRemote: remote, into: parent)
+    }
 }

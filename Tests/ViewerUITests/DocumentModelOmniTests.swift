@@ -67,4 +67,38 @@ final class DocumentModelOmniTests: XCTestCase {
         XCTAssertFalse(isDir)
         XCTAssertFalse(model.isCrossSearchPresented, "a missing path is not a search")
     }
+
+    // MARK: - TSK-1572: launchpad sections + git-clone plan bridge
+
+    func test_launchpadSections_splitsRecentsIntoFilesAndFolders() {
+        let model = makeModel()
+        model.recents = [
+            HistoryEntry(url: URL(fileURLWithPath: "/x/notes.md"), kind: .file, lastOpenedAt: Date()),
+            HistoryEntry(url: URL(fileURLWithPath: "/x/proj"), kind: .folder, lastOpenedAt: Date()),
+        ]
+        let sections = model.launchpadSections()
+        XCTAssertEqual(sections.map(\.title), ["Recent Files", "Recent Folders"])
+        XCTAssertEqual(sections[0].items.map(\.title), ["notes.md"])
+        XCTAssertEqual(sections[0].items.map(\.isDirectory), [false])
+        XCTAssertEqual(sections[1].items.map(\.title), ["proj"])
+        XCTAssertEqual(sections[1].items.map(\.isDirectory), [true])
+    }
+
+    func test_gitClonePlan_targetsWorkspaceParent_elseHome() {
+        let model = makeModel()
+        // No workspace root yet → clone beside HOME.
+        let home = model.gitClonePlan(forRemote: "github.com/o/repo")
+        XCTAssertEqual(home?.repoName, "repo")
+        XCTAssertEqual(home?.targetDirectory, "\(NSHomeDirectory())/repo")
+        // Open a workspace folder → clone lands beside it (its parent).
+        model.openPath(tmp)
+        let beside = model.gitClonePlan(forRemote: "git@github.com:o/thing.git")
+        XCTAssertEqual(beside?.repoName, "thing")
+        XCTAssertEqual(beside?.targetDirectory,
+                       "\(tmp.deletingLastPathComponent().path)/thing")
+    }
+
+    func test_gitClonePlan_nilForNonRepo() {
+        XCTAssertNil(makeModel().gitClonePlan(forRemote: "github.com/"))
+    }
 }

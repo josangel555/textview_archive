@@ -11,6 +11,10 @@
   switch it off under Settings ▸ Privacy & Permissions ▸ Secret detection.
 
 ### Changed
+- **The new-tab welcome screen groups your recents.** Instead of one flat list, the launchpad now
+  shows **Recent Files**, **Recent Folders**, and **Bookmarks** as separate sections — so folders and
+  bookmarks are easy to find, not buried among files. (Keyboard arrow-navigation and an in-app
+  git-clone action are coming next.)
 - **Recover files deleted long ago — and pick which version.** File ▸ Recover Deleted File now
   lists **every** file that has Local History but is gone from disk, not just recently-opened ones
   (so a file you deleted weeks back is still recoverable). Each row's **Recreate** button recreates
@@ -101,6 +105,12 @@
   actually collide. A genuine overlapping conflict still shows the banner.
 
 ### System work
+- **Launchpad model foundation (TSK-1572).** Three pure, host-tested cores for the new-tab
+  launchpad — `LaunchpadSections` (splits recents into files/folders + bookmarks, deduped/capped),
+  `LaunchpadSelection` (the ↑/↓ keyboard-nav state machine across omni + rows), and `GitClonePlan`
+  (a git remote → normalized clone URL + repo name + target dir) — plus `DocumentModel.launchpadSections`
+  / `gitClonePlan` bridges. The welcome screen now renders the sections live; the arrow-nav keyboard
+  wiring, git-clone subprocess, and empty-⌘V paste hook are the interaction tail (TSK-1582).
 - **HTML trust-mode: consent-gated-network security core (TSK-1203).** A trusted local HTML page's
   `connect-src` fence can now be escalated per-page to explicit user-consented https origins
   (`HTMLDocumentPolicy.cspString(allowedConnectHosts:)` + a strict `connectSource` host validator +

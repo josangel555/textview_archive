@@ -1948,15 +1948,17 @@ struct EmptyStateView: View {
             // VM render-validation guard for TSK-760 depends on this).
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("mdv.emptyState.actions")
-            // TSK-745: the new-tab landing surfaces recent files, click-to-open.
-            // Capped (model.landingRecents) so the welcome screen stays a
-            // glanceable launcher; the full scrollable list lives in the sidebar.
-            if model.landingRecents.isEmpty {
+            // TSK-745 / TSK-1572: the landing surfaces recent files/folders +
+            // bookmarks as SECTIONS (host-tested `launchpadSections`), capped so
+            // the welcome screen stays a glanceable launcher; the full scrollable
+            // list lives in the sidebar.
+            let sections = model.launchpadSections()
+            if sections.isEmpty {
                 Text("Or press ⌘K to search recents.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                recentsLauncher
+                launchpadSectionsView(sections)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1989,42 +1991,41 @@ struct EmptyStateView: View {
         .frame(maxWidth: 420)
     }
 
-    private var recentsLauncher: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Recent")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("mdv.emptyState.recentsHeader")
-            ForEach(model.landingRecents) { entry in
-                Button(action: { model.openPath(entry.url) }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: entry.kind == .folder ? "folder" : "doc")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                        Text(entry.displayName)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        if let folder = entry.parentFolderLabel {
-                            Text(folder)
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.head)
+    /// TSK-1572 — the sectioned launchpad (Recent Files / Recent Folders /
+    /// Bookmarks). Each section's items come from the host-tested
+    /// `LaunchpadSections` model; a row click opens the path.
+    private func launchpadSectionsView(_ sections: [LaunchpadSections.Section]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(section.title)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                        Button(action: { model.openPath(URL(fileURLWithPath: item.path)) }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: item.isDirectory ? "folder" : "doc")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 16)
+                                Text(item.title)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        Spacer(minLength: 0)
+                        .buttonStyle(.plain)
+                        .help(item.path)
+                        .accessibilityIdentifier("mdv.emptyState.launchpadRow")
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help(entry.url.path)
-                .accessibilityIdentifier("mdv.emptyState.recentRow")
             }
         }
         .frame(maxWidth: 360, alignment: .leading)
         .padding(.top, 4)
         // AX container so the launcher + its rows surface out-of-process (the
-        // VM render-validation guard for TSK-745) — see the note on the action
-        // row above; a bare identifier on a SwiftUI VStack isn't promoted.
+        // VM render-validation guard for TSK-745); a bare identifier on a
+        // SwiftUI VStack isn't promoted.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.emptyState.recents")
     }

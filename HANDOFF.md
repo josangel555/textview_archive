@@ -20,18 +20,16 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-F (chrome/first-run): 1573 + 1575 (part 1) → `review`** (host-only).
-  **1573 recover-deleted** = full enumeration + version picker. ROOT-CAUSE WIN: the ticket claimed the
-  store "can't enumerate its paths" but each pathKey dir ALREADY has a `_path` sidecar → added
-  `LocalHistoryStore.allTrackedPaths()` (reads the sidecars) so `recoverableDeletedFiles()` surfaces
-  LONG-deleted files (not just recents); `resurrectFile(at:version:)` + `recoverableVersions` recreate a
-  CHOSEN version; RecoverDeletedFileView got a per-row version Menu. Host-tested (LocalHistoryStore +2,
-  DocumentModelResurrection +3). **1575 part 1** = Help ▸ Capabilities: `CapabilitiesDocument` (bundled
-  `docs/CAPABILITIES.md` via build-app.sh copy — SINGLE source — + embedded fallback), `openCapabilities`,
-  Help menu item. Host-tested (CapabilitiesDocument +3, DocumentModelFirstRun +2). 1575-part2 (walkthrough
-  launch points) SPLIT → **TSK-1581**. Render tails (the picker Menu + rendered Capabilities page) = VM-UAT.
-- **CH-F remaining:** 1572 launchpad (4 sub-items: sections + arrow-nav model + git-clone plan + universal
-  paste — host-testable models + render tail), 1104 multi-window (VM), 1111 bookmarks-open-in-new (VM).
+- **THIS TICK — CH-F: 1572 launchpad → `review`** (host+live-view). Built 3 PURE host-tested cores:
+  `LaunchpadSections` (recents → Recent Files/Folders + Bookmarks, deduped/capped), `LaunchpadSelection`
+  (↑/↓ nav state machine), `GitClonePlan` (remote → clone URL + repo + target dir) + `DocumentModel`
+  bridges (`launchpadSections`, `gitClonePlan`). Sub-item 1 (SECTIONS) is LIVE: EmptyStateView's flat
+  recents list replaced by `launchpadSectionsView(sections)` — user-facing. Host pyramid: LaunchpadModel
+  +11, DocumentModelOmni +3. Interaction tails (arrow-nav keyboard wiring, git-clone subprocess, empty-⌘V
+  paste hook) SPLIT → **TSK-1582** (models tested; only the SwiftUI focus/keyDown + Process + ⌘V hook remain).
+- **CH-F remaining:** 1104 multi-window (VM), 1111 bookmarks-open-in-new (VM).
+- **PRIOR CH-F — 1573 recover-deleted + 1575-part1 Capabilities → `review`** (`ea377a56`). Splits filed:
+  1573 picker=render tail; 1575-part2 walkthrough→TSK-1581.
 - **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS:** 1482 menu-audit (declarative-menu refactor OR VM),
   1191 git-history migration (render VM-val), 1205 spreadsheet-grid (render). Each = its OWN focused tick.
 - **PRIOR — CH-D/CH-E: 1203-core+1567 (`8253d8cb`); CH-C: 1505+1570-U2 (`62697ec1`); CH-D data-safety
