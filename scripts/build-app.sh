@@ -95,6 +95,20 @@ if [[ "${MDV_SWIFT_OFFLINE:-}" == "1" ]]; then
   echo "==> offline mode: swift build ${OFFLINE_FLAG[*]}"
 fi
 
+# TSK-1547 force-relink: build-rust-core.sh normally deletes the exec product
+# (via cargo) so SwiftPM relinks against the freshly-staged staticlib. On a host
+# WITHOUT cargo (the offline VM uses the PRE-STAGED .a), that deletion is
+# skipped — SwiftPM then sees identical objects and SKIPS the link, leaving the
+# exec older than the .a, and the STALE-LINK tooth below (correctly) refuses to
+# ship. Force the link edge here: if the staged .a is newer than the exec (or
+# the exec is missing), delete the exec so the swift build relinks it.
+_STAGED_A="$ROOT_DIR/rust-core/link/libmdvcore_ffi.a"
+_EXE="$ROOT_DIR/.build/$(uname -m)-apple-macosx/$CONFIG/$EXEC_NAME"
+if [[ -f "$_STAGED_A" && ( ! -f "$_EXE" || "$_STAGED_A" -nt "$_EXE" ) ]]; then
+  echo "==> force-relink: removing $_EXE (staticlib newer / exec missing)"
+  rm -f "$_EXE"
+fi
+
 echo "==> swift build -c $CONFIG"
 ( cd "$ROOT_DIR" && swift build -c "$CONFIG" "${OFFLINE_FLAG[@]}" )
 
