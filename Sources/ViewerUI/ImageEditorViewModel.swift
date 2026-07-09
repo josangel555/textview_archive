@@ -89,6 +89,10 @@ public final class ImageEditorViewModel: ObservableObject {
         case selectRect
         /// Free-form lasso selection: drag a freehand region. TSK-1064.
         case selectLasso
+        /// Extended shape gallery (TSK-1085): drag a bounding box to place one of
+        /// the parametric GalleryShape polygons (which shape = `galleryShapeKind`)
+        /// as a filled/stroked raster op. Distinct from the vector `.drawRect` etc.
+        case galleryShape
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool {
@@ -149,6 +153,8 @@ public final class ImageEditorViewModel: ObservableObject {
     /// TSK-1059/1060 — when a shape tool draws, fill the shape (in addition to its
     /// outline) with the paint color. Off = outline only.
     @Published public var shapeFilled: Bool = false
+    /// TSK-1085 — the selected extended-gallery shape for the `.galleryShape` tool.
+    @Published public var galleryShapeKind: GalleryShape = .star5
     /// TSK-1062 — brush/eraser stamp shape: a square stamp when true, the default
     /// round disc otherwise. (No effect at radius 0 — that's always a single pixel.)
     @Published public var squareBrush: Bool = false
@@ -746,7 +752,7 @@ public final class ImageEditorViewModel: ObservableObject {
         // Shape tools are drag-committed via drawShape, not a click.
         // Drag-committed (shapes via drawShape, marquee via setSelection) — not a click.
         case .drawRect, .drawEllipse, .drawRoundedRect, .drawLine, .drawArrow,
-             .selectRect, .selectLasso: return 0
+             .selectRect, .selectLasso, .galleryShape: return 0
         }
     }
 
@@ -805,6 +811,32 @@ public final class ImageEditorViewModel: ObservableObject {
         let style = ViewerCore.ShapeStyle(stroke: stroke, lineWidth: max(2, Double(brushRadius)),
                                fill: shapeFilled ? stroke : nil)
         return addShape(VectorShape(kind: kind, frame: normalizedFrame, style: style))
+    }
+
+    /// TSK-1085 — place an extended-gallery shape (`GalleryShape`) as a raster op.
+    /// The pure vertex geometry (host-tested) is projected onto the drag box in
+    /// PIXEL space, then committed via the shipped fillPolygon/strokePolygon
+    /// rasterizer — a single undoable op (filled → fillPolygon, else the outline).
+    /// No-op with no image loaded or a degenerate (<3-vertex / empty) box.
+    @discardableResult
+    public func drawGalleryShape(_ shape: GalleryShape, normalizedFrame: CGRect) -> Bool {
+        guard let cg = rendered else { return false }
+        // A degenerate box collapses every vertex onto a point (no visible shape).
+        guard normalizedFrame.width > 0.001, normalizedFrame.height > 0.001 else { return false }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        let pixelRect = CGRect(
+            x: normalizedFrame.minX * w, y: normalizedFrame.minY * h,
+            width: normalizedFrame.width * w, height: normalizedFrame.height * h)
+        let points = shape.vertices(in: pixelRect)
+        guard points.count >= 3 else { return false }
+        let color = DrawColor(
+            red: Double(paintColor.r) / 255, green: Double(paintColor.g) / 255,
+            blue: Double(paintColor.b) / 255, alpha: Double(paintColor.a) / 255)
+        let op: EditOp = shapeFilled
+            ? .fillPolygon(points: points, color: color)
+            : .strokePolygon(points: points, color: color, lineWidth: max(2, Double(brushRadius)))
+        commitGeometry(op)
+        return true
     }
 
     /// Remove the shape with `id` (no-op for an unknown id).

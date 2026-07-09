@@ -17,6 +17,10 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Extended shape gallery in the image editor.** The paint tools gained a Shapes menu with
+  12 parametric shapes — triangle, right-triangle, diamond, pentagon, hexagon, 4/5/6-point
+  stars, and arrows (up/down/left/right). Pick one and drag a box to place it, filled or
+  outlined. (Heart/lightning/callouts are coming.)
 - **Recover a deleted file.** File ▸ "Recover Deleted File…" lists recently-opened files you
   deleted that still have Local History, and recreates one from its latest saved version
   (atomic — it never overwrites a file that's since reappeared). Restores now work even

@@ -320,6 +320,16 @@ struct ImageEditorView: View {
                                 }
                                 return
                             }
+                            if vm.tool == .galleryShape {
+                                defer { shapeDragStart = nil; shapeDragCurrent = nil }
+                                // TSK-1085: a closed shape → the standardized box.
+                                let rect = ShapeDragGeometry.normalizedRect(
+                                    from: value.startLocation, to: value.location, in: displayed)
+                                if rect.width > 0.001 && rect.height > 0.001 {
+                                    vm.drawGalleryShape(vm.galleryShapeKind, normalizedFrame: rect)
+                                }
+                                return
+                            }
                             if let kind = vm.tool.shapeKind {
                                 defer { shapeDragStart = nil; shapeDragCurrent = nil }
                                 let open = vm.tool.isOpenShape
@@ -572,6 +582,24 @@ struct ImageEditorView: View {
         .labelsHidden()
         .accessibilityIdentifier("mdv.imageEditor.paintTool")
 
+        // TSK-1085: the extended shape gallery (23 Win7 shapes; the 12 clean
+        // parametric ones here — heart/lightning/callouts are the curve-based
+        // follow-on). Pick one to arm the .galleryShape tool; drag a box to place.
+        Menu {
+            ForEach(GalleryShape.allCases, id: \.self) { shape in
+                Button {
+                    vm.galleryShapeKind = shape
+                    vm.tool = .galleryShape
+                } label: {
+                    Label(galleryShapeLabel(shape), systemImage: gallerySymbol(shape))
+                }
+            }
+        } label: {
+            Label("Shapes: \(galleryShapeLabel(vm.galleryShapeKind))",
+                  systemImage: vm.tool == .galleryShape ? "star.fill" : "star")
+        }
+        .accessibilityIdentifier("mdv.imageEditor.shapeGallery")
+
         ColorPicker("Color", selection: paintColorBinding, supportsOpacity: true)
             .accessibilityIdentifier("mdv.imageEditor.paintColor")
         // TSK-1069: background color (Clear fills with it) + swap.
@@ -699,6 +727,39 @@ struct ImageEditorView: View {
             .frame(width: 18, height: 18)
             .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.secondary, lineWidth: 0.5))
             .onTapGesture { vm.paintColor = c; vm.recordRecentColor(c) }
+    }
+
+    /// TSK-1085 — a human label for a gallery shape (the rawValue is terse).
+    private func galleryShapeLabel(_ shape: GalleryShape) -> String {
+        switch shape {
+        case .triangle: return "Triangle"
+        case .rightTriangle: return "Right Triangle"
+        case .diamond: return "Diamond"
+        case .pentagon: return "Pentagon"
+        case .hexagon: return "Hexagon"
+        case .star4: return "4-Point Star"
+        case .star5: return "5-Point Star"
+        case .star6: return "6-Point Star"
+        case .arrowRight: return "Arrow Right"
+        case .arrowLeft: return "Arrow Left"
+        case .arrowUp: return "Arrow Up"
+        case .arrowDown: return "Arrow Down"
+        }
+    }
+
+    /// TSK-1085 — an SF Symbol roughly evoking each gallery shape (menu icon).
+    private func gallerySymbol(_ shape: GalleryShape) -> String {
+        switch shape {
+        case .triangle, .rightTriangle: return "triangle"
+        case .diamond: return "diamond"
+        case .pentagon: return "pentagon"
+        case .hexagon: return "hexagon"
+        case .star4, .star5, .star6: return "star"
+        case .arrowRight: return "arrow.right"
+        case .arrowLeft: return "arrow.left"
+        case .arrowUp: return "arrow.up"
+        case .arrowDown: return "arrow.down"
+        }
     }
 
     private func slider(

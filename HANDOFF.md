@@ -50,6 +50,13 @@ the modifier NEVER FIRES — anchor async work (scans, loads) on an always-prese
 a `Group { if x {…} }`. This hid the secret badge on the first render until fixed (ZStack + a
 zero-height Color.clear owning the .task).
 
+TSK-1085 (image SHAPE GALLERY, review — ON-SCREEN UNVERIFIED): wired the 12 GalleryShape polygons
+into the image editor — a Shapes Menu picker + `.galleryShape` tool; drag a box → drawGalleryShape
+projects the (host-tested) vertices to pixels → fill/strokePolygon raster op (undoable). Model
+host-tested (ImageEditorGalleryShapeTests 3/3 + GalleryShape 7/7). ON-SCREEN UNVERIFIED: the
+ImageEditorViewModel is VIEW-LOCAL (@StateObject, unreachable from the scene applier) + the picker
+is a Menu (needs a click) + drag-place needs a real drag → no static scene state to capture; the
+picker/drag are the AX-event lane. Follow-on TSK-1574 (freeform heart/lightning/callouts, curves).
 TSK-1500 (RECOVER deleted file, review): File ▸ "Recover Deleted File…" → a sheet listing
 recently-opened deleted-but-has-history files, each Recreate = FileResurrection.recreate (atomic
 O_EXCL) + open. Entry point reuses RECENTS (real paths; the history store hashes paths one-way so
