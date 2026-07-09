@@ -2774,13 +2774,20 @@ public final class DocumentModel: ObservableObject {
             let mtime = attrs?[.modificationDate] as? Date
             let size = attrs?[.size] as? Int
             if buf.hasExternalEdit(currentMTime: mtime, currentSize: size) {
+                // TSK-1269/1165: try a CLEAN 3-way auto-merge first. When the
+                // external change and the local edits don't overlap, the
+                // reconciler merges them and we apply silently (both preserved) —
+                // no banner, no data loss. Only a real overlapping conflict falls
+                // through to the DiskConflictBanner below.
+                if applyExternalAutoMerge(
+                    forTabID: tab.id, url: watchedURL, diskMTime: mtime, diskSize: size) {
+                    return
+                }
                 // TSK-1166: a PASSIVE watcher conflict (the user didn't ask to
-                // reload) now surfaces as a non-modal `DiskConflictBanner` above
-                // the editor rather than a blocking NSAlert — the deliberate
-                // `refreshTab` path keeps its modal (a modal confirm is right for
-                // an explicit destructive reload). Idempotent: a duplicate watcher
-                // event for the same tab just re-sets the (Equatable-equal) info.
-                // Backstop: even if the banner is somehow missed, the write-time
+                // reload) surfaces as a non-modal `DiskConflictBanner` above the
+                // editor rather than a blocking NSAlert. Idempotent: a duplicate
+                // watcher event for the same tab just re-sets the (Equatable-equal)
+                // info. Backstop: even if the banner is missed, the write-time
                 // `SaveConflictDecision` still catches the conflict on save.
                 activeDiskConflict = DiskConflictBannerInfo(
                     tabID: tab.id, index: i, url: watchedURL)
@@ -2959,6 +2966,28 @@ public final class DocumentModel: ObservableObject {
         guard let buf = editor.editorBuffers[id] else { return nil }
         guard let disk = try? String(contentsOf: url, encoding: buf.encoding) else { return nil }
         return ExternalEditReconciler.reconcile(base: buf.originalText, local: buf.text, disk: disk)
+    }
+
+    /// TSK-1269/1165 (slices 2/3) — APPLY the reconciler outcome for a dirty tab
+    /// whose file changed externally. Only `.autoMerged` (a clean, non-overlapping
+    /// 3-way merge) is applied here: the buffer takes the merged text and stays
+    /// DIRTY (`originalText` untouched, so the user still saves the merge and a
+    /// Revert reaches the pre-conflict baseline), while the disk fingerprint is
+    /// refreshed so this same external change doesn't re-fire the watcher.
+    /// Returns `true` iff a merge was applied; `false` (no buffer / a real
+    /// `.conflict` / no change) leaves the caller to surface the conflict banner.
+    /// The buffer mutation is host-tested; CM6 re-display is the render tail.
+    @discardableResult
+    func applyExternalAutoMerge(
+        forTabID id: UUID, url: URL, diskMTime: Date?, diskSize: Int?
+    ) -> Bool {
+        guard case let .autoMerged(merged)? = reconcileExternalEdit(forTabID: id, url: url),
+              var buf = editor.editorBuffers[id] else { return false }
+        buf.setText(merged)
+        buf.refreshSavedFingerprint(diskMTime: diskMTime, diskSize: diskSize)
+        tabCoordinator.setEditorBuffer(buf, forTabID: id)
+        ToastCenter.shared.post(.info, "Merged external changes into your edits")
+        return true
     }
 
     func startWatchingCurrentFile() {

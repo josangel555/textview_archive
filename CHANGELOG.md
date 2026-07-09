@@ -73,6 +73,16 @@
   now opens a real editor — rename in place, reorder up/down, delete, and filter — instead
   of dropping you into the raw JSON file.
 
+### Fixed
+- **Hex search now finds your unsaved edits.** In the hex viewer's find bar, searching for a
+  byte pattern (and the click-to-highlight matches) now scans the bytes you've actually typed,
+  not just the on-disk file — so a byte you just edited is findable instead of silently missing.
+- **Non-conflicting outside changes merge into your edits instead of prompting.** When a file
+  you're editing changes on disk (a formatter, `git pull`, another tool) and the outside change
+  doesn't touch the lines you edited, TextView now merges both automatically and keeps your
+  document dirty so you can review and save — no more conflict banner for changes that don't
+  actually collide. A genuine overlapping conflict still shows the banner.
+
 ### System work
 - **Code-review journey verified end-to-end + documented (TSK-1445).** Added `ReviewJourneyTests`
   driving the whole loop on a REAL commit diff — open review → comment on a diff line → reply →

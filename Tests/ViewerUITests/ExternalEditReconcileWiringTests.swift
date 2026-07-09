@@ -3,13 +3,17 @@ import ViewerKit
 import ViewerCore
 @testable import ViewerUI
 
-/// TSK-1269 slice 1 — host coverage for `DocumentModel.reconcileExternalEdit`,
-/// the DECISION half of wiring `ExternalEditReconciler` (3-way auto-merge) into
-/// the dirty-buffer external-change flow. Pins that base/ours/theirs are sourced
-/// correctly (base = buffer.originalText, ours = buffer.text, theirs = disk) and
-/// that each `Outcome` plus the no-buffer / unreadable-disk nil guards hold. The
-/// APPLY of an outcome (buffer-replace + CM6 redisplay) and routing refreshTab /
-/// the watcher through it are slices 2/3 (render → review).
+/// TSK-1269/1165 — host coverage for wiring `ExternalEditReconciler` (3-way
+/// auto-merge) into the dirty-buffer external-change flow.
+///   • DECISION (`reconcileExternalEdit`): base/ours/theirs are sourced correctly
+///     (base = buffer.originalText, ours = buffer.text, theirs = disk) and each
+///     `Outcome` plus the no-buffer / unreadable-disk nil guards hold.
+///   • APPLY (`applyExternalAutoMerge`, slices 2/3): a non-overlapping `.autoMerged`
+///     is applied to the buffer and kept DIRTY (baseline preserved for Revert); a
+///     `.conflict` returns false with the buffer untouched (caller shows the banner).
+/// The only remaining tail is the LIVE CM6 redisplay after an external merge, which
+/// reuses the proven clean-reload `setEditorBuffer` path (VM/on-screen UNVERIFIED —
+/// it needs a real watcher fire, so it isn't cleanly scene-drivable).
 @MainActor
 final class ExternalEditReconcileWiringTests: XCTestCase {
 
@@ -115,5 +119,60 @@ final class ExternalEditReconcileWiringTests: XCTestCase {
         let gone = tmpDir.appendingPathComponent("does-not-exist.txt")
         XCTAssertNil(model.reconcileExternalEdit(forTabID: id, url: gone),
             "unreadable disk path → nil")
+    }
+
+    // MARK: - slices 2/3: applyExternalAutoMerge (APPLY the outcome)
+
+    private func diskFingerprint(_ url: URL) -> (Date?, Int?) {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attrs?[.modificationDate] as? Date, attrs?[.size] as? Int)
+    }
+
+    // non-overlapping local + disk edits → merge is APPLIED to the buffer, which
+    // stays DIRTY (originalText untouched so the user still saves the merge).
+    func test_applyAutoMerge_appliesMerge_andKeepsBufferDirty() throws {
+        let url = try writeFile("g.txt", "a\nb\nc\n")
+        let model = makeModel()
+        let id = openSeeded(url, in: model)
+        model.editor.updateEditorText("X\nb\nc\n", forTabID: id)            // local edits line 1
+        try "a\nb\nZ\n".write(to: url, atomically: true, encoding: .utf8)   // disk edits line 3
+        let (mtime, size) = diskFingerprint(url)
+
+        let applied = model.applyExternalAutoMerge(
+            forTabID: id, url: url, diskMTime: mtime, diskSize: size)
+
+        XCTAssertTrue(applied, "non-overlapping edits must auto-merge+apply")
+        let buf = model.editor.editorBuffers[id]
+        XCTAssertNotNil(buf)
+        XCTAssertTrue(buf!.text.contains("X") && buf!.text.contains("Z"),
+            "applied buffer must carry BOTH edits; got: \(buf!.text)")
+        XCTAssertTrue(buf!.isDirty,
+            "merge stays dirty so the user saves it (baseline preserved for Revert)")
+    }
+
+    // overlapping edits → NOT applied (returns false); the caller surfaces the
+    // conflict banner. The buffer keeps the user's local text untouched.
+    func test_applyAutoMerge_returnsFalse_onConflict_bufferUntouched() throws {
+        let url = try writeFile("h.txt", "a\nb\nc\n")
+        let model = makeModel()
+        let id = openSeeded(url, in: model)
+        model.editor.updateEditorText("LOCAL\nb\nc\n", forTabID: id)          // local edits line 1
+        try "DISK\nb\nc\n".write(to: url, atomically: true, encoding: .utf8)  // disk edits line 1 (overlap)
+        let (mtime, size) = diskFingerprint(url)
+
+        let applied = model.applyExternalAutoMerge(
+            forTabID: id, url: url, diskMTime: mtime, diskSize: size)
+
+        XCTAssertFalse(applied, "overlapping edits must NOT silently merge")
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, "LOCAL\nb\nc\n",
+            "on conflict the buffer's local text is left intact for the banner flow")
+    }
+
+    // no buffer for the tab id → false (caller falls through to its normal path)
+    func test_applyAutoMerge_returnsFalse_whenNoBuffer() throws {
+        let url = try writeFile("i.txt", "x\n")
+        let model = makeModel()
+        XCTAssertFalse(model.applyExternalAutoMerge(
+            forTabID: UUID(), url: url, diskMTime: nil, diskSize: nil))
     }
 }

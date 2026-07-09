@@ -247,7 +247,7 @@ struct HexView: View {
         let capped = HexMatchCap.cap(
             pattern.isEmpty
                 ? []
-                : RustHexSearchAdapter.search(searchQuery, mode: searchMode, in: file.data),
+                : RustHexSearchAdapter.search(searchQuery, mode: searchMode, in: searchableData),
             to: Self.matchCap)
         matches = capped.offsets
         matchesCapped = capped.wasCapped
@@ -270,9 +270,16 @@ struct HexView: View {
         clickOffsets = HexMatchCap.cap(
             pattern.isEmpty
                 ? []
-                : HexSearchEngine.find(pattern: pattern, in: file.data),
+                : HexSearchEngine.find(pattern: pattern, in: searchableData),
             to: Self.matchCap).offsets
     }
+
+    /// TSK-1423: the bytes search + click-highlight run against — the model's
+    /// stashed DIRTY hex bytes when the tab has unsaved edits (the controller
+    /// pushes them via `stashHexBytes` on every edit), else the on-disk
+    /// `file.data`. Before this, search read `file.data` and silently ignored
+    /// unsaved edits, so a just-typed byte was un-findable.
+    private var searchableData: Data { model.dirtyHexBytes(forTabID: tabID) ?? file.data }
 
     private func clearClickHighlight() {
         clickPattern = []

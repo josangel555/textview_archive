@@ -191,6 +191,39 @@ final class HexDirtySaveClose_Audit_Sources_ViewerUI_DocumentModel_swift_Tests: 
             "no stash → the close-confirm Save overload must report nothing to save")
     }
 
+    // MARK: - TSK-1423: search/highlight run against the DIRTY stash, not disk
+
+    /// `HexView.searchableData` (the source both the find bar and click-highlight
+    /// scan) is `model.dirtyHexBytes(forTabID:) ?? file.data`. Before the fix it
+    /// was hard-wired to `file.data`, so a just-typed byte was un-findable. This
+    /// pins the data-source contract: the edited pattern lives ONLY in the stash
+    /// and IS findable there, while it is absent from the on-disk bytes (the
+    /// exact regression the pre-fix code exhibited).
+    func test_search_findsPatternInDirtyStash_notOnDisk() throws {
+        let (model, id, _, dirtyBytes) = try openHexDirtyTab("search_dirty.bin")
+        let onDisk = Data([0x00, 0x01, 0x02, 0x03])   // what openHexDirtyTab writes
+        let editedPattern: [UInt8] = [0xDE, 0xAD]      // exists only in the dirty stash
+
+        let searchable = model.dirtyHexBytes(forTabID: id)
+        XCTAssertEqual(searchable, dirtyBytes,
+            "the dirty stash is the live search source for an edited hex tab")
+        XCTAssertEqual(HexSearchEngine.find(pattern: editedPattern, in: searchable!), [0],
+            "an unsaved-edited byte pattern must be findable in the dirty stash")
+        XCTAssertTrue(HexSearchEngine.find(pattern: editedPattern, in: onDisk).isEmpty,
+            "pre-fix regression guard: the edit is absent from the on-disk bytes")
+    }
+
+    /// The `?? file.data` fallback: a CLEAN tab (no stash) has no dirty bytes, so
+    /// search correctly falls back to the on-disk file.
+    func test_search_fallsBackToDisk_whenTabClean() throws {
+        let url = try writeBinary("search_clean.bin", [0x00, 0x01, 0x02, 0x03])
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        XCTAssertNil(model.dirtyHexBytes(forTabID: id),
+            "a clean tab has no dirty stash → searchableData falls back to file.data")
+    }
+
     // MARK: - Leak: every close path empties the stash for the closed tab
 
     func test_noStashLeak_afterDiscardClose() throws {
