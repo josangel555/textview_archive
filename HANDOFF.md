@@ -62,6 +62,8 @@ land at `review` UNVERIFIED; UAT/AX/T5 batch when the VM returns.
 - T46: TSK-1474 video fallback card (73ae6ead) → review UNVERIFIED. MediaPreviewView.video
   branches on VideoPlayability: .native→AVPlayerView, .unsupported→VideoFallbackCard (kills
   black-player for mkv/webm/etc). Tail: UAT U1-U6 (U2 = .mkv card non-black on T5).
+- T47: TSK-1469 archive preview-on-select + Extract (e4f76ffd) → review UNVERIFIED. Master/detail
+  ArchiveBrowserView; previewPlan gate (no extract for >2MiB); capped-read peek. Tail: UAT U1-U7.
 - Gate flake filed TSK-1567 (EditorAssistToggleTests shared-UserDefaults parallel race).
 
 ## P0 INCIDENT RESOLVED (2026-07-07 ~23:15, TSK-1566 → fixed, 12f6e392)
