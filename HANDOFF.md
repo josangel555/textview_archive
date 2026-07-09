@@ -36,15 +36,22 @@ crash the frontend). If the dep cache is ever damaged: ship it from host — `rs
 .build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/` +
 `swift package resolve` (or build `--disable-automatic-resolution`).
 
-CURRENT: recovering the VM dist build (I wrongly rm-rf'd .build; deps re-shipped from host; a
-6.3 offline build is running in the BACKGROUND — do not block on it). TSK-1568 tracks it (not a
-blocker, being resolved).
+CURRENT (2026-07-09): FRESH DIST BUILT on the VM ✅ (dist/TextView.app rebuilt with 6.3 offline,
+my render-tail code in it). The offline saga is documented in LESSONS ("Offline VM dist build
+recipe") — TSK-1568. build-app.sh now supports MDV_SWIFT_OFFLINE=1. App LAUNCHES on the VM GUI
+lane (menu bar confirmed). REMAINING GAP (TSK-1569): screencapture shows the menu bar but NO
+window — window-capture issue (off-screen/Space/timing), blocks pixel UAT. Debug via
+screencapture -l<winID> (windowid file) or MDV_UI_SCENE + longer settle. Leftover root-owned VM
+test instances linger (reap with sudo kill).
 
 ## NEXT ACTION — build the PYRAMID, not a flagpole (owner directive 2026-07-09)
 The test pyramid is currently a flagpole (host unit tests only); the VM/render/UAT/AX tiers are
 the real gap. Once the dist build lands:
-1. `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 TOOLCHAINS=<6.3> bash
-   scripts/test-in-vm.sh all` — full T4/T5/WV suite (build_all rebuilds dist). Capture FULL output.
+1. Dist is ALREADY fresh on the VM. First resolve TSK-1569 (window not in screencapture) —
+   capture by window id (the app writes a windowid file) instead of -x, or drive MDV_UI_SCENE.
+   To rebuild dist if needed: `MDV_SWIFT_OFFLINE=1 bash scripts/build-app.sh debug` on the VM
+   (deps + git configs already staged; if the STALE-LINK tooth trips, `touch -t <old>
+   rust-core/link/libmdvcore_ffi.a` first).
 2. UAT the 7 review-lane tails (1438/1474/1469/1477/1478/1470/1475): spawn dist, drive each
    ticket's UAT cases, screencapture -l<winID>, Read the PNG, attach evidence, leave at `review`.
 3. GROW the pyramid: add T5/WV/AX tests for the new render surfaces (they only have host models
