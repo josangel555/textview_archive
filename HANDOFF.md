@@ -57,9 +57,11 @@ HOST lost its key (<path-to-ssh-key> gone in the relocation; no host key is
 enrolled on the VM). Owner must console-paste my ~/.ssh/id_ed25519.pub into the VM's
 authorized_keys OR give the vm-tester login pw. Until then: render tails are BUILD + host-test +
 land at `review` UNVERIFIED; UAT/AX/T5 batch when the VM returns.
-- T45 (this tick): TSK-1438 UI built (36796098) → review UNVERIFIED. MarkdownOutlineModel
-  (host-tested ObservableObject, scroll no-op guard) + MarkdownOutlineSection (SwiftUI). Tail:
-  mount as .markdownOutline sidebar panel + wire onJump + run UAT U1-U6 on VM.
+- T45: TSK-1438 outline UI (36796098) → review UNVERIFIED (model+section; tail: mount as
+  .markdownOutline panel + onJump + UAT on VM).
+- T46: TSK-1474 video fallback card (73ae6ead) → review UNVERIFIED. MediaPreviewView.video
+  branches on VideoPlayability: .native→AVPlayerView, .unsupported→VideoFallbackCard (kills
+  black-player for mkv/webm/etc). Tail: UAT U1-U6 (U2 = .mkv card non-black on T5).
 - Gate flake filed TSK-1567 (EditorAssistToggleTests shared-UserDefaults parallel race).
 
 ## P0 INCIDENT RESOLVED (2026-07-07 ~23:15, TSK-1566 → fixed, 12f6e392)
