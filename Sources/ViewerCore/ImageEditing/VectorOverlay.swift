@@ -248,6 +248,39 @@ public struct VectorOverlay: Sendable, Codable, Equatable {
         shapes.firstIndex { $0.id == id }
     }
 
+    /// The FRONT-most shape hit by `point` (normalized `0...1`), or `nil` —
+    /// so a click selects the visually-topmost shape under the cursor (TSK-1168).
+    /// Closed shapes (rect / ellipse / roundedRect / text) hit-test by frame
+    /// containment; open shapes (line / arrow) by distance to their segment ≤
+    /// `lineTolerance`. Front-to-back (`reversed`) because the last shape draws
+    /// on top. Pure — the on-canvas tap gesture calls this.
+    public func hitTest(_ point: CGPoint, lineTolerance: CGFloat = 0.02) -> UUID? {
+        for shape in shapes.reversed() where Self.contains(shape, point, lineTolerance: lineTolerance) {
+            return shape.id
+        }
+        return nil
+    }
+
+    static func contains(_ shape: VectorShape, _ p: CGPoint, lineTolerance: CGFloat) -> Bool {
+        switch shape.kind {
+        case .line, .arrow:
+            return segmentDistance(p, shape.start, shape.end) <= lineTolerance
+        case .rect, .ellipse, .roundedRect, .text:
+            return shape.frame.standardized.contains(p)
+        }
+    }
+
+    /// Perpendicular distance from `p` to the segment `a`–`b` (clamped to the
+    /// endpoints), all in normalized space.
+    static func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        if len2 == 0 { return hypot(p.x - a.x, p.y - a.y) }
+        var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+        t = min(1, max(0, t))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
     // MARK: Move (position) / restyle
 
     /// Translate the shape with `id` by a normalized delta. No-op (returns

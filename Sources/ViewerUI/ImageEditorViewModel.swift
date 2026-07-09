@@ -93,6 +93,10 @@ public final class ImageEditorViewModel: ObservableObject {
         /// the parametric GalleryShape polygons (which shape = `galleryShapeKind`)
         /// as a filled/stroked raster op. Distinct from the vector `.drawRect` etc.
         case galleryShape
+        /// TSK-1168 — on-canvas vector EDIT: click a placed shape to select it,
+        /// drag its body to move, drag a corner/edge handle to resize. The move/
+        /// resize/hit-test math is host-tested; the live drag is the VM/AX tail.
+        case editShapes
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool {
@@ -753,6 +757,9 @@ public final class ImageEditorViewModel: ObservableObject {
         // Drag-committed (shapes via drawShape, marquee via setSelection) — not a click.
         case .drawRect, .drawEllipse, .drawRoundedRect, .drawLine, .drawArrow,
              .selectRect, .selectLasso, .galleryShape: return 0
+        // TSK-1168: the on-canvas shape-edit tool acts on the vector overlay via
+        // select/move/resize gestures, never on raster pixels — a click here paints nothing.
+        case .editShapes: return 0
         }
     }
 
@@ -907,6 +914,25 @@ public final class ImageEditorViewModel: ObservableObject {
     public func resizeSelectedShape(to frame: CGRect) -> Bool {
         guard let id = selectedShapeID else { return false }
         return mutatingOverlay { overlay.setFrame(id: id, frame) }
+    }
+
+    /// TSK-1168 — select the FRONT-most shape under a normalized point (on-canvas
+    /// pick-by-hit-test), or clear the selection when the point misses every
+    /// shape. Supersedes the TSK-1321 "just the latest" first slice.
+    public func selectShape(at point: CGPoint) {
+        selectedShapeID = overlay.hitTest(point)
+    }
+
+    /// TSK-1168 — resize the selected shape by dragging `handle` by a normalized
+    /// delta. Computes the new frame (`ShapeDragGeometry.resizedFrame`, which
+    /// moves only the handle's edges, clamps to `0...1`, and enforces a min size)
+    /// and commits it undoably. No-op without a selection. The `DragGesture`
+    /// feeds incremental deltas here; the live drag is the VM/AX render tail.
+    @discardableResult
+    public func resizeSelectedShape(handle: ShapeDragGeometry.Handle, byX dx: CGFloat, y dy: CGFloat) -> Bool {
+        guard let shape = selectedShape else { return false }
+        let newFrame = ShapeDragGeometry.resizedFrame(shape.frame, handle: handle, byX: dx, y: dy)
+        return resizeSelectedShape(to: newFrame)
     }
 
     /// Replace the selected shape's style (colour / line-width / fill — "change

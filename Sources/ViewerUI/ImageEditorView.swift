@@ -21,6 +21,10 @@ struct ImageEditorView: View {
     @State private var shapeDragCurrent: CGPoint?
     /// TSK-1064 — in-progress lasso path (view points) while dragging the lasso tool.
     @State private var lassoPoints: [CGPoint] = []
+    /// TSK-1168 — on-canvas shape-edit drag: previous location (for the incremental
+    /// delta) + which handle is being dragged (nil = moving the body).
+    @State private var editDragLast: CGPoint?
+    @State private var editHandle: ShapeDragGeometry.Handle?
     /// TSK-1073 — resize/stretch dialog state.
     @State private var resizeSheetShown = false
     @State private var resizeWidth = ""
@@ -194,6 +198,13 @@ struct ImageEditorView: View {
                     // exact rect the fitted image occupies — a pure SwiftUI
                     // sibling (Canvas), so no opaque-representable occlusion.
                     VectorOverlayView(overlay: vm.overlay, imageRect: displayed)
+                    // TSK-1168: selection outline + resize handles for the shape
+                    // being edited (only in the .editShapes tool). Pure SwiftUI
+                    // sibling; the drag that moves/resizes is the gesture below.
+                    if vm.tool == .editShapes, let sel = vm.selectedShape {
+                        ShapeSelectionHandlesView(frame: sel.frame, imageRect: displayed)
+                            .allowsHitTesting(false)
+                    }
                     // TSK-1059/1058: live rubber-band while dragging a shape tool.
                     if vm.tool.isShape, let s = shapeDragStart, let c = shapeDragCurrent {
                         if vm.tool.isOpenShape {
@@ -261,6 +272,33 @@ struct ImageEditorView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
+                            if vm.tool == .editShapes {
+                                // First change of the drag: decide handle-resize vs
+                                // body-move (+ select the shape under the point).
+                                if editDragLast == nil {
+                                    let startNorm = ShapeDragGeometry.normalizedPoint(
+                                        value.startLocation, in: displayed)
+                                    if let sel = vm.selectedShape,
+                                       let h = ShapeDragGeometry.handleHitTest(
+                                           startNorm, in: sel.frame, tolerance: 0.035) {
+                                        editHandle = h   // resize the current selection
+                                    } else {
+                                        vm.selectShape(at: startNorm)  // pick (or clear)
+                                        editHandle = nil
+                                    }
+                                } else if let last = editDragLast {
+                                    // Incremental normalized delta since the last change.
+                                    let dx = (value.location.x - last.x) / displayed.width
+                                    let dy = (value.location.y - last.y) / displayed.height
+                                    if let h = editHandle {
+                                        vm.resizeSelectedShape(handle: h, byX: dx, y: dy)
+                                    } else {
+                                        vm.moveSelectedShape(byX: dx, y: dy)
+                                    }
+                                }
+                                editDragLast = value.location
+                                return
+                            }
                             if vm.tool.isShape {
                                 shapeDragStart = value.startLocation
                                 shapeDragCurrent = value.location
@@ -298,6 +336,13 @@ struct ImageEditorView: View {
                             lastPaintPixel = px
                         }
                         .onEnded { value in
+                            if vm.tool == .editShapes {
+                                // A tap (no movement) already selected via the first
+                                // onChanged; just clear the per-drag state.
+                                editDragLast = nil
+                                editHandle = nil
+                                return
+                            }
                             if vm.tool == .selectLasso {
                                 defer { lassoPoints = [] }
                                 if let poly = SelectionGeometry.polygon(
@@ -577,6 +622,8 @@ struct ImageEditorView: View {
             Image(systemName: "arrow.up.right").tag(ImageEditorViewModel.RasterTool.drawArrow)
             Image(systemName: "rectangle.dashed").tag(ImageEditorViewModel.RasterTool.selectRect)
             Image(systemName: "lasso").tag(ImageEditorViewModel.RasterTool.selectLasso)
+            // TSK-1168: select + move/resize a placed vector shape on the canvas.
+            Image(systemName: "selection.pin.in.out").tag(ImageEditorViewModel.RasterTool.editShapes)
         }
         .pickerStyle(.segmented)
         .labelsHidden()

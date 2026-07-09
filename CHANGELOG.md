@@ -17,6 +17,10 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Move & resize shapes on the image canvas.** The image editor's paint tools gained a
+  **select** tool (the ⌖ icon): click a placed shape to select it — it shows a dashed outline with
+  eight resize handles — then drag its body to move it or a handle to resize. Previously a placed
+  shape was fixed once drawn. (Undo works on each move/resize.)
 - **Git panel now stages, commits, and discards.** The sidebar Git ▸ Status tab gained the
   standard loop: a **＋/－** on each row to stage/unstage, a commit-message field with a **Commit**
   button (disabled until something's staged and a message is typed), and **Discard Changes…** on a
