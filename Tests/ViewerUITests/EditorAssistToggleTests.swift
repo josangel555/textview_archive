@@ -17,15 +17,15 @@ final class EditorAssistToggleTests: HeadlessUITestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        // The prefs persist via UserDefaults; clear so each test starts at defaults.
-        UserDefaults.standard.removeObject(forKey: EditorCoordinator.spellCheckDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: EditorCoordinator.autocompleteDefaultsKey)
+        // TSK-1567: the assist toggles now persist through the harness's OWN
+        // hermetic defaults suite (EditorCoordinator.assistDefaults ←
+        // preferences.defaults), never `UserDefaults.standard`. So each test
+        // starts at defaults without touching (or racing on) the global store —
+        // which was the `--parallel` flake this fixed.
         harness = HeadlessHarness(label: "EditorAssistToggleTests")
     }
 
     override func tearDown() async throws {
-        UserDefaults.standard.removeObject(forKey: EditorCoordinator.spellCheckDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: EditorCoordinator.autocompleteDefaultsKey)
         harness?.cleanup()
         harness = nil
         try await super.tearDown()
@@ -83,5 +83,26 @@ final class EditorAssistToggleTests: HeadlessUITestCase {
         XCTAssertFalse(harness.model.editor.autocompleteEnabled)
         _ = ScriptVerb.apply(verb: "toggle-spell-check", to: harness.model, sessions: harness.sessions)
         XCTAssertTrue(harness.model.editor.spellCheckEnabled)
+    }
+
+    /// TSK-1567 regression guard: two independent models (each its own hermetic
+    /// defaults suite) must NOT share assist-toggle state. Before the fix both
+    /// wrote `UserDefaults.standard`, so a toggle in one parallel test leaked into
+    /// another — the `--parallel` flake. This is the teeth: it FAILS if the
+    /// coordinator ever reverts to the global store.
+    func test_toggleState_isIsolatedPerModel() {
+        let a = HeadlessHarness(label: "AssistIsolationA")
+        defer { a.cleanup() }
+        let b = HeadlessHarness(label: "AssistIsolationB")
+        defer { b.cleanup() }
+        a.model.editor.autocompleteEnabled = false
+        a.model.editor.spellCheckEnabled = false
+        XCTAssertTrue(b.model.editor.autocompleteEnabled,
+            "toggling model A's autocomplete must not leak into model B (separate suites)")
+        XCTAssertTrue(b.model.editor.spellCheckEnabled,
+            "toggling model A's spell-check must not leak into model B")
+        // And A actually flipped (the write landed in A's own suite).
+        XCTAssertFalse(a.model.editor.autocompleteEnabled)
+        XCTAssertFalse(a.model.editor.spellCheckEnabled)
     }
 }

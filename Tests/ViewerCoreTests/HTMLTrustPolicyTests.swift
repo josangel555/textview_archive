@@ -112,4 +112,46 @@ final class HTMLTrustPolicyTests: XCTestCase {
         XCTAssertTrue(HTMLTrustStore(defaults: d).isOptedIn(url: localDoc),
                       "a trust opt-in must survive reopen (same store backing)")
     }
+
+    // MARK: TSK-1203 — network-consent store (per-document, https-only, revocable)
+
+    private func freshNetworkStore() -> HTMLNetworkConsentStore {
+        HTMLNetworkConsentStore(defaults: UserDefaults(suiteName: "HTMLNet-\(UUID().uuidString)")!)
+    }
+
+    func test_networkStore_defaultIsEmpty() {
+        XCTAssertEqual(freshNetworkStore().allowedHosts(for: localDoc), [])
+    }
+
+    func test_networkStore_allowThenRead_roundTrips_sortedDeduped() {
+        let store = freshNetworkStore()
+        XCTAssertTrue(store.allow(host: "b.example.com", for: localDoc))
+        XCTAssertTrue(store.allow(host: "a.example.com", for: localDoc))
+        XCTAssertTrue(store.allow(host: "a.example.com", for: localDoc))   // dupe
+        XCTAssertEqual(store.allowedHosts(for: localDoc),
+                       ["a.example.com", "b.example.com"])
+    }
+
+    func test_networkStore_rejectsInvalidHost() {
+        let store = freshNetworkStore()
+        XCTAssertFalse(store.allow(host: "*.evil.com", for: localDoc))
+        XCTAssertFalse(store.allow(host: "http://x", for: localDoc))
+        XCTAssertEqual(store.allowedHosts(for: localDoc), [], "no invalid host is stored")
+    }
+
+    func test_networkStore_isPerDocument() {
+        let store = freshNetworkStore()
+        let a = URL(fileURLWithPath: "/tmp/site/a.html")
+        let b = URL(fileURLWithPath: "/tmp/site/b.html")
+        store.allow(host: "api.example.com", for: a)
+        XCTAssertEqual(store.allowedHosts(for: a), ["api.example.com"])
+        XCTAssertEqual(store.allowedHosts(for: b), [], "consent for A must not leak to B")
+    }
+
+    func test_networkStore_revokeAll_clearsConsent() {
+        let store = freshNetworkStore()
+        store.allow(host: "api.example.com", for: localDoc)
+        store.revokeAll(for: localDoc)
+        XCTAssertEqual(store.allowedHosts(for: localDoc), [])
+    }
 }

@@ -62,6 +62,35 @@ extension DocumentModel {
             userOptedIn: htmlTrustStore.isOptedIn(url: url))
     }
 
+    /// TSK-1203 — the https hosts a TRUSTED tab may `connect-src` to. Fail-closed:
+    /// an UNtrusted tab returns `[]` regardless of any stored consent, so an
+    /// untrusted page's fence can never be widened. The single read path the
+    /// renderer passes to `HTMLDocumentPolicy.envelope(allowedConnectHosts:)`.
+    public func htmlAllowedConnectHosts(forTabID tabID: UUID) -> [String] {
+        guard htmlTrusted(forTabID: tabID),
+              let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return [] }
+        return htmlNetworkConsent.allowedHosts(for: url)
+    }
+
+    /// Consent to `host` for THIS tab's HTML doc (a deliberate user action). Only
+    /// applies to a TRUSTED, valid-host pair; fires `objectWillChange` so the
+    /// renderer rebuilds the CSP with the new origin. Returns whether it took.
+    @discardableResult
+    public func allowHTMLNetwork(host: String, forTabID tabID: UUID) -> Bool {
+        guard htmlTrusted(forTabID: tabID),
+              let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return false }
+        let ok = htmlNetworkConsent.allow(host: host, for: url)
+        if ok { objectWillChange.send() }
+        return ok
+    }
+
+    /// Revoke ALL network consent for THIS tab's doc (fence back to `connect-src 'none'`).
+    public func revokeHTMLNetwork(forTabID tabID: UUID) {
+        guard let url = tabs.tabs.first(where: { $0.id == tabID })?.url else { return }
+        htmlNetworkConsent.revokeAll(for: url)
+        objectWillChange.send()
+    }
+
     /// Is the tab's HTML doc ELIGIBLE for trust (local + not quarantined)?
     /// Drives whether the "Trust & Run" affordance is offered (slice 3).
     public func htmlTrustEligible(forTabID tabID: UUID) -> Bool {

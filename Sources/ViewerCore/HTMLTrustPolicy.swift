@@ -77,6 +77,57 @@ public final class HTMLTrustStore: @unchecked Sendable {
     }
 }
 
+/// Per-document NETWORK consent (TSK-1203) — a SECOND, separate escalation
+/// BEYOND trust: a trusted page's `connect-src` stays `'none'` until the user
+/// explicitly allows specific hosts for THAT page. Default empty; per-path;
+/// revocable. Only meaningful for a page that is ALSO trusted — the CSP builder
+/// ignores consented hosts for an untrusted document — so this can never widen an
+/// untrusted page's fence. Same path-keying + persistence shape as `HTMLTrustStore`.
+public final class HTMLNetworkConsentStore: @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let lock = NSLock()
+    static let storageKey = "MarkdownViewer.html.networkConsent"   // [trustKey: [host]]
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    private func map() -> [String: [String]] {
+        (defaults.dictionary(forKey: Self.storageKey) as? [String: [String]]) ?? [:]
+    }
+
+    /// The https hosts the user consented to for THIS document (sorted, deduped).
+    public func allowedHosts(for url: URL) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return map()[HTMLTrustPolicy.trustKey(for: url)] ?? []
+    }
+
+    /// Consent to `host` for THIS document. Only hosts that validate as a bare
+    /// https origin are stored (the CSP builder re-validates as defence-in-depth).
+    /// A no-op for an invalid host. Returns whether the host was accepted.
+    @discardableResult
+    public func allow(host: String, for url: URL) -> Bool {
+        guard HTMLDocumentPolicy.connectSource(forHost: host) != nil else { return false }
+        let normalized = host.trimmingCharacters(in: .whitespaces).lowercased()
+        lock.lock(); defer { lock.unlock() }
+        var m = map()
+        let key = HTMLTrustPolicy.trustKey(for: url)
+        var hosts = Set(m[key] ?? [])
+        hosts.insert(normalized)
+        m[key] = Array(hosts).sorted()
+        defaults.set(m, forKey: Self.storageKey)
+        return true
+    }
+
+    /// Revoke ALL network consent for THIS document (the fence returns to `'none'`).
+    public func revokeAll(for url: URL) {
+        lock.lock(); defer { lock.unlock() }
+        var m = map()
+        m.removeValue(forKey: HTMLTrustPolicy.trustKey(for: url))
+        defaults.set(m, forKey: Self.storageKey)
+    }
+}
+
 /// Side-effecting quarantine probe (TSK-1189). The pure gate
 /// (`HTMLTrustPolicy.isTrustEligible`) takes the result as a `Bool` so it stays
 /// testable; this reads the actual xattr. A file carrying `com.apple.quarantine`

@@ -93,6 +93,17 @@
   actually collide. A genuine overlapping conflict still shows the banner.
 
 ### System work
+- **HTML trust-mode: consent-gated-network security core (TSK-1203).** A trusted local HTML page's
+  `connect-src` fence can now be escalated per-page to explicit user-consented https origins
+  (`HTMLDocumentPolicy.cspString(allowedConnectHosts:)` + a strict `connectSource` host validator +
+  a per-document `HTMLNetworkConsentStore`), wired live through the renderer envelope and gated
+  fail-closed on the model (untrusted tabs expose zero hosts). Empty consent ⇒ `connect-src 'none'`,
+  identical to today. Security invariants host-tested (untrusted never relaxes; malformed hosts
+  dropped); the grant UI + blocked-host detection + failure banner are the render tail (TSK-1580).
+- **Fixed the `EditorAssistToggleTests` `--parallel` flake (TSK-1567).** The spell/autocomplete
+  toggles persisted through `UserDefaults.standard`, so parallel suites raced on the global store.
+  `EditorCoordinator` now takes an injected `assistDefaults` (threaded from the model's preferences
+  suite); hermetic tests isolate on their own suite. Added a per-model isolation regression guard.
 - **Spelling verb surface + CH-C spike triage (TSK-1505 / 1570 / 1170·1173·1504).** New spelling
   verbs wired through `ScriptVerbDispatch` + `ScriptVerbCatalog` + `CommandRegistry` palette
   descriptors, on an `EditorCoordinator` spell seam (language/ignore config, per-tab nav cursor) and

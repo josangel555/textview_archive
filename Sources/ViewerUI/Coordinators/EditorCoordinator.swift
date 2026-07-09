@@ -238,12 +238,13 @@ public final class EditorCoordinator: ObservableObject {
     /// — on a loaded machine / large txt that is felt as typing jank, so the
     /// user can switch it off from the footer chip (persisted; default ON).
     /// Turning it OFF clears existing squiggles immediately.
-    @Published public var spellCheckEnabled: Bool =
-        UserDefaults.standard.object(forKey: EditorCoordinator.spellCheckDefaultsKey) as? Bool ?? true
-    {
+    /// Seeded from `assistDefaults` in `init` (default ON). TSK-1567: persistence
+    /// goes through the INJECTED `assistDefaults`, not `UserDefaults.standard`, so
+    /// hermetic tests (each with their own suite) can't race on the global store.
+    @Published public var spellCheckEnabled: Bool = true {
         didSet {
             guard oldValue != spellCheckEnabled else { return }
-            UserDefaults.standard.set(spellCheckEnabled, forKey: Self.spellCheckDefaultsKey)
+            assistDefaults.set(spellCheckEnabled, forKey: Self.spellCheckDefaultsKey)
             if !spellCheckEnabled {
                 // Instant effect: clear every tab's spell layer (LSP survives the merge).
                 for id in spellEditorDiagnostics.keys where !(spellEditorDiagnostics[id] ?? []).isEmpty {
@@ -257,14 +258,17 @@ public final class EditorCoordinator: ObservableObject {
     /// buffer-word fallback (which SCANS the whole buffer per completion
     /// request: the txt typing-cost twin of the spell pass). Persisted;
     /// default ON.
-    @Published public var autocompleteEnabled: Bool =
-        UserDefaults.standard.object(forKey: EditorCoordinator.autocompleteDefaultsKey) as? Bool ?? true
-    {
+    @Published public var autocompleteEnabled: Bool = true {
         didSet {
             guard oldValue != autocompleteEnabled else { return }
-            UserDefaults.standard.set(autocompleteEnabled, forKey: Self.autocompleteDefaultsKey)
+            assistDefaults.set(autocompleteEnabled, forKey: Self.autocompleteDefaultsKey)
         }
     }
+
+    /// Backing store for the assist toggles (TSK-1567). Injected so tests isolate
+    /// on their own suite; production passes `preferences.defaults` (usually
+    /// `.standard`). Never read `UserDefaults.standard` directly for these.
+    private let assistDefaults: UserDefaults
 
     /// Last-known editor cursor position per tab. Used to restore the
     /// caret when the user switches tabs (CM6 view dismantles + remounts
@@ -410,8 +414,16 @@ public final class EditorCoordinator: ObservableObject {
     /// integration seam the viewer agent's diff surface plugs into.
     public var onViewSaveConflictDiff: ((_ tabID: UUID, _ url: URL) -> Void)?
 
-    public init(tabCoordinator: TabCoordinator) {
+    public init(tabCoordinator: TabCoordinator, assistDefaults: UserDefaults = .standard) {
         self.tabCoordinator = tabCoordinator
+        self.assistDefaults = assistDefaults
+        // TSK-1567: seed the assist toggles from the injected store (default ON).
+        // Assigning in `init` does NOT fire the didSet observers (initialization
+        // context), so this reads without a redundant write-back.
+        spellCheckEnabled =
+            assistDefaults.object(forKey: Self.spellCheckDefaultsKey) as? Bool ?? true
+        autocompleteEnabled =
+            assistDefaults.object(forKey: Self.autocompleteDefaultsKey) as? Bool ?? true
         // Register our cleanup hook before any tabs can close. Drains
         // the three editor-owned dicts in lock-step with TabCoordinator's
         // six built-in dicts. Idempotent removeValue — no preflight

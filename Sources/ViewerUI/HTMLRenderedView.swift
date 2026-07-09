@@ -66,12 +66,19 @@ public struct HTMLRenderedView: NSViewRepresentable {
     public let pdfExportURL: URL?
     public let onPDFExportResult: ((Int, Bool, String) -> Void)?
 
+    /// TSK-1203 — https hosts a TRUSTED doc may `connect-src` to (user-consented,
+    /// per-page). Empty by default ⇒ `connect-src 'none'` (the fence, unchanged).
+    /// Fed by `DocumentModel.htmlAllowedConnectHosts(forTabID:)`, which is itself
+    /// fail-closed (returns [] for any untrusted tab).
+    public let allowedConnectHosts: [String]
+
     public init(
         rawHTML: String,
         documentURL: URL,
         zoom: Double = 1.0,
         javaScriptEnabled: Bool = false,
         trusted: Bool = false,
+        allowedConnectHosts: [String] = [],
         printNonce: Int = 0,
         pdfExportNonce: Int = 0,
         pdfExportURL: URL? = nil,
@@ -82,6 +89,7 @@ public struct HTMLRenderedView: NSViewRepresentable {
         self.zoom = zoom
         self.javaScriptEnabled = javaScriptEnabled
         self.trusted = trusted
+        self.allowedConnectHosts = allowedConnectHosts
         self.printNonce = printNonce
         self.pdfExportNonce = pdfExportNonce
         self.pdfExportURL = pdfExportURL
@@ -181,7 +189,9 @@ public struct HTMLRenderedView: NSViewRepresentable {
         // L1: sanitize THEN wrap in the policy envelope (CSP + charset).
         // The raw bytes never reach the WebView un-sanitized.
         let sanitized = HTMLDocumentPolicy.sanitize(rawHTML, trusted: trusted)
-        let document = HTMLDocumentPolicy.envelope(sanitizedBody: sanitized, trusted: trusted)
+        let document = HTMLDocumentPolicy.envelope(
+            sanitizedBody: sanitized, trusted: trusted,
+            allowedConnectHosts: allowedConnectHosts)
 
         // Reload only when the rendered document OR the JS opt-in changed
         // (the opt-in only takes effect on a fresh load). Avoids a render

@@ -1081,6 +1081,9 @@ public struct ContentView: View {
                     // TSK-1189: trust-local-HTML — runs the page's own scripts
                     // only for a local, user-opted-in, non-quarantined doc.
                     trusted: model.htmlTrusted(forTabID: tab.id),
+                    // TSK-1203: consent-gated network — [] (connect-src 'none') unless
+                    // the user allowed hosts for THIS trusted page.
+                    allowedConnectHosts: model.htmlAllowedConnectHosts(forTabID: tab.id),
                     printNonce: isActive ? model.renderedPrintRequest : 0,
                     pdfExportNonce: isActive ? (model.renderedPDFExportRequest?.nonce ?? 0) : 0,
                     pdfExportURL: model.renderedPDFExportRequest?.url,

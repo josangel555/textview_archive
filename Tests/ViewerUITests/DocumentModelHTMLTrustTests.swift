@@ -32,6 +32,8 @@ final class DocumentModelHTMLTrustTests: XCTestCase {
         // Throwaway suite so the opt-in doesn't touch .standard.
         m.htmlTrustStore = HTMLTrustStore(defaults: UserDefaults(
             suiteName: "HTMLTrustStore-\(UUID().uuidString)")!)
+        m.htmlNetworkConsent = HTMLNetworkConsentStore(defaults: UserDefaults(
+            suiteName: "HTMLNetStore-\(UUID().uuidString)")!)
         return m
     }
 
@@ -89,5 +91,50 @@ final class DocumentModelHTMLTrustTests: XCTestCase {
         let id = openHTML(m)
         XCTAssertFalse(m.shouldOfferHTMLTrust(forTabID: id, contents: "<p>just text, no scripts</p>"),
                        "no banner when nothing was suppressed")
+    }
+
+    // MARK: TSK-1203 — network consent accessor (fail-closed for untrusted)
+
+    func test_networkConsent_returnsHosts_onlyWhenTrusted() {
+        let m = makeModel()
+        let id = openHTML(m)
+        // Untrusted: granting is rejected AND the read is empty.
+        XCTAssertFalse(m.allowHTMLNetwork(host: "api.example.com", forTabID: id),
+                       "an untrusted tab can't be granted network")
+        XCTAssertEqual(m.htmlAllowedConnectHosts(forTabID: id), [],
+                       "untrusted tab exposes NO connect hosts (fail-closed)")
+        // Trust, then grant.
+        m.setHTMLTrusted(true, forTabID: id)
+        XCTAssertTrue(m.allowHTMLNetwork(host: "api.example.com", forTabID: id))
+        XCTAssertEqual(m.htmlAllowedConnectHosts(forTabID: id), ["api.example.com"])
+    }
+
+    func test_networkConsent_revokedByUntrusting() {
+        let m = makeModel()
+        let id = openHTML(m)
+        m.setHTMLTrusted(true, forTabID: id)
+        m.allowHTMLNetwork(host: "api.example.com", forTabID: id)
+        XCTAssertEqual(m.htmlAllowedConnectHosts(forTabID: id), ["api.example.com"])
+        // Revoking TRUST alone re-closes the network fence (accessor is trust-gated),
+        // even though the stored consent for the path survives.
+        m.setHTMLTrusted(false, forTabID: id)
+        XCTAssertEqual(m.htmlAllowedConnectHosts(forTabID: id), [],
+                       "untrusting a doc closes its network fence")
+    }
+
+    func test_revokeHTMLNetwork_clearsStoredConsent() {
+        let m = makeModel()
+        let id = openHTML(m)
+        m.setHTMLTrusted(true, forTabID: id)
+        m.allowHTMLNetwork(host: "api.example.com", forTabID: id)
+        m.revokeHTMLNetwork(forTabID: id)
+        XCTAssertEqual(m.htmlAllowedConnectHosts(forTabID: id), [],
+                       "explicit revoke clears the stored consent")
+    }
+
+    func test_unknownTab_networkFailsClosed() {
+        let m = makeModel()
+        XCTAssertEqual(m.htmlAllowedConnectHosts(forTabID: UUID()), [])
+        XCTAssertFalse(m.allowHTMLNetwork(host: "api.example.com", forTabID: UUID()))
     }
 }

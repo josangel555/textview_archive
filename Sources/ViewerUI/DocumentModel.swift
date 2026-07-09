@@ -555,7 +555,11 @@ public final class DocumentModel: ObservableObject {
         // effect closures so the closures can capture `self` weakly.
         // EditorCoordinator registers a close-hook on TabCoordinator
         // in its init — must happen before any tab can close.
-        self.editor = EditorCoordinator(tabCoordinator: tabCoordinator)
+        // TSK-1567: route the assist-toggle persistence through the model's own
+        // preferences store (a hermetic suite under test) so parallel suites don't
+        // race on `UserDefaults.standard`.
+        self.editor = EditorCoordinator(
+            tabCoordinator: tabCoordinator, assistDefaults: preferences.defaults)
         // Single Local-History store (TSK-1103 merge): the editor save-path
         // snapshot hook (EditorCoordinator.saveEditor) and the unified version
         // viewer must read/write the SAME instance, so the viewer sees exactly
@@ -2017,6 +2021,11 @@ public final class DocumentModel: ObservableObject {
     /// persisted; `var` so tests can inject a throwaway suite. The trust
     /// decision is fail-closed (`HTMLTrustPolicy.isTrusted`).
     public var htmlTrustStore = HTMLTrustStore()
+
+    /// PER-DOCUMENT network consent for a TRUSTED HTML doc (TSK-1203). Separate,
+    /// second escalation: a trusted page's `connect-src` stays `'none'` until the
+    /// user allows specific hosts for THAT page. `var` so tests inject a suite.
+    public var htmlNetworkConsent = HTMLNetworkConsentStore()
 
     // Rendered-markdown cache LOGIC → DocumentModel+RenderedCache.swift
     // (TSK-1110 SRP slice): renderedHTML / renderedHTMLIfCached /

@@ -166,6 +166,60 @@ final class HTMLDocumentPolicyTests: XCTestCase {
         XCTAssertTrue(tag.contains("form-action 'none'"))
     }
 
+    // MARK: - TSK-1203: consent-gated network (connect-src)
+
+    /// THE SECURITY INVARIANT: an UNtrusted page ignores consented hosts entirely
+    /// — its fence can never be widened. `cspString(trusted:false, hosts)` must be
+    /// byte-identical to the strict constant.
+    func test_cspString_untrusted_ignoresConsentedHosts() {
+        let s = HTMLDocumentPolicy.cspString(
+            trusted: false, allowedConnectHosts: ["api.example.com", "evil.test"])
+        XCTAssertEqual(s, HTMLDocumentPolicy.csp,
+            "untrusted must NEVER relax connect-src, regardless of consent")
+        XCTAssertTrue(s.contains("connect-src 'none'"))
+    }
+
+    /// Trusted with NO consent keeps `connect-src 'none'` (default fence).
+    func test_cspString_trusted_noConsent_keepsFence() {
+        let s = HTMLDocumentPolicy.cspString(trusted: true, allowedConnectHosts: [])
+        XCTAssertTrue(s.contains("connect-src 'none'"))
+    }
+
+    /// Trusted WITH consent lists the validated https origins in connect-src.
+    func test_cspString_trusted_withConsent_listsHttpsOrigins() {
+        let s = HTMLDocumentPolicy.cspString(
+            trusted: true, allowedConnectHosts: ["api.example.com", "cdn.test:8443"])
+        XCTAssertTrue(s.contains("connect-src https://api.example.com https://cdn.test:8443"),
+            "consented hosts must appear as https origins; got: \(s)")
+        XCTAssertFalse(s.contains("connect-src 'none'"))
+        // The rest of the fence is untouched.
+        XCTAssertTrue(s.contains("object-src 'none'") && s.contains("form-action 'none'"))
+    }
+
+    /// Invalid consented entries are DROPPED; if none survive, back to `'none'`.
+    func test_cspString_trusted_dropsInvalidHosts() {
+        let s = HTMLDocumentPolicy.cspString(
+            trusted: true, allowedConnectHosts: ["*.evil.com", "http://x", "a b", ""])
+        XCTAssertTrue(s.contains("connect-src 'none'"),
+            "no valid host survives → fence stays closed; got: \(s)")
+    }
+
+    func test_connectSource_acceptsBareHttpsOrigins() {
+        XCTAssertEqual(HTMLDocumentPolicy.connectSource(forHost: "api.example.com"),
+                       "https://api.example.com")
+        XCTAssertEqual(HTMLDocumentPolicy.connectSource(forHost: "CDN.Test:8443"),
+                       "https://cdn.test:8443")
+    }
+
+    func test_connectSource_rejectsUnsafeOrMalformed() {
+        for bad in ["*.example.com", "http://api.example.com", "api.example.com/path",
+                    "api.example.com?q=1", "user@host.com", "a b", "", "host:notaport",
+                    "javascript:alert(1)", "'none'"] {
+            XCTAssertNil(HTMLDocumentPolicy.connectSource(forHost: bad),
+                "must reject unsafe/malformed host: \(bad)")
+        }
+    }
+
     func test_cspMeta_isWellFormed_bothTrustLevels() {
         for trusted in [false, true] {
             let tag = HTMLDocumentPolicy.cspMeta(trusted: trusted)

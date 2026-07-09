@@ -20,19 +20,22 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-C (editor & markdown power tools): 1505 SHIPPED + 1570 (U2) SHIPPED → `review`**
-  (host-only). **1505 spelling verbs** = the owner-asked full loop (next/prev/fix/add-to-dict/ignore/
-  set-language/check-document) wired through ScriptVerbDispatch + ScriptVerbCatalog + CommandRegistry
-  palette descriptors, on a new EditorCoordinator spell seam (language/ignore config + per-tab nav
-  cursor) + pure `SpellNavigation`; full host pyramid (SpellNavigationTests + DocumentModelSpellingTests
-  12 cases). CM6 caret-jump/text-replace = render tail (model decisions host-tested). **1570 U2**
-  scroll-highlight wired (feeds `viewportChanged`, already host-tested); U3 preview-scroll SPLIT →
-  **TSK-1579** (needs a NEW rendered-preview scroll-to-line WebView API).
-- **CH-C DEFERRED (model DONE, only render/JS tail left — spike comments on the board):** 1170 snippets
-  (Swift walker + wiring COMPLETE; gap = CM6-JS Tab keymap posting `snippetTab`, `codemirror.js` has 0
-  refs) · 1173 sticky-scroll (model COMPLETE — `stickyScrollHeaders` @Published + recompute; gap = the
-  pinned SwiftUI overlay over CM6, ⚠️compositor-occlusion) · 1504 cheap-assists (BufferWordIndex design +
-  the CM6 delta hook @ CodeMirrorEditorView:936 to feed it — not built, would be dead code without the wire).
+- **THIS TICK — CH-D/CH-E stragglers (security + test-infra): 1203 (core) + 1567 → `review`** (host-only).
+  **1203 consent-gated network** = the trust-mode CSP fence can now escalate a TRUSTED page's
+  `connect-src` to explicit user-consented https origins: `HTMLDocumentPolicy.cspString(allowedConnectHosts:)`
+  + `connectSource` validator (https-only, no wildcards/path/scheme) + `HTMLNetworkConsentStore` (per-page)
+  + `DocumentModel.htmlAllowedConnectHosts/allowHTMLNetwork/revokeHTMLNetwork` (fail-closed: untrusted→[]),
+  threaded live through HTMLRenderedView→envelope→CSP. Empty consent ⇒ `connect-src 'none'` (unchanged).
+  Security invariants host-tested (HTMLDocumentPolicy +6, HTMLTrustPolicy +6, DocumentModelHTMLTrust +4).
+  Render tail (failure banner + grant UI + blocked-host detection) SPLIT → **TSK-1580**. **1567**: fixed
+  the EditorAssistToggleTests `--parallel` flake — injected `assistDefaults` into EditorCoordinator
+  (threaded from the model's prefs suite); added a per-model isolation guard.
+- **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS (not a quick chunk):** 1482 menu-audit (buildMenu is
+  ~1300 lines imperative + AppMenuActions is a 3-method protocol → needs a declarative-menu refactor OR
+  VM testing), 1191 git-history migration (retire FileHistoryView onto UnifiedHistoryView, render VM-val),
+  1205 spreadsheet-grid (render). Take each as its OWN focused tick, not a 3-5 batch.
+- **PRIOR — CH-C: 1505 spelling verbs + 1570 U2 outline-highlight → `review`** (`62697ec1`); deferred
+  1170/1173/1504 (models DONE, render/JS tail — board spike comments); 1570-U3 split → TSK-1579.
 - **PRIOR — CH-D (data-safety): 1423 + 1269 + 1165 → `review`** (`5ed63734`): hex-search-over-dirty-bytes
   + external-edit 3-way auto-merge wire (host pyramid; CM6 redisplay = render tail).
 - **PRIOR (at `review`):** CH-B image tools (`1a6eef77`: 1083/1084/1086/1089; 1090 parked) · CH-A image

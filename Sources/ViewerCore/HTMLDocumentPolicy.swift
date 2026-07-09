@@ -151,17 +151,49 @@ public enum HTMLDocumentPolicy {
     /// home), plus `object/frame/base/form-action 'none'` and local+inline
     /// img/style/font. `trusted == false` returns the strict `csp` constant
     /// byte-for-byte. A trusted page is a local web page, NOT an exfiltrator.
-    public static func cspString(trusted: Bool) -> String {
+    public static func cspString(trusted: Bool, allowedConnectHosts: [String] = []) -> String {
+        // Untrusted NEVER relaxes — the fence is fail-closed and `allowedConnectHosts`
+        // is IGNORED (a security invariant, host-tested). Only a trusted page can
+        // ever escalate, and even then ONLY to the explicit https origins the user
+        // consented to (TSK-1203 consent-gated network).
         guard trusted else { return csp }
+        let connectSrc = connectSrcValue(allowedConnectHosts)
         return "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             + "img-src file: data:; style-src 'unsafe-inline'; font-src data:; "
-            + "connect-src 'none'; frame-src 'none'; object-src 'none'; "
+            + "connect-src \(connectSrc); frame-src 'none'; object-src 'none'; "
             + "base-uri 'none'; form-action 'none';"
     }
 
-    /// The `<meta>` CSP tag for the given trust level.
-    public static func cspMeta(trusted: Bool) -> String {
-        "<meta http-equiv=\"Content-Security-Policy\" content=\"\(cspString(trusted: trusted))\">"
+    /// The `connect-src` directive VALUE for a trusted page: `'none'` unless the
+    /// user consented to specific hosts, in which case the validated https origins
+    /// (invalid/empty entries dropped; if none survive, back to `'none'`).
+    static func connectSrcValue(_ allowedConnectHosts: [String]) -> String {
+        guard !allowedConnectHosts.isEmpty else { return "'none'" }
+        let sources = allowedConnectHosts.compactMap { connectSource(forHost: $0) }
+        return sources.isEmpty ? "'none'" : sources.joined(separator: " ")
+    }
+
+    /// TSK-1203 — validate a consented host into a CSP `connect-src` source
+    /// expression (`https://<host>[:port]`), or nil if it isn't a plausible bare
+    /// origin. HTTPS-ONLY (the fence never permits cleartext exfiltration); NO
+    /// wildcards, path, scheme, userinfo, query, or fragment — a single concrete
+    /// origin the user explicitly opted THIS page into. Canonicalised via
+    /// `URLComponents` so smuggled extras can't widen the grant.
+    public static func connectSource(forHost host: String) -> String? {
+        let h = host.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !h.isEmpty, h.count <= 253,
+              !h.contains(where: { "/*?#@ \t\\'\"".contains($0) }) else { return nil }
+        guard let comps = URLComponents(string: "https://\(h)"),
+              let parsedHost = comps.host, !parsedHost.isEmpty,
+              comps.path.isEmpty, comps.user == nil, comps.password == nil,
+              comps.query == nil, comps.fragment == nil else { return nil }
+        if let port = comps.port { return "https://\(parsedHost):\(port)" }
+        return "https://\(parsedHost)"
+    }
+
+    /// The `<meta>` CSP tag for the given trust level (+ any consented network hosts).
+    public static func cspMeta(trusted: Bool, allowedConnectHosts: [String] = []) -> String {
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"\(cspString(trusted: trusted, allowedConnectHosts: allowedConnectHosts))\">"
     }
 
     /// Outcome of a sub-resource / navigation policy decision for the
@@ -309,13 +341,15 @@ public enum HTMLDocumentPolicy {
     /// any `<head>` the (sanitized) document also carries, and the CSP
     /// `<meta>` is honored as long as it appears before the content it
     /// governs. We prepend it.
-    public static func envelope(sanitizedBody: String, trusted: Bool = false) -> String {
+    public static func envelope(
+        sanitizedBody: String, trusted: Bool = false, allowedConnectHosts: [String] = []
+    ) -> String {
         """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
-        \(cspMeta(trusted: trusted))
+        \(cspMeta(trusted: trusted, allowedConnectHosts: allowedConnectHosts))
         <meta name="viewport" content="width=device-width, initial-scale=1">
         </head>
         <body>
