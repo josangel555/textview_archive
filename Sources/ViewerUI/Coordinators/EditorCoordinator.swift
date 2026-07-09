@@ -434,6 +434,7 @@ public final class EditorCoordinator: ObservableObject {
         pendingEditorDiagnostics.removeValue(forKey: id)
         lspEditorDiagnostics.removeValue(forKey: id)
         spellEditorDiagnostics.removeValue(forKey: id)
+        spellNavIndex.removeValue(forKey: id)
         pendingEditorGutterMarkers.removeValue(forKey: id)
         editorFoldRangesByTab.removeValue(forKey: id)
         editorFoldRegionsByTab.removeValue(forKey: id)
@@ -725,11 +726,99 @@ public final class EditorCoordinator: ObservableObject {
             setEditorSpellDiagnostics([], forTabID: id)
             return
         }
-        var issues = SpellCheckEngine().misspelledSpans(in: text)
+        var issues = SpellCheckEngine(
+            language: spellLanguage, ignoredWords: spellIgnoredWords
+        ).misspelledSpans(in: text)
         if Self.isMarkdownProse(url: url) {
             issues = MarkdownSpellMask.filterProse(issues, in: text)
         }
         setEditorSpellDiagnostics(issues, forTabID: id)
+    }
+
+    // MARK: - Spelling verbs (TSK-1505) — nav / fix / learn / language
+
+    /// Active spell-check language (BCP-47 tag, e.g. "en_US"); nil = the system
+    /// default NSSpellChecker uses. Set via `set-spell-language`; a change
+    /// re-runs the pass over every open prose tab so squiggles update at once.
+    @Published public var spellLanguage: String? = nil
+
+    /// Session-scoped ignore list (Set, lower-cased by the engine). `ignore-word`
+    /// adds here (non-persistent, unlike `add-to-dictionary`'s learnWord).
+    public private(set) var spellIgnoredWords: Set<String> = []
+
+    /// Per-tab spell-nav cursor — the index into the tab's document-ordered spell
+    /// issues that next/prev-misspelling last landed on. nil = "before the first"
+    /// (so the first `next` lands on issue 0). Reset when a tab's spell layer changes.
+    private var spellNavIndex: [UUID: Int] = [:]
+
+    /// The tab's spell issues (as `CMDiagnostic` from/to offsets), in document order.
+    public func spellIssues(forTabID id: UUID) -> [CMDiagnostic] {
+        (spellEditorDiagnostics[id] ?? []).sorted { $0.from < $1.from }
+    }
+
+    /// The issue the nav cursor currently points at (what `fix`/`ignore`/`learn`
+    /// act on), or nil when there are none / the cursor hasn't moved yet.
+    public func currentSpellIssue(forTabID id: UUID) -> CMDiagnostic? {
+        let issues = spellIssues(forTabID: id)
+        guard let idx = spellNavIndex[id], issues.indices.contains(idx) else { return nil }
+        return issues[idx]
+    }
+
+    /// Move the spell-nav cursor to the next (`+1`) / previous (`−1`) issue,
+    /// wrapping, and select its range in the active editor. Returns the landed
+    /// issue, or nil when the tab has no misspellings.
+    @discardableResult
+    public func navigateSpell(forTabID id: UUID, direction: Int) -> CMDiagnostic? {
+        let issues = spellIssues(forTabID: id)
+        guard let next = SpellNavigation.step(
+            from: spellNavIndex[id], count: issues.count, by: direction) else {
+            spellNavIndex[id] = nil
+            return nil
+        }
+        spellNavIndex[id] = next
+        let issue = issues[next]
+        editorSelectRequest = CMSelectRequest(anchor: issue.from, head: issue.to, target: id)
+        return issue
+    }
+
+    /// Reset a tab's nav cursor (call when its spell layer is replaced so a stale
+    /// index can't point past the new issue list).
+    func resetSpellNav(forTabID id: UUID) { spellNavIndex[id] = nil }
+
+    /// Set the spell language and re-run every open prose tab's pass. A nil / empty
+    /// / unavailable tag falls back to the system default (returns false so the
+    /// caller can report it); a recognized tag returns true.
+    @discardableResult
+    public func setSpellLanguage(_ tag: String?, reSpell: (UUID) -> Void) -> Bool {
+        let normalized = (tag?.isEmpty ?? true) ? nil : tag
+        let available = normalized == nil
+            || SpellCheckEngine.availableLanguages.contains(normalized!)
+        spellLanguage = available ? normalized : nil
+        forEachOpenTab(reSpell)
+        return available
+    }
+
+    /// Add `word` to the session ignore list and re-run open prose tabs.
+    public func ignoreSpellWord(_ word: String, reSpell: (UUID) -> Void) {
+        guard !word.isEmpty else { return }
+        spellIgnoredWords.insert(word)
+        forEachOpenTab(reSpell)
+    }
+
+    /// Learn `word` into the user dictionary (persistent, via NSSpellChecker) and
+    /// re-run open prose tabs. Returns false for an empty word.
+    @discardableResult
+    public func learnSpellWord(_ word: String, reSpell: (UUID) -> Void) -> Bool {
+        guard !word.isEmpty else { return false }
+        NSSpellChecker.shared.learnWord(word)
+        forEachOpenTab(reSpell)
+        return true
+    }
+
+    /// Invoke `body` for every currently-open tab id (used to re-spell all panes
+    /// after a language/ignore/learn change).
+    private func forEachOpenTab(_ body: (UUID) -> Void) {
+        for tab in tabsSnapshot() { body(tab.id) }
     }
 
     // MARK: - Save path

@@ -1780,11 +1780,26 @@ struct MarkdownOutlineWrapper: View {
             },
             uiSize: model.uiSize
         )
-        .onAppear { refresh() }
+        .onAppear {
+            refresh()
+            // TSK-1570 (U2): seed the current-section highlight from the source
+            // view's current viewport top so the highlight is right on first paint,
+            // not only after the next scroll.
+            if let top = model.sourceView.sourceScrollState.topVisibleLine {
+                outline.viewportChanged(topLine: top)
+            }
+        }
         .onChange(of: model.currentURL) { _, _ in refresh() }
         // Rebuild when the async read completes (.loading → .loaded): the URL
         // is set before the contents arrive (same race LSPOutlineWrapper fixed).
         .onChange(of: model.currentState) { _, _ in refresh() }
+        // TSK-1570 (U2): SCROLL-HIGHLIGHT — feed the source view's visible top
+        // line into the outline so the current-section highlight follows scroll.
+        // `viewportChanged` is host-tested (binary-search of the current heading);
+        // this is the missing view-layer wire.
+        .onChange(of: model.sourceView.sourceScrollState.topVisibleLine) { _, top in
+            if let top { outline.viewportChanged(topLine: top) }
+        }
     }
 
     private func refresh() {

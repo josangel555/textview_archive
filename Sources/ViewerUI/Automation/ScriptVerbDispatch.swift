@@ -148,6 +148,16 @@ public enum ScriptVerb {
         case "dismiss-tool-results": model.dismissToolResults()
         case "toggle-spell-check":   model.editor.spellCheckEnabled.toggle()
         case "toggle-autocomplete":  model.editor.autocompleteEnabled.toggle()
+        // TSK-1505: the automatable spelling loop (find → fix → learn → language →
+        // report). next/prev select the misspelling; fix/add/ignore act on the
+        // CURRENT (last-navigated) one; set-spell-language takes a BCP-47 arg.
+        case "next-misspelling":        _ = model.spellNextMisspelling()
+        case "prev-misspelling":        _ = model.spellPrevMisspelling()
+        case "fix-misspelling":         _ = model.spellFixCurrent()
+        case "add-to-dictionary":       _ = model.spellLearnCurrentWord()
+        case "ignore-word":             _ = model.spellIgnoreCurrentWord()
+        case "set-spell-language":      _ = model.spellSetLanguage(arg)
+        case "check-spelling-document": _ = model.runSpellCheckToPanel()
         case "copy-reference":
             // TSK-1256/942: copy an mdv:// reference to the current editor SELECTION
             // (a line range for a multi-line span, else the current line) to the

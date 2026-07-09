@@ -192,6 +192,13 @@ public enum ScriptVerbCatalog {
         // Editor assists (footer chips): per-keystroke cost relief valves.
         ScriptVerb("toggle-spell-check", .editor, .none, "Toggle editor spell-check squiggles"),
         ScriptVerb("toggle-autocomplete", .editor, .none, "Toggle editor autocomplete (LSP + in-file words)"),
+        ScriptVerb("next-misspelling", .editor, .none, "Select the next misspelling (wraps)"),
+        ScriptVerb("prev-misspelling", .editor, .none, "Select the previous misspelling (wraps)"),
+        ScriptVerb("fix-misspelling", .editor, .none, "Replace the current misspelling with its top suggestion"),
+        ScriptVerb("add-to-dictionary", .editor, .none, "Learn the current misspelling's word (persistent)"),
+        ScriptVerb("ignore-word", .editor, .none, "Ignore the current misspelling's word for this session"),
+        ScriptVerb("set-spell-language", .editor, .string, "Set the spell-check language (BCP-47, e.g. en_GB)"),
+        ScriptVerb("check-spelling-document", .editor, .none, "Whole-document spell report into the results panel"),
         ScriptVerb("editor-set-text", .editor, .string, "Replace the active tab's editor buffer text"),
         ScriptVerb("editor-save", .editor, .none, "Save the active editor buffer (⌘S equivalent)"),
         ScriptVerb("editor-format", .editor, .none, "Whole-document LSP format of the active buffer"),

@@ -129,6 +129,26 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "view.toggleAutocomplete", title: "Toggle Autocomplete", category: .view,
             scriptVerb: "toggle-autocomplete"),
+        // TSK-1505: spelling actions — ⌘K-discoverable palette parity for the
+        // automatable spelling loop (find → fix → learn → language → report).
+        CommandDescriptor(
+            id: "edit.nextMisspelling", title: "Next Misspelling", category: .edit,
+            scriptVerb: "next-misspelling"),
+        CommandDescriptor(
+            id: "edit.prevMisspelling", title: "Previous Misspelling", category: .edit,
+            scriptVerb: "prev-misspelling"),
+        CommandDescriptor(
+            id: "edit.fixMisspelling", title: "Fix Misspelling", category: .edit,
+            scriptVerb: "fix-misspelling"),
+        CommandDescriptor(
+            id: "edit.addToDictionary", title: "Add to Dictionary", category: .edit,
+            scriptVerb: "add-to-dictionary"),
+        CommandDescriptor(
+            id: "edit.ignoreWord", title: "Ignore Spelling", category: .edit,
+            scriptVerb: "ignore-word"),
+        CommandDescriptor(
+            id: "edit.checkSpellingDocument", title: "Check Spelling in Document", category: .edit,
+            scriptVerb: "check-spelling-document"),
         CommandDescriptor(
             id: "view.toggleInvisibles", title: "Show Invisibles", category: .view,
             defaultShortcut: Shortcut(key: "i", modifiers: [.command, .option]),

@@ -20,18 +20,21 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-D (data-safety): 1423 + 1269 + 1165 → `review`** (commit `2c14b722`, host-only).
-  (1) Hex find/click-highlight now scan `model.dirtyHexBytes ?? file.data` so UNSAVED edited bytes
-  are findable (root: HexView had no access to the edit buffer — private to HexTextController — but
-  edits are stashed on the model via `stashHexBytes`). (2) Wired the un-called `applyExternalAutoMerge`
-  into `reloadCurrentFile`'s dirty external-change branch: non-overlapping local+disk edits 3-way
-  auto-merge SILENTLY (buffer kept dirty, fingerprint refreshed), only real overlap → conflict banner.
-  Both PURE model/wiring, full host pyramid (ExternalEditReconcileWiring +3, HexDirtySaveClose +2),
-  gate green. The live CM6 redisplay-after-external-merge reuses the shipped clean-reload
-  `setEditorBuffer` path → on-screen UNVERIFIED (watcher-fire, not scene-drivable) = honest render tail.
-- **PRIOR THIS SESSION — CH-C (devtools):** 1577 git-panel VM-VERIFIED (`4e650831`, closes TSK-1443's
-  render loop; `git-panel4.png`) · 1571 monitor menu (`94d74e1b`). Parked: 318/1108 CR-Q&A (agent
-  transport). Remaining CH-C: 1191 git history-unify, 1482 menu audit — focused future ticks.
+- **THIS TICK — CH-C (editor & markdown power tools): 1505 SHIPPED + 1570 (U2) SHIPPED → `review`**
+  (host-only). **1505 spelling verbs** = the owner-asked full loop (next/prev/fix/add-to-dict/ignore/
+  set-language/check-document) wired through ScriptVerbDispatch + ScriptVerbCatalog + CommandRegistry
+  palette descriptors, on a new EditorCoordinator spell seam (language/ignore config + per-tab nav
+  cursor) + pure `SpellNavigation`; full host pyramid (SpellNavigationTests + DocumentModelSpellingTests
+  12 cases). CM6 caret-jump/text-replace = render tail (model decisions host-tested). **1570 U2**
+  scroll-highlight wired (feeds `viewportChanged`, already host-tested); U3 preview-scroll SPLIT →
+  **TSK-1579** (needs a NEW rendered-preview scroll-to-line WebView API).
+- **CH-C DEFERRED (model DONE, only render/JS tail left — spike comments on the board):** 1170 snippets
+  (Swift walker + wiring COMPLETE; gap = CM6-JS Tab keymap posting `snippetTab`, `codemirror.js` has 0
+  refs) · 1173 sticky-scroll (model COMPLETE — `stickyScrollHeaders` @Published + recompute; gap = the
+  pinned SwiftUI overlay over CM6, ⚠️compositor-occlusion) · 1504 cheap-assists (BufferWordIndex design +
+  the CM6 delta hook @ CodeMirrorEditorView:936 to feed it — not built, would be dead code without the wire).
+- **PRIOR — CH-D (data-safety): 1423 + 1269 + 1165 → `review`** (`5ed63734`): hex-search-over-dirty-bytes
+  + external-edit 3-way auto-merge wire (host pyramid; CM6 redisplay = render tail).
 - **PRIOR (at `review`):** CH-B image tools (`1a6eef77`: 1083/1084/1086/1089; 1090 parked) · CH-A image
   (`a51f9564`: 1055/1088/1114/1441/1574; render→1578) · 1168 vector-edit (`a403011d`) · 1445 CR journey
   (`5ce2a901`) · 1443 git panel (`8a09f977`; U1=1577) · 1444 LSP (`ddd8aa4d`) · 1576 footer (`ebf056fe`).

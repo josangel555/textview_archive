@@ -131,6 +131,9 @@ final class CommandRegistryTests: XCTestCase {
             "check-links", "lint-markdown", "document-stats", "csv-summary",
             // editor assist toggles (footer chips)
             "toggle-spell-check", "toggle-autocomplete",
+            // spelling verbs made ⌘K-discoverable (TSK-1505)
+            "next-misspelling", "prev-misspelling", "fix-misspelling",
+            "add-to-dictionary", "ignore-word", "check-spelling-document",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

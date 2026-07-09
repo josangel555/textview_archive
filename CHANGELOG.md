@@ -15,8 +15,17 @@
   Endings now check-mark what the open file currently is, and Convert Indentation shows a
   "Current: …" header — so you're no longer converting blind. (The status bar already
   shows encoding · EOL · indent.)
+- **Markdown outline highlights the section you're in.** As you scroll a markdown file, the
+  sidebar "Contents" outline now highlights the current heading (it follows the viewport instead
+  of staying put). Jumping to the section in the rendered preview is still coming.
 
 ### Added
+- **Spelling is now a full, drivable feature.** Beyond the squiggles, the ⌘K palette (and
+  automation) gained the whole loop: **Next / Previous Misspelling** (jump between flagged words),
+  **Fix Misspelling** (replace with the top suggestion), **Add to Dictionary** / **Ignore Spelling**,
+  **Check Spelling in Document** (a full report in the results panel — click a row to jump to the
+  line), and a set-spell-language verb (BCP-47, e.g. `en_GB`). You can walk and fix a document's
+  spelling without touching the mouse.
 - **Claude Session Monitor in the menu.** **Tools ▸ Claude Session Monitor** opens the read-only
   session monitor window — previously it was only reachable via the `--claude-monitor` command-line
   flag. Reopening re-focuses the existing window instead of spawning a duplicate.
@@ -84,6 +93,15 @@
   actually collide. A genuine overlapping conflict still shows the banner.
 
 ### System work
+- **Spelling verb surface + CH-C spike triage (TSK-1505 / 1570 / 1170·1173·1504).** New spelling
+  verbs wired through `ScriptVerbDispatch` + `ScriptVerbCatalog` + `CommandRegistry` palette
+  descriptors, on an `EditorCoordinator` spell seam (language/ignore config, per-tab nav cursor) and
+  a pure `SpellNavigation` core; host pyramid = `SpellNavigationTests` (pure) + `DocumentModelSpellingTests`
+  (command-path). Markdown outline U2 scroll-highlight wired (feeds `viewportChanged`). Deep-recon
+  spikes recorded on the render-tail tickets: 1170 (Swift snippet walker complete — only the CM6-JS
+  Tab keymap is missing), 1173 (sticky-scroll model complete — only the pinned overlay view remains),
+  1504 (incremental `BufferWordIndex` design + the CM6 delta hook to feed it); 1570-U3 preview-scroll
+  split to TSK-1579.
 - **Code-review journey verified end-to-end + documented (TSK-1445).** Added `ReviewJourneyTests`
   driving the whole loop on a REAL commit diff — open review → comment on a diff line → reply →
   resolve → persist → reopen-from-disk (survives) → export (carries the hunk) → `get_review_context`
