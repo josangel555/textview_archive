@@ -199,6 +199,10 @@ public final class DocumentModel: ObservableObject {
     /// The editor controller, created fresh over the live favorites store on open.
     @Published public var terminalFavoritesEditorVM: TerminalFavoritesEditorModel?
 
+    /// TSK-1500 — the "Recover Deleted File" picker sheet (deleted-but-has-history
+    /// files). Transient; driven by the "Recover Deleted File…" menu item.
+    @Published public var showRecoverDeletedFile = false
+
     /// TSK-1166 — the active passive-watcher disk-conflict, surfaced as a non-modal
     /// `DiskConflictBanner` above the editor (vs the blocking NSAlert the deliberate
     /// `refreshTab` path still uses). `nil` = no conflict. Set by the file-watcher

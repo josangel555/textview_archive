@@ -17,6 +17,10 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Recover a deleted file.** File ▸ "Recover Deleted File…" lists recently-opened files you
+  deleted that still have Local History, and recreates one from its latest saved version
+  (atomic — it never overwrites a file that's since reappeared). Restores now work even
+  when the file is gone from disk.
 - **Terminal pane header.** The terminal now shows a header row — "Terminal — <name>
   [<working dir>, pid <n>]" — that tracks the shell's live working directory (updates as
   you `cd`) and its process id.

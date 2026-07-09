@@ -30,7 +30,10 @@ final class UISceneApplierTests: XCTestCase {
             controller: DocumentController(),
             history: HistoryStore(storeURL: tmp.appendingPathComponent("history.json")),
             sidebar: SidebarModel(),
-            preferences: PreferencesStore(defaults: defaults))
+            preferences: PreferencesStore(defaults: defaults),
+            // Isolate Local History to the per-test tmp so scenes that snapshot
+            // (e.g. 'recover-deleted') never touch the host's App Support store.
+            localHistory: LocalHistoryStore(directory: tmp.appendingPathComponent("localhistory")))
     }
 
     @discardableResult
@@ -254,6 +257,21 @@ final class UISceneApplierTests: XCTestCase {
         let status = apply("terminal-header", model)
         XCTAssertTrue(model.terminalPane.isOpen, "the terminal pane is open")
         XCTAssertNotNil(model.terminalPane.terminal, "a terminal tab exists")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
+    func test_recoverDeletedScene_seedsAndOpensThePicker() {
+        // TSK-1500 render tail: the scene seeds a deleted-but-has-history file
+        // (workspace-isolated localHistory) + opens the Recover Deleted File
+        // sheet. Pins the scene→model contract: the sheet flag flips and the
+        // seeded file is enumerated as recoverable. The recreate outcomes are
+        // host-tested by DocumentModelResurrectionTests; the on-screen list is
+        // the VM pixel assertion.
+        let model = makeModel()
+        let status = apply("recover-deleted", model)
+        XCTAssertTrue(model.showRecoverDeletedFile, "the recover sheet is presented")
+        XCTAssertEqual(model.recoverableDeletedFiles().count, 1,
+                       "the seeded deleted-with-history file is enumerated as recoverable")
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 

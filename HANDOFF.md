@@ -50,6 +50,12 @@ the modifier NEVER FIRES — anchor async work (scans, loads) on an always-prese
 a `Group { if x {…} }`. This hid the secret badge on the first render until fixed (ZStack + a
 zero-height Color.clear owning the .task).
 
+TSK-1500 (RECOVER deleted file, review): File ▸ "Recover Deleted File…" → a sheet listing
+recently-opened deleted-but-has-history files, each Recreate = FileResurrection.recreate (atomic
+O_EXCL) + open. Entry point reuses RECENTS (real paths; the history store hashes paths one-way so
+can't enumerate). Model host-tested (DocumentModelResurrectionTests 4/4 + FileResurrection 8/8).
+UAT scene "recover-deleted". Follow-on TSK-1573 (full enumeration via a path-storing manifest +
+version picker). Also isolated UISceneApplierTests.makeModel's localHistory to tmp.
 TSK-1249 (terminal HEADER row, review): added a header above the terminal surface — "Terminal —
 <name> [<cwd>, pid <n>]" (TerminalHeaderRow observes the TerminalModel → live-updates on OSC-7
 cwd + pid via the version bump). Exposed TerminalModel.childPID (public forward to PTYProcess).

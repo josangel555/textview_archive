@@ -239,6 +239,11 @@ public enum UISceneRegistry {
             id: "terminal-header",
             fixture: .none,
             summary: "Terminal pane (top strip) → the header row 'Terminal — <name> [<cwd>, pid <n>]' above the surface (TSK-1249)"),
+        SceneSpec(
+            id: "recover-deleted",
+            fixture: .none,
+            closesExistingTabs: true,
+            summary: "A deleted-but-has-history file → the Recover Deleted File sheet lists it with a Recreate action (TSK-1500)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

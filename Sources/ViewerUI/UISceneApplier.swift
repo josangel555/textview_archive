@@ -304,6 +304,29 @@ public enum UISceneApplier {
             return "ui-scene: applied 'structural-search' show=\(model.showStructuralSearch) lang=\(model.structuralSearchVM?.language.rawValue ?? "nil")"
         }
 
+        // Recover Deleted File scene (TSK-1500 render tail): seed a workspace
+        // with a file that has Local History but is DELETED from disk, then open
+        // the recover sheet so it lists the file with a Recreate action. Mirrors
+        // the recovery flow's inputs (recents retain the path; the history store
+        // has the bytes).
+        if scene == "recover-deleted" {
+            let notes = tabsBaseDir.appendingPathComponent("notes")
+            try? FileManager.default.createDirectory(
+                at: notes, withIntermediateDirectories: true)
+            let file = notes.appendingPathComponent("todo.md")
+            let content = "# Recovered TODO\n- ship the terminal header\n- wire the secret badge\n"
+            try? content.write(to: file, atomically: true, encoding: .utf8)
+            _ = model.localHistoryStore.snapshot(
+                path: file.standardizedFileURL.path, content: content, at: Date())
+            try? FileManager.default.removeItem(at: file)   // delete it
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.openFolder(tabsBaseDir)                   // sets the workspace root
+            model.recents = [HistoryEntry(url: file, kind: .file, lastOpenedAt: Date())]
+            model.showRecoverDeletedFile = true
+            return "ui-scene: applied 'recover-deleted' show=\(model.showRecoverDeletedFile) recoverable=\(model.recoverableDeletedFiles().count)"
+        }
+
         // Terminal header scene (TSK-1249 render tail): open the terminal pane
         // (top strip) with a tab so the header row — "Terminal — <name> [<cwd>,
         // pid <n>]" — renders above the surface. The shell spawns on the view's

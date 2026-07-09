@@ -1096,6 +1096,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showFolderTreemap()
     }
 
+    /// TSK-1500 — File ▸ Recover Deleted File…: present the picker of deleted
+    /// files that still have Local History (recreate-from-version).
+    @objc func recoverDeletedFile(_ sender: Any?) {
+        model.showRecoverDeletedFile = true
+    }
+
     /// TSK-1107 — File ▸ Walkthroughs: open the saved-walkthroughs browser.
     @objc func showWalkthroughsBrowser(_ sender: Any?) {
         model.showWalkthroughsBrowser()
@@ -1753,6 +1759,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showFolderTreemap(_:)), keyEquivalent: "")
         treemapItem.target = self
         fileMenu.addItem(treemapItem)
+
+        // TSK-1500: File → Recover Deleted File… — a picker of recently-opened
+        // files that were deleted but still have Local History, each recreated
+        // from its latest version (atomic, never-overwrite).
+        let recoverItem = NSMenuItem(
+            title: "Recover Deleted File…",
+            action: #selector(recoverDeletedFile(_:)), keyEquivalent: "")
+        recoverItem.target = self
+        fileMenu.addItem(recoverItem)
 
         // TSK-1054: File → New Image — create + open a blank PNG canvas.
         let newImageItem = NSMenuItem(

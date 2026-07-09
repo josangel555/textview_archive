@@ -487,6 +487,12 @@ public struct ContentView: View {
                 .accessibilityIdentifier("mdv.terminalFavorites.sheet")
             }
         }
+        // TSK-1500 — the Recover Deleted File picker (opened via the "Recover
+        // Deleted File…" menu item).
+        .sheet(isPresented: $model.showRecoverDeletedFile) {
+            RecoverDeletedFileView(model: model,
+                                   onClose: { model.showRecoverDeletedFile = false })
+        }
         // TSK-1325 — the Image Convert panel (opened via model.openConvertImage()).
         .sheet(isPresented: $model.showConvertImage) {
             if let vm = model.convertImageVM {
