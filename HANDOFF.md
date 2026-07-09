@@ -17,17 +17,16 @@ task_park "Need me".
   window-id capture pipeline works end-to-end. The pyramid is real, not a flagpole.
 - **§1 "Fresh models" render tails are DRAINED** — all at `fixed`/`review`. Build frontier = §1
   "Older pool" (genuinely-`reported` features w/ a deep backend + no front). Done recently: 1444 LSP
-  status · 1576 footer-capture lane · **1443 git panel (THIS TICK)**. Next: 1445 CR journey · 1168
+  status · 1576 footer-capture lane · 1443 git panel · **1445 CR journey (THIS TICK)**. Next: 1168
   vector editing · 1441 image-editor feel · 1494 cursor mode.
-- **THIS TICK — TSK-1443 git Status-tab stage/unstage/commit/discard loop → `review`** (commit
-  `8a09f977`). GitClient index mutations (arg-injection + unborn-HEAD guards) · pure GitStageOp
-  confirm-gate (only discard confirms) · GitPanelModel actions via ToastCenter + a
-  requestDiscard→confirmDiscard gate (never silent) · GitStatusTab per-row ＋/－ + commit bar +
-  Discard-with-confirm. 19 host tests (real-repo git + confirm-gate + model command-path). Interactive
-  U2-U6 = AX tier (off-limits, host-covered); render U1 filed **TSK-1577** (git panel is a view-local
-  @StateObject → needs a fixture-repo scene).
-- **PRIOR TICKS (at `review`):** 1444 LSP chip (`ddd8aa4d`, VM-verified via 1576) · 1576 footer-capture
-  fix (`ebf056fe`, VM-verified).
+- **THIS TICK — TSK-1445 code-review journey verified end-to-end → `review`** (commit `5ce2a901`).
+  Backends/UI/per-unit tests/MCP tools already existed; the gap was "never driven as a whole."
+  `ReviewJourneyTests` drives the full loop on a REAL commit diff (openCommitReview → comment(anchored)
+  → reply(threaded) → resolve → flush → reopen-from-disk survives → export carries the hunk →
+  get_review_context MCP parity). No product friction. Documented workflow in `docs/CAPABILITIES.md`
+  §5. U1 diff-render + U3 scroll-nav = WebView/AX tier.
+- **PRIOR TICKS (at `review`):** 1443 git panel (`8a09f977`, 19 host tests; render U1 = TSK-1577) ·
+  1444 LSP chip (`ddd8aa4d`, VM-verified via 1576) · 1576 footer-capture fix (`ebf056fe`, VM-verified).
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
 
 ## ✅ FOOTER-CAPTURE ROOT (2026-07-09, TSK-1576 — corrects a wrong first theory)
