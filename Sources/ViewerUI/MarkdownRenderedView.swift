@@ -130,11 +130,19 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     /// Push the content-scale to the page's `--mdv-content-scale` CSS var (TSK-358)
     /// — live, no reload (mirrors `pageZoom`), so the render cache is untouched.
     /// `markdown.css` reads it via `calc(15px * var(--mdv-content-scale, 1))`.
-    /// TSK-1183: feature gate for the DOM-patch apply path. Default OFF —
-    /// production stays on full `loadHTMLString` reloads until the gated live path
-    /// is VM-validated and the owner flips it on (the rust-flip pattern).
+    /// TSK-838/1183: feature gate for the DOM-patch apply path. Default ON
+    /// (owner-approved 2026-06-30 — the VM-validated apply kills the measured
+    /// 2-9s same-file reload storm; safe-by-construction — `tryApplyDOMPatch`
+    /// falls back to a full reload for any unsupported change). Opt OUT with
+    /// `MDV_DOM_PATCH=0`.
     static var domPatchEnabled: Bool {
-        ProcessInfo.processInfo.environment["MDV_DOM_PATCH"] == "1"
+        domPatchEnabled(env: ProcessInfo.processInfo.environment["MDV_DOM_PATCH"])
+    }
+
+    /// Pure gate (host-testable): DOM-patch is ON unless explicitly disabled with
+    /// `MDV_DOM_PATCH=0`. nil (unset) / "1" / any other value ⇒ ON.
+    static func domPatchEnabled(env: String?) -> Bool {
+        env != "0"
     }
 
     /// TSK-1183: attempt a same-file incremental DOM patch instead of a full reload.

@@ -20,16 +20,18 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-F: 1572 launchpad → `review`** (host+live-view). Built 3 PURE host-tested cores:
-  `LaunchpadSections` (recents → Recent Files/Folders + Bookmarks, deduped/capped), `LaunchpadSelection`
-  (↑/↓ nav state machine), `GitClonePlan` (remote → clone URL + repo + target dir) + `DocumentModel`
-  bridges (`launchpadSections`, `gitClonePlan`). Sub-item 1 (SECTIONS) is LIVE: EmptyStateView's flat
-  recents list replaced by `launchpadSectionsView(sections)` — user-facing. Host pyramid: LaunchpadModel
-  +11, DocumentModelOmni +3. Interaction tails (arrow-nav keyboard wiring, git-clone subprocess, empty-⌘V
-  paste hook) SPLIT → **TSK-1582** (models tested; only the SwiftUI focus/keyDown + Process + ⌘V hook remain).
-- **CH-F remaining:** 1104 multi-window (VM), 1111 bookmarks-open-in-new (VM).
-- **PRIOR CH-F — 1573 recover-deleted + 1575-part1 Capabilities → `review`** (`ea377a56`). Splits filed:
-  1573 picker=render tail; 1575-part2 walkthrough→TSK-1581.
+- **THIS TICK — CH-G perf: TSK-838 DOM-patch FLIP (owner-approved) → `review`** (host + VM-UAT).
+  **TSK-838 (VeryHigh)**: the rendered-markdown DOM-patch lever was BUILT + VM-proven but gated OFF
+  (`MDV_DOM_PATCH==1`); the owner RESOLVED the parked decision 2026-06-30 ("Go for it. Do an agentic
+  UAT"). Flipped `MarkdownRenderedView.domPatchEnabled` to DEFAULT-ON (opt-out `MDV_DOM_PATCH=0`),
+  refactored to a host-testable `domPatchEnabled(env:)`. Safe-by-construction (tryApplyDOMPatch falls
+  back to full reload for unsupported changes). Kills the measured 2-9s same-file reload storm →
+  O(changed-blocks) patch + preserves scroll. Host: DomPatchGateTests +3. VM-UAT: BlockPatchApply/
+  AlignmentProbe webview lane (see the tick's `checks`). Child TSK-1183 (applier) already at review.
+- **CH-G remaining:** 1488 jank-instrumentation (host model + VM), 891 Page-Up jank (VM trace), 1047
+  warm-CM6-cache (blocker: live-validation), 1180/1184/1185 perf traces (VM measure). Mostly VM.
+- **PRIOR CH-F — 1572 launchpad (`d169f64e`; sections live, tails→TSK-1582); 1573+1575-part1 (`ea377a56`;
+  splits TSK-1581) → `review`.** CH-F remaining: 1104/1111 (window, VM).
 - **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS:** 1482 menu-audit (declarative-menu refactor OR VM),
   1191 git-history migration (render VM-val), 1205 spreadsheet-grid (render). Each = its OWN focused tick.
 - **PRIOR — CH-D/CH-E: 1203-core+1567 (`8253d8cb`); CH-C: 1505+1570-U2 (`62697ec1`); CH-D data-safety

@@ -104,6 +104,13 @@
   document dirty so you can review and save — no more conflict banner for changes that don't
   actually collide. A genuine overlapping conflict still shows the banner.
 
+### Performance
+- **Editing markdown no longer stutters the preview.** Updating a markdown file used to fully
+  reload the rendered preview on every change — a 2–9 second "reload storm" on large documents.
+  The preview now **patches only the blocks that changed** in place, so edits show up instantly and
+  your scroll position is kept. (Any change too large to patch cleanly still falls back to a full,
+  correct re-render.) This is now on by default; set `MDV_DOM_PATCH=0` to opt out.
+
 ### System work
 - **Launchpad model foundation (TSK-1572).** Three pure, host-tested cores for the new-tab
   launchpad — `LaunchpadSections` (splits recents into files/folders + bookmarks, deduped/capped),
