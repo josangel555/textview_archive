@@ -287,6 +287,18 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_terminalDockRightScene_docksTheTerminalRight() {
+        // TSK-1123: the scene docks the terminal to the RIGHT edge via setPaneEdge
+        // (the path the new Dock control uses). Pins the scene→model contract; the
+        // on-screen terminal-at-right + the Dock control are the VM pixel assertion.
+        // setPaneEdge round-trip/persistence is host-tested (TerminalPaneStoreTests).
+        let model = makeModel()
+        let status = apply("terminal-dock-right", model)
+        XCTAssertEqual(model.terminalPane.paneEdge, .right, "the terminal is docked right")
+        XCTAssertTrue(model.terminalPane.isOpen, "the pane is open")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

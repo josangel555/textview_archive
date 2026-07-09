@@ -240,6 +240,10 @@ public enum UISceneRegistry {
             fixture: .none,
             summary: "Terminal pane (top strip) → the header row 'Terminal — <name> [<cwd>, pid <n>]' above the surface (TSK-1249)"),
         SceneSpec(
+            id: "terminal-dock-right",
+            fixture: .none,
+            summary: "Terminal docked to the RIGHT edge (the owner's 'can't get the terminal to the right' pain) with the new Dock control in the strip (TSK-1123)"),
+        SceneSpec(
             id: "recover-deleted",
             fixture: .none,
             closesExistingTabs: true,

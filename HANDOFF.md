@@ -23,7 +23,12 @@ task_park "Need me".
   deleted-file · 1448 first-run-sample-tour. Host-tested + UNVERIFIED-flagged (real-event/AX lane):
   1480 format-menu-checkmarks · 1085 image-shape-gallery.
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
-- **In flight:** none uncommitted.
+- **1123 terminal DOCK control** (in flight this tick): added a Dock menu to the terminal tab
+  strip (Left/Bottom/Right → setPaneEdge, current edge check-marked) — the owner's "can't get the
+  terminal to the right" pain (setPaneEdge existed, nothing called it). The unified Settings-matrix
+  placement (all tool windows via PanelPlacement + TerminalPanelEdgeBridge) is the REMAINING 1123
+  slice. UAT scene "terminal-dock-right".
+- **In flight:** none uncommitted after this tick's commit.
 
 ## Follow-ons filed this session
 1570 outline scroll-highlight+preview-jump · 1571 mount Monitor as menu item (openClaudeMonitorWindow

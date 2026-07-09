@@ -339,6 +339,20 @@ public enum UISceneApplier {
             return "ui-scene: applied 'first-run' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
 
+        // Terminal dock-right scene (TSK-1123): dock the terminal to the RIGHT
+        // edge (the owner's "can't get the terminal to the right" pain) via the
+        // same setPaneEdge path the new Dock control uses, so the VM capture
+        // shows the terminal composited at the right + the Dock control present.
+        if scene == "terminal-dock-right" {
+            let pane = model.terminalPane
+            pane.setTabPosition(.right)
+            pane.setPaneEdge(.right)
+            pane.setWidth(360)
+            pane.setOpen(true)
+            while pane.tabs.count < 1 { pane.addTab() }
+            return "ui-scene: applied 'terminal-dock-right' edge=\(pane.paneEdge.rawValue) open=\(pane.isOpen) tabs=\(pane.tabs.count)"
+        }
+
         // Terminal header scene (TSK-1249 render tail): open the terminal pane
         // (top strip) with a tab so the header row — "Terminal — <name> [<cwd>,
         // pid <n>]" — renders above the surface. The shell spawns on the view's

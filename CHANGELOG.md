@@ -17,6 +17,9 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Move the terminal to any edge.** The terminal pane's tab strip now has a Dock control —
+  send the terminal to the left, right, or bottom of the window (the current edge is
+  check-marked). Previously the terminal could only be moved by editing preferences.
 - **First-run sample tour.** A fresh install now opens a "Welcome to TextView.md" that shows
   off the lenses (rendered headings, a table, a highlighted code fence, a Mermaid diagram, a
   task list) — shown once. Reopen it any time via Help ▸ Open Sample Document (it never

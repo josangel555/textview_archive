@@ -230,6 +230,7 @@ struct TerminalPaneView: View {
             newTabButton
             Spacer(minLength: 0)
             restartButtonIfExited
+            dockMenu
             closePaneButton
         }
         .padding(.horizontal, 8)
@@ -247,12 +248,45 @@ struct TerminalPaneView: View {
             newTabButton
             Spacer(minLength: 0)
             restartButtonIfExited
+            dockMenu
             closePaneButton
         }
         .frame(width: max(46, fontSize * 3.6))
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
         .background(Palette.windowBackground)
+    }
+
+    /// TSK-1123 — the terminal's "dock to a window edge" control, the missing
+    /// user-facing way to move the terminal (the owner's "can't get the terminal
+    /// to the right" pain — setPaneEdge existed but nothing called it). The
+    /// current edge is check-marked. The unified Settings-matrix placement (all
+    /// tool windows) is the remaining ticket slice.
+    private var dockMenu: some View {
+        Menu {
+            dockButton("Dock Bottom", .bottom)
+            dockButton("Dock Left", .left)
+            dockButton("Dock Right", .right)
+        } label: {
+            Image(systemName: "square.righthalf.filled")
+                .font(.system(size: fontSize * 0.8, weight: .medium))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Move the terminal to a window edge")
+        .accessibilityIdentifier("mdv.terminal.dock")
+    }
+
+    @ViewBuilder
+    private func dockButton(_ title: String, _ edge: TerminalPaneEdge) -> some View {
+        Button { store.setPaneEdge(edge) } label: {
+            if store.paneEdge == edge {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
     }
 
     private var newTabButton: some View {

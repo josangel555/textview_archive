@@ -60,6 +60,7 @@ scene_expect() {
     omni) echo "mdv.emptyState.omni" ;;
     structural-search) echo "mdv.structuralSearch.examplesButton" ;;
     terminal-header) echo "mdv.terminal.header" ;;
+    terminal-dock-right) echo "mdv.terminal.dock" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     *) echo "" ;;
