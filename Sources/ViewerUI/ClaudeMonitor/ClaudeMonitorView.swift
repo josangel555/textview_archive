@@ -151,6 +151,10 @@ final class ClaudeMonitorModel: ObservableObject {
 
     /// Kick off the off-main index scan. Idempotent-ish: a re-entrant call
     /// just runs another scan and republishes (cheap, read-only).
+    /// TSK-1477 — the last transcript-tree fingerprint, so the auto-refresh
+    /// poll only rebuilds when the tree actually changed (no-op-poll guard).
+    private var lastFingerprint: ClaudeMonitorListState.Fingerprint?
+
     func loadSessions() {
         isLoadingSessions = true
         let root = self.root
@@ -159,8 +163,12 @@ final class ClaudeMonitorModel: ObservableObject {
             // safe to run for a directory of large transcripts.
             let index = ClaudeSessionIndex()
             let result = index.summaries(root: root)
+            // Prime the fingerprint from the SAME scan so the first poll tick
+            // doesn't trigger a redundant reload.
+            let fp = ClaudeMonitorListState.fingerprint(of: index.transcriptURLs(root: root))
             await MainActor.run {
                 self.sessions = result
+                self.lastFingerprint = fp
                 self.isLoadingSessions = false
                 // If the prior selection vanished (file deleted between
                 // scans), drop the now-dangling detail.
@@ -172,6 +180,29 @@ final class ClaudeMonitorModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// TSK-1477 — the auto-refresh poll: fingerprint the transcript tree
+    /// off-main and reload ONLY when it changed since the last scan (catches
+    /// a new session file AND an append to a live one — the fingerprint folds
+    /// in file count, newest mtime, and total bytes). A tick with no change
+    /// does nothing, so an idle monitor never churns the list.
+    func refreshIfChanged() {
+        guard !isLoadingSessions else { return }
+        let root = self.root
+        let previous = self.lastFingerprint
+        Task.detached(priority: .utility) {
+            let fp = ClaudeMonitorListState.fingerprint(
+                of: ClaudeSessionIndex().transcriptURLs(root: root))
+            guard ClaudeMonitorListState.needsRescan(previous: previous, current: fp) else { return }
+            await MainActor.run { self.loadSessions() }
+        }
+    }
+
+    /// TSK-1477 — the actionable empty-state reason (why the list is blank),
+    /// so the pane explains itself instead of a generic "none found".
+    func emptyState() -> ClaudeMonitorListState {
+        ClaudeMonitorListState.classify(root: root, transcriptCount: sessions.count)
     }
 
     /// Run a full-text search over EVERY transcript under `root` (the
@@ -380,6 +411,13 @@ public struct ClaudeMonitorView: View {
                 model.runContentSearch()
             }
         }
+        // TSK-1477: auto-refresh — poll the transcript tree every 5s and
+        // rebuild only when its fingerprint changed (guarded in the model),
+        // so a live session appears without a manual re-scan. Paused during
+        // content search so results don't shift under the user.
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            if model.searchMode == .sessions { model.refreshIfChanged() }
+        }
         .accessibilityIdentifier("mdv.claudeMonitor")
     }
 
@@ -422,7 +460,7 @@ public struct ClaudeMonitorView: View {
             centeredHint("Scanning \(model.root.path)…")
         } else if model.filteredSessions.isEmpty {
             centeredHint(model.sessions.isEmpty
-                ? "No Claude sessions found under \(model.root.path)."
+                ? Self.emptyMessage(model.emptyState())
                 : "No sessions match the filter.")
         } else {
             List(selection: Binding(
@@ -440,6 +478,21 @@ public struct ClaudeMonitorView: View {
                 }
             }
             .listStyle(.sidebar)
+        }
+    }
+
+    /// TSK-1477 — map the classified empty state to an actionable message.
+    static func emptyMessage(_ state: ClaudeMonitorListState) -> String {
+        switch state {
+        case .sessions(let count):
+            return "\(count) sessions."
+        case .empty(.rootMissing(let path)):
+            return "The monitor folder doesn't exist:\n\(path)\n"
+                + "Set MDV_MONITOR_ROOT, or check that ~/.claude is present."
+        case .empty(.notAClaudeDir(let path)):
+            return "No projects/ folder under:\n\(path)\nIs this a Claude data directory?"
+        case .empty(.noTranscripts(let path)):
+            return "No transcripts yet under:\n\(path)"
         }
     }
 
