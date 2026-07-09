@@ -17,6 +17,11 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Language-server status in the footer.** When you open a code file, a small chip in the
+  status bar now shows whether its language server is running, starting, failed, or not
+  installed — so features like hover, go-to-definition and completions stop failing silently.
+  Click it for the per-language list (with install hints for missing servers) and a Restart
+  button to revive a crashed server without waiting out the cooldown.
 - **Move the terminal to any edge.** The terminal pane's tab strip now has a Dock control —
   send the terminal to the left, right, or bottom of the window (the current edge is
   check-marked). Previously the terminal could only be moved by editing preferences.

@@ -339,6 +339,24 @@ public enum UISceneApplier {
             return "ui-scene: applied 'first-run' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
 
+        // LSP status chip scene (TSK-1444 render tail): open a Swift file so the
+        // footer LSP status chip (mdv.statusBar.lsp) is eligible to render. Its
+        // state comes from the live pool + binary availability, OR from
+        // MDV_LSP_STATUS_FAKE ("<state>[:<language>]", set by the harness) for a
+        // deterministic capture of running / idle / failed / notInstalled.
+        if scene == "lsp-status" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("sample.swift")
+            try? "import Foundation\nfunc greet(_ name: String) { print(\"hi \\(name)\") }\n"
+                .write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.open(url: f)
+            let forced = ProcessInfo.processInfo.environment["MDV_LSP_STATUS_FAKE"] ?? "(none)"
+            return "ui-scene: applied 'lsp-status' file=\(f.lastPathComponent) fake=\(forced)"
+        }
+
         // Terminal dock-right scene (TSK-1123): dock the terminal to the RIGHT
         // edge (the owner's "can't get the terminal to the right" pain) via the
         // same setPaneEdge path the new Dock control uses, so the VM capture

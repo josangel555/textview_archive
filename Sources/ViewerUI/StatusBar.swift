@@ -67,6 +67,15 @@ struct StatusBar: View {
             // shows a red "● Recording Macro" while a macro is being captured.
             MacroRecordingChip(macros: model.macros)
 
+            // TSK-1444: LSP status chip — surfaces the focused file's
+            // language-server state (running / idle / failed / not installed)
+            // so LSP features stop degrading silently. Own view (own poll
+            // tick) → re-bodies only the chip. Hidden for non-LSP files.
+            LSPStatusChipView(
+                pool: model.lspPool,
+                currentURL: model.currentURL,
+                fontSize: model.uiSize(10))
+
             // TSK-933: the footer path is a clickable breadcrumb — each segment
             // reveals that ancestor folder (or the file) in the sidebar. Lowest
             // layout priority so it shrinks before the live metric chips (same

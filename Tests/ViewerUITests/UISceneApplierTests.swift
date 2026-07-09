@@ -287,6 +287,21 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_lspStatusScene_opensASwiftFileForTheChip() {
+        // TSK-1444 render tail: the scene opens a Swift file so the footer LSP
+        // status chip (mdv.statusBar.lsp) is eligible to render. Pins the
+        // scene→model contract (an LSP-eligible tab is the selected surface); the
+        // chip's classification is host-tested (LSPStatusChipTests) and its
+        // on-screen pixels are the VM assertion (MDV_LSP_STATUS_FAKE forces state).
+        let model = makeModel()
+        let status = apply("lsp-status", model)
+        XCTAssertEqual(model.tabs.selected?.url?.pathExtension, "swift",
+                       "an LSP-eligible Swift file is the selected surface")
+        XCTAssertNotNil(model.lspPool.registry.language(for: model.tabs.selected!.url!),
+                        "the open file resolves to an LSP language (so the chip is not hidden)")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     func test_terminalDockRightScene_docksTheTerminalRight() {
         // TSK-1123: the scene docks the terminal to the RIGHT edge via setPaneEdge
         // (the path the new Dock control uses). Pins the scene→model contract; the

@@ -63,6 +63,18 @@ public enum LSPLanguage: String, Sendable, Hashable, CaseIterable {
         }
     }
 
+    /// Compact name for the status-bar LSP chip, where horizontal space is
+    /// scarce (the `displayName` "(server-binary)" suffix would blow the
+    /// footer budget). TSK-1444.
+    public var shortName: String {
+        switch self {
+        case .swift:      return "Swift"
+        case .typescript: return "TS/JS"
+        case .java:       return "Java"
+        case .python:     return "Python"
+        }
+    }
+
     /// User-facing install hint when the server binary isn't found on
     /// the user's PATH. Surfaced in the Settings diagnostics panel and
     /// in toast notifications.
@@ -479,7 +491,7 @@ public struct LSPLanguageRegistry: Sendable {
     /// Code-family extension bundles a reusable stdio server — the
     /// editor's extensions directory (TSK-797). So a user with VS Code /
     /// Cursor installed gets LSP "for free" without a separate install.
-    static func discoverServerBinary(for language: LSPLanguage) -> URL? {
+    public static func discoverServerBinary(for language: LSPLanguage) -> URL? {
         switch language {
         case .swift:
             // The Swift VS Code extension defers to the toolchain's

@@ -73,11 +73,18 @@ case "$scene" in
     ;;
 esac
 
+# Optional per-run env for the LSP status chip scene (TSK-1444): a forced chip
+# state ("<state>[:<language>]", e.g. "failed:python"), dropped by the host in
+# $JOB_DIR/lsp-fake before kickstart. Absent/empty → the chip shows the REAL
+# pool state (the model treats an empty value as "no override").
+LSP_FAKE="$(tr -d '[:space:]' < "$JOB_DIR/lsp-fake" 2>/dev/null || true)"
+
 if [ -n "$MON_ROOT" ]; then
   MDV_TEST_INSTANCE=1 MDV_MONITOR_ROOT="$MON_ROOT" \
     "$APP" --claude-monitor >"$JOB_DIR/$scene.applog" 2>&1 &
 else
   MDV_TEST_INSTANCE=1 MDV_SKIP_WORKSPACE_RESTORE=1 MDV_UI_SCENE="$scene" \
+    MDV_LSP_STATUS_FAKE="$LSP_FAKE" \
     "$APP" "$FILE" >"$JOB_DIR/$scene.applog" 2>&1 &
 fi
 PID=$!

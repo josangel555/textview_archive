@@ -111,6 +111,12 @@ public actor LSPPool {
         public let isLive: Bool
         public let isDead: Bool
         public let status: LSPServerStatus
+        public init(key: Key, isLive: Bool, isDead: Bool, status: LSPServerStatus) {
+            self.key = key
+            self.isLive = isLive
+            self.isDead = isDead
+            self.status = status
+        }
     }
 
     // Public so callers (DocumentModel command guards) consult the SAME
@@ -531,6 +537,42 @@ public actor LSPPool {
                 key: key, isLive: live, isDead: dead,
                 status: entry.serverStatus)
         }
+    }
+
+    /// Restart every server for `language`: shut down any live client and
+    /// drop the entry so the next request cold-starts fresh. Crucially this
+    /// also clears a `.dead` cooldown, so it is the "Restart" action behind
+    /// the status chip (TSK-1444) — the user's escape hatch when a server
+    /// crashed and is sitting in cooldown. Idempotent; a no-op (returns 0)
+    /// when the pool is closed or holds no key for the language. Orphaned
+    /// live clients are shut down CONCURRENTLY (same bounded-teardown
+    /// rationale as `closeAll`). Returns the number of keys restarted so the
+    /// caller can toast / the test can assert.
+    @discardableResult
+    public func restart(language: LSPLanguage) async -> Int {
+        guard !isClosed else { return 0 }
+        // Snapshot the victim keys + their live clients BEFORE any await, so
+        // the actor-isolated mutation of `entries` can't race a suspension.
+        var liveClients: [LSPClient] = []
+        var count = 0
+        for (key, entry) in entries where key.language == language {
+            if case .live(let client, _) = entry.state {
+                liveClients.append(client)
+            }
+            entries.removeValue(forKey: key)
+            count += 1
+        }
+        guard count > 0 else { return 0 }
+        // The entries are already dropped, so a concurrent `ensureLive` will
+        // cold-start a fresh server (the intended restart). Reap the now-
+        // orphaned clients concurrently.
+        await withTaskGroup(of: Void.self) { group in
+            for client in liveClients {
+                group.addTask { await client.shutdown() }
+            }
+            for await _ in group {}
+        }
+        return count
     }
 
     /// Test-only: current per-file LSP version for `fileURL`, or nil if

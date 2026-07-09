@@ -253,6 +253,11 @@ public enum UISceneRegistry {
             fixture: .none,
             closesExistingTabs: true,
             summary: "The first-run sample tour ('Welcome to TextView.md') opened rendered — headings/table/mermaid demo the lenses (TSK-1448)"),
+        SceneSpec(
+            id: "lsp-status",
+            fixture: .throwawaySource(name: "sample.swift"),
+            closesExistingTabs: true,
+            summary: "A Swift file open → the footer LSP status chip (mdv.statusBar.lsp) shows the language-server state; MDV_LSP_STATUS_FAKE forces a deterministic state (TSK-1444)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one
