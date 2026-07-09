@@ -17,7 +17,12 @@
   pixels as proof. Verified this session: video fallback card (TSK-1474), archive
   browser (TSK-1469), notebook cell outputs (TSK-1440), dependency-graph canvas
   (TSK-1470 — nodes + edge arrows paint; scene resets the restored terminal/sidebar so
-  the hosted graph tab is visible). Each scene is a committed guard + host applier test.
+  the hosted graph tab is visible), markdown outline panel (TSK-1438), terminal favorites
+  editor (TSK-1475). Each scene is a committed guard + host applier test.
+- **Launch-mode UAT lane** (aqua-runner `monitor-*` scenes): the Claude Session Monitor
+  (`--claude-monitor` window, not a `MDV_UI_SCENE`) is now UAT-drivable — the runner builds
+  a fixture root + launches in monitor mode via `MDV_MONITOR_ROOT`. Verified TSK-1477's
+  empty-state message + session-list rendering on the VM.
 
 ## 2026-07-07
 

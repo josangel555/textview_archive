@@ -36,24 +36,26 @@ crash the frontend). If the dep cache is ever damaged: ship it from host — `rs
 .build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/` +
 `swift package resolve` (or build `--disable-automatic-resolution`).
 
-CURRENT (2026-07-09): ★ VM UAT PIPELINE PROVEN. 6 render tails UAT-VERIFIED ON-SCREEN via the
+CURRENT (2026-07-09): ★ VM UAT PIPELINE PROVEN. 7 render tails UAT-VERIFIED ON-SCREEN via the
 pyramid (all at `review` w/ screenshot evidence, owner validates): TSK-1474 video fallback ·
 TSK-1469 archive browser · TSK-1440 notebook OUTPUTS · TSK-1470 dep-graph CANVAS · TSK-1438
-markdown OUTLINE panel (MOUNTED as .markdownOutline sidebar panel) · TSK-1475 terminal FAVORITES
-editor (MOUNTED behind Terminal ▸ Terminal Favorites ▸ "Manage Favorites…" → .sheet; lists
-seeded favs w/ rename/reorder/delete; UAT U1). Two of these (1438, 1475) crossed from
-built-but-unreachable to genuinely USABLE. Offline build (TSK-1568, MDV_SWIFT_OFFLINE=1) + window
-capture (TSK-1569, vm-uitest.sh window-id) SOLVED. Committed UAT scenes: video-unsupported,
-archive-preview, notebook, depgraph, outline, favorites.
-NEXT tails to UAT (scene each, per recipe): monitor(1477, --claude-monitor mode), plugins(1478,
-Settings→Plugins nav). Reap leftover root-owned VM test instances with sudo kill (not pkill-9) —
-they accumulate + screencapture can grab the wrong window-id (hit this on depgraph: reap, then
-re-run). LAYOUT/AX GOTCHAS: a restored terminal + the always-on Bookmarks panel (persisted
-entries) bury sidebar targets — the scene must reset layout (`terminalPane.setOpen(false)`, and
-for accordion panels force target `panelLayout.setOverride(kind, .shown)` + hide siblings
-`.hidden`); the ax-reader does NOT surface content-view OR .sheet-content a11y ids (only sidebar
-panels + overlays/menus) → AX-presence asserts FALSE-FAIL for content/sheet views; present-in-tree
-≠ visible, so READ the PNG.
+markdown OUTLINE panel (MOUNTED) · TSK-1475 terminal FAVORITES editor (MOUNTED behind "Manage
+Favorites…") · TSK-1477 Claude MONITOR (empty-state message + session-list render, via the new
+launch-mode UAT lane). Two (1438, 1475) crossed built→USABLE. Offline build (TSK-1568) + window
+capture (TSK-1569) SOLVED. Committed UAT scenes: video-unsupported, archive-preview, notebook,
+depgraph, outline, favorites; + aqua-runner launch-mode `monitor-*` scenes.
+NEXT tails to UAT: plugins(1478, Settings→Plugins nav — Settings is a SwiftUI Settings scene,
+hard to drive to a tab; needs a settings-tab override or a mount). MOUNT follow-ons filed:
+TSK-1570 (outline scroll-highlight+preview-jump), TSK-1571 (mount the Monitor as a menu item —
+openClaudeMonitorWindow clobbers self.window, needs a separate window ref).
+NEW UAT LANE (launch-mode windows): aqua-runner.sh handles `monitor-*` scenes — builds a fixture
+root + launches `--claude-monitor` + MDV_MONITOR_ROOT (no dist rebuild if only Swift is unchanged;
+the monitor window writes the same windowid). Reap leftover root-owned VM instances with sudo kill
+(not pkill-9). LAYOUT/AX GOTCHAS: a restored terminal + the always-on Bookmarks panel bury sidebar
+targets — reset layout (`terminalPane.setOpen(false)`, force target `panelLayout.setOverride(kind,
+.shown)` + hide siblings); the ax-reader surfaces sidebar-panel + SEPARATE-WINDOW-root ids
+(mdv.claudeMonitor passed) + overlays/menus, but NOT doc-content-view or .sheet-content ids →
+those AX-assert FALSE-FAIL; present-in-tree ≠ visible, so READ the PNG.
 
 PER-RENDER-TAIL UAT RECIPE (proven): (1) add a scene to UISceneRegistry.staticScenes + an inline
 handler in UISceneApplier that reaches the surface; (2) rebuild dist on the VM — use the CORRECT

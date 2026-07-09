@@ -47,8 +47,39 @@ fi
 # Keep the display awake (overnight runs lock it → capture fails).
 caffeinate -u -t 40 &
 CAFF=$!
-MDV_TEST_INSTANCE=1 MDV_SKIP_WORKSPACE_RESTORE=1 MDV_UI_SCENE="$scene" \
-  "$APP" "$FILE" >"$JOB_DIR/$scene.applog" 2>&1 &
+
+# Monitor launch-mode UAT (TSK-1477): the Claude Session Monitor is a separate
+# `--claude-monitor` window, NOT a MDV_UI_SCENE (it has no document-model scene
+# applier). For `monitor-*` scenes, build a fixture root + launch in monitor
+# mode pointed at it via MDV_MONITOR_ROOT (the view's documented root override,
+# ClaudeMonitorModel.defaultRoot). The monitor window writes the SAME windowid
+# file (main.swift openClaudeMonitorWindow), so the capture path is unchanged.
+MON_ROOT=""
+case "$scene" in
+  monitor-rootmissing)
+    # A root that does NOT exist → the rootMissing actionable empty state (U1).
+    MON_ROOT="$JOB_DIR/mon-missing-does-not-exist"
+    rm -rf "$MON_ROOT"
+    ;;
+  monitor-sessions)
+    # A populated root: <root>/projects/<p>/<s>.jsonl → the session list (U4).
+    MON_ROOT="$JOB_DIR/mon-root"
+    rm -rf "$MON_ROOT"
+    mkdir -p "$MON_ROOT/projects/demo-project"
+    printf '%s\n%s\n' \
+      '{"type":"user","timestamp":"2026-07-01T10:00:00Z","message":{"role":"user","content":"Build the outline panel"}}' \
+      '{"type":"assistant","timestamp":"2026-07-01T10:00:05Z","message":{"role":"assistant","content":"Done."}}' \
+      > "$MON_ROOT/projects/demo-project/session-abc123.jsonl"
+    ;;
+esac
+
+if [ -n "$MON_ROOT" ]; then
+  MDV_TEST_INSTANCE=1 MDV_MONITOR_ROOT="$MON_ROOT" \
+    "$APP" --claude-monitor >"$JOB_DIR/$scene.applog" 2>&1 &
+else
+  MDV_TEST_INSTANCE=1 MDV_SKIP_WORKSPACE_RESTORE=1 MDV_UI_SCENE="$scene" \
+    "$APP" "$FILE" >"$JOB_DIR/$scene.applog" 2>&1 &
+fi
 PID=$!
 trap 'kill "$PID" "$CAFF" 2>/dev/null; sleep 0.3; kill -9 "$PID" 2>/dev/null' EXIT
 

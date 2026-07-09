@@ -55,6 +55,7 @@ scene_expect() {
     depgraph) echo "mdv.depgraph.canvas" ;;
     outline) echo "mdv.markdownOutline" ;;
     favorites) echo "mdv.terminalFavorites.editor" ;;
+    monitor-rootmissing|monitor-sessions) echo "mdv.claudeMonitor" ;;
     *) echo "" ;;
   esac
 }
