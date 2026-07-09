@@ -244,6 +244,19 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_terminalHeaderScene_opensThePaneWithATab() {
+        // TSK-1249 render tail: the scene opens the terminal pane (top strip) with
+        // a tab so the header row renders above the surface. Pins the scene→model
+        // contract; the on-screen header string ("Terminal — <name> [<cwd>, pid
+        // <n>]") is the VM pixel assertion + host-tested TerminalHeader.format.
+        // (The shell spawns on the view's appearance, so no PTY starts here.)
+        let model = makeModel()
+        let status = apply("terminal-header", model)
+        XCTAssertTrue(model.terminalPane.isOpen, "the terminal pane is open")
+        XCTAssertNotNil(model.terminalPane.terminal, "a terminal tab exists")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

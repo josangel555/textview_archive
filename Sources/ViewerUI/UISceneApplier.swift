@@ -304,6 +304,21 @@ public enum UISceneApplier {
             return "ui-scene: applied 'structural-search' show=\(model.showStructuralSearch) lang=\(model.structuralSearchVM?.language.rawValue ?? "nil")"
         }
 
+        // Terminal header scene (TSK-1249 render tail): open the terminal pane
+        // (top strip) with a tab so the header row — "Terminal — <name> [<cwd>,
+        // pid <n>]" — renders above the surface. The shell spawns on the view's
+        // appearance (pid) and reports its cwd via OSC-7, so by capture time the
+        // header carries both fields.
+        if scene == "terminal-header" {
+            let pane = model.terminalPane
+            pane.setTabPosition(.top)
+            pane.setPaneEdge(.bottom)
+            pane.setHeight(320)
+            pane.setOpen(true)
+            while pane.tabs.count < 1 { pane.addTab() }
+            return "ui-scene: applied 'terminal-header' open=\(pane.isOpen) tabs=\(pane.tabs.count) hasTerminal=\(pane.terminal != nil)"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —

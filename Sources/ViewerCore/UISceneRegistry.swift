@@ -235,6 +235,10 @@ public enum UISceneRegistry {
             fixture: .throwawaySource(name: "sample.swift"),
             closesExistingTabs: true,
             summary: "Structural Search panel over a Swift file → query field w/ help placeholder + Examples button (TSK-1476)"),
+        SceneSpec(
+            id: "terminal-header",
+            fixture: .none,
+            summary: "Terminal pane (top strip) → the header row 'Terminal — <name> [<cwd>, pid <n>]' above the surface (TSK-1249)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

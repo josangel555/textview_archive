@@ -17,6 +17,9 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Terminal pane header.** The terminal now shows a header row — "Terminal — <name>
+  [<working dir>, pid <n>]" — that tracks the shell's live working directory (updates as
+  you `cd`) and its process id.
 - **Structural Search now has examples.** The tree-sitter structural-search panel gained an
   "Examples" button — a language-tailored list (Swift / Python / JS-TS / Rust) of insertable
   queries, so you can run one in a click without knowing the DSL. Syntax errors in your query

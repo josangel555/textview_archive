@@ -173,22 +173,51 @@ struct TerminalPaneView: View {
     /// position survives the swap because it lives on the per-tab
     /// `TerminalModel`, not the view — TSK-489.)
     private var terminalSurface: some View {
-        ZStack {
+        VStack(spacing: 0) {
+            // TSK-1249: the header row — "Terminal — <name> [<cwd>, pid <n>]",
+            // bound to the selected tab's live OSC-7 cwd + child pid. Own subview
+            // observing the TerminalModel so it re-bodies on the version bump when
+            // the cwd/pid change (TerminalPaneView observes only the store).
+            // COMPOSITOR (LESSONS/TSK-488): the header is a SwiftUI sibling drawn
+            // BEFORE the opaque, layer-backed TerminalRepresentable in the same
+            // stack — without its OWN compositing layer ordered ABOVE the surface
+            // it is OCCLUDED (invisible on screen though present in the tree; the
+            // VM pixel check caught exactly this). Mirror the tab strip's fix.
             if let terminal = store.terminal {
-                TerminalRepresentable(
-                    model: terminal,
-                    fontSize: fontSize,
-                    onCycleTab: { forward in store.cycleTab(forward: forward) },
-                    onNewTab: { store.addTab() },
-                    onCloseTab: { if let id = store.selectedTabID { store.closeTab(id) } }
-                )
-                .id(store.selectedTabID)
-                if terminal.hasExited {
-                    exitedOverlay(terminal)
+                VStack(spacing: 0) {
+                    TerminalHeaderRow(model: terminal, name: selectedTabLabel, fontSize: fontSize)
+                    Divider()
+                }
+                .compositingGroup()
+                .zIndex(1)
+            }
+            ZStack {
+                if let terminal = store.terminal {
+                    TerminalRepresentable(
+                        model: terminal,
+                        fontSize: fontSize,
+                        onCycleTab: { forward in store.cycleTab(forward: forward) },
+                        onNewTab: { store.addTab() },
+                        onCloseTab: { if let id = store.selectedTabID { store.closeTab(id) } }
+                    )
+                    .id(store.selectedTabID)
+                    if terminal.hasExited {
+                        exitedOverlay(terminal)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .zIndex(0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The selected tab's short label (custom name, else the number) for the
+    /// header — the format prepends "Terminal —", so a bare "Terminal N" title
+    /// would read redundantly; the label avoids that.
+    private var selectedTabLabel: String {
+        guard let id = store.selectedTabID,
+              let tab = store.tabs.first(where: { $0.id == id }) else { return "" }
+        return store.tabLabel(for: tab)
     }
 
     /// Horizontal strip (tab position = top).
@@ -334,6 +363,34 @@ struct TerminalPaneView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.textBackground.opacity(0.85))
+    }
+}
+
+/// TSK-1249 — the terminal pane's header row: "Terminal — <name> [<cwd>, pid <n>]".
+/// Observes the `TerminalModel` DIRECTLY so it re-bodies on the version bump when
+/// the shell reports a new OSC-7 cwd (or spawns/exits, changing the pid) — the
+/// enclosing `TerminalPaneView` observes only the store. The compose logic
+/// (home→~ abbreviation, missing-field drop) is the host-tested `TerminalHeader`.
+private struct TerminalHeaderRow: View {
+    @ObservedObject var model: TerminalModel
+    let name: String
+    let fontSize: CGFloat
+
+    var body: some View {
+        Text(TerminalHeader.format(
+            name: name,
+            cwd: model.liveWorkingDirectory?.path,
+            pid: model.childPID > 0 ? model.childPID : nil))
+            .font(.system(size: fontSize * 0.82, design: .monospaced))
+            .foregroundStyle(Palette.secondaryLabel)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Palette.windowBackground)
+            .help("The active terminal tab, its live working directory, and shell PID")
+            .accessibilityIdentifier("mdv.terminal.header")
     }
 }
 

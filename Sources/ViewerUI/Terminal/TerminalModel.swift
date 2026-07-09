@@ -157,6 +157,11 @@ public final class TerminalModel: ObservableObject {
         box.currentWorkingDirectory ?? initialWorkingDirectory
     }
 
+    /// TSK-1249 — the spawned shell's child PID (`> 0` while running, `-1`
+    /// before spawn / after exit), surfaced for the terminal pane header row.
+    /// Reads through to the owned `PTYProcess`.
+    public var childPID: pid_t { pty.childPID }
+
     /// Fired on the main actor when the live cwd CHANGES (the shell emitted a
     /// new OSC-7 report). The store uses it to write the new cwd through to the
     /// persisted tab descriptor (TSK-341). Set by the owning store.

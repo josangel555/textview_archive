@@ -50,6 +50,13 @@ the modifier NEVER FIRES — anchor async work (scans, loads) on an always-prese
 a `Group { if x {…} }`. This hid the secret badge on the first render until fixed (ZStack + a
 zero-height Color.clear owning the .task).
 
+TSK-1249 (terminal HEADER row, review): added a header above the terminal surface — "Terminal —
+<name> [<cwd>, pid <n>]" (TerminalHeaderRow observes the TerminalModel → live-updates on OSC-7
+cwd + pid via the version bump). Exposed TerminalModel.childPID (public forward to PTYProcess).
+Formatter host-tested (TerminalHeaderTests 3/3). UAT scene "terminal-header". COMPOSITOR CATCH:
+the header was INVISIBLE on the first VM capture (occluded by the opaque TerminalRepresentable —
+the LESSONS/TSK-488 class); fixed w/ .compositingGroup().zIndex(1) above the surface. A live
+reminder that present-in-tree ≠ visible + the VM pixel check is what catches it.
 TSK-1476 (structural-search HELP, review): wired StructuralSearchHelp into StructuralSearchView —
 an Examples popover (language-tailored insertable queries, insert-on-click), the help placeholder,
 + a live under-field validation error as you type. Language auto-seeded (currentEffectiveLanguage).

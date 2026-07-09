@@ -59,6 +59,7 @@ scene_expect() {
     secrets) echo "mdv.secretBanner" ;;
     omni) echo "mdv.emptyState.omni" ;;
     structural-search) echo "mdv.structuralSearch.examplesButton" ;;
+    terminal-header) echo "mdv.terminal.header" ;;
     *) echo "" ;;
   esac
 }
