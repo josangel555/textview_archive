@@ -3892,3 +3892,22 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   swift-folds.scm → build-app.sh --install rc=8, so the P0 fix could not even INSTALL until the
   stale check was dropped. When deleting a shipped resource, grep `runResourceSelfCheck` in
   main.swift for its check entry.
+
+- **VM ssh "down" was a lost HOST key, not the VM (2026-07-09, TSK-1550).** Symptom: `ssh macOS15`
+  → "Permission denied (publickey,password,keyboard-interactive)", `ssh -v` shows NO "Offering"
+  line. Root: the configured IdentityFile (`<path-to-ssh-key>`) + its dir were
+  gone (swept in the ~/Documents relocation/iCloud incident). The VM itself was UP the whole time
+  (pings, sshd handshakes, password auth works). FIX with the owner's VM login password (<vm-sudo-password>):
+  `expect`-drive `ssh-copy-id -i ~/.ssh/id_ed25519.pub -o PreferredAuthentications=password
+  -o PubkeyAuthentication=no vm-tester@<vm-ip>` (both `/usr/bin/expect` + `/usr/bin/ssh-copy-id`
+  ship on macOS), then re-point `~/.ssh/config` macOS15 → `~/.ssh/id_ed25519` + `IdentitiesOnly yes`.
+  LESSON: when "can't ssh the VM", FIRST check the key exists (`ls -la <IdentityFile>`) + `ssh -v`
+  for an Offering line — don't assume the remote is broken.
+- **vm-smoke.sh ships a STALE dist (re-confirmed 2026-07-09).** After the VM lane came back,
+  vm-smoke launched a Jul-4 `dist/TextView.app` and warned "SwiftPM did not relink against the
+  fresh staticlib" — the screenshot showed only the TextView menu bar (app running) + desktop, no
+  fresh render. For real render/UAT of NEW code: `rm .build/*/debug/MarkdownViewer` on the VM to
+  force a relink, or use `test-in-vm.sh all` (build_all rebuilds dist). vm-smoke alone = lane
+  liveness check, NOT a fresh-render validator.
+- **The UTM VM clock is skewed ~3 days behind real time (2026-07-09: VM said Jul-6).** So file
+  mtimes on the VM read old; judge dist freshness by `git log` correlation, not the VM's clock.

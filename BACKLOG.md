@@ -18,10 +18,18 @@ checks artifact. NEVER `task_validate` (owner validates). Blocked ⇒ park, take
 **PURE AUTONOMY — NO INLINE QUESTIONS.** Every question/decision/approval/ambiguity becomes a
 BOARD "Need me" gate (`task_park` with homework + recommendation), then MOVE ON.
 
+**★ VM LANE RESTORED (2026-07-09, TSK-1550 fixed).** The macOS15 test VM is reachable again
+(host lost its ssh key in the relocation incident; re-enrolled ~/.ssh/id_ed25519, re-pointed
+~/.ssh/config). The render/UAT/T5 validation lane is OPEN. The 7 render tails stacked at `review`
+this session — 1438 outline · 1474 video · 1469 archive · 1477 monitor · 1478 plugins · 1470
+dep-graph · 1475 favorites — can now be UAT-validated: `test-in-vm.sh all` (build_all rebuilds
+dist — vm-smoke ships a STALE dist, see LESSONS), then drive each ticket's UAT cases + attach
+screenshots. Leave at `review` (owner validates) per the cron mandate.
+
 **OWNER CORRECTIONS (2026-07-07, post-run):**
 - Host-workability was a PRIORITY, not a mandate. Render/view code is BUILD-NOW on the host;
   each lands at `review` as "model-fixed, on-screen UNVERIFIED — needs VM". TSK-1550 gates only
-  the VALIDATION rung (batched when the VM returns), never the build.
+  the VALIDATION rung (now OPEN — the VM is back), never the build.
 - **UAT CASES ARE ON THE TICKETS** (stamped 2026-07-07): every render-tail ticket carries
   agent-executable UAT cases (MCP/AX/screenshot-driven). The agent MUST execute them (VM lane,
   or AX where applicable) and attach the evidence BEFORE claiming the ticket complete.
