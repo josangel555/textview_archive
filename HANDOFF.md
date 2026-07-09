@@ -15,18 +15,21 @@ task_park "Need me".
 ## ★ Current state (2026-07-09)
 - **VM lane RESTORED + PROVEN** (TSK-1550 fixed): `ssh macOS15` passwordless; offline dist build +
   window-id capture pipeline works end-to-end. The pyramid is real, not a flagpole.
-- **§1 "Fresh models" render tails are DRAINED** — all at `fixed`/`review`. Build frontier = §1
-  "Older pool" (deep backend + no front). Done recently: 1444 LSP · 1576 footer-lane · 1443 git panel
-  · 1445 CR journey · **1168 vector editing (THIS TICK)**. Next: 1441 image-editor feel · 1494 cursor
-  mode · 1443's render U1 (TSK-1577).
-- **THIS TICK — TSK-1168 on-canvas vector editing → `review`** (commit `a403011d`). Select + move/
-  resize placed shapes. Pure: VectorOverlay.hitTest + ShapeDragGeometry handle geometry/resize. VM:
-  selectShape(at:) + resizeSelectedShape(handle:) (undoable). View: new `.editShapes` ⌖ tool +
-  ShapeSelectionHandlesView + DragGesture branch. 16 host tests. Live drag + handle render = VM/AX
-  tail (image editor is view-local @StateObject; faithful drag not synthesizable in-process TSK-1188).
-- **PRIOR TICKS (at `review`):** 1445 CR journey (`5ce2a901`) · 1443 git panel (`8a09f977`; render U1
-  = TSK-1577) · 1444 LSP chip (`ddd8aa4d`, VM-verified via 1576) · 1576 footer-capture (`ebf056fe`,
-  VM-verified).
+- **★ CADENCE CHANGED (2026-07-09): OVERLOADED CHUNK TICKS.** BACKLOG.md is now CHUNKED (§1 =
+  CH-A..CH-K, each 3–5 related tickets). Each tick takes ONE whole chunk: implement all + full test
+  pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
+  a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
+  the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
+- **THIS TICK — CH-A (image editor) → all 5 at `review`** (commit `a51f9564`). 1114 fillSelection +
+  deleteSelection-undo-fix (data-loss bug) · 1574 heart/lightning/callout gallery shapes · 1088/1441
+  ImageViewport model (zoom/pan/grid/ruler/coords, host-tested) + save-vs-copy tooltips · 1055
+  reconcile (already done via TSK-1424). 17 host tests. **Render integration (zoom/pan/grid/rulers
+  on-screen) filed TSK-1578** (image editor = view-local @StateObject → VM/owner glance).
+- **PRIOR (at `review`):** 1168 vector-edit (`a403011d`) · 1445 CR journey (`5ce2a901`) · 1443 git
+  panel (`8a09f977`; U1=1577) · 1444 LSP chip (`ddd8aa4d`, VM-verified) · 1576 footer-capture
+  (`ebf056fe`, VM-verified).
+- **Next chunk:** CH-B (image advanced tools) or CH-C (devtools). **Verify-before-build: many §1
+  items are already done** — task_get + grep before building (CH-A's 1055 was already shipped).
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
 
 ## ✅ FOOTER-CAPTURE ROOT (2026-07-09, TSK-1576 — corrects a wrong first theory)
