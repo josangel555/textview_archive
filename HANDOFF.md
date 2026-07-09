@@ -26,18 +26,22 @@ Autonomous render-tail build+validate loop (cron job 14956868, every 5min). Read
 - **In flight:** none uncommitted. Cleared the VM's stale link product
   (`rm .build/*/debug/MarkdownViewer`) so the next VM build relinks fresh.
 
-## NEXT ACTION (continue autonomously while owner is away)
-UAT-validate the 7 stacked tails on the now-open VM, leave each at `review` with screenshot
-evidence (owner does final task_validate tomorrow):
-1. `rsync -az --delete --exclude='.build/' --exclude='.swiftpm/' --exclude='dist/'
-   --exclude='.git/objects/pack/' ./ macOS15:markdown_viewer/`
-2. `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 bash scripts/test-in-vm.sh all`
-   — `all` = build_all REBUILDS dist (vm-smoke ships a STALE dist — do NOT trust it for fresh
-   render; see LESSONS). Capture FULL output (not `| tail`).
-3. Per ticket: drive its UAT cases via the GUI lane (spawn dist, screencapture -l<winID>, Read
-   the PNG) and attach a checks artifact + note the pass/fail. Leave at `review`.
-Then resume BACKLOG §1 top-down for any remaining render tails (settings IA 1481, first-run
-wiring 1448, resurrection 1500, notebook outputs render, etc.).
+## ★ VM UAT BLOCKED (2026-07-09, TSK-1568 parked — owner decision)
+The VM ssh/GUI/screencapture lane WORKS, but rebuilding dist with this session's render code is
+walled: (1) VM default Swift 6.1.2 CRASHES on the tree (SIL-lowering segfault — tmp/vm-forcebuild.log);
+(2) building with the 6.3 toolchain needs a full clean rebuild (the .build cache has 6.1.2 dep
+modules — Markdown, SwiftTreeSitter, … — that 6.3 won't import; partly polluted by my 6.1.2
+attempt); (3) a clean 6.3 rebuild is OOM-risky on the 4GiB VM (memory says 6GiB+). Did NOT run it
+unattended. Parked TSK-1568 (recommend: bump VM RAM → clean rebuild → UAT). ⚠️ The VM's .build is
+in a mixed 6.1.2/6.3 state — it needs one clean rebuild before the test lane is reliable again.
+The 7 tails stay at `review` with host-test evidence (nothing lost; only on-screen UAT deferred).
+
+## NEXT ACTION
+VM UAT is blocked pending TSK-1568. So resume BACKLOG §1 top-down building the NEXT render tails
+on the host (build + host-test + land at `review` UNVERIFIED), same as before the VM came back:
+settings IA (1481), first-run wiring (1448), resurrection entry (1500), notebook outputs render,
+etc. When TSK-1568 is resolved (VM RAM bump / supervised clean build), batch-UAT the whole
+`review` stack at once via `test-in-vm.sh all` (build_all) + per-ticket screencapture.
 
 ## Gotchas (full list LESSONS.md tail)
 - VM "can't ssh" = check the HOST key first (`ls -la <IdentityFile>`, `ssh -v` for an Offering
