@@ -16,17 +16,17 @@ task_park "Need me".
 - **VM lane RESTORED + PROVEN** (TSK-1550 fixed): `ssh macOS15` passwordless; offline dist build +
   window-id capture pipeline works end-to-end. The pyramid is real, not a flagpole.
 - **§1 "Fresh models" render tails are DRAINED** — all at `fixed`/`review`. Build frontier = §1
-  "Older pool" (genuinely-`reported` features w/ a deep backend + no front). Done recently: 1444 LSP
-  status · 1576 footer-capture lane · 1443 git panel · **1445 CR journey (THIS TICK)**. Next: 1168
-  vector editing · 1441 image-editor feel · 1494 cursor mode.
-- **THIS TICK — TSK-1445 code-review journey verified end-to-end → `review`** (commit `5ce2a901`).
-  Backends/UI/per-unit tests/MCP tools already existed; the gap was "never driven as a whole."
-  `ReviewJourneyTests` drives the full loop on a REAL commit diff (openCommitReview → comment(anchored)
-  → reply(threaded) → resolve → flush → reopen-from-disk survives → export carries the hunk →
-  get_review_context MCP parity). No product friction. Documented workflow in `docs/CAPABILITIES.md`
-  §5. U1 diff-render + U3 scroll-nav = WebView/AX tier.
-- **PRIOR TICKS (at `review`):** 1443 git panel (`8a09f977`, 19 host tests; render U1 = TSK-1577) ·
-  1444 LSP chip (`ddd8aa4d`, VM-verified via 1576) · 1576 footer-capture fix (`ebf056fe`, VM-verified).
+  "Older pool" (deep backend + no front). Done recently: 1444 LSP · 1576 footer-lane · 1443 git panel
+  · 1445 CR journey · **1168 vector editing (THIS TICK)**. Next: 1441 image-editor feel · 1494 cursor
+  mode · 1443's render U1 (TSK-1577).
+- **THIS TICK — TSK-1168 on-canvas vector editing → `review`** (commit `a403011d`). Select + move/
+  resize placed shapes. Pure: VectorOverlay.hitTest + ShapeDragGeometry handle geometry/resize. VM:
+  selectShape(at:) + resizeSelectedShape(handle:) (undoable). View: new `.editShapes` ⌖ tool +
+  ShapeSelectionHandlesView + DragGesture branch. 16 host tests. Live drag + handle render = VM/AX
+  tail (image editor is view-local @StateObject; faithful drag not synthesizable in-process TSK-1188).
+- **PRIOR TICKS (at `review`):** 1445 CR journey (`5ce2a901`) · 1443 git panel (`8a09f977`; render U1
+  = TSK-1577) · 1444 LSP chip (`ddd8aa4d`, VM-verified via 1576) · 1576 footer-capture (`ebf056fe`,
+  VM-verified).
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
 
 ## ✅ FOOTER-CAPTURE ROOT (2026-07-09, TSK-1576 — corrects a wrong first theory)
