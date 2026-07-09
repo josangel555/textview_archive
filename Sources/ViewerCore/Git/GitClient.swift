@@ -717,6 +717,80 @@ public final class GitClient: Sendable {
         }
     }
 
+    // MARK: - Index mutations (stage / unstage / commit / discard) — TSK-1443
+
+    /// `git add -- <path>`. Stages a tracked-modified OR untracked file.
+    /// Reversible via `unstage`. Path is guarded (`safeRelativePath`) and
+    /// passed after `--` so a leading-`-` name can't be read as an option.
+    @discardableResult
+    public func stage(path: String) -> (ok: Bool, message: String) {
+        guard let safe = Self.safeRelativePath(path) else { return (false, "Invalid path.") }
+        return runMutation(["add", "--", safe], failLabel: "git add failed.")
+    }
+
+    /// Unstage `path`. On a normal HEAD that's `git reset -q HEAD -- <path>`;
+    /// on an UNBORN HEAD (no commits yet) `git reset HEAD` errors ("ambiguous
+    /// argument 'HEAD'"), so unstaging there means dropping it from the index
+    /// with `git rm --cached`. Reversible via `stage`.
+    @discardableResult
+    public func unstage(path: String) -> (ok: Bool, message: String) {
+        guard let safe = Self.safeRelativePath(path) else { return (false, "Invalid path.") }
+        if revParse("HEAD") != nil {
+            return runMutation(["reset", "-q", "HEAD", "--", safe], failLabel: "git reset failed.")
+        }
+        // Unborn HEAD: nothing committed → unstage = remove from the index.
+        return runMutation(["rm", "-q", "--cached", "--", safe], failLabel: "git rm --cached failed.")
+    }
+
+    /// `git commit -m <message>` of the STAGED index (does not auto-stage).
+    /// Refuses an empty/whitespace message. `-m` takes the message as one
+    /// argument (not a shell string) so there is no injection surface.
+    @discardableResult
+    public func commit(message: String) -> (ok: Bool, message: String) {
+        let msg = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !msg.isEmpty else { return (false, "Commit message is empty.") }
+        return runMutation(["commit", "-m", msg], failLabel: "git commit failed.")
+    }
+
+    /// DESTRUCTIVE: revert a tracked file's working-tree changes to the index/
+    /// HEAD state via `git checkout -- <path>`. Loses uncommitted edits — the
+    /// caller MUST gate on a confirmation (`GitStageOp.discard.requiresConfirm`).
+    /// For an UNTRACKED file there is nothing in git to restore; deleting it is
+    /// a separate, caller-owned action (not done here).
+    @discardableResult
+    public func discardChanges(path: String) -> (ok: Bool, message: String) {
+        guard let safe = Self.safeRelativePath(path) else { return (false, "Invalid path.") }
+        return runMutation(["checkout", "--", safe], failLabel: "git checkout failed.")
+    }
+
+    /// Shared outcome-mapper for the mutating commands above: run + translate a
+    /// throw into `(false, <git stderr or failLabel>)`, matching `checkout`.
+    private func runMutation(_ args: [String], failLabel: String) -> (ok: Bool, message: String) {
+        do {
+            _ = try run(args)
+            return (true, "")
+        } catch let e as Error {
+            if case let .processFailed(_, msg) = e {
+                return (false, msg.isEmpty ? failLabel : msg)
+            }
+            return (false, e.description)
+        } catch {
+            return (false, failLabel)
+        }
+    }
+
+    /// Reject a pathspec that could be read as a git option (leading `-`) or
+    /// escape the repo (absolute path / `..` traversal), returning a trimmed
+    /// repo-relative path otherwise. `--` already stops option-parsing, but
+    /// this is cheap defense-in-depth (and matches `checkout`'s guard). Pure +
+    /// `static` so the rule is host-testable without a repo.
+    static func safeRelativePath(_ path: String) -> String? {
+        let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !p.isEmpty, !p.hasPrefix("-"), !p.hasPrefix("/"),
+              !p.contains("..") else { return nil }
+        return p
+    }
+
     // MARK: - remote
 
     public struct RemoteEntry: Equatable, Sendable {

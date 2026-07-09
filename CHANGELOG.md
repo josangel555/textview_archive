@@ -17,6 +17,11 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Git panel now stages, commits, and discards.** The sidebar Git ▸ Status tab gained the
+  standard loop: a **＋/－** on each row to stage/unstage, a commit-message field with a **Commit**
+  button (disabled until something's staged and a message is typed), and **Discard Changes…** on a
+  file's menu — which always asks first, so you can't lose uncommitted work by accident. It was
+  view-only before.
 - **Language-server status in the footer.** When you open a code file, a small chip in the
   status bar now shows whether its language server is running, starting, failed, or not
   installed — so features like hover, go-to-definition and completions stop failing silently.

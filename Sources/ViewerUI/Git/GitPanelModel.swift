@@ -57,6 +57,16 @@ public final class GitPanelModel: ObservableObject {
     @Published public private(set) var userPinnedPanelRoot: URL?
 
     @Published public var statusEntries: [GitClient.StatusEntry] = []
+    /// TSK-1443: the commit-message field the Status-tab commit bar binds to.
+    /// Cleared after a successful commit.
+    @Published public var commitMessage: String = ""
+    /// TSK-1443: a path awaiting discard confirmation (drives the Status-tab
+    /// confirm dialog). `nil` = no dialog. A destructive op NEVER runs without
+    /// passing through here (`GitStageOp.discard.requiresConfirm`).
+    @Published public var pendingDiscard: String?
+    /// TSK-1443: true while an index mutation (stage/unstage/commit/discard) is
+    /// shelling out, so the commit bar can disable + show progress.
+    @Published public private(set) var isMutating: Bool = false
     @Published public var logEntries: [GitClient.GraphCommit] = []
     /// SHA of the log commit whose diff is currently shown (TSK-595).
     /// Drives the Log tab's selected-row highlight; reset on repo switch
@@ -496,6 +506,86 @@ public final class GitPanelModel: ObservableObject {
         if let r = p.remotes, remoteEntries != r { remoteEntries = r }
         lastRefreshed[tab] = Date()
         if isRefreshing { isRefreshing = false }
+    }
+
+    // MARK: - Index actions (stage / unstage / commit / discard) — TSK-1443
+
+    /// Stage a file (`git add`). Reversible; runs immediately.
+    public func stage(path: String) { runIndexOp(.stage, path: path) }
+    /// Unstage a file (`git reset HEAD` / `rm --cached` on unborn HEAD).
+    public func unstage(path: String) { runIndexOp(.unstage, path: path) }
+
+    /// Request a discard — opens the confirm dialog; NEVER runs the destructive
+    /// op directly. `confirmDiscard()` (from the dialog) is the only path that
+    /// actually reverts the file, so a discard can't happen without an explicit
+    /// confirmation (`GitStageOp.discard.requiresConfirm`).
+    public func requestDiscard(path: String) { pendingDiscard = path }
+    public func cancelDiscard() { pendingDiscard = nil }
+    public func confirmDiscard() {
+        guard let path = pendingDiscard else { return }
+        pendingDiscard = nil
+        runIndexOp(.discard, path: path)
+    }
+
+    /// Commit the staged index with `commitMessage`. Refuses an empty message
+    /// (toast feedback, no commit); on success clears the field + refreshes.
+    public func commit() {
+        let msg = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !msg.isEmpty else {
+            ToastCenter.shared.post(.error, "Enter a commit message to commit.")
+            return
+        }
+        guard repoRoot != nil else { return }
+        Task { @MainActor [weak self] in await self?.performCommit(message: msg) }
+    }
+
+    private func runIndexOp(_ op: GitStageOp, path: String) {
+        guard repoRoot != nil else { return }
+        Task { @MainActor [weak self] in await self?.performIndexOp(op, path: path) }
+    }
+
+    /// Awaitable core (also the host-test seam): run the mutation OFF-MAIN, then
+    /// toast the outcome and refresh the Status tab. Returns whether it applied.
+    @discardableResult
+    func performIndexOp(_ op: GitStageOp, path: String) async -> Bool {
+        guard let root = repoRoot else { return false }
+        isMutating = true
+        let result = await Task.detached(priority: .userInitiated) { () -> (ok: Bool, message: String) in
+            let git = GitClient(repoRoot: root)
+            switch op {
+            case .stage:   return git.stage(path: path)
+            case .unstage: return git.unstage(path: path)
+            case .discard: return git.discardChanges(path: path)
+            case .commit:  return (false, "commit is handled by performCommit")
+            }
+        }.value
+        isMutating = false
+        if result.ok {
+            refreshCurrent()
+        } else {
+            ToastCenter.shared.post(.error, "Git \(op.verb) failed", detail: result.message)
+        }
+        return result.ok
+    }
+
+    /// Awaitable commit core (host-test seam). Empty-message guard lives in the
+    /// public `commit()`; callers here pass a pre-trimmed non-empty message.
+    @discardableResult
+    func performCommit(message: String) async -> Bool {
+        guard let root = repoRoot else { return false }
+        isMutating = true
+        let result = await Task.detached(priority: .userInitiated) {
+            GitClient(repoRoot: root).commit(message: message)
+        }.value
+        isMutating = false
+        if result.ok {
+            commitMessage = ""
+            refreshCurrent()
+            ToastCenter.shared.post(.success, "Committed.")
+        } else {
+            ToastCenter.shared.post(.error, "Commit failed", detail: result.message)
+        }
+        return result.ok
     }
 
     // MARK: - Log search (TSK-596)
