@@ -230,6 +230,11 @@ public enum UISceneRegistry {
             fixture: .none,
             closesExistingTabs: true,
             summary: "Empty-state new-tab launchpad with the omnibox field (path/URL/git/search) + New… buttons (TSK-1489)"),
+        SceneSpec(
+            id: "structural-search",
+            fixture: .throwawaySource(name: "sample.swift"),
+            closesExistingTabs: true,
+            summary: "Structural Search panel over a Swift file → query field w/ help placeholder + Examples button (TSK-1476)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

@@ -287,6 +287,23 @@ public enum UISceneApplier {
             return "ui-scene: applied 'omni' tabs=\(model.tabs.tabs.count) hasContext=\(model.hasOpenContext)"
         }
 
+        // Structural Search help scene (TSK-1476 render tail): open a Swift file
+        // + present the Structural Search panel so the query field (with the help
+        // placeholder) + the Examples button render. Examples are tailored off the
+        // active file's language (Swift here). The popover content is host-tested.
+        if scene == "structural-search" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("sample.swift")
+            try? "func greet(name: String) { print(name) }\nstruct Point { let x: Int }\n"
+                .write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.open(url: f)
+            model.openStructuralSearch()
+            return "ui-scene: applied 'structural-search' show=\(model.showStructuralSearch) lang=\(model.structuralSearchVM?.language.rawValue ?? "nil")"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —

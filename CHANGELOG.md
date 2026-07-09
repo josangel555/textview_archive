@@ -17,6 +17,10 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Structural Search now has examples.** The tree-sitter structural-search panel gained an
+  "Examples" button — a language-tailored list (Swift / Python / JS-TS / Rust) of insertable
+  queries, so you can run one in a click without knowing the DSL. Syntax errors in your query
+  now show live under the field as you type.
 - **New-tab omnibox.** The "no file open" screen now has a single field: type a file or
   folder path to open it, a URL or git-repo link to open it in your browser, or any other
   text to run a cross-file search. Recent files still list below.

@@ -16,9 +16,23 @@ struct StructuralSearchView: View {
     /// Dismiss the panel. Nil hides the Close button.
     var onClose: (() -> Void)?
 
+    /// TSK-1476 — the language-tailored examples popover.
+    @State private var showExamples = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+            // TSK-1476: live under-field validation — parse the query AS TYPED so
+            // a syntax slip is visible BEFORE Search (the post-run errorMessage
+            // still shows engine errors). Suppressed while a run-error is shown.
+            if vm.errorMessage == nil,
+               let liveError = StructuralSearchHelp.validationError(for: vm.query) {
+                Text(liveError)
+                    .foregroundStyle(.orange)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("mdv.structuralSearch.liveError")
+            }
             resultsArea
         }
         .padding(12)
@@ -27,7 +41,7 @@ struct StructuralSearchView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            TextField("structural query — e.g. function_declaration name=$X", text: $vm.query)
+            TextField(StructuralSearchHelp.placeholder, text: $vm.query)
                 .font(.system(.body, design: .monospaced))
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { vm.run() }
@@ -35,11 +49,46 @@ struct StructuralSearchView: View {
             Button("Search") { vm.run() }
                 .keyboardShortcut(.return, modifiers: [])
                 .accessibilityIdentifier("mdv.structuralSearch.run")
+            // TSK-1476: insertable examples so a user who's never seen the DSL can
+            // run one in a click. Language-tailored off the active file's language.
+            Button("Examples") { showExamples.toggle() }
+                .popover(isPresented: $showExamples, arrowEdge: .bottom) { examplesList }
+                .accessibilityIdentifier("mdv.structuralSearch.examplesButton")
             if let onClose {
                 Button("Close") { onClose() }
                     .accessibilityIdentifier("mdv.structuralSearch.close")
             }
         }
+    }
+
+    private var examplesList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Examples — click to insert")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Divider()
+            ForEach(Array(StructuralSearchHelp.examples(for: vm.language).enumerated()), id: \.offset) { _, ex in
+                Button {
+                    vm.query = ex.query
+                    showExamples = false
+                } label: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(ex.label)
+                            .font(.system(size: 12, weight: .medium))
+                        Text(ex.query)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 2)
+            }
+        }
+        .padding(12)
+        .frame(width: 360)
+        .accessibilityIdentifier("mdv.structuralSearch.examples")
     }
 
     @ViewBuilder private var resultsArea: some View {

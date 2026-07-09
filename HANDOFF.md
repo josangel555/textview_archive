@@ -50,6 +50,10 @@ the modifier NEVER FIRES — anchor async work (scans, loads) on an always-prese
 a `Group { if x {…} }`. This hid the secret badge on the first render until fixed (ZStack + a
 zero-height Color.clear owning the .task).
 
+TSK-1476 (structural-search HELP, review): wired StructuralSearchHelp into StructuralSearchView —
+an Examples popover (language-tailored insertable queries, insert-on-click), the help placeholder,
++ a live under-field validation error as you type. Language auto-seeded (currentEffectiveLanguage).
+Help host-tested (StructuralSearchHelpTests 4/4, every example parses). UAT scene "structural-search".
 TSK-1489 (new-tab OMNIBOX, review): BUILT the omni field on the EmptyStateView launchpad — one
 field wired to OmniResolver.classify → openPath / openURL+gitRemote (browser) / search
 (openGlobalSearch). UAT-verified on the VM (omni scene): the field renders w/ placeholder "Open a

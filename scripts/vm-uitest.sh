@@ -58,6 +58,7 @@ scene_expect() {
     monitor-rootmissing|monitor-sessions) echo "mdv.claudeMonitor" ;;
     secrets) echo "mdv.secretBanner" ;;
     omni) echo "mdv.emptyState.omni" ;;
+    structural-search) echo "mdv.structuralSearch.examplesButton" ;;
     *) echo "" ;;
   esac
 }

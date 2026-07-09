@@ -231,6 +231,19 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_structuralSearchScene_presentsThePanel() {
+        // TSK-1476 render tail: the scene opens a Swift file + presents the
+        // Structural Search panel so the query field (help placeholder) + the
+        // Examples button render. Pins the scene→model contract; the on-screen
+        // Examples affordance is the VM pixel assertion. The examples-per-language
+        // + all-parse invariant is host-tested by StructuralSearchHelpTests.
+        let model = makeModel()
+        let status = apply("structural-search", model)
+        XCTAssertTrue(model.showStructuralSearch, "the structural search panel is presented")
+        XCTAssertNotNil(model.structuralSearchVM, "the VM is seeded from the active buffer")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene
