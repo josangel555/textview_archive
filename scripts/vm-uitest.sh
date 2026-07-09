@@ -50,6 +50,7 @@ scene_expect() {
     folder-only) echo "mdv.statusBar mdv.emptyState.newFile mdv.emptyState.recentRow" ;;
     metadata-checksum) echo "mdv.metadata.checksumAlgorithm" ;;
     video-unsupported) echo "mdv.video.fallbackCard" ;;
+    archive-preview) echo "mdv.archive.browser" ;;
     *) echo "" ;;
   esac
 }

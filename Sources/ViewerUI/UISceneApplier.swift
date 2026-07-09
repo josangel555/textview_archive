@@ -113,6 +113,22 @@ public enum UISceneApplier {
             return "ui-scene: applied 'video-unsupported' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
 
+        // Archive-preview scene (TSK-1469 render tail): open a real .zip so
+        // ArchiveBrowserView's master/detail list + preview pane render. The
+        // embedded base64 is a valid stored-mode zip with readme.txt + data.csv
+        // (ArchiveCatalog.list needs a real archive). The VM harness reads the
+        // PNG (ax-reader doesn't surface content-view a11y ids — see TSK-1474).
+        if scene == "archive-preview" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("sample.zip")
+            let b64 = "UEsDBAoAAAAAAEUr6Vx0RKWRFgAAABYAAAAKAAAAcmVhZG1lLnR4dGhlbGxvIGZyb20gdGhlIGFyY2hpdmVQSwMECgAAAAAARSvpXJqADc4OAAAADgAAAAgAAABkYXRhLmNzdmNvbDEsY29sMgoxLDIKUEsBAh4DCgAAAAAARSvpXHREpZEWAAAAFgAAAAoAAAAAAAAAAQAAAKSBAAAAAHJlYWRtZS50eHRQSwECHgMKAAAAAABFK+lcmoANzg4AAAAOAAAACAAAAAAAAAABAAAApIE+AAAAZGF0YS5jc3ZQSwUGAAAAAAIAAgBuAAAAcgAAAAAA"
+            if let data = Data(base64Encoded: b64) { try? data.write(to: f) }
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            return "ui-scene: applied 'archive-preview' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —

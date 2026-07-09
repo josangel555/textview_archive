@@ -196,6 +196,11 @@ public enum UISceneRegistry {
             fixture: .throwawaySource(name: "sample.mkv"),
             closesExistingTabs: true,
             summary: "Unsupported video container (.mkv) → VideoFallbackCard, not a black AVPlayerView (TSK-1474)"),
+        SceneSpec(
+            id: "archive-preview",
+            fixture: .throwawaySource(name: "sample.zip"),
+            closesExistingTabs: true,
+            summary: "Zip archive → ArchiveBrowserView master/detail list + preview (TSK-1469)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one
