@@ -120,19 +120,39 @@ All LSP commands are rebindable in `~/.textview/keybinding.json`
 
 ## 5. Code review (answers TSK-796)
 
-Review git diffs with inline comments, stored project-locally.
+Review git diffs with inline comments, stored project-locally. The whole loop —
+open → comment → reply → resolve → persist → export → hand to an agent — is
+verified end-to-end (`ReviewJourneyTests`, TSK-1445).
 
-- **Start:** open a diff (Git panel ⌥⌘⇧B → Status → click a file), then *New
-  Review from Diff…* (palette `⌘K` → "review").
-- **Comment:** hover a diff line's gutter → click **+** → pick a severity
-  (info/suggestion/issue/blocker/question/praise), write Markdown, **⌘↩** to save.
-- **Manage:** Edit / Resolve / Delete / Reply on each comment card.
-- **Export:** *Review ▸ Export Current Review* → clipboard (`⌘⇧E`) or a JSON file
-  (self-contained, schema `textview.code-review` v1).
-- **Stored:** `<repo>/.textview/reviews/<ulid>.json` (git-ignored by default; set
-  `"tracked": true` in `.textview/config.json` to commit them).
-- ⚠️ Stage-3 bits still landing: multi-line comment ranges, the right-rail
-  comments index, the draft→sent state pills.
+**The journey:**
+1. **Open a review.** Git panel (⌥⌘⇧B) → **Log** → right-click a commit → *Review
+   Commit…* (or Status → a file → *New Review from Diff…*, palette `⌘K` → "review").
+   The **Review** tab shows the commit's diff with hunks.
+2. **Comment on a line.** Hover a diff line's gutter → click **+** → pick a
+   severity (info / suggestion / issue / blocker / question / praise), write
+   Markdown, **⌘↩** to save. The comment anchors to `file:line` on the correct
+   (old/new) side and is stamped with the commit sha.
+3. **Reply / resolve / edit / delete** on each comment card. Replies thread under
+   the parent; deleting a parent removes its whole thread. Resolving flips a
+   visual state and updates counts.
+4. **It persists.** Every change is debounced-saved to
+   `<repo>/.textview/reviews/<ulid>.json`; close + reopen the review and the
+   comments, threads, and resolved state are all still there (git-ignored by
+   default — set `"tracked": true` in `.textview/config.json` to commit them).
+5. **Export.** *Review ▸ Export Current Review* → clipboard (`⌘⇧E`) or a
+   self-contained JSON file (schema `textview.code-review` v1). The export carries
+   each comment **with its frozen diff hunk**, so a reader sees the code in context.
+
+**Hand it to an agent (MCP, §2).** Two extra tools expose the review to an
+automation client so an agent can act on your comments:
+- **`get_review_context`** `{review_id?, store_path?, question?}` → the review's
+  comments (file · lines · severity · resolved · body · **frozen hunk**), ordered
+  and byte-budgeted (lowest-severity dropped first if huge; drop count reported).
+  Replies are flattened into the parent's body. No id → the most-recent review.
+- **`list_review_comments`** `{review_id?, store_path?}` → the flat comment list.
+
+- ⚠️ Still landing: multi-line comment ranges, the right-rail comments index, the
+  draft→sent state pills. Anchor staleness degrades to `unknown` without git.
 
 ---
 

@@ -60,6 +60,12 @@
   of dropping you into the raw JSON file.
 
 ### System work
+- **Code-review journey verified end-to-end + documented (TSK-1445).** Added `ReviewJourneyTests`
+  driving the whole loop on a REAL commit diff — open review → comment on a diff line → reply →
+  resolve → persist → reopen-from-disk (survives) → export (carries the hunk) → `get_review_context`
+  MCP parity — closing the "never driven as a whole" gap (the backends/UI/per-unit tests already
+  existed; no product friction surfaced). Rewrote `docs/CAPABILITIES.md` §5 as the step-by-step
+  workflow incl. the `get_review_context`/`list_review_comments` agent tools.
 - **Render-tail on-screen UAT lane (VM pyramid).** Built deterministic `MDV_UI_SCENE`
   scenes that drive each built-but-unreachable render tail to its exact on-screen state,
   rebuilt `dist` on the UTM VM (offline toolchain), captured by window-id and read the
