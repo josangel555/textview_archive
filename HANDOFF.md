@@ -50,6 +50,18 @@ validates). One gate + one commit + board-record per work unit.
   `review` "model-fixed, on-screen UNVERIFIED"; TSK-1550 gates only the batched VM validation.
   Resume there (top of the class-1 list), not the class-3 spikes.
 
+## RESUMED CRON — render-tail build phase (2026-07-09)
+Cron re-armed (job 14956868, every 5min). VM ssh (TSK-1550) is the critical path for the owner's
+"all lanes incl. UAT/AX" ask — ROOT-CAUSED + PARKED (Need-me): the VM is UP/pingable, but the
+HOST lost its key (<path-to-ssh-key> gone in the relocation; no host key is
+enrolled on the VM). Owner must console-paste my ~/.ssh/id_ed25519.pub into the VM's
+authorized_keys OR give the vm-tester login pw. Until then: render tails are BUILD + host-test +
+land at `review` UNVERIFIED; UAT/AX/T5 batch when the VM returns.
+- T45 (this tick): TSK-1438 UI built (36796098) → review UNVERIFIED. MarkdownOutlineModel
+  (host-tested ObservableObject, scroll no-op guard) + MarkdownOutlineSection (SwiftUI). Tail:
+  mount as .markdownOutline sidebar panel + wire onJump + run UAT U1-U6 on VM.
+- Gate flake filed TSK-1567 (EditorAssistToggleTests shared-UserDefaults parallel race).
+
 ## P0 INCIDENT RESOLVED (2026-07-07 ~23:15, TSK-1566 → fixed, 12f6e392)
 Owner: "can't open the /Applications build" → LS -600. Root: --mcp-connect bridges ran AFTER
 `NSApplication.shared` in main.swift → every bridge registered with LaunchServices as the app;
