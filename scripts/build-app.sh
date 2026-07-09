@@ -110,7 +110,10 @@ if [[ -f "$_STAGED_A" && ( ! -f "$_EXE" || "$_STAGED_A" -nt "$_EXE" ) ]]; then
 fi
 
 echo "==> swift build -c $CONFIG"
-( cd "$ROOT_DIR" && swift build -c "$CONFIG" "${OFFLINE_FLAG[@]}" )
+# macOS ships bash 3.2, where "${empty_array[@]}" trips `set -u` ("unbound
+# variable"). The `${arr[@]+"${arr[@]}"}` idiom expands to nothing when empty
+# (no stray empty-string arg) and to the elements otherwise — safe on 3.2 + 4+.
+( cd "$ROOT_DIR" && swift build -c "$CONFIG" ${OFFLINE_FLAG[@]+"${OFFLINE_FLAG[@]}"} )
 
 # SwiftPM's default `swift build` walks the executable's dep graph
 # only — the lazy-grammar dynamic library products aren't reached
@@ -129,10 +132,10 @@ LAZY_PRODUCTS=(
 )
 for prod in "${LAZY_PRODUCTS[@]}"; do
   echo "==> swift build --product $prod -c $CONFIG"
-  ( cd "$ROOT_DIR" && swift build -c "$CONFIG" --product "$prod" "${OFFLINE_FLAG[@]}" )
+  ( cd "$ROOT_DIR" && swift build -c "$CONFIG" --product "$prod" ${OFFLINE_FLAG[@]+"${OFFLINE_FLAG[@]}"} )
 done
 
-BIN_DIR="$( cd "$ROOT_DIR" && swift build -c "$CONFIG" --show-bin-path "${OFFLINE_FLAG[@]}" )"
+BIN_DIR="$( cd "$ROOT_DIR" && swift build -c "$CONFIG" --show-bin-path ${OFFLINE_FLAG[@]+"${OFFLINE_FLAG[@]}"} )"
 BIN_PATH="$BIN_DIR/$EXEC_NAME"
 if [[ ! -x "$BIN_PATH" ]]; then
   echo "Error: built executable not found at $BIN_PATH" >&2
