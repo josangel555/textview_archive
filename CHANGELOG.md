@@ -17,6 +17,9 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Curve, polygon & text tools in the image editor.** Three new paint tools: **Curve** (drag to
+  lay a smooth arc), **Polygon** (click each corner, then Close Polygon — filled or outlined), and
+  **Text** (click to drop an editable, movable text label). Anti-aliased.
 - **Fill a selection.** With a marquee/lasso selection active, the new **Fill** button paints the
   whole selected region with the current color (undoable). Deleting a selection is now undoable too.
 - **Three more shapes.** The image editor's shape gallery gained **heart**, **lightning**, and

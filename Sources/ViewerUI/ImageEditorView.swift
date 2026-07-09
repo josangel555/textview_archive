@@ -343,6 +343,26 @@ struct ImageEditorView: View {
                                 editHandle = nil
                                 return
                             }
+                            if vm.tool == .drawCurve {
+                                // TSK-1083: a drag lays a bowed arc start→end.
+                                let a = ShapeDragGeometry.normalizedPoint(value.startLocation, in: displayed)
+                                let b = ShapeDragGeometry.normalizedPoint(value.location, in: displayed)
+                                vm.drawCurveShape(fromNormalized: a, toNormalized: b)
+                                return
+                            }
+                            if vm.tool == .textTool {
+                                // TSK-1089: a click places an editable text label.
+                                vm.placeTextShape(atNormalized:
+                                    ShapeDragGeometry.normalizedPoint(value.location, in: displayed))
+                                return
+                            }
+                            if vm.tool == .drawPolygon {
+                                // TSK-1084: each click adds a vertex; the "Close
+                                // Polygon" control commits the ring.
+                                vm.addPolygonPoint(
+                                    ShapeDragGeometry.normalizedPoint(value.location, in: displayed))
+                                return
+                            }
                             if vm.tool == .selectLasso {
                                 defer { lassoPoints = [] }
                                 if let poly = SelectionGeometry.polygon(
@@ -627,6 +647,10 @@ struct ImageEditorView: View {
             Image(systemName: "lasso").tag(ImageEditorViewModel.RasterTool.selectLasso)
             // TSK-1168: select + move/resize a placed vector shape on the canvas.
             Image(systemName: "selection.pin.in.out").tag(ImageEditorViewModel.RasterTool.editShapes)
+            // TSK-1083/1084/1089 — curve · polygon · text tools.
+            Image(systemName: "scribble").tag(ImageEditorViewModel.RasterTool.drawCurve)
+            Image(systemName: "pentagon").tag(ImageEditorViewModel.RasterTool.drawPolygon)
+            Image(systemName: "textformat").tag(ImageEditorViewModel.RasterTool.textTool)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
@@ -692,6 +716,19 @@ struct ImageEditorView: View {
         if vm.tool.isShape {
             Toggle("Fill shape", isOn: $vm.shapeFilled)
                 .accessibilityIdentifier("mdv.imageEditor.shapeFill")
+        }
+
+        // TSK-1084: while building a polygon (click each vertex), offer Close/Cancel.
+        if vm.tool == .drawPolygon, !vm.polygonPoints.isEmpty {
+            HStack {
+                Text("\(vm.polygonPoints.count) point\(vm.polygonPoints.count == 1 ? "" : "s")")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Close Polygon") { vm.commitPolygon() }
+                    .disabled(vm.polygonPoints.count < 3)
+                    .accessibilityIdentifier("mdv.imageEditor.closePolygon")
+                Button("Cancel") { vm.cancelPolygon() }
+            }
         }
 
         if vm.tool == .brush || vm.tool == .eraser {

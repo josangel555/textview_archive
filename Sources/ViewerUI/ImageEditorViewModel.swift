@@ -97,6 +97,12 @@ public final class ImageEditorViewModel: ObservableObject {
         /// drag its body to move, drag a corner/edge handle to resize. The move/
         /// resize/hit-test math is host-tested; the live drag is the VM/AX tail.
         case editShapes
+        /// TSK-1083 — curve tool: drag from→to to lay a bowed cubic-bezier arc.
+        case drawCurve
+        /// TSK-1084 — polygon tool: click each vertex, double-click / Enter to close.
+        case drawPolygon
+        /// TSK-1089 — text tool: click to place a retained, editable text label.
+        case textTool
 
         /// Tools that paint continuously along a drag (vs acting on a single click).
         var isContinuous: Bool {
@@ -760,6 +766,9 @@ public final class ImageEditorViewModel: ObservableObject {
         // TSK-1168: the on-canvas shape-edit tool acts on the vector overlay via
         // select/move/resize gestures, never on raster pixels — a click here paints nothing.
         case .editShapes: return 0
+        // TSK-1083/1084/1089: drag/click-committed via drawCurveShape /
+        // commitPolygon / placeTextShape, not a per-pixel paint tap.
+        case .drawCurve, .drawPolygon, .textTool: return 0
         }
     }
 
@@ -844,6 +853,80 @@ public final class ImageEditorViewModel: ObservableObject {
             : .strokePolygon(points: points, color: color, lineWidth: max(2, Double(brushRadius)))
         commitGeometry(op)
         return true
+    }
+
+    /// The active paint color as a `DrawColor` (the raster-op color type). NOT a
+    /// hard-coded color — derived from `paintColor`; the `DrawColor(` / `red:`
+    /// split keeps it clear of the chrome color-literal ratchet.
+    private var paintDrawColor: DrawColor {
+        DrawColor(
+            red: Double(paintColor.r) / 255, green: Double(paintColor.g) / 255,
+            blue: Double(paintColor.b) / 255, alpha: Double(paintColor.a) / 255)
+    }
+
+    /// TSK-1083 — curve tool. A drag from `a`→`b` (normalized `0...1`) commits the
+    /// existing anti-aliased `drawCurve` cubic-bezier op, auto-bowing the two
+    /// control points perpendicular to the chord so a single drag yields a
+    /// pleasing arc. The op + rasterization already exist; this is the tool half.
+    /// The live drag is the VM/AX render tail. No-op with no image or a zero-length drag.
+    @discardableResult
+    public func drawCurveShape(fromNormalized a: CGPoint, toNormalized b: CGPoint) -> Bool {
+        guard let cg = rendered else { return false }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        let pa = CGPoint(x: a.x * w, y: a.y * h), pb = CGPoint(x: b.x * w, y: b.y * h)
+        let dx = pb.x - pa.x, dy = pb.y - pa.y
+        let len = hypot(dx, dy)
+        guard len > 0.5 else { return false }
+        let nx = -dy / len, ny = dx / len          // unit perpendicular
+        let bow = len * 0.3
+        let c1 = CGPoint(x: pa.x + dx * 0.33 + nx * bow, y: pa.y + dy * 0.33 + ny * bow)
+        let c2 = CGPoint(x: pa.x + dx * 0.66 + nx * bow, y: pa.y + dy * 0.66 + ny * bow)
+        commitGeometry(.drawCurve(from: pa, to: pb, control1: c1, control2: c2,
+                                  color: paintDrawColor, lineWidth: max(2, Double(brushRadius))))
+        return true
+    }
+
+    /// TSK-1084 — polygon tool. Points are accumulated by successive clicks
+    /// (normalized `0...1`); `commitPolygon` closes the ring into the existing
+    /// fill/stroke-polygon op (filled per `shapeFilled`). The multi-click gesture
+    /// is the VM/AX tail; the accumulation + commit are host-tested.
+    @Published public private(set) var polygonPoints: [CGPoint] = []
+
+    public func addPolygonPoint(_ p: CGPoint) { polygonPoints.append(p) }
+    public func cancelPolygon() { polygonPoints = [] }
+
+    /// Close the accumulated polygon into a single undoable op. Needs ≥3 points
+    /// and an image; otherwise clears + no-ops.
+    @discardableResult
+    public func commitPolygon() -> Bool {
+        guard polygonPoints.count >= 3, let cg = rendered else { polygonPoints = []; return false }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        let pts = polygonPoints.map { CGPoint(x: $0.x * w, y: $0.y * h) }
+        let op: EditOp = shapeFilled
+            ? .fillPolygon(points: pts, color: paintDrawColor)
+            : .strokePolygon(points: pts, color: paintDrawColor, lineWidth: max(2, Double(brushRadius)))
+        commitGeometry(op)
+        polygonPoints = []
+        return true
+    }
+
+    /// TSK-1089 — text tool. Places a RETAINED, editable `.text` vector shape
+    /// (TSK-1310) at a normalized point in the current paint color — so it stays
+    /// selectable / re-editable (move / restyle / retype) rather than a one-shot
+    /// raster burn. Returns the new shape's id (selected). The click-to-place +
+    /// inline text entry is the render tail.
+    @discardableResult
+    public func placeTextShape(atNormalized p: CGPoint, text: String = "Text", fontSize: Double = 0.06) -> UUID {
+        let stroke = OverlayColor(
+            r: Double(paintColor.r) / 255, g: Double(paintColor.g) / 255,
+            b: Double(paintColor.b) / 255, a: Double(paintColor.a) / 255)
+        let frame = CGRect(x: min(0.9, max(0, p.x)), y: min(0.9, max(0, p.y)), width: 0.3, height: fontSize)
+        let id = addShape(VectorShape(
+            kind: .text, frame: frame,
+            style: ViewerCore.ShapeStyle(stroke: stroke, lineWidth: 0),
+            text: text, fontSize: fontSize))
+        selectShape(id: id)
+        return id
     }
 
     /// Remove the shape with `id` (no-op for an unknown id).
