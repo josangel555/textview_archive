@@ -79,7 +79,17 @@ public struct MediaPreviewView: View {
                                       initialImageEditState: initialImageEditState,
                                       onImageEditStateChanged: onImageEditStateChanged)
             case .audio: AudioPreview(url: url)
-            case .video: VideoPreview(url: url)
+            case .video:
+                // TSK-1474: FileCategory.video routes broadly (mkv/webm/wmv/
+                // flv reach here) but AVFoundation only plays the QuickTime/
+                // MPEG-4 family — a bare AVPlayerView on the rest renders a
+                // BLACK screen. Gate on VideoPlayability: native → player,
+                // otherwise a fallback card with open-externally.
+                if VideoPlayability.classify(url: url) == .native {
+                    VideoPreview(url: url)
+                } else {
+                    VideoFallbackCard(url: url, uiScale: uiScale)
+                }
             case .pdf:
                 if let find { PDFPreviewFindable(url: url, find: find) }
                 else { PDFPreview(url: url) }
@@ -787,6 +797,43 @@ struct AudioPlayerHost: NSViewRepresentable {
         // an unchanged URL (no playback yank) and replaces it for a new one.
         let p = AudioPlaybackController.shared.player(for: url)
         if nsView.player !== p { nsView.player = p }
+    }
+}
+
+/// TSK-1474 — the fallback shown for a video container AVFoundation can't
+/// play natively (mkv/webm/wmv/flv/avi), instead of a black AVPlayerView.
+/// Explains the situation and offers to hand the file to the system default
+/// app. Pure SwiftUI (no representable) — the render tail is a VM/T5 eyeball
+/// that the card is visibly non-black.
+private struct VideoFallbackCard: View {
+    let url: URL
+    var uiScale: CGFloat = 1.0
+
+    var body: some View {
+        VStack(spacing: 12 * uiScale) {
+            Image(systemName: "film.stack")
+                .font(.system(size: 40 * uiScale))
+                .foregroundStyle(.secondary)
+            Text("Can't preview this video")
+                .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale) + 2,
+                              weight: .medium))
+            Text("\(url.pathExtension.uppercased()) isn't a format the built-in "
+                 + "player can decode. Open it in the default app instead.")
+                .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale)))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320 * uiScale)
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Label("Open in default app", systemImage: "arrow.up.forward.app")
+            }
+            .controlSize(.large)
+            .accessibilityIdentifier("mdv.video.openExternally")
+        }
+        .padding(24 * uiScale)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("mdv.video.fallbackCard")
     }
 }
 
