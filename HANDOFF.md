@@ -15,19 +15,19 @@ task_park "Need me".
 ## ★ Current state (2026-07-09)
 - **VM lane RESTORED + PROVEN** (TSK-1550 fixed): `ssh macOS15` passwordless; offline dist build +
   window-id capture pipeline works end-to-end. The pyramid is real, not a flagpole.
-- **§1 "Fresh models" render tails are DRAINED** — all ~20 are at `fixed`/`review` (owner
-  validates). Build frontier has moved to §1 "Older pool" (genuinely-`reported` features where a
-  deep backend has no user-facing front): 1443 git panel · 1444 LSP status (JUST DONE) · 1445 CR
-  journey · 1168 vector editing · 1441 image-editor feel · 1494 cursor mode · follow-ons 1571/1572/
-  1575/1505.
-- **TSK-1444 LSP footer status chip → `review`** (commit `ddd8aa4d`). Pure ViewerCore classifier
-  (running/idle/failed/notInstalled) + StatusBar chip + per-language popover + Restart +
-  `LSPPool.restart(language:)`. VM render NOW VERIFIED (see 1576).
-- **THIS TICK — TSK-1576 footer-capture UAT lane FIXED + verified.** `WindowGeometry.sceneCaptureFrame`
-  + a `MDV_UI_SCENE`-gated call in `main.swift` forces a deterministic 1280×860 scene window so the
-  status-bar FOOTER renders in captures. Verified on-screen (saved frame deleted → code forces the
-  size): the footer + a red `⚠ Python` LSP chip render → closes the TSK-1444 UNVERIFIED loop. Footer
-  chips (git/memory/vim/macro) are now VM-verifiable.
+- **§1 "Fresh models" render tails are DRAINED** — all at `fixed`/`review`. Build frontier = §1
+  "Older pool" (genuinely-`reported` features w/ a deep backend + no front). Done recently: 1444 LSP
+  status · 1576 footer-capture lane · **1443 git panel (THIS TICK)**. Next: 1445 CR journey · 1168
+  vector editing · 1441 image-editor feel · 1494 cursor mode.
+- **THIS TICK — TSK-1443 git Status-tab stage/unstage/commit/discard loop → `review`** (commit
+  `8a09f977`). GitClient index mutations (arg-injection + unborn-HEAD guards) · pure GitStageOp
+  confirm-gate (only discard confirms) · GitPanelModel actions via ToastCenter + a
+  requestDiscard→confirmDiscard gate (never silent) · GitStatusTab per-row ＋/－ + commit bar +
+  Discard-with-confirm. 19 host tests (real-repo git + confirm-gate + model command-path). Interactive
+  U2-U6 = AX tier (off-limits, host-covered); render U1 filed **TSK-1577** (git panel is a view-local
+  @StateObject → needs a fixture-repo scene).
+- **PRIOR TICKS (at `review`):** 1444 LSP chip (`ddd8aa4d`, VM-verified via 1576) · 1576 footer-capture
+  fix (`ebf056fe`, VM-verified).
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
 
 ## ✅ FOOTER-CAPTURE ROOT (2026-07-09, TSK-1576 — corrects a wrong first theory)
@@ -42,8 +42,8 @@ ax-reader still doesn't surface `mdv.statusBar.*` children → footer `scene_exp
 ## Follow-ons filed
 1570 outline scroll-highlight+preview-jump · 1571 mount Monitor as menu item · 1572 omnibox launchpad
 · 1573 recover-deleted full enumeration · 1574 shape-gallery freeform · 1575 first-run Capabilities
-page · **1576 footer-capture UAT lane** (blocks VM-verifying footer chips). STILL to UAT: 1478
-plugins (Settings→tab, hard to drive).
+page · 1576 footer-capture UAT lane (DONE) · **1577 git-panel render scene** (view-local @StateObject).
+STILL to UAT: 1478 plugins (Settings→tab, hard to drive).
 
 ## VM UAT recipe (proven)
 1. Add a scene to `UISceneRegistry.staticScenes` + an inline handler in `UISceneApplier` that
