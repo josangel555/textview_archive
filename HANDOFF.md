@@ -20,14 +20,14 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-C (devtools) IN PROGRESS: 1571 → `review`** (commit `94d74e1b`). Mounted the Claude
-  Session Monitor as Tools ▸ Claude Session Monitor (was CLI-flag-only) + fixed the self.window clobber
-  (separate monitorWindow ref + re-focus-if-open). **CH-C IS HEAVY** — the other items are substantial
-  STANDALONE tickets, not chunk-crammable: 318/1108 CR agent-Q&A PARKED (Need-me: app is an MCP server
-  not a client → Q&A transport is a product call); 1191 git history-unify (real rework — GitLogTab has
-  cumulative-diff/search/review-launch that UnifiedHistoryView lacks); 1482 menu audit (imperative menu
-  in the executable, hard to host-test); 1577 git-render scene (view-local @StateObject). Continue CH-C
-  next tick with 1191/1482, one focused ticket at a time.
+- **THIS TICK — CH-C (devtools): 1577 → `review`, VM-VERIFIED** (commit `4e650831`). Built the
+  git-panel MDV_UI_SCENE (fixture repo staged/unstaged/untracked + force .git panel shown +
+  showGitPanel) → captured `git-panel4.png`: the Status tab renders the 3 groups + per-row ＋/－ +
+  commit bar = exactly TSK-1443's UI → **closes TSK-1443's render loop too** (comment added). Hit +
+  LESSONS'd the SwiftPM VM-staleness trap (rsync -a mtime → touch ViewerCore before build-app.sh).
+- **PRIOR THIS SESSION — CH-C 1571** (`94d74e1b`, monitor menu + window-ref fix) · **318/1108 CR-Q&A
+  PARKED** (Need-me: agent transport). Remaining CH-C: 1191 git history-unify (real rework), 1482 menu
+  audit (executable menu, hard to host-test) — each a focused future tick.
 - **PRIOR (at `review`):** CH-B image tools (`1a6eef77`: 1083/1084/1086/1089; 1090 parked) · CH-A image
   (`a51f9564`: 1055/1088/1114/1441/1574; render→1578) · 1168 vector-edit (`a403011d`) · 1445 CR journey
   (`5ce2a901`) · 1443 git panel (`8a09f977`; U1=1577) · 1444 LSP (`ddd8aa4d`) · 1576 footer (`ebf056fe`).
