@@ -57,6 +57,7 @@ scene_expect() {
     favorites) echo "mdv.terminalFavorites.editor" ;;
     monitor-rootmissing|monitor-sessions) echo "mdv.claudeMonitor" ;;
     secrets) echo "mdv.secretBanner" ;;
+    omni) echo "mdv.emptyState.omni" ;;
     *) echo "" ;;
   esac
 }

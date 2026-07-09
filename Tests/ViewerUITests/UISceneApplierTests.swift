@@ -215,6 +215,22 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_omniScene_reachesTheEmptyStateLaunchpad() {
+        // TSK-1489 render tail: the 'omni' scene closes every tab so the
+        // EmptyStateView (with the omnibox field) renders. Pins the scene→model
+        // contract: no tabs remain; the on-screen omni field is the VM pixel
+        // assertion (mdv.emptyState.omni). The omni DISPATCH is host-tested by
+        // DocumentModelOmniTests.
+        let model = makeModel()
+        let f = tmp.appendingPathComponent("preopened.md")
+        try? "# x\n".write(to: f, atomically: true, encoding: .utf8)
+        model.open(url: f)
+        XCTAssertFalse(model.tabs.tabs.isEmpty, "precondition: a file tab is open")
+        let status = apply("omni", model)
+        XCTAssertTrue(model.tabs.tabs.isEmpty, "omni closes all tabs → the empty-state launchpad")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

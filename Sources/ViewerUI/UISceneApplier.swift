@@ -277,6 +277,16 @@ public enum UISceneApplier {
             return "ui-scene: applied 'secrets' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
 
+        // Omnibox / new-tab launchpad scene (TSK-1489 render tail): close every
+        // tab so the EmptyStateView (the new-tab launchpad) renders with its
+        // omnibox field + New… buttons. The aqua-runner launches with a file
+        // open, so reach the empty state explicitly.
+        if scene == "omni" {
+            model.terminalPane.setOpen(false)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            return "ui-scene: applied 'omni' tabs=\(model.tabs.tabs.count) hasContext=\(model.hasOpenContext)"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —

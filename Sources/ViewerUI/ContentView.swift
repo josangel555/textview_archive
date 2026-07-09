@@ -1895,6 +1895,8 @@ struct LoadingStateView: View {
 
 struct EmptyStateView: View {
     @ObservedObject var model: DocumentModel
+    /// TSK-1489 — the new-tab omnibox input.
+    @State private var omniText = ""
 
     var body: some View {
         VStack(spacing: 14) {
@@ -1905,6 +1907,7 @@ struct EmptyStateView: View {
                 .foregroundStyle(.secondary)
             Text("No file open")
                 .font(.title2)
+            omniField
             HStack(spacing: 12) {
                 // TSK-760: create a new editable text file straight from the
                 // landing (folder if one is open, else a temp scratch the user
@@ -1948,6 +1951,33 @@ struct EmptyStateView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// TSK-1489 — the omnibox: one field that resolves a filesystem path (open),
+    /// a URL / git remote (browser), or anything else (cross-file search) via the
+    /// host-tested `OmniResolver`. Keyboard-first (focus + Enter). The full
+    /// launchpad sections (recent folders / bookmarks) are a follow-on; recents
+    /// already render below.
+    private var omniField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Open a path, URL, or git repo — or search…", text: $omniText)
+                .textFieldStyle(.plain)
+                .onSubmit {
+                    let submitted = omniText
+                    omniText = ""
+                    guard !submitted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    else { return }
+                    model.resolveOmniInput(submitted)
+                }
+                .accessibilityIdentifier("mdv.emptyState.omni")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.25)))
+        .frame(maxWidth: 420)
     }
 
     private var recentsLauncher: some View {

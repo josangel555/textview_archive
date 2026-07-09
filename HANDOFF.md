@@ -50,7 +50,13 @@ the modifier NEVER FIRES — anchor async work (scans, loads) on an always-prese
 a `Group { if x {…} }`. This hid the secret badge on the first render until fixed (ZStack + a
 zero-height Color.clear owning the .task).
 
-TSK-1480 (format menus, review — commit pending): the Convert Encoding/Line-Endings submenus now
+TSK-1489 (new-tab OMNIBOX, review): BUILT the omni field on the EmptyStateView launchpad — one
+field wired to OmniResolver.classify → openPath / openURL+gitRemote (browser) / search
+(openGlobalSearch). UAT-verified on the VM (omni scene): the field renders w/ placeholder "Open a
+path, URL, or git repo — or search…" above New… buttons + Recent list. Dispatch host-tested
+(DocumentModelOmniTests 4/4, .openURL skipped — would launch a real browser). Follow-on TSK-1572
+(sections / arrow-nav / git-clone / ⌘V paste).
+TSK-1480 (format menus, review): the Convert Encoding/Line-Endings submenus now
 check-mark the active file's current value + Convert Indentation shows a "Current: <indent>"
 header (menuNeedsUpdate → FileFormatMenuState.resolve, host-tested 5/5). The footer ALREADY showed
 enc/EOL/indent (existing StatusBar chips) so that half was pre-met. ON-SCREEN submenu check-mark is

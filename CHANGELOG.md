@@ -17,6 +17,9 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **New-tab omnibox.** The "no file open" screen now has a single field: type a file or
+  folder path to open it, a URL or git-repo link to open it in your browser, or any other
+  text to run a cross-file search. Recent files still list below.
 - **Markdown "Contents" outline panel in the sidebar.** Opening a markdown file now shows
   a live heading outline in the sidebar — a filterable list you can click to jump to a
   section. It sits below the code Outline panel and appears only for markdown documents.

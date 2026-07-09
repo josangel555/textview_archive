@@ -225,6 +225,11 @@ public enum UISceneRegistry {
             fixture: .throwawaySource(name: "config.env"),
             closesExistingTabs: true,
             summary: "Doc with an AWS key + GitHub token (+ a benign UUID) → the SecretWarningBanner flags the secrets, UUID stays quiet (TSK-1496)"),
+        SceneSpec(
+            id: "omni",
+            fixture: .none,
+            closesExistingTabs: true,
+            summary: "Empty-state new-tab launchpad with the omnibox field (path/URL/git/search) + New… buttons (TSK-1489)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one
