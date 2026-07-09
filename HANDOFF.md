@@ -36,13 +36,22 @@ crash the frontend). If the dep cache is ever damaged: ship it from host — `rs
 .build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/` +
 `swift package resolve` (or build `--disable-automatic-resolution`).
 
-CURRENT (2026-07-09): ★ VM UAT LANE FULLY OPERATIONAL. Fresh dist BUILT on the VM ✅ (dist/TextView.app rebuilt with 6.3 offline,
-my render-tail code in it). The offline saga is documented in LESSONS ("Offline VM dist build
-recipe") — TSK-1568. build-app.sh now supports MDV_SWIFT_OFFLINE=1. App LAUNCHES on the VM GUI
-lane (menu bar confirmed). REMAINING GAP (TSK-1569): screencapture shows the menu bar but NO
-window — window-capture issue (off-screen/Space/timing), blocks pixel UAT. Debug via
-screencapture -l<winID> (windowid file) or MDV_UI_SCENE + longer settle. Leftover root-owned VM
-test instances linger (reap with sudo kill).
+CURRENT (2026-07-09): ★ VM UAT PIPELINE PROVEN END-TO-END. First render tail UAT-VERIFIED
+ON-SCREEN — TSK-1474 video fallback: `vm-uitest.sh run video-unsupported` on the fresh dist shows
+the VideoFallbackCard (not a black AVPlayerView). Offline build (TSK-1568, MDV_SWIFT_OFFLINE=1) +
+window capture (TSK-1569, vm-uitest.sh window-id) both SOLVED. Reap leftover root-owned VM test
+instances with sudo kill (not pkill-9).
+
+PER-RENDER-TAIL UAT RECIPE (proven): (1) add a scene to UISceneRegistry.staticScenes + an inline
+handler in UISceneApplier that reaches the surface; (2) rebuild dist on the VM — use the CORRECT
+full-repo rsync (`rsync -az --delete --exclude=.build/ ... ./  macOS15:markdown_viewer/`; a
+`Sources/` trailing-slash drops files at the WRONG level → "unknown scene"), then
+`touch -t 202607010000 rust-core/link/libmdvcore_ffi.a && MDV_SWIFT_OFFLINE=1 bash
+scripts/build-app.sh debug`; (3) `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh run <scene>` —
+its 30s poll is too short (agent finishes async ~60-90s); poll `~/.mdv-uitest/done` then
+`scp macOS15:.mdv-uitest/<scene>.png`; (4) READ the PNG — pixels are AUTHORITATIVE (the ax-reader
+does NOT surface content-view a11y ids, only overlays/menus → AX-presence asserts false-fail for
+content views). Leave the ticket at `review` (owner validates; agent never task_validates).
 
 ## NEXT ACTION — build the PYRAMID, not a flagpole (owner directive 2026-07-09)
 The test pyramid is currently a flagpole (host unit tests only); the VM/render/UAT/AX tiers are
