@@ -543,6 +543,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
         }
 
+        // TSK-1448 — first-run tour: on a fresh profile that opened NO file at
+        // launch, open the self-demonstrating sample once (one-shot latch). Only
+        // in a real user launch — skipped for the UI-scene harness, diagnose
+        // dumps, and tagged test instances so they never consume the owner's
+        // shared latch. The auto-open decision is host-tested (FirstRunExperience).
+        let env = ProcessInfo.processInfo.environment
+        if !openedFirst, !diagnoseMode,
+           env["MDV_UI_SCENE"] == nil, env["MDV_TEST_INSTANCE"] != "1",
+           FirstRunExperience.shouldOffer() {
+            if model.openFirstRunSample() != nil {
+                FirstRunExperience.markShown()
+            }
+        }
+
         activateIfForeground()
 
         installDiagnosticSignalHandler()
@@ -2804,6 +2818,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             title: "Keyboard Shortcuts",
             action: #selector(showKeyboardShortcuts(_:)),
             keyEquivalent: ""))
+        // TSK-1448 — reopen the first-run sample tour any time (collision-safe:
+        // a user's own "Welcome to TextView.md" is never overwritten).
+        helpMenu.addItem(NSMenuItem(
+            title: "Open Sample Document",
+            action: #selector(openSampleDocument(_:)),
+            keyEquivalent: ""))
         // TSK-696 — install the `textview` command-line launcher on PATH.
         helpMenu.addItem(NSMenuItem(
             title: "Install '\(CLILauncher.commandName)' Command…",
@@ -3829,6 +3849,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// bound shortcut from the effective `CommandRegistry` (built-in defaults +
     /// the user's `keybinding.json` overrides), grouped + searchable. Always
     /// available (no diagnostic gate); it's a user-facing help page.
+    /// TSK-1448 — Help ▸ Open Sample Document: write + open the first-run tour.
+    @objc func openSampleDocument(_ sender: Any?) {
+        model.openFirstRunSample()
+    }
+
     @objc func showKeyboardShortcuts(_ sender: Any?) {
         if let win = keyboardShortcutsWindow {
             win.makeKeyAndOrderFront(nil)

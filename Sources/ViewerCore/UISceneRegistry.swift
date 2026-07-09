@@ -244,6 +244,11 @@ public enum UISceneRegistry {
             fixture: .none,
             closesExistingTabs: true,
             summary: "A deleted-but-has-history file → the Recover Deleted File sheet lists it with a Recreate action (TSK-1500)"),
+        SceneSpec(
+            id: "first-run",
+            fixture: .none,
+            closesExistingTabs: true,
+            summary: "The first-run sample tour ('Welcome to TextView.md') opened rendered — headings/table/mermaid demo the lenses (TSK-1448)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

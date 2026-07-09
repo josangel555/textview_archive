@@ -327,6 +327,18 @@ public enum UISceneApplier {
             return "ui-scene: applied 'recover-deleted' show=\(model.showRecoverDeletedFile) recoverable=\(model.recoverableDeletedFiles().count)"
         }
 
+        // First-run sample tour scene (TSK-1448 render tail): open the
+        // self-demonstrating sample ("Welcome to TextView.md") rendered so the
+        // VM capture shows the lenses (headings/table/mermaid/task-list). Writes
+        // into the harness temp dir (not App Support). Drives openFirstRunSample
+        // directly — the auto-open latch is host-tested + skipped in scene mode.
+        if scene == "first-run" {
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.openFirstRunSample(dir: tabsBaseDir)
+            return "ui-scene: applied 'first-run' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
+        }
+
         // Terminal header scene (TSK-1249 render tail): open the terminal pane
         // (top strip) with a tab so the header row — "Terminal — <name> [<cwd>,
         // pid <n>]" — renders above the surface. The shell spawns on the view's

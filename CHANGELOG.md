@@ -17,6 +17,10 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **First-run sample tour.** A fresh install now opens a "Welcome to TextView.md" that shows
+  off the lenses (rendered headings, a table, a highlighted code fence, a Mermaid diagram, a
+  task list) — shown once. Reopen it any time via Help ▸ Open Sample Document (it never
+  overwrites a file of your own by that name).
 - **Extended shape gallery in the image editor.** The paint tools gained a Shapes menu with
   12 parametric shapes — triangle, right-triangle, diamond, pentagon, hexagon, 4/5/6-point
   stars, and arrows (up/down/left/right). Pick one and drag a box to place it, filled or

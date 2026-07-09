@@ -275,6 +275,18 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_firstRunScene_opensTheSampleTour() {
+        // TSK-1448 render tail: the scene opens the first-run sample ("Welcome to
+        // TextView.md") rendered so the VM capture shows the lenses. Pins the
+        // scene→model contract; the rendered markdown (headings/table/mermaid) is
+        // the VM pixel assertion. The write + one-shot latch are host-tested.
+        let model = makeModel()
+        let status = apply("first-run", model)
+        XCTAssertEqual(model.tabs.selected?.url?.lastPathComponent, "Welcome to TextView.md",
+                       "the sample tour is the selected tab")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

@@ -61,6 +61,7 @@ scene_expect() {
     structural-search) echo "mdv.structuralSearch.examplesButton" ;;
     terminal-header) echo "mdv.terminal.header" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
+    first-run) echo "mdv.content" ;;
     *) echo "" ;;
   esac
 }
