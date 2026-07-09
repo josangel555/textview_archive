@@ -17,6 +17,9 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Claude Session Monitor in the menu.** **Tools ▸ Claude Session Monitor** opens the read-only
+  session monitor window — previously it was only reachable via the `--claude-monitor` command-line
+  flag. Reopening re-focuses the existing window instead of spawning a duplicate.
 - **Curve, polygon & text tools in the image editor.** Three new paint tools: **Curve** (drag to
   lay a smooth arc), **Polygon** (click each corner, then Close Polygon — filled or outlined), and
   **Text** (click to drop an editable, movable text label). Anti-aliased.

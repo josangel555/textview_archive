@@ -20,6 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         initialRoot: PreferencesStore().lastFolderURL
     )
     var window: NSWindow?
+    /// TSK-1571: the menu-opened Claude Session Monitor window, held SEPARATELY
+    /// from `window` (the main doc window) so opening the monitor from the Tools
+    /// menu doesn't clobber the main-window reference. In `--claude-monitor`
+    /// launch mode the monitor IS the only window and stays on `window`.
+    private var monitorWindow: NSWindow?
     private var openRecentMenu: NSMenu?
     private var sessionJumpMenu: NSMenu?
     private var languageMenu: NSMenu?
@@ -2452,6 +2457,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                         action: #selector(showCSVSummary(_:)), keyEquivalent: "")
         csvSummaryItem.target = self
         toolsMenu.addItem(csvSummaryItem)
+        // TSK-1571: mount the Claude Session Monitor (a standalone read-only
+        // window) as a menu item — it was `--claude-monitor` CLI-flag-only before.
+        toolsMenu.addItem(.separator())
+        let claudeMonitorItem = NSMenuItem(
+            title: "Claude Session Monitor",
+            action: #selector(openClaudeMonitor(_:)), keyEquivalent: "")
+        claudeMonitorItem.target = self
+        toolsMenu.addItem(claudeMonitorItem)
         toolsMenuItem.submenu = toolsMenu
         // (added to mainMenu in the ordered block below, after View)
 
@@ -4170,8 +4183,11 @@ extension AppDelegate {
     /// single `NSHostingController(rootView: ClaudeMonitorView())`. Retained
     /// on the delegate so a second invocation could re-focus it; today the
     /// flag opens exactly one window at launch.
+    /// Build a fresh monitor window (shared by launch mode + the menu). Publishes
+    /// the WindowServer windowid ONLY in launch mode (`publishWindowId`), so a
+    /// menu-opened monitor doesn't clobber the main window's windowid file.
     @MainActor
-    fileprivate func openClaudeMonitorWindow() {
+    private func makeClaudeMonitorWindow(publishWindowId: Bool) -> NSWindow {
         NSWindow.allowsAutomaticWindowTabbing = false
         let host = NSHostingController(rootView: ClaudeMonitorView())
         let window = NSWindow(
@@ -4190,18 +4206,44 @@ extension AppDelegate {
         if UserDefaults.standard.string(forKey: "NSWindow Frame \(autosaveName)") == nil {
             window.center()
         }
-        showWindow(window)
-        self.window = window
-        // Publish the WindowServer windowNumber (same contract as the main
-        // document window) so the T5 pixel lane can `screencapture -l<id>`
-        // this monitor window — see ClaudeMonitorVisualRegressionTests.
-        if let identifier = Bundle.main.bundleIdentifier {
+        if publishWindowId, let identifier = Bundle.main.bundleIdentifier {
             let url = ArtifactDir.url
                 .appendingPathComponent("\(identifier).windowid")
             try? "\(window.windowNumber)".write(
                 to: url, atomically: true, encoding: .utf8)
         }
+        return window
+    }
+
+    /// `--claude-monitor` launch mode: the monitor is the app's ONLY window, so
+    /// it stays on `self.window` (and publishes the windowid for the T5 lane).
+    @MainActor
+    fileprivate func openClaudeMonitorWindow() {
+        let window = makeClaudeMonitorWindow(publishWindowId: true)
+        showWindow(window)
+        self.window = window
         activateIfForeground()
+    }
+
+    /// TSK-1571: open the monitor from the Tools menu. Re-focuses the existing
+    /// monitor if one is already open (no duplicates) and — crucially — retains
+    /// it on `monitorWindow`, NOT `self.window`, so the main doc window's
+    /// reference survives.
+    @MainActor
+    fileprivate func openClaudeMonitorFromMenu() {
+        if let existing = monitorWindow, existing.isVisible {
+            showWindow(existing)
+            activateIfForeground()
+            return
+        }
+        let window = makeClaudeMonitorWindow(publishWindowId: false)
+        monitorWindow = window
+        showWindow(window)
+        activateIfForeground()
+    }
+
+    @objc func openClaudeMonitor(_ sender: Any?) {
+        openClaudeMonitorFromMenu()
     }
 }
 
