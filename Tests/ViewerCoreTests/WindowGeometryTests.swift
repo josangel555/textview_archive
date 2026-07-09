@@ -189,4 +189,47 @@ final class WindowGeometryTests: XCTestCase {
         let decoded = try JSONDecoder().decode(WindowGeometry.Frame.self, from: data)
         XCTAssertEqual(decoded, frame)
     }
+
+    // MARK: - sceneCaptureFrame (TSK-1576 — UAT footer-inclusive window)
+
+    /// The real VM visible frame (1920×1200 display, menu bar + Dock excluded).
+    private let vmVisible = CGRect(x: 0, y: 58, width: 1920, height: 1117)
+
+    func test_sceneCaptureFrame_isGenerousAndOnScreen() {
+        // On a big display the target size is used verbatim, centered — big
+        // enough that the footer renders (the 600×360 min squeezed it out).
+        let f = WindowGeometry.sceneCaptureFrame(in: vmVisible)
+        XCTAssertEqual(f.size.width, 1280, accuracy: 0.001)
+        XCTAssertEqual(f.size.height, 860, accuracy: 0.001)
+        XCTAssertTrue(vmVisible.contains(f), "the scene window is fully on-screen")
+        // Centered within the visible frame.
+        XCTAssertEqual(f.midX, vmVisible.midX, accuracy: 0.001)
+        XCTAssertEqual(f.midY, vmVisible.midY, accuracy: 0.001)
+    }
+
+    func test_sceneCaptureFrame_capsToSmallVisible() {
+        // A visible area smaller than the target caps each dimension (minus the
+        // margin on both sides) and stays fully on-screen.
+        let small = CGRect(x: 0, y: 0, width: 1000, height: 700)
+        let f = WindowGeometry.sceneCaptureFrame(in: small)
+        XCTAssertEqual(f.size.width, 1000 - 40, accuracy: 0.001)
+        XCTAssertEqual(f.size.height, 700 - 40, accuracy: 0.001)
+        XCTAssertTrue(small.contains(f))
+    }
+
+    func test_sceneCaptureFrame_respectsVisibleOrigin() {
+        // A visible frame offset from the origin (menu bar / Dock) anchors the
+        // centered window to THAT origin, not (0,0).
+        let f = WindowGeometry.sceneCaptureFrame(in: vmVisible)
+        XCTAssertGreaterThanOrEqual(f.minY, vmVisible.minY, "never above the visible top edge")
+        XCTAssertLessThanOrEqual(f.maxY, vmVisible.maxY, "never below the visible bottom edge")
+    }
+
+    func test_sceneCaptureFrame_degenerateVisible_staysPositive() {
+        // A visible area smaller than the margins still yields a usable (>0) rect.
+        let tiny = CGRect(x: 0, y: 0, width: 8, height: 8)
+        let f = WindowGeometry.sceneCaptureFrame(in: tiny)
+        XCTAssertGreaterThan(f.size.width, 0)
+        XCTAssertGreaterThan(f.size.height, 0)
+    }
 }

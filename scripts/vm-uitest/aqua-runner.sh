@@ -83,8 +83,10 @@ if [ -n "$MON_ROOT" ]; then
   MDV_TEST_INSTANCE=1 MDV_MONITOR_ROOT="$MON_ROOT" \
     "$APP" --claude-monitor >"$JOB_DIR/$scene.applog" 2>&1 &
 else
+  # MDV_WINDOW_DIAG=1: dump window + screen frames to the applog 3s post-launch
+  # (test-only geometry diagnostic — TSK-1576 footer-capture root-cause aid).
   MDV_TEST_INSTANCE=1 MDV_SKIP_WORKSPACE_RESTORE=1 MDV_UI_SCENE="$scene" \
-    MDV_LSP_STATUS_FAKE="$LSP_FAKE" \
+    MDV_LSP_STATUS_FAKE="$LSP_FAKE" MDV_WINDOW_DIAG=1 \
     "$APP" "$FILE" >"$JOB_DIR/$scene.applog" 2>&1 &
 fi
 PID=$!

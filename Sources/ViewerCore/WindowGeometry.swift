@@ -175,6 +175,28 @@ public enum WindowGeometry {
         return didClamp ? .clamped(rect) : .restore(rect)
     }
 
+    /// TSK-1576: a deterministic, footer-inclusive window frame for UAT SCENE
+    /// captures — a generous `target` size (large enough that the WHOLE app
+    /// chrome, including the status-bar FOOTER, renders), centered in and capped
+    /// to `visible`. Scene spawns otherwise restore whatever frame the VM last
+    /// saved, which can be as small as the minimum content size (600×360) — at
+    /// that height the footer is squeezed out of the window-id capture entirely
+    /// (verified 2026-07-09: at 600×360 no footer captured; at 1280×860 the full
+    /// footer + every chip render). Deterministic (depends only on `visible` +
+    /// `target`), so every scene captures the same reproducible geometry rather
+    /// than a leftover saved frame.
+    public static func sceneCaptureFrame(
+        in visible: CGRect,
+        target: CGSize = CGSize(width: 1280, height: 860),
+        margin: CGFloat = 20
+    ) -> CGRect {
+        let w = max(1, min(target.width, visible.size.width - 2 * margin))
+        let h = max(1, min(target.height, visible.size.height - 2 * margin))
+        let x = visible.minX + (visible.size.width - w) / 2
+        let y = visible.minY + (visible.size.height - h) / 2
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
     /// The visible screen rect that contains the largest share of `rect`
     /// (the display the window "belongs to"), or `nil` if it overlaps none.
     public static func screen(for rect: CGRect, in visibleFrames: [CGRect]) -> CGRect? {

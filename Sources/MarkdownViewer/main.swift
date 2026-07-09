@@ -157,6 +157,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                 let wins = NSApplication.shared.windows
                 var out = "MDV_WINDOW_DIAG: \(wins.count) window(s); appActive=\(NSApp.isActive)\n"
+                // TSK-1576: also dump every screen's full + visible frame, so a
+                // footer-clipping capture can be rooted in geometry (window bottom
+                // vs visibleFrame minY) rather than inferred.
+                for (i, s) in NSScreen.screens.enumerated() {
+                    out += "MDV_WINDOW_DIAG screen[\(i)] frame=\(NSStringFromRect(s.frame))"
+                        + " visibleFrame=\(NSStringFromRect(s.visibleFrame))\n"
+                }
                 for (i, w) in wins.enumerated() {
                     let title = w.title.isEmpty ? "<none>" : w.title
                     out += "MDV_WINDOW_DIAG[\(i)] title=\(title)"
@@ -374,6 +381,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 ?? NSScreen.main?.visibleFrame
                 ?? NSRect(origin: .zero, size: WindowGeometry.defaultContentSize)
             window.setFrame(resolution.frame(primaryVisible: primary), display: false)
+        }
+        // TSK-1576: in UAT SCENE mode only, force a deterministic, generous
+        // window size so the WHOLE app chrome — including the status-bar FOOTER
+        // (the app's bottom row) — renders and is captured. Scene spawns restore
+        // whatever frame the VM last saved, which can be the 600×360 MINIMUM; at
+        // that height the footer is squeezed out of the window-id capture
+        // entirely (so every footer chip — git/LSP/memory/vim — was
+        // un-capturable). Gated on MDV_UI_SCENE → zero production impact.
+        if ProcessInfo.processInfo.environment["MDV_UI_SCENE"] != nil,
+           let vf = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame {
+            window.setFrame(WindowGeometry.sceneCaptureFrame(in: vf), display: false)
         }
         showWindow(window)
         self.window = window

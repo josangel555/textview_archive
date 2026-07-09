@@ -20,21 +20,24 @@ task_park "Need me".
   deep backend has no user-facing front): 1443 git panel · 1444 LSP status (JUST DONE) · 1445 CR
   journey · 1168 vector editing · 1441 image-editor feel · 1494 cursor mode · follow-ons 1571/1572/
   1575/1505.
-- **THIS TICK — TSK-1444 LSP footer status chip → `review`** (commit `ddd8aa4d`). Pure ViewerCore
-  classifier (running/idle/failed/notInstalled) + StatusBar chip + per-language popover + Restart +
-  `LSPPool.restart(language:)`. 22 host tests green + gate green. **VM footer render UNVERIFIED** —
-  see the NEW GOTCHA below; **filed TSK-1576** to fix the footer-capture lane.
+- **TSK-1444 LSP footer status chip → `review`** (commit `ddd8aa4d`). Pure ViewerCore classifier
+  (running/idle/failed/notInstalled) + StatusBar chip + per-language popover + Restart +
+  `LSPPool.restart(language:)`. VM render NOW VERIFIED (see 1576).
+- **THIS TICK — TSK-1576 footer-capture UAT lane FIXED + verified.** `WindowGeometry.sceneCaptureFrame`
+  + a `MDV_UI_SCENE`-gated call in `main.swift` forces a deterministic 1280×860 scene window so the
+  status-bar FOOTER renders in captures. Verified on-screen (saved frame deleted → code forces the
+  size): the footer + a red `⚠ Python` LSP chip render → closes the TSK-1444 UNVERIFIED loop. Footer
+  chips (git/memory/vim/macro) are now VM-verifiable.
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
-- **In flight:** none uncommitted after `ddd8aa4d`.
 
-## ⚠ NEW GOTCHA (2026-07-09) — VM UAT can't capture STATUS-BAR FOOTER chips (TSK-1576)
-`screencapture -l<windowid>` returns a fixed 1200x776 frame with NO footer — the VM display is
-~1200x800, menu bar ~24px, and the window's bottom (StatusBar h=22) lands at/below screen y=800 →
-clipped. Confirmed on 2 scenes (secrets.png + lsp-status.png both cut at 776, footer absent). AND
-the ax-reader does NOT descend into `mdv.statusBar.*` chip children (only the parent surfaces). So
-EVERY footer chip (git/LSP/memory/vim/macro) is un-verifiable on the VM lane until TSK-1576 (cap the
-scene-mode window height in main.swift's WindowGeometry path so the footer is on-screen). Footer
-render tails land at `review` UNVERIFIED (host-tested + gate-green) meanwhile.
+## ✅ FOOTER-CAPTURE ROOT (2026-07-09, TSK-1576 — corrects a wrong first theory)
+Scene captures missed the footer because the scene restored a TINY (600×360 min) saved window frame,
+NOT because of screen clipping. `MDV_WINDOW_DIAG` proved the VM is 1920×1200 @2× and the window was
+600×360 fully on-screen (the 1200×776 PNGs were that small window at 2× retina). At 600×360 the
+footer is squeezed out; at 1280×860 it renders. Fix forces 1280×860 for all `MDV_UI_SCENE` spawns.
+LESSON: DUMP THE GEOMETRY (`MDV_WINDOW_DIAG=1`, now aqua-runner-forwarded) before theorising. The
+ax-reader still doesn't surface `mdv.statusBar.*` children → footer `scene_expect` targets the
+`mdv.statusBar` parent; the chip is a pixel-only assert (read the PNG).
 
 ## Follow-ons filed
 1570 outline scroll-highlight+preview-jump · 1571 mount Monitor as menu item · 1572 omnibox launchpad

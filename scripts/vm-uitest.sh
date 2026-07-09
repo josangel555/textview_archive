@@ -63,7 +63,7 @@ scene_expect() {
     terminal-dock-right) echo "mdv.terminal.dock" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
-    lsp-status) echo "mdv.statusBar.lsp" ;;
+    lsp-status) echo "mdv.statusBar" ;;
     *) echo "" ;;
   esac
 }

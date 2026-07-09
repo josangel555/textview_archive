@@ -21,19 +21,25 @@ hours.
   banner's `mdv.secretBanner` id was absent from the ax-reader anyway (doc-content overlays +
   `.sheet` content don't surface — only sidebar panels, separate-window roots, and overlays/menus
   do), so the ONLY signal was the pixels. Always READ the PNG for content/overlay tails.
-- **The VM UAT lane CANNOT capture STATUS-BAR FOOTER chips — the footer sits below the ~800px VM
-  display (TSK-1576).** `screencapture -l<windowid>` returns a fixed 1200x776 frame with NO footer:
-  the VM screen is ~1200x800, the menu bar eats ~24px, and the window's bottom (the StatusBar,
-  height 22) lands at/below screen y=800 → clipped. Confirmed on TWO independent scenes
-  (`secrets.png` + `lsp-status.png` both cut at exactly 776px, footer absent). AND the ax-reader
-  does NOT descend into `mdv.statusBar.*` chip children (only the `mdv.statusBar` parent surfaces),
-  so a11y-presence can't substitute. NET: every footer chip (git · LSP · memory · vim · macro ·
-  path/metrics) is un-verifiable on the VM lane as configured. Hit building TSK-1444 (LSP status
-  chip): host-tested exhaustively + gate-green, but VM render UNVERIFIED. Fix (TSK-1576): cap the
-  scene-mode window content height in `main.swift`'s `WindowGeometry` path so the footer is always
-  on-screen. Until then, footer render tails land at `review` UNVERIFIED. Don't burn rounds trying
-  to capture a footer element — check the window/screen geometry FIRST (compare capture height to
-  a known scene: if both clip at 776 with no footer, it's this limit, not your view).
+- **VM UAT scene captures were missing the STATUS-BAR FOOTER because the scene restored a TINY
+  (600×360, the MINIMUM content size) saved window frame — NOT because of screen clipping (TSK-1576,
+  FIXED + verified).** First (wrong) theory: "the footer sits below the ~800px VM screen." The
+  `MDV_WINDOW_DIAG` geometry dump DISPROVED it — the VM display is actually **1920×1200 @2×**
+  (visibleFrame `{{0,58},{1920,1117}}`), and the scene window was **600×360 points at (959,787)**,
+  FULLY on-screen (the 1200×776-pixel captures were that small window at 2× retina). At 600×360 the
+  footer (22pt) is squeezed out of the layout / clipped by the small window; at 1280×860 the full
+  footer + every chip render. ROOT: aqua-runner scene spawns don't set `MDV_PRISTINE_CHROME`, so
+  they restore whatever frame the VM last saved (`defaults` key `NSWindow Frame MainWindow`), which
+  had decayed to the minimum. FIX: `WindowGeometry.sceneCaptureFrame(in:)` + a `MDV_UI_SCENE`-gated
+  call in `main.swift` forces a deterministic **1280×860** window centered in the visibleFrame for
+  ALL scene captures (zero production impact). Verified 2026-07-09: with the saved frame DELETED,
+  the code forces 1280×860 and the footer + a red `⚠ Python` LSP chip (`MDV_LSP_STATUS_FAKE=
+  failed:python`) render — closing the TSK-1444 UNVERIFIED loop too.
+- **The ax-reader does NOT descend into `mdv.statusBar.*` chip children** (only the `mdv.statusBar`
+  parent surfaces) — so a footer scene's `scene_expect` must target `mdv.statusBar` (the parent),
+  and the CHIP itself is a pixel-only assertion (read the PNG). LESSON: when a capture looks wrong,
+  DUMP THE GEOMETRY (`MDV_WINDOW_DIAG=1`, now forwarded by aqua-runner) before theorising — the
+  first screen-clip theory cost a rebuild before the diag showed a tiny-window root instead.
 
 ## Session 2026-07-02 (late) — VM webview lane: boot cured, channel-death residual (M3.S1b)
 
