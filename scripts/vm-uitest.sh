@@ -52,6 +52,7 @@ scene_expect() {
     video-unsupported) echo "mdv.video.fallbackCard" ;;
     archive-preview) echo "mdv.archive.browser" ;;
     notebook) echo "mdv.notebook.cellList" ;;
+    depgraph) echo "mdv.depgraph.canvas" ;;
     *) echo "" ;;
   esac
 }

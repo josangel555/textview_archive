@@ -55,6 +55,7 @@ public struct DependencyGraphView: View {
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
+                .accessibilityIdentifier("mdv.depgraph.canvas")
                 // Origin-based transform (anchor .topLeading) so the applied
                 // scale+offset matches DependencyGraphInteraction.Transform's
                 // toView math — the zoom's anchor-fixed contract holds on screen.

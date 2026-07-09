@@ -206,6 +206,11 @@ public enum UISceneRegistry {
             fixture: .throwawaySource(name: "sample.ipynb"),
             closesExistingTabs: true,
             summary: "Jupyter .ipynb → NotebookCellListView with rendered outputs (TSK-1440); enables NotebookGate"),
+        SceneSpec(
+            id: "depgraph",
+            fixture: .folderRoot,
+            closesExistingTabs: true,
+            summary: "Import-dependency graph over a 3-file folder (Alpha→Beta→Gamma) → DependencyGraphView hosted tab (TSK-1470)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

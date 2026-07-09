@@ -128,6 +128,35 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertTrue(status.contains("hasContext=true"), "status: \(status)")
     }
 
+    func test_depgraphScene_opensFolderAndProducesARealGraph() throws {
+        // TSK-1470 render tail: DependencyGraphView was built-but-unreachable;
+        // the scene opens a 3-file folder (Alpha→Beta→Gamma) and invokes
+        // showDependencyGraph(). Pins two contracts the tail depends on: (1) a
+        // folder root is open (showDependencyGraph's guard) with the chained
+        // fixture written; (2) that fixture yields a REAL non-empty graph — an
+        // empty graph draws the unavailable placeholder, not the canvas the VM
+        // lane captures. The hosted-tab open is async (Task.detached), so its
+        // on-screen paint is the VM pixel assertion (mdv.depgraph.canvas).
+        let model = makeModel()
+        let status = apply("depgraph", model)
+        XCTAssertNotNil(model.sidebar.rootURL, "a folder root is open (showDependencyGraph's guard)")
+        XCTAssertTrue(status.contains("root=true"), "status: \(status)")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+        XCTAssertFalse(model.terminalPane.isOpen,
+                       "the scene closes a restored terminal so the graph canvas is on screen")
+        let root = try XCTUnwrap(model.sidebar.rootURL)
+        for name in ["Alpha.swift", "Beta.swift", "Gamma.swift"] {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: root.appendingPathComponent(name).path),
+                "\(name) fixture written")
+        }
+        let graph = DependencyGraph.importGraph(root: root)
+        XCTAssertFalse(graph.isEmpty,
+                       "the chained fixture must yield a non-empty graph (else the view draws the placeholder)")
+        XCTAssertGreaterThanOrEqual(graph.edges.count, 2,
+                                    "Alpha→Beta→Gamma = 2 edges; got \(graph.edges.count)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

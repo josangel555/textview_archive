@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-09
+
+### System work
+- **Render-tail on-screen UAT lane (VM pyramid).** Built deterministic `MDV_UI_SCENE`
+  scenes that drive each built-but-unreachable render tail to its exact on-screen state,
+  rebuilt `dist` on the UTM VM (offline toolchain), captured by window-id and read the
+  pixels as proof. Verified this session: video fallback card (TSK-1474), archive
+  browser (TSK-1469), notebook cell outputs (TSK-1440), dependency-graph canvas
+  (TSK-1470 — nodes + edge arrows paint; scene resets the restored terminal/sidebar so
+  the hosted graph tab is visible). Each scene is a committed guard + host applier test.
+
 ## 2026-07-07
 
 ### Added

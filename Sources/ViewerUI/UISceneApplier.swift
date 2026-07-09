@@ -152,6 +152,39 @@ public enum UISceneApplier {
             return "ui-scene: applied 'notebook' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil") gate=\(NotebookGate.isEnabled())"
         }
 
+        // Dependency-graph scene (TSK-1470 render tail): DependencyGraphView was
+        // built-but-unreachable; showDependencyGraph() opens it as a hosted tab.
+        // importGraph resolves `import Foo` → a file `Foo.swift`, so write three
+        // files that chain Alpha → Beta → Gamma to produce a REAL 3-node/2-edge
+        // graph (an empty folder would draw the unavailable placeholder, not the
+        // canvas the tail guards). openFolder sets sidebar.rootURL (the guard in
+        // showDependencyGraph); the extraction + hosted-tab open run async, so
+        // the VM harness (which captures ~60-90s later) sees the painted canvas.
+        if scene == "depgraph" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let files: [(String, String)] = [
+                ("Alpha.swift", "import Foundation\nimport Beta\n\nstruct Alpha { let b = Beta() }\n"),
+                ("Beta.swift", "import Foundation\nimport Gamma\n\nstruct Beta { let g = Gamma() }\n"),
+                ("Gamma.swift", "import Foundation\n\nstruct Gamma {}\n"),
+            ]
+            for (name, body) in files {
+                try? body.write(
+                    to: tabsBaseDir.appendingPathComponent(name),
+                    atomically: true, encoding: .utf8)
+            }
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            // A restored session can leave the terminal occupying the content
+            // area + a very wide sidebar, hiding the hosted graph tab — the
+            // scene must fully specify its layout so the canvas is on screen for
+            // the VM capture. Close the terminal; narrow the sidebar.
+            model.terminalPane.setOpen(false)
+            model.setSidebarWidth(240)
+            model.openFolder(tabsBaseDir)
+            model.showDependencyGraph()
+            return "ui-scene: applied 'depgraph' root=\(model.sidebar.rootURL != nil) tabs=\(model.tabs.tabs.count) terminalOpen=\(model.terminalPane.isOpen)"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —
