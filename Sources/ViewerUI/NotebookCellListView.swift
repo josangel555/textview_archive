@@ -31,6 +31,7 @@ public struct NotebookCellListView: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .accessibilityIdentifier("mdv.notebook.cellList")
     }
 }
 
@@ -68,7 +69,62 @@ struct NotebookCellRow: View {
                     RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(chipColor.opacity(0.25), lineWidth: 1)
                 )
+            // TSK-1440: render code-cell OUTPUTS (stream/result text, images,
+            // errors) below the source — previously only the source showed.
+            if cell.cellType == .code {
+                let outputs = NotebookOutputParser.parse(cell.outputs)
+                ForEach(Array(outputs.enumerated()), id: \.offset) { _, out in
+                    outputView(out)
+                }
+            }
         }
+    }
+
+    /// One rendered output. Text/stream → mono block; image → decoded NSImage;
+    /// error → red ename/evalue + traceback; unknown → a subtle note.
+    @ViewBuilder
+    private func outputView(_ out: NotebookOutput) -> some View {
+        switch out {
+        case .stream(_, let text), .text(let text):
+            Text(text.isEmpty ? " " : text)
+                .font(.system(size: fontSize - 1, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.secondary.opacity(0.08)))
+                .accessibilityIdentifier("mdv.notebook.output.text")
+        case .image(_, let base64):
+            if let data = Data(base64Encoded: base64), let img = NSImage(data: data) {
+                Image(nsImage: img).resizable().scaledToFit()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("mdv.notebook.output.image")
+            } else {
+                outputNote("(image output — could not decode)")
+            }
+        case .error(let ename, let evalue, let traceback):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(ename): \(evalue)")
+                    .font(.system(size: fontSize - 1, weight: .semibold, design: .monospaced))
+                Text(traceback)
+                    .font(.system(size: fontSize - 2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            .foregroundStyle(.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 5).fill(Color.red.opacity(0.08)))
+            .accessibilityIdentifier("mdv.notebook.output.error")
+        case .unknown(let type):
+            outputNote("(output: \(type))")
+        }
+    }
+
+    private func outputNote(_ s: String) -> some View {
+        Text(s)
+            .font(.system(size: fontSize - 2))
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var label: String {

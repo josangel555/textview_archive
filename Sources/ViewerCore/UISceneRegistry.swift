@@ -201,6 +201,11 @@ public enum UISceneRegistry {
             fixture: .throwawaySource(name: "sample.zip"),
             closesExistingTabs: true,
             summary: "Zip archive → ArchiveBrowserView master/detail list + preview (TSK-1469)"),
+        SceneSpec(
+            id: "notebook",
+            fixture: .throwawaySource(name: "sample.ipynb"),
+            closesExistingTabs: true,
+            summary: "Jupyter .ipynb → NotebookCellListView with rendered outputs (TSK-1440); enables NotebookGate"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

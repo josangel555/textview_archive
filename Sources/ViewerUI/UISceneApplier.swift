@@ -129,6 +129,29 @@ public enum UISceneApplier {
             return "ui-scene: applied 'archive-preview' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
 
+        // Notebook scene (TSK-1440 render tail): enable NotebookGate (persisted
+        // key, read at render time) + open a .ipynb with stream/result/error
+        // outputs so NotebookCellListView renders the OUTPUTS below each cell
+        // source (the tail this scene guards). VM harness reads the PNG.
+        if scene == "notebook" {
+            UserDefaults.standard.set(true, forKey: NotebookGate.defaultsKey)
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("sample.ipynb")
+            let ipynb = """
+            {"cells":[
+             {"cell_type":"markdown","metadata":{},"source":["# Demo notebook\\n","Rendered **outputs** below."]},
+             {"cell_type":"code","execution_count":1,"metadata":{},"outputs":[{"output_type":"stream","name":"stdout","text":["hello from stdout\\n"]}],"source":["print('hello from stdout')"]},
+             {"cell_type":"code","execution_count":2,"metadata":{},"outputs":[{"output_type":"execute_result","execution_count":2,"data":{"text/plain":["42"]},"metadata":{}}],"source":["6 * 7"]},
+             {"cell_type":"code","execution_count":3,"metadata":{},"outputs":[{"output_type":"error","ename":"ValueError","evalue":"bad value","traceback":["Traceback (most recent call last):","ValueError: bad value"]}],"source":["raise ValueError('bad value')"]}
+            ],"metadata":{},"nbformat":4,"nbformat_minor":5}
+            """
+            try? ipynb.write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            return "ui-scene: applied 'notebook' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil") gate=\(NotebookGate.isEnabled())"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —
