@@ -17,6 +17,10 @@
   shows encoding · EOL · indent.)
 
 ### Added
+- **Fill a selection.** With a marquee/lasso selection active, the new **Fill** button paints the
+  whole selected region with the current color (undoable). Deleting a selection is now undoable too.
+- **Three more shapes.** The image editor's shape gallery gained **heart**, **lightning**, and
+  **speech callout** — drag a box to place one, filled or outlined.
 - **Move & resize shapes on the image canvas.** The image editor's paint tools gained a
   **select** tool (the ⌖ icon): click a placed shape to select it — it shows a dashed outline with
   eight resize handles — then drag its body to move it or a handle to resize. Previously a placed

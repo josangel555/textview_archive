@@ -572,10 +572,13 @@ struct ImageEditorView: View {
                     Button { saveInPlace() } label: {
                         Label("Save", systemImage: "square.and.arrow.down.fill")
                     }
+                    // TSK-1441: spell out save-vs-copy so it isn't ambiguous.
+                    .help("Overwrite the original file with your edits")
                     .accessibilityIdentifier("mdv.imageEditor.saveInPlace")
                     Button { saveCopy() } label: {
                         Label("Save a Copy…", systemImage: "square.and.arrow.down")
                     }
+                    .help("Write the edited image to a NEW file — the original is left unchanged")
                     .accessibilityIdentifier("mdv.imageEditor.save")
                 }
                 // TSK-1067: copy the selection (or whole image) to a file / paste a file in.
@@ -711,6 +714,10 @@ struct ImageEditorView: View {
                         .accessibilityIdentifier("mdv.imageEditor.cutSelection")
                     Button("Crop") { vm.cropToSelection() }
                         .accessibilityIdentifier("mdv.imageEditor.cropToSelection")
+                    // TSK-1114: fill the selection with the active paint color.
+                    Button("Fill") { vm.fillSelection() }
+                        .help("Fill the selection with the current paint color")
+                        .accessibilityIdentifier("mdv.imageEditor.fillSelection")
                     Button("Delete") { vm.deleteSelection() }
                         .accessibilityIdentifier("mdv.imageEditor.deleteSelection")
                     Button("Invert") { vm.invertSelection() }
@@ -791,6 +798,9 @@ struct ImageEditorView: View {
         case .arrowLeft: return "Arrow Left"
         case .arrowUp: return "Arrow Up"
         case .arrowDown: return "Arrow Down"
+        case .heart: return "Heart"
+        case .lightning: return "Lightning"
+        case .speechCallout: return "Speech Callout"
         }
     }
 
@@ -806,6 +816,9 @@ struct ImageEditorView: View {
         case .arrowLeft: return "arrow.left"
         case .arrowUp: return "arrow.up"
         case .arrowDown: return "arrow.down"
+        case .heart: return "heart"
+        case .lightning: return "bolt"
+        case .speechCallout: return "bubble.left"
         }
     }
 

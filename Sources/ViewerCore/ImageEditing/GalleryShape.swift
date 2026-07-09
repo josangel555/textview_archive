@@ -24,6 +24,12 @@ public enum GalleryShape: String, CaseIterable, Sendable, Codable, Equatable {
     case arrowLeft
     case arrowUp
     case arrowDown
+    // TSK-1574 — freeform Win7 members, curve-based, approximated as dense
+    // polygon rings so the existing fillPolygon/strokePolygon rasterizer draws
+    // them with no new render path.
+    case heart
+    case lightning
+    case speechCallout
 
     /// The closed vertex ring (first point != implicitly repeated; the
     /// rasterizer closes the path). Points are in the same space as `rect`.
@@ -64,7 +70,38 @@ public enum GalleryShape: String, CaseIterable, Sendable, Codable, Equatable {
         case .arrowDown:
             return [p(0.3, 0), p(0.3, 0.6), p(0, 0.6), p(0.5, 1),
                     p(1, 0.6), p(0.7, 0.6), p(0.7, 0)]
+        case .heart:
+            return heartRing.map { p($0.x, $0.y) }
+        case .lightning:
+            // A zig-zag bolt: tip top, kicks left then right, point at bottom.
+            return [p(0.55, 0), p(0.15, 0.55), p(0.45, 0.55), p(0.30, 1),
+                    p(0.85, 0.42), p(0.55, 0.42), p(0.72, 0)]
+        case .speechCallout:
+            // A rounded-ish speech bubble body (top ¾) with a tail at bottom-left.
+            return [p(0, 0), p(1, 0), p(1, 0.72), p(0.42, 0.72),
+                    p(0.22, 1), p(0.26, 0.72), p(0, 0.72)]
         }
+    }
+
+    /// A heart outline as a normalized (`0...1`, y-down) polygon ring, sampled
+    /// from the classic parametric heart curve and rescaled to fill the unit
+    /// box. Precomputed once (pure constants) so `vertices(in:)` just maps it
+    /// into the rect. TSK-1574.
+    private var heartRing: [(x: Double, y: Double)] {
+        let n = 28
+        var pts: [(Double, Double)] = []
+        for i in 0..<n {
+            let t = 2 * Double.pi * Double(i) / Double(n)
+            let x = 16 * pow(sin(t), 3)
+            let y = 13 * cos(t) - 5 * cos(2 * t) - 2 * cos(3 * t) - cos(4 * t)
+            pts.append((x, y))
+        }
+        let xs = pts.map(\.0), ys = pts.map(\.1)
+        let minX = xs.min()!, maxX = xs.max()!, minY = ys.min()!, maxY = ys.max()!
+        let dx = maxX - minX, dy = maxY - minY
+        // Normalize into 0...1; flip Y because the math curve is y-up but image
+        // space is y-down (the heart's cusp must land at the TOP of the box).
+        return pts.map { (($0.0 - minX) / dx, 1 - ($0.1 - minY) / dy) }
     }
 
     /// A regular n-gon inscribed in the rect's ellipse, first vertex at

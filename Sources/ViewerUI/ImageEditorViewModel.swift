@@ -1024,9 +1024,30 @@ public final class ImageEditorViewModel: ObservableObject {
     /// without a selection. Bakes a destructive paint session, like the eraser.
     @discardableResult
     public func deleteSelection() -> Bool {
-        guard let sel = selection, sel.bounds != nil,
-              beginPaintSessionIfNeeded(), var canvas = paintCanvas else { return false }
+        guard let sel = selection, sel.bounds != nil else { return false }
+        // TSK-1114: register the undo entry (beginStroke snapshots the pre-op
+        // canvas + pushes .paint) BEFORE clearing — deleting a selection was a
+        // silent, un-undoable data loss before this (it used only
+        // beginPaintSessionIfNeeded, which bakes but records no undo).
+        beginStroke()
+        guard var canvas = paintCanvas else { return false }
         canvas.fill(.clear, in: sel)
+        paintCanvas = canvas
+        render()
+        return true
+    }
+
+    /// TSK-1114 — fill the current selection with the active `paintColor`. The
+    /// selection-tool render tail: mirrors `deleteSelection` (fills `.clear`) as
+    /// a single UNDOABLE paint op (via `beginStroke`). No-op without a bounded
+    /// selection. The marquee/lasso tools + the selection itself already exist;
+    /// this closes the "fill-selection action" half.
+    @discardableResult
+    public func fillSelection() -> Bool {
+        guard let sel = selection, sel.bounds != nil else { return false }
+        beginStroke()
+        guard var canvas = paintCanvas else { return false }
+        canvas.fill(paintColor, in: sel)
         paintCanvas = canvas
         render()
         return true
