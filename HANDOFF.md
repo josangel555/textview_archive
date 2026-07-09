@@ -20,18 +20,20 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-B (image advanced tools) → 4 at `review`** (commit `1a6eef77`). Verify-before-build:
-  the raster OPS already existed (drawCurve AA bezier · fill/strokePolygon · drawText + retained .text
-  shape) → wired the TOOLS. 1083 curve tool · 1084 polygon multi-click + Close · 1089 text tool
-  (retained editable .text) · 1086 AA reconcile (CGContext/Canvas AA + editable overlay). 6 host tests.
-  **1090 layers PARKED (Need-me: epic-scale, recommend design-first).** 1087 brush-gallery stays
-  reported (future image chunk). Live drag/multi-click = VM/AX tail.
-- **PRIOR (at `review`):** CH-A image (`a51f9564`: 1055/1088/1114/1441/1574; render→1578) · 1168
-  vector-edit (`a403011d`) · 1445 CR journey (`5ce2a901`) · 1443 git panel (`8a09f977`; U1=1577) ·
-  1444 LSP chip (`ddd8aa4d`) · 1576 footer-capture (`ebf056fe`).
-- **Next chunk:** CH-C (devtools: 1571 monitor-menu · 1577 git-render-scene · 1482 menu-audit · 1191
-  git-history · 318/1108 CR Q&A). **Verify-before-build: many §1 items already done** — task_get +
-  grep first (CH-A's 1055 + CH-B's 1086 were already shipped; CH-B's ops pre-existed).
+- **THIS TICK — CH-C (devtools) IN PROGRESS: 1571 → `review`** (commit `94d74e1b`). Mounted the Claude
+  Session Monitor as Tools ▸ Claude Session Monitor (was CLI-flag-only) + fixed the self.window clobber
+  (separate monitorWindow ref + re-focus-if-open). **CH-C IS HEAVY** — the other items are substantial
+  STANDALONE tickets, not chunk-crammable: 318/1108 CR agent-Q&A PARKED (Need-me: app is an MCP server
+  not a client → Q&A transport is a product call); 1191 git history-unify (real rework — GitLogTab has
+  cumulative-diff/search/review-launch that UnifiedHistoryView lacks); 1482 menu audit (imperative menu
+  in the executable, hard to host-test); 1577 git-render scene (view-local @StateObject). Continue CH-C
+  next tick with 1191/1482, one focused ticket at a time.
+- **PRIOR (at `review`):** CH-B image tools (`1a6eef77`: 1083/1084/1086/1089; 1090 parked) · CH-A image
+  (`a51f9564`: 1055/1088/1114/1441/1574; render→1578) · 1168 vector-edit (`a403011d`) · 1445 CR journey
+  (`5ce2a901`) · 1443 git panel (`8a09f977`; U1=1577) · 1444 LSP (`ddd8aa4d`) · 1576 footer (`ebf056fe`).
+- **LESSON: not every chunk is 3-5 quick tickets.** CH-C bundled 5 substantial devtools tickets; honest
+  output was 1 build + 1 park + 3 deferred. Half-building 5 UI tickets is worse than shipping 1 well.
+  **Verify-before-build keeps paying** (CH-A's 1055 + CH-B's 1086 + ops were already done).
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
 
 ## ✅ FOOTER-CAPTURE ROOT (2026-07-09, TSK-1576 — corrects a wrong first theory)
