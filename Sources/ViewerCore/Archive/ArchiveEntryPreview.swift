@@ -58,6 +58,24 @@ public enum ArchiveEntryPreview: Equatable, Sendable {
         return .binary(byteCount: total)
     }
 
+    /// TSK-1469 — the preview-on-select PLAN: decide from the LISTING's
+    /// declared size whether the pane should extract+read the entry at all.
+    /// An entry known to exceed the cap goes straight to `.skip(.tooBig)` so
+    /// a huge member is never extracted just to peek. `nil` size (unknown) →
+    /// `.read` (the byte-level cap in `classify` still protects us).
+    public enum PreviewPlan: Equatable, Sendable {
+        /// Extract + capped-read, then `classify`.
+        case read
+        /// Skip extraction; render this preview directly.
+        case skip(ArchiveEntryPreview)
+    }
+
+    public static func previewPlan(sizeBytes: Int?, isDirectory: Bool) -> PreviewPlan {
+        if isDirectory { return .skip(.unreadable(reason: "Folder")) }
+        if let n = sizeBytes, n > previewCap { return .skip(.tooBig(byteCount: n)) }
+        return .read
+    }
+
     /// The failure branch the pane renders when `zipEntryBytes` throws —
     /// mapped here so the reason wording is single-sourced + testable.
     public static func failed(_ error: Error) -> ArchiveEntryPreview {

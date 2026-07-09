@@ -110,4 +110,33 @@ final class ArchiveEntryPreviewTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - previewPlan (TSK-1469 preview-on-select extraction gate)
+
+    func test_previewPlan_skipsHugeEntries_withoutExtracting() {
+        let big = ArchiveEntryPreview.previewCap + 1
+        XCTAssertEqual(
+            ArchiveEntryPreview.previewPlan(sizeBytes: big, isDirectory: false),
+            .skip(.tooBig(byteCount: big)),
+            "an entry known to exceed the cap must never be extracted to peek")
+    }
+
+    func test_previewPlan_readsWithinCap_andUnknownSize() {
+        XCTAssertEqual(
+            ArchiveEntryPreview.previewPlan(sizeBytes: 1024, isDirectory: false), .read)
+        XCTAssertEqual(
+            ArchiveEntryPreview.previewPlan(sizeBytes: nil, isDirectory: false), .read,
+            "unknown size → read; the byte-level cap in classify still protects us")
+        XCTAssertEqual(
+            ArchiveEntryPreview.previewPlan(
+                sizeBytes: ArchiveEntryPreview.previewCap, isDirectory: false), .read,
+            "exactly at the cap still reads")
+    }
+
+    func test_previewPlan_directory_isSkipped() {
+        guard case .skip(.unreadable) = ArchiveEntryPreview.previewPlan(
+            sizeBytes: 0, isDirectory: true) else {
+            return XCTFail("a directory entry has no byte preview")
+        }
+    }
 }
