@@ -469,6 +469,24 @@ public struct ContentView: View {
                     onClose: { model.showTerminalCommandPalette = false })
             }
         }
+        // TSK-1475 — the Terminal Favorites management editor (opened via the
+        // "Manage Favorites…" menu → model.openTerminalFavoritesEditor()).
+        .sheet(isPresented: $model.showTerminalFavoritesEditor) {
+            if let vm = model.terminalFavoritesEditorVM {
+                VStack(spacing: 0) {
+                    TerminalFavoritesEditor(model: vm)
+                    Divider()
+                    HStack {
+                        Spacer()
+                        Button("Done") { model.showTerminalFavoritesEditor = false }
+                            .keyboardShortcut(.defaultAction)
+                    }
+                    .padding(12)
+                }
+                .frame(minWidth: 440, minHeight: 380)
+                .accessibilityIdentifier("mdv.terminalFavorites.sheet")
+            }
+        }
         // TSK-1325 — the Image Convert panel (opened via model.openConvertImage()).
         .sheet(isPresented: $model.showConvertImage) {
             if let vm = model.convertImageVM {

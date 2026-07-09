@@ -237,6 +237,22 @@ public enum UISceneApplier {
             return "ui-scene: applied 'outline' tabs=\(model.tabs.tabs.count) sidebar=\(model.sidebar.isVisible) outline=\(model.panelLayout.override(for: .markdownOutline).rawValue) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
 
+        // Terminal-favorites editor scene (TSK-1475 render tail): the Manage
+        // Favorites… editor is now MOUNTED (menu → openTerminalFavoritesEditor →
+        // .sheet). Seed a deterministic favorites list, then open the sheet so
+        // the VM harness captures TerminalFavoritesEditor listing them in stored
+        // order (UAT U1). add() inserts at index 0, so seed in reverse for a
+        // natural top→bottom order.
+        if scene == "favorites" {
+            let store = model.terminalFavorites
+            store.removeAll()
+            _ = store.add(command: "make build", title: "Build")
+            _ = store.add(command: "npm test", title: "Run tests")
+            _ = store.add(command: "git status", title: "Git status")
+            model.openTerminalFavoritesEditor()
+            return "ui-scene: applied 'favorites' show=\(model.showTerminalFavoritesEditor) vm=\(model.terminalFavoritesEditorVM != nil) count=\(store.all.count)"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —

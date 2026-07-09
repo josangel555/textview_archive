@@ -1295,7 +1295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         menu.addItem(.separator())
         let edit = NSMenuItem(
-            title: "Edit Favorites…", action: #selector(editTerminalFavorites(_:)), keyEquivalent: "")
+            title: "Manage Favorites…", action: #selector(editTerminalFavorites(_:)), keyEquivalent: "")
         edit.target = self
         menu.addItem(edit)
         let reload = NSMenuItem(
@@ -1310,12 +1310,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func editTerminalFavorites(_ sender: Any?) {
-        // Open the hand-editable JSON in the app (creating it empty if missing).
-        let url = model.terminalFavorites.storeURL
-        if !FileManager.default.fileExists(atPath: url.path) {
-            try? Data("[]\n".utf8).write(to: url, options: .atomic)
-        }
-        model.open(url: url)
+        // TSK-1475: open the GUI management editor (rename / reorder / delete)
+        // instead of the old raw-JSON-file edit path.
+        model.openTerminalFavoritesEditor()
     }
 
     @objc func reloadTerminalFavorites(_ sender: Any?) {

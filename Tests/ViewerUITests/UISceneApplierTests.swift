@@ -179,6 +179,24 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_favoritesScene_seedsAndOpensTheManagementEditor() {
+        // TSK-1475 render tail: the Manage Favorites… editor is mounted (menu →
+        // openTerminalFavoritesEditor → .sheet). The scene seeds a deterministic
+        // list + opens the sheet. Pins the mount contract: the presentation flag
+        // flips true, a fresh editor VM is created over the store, and the store
+        // holds the seeded favorites in order — the on-screen sheet is the VM
+        // pixel assertion (mdv.terminalFavorites.editor). CRUD is host-tested by
+        // TerminalFavoritesEditorModelTests.
+        let model = makeModel()
+        let status = apply("favorites", model)
+        XCTAssertTrue(model.showTerminalFavoritesEditor, "the editor sheet is presented")
+        XCTAssertNotNil(model.terminalFavoritesEditorVM, "a fresh editor VM is created over the store")
+        XCTAssertEqual(model.terminalFavorites.all.map(\.command),
+                       ["git status", "npm test", "make build"],
+                       "seeded favorites are in stored order (add inserts at 0)")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

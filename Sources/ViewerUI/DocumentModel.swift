@@ -193,6 +193,12 @@ public final class DocumentModel: ObservableObject {
     /// The palette controller, seeded over the live favorites + command history.
     @Published public var terminalCommandPaletteVM: TerminalCommandPaletteViewModel?
 
+    /// TSK-1475 — the terminal-favorites management editor (rename / reorder /
+    /// delete). Transient; driven by `openTerminalFavoritesEditor()`.
+    @Published public var showTerminalFavoritesEditor = false
+    /// The editor controller, created fresh over the live favorites store on open.
+    @Published public var terminalFavoritesEditorVM: TerminalFavoritesEditorModel?
+
     /// TSK-1166 — the active passive-watcher disk-conflict, surfaced as a non-modal
     /// `DiskConflictBanner` above the editor (vs the blocking NSAlert the deliberate
     /// `refreshTab` path still uses). `nil` = no conflict. Set by the file-watcher

@@ -6,6 +6,9 @@
 - **Markdown "Contents" outline panel in the sidebar.** Opening a markdown file now shows
   a live heading outline in the sidebar — a filterable list you can click to jump to a
   section. It sits below the code Outline panel and appears only for markdown documents.
+- **Manage Terminal Favorites editor.** Terminal ▸ Terminal Favorites ▸ "Manage Favorites…"
+  now opens a real editor — rename in place, reorder up/down, delete, and filter — instead
+  of dropping you into the raw JSON file.
 
 ### System work
 - **Render-tail on-screen UAT lane (VM pyramid).** Built deterministic `MDV_UI_SCENE`

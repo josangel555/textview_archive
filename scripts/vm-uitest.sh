@@ -54,6 +54,7 @@ scene_expect() {
     notebook) echo "mdv.notebook.cellList" ;;
     depgraph) echo "mdv.depgraph.canvas" ;;
     outline) echo "mdv.markdownOutline" ;;
+    favorites) echo "mdv.terminalFavorites.editor" ;;
     *) echo "" ;;
   esac
 }

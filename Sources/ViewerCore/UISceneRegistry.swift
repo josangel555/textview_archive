@@ -216,6 +216,10 @@ public enum UISceneRegistry {
             fixture: .throwawaySource(name: "outline-doc.md"),
             closesExistingTabs: true,
             summary: "Markdown doc with ≥6 headings + sidebar open → the mounted .markdownOutline panel lists them (TSK-1438)"),
+        SceneSpec(
+            id: "favorites",
+            fixture: .none,
+            summary: "Seeded favorites + the Manage Favorites… editor sheet open → TerminalFavoritesEditor lists them in order (TSK-1475)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one
