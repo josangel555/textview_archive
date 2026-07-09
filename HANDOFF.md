@@ -68,6 +68,8 @@ land at `review` UNVERIFIED; UAT/AX/T5 batch when the VM returns.
   empty messages (rootMissing/notAClaudeDir/noTranscripts) + 5s fingerprint-gated poll. Tail: UAT U1-U6.
 - T49: TSK-1478 plugins install/remove UI (913c3758) → review UNVERIFIED. Install… + Remove wired
   to PluginLifecycle w/ outcome banners; trust prompt already existed. Tail: UAT U1-U6.
+- T50: TSK-1470 dep-graph zoom/pan + large-graph guard (537c9f08) → review UNVERIFIED. Pinch/drag
+  via tested Transform (scaleEffect topLeading), Reset, >300 tooLarge placeholder. Tail: UAT U1-U6.
 - Gate flake filed TSK-1567 (EditorAssistToggleTests shared-UserDefaults parallel race).
 
 ## P0 INCIDENT RESOLVED (2026-07-07 ~23:15, TSK-1566 → fixed, 12f6e392)
