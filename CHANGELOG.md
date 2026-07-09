@@ -112,6 +112,12 @@
   correct re-render.) This is now on by default; set `MDV_DOM_PATCH=0` to opt out.
 
 ### System work
+- **Per-interaction felt-perf measurement layer (TSK-1488).** A pure, host-tested `InteractionProfiler`
+  in ViewerCore: nearest-rank frame-duration percentiles (`FramePercentiles`), per-interaction-kind p95
+  budgets (`InteractionKind` — typing/scroll at 60fps, tab-switch/re-render allow a dropped frame),
+  `InteractionSpan.exceedsBudget` verdicts, and rolling per-kind history + an over-budget dump — so lag
+  is graded by numbers per interaction, not window-level vibes. The live CADisplayLink feed, on-screen
+  HUD, and `vm-profile.sh` capture are the render/VM tail (TSK-1583).
 - **Launchpad model foundation (TSK-1572).** Three pure, host-tested cores for the new-tab
   launchpad — `LaunchpadSections` (splits recents into files/folders + bookmarks, deduped/capped),
   `LaunchpadSelection` (the ↑/↓ keyboard-nav state machine across omni + rows), and `GitClonePlan`

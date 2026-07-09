@@ -20,18 +20,20 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-G perf: TSK-838 DOM-patch FLIP (owner-approved) → `review`** (host + VM-UAT).
-  **TSK-838 (VeryHigh)**: the rendered-markdown DOM-patch lever was BUILT + VM-proven but gated OFF
-  (`MDV_DOM_PATCH==1`); the owner RESOLVED the parked decision 2026-06-30 ("Go for it. Do an agentic
-  UAT"). Flipped `MarkdownRenderedView.domPatchEnabled` to DEFAULT-ON (opt-out `MDV_DOM_PATCH=0`),
-  refactored to a host-testable `domPatchEnabled(env:)`. Safe-by-construction (tryApplyDOMPatch falls
-  back to full reload for unsupported changes). Kills the measured 2-9s same-file reload storm →
-  O(changed-blocks) patch + preserves scroll. Host: DomPatchGateTests +3. VM-UAT: BlockPatchApply/
-  AlignmentProbe webview lane (see the tick's `checks`). Child TSK-1183 (applier) already at review.
-- **CH-G remaining:** 1488 jank-instrumentation (host model + VM), 891 Page-Up jank (VM trace), 1047
-  warm-CM6-cache (blocker: live-validation), 1180/1184/1185 perf traces (VM measure). Mostly VM.
-- **PRIOR CH-F — 1572 launchpad (`d169f64e`; sections live, tails→TSK-1582); 1573+1575-part1 (`ea377a56`;
-  splits TSK-1581) → `review`.** CH-F remaining: 1104/1111 (window, VM).
+- **THIS TICK — CH-G perf: TSK-1488 interaction-profiler foundation → `review`** (host-only).
+  Built the PURE per-interaction felt-perf layer in ViewerCore (picking up the `wperf`-session diagnosed
+  plan): `FramePercentiles` (nearest-rank p50/p95/p99/worst), `InteractionKind` (per-kind p95 frame
+  budgets), `InteractionSpan.exceedsBudget`, `InteractionProfiler` (begin/recordFrame/end + rolling
+  per-kind history + overBudgetSpans + dump), env-gated `isEnabled(MDV_PERF_HUD)`. Sits ON TOP of the
+  existing window-level `FrameStats`/`FrameRateMonitor`. Host pyramid: InteractionProfilerTests +16
+  (percentile math, kind-specific budget teeth, span bookkeeping, history cap). Live CADisplayLink feed
+  + interaction-boundary hooks + HUD + vm-profile.sh capture SPLIT → **TSK-1583**. This is the measurement
+  FOUNDATION the other CH-G perf tickets (891/1180/1184/1185) consume.
+- **PRIOR CH-G — TSK-838 DOM-patch FLIP → `review`** (`847b7921`, owner-approved). Default-ON kills the
+  2-9s reload storm; VM-UAT GREEN this session (BlockPatchApplyWebViewTests + AlignmentProbe on the live
+  VM WebView — recorded on the ticket). Child TSK-1183 (applier) at review.
+- **CH-G remaining (mostly VM):** 891 Page-Up jank (VM trace+fix), 1047 warm-CM6-cache (blocker
+  live-validation), 1180/1184/1185 perf traces (VM measure) — all can now USE the InteractionProfiler.
 - **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS:** 1482 menu-audit (declarative-menu refactor OR VM),
   1191 git-history migration (render VM-val), 1205 spreadsheet-grid (render). Each = its OWN focused tick.
 - **PRIOR — CH-D/CH-E: 1203-core+1567 (`8253d8cb`); CH-C: 1505+1570-U2 (`62697ec1`); CH-D data-safety
