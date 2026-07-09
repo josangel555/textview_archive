@@ -3924,3 +3924,17 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   Package.resolved macOS15:markdown_viewer/.build/`) + `swift package resolve`, or build with
   `--disable-automatic-resolution`. (3) build dist with the 6.3 toolchain (default 6.1.2 can
   crash the frontend).
+
+- **Offline VM dist build recipe (2026-07-09, the full chain — verified piece by piece).** The
+  macOS15 VM has NO github access, so a fresh dist build after any .build damage needs ALL of:
+  (1) build with the **6.3** toolchain (`export TOOLCHAINS=$(plutil -extract CFBundleIdentifier raw
+  /Library/Developer/Toolchains/swift-6.3-RELEASE.xctoolchain/Info.plist)`) — default 6.1.2 crashes
+  the frontend; (2) ship the SPM cache from host: `rsync -az .build/checkouts .build/repositories
+  macOS15:markdown_viewer/.build/` AND the nested submodule working tree
+  (`rsync -az .build/checkouts/SwiftTreeSitter/ macOS15:.../SwiftTreeSitter/`); (3) SwiftTreeSitter
+  pulls a git SUBMODULE `tree-sitter-swift` from github — redirect it to the local bare mirror:
+  `git config --global url."file:///Users/vm-tester/markdown_viewer/.build/repositories/tree-sitter-swift-b221aa19".insteadOf "https://github.com/alex-pinkus/tree-sitter-swift"`;
+  (4) git blocks file:// submodule transport (CVE-2022-39253) — `git config --global
+  protocol.file.allow always`; (5) `swift build -c debug --disable-automatic-resolution` (don't
+  re-resolve/refetch). THEN `build-app.sh debug`. The `insteadOf`+`protocol.file.allow` git configs
+  are global + persist, so future builds are fine. BEST PREVENTION: never rm -rf .build on the VM.

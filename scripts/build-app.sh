@@ -84,8 +84,19 @@ else
   echo "==> C compiler cache: none (install ccache/sccache to speed clean rebuilds)"
 fi
 
+# Offline build support (the macOS15 VM has no github): MDV_SWIFT_OFFLINE=1
+# adds --disable-automatic-resolution so `swift build` uses the already-present
+# .build/{checkouts,repositories} + Package.resolved instead of re-fetching
+# updates from remotes (which fails on an offline host). Deps must already be
+# staged; see LESSONS "Offline VM dist build recipe".
+OFFLINE_FLAG=()
+if [[ "${MDV_SWIFT_OFFLINE:-}" == "1" ]]; then
+  OFFLINE_FLAG=(--disable-automatic-resolution)
+  echo "==> offline mode: swift build ${OFFLINE_FLAG[*]}"
+fi
+
 echo "==> swift build -c $CONFIG"
-( cd "$ROOT_DIR" && swift build -c "$CONFIG" )
+( cd "$ROOT_DIR" && swift build -c "$CONFIG" "${OFFLINE_FLAG[@]}" )
 
 # SwiftPM's default `swift build` walks the executable's dep graph
 # only — the lazy-grammar dynamic library products aren't reached
@@ -104,10 +115,10 @@ LAZY_PRODUCTS=(
 )
 for prod in "${LAZY_PRODUCTS[@]}"; do
   echo "==> swift build --product $prod -c $CONFIG"
-  ( cd "$ROOT_DIR" && swift build -c "$CONFIG" --product "$prod" )
+  ( cd "$ROOT_DIR" && swift build -c "$CONFIG" --product "$prod" "${OFFLINE_FLAG[@]}" )
 done
 
-BIN_DIR="$( cd "$ROOT_DIR" && swift build -c "$CONFIG" --show-bin-path )"
+BIN_DIR="$( cd "$ROOT_DIR" && swift build -c "$CONFIG" --show-bin-path "${OFFLINE_FLAG[@]}" )"
 BIN_PATH="$BIN_DIR/$EXEC_NAME"
 if [[ ! -x "$BIN_PATH" ]]; then
   echo "Error: built executable not found at $BIN_PATH" >&2
