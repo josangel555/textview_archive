@@ -51,6 +51,35 @@ public enum ThreeWayMerge {
         }
     }
 
+    /// TSK-1171 — a user's choice for ONE conflict region, collected by the
+    /// 3-pane resolve UI and applied by `Result.resolved(_:)`.
+    public enum Resolution: Equatable, Sendable {
+        /// Take our side's edit, discard theirs.
+        case ours
+        /// Take their side's edit, discard ours.
+        case theirs
+        /// Discard both edits, keep the original base text.
+        case base
+        /// Keep both, ours first then theirs.
+        case bothOursFirst
+        /// Keep both, theirs first then ours.
+        case bothTheirsFirst
+        /// A hand-edited resolution (the user typed the merged lines themselves).
+        case custom([String])
+
+        /// The lines this resolution contributes, given the conflict's slices.
+        public func lines(base: [String], ours: [String], theirs: [String]) -> [String] {
+            switch self {
+            case .ours:            return ours
+            case .theirs:          return theirs
+            case .base:            return base
+            case .bothOursFirst:   return ours + theirs
+            case .bothTheirsFirst: return theirs + ours
+            case .custom(let l):   return l
+            }
+        }
+    }
+
     /// The full merge outcome.
     public struct Result: Equatable, Sendable {
         /// The classified regions, in document order.
@@ -116,6 +145,43 @@ public enum ThreeWayMerge {
                 }
             }
             return out.joined(separator: "\n")
+        }
+
+        /// TSK-1171 — the conflict regions in document order (base/ours/theirs
+        /// slices), for a resolve UI to present + collect one `Resolution` each.
+        /// Ordinal position matches the resolution index `resolved(_:)` expects.
+        public var conflicts: [(base: [String], ours: [String], theirs: [String])] {
+            regions.compactMap { region in
+                if case .conflict(let b, let o, let t) = region { return (b, o, t) }
+                return nil
+            }
+        }
+
+        /// TSK-1171 — apply per-conflict `resolutions` (one per conflict region, in
+        /// document order) to produce the fully-resolved lines. Non-conflict regions
+        /// contribute their chosen lines; each conflict contributes per its
+        /// resolution. Returns `nil` when `resolutions.count != conflictCount` — the
+        /// caller must resolve EVERY conflict before writing back (no partial merges).
+        public func resolved(_ resolutions: [Resolution]) -> [String]? {
+            guard resolutions.count == conflictCount else { return nil }
+            var out: [String] = []
+            var ri = 0
+            for region in regions {
+                switch region {
+                case .unchanged(let l), .oursOnly(let l), .theirsOnly(let l), .bothSame(let l):
+                    out.append(contentsOf: l)
+                case .conflict(let base, let ours, let theirs):
+                    out.append(contentsOf: resolutions[ri].lines(base: base, ours: ours, theirs: theirs))
+                    ri += 1
+                }
+            }
+            return out
+        }
+
+        /// Convenience: the resolved document as a `\n`-joined string (nil on a
+        /// resolution-count mismatch, per `resolved(_:)`).
+        public func resolvedText(_ resolutions: [Resolution]) -> String? {
+            resolved(resolutions).map { $0.joined(separator: "\n") }
         }
     }
 

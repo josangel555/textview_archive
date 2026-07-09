@@ -20,20 +20,18 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-G perf: TSK-1488 interaction-profiler foundation → `review`** (host-only).
-  Built the PURE per-interaction felt-perf layer in ViewerCore (picking up the `wperf`-session diagnosed
-  plan): `FramePercentiles` (nearest-rank p50/p95/p99/worst), `InteractionKind` (per-kind p95 frame
-  budgets), `InteractionSpan.exceedsBudget`, `InteractionProfiler` (begin/recordFrame/end + rolling
-  per-kind history + overBudgetSpans + dump), env-gated `isEnabled(MDV_PERF_HUD)`. Sits ON TOP of the
-  existing window-level `FrameStats`/`FrameRateMonitor`. Host pyramid: InteractionProfilerTests +16
-  (percentile math, kind-specific budget teeth, span bookkeeping, history cap). Live CADisplayLink feed
-  + interaction-boundary hooks + HUD + vm-profile.sh capture SPLIT → **TSK-1583**. This is the measurement
-  FOUNDATION the other CH-G perf tickets (891/1180/1184/1185) consume.
-- **PRIOR CH-G — TSK-838 DOM-patch FLIP → `review`** (`847b7921`, owner-approved). Default-ON kills the
-  2-9s reload storm; VM-UAT GREEN this session (BlockPatchApplyWebViewTests + AlignmentProbe on the live
-  VM WebView — recorded on the ticket). Child TSK-1183 (applier) at review.
-- **CH-G remaining (mostly VM):** 891 Page-Up jank (VM trace+fix), 1047 warm-CM6-cache (blocker
-  live-validation), 1180/1184/1185 perf traces (VM measure) — all can now USE the InteractionProfiler.
+- **THIS TICK — CH-H: TSK-1171 3-way merge conflict-resolution stack → `review`** (host-only).
+  On top of the done diff3 MODEL (`ThreeWayMerge`), added the RESOLUTION half: `Resolution` enum
+  (ours/theirs/both/base/custom) + `Result.resolved(_:)`/`conflicts`; `ConflictResolutionModel`
+  (ObservableObject — per-conflict choice bookkeeping + derived resolvedText + resolveAllRemaining);
+  the 3-pane `ConflictResolutionView` (base/ours/theirs + segmented picker + Apply); `DocumentModel`
+  `beginConflictResolution`(base=originalText/ours=buffer/theirs=disk; nil if no conflict) +
+  `applyConflictResolution`(writes resolved text, kept-dirty). Model-complete + agent-drivable + host-
+  tested (ThreeWayMerge +6, ConflictResolutionModel +6, ExternalEditReconcileWiring +2). Mounting the
+  sheet from the DiskConflictBanner SPLIT → **TSK-1584**. Coherent with my prior 1269/1165 reconciler.
+- **PRIOR CH-G — 1488 interaction-profiler (`5a6c2452`, host); TSK-838 DOM-patch FLIP (`847b7921`,
+  owner-approved, VM-UAT GREEN this session) → `review`.** CH-G remaining (mostly VM): 891 Page-Up,
+  1047 (blocked live-val), 1180/1184/1185 traces — can now use the InteractionProfiler.
 - **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS:** 1482 menu-audit (declarative-menu refactor OR VM),
   1191 git-history migration (render VM-val), 1205 spreadsheet-grid (render). Each = its OWN focused tick.
 - **PRIOR — CH-D/CH-E: 1203-core+1567 (`8253d8cb`); CH-C: 1505+1570-U2 (`62697ec1`); CH-D data-safety

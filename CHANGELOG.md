@@ -112,6 +112,14 @@
   correct re-render.) This is now on by default; set `MDV_DOM_PATCH=0` to opt out.
 
 ### System work
+- **3-way merge conflict-resolution stack (TSK-1171).** On top of the existing diff3 merge model,
+  added the RESOLUTION half: `ThreeWayMerge.Resolution` (ours/theirs/both/base/custom) + `Result.resolved(_:)`
+  (apply per-conflict choices → merged text), a `ConflictResolutionModel` (per-conflict choice bookkeeping
+  + derived resolved text + "take all" bulk), the 3-pane `ConflictResolutionView` (base/ours/theirs +
+  segmented picker + Apply), and `DocumentModel.beginConflictResolution` / `applyConflictResolution`
+  (compute the merge for a dirty-vs-disk tab, write the resolved text back kept-dirty). Model-complete +
+  host-tested (ThreeWayMerge +6, ConflictResolutionModel +6, reconcile-wiring +2); mounting the sheet from
+  the disk-conflict banner is the render tail (TSK-1584).
 - **Per-interaction felt-perf measurement layer (TSK-1488).** A pure, host-tested `InteractionProfiler`
   in ViewerCore: nearest-rank frame-duration percentiles (`FramePercentiles`), per-interaction-kind p95
   budgets (`InteractionKind` — typing/scroll at 60fps, tab-switch/re-render allow a dropped frame),

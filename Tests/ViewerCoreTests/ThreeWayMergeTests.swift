@@ -230,4 +230,56 @@ final class ThreeWayMergeTests: XCTestCase {
         XCTAssertFalse(r.hasConflicts)
         XCTAssertEqual(r.autoMerged, ["x", "y"])
     }
+
+    // MARK: - TSK-1171: conflict resolution (apply per-conflict choices)
+
+    /// base a/b/c, ours a/OURS/c, theirs a/THEIRS/c → one conflict on line 2.
+    private func oneConflict() -> ThreeWayMerge.Result {
+        ThreeWayMerge.merge(base: ["a", "b", "c"], ours: ["a", "OURS", "c"], theirs: ["a", "THEIRS", "c"])
+    }
+
+    func test_conflicts_exposesTheSlices() {
+        let r = oneConflict()
+        XCTAssertEqual(r.conflicts.count, 1)
+        XCTAssertEqual(r.conflicts[0].base, ["b"])
+        XCTAssertEqual(r.conflicts[0].ours, ["OURS"])
+        XCTAssertEqual(r.conflicts[0].theirs, ["THEIRS"])
+    }
+
+    func test_resolved_eachChoiceProducesTheRightMerge() {
+        let r = oneConflict()
+        XCTAssertEqual(r.resolved([.ours]), ["a", "OURS", "c"])
+        XCTAssertEqual(r.resolved([.theirs]), ["a", "THEIRS", "c"])
+        XCTAssertEqual(r.resolved([.base]), ["a", "b", "c"])
+        XCTAssertEqual(r.resolved([.bothOursFirst]), ["a", "OURS", "THEIRS", "c"])
+        XCTAssertEqual(r.resolved([.bothTheirsFirst]), ["a", "THEIRS", "OURS", "c"])
+        XCTAssertEqual(r.resolved([.custom(["MERGED"])]), ["a", "MERGED", "c"])
+    }
+
+    func test_resolvedText_joinsWithNewlines() {
+        XCTAssertEqual(oneConflict().resolvedText([.ours]), "a\nOURS\nc")
+    }
+
+    func test_resolved_nilOnCountMismatch() {
+        let r = oneConflict()
+        XCTAssertNil(r.resolved([]), "no resolution for the 1 conflict → nil (must resolve all)")
+        XCTAssertNil(r.resolved([.ours, .theirs]), "too many resolutions → nil")
+    }
+
+    func test_resolved_multipleConflicts_appliedInOrder() {
+        // Two separate conflicts.
+        let r = ThreeWayMerge.merge(
+            base:   ["1", "a", "2", "b", "3"],
+            ours:   ["1", "OA", "2", "OB", "3"],
+            theirs: ["1", "TA", "2", "TB", "3"])
+        XCTAssertEqual(r.conflictCount, 2)
+        XCTAssertEqual(r.resolved([.ours, .theirs]), ["1", "OA", "2", "TB", "3"],
+                       "resolutions map to conflicts in document order")
+    }
+
+    func test_resolved_noConflicts_ignoresResolutions() {
+        let clean = ThreeWayMerge.merge(base: ["a", "b"], ours: ["a", "b"], theirs: ["a", "b"])
+        XCTAssertEqual(clean.conflictCount, 0)
+        XCTAssertEqual(clean.resolved([]), ["a", "b"])
+    }
 }

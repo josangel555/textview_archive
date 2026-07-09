@@ -175,4 +175,42 @@ final class ExternalEditReconcileWiringTests: XCTestCase {
         XCTAssertFalse(model.applyExternalAutoMerge(
             forTabID: UUID(), url: url, diskMTime: nil, diskSize: nil))
     }
+
+    // MARK: - TSK-1171: 3-way conflict resolution entry points
+
+    // Overlapping edits → beginConflictResolution yields a model with the conflict;
+    // resolving + applying writes the resolved text into the (still-dirty) buffer.
+    func test_beginAndApplyConflictResolution_writesResolvedText() throws {
+        let url = try writeFile("j.txt", "a\nb\nc\n")
+        let model = makeModel()
+        let id = openSeeded(url, in: model)
+        model.editor.updateEditorText("a\nOURS\nc\n", forTabID: id)             // local edits line 2
+        try "a\nTHEIRS\nc\n".write(to: url, atomically: true, encoding: .utf8)  // disk edits line 2 (overlap)
+
+        let resModel = try XCTUnwrap(
+            model.beginConflictResolution(forTabID: id, url: url),
+            "an overlapping edit must produce a resolution model")
+        XCTAssertEqual(resModel.conflicts.count, 1)
+        resModel.select(.ours, at: 0)
+        let resolved = try XCTUnwrap(resModel.resolvedText)
+        XCTAssertEqual(resolved, "a\nOURS\nc\n")
+
+        let (mtime, size) = diskFingerprint(url)
+        XCTAssertTrue(model.applyConflictResolution(
+            resolved, forTabID: id, diskMTime: mtime, diskSize: size))
+        let buf = model.editor.editorBuffers[id]
+        XCTAssertEqual(buf?.text, "a\nOURS\nc\n", "resolved text lands in the buffer")
+        XCTAssertTrue(buf?.isDirty == true, "resolution stays dirty so the user saves it")
+    }
+
+    // No overlap (clean auto-merge) → nil (nothing to resolve interactively).
+    func test_beginConflictResolution_nil_whenNoConflict() throws {
+        let url = try writeFile("k.txt", "a\nb\nc\n")
+        let model = makeModel()
+        let id = openSeeded(url, in: model)
+        model.editor.updateEditorText("X\nb\nc\n", forTabID: id)            // line 1
+        try "a\nb\nZ\n".write(to: url, atomically: true, encoding: .utf8)   // line 3 (no overlap)
+        XCTAssertNil(model.beginConflictResolution(forTabID: id, url: url),
+            "non-overlapping edits auto-merge — no interactive resolution needed")
+    }
 }

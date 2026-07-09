@@ -2999,6 +2999,35 @@ public final class DocumentModel: ObservableObject {
         return true
     }
 
+    /// TSK-1171 — build the 3-pane conflict-resolution model for a dirty tab whose
+    /// buffer conflicts with disk: base = the last-saved baseline, ours = the
+    /// buffer's edits, theirs = the on-disk text. Returns nil when there's no
+    /// buffer, disk is unreadable, or the 3-way merge has NO conflicts (nothing to
+    /// resolve — the auto-merge path handles that). Host-testable; the sheet that
+    /// presents the returned model is the render tail.
+    public func beginConflictResolution(forTabID id: UUID, url: URL) -> ConflictResolutionModel? {
+        guard let buf = editor.editorBuffers[id],
+              let disk = try? String(contentsOf: url, encoding: buf.encoding) else { return nil }
+        let result = ThreeWayMerge.merge(base: buf.originalText, ours: buf.text, theirs: disk)
+        guard result.hasConflicts else { return nil }
+        return ConflictResolutionModel(
+            result: result, oursLabel: "My edits", theirsLabel: "On disk")
+    }
+
+    /// TSK-1171 — apply the user's fully-resolved conflict text to the tab's buffer.
+    /// Kept DIRTY (so the user still saves the resolution) with the disk fingerprint
+    /// refreshed (so the watcher doesn't immediately re-fire the same conflict).
+    @discardableResult
+    public func applyConflictResolution(
+        _ text: String, forTabID id: UUID, diskMTime: Date?, diskSize: Int?
+    ) -> Bool {
+        guard var buf = editor.editorBuffers[id] else { return false }
+        buf.setText(text)
+        buf.refreshSavedFingerprint(diskMTime: diskMTime, diskSize: diskSize)
+        tabCoordinator.setEditorBuffer(buf, forTabID: id)
+        return true
+    }
+
     func startWatchingCurrentFile() {
         let url = currentURL
         // B9: idempotent — no-op if already watching the same URL.
