@@ -2142,6 +2142,18 @@ public final class DocumentModel: ObservableObject {
         tabs.selected?.categoryOverride != nil
     }
 
+    /// TSK-1319 — the dynamic content-specific menu for the active tab: its title
+    /// + the content actions (from `ContentActionMenu`, keyed on `currentCategory`).
+    /// nil when no tab is active or the content kind has no content menu. Each
+    /// action's verb dispatches through the existing `ScriptVerb` path. Host-
+    /// testable + agent-drivable; the live NSMenu build + per-tab-switch rebuild
+    /// are the AppKit/render tail.
+    public var activeContentMenu: (title: String, actions: [ContentActionMenu.Action])? {
+        guard let category = currentCategory,
+              let title = ContentActionMenu.menuTitle(for: category) else { return nil }
+        return (title, ContentActionMenu.actions(for: category))
+    }
+
     // openAsCategories / openAs / setCurrentCategoryOverride / defaultViewMode /
     // setDefaultViewMode / sniffCategory → DocumentModel+OpenAs.swift (TSK-1110 SRP slice).
 

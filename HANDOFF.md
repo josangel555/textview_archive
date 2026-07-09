@@ -20,18 +20,15 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-H: TSK-1171 3-way merge conflict-resolution stack → `review`** (host-only).
-  On top of the done diff3 MODEL (`ThreeWayMerge`), added the RESOLUTION half: `Resolution` enum
-  (ours/theirs/both/base/custom) + `Result.resolved(_:)`/`conflicts`; `ConflictResolutionModel`
-  (ObservableObject — per-conflict choice bookkeeping + derived resolvedText + resolveAllRemaining);
-  the 3-pane `ConflictResolutionView` (base/ours/theirs + segmented picker + Apply); `DocumentModel`
-  `beginConflictResolution`(base=originalText/ours=buffer/theirs=disk; nil if no conflict) +
-  `applyConflictResolution`(writes resolved text, kept-dirty). Model-complete + agent-drivable + host-
-  tested (ThreeWayMerge +6, ConflictResolutionModel +6, ExternalEditReconcileWiring +2). Mounting the
-  sheet from the DiskConflictBanner SPLIT → **TSK-1584**. Coherent with my prior 1269/1165 reconciler.
-- **PRIOR CH-G — 1488 interaction-profiler (`5a6c2452`, host); TSK-838 DOM-patch FLIP (`847b7921`,
-  owner-approved, VM-UAT GREEN this session) → `review`.** CH-G remaining (mostly VM): 891 Page-Up,
-  1047 (blocked live-val), 1180/1184/1185 traces — can now use the InteractionProfiler.
+- **THIS TICK — CH-H: TSK-1319 dynamic content-menu model → `review`** (host-only). `ContentActionMenu`
+  (ViewerCore) maps `FileCategory` → curated content actions (Markdown/Data/Code menus) each a real
+  script-verb token (cohesion-guarded) + `DocumentModel.activeContentMenu` (spec for the current tab,
+  follows Open-As override). Host pyramid: ContentActionMenuTests +8 (mapping + verb-cohesion teeth),
+  DocumentModelContentMenu +5 (accessor per category + override). Live dynamic NSMenu (build from spec +
+  tab-switch rebuild + capability filter; multi-menu-per-visible-content = 2nd slice) SPLIT → **TSK-1585**.
+- **PRIOR CH-H — 1171 3-way merge resolution stack (`f9127559`; sheet-mount→TSK-1584) → `review`.**
+- **PRIOR CH-G — 1488 interaction-profiler (`5a6c2452`); 838 DOM-patch FLIP (`847b7921`, owner-approved,
+  VM-UAT GREEN) → `review`.** CH-G remaining (mostly VM): 891, 1047 (blocked), 1180/1184/1185 traces.
 - **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS:** 1482 menu-audit (declarative-menu refactor OR VM),
   1191 git-history migration (render VM-val), 1205 spreadsheet-grid (render). Each = its OWN focused tick.
 - **PRIOR — CH-D/CH-E: 1203-core+1567 (`8253d8cb`); CH-C: 1505+1570-U2 (`62697ec1`); CH-D data-safety

@@ -112,6 +112,12 @@
   correct re-render.) This is now on by default; set `MDV_DOM_PATCH=0` to opt out.
 
 ### System work
+- **Dynamic content-menu model (TSK-1319).** `ContentActionMenu` maps a tab's `FileCategory` →
+  the content-specific actions a dedicated menu should offer (Markdown → lint/check-links/align/TOC/…;
+  Data → CSV summary/convert; Code → JSON tools), each referencing a real script-verb token (guarded
+  by a cohesion test), plus `DocumentModel.activeContentMenu` (the spec for the current tab). Host-tested
+  + agent-drivable; mounting the live dynamic NSMenu (rebuilt per tab-switch, capability-filtered) is the
+  AppKit/render tail (TSK-1585).
 - **3-way merge conflict-resolution stack (TSK-1171).** On top of the existing diff3 merge model,
   added the RESOLUTION half: `ThreeWayMerge.Resolution` (ours/theirs/both/base/custom) + `Result.resolved(_:)`
   (apply per-conflict choices → merged text), a `ConflictResolutionModel` (per-conflict choice bookkeeping
