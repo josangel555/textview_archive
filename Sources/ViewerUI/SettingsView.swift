@@ -559,12 +559,29 @@ public struct SettingsView: View {
         PreferencesStore(defaults: .standard).resetWindowState()
     }
 
+    /// TSK-1496 — the credential warn-badge treatment. 0 = warn badge (default),
+    /// 2 = off. Shared with `SecretWarningBanner` via the same defaults key.
+    @AppStorage(SecretDetector.treatmentDefaultsKey) private var secretTreatment: Int = 0
+
     private var privacySection: some View {
         section("Privacy & Permissions") {
             row("Full Disk Access") {
                 Button("Open System Settings…") { openFullDiskAccessSettings() }
             }
             Text("TextView reads files you open. Some locations (other apps' container folders, system paths) require Full Disk Access. Grant it in System Settings → Privacy & Security → Full Disk Access, then relaunch.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+            row("Secret detection") {
+                Picker("", selection: $secretTreatment) {
+                    Text("Warn badge").tag(0)
+                    Text("Off").tag(SecretBannerState.treatmentOff)
+                }
+                .labelsHidden()
+                .frame(width: 150)
+                .accessibilityIdentifier("mdv.settings.secretTreatment")
+            }
+            Text("Flags likely credentials (AWS/GitHub/Slack/GCP keys, PEM blocks, JWTs, high-entropy assignments) in the open document with a non-modal badge. Values are shown redacted; TextView never modifies the file. Not a guarantee — see the badge details for what it does and doesn't catch.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)

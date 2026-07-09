@@ -56,6 +56,7 @@ scene_expect() {
     outline) echo "mdv.markdownOutline" ;;
     favorites) echo "mdv.terminalFavorites.editor" ;;
     monitor-rootmissing|monitor-sessions) echo "mdv.claudeMonitor" ;;
+    secrets) echo "mdv.secretBanner" ;;
     *) echo "" ;;
   esac
 }

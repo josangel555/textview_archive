@@ -197,6 +197,24 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_secretsScene_opensADocWithDetectableSecrets() {
+        // TSK-1496 render slice: the 'secrets' scene opens a config with an AWS
+        // key + GitHub token so SecretWarningBanner flags them. Pins the scene→
+        // model contract: a config.env tab is selected, the treatment default is
+        // reset to warn (0), and the terminal is closed. The banner render +
+        // count are the VM pixel assertion; the fixture's finding count is pinned
+        // by SecretBannerStateTests.
+        let model = makeModel()
+        let status = apply("secrets", model)
+        XCTAssertEqual(model.tabs.tabs.count, 1, "one config tab open")
+        XCTAssertEqual(model.tabs.selected?.url?.lastPathComponent, "config.env",
+                       "the selected tab is the secrets fixture")
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: SecretDetector.treatmentDefaultsKey), 0,
+                       "the treatment is reset to warn so the badge shows")
+        XCTAssertFalse(model.terminalPane.isOpen, "no restored terminal over the editor")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

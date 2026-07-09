@@ -2,6 +2,14 @@
 
 ## 2026-07-09
 
+### Security
+- **Credential warn-badge.** When a document you open contains a likely secret
+  (AWS/GitHub/Slack/GCP keys, PEM private-key blocks, JWTs, high-entropy
+  `secret=`/`token=` assignments), a non-modal badge now appears above the editor —
+  "N potential secrets detected" with a Details popover listing each one **redacted**
+  (line + type, never the raw value). TextView never modifies the file. On by default;
+  switch it off under Settings ▸ Privacy & Permissions ▸ Secret detection.
+
 ### Added
 - **Markdown "Contents" outline panel in the sidebar.** Opening a markdown file now shows
   a live heading outline in the sidebar — a filterable list you can click to jump to a

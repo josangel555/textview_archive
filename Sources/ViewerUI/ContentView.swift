@@ -771,6 +771,14 @@ public struct ContentView: View {
                     }
                     .zIndex(1)
                 }
+                // TSK-1496: credential warn-badge — the shipped SecretDetector,
+                // surfaced. Only the ACTIVE tab scans (the banner self-hides when
+                // clean / treatment off). Its own compositingGroup + zIndex keep
+                // it above the CM6 WebView (the LESSONS occlusion rule).
+                if isActive {
+                    SecretWarningBanner(contents: file.contents)
+                        .zIndex(1)
+                }
                 loadedView(for: file, tab: tab, isActive: isActive)
                     .zIndex(0)
             }

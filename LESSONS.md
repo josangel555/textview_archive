@@ -5,6 +5,23 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Session 2026-07-09 — SwiftUI `.task` on a conditionally-empty view never fires
+
+- **`.task` / `.onAppear` attached to a `Group { if cond {…} }` that starts FALSE does not
+  run** — an empty Group renders as `EmptyView`, and modifiers on EmptyView are elided, so the
+  async work never schedules. Live miss: the TSK-1496 secret warn-badge computed its findings in
+  a `.task(id: contents)` on `Group { if shouldShow { banner } }`; on the first (clean) render
+  the Group was empty, the scan never ran, and the badge stayed hidden ON THE VM despite the
+  detector + wiring being correct (the dist even `strings`-grepped positive for the AX id). Fix:
+  anchor the async work on an ALWAYS-PRESENT concrete view — a zero-height `Color.clear` inside a
+  `ZStack`, with the conditional banner as a sibling. `Color.clear` is a real view (not
+  EmptyView) even at zero size, so its `.task` fires. Rule: never hang load-bearing
+  `.task`/`.onAppear` off a view that can render as EmptyView; give it a stable host.
+- **A present-in-tree AX id is NOT proof of on-screen visibility** (reinforced): the secret
+  banner's `mdv.secretBanner` id was absent from the ax-reader anyway (doc-content overlays +
+  `.sheet` content don't surface — only sidebar panels, separate-window roots, and overlays/menus
+  do), so the ONLY signal was the pixels. Always READ the PNG for content/overlay tails.
+
 ## Session 2026-07-02 (late) — VM webview lane: boot cured, channel-death residual (M3.S1b)
 
 - **Window-hosting a WKWebView in the VM GUI-lane tests breaks BOOT** (runtime never posts

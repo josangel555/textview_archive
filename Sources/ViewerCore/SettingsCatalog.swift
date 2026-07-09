@@ -76,6 +76,9 @@ public enum SettingsCatalog {
         Item(id: "mdv.settings.fullDiskAccess", title: "Full Disk Access",
              description: "Some locations need Full Disk Access; grant it in System Settings → Privacy & Security.",
              section: .general, kind: .info),
+        Item(id: "mdv.settings.secretTreatment", title: "Secret Detection",
+             description: "Flag likely credentials in the open document with a non-modal warn badge (values shown redacted).",
+             section: .general, kind: .picker),
         // Appearance
         Item(id: "mdv.settings.theme", title: "Theme",
              description: "Color theme for source and editor views; Follow System tracks light/dark.",

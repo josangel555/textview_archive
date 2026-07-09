@@ -36,14 +36,19 @@ crash the frontend). If the dep cache is ever damaged: ship it from host — `rs
 .build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/` +
 `swift package resolve` (or build `--disable-automatic-resolution`).
 
-CURRENT (2026-07-09): ★ VM UAT PIPELINE PROVEN. 7 render tails UAT-VERIFIED ON-SCREEN via the
+CURRENT (2026-07-09): ★ VM UAT PIPELINE PROVEN. 8 render tails UAT-VERIFIED ON-SCREEN via the
 pyramid (all at `review` w/ screenshot evidence, owner validates): TSK-1474 video fallback ·
 TSK-1469 archive browser · TSK-1440 notebook OUTPUTS · TSK-1470 dep-graph CANVAS · TSK-1438
-markdown OUTLINE panel (MOUNTED) · TSK-1475 terminal FAVORITES editor (MOUNTED behind "Manage
-Favorites…") · TSK-1477 Claude MONITOR (empty-state message + session-list render, via the new
-launch-mode UAT lane). Two (1438, 1475) crossed built→USABLE. Offline build (TSK-1568) + window
-capture (TSK-1569) SOLVED. Committed UAT scenes: video-unsupported, archive-preview, notebook,
-depgraph, outline, favorites; + aqua-runner launch-mode `monitor-*` scenes.
+markdown OUTLINE panel (MOUNTED) · TSK-1475 terminal FAVORITES editor (MOUNTED) · TSK-1477 Claude
+MONITOR (launch-mode UAT lane) · TSK-1496 secret WARN-BADGE (BUILT the render slice: wired the
+shipped-but-inert SecretDetector into a non-modal banner above the editor, behind mdv.secretTreatment).
+Two (1438, 1475) crossed built→USABLE; 1496 is a security render-slice BUILD. Offline build
+(TSK-1568) + window capture (TSK-1569) SOLVED. Committed UAT scenes: video-unsupported,
+archive-preview, notebook, depgraph, outline, favorites, secrets; + aqua-runner `monitor-*` scenes.
+GOTCHA (2026-07-09): `.task`/`.onAppear` on a conditionally-EMPTY Group renders as EmptyView and
+the modifier NEVER FIRES — anchor async work (scans, loads) on an always-present Color.clear, not
+a `Group { if x {…} }`. This hid the secret badge on the first render until fixed (ZStack + a
+zero-height Color.clear owning the .task).
 NEXT tails to UAT: plugins(1478, Settings→Plugins nav — Settings is a SwiftUI Settings scene,
 hard to drive to a tab; needs a settings-tab override or a mount). MOUNT follow-ons filed:
 TSK-1570 (outline scroll-highlight+preview-jump), TSK-1571 (mount the Monitor as a menu item —

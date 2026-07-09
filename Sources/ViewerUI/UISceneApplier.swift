@@ -253,6 +253,30 @@ public enum UISceneApplier {
             return "ui-scene: applied 'favorites' show=\(model.showTerminalFavoritesEditor) vm=\(model.terminalFavoritesEditorVM != nil) count=\(store.all.count)"
         }
 
+        // Secret warn-badge scene (TSK-1496 render slice): open a doc with an AWS
+        // key + a GitHub token (both high-precision SecretDetector shapes) plus a
+        // benign UUID (false-positive-guard negative). With the default treatment
+        // (warn), SecretWarningBanner flags the two secrets and leaves the UUID
+        // quiet. Reset the treatment default to warn (0) in case a prior run left
+        // it off. VM harness reads the banner pixels (values stay redacted).
+        if scene == "secrets" {
+            UserDefaults.standard.set(0, forKey: SecretDetector.treatmentDefaultsKey)
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("config.env")
+            let body = """
+            # Example config (fixture — not real credentials)
+            AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+            GH_PAT=ghp_1234567890abcdefghijklmnopqrstuvwxyz12
+            NORMAL_UUID=550e8400-e29b-41d4-a716-446655440000
+            """
+            try? body.write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.open(url: f)
+            return "ui-scene: applied 'secrets' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —

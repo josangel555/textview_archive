@@ -220,6 +220,11 @@ public enum UISceneRegistry {
             id: "favorites",
             fixture: .none,
             summary: "Seeded favorites + the Manage Favorites… editor sheet open → TerminalFavoritesEditor lists them in order (TSK-1475)"),
+        SceneSpec(
+            id: "secrets",
+            fixture: .throwawaySource(name: "config.env"),
+            closesExistingTabs: true,
+            summary: "Doc with an AWS key + GitHub token (+ a benign UUID) → the SecretWarningBanner flags the secrets, UUID stays quiet (TSK-1496)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one
