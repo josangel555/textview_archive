@@ -36,15 +36,15 @@ crash the frontend). If the dep cache is ever damaged: ship it from host — `rs
 .build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/` +
 `swift package resolve` (or build `--disable-automatic-resolution`).
 
-CURRENT (2026-07-09): ★ VM UAT PIPELINE PROVEN. Render tails UAT-VERIFIED ON-SCREEN via the
-pyramid: TSK-1474 video fallback (VideoFallbackCard, not a black AVPlayerView) + TSK-1469 archive
-browser (entry list readme.txt/data.csv + master/detail). Both at `review` w/ screenshot evidence
-(owner validates). Offline build (TSK-1568, MDV_SWIFT_OFFLINE=1) + window capture (TSK-1569,
-vm-uitest.sh window-id) both SOLVED. Committed UAT scenes: video-unsupported, archive-preview.
-NEXT tails to UAT (add a scene each per the recipe below): monitor(1477, --claude-monitor or a
-scene), plugins(1478, Settings→Plugins sub-page nav), dep-graph(1470, project graph), outline
-(1438)/favorites(1475) need mounting first, notebook(1440) behind NotebookGate. Reap leftover
-root-owned VM test instances with sudo kill (not pkill-9).
+CURRENT (2026-07-09): ★ VM UAT PIPELINE PROVEN. 3 render tails UAT-VERIFIED ON-SCREEN via the
+pyramid (all at `review` w/ screenshot evidence, owner validates): TSK-1474 video fallback
+(VideoFallbackCard) · TSK-1469 archive browser (entry list + master/detail) · TSK-1440 notebook
+OUTPUTS (wired outputs into NotebookCellRow — was source-only — + verified the stream output
+renders). Offline build (TSK-1568, MDV_SWIFT_OFFLINE=1) + window capture (TSK-1569, vm-uitest.sh
+window-id) SOLVED. Committed UAT scenes: video-unsupported, archive-preview, notebook.
+NEXT tails to UAT (scene each, per recipe): monitor(1477, --claude-monitor mode), plugins(1478,
+Settings→Plugins nav), dep-graph(1470, doc-action over a folder), outline(1438)/favorites(1475)
+need MOUNTING first. Reap leftover root-owned VM test instances with sudo kill (not pkill-9).
 
 PER-RENDER-TAIL UAT RECIPE (proven): (1) add a scene to UISceneRegistry.staticScenes + an inline
 handler in UISceneApplier that reaches the surface; (2) rebuild dist on the VM — use the CORRECT
