@@ -26,6 +26,18 @@ extension DocumentModel {
     /// True when "Convert Line Endings" can act — there's an active text file.
     public var canConvertActiveFileLineEnding: Bool { activeTextWithEncoding != nil }
 
+    /// TSK-1480 — the active file's detected format facets (encoding / line
+    /// ending / indent) for the Convert submenus' current-value markers, so the
+    /// user isn't converting blind. Reads the live editor buffer if present.
+    /// nil for a non-text tab. Computed on menu-open (cold path), not the body.
+    public var activeFileFormatFacets:
+        (encoding: String.Encoding, lineEnding: LineEnding, indent: IndentStyleDetector.Style)? {
+        guard let a = activeTextWithEncoding else { return nil }
+        return (a.encoding,
+                LineEndingDetector.detect(in: a.text),
+                IndentStyleDetector.detect(in: a.text))
+    }
+
     /// TSK-675 — convert the active file's LEADING indentation between tabs and
     /// spaces, using the editor's configured indent width. Leading whitespace
     /// only (alignment after the first non-space is untouched); line endings +

@@ -25,6 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var languageMenu: NSMenu?
     private var windowMenu: NSMenu?
     private var terminalFavoritesMenu: NSMenu?   // TSK-769
+    // TSK-1480: the Convert submenus + the Indent submenu's current-value header,
+    // retained so `menuNeedsUpdate` can mark the active file's current format.
+    private var convertEncodingMenu: NSMenu?
+    private var convertLineEndingMenu: NSMenu?
+    private var convertIndentMenu: NSMenu?
+    private var convertIndentHeaderItem: NSMenuItem?
     /// TSK-754: plugin-contributed menu items, keyed by their menu-item
     /// tag, so the single `invokePluginMenuItem` selector can dispatch to
     /// the right `Entry.invoke` closure. Rebuilt whenever the Plugins
@@ -1269,7 +1275,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             rebuildLanguageMenu(menu)
         } else if menu === terminalFavoritesMenu {
             rebuildTerminalFavoritesMenu(menu)
+        } else if menu === convertEncodingMenu || menu === convertLineEndingMenu
+                    || menu === convertIndentMenu {
+            markCurrentFileFormat()
         }
+    }
+
+    /// TSK-1480: on Convert-submenu open, mark the active file's CURRENT format
+    /// so the user sees what the file IS before converting blind — a check-mark
+    /// on the current encoding + line-ending choice, and a "Current: <indent>"
+    /// header on the direction-based Indent submenu. Reads the detected facets
+    /// off the active tab (cold menu-open path). Pure resolution is host-tested
+    /// (FileFormatMenuStateTests); this applies it to the NSMenuItems.
+    private func markCurrentFileFormat() {
+        let facets = model.activeFileFormatFacets
+        let resolution = facets.map {
+            FileFormatMenuState.resolve(
+                encoding: $0.encoding,
+                lineEnding: $0.lineEnding,
+                indent: $0.indent,
+                encodingChoices: AppDelegate.encodingChoices.map(\.encoding),
+                lineEndingChoices: AppDelegate.lineEndingChoices.map(\.ending))
+        }
+        if let menu = convertEncodingMenu {
+            for item in menu.items { item.state = .off }
+            if let i = resolution?.checkedEncodingIndex, menu.items.indices.contains(i) {
+                menu.items[i].state = .on
+            }
+        }
+        if let menu = convertLineEndingMenu {
+            for item in menu.items { item.state = .off }
+            if let i = resolution?.checkedLineEndingIndex, menu.items.indices.contains(i) {
+                menu.items[i].state = .on
+            }
+        }
+        convertIndentHeaderItem?.title = resolution?.indentHeader ?? "Current: —"
     }
 
     /// Rebuild the "Terminal Favorites" submenu (TSK-769) from the user's store.
@@ -2592,6 +2632,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             mi.tag = i
             convertMenu.addItem(mi)
         }
+        // TSK-1480: mark the active file's CURRENT encoding on open (check-mark).
+        convertMenu.delegate = self
+        convertEncodingMenu = convertMenu
         convertItem.submenu = convertMenu
         formatMenu.addItem(convertItem)
         // TSK-675: normalize the active file's line endings (LF/CRLF/CR). Tag =
@@ -2605,6 +2648,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             mi.tag = i
             eolMenu.addItem(mi)
         }
+        // TSK-1480: mark the active file's CURRENT line ending on open.
+        eolMenu.delegate = self
+        convertLineEndingMenu = eolMenu
         eolItem.submenu = eolMenu
         formatMenu.addItem(eolItem)
         // TSK-675: whitespace cleanup on the active file (line endings preserved).
@@ -2620,6 +2666,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // editor's indent width). Enabled for any active text file.
         let indentItem = NSMenuItem(title: "Convert Indentation", action: nil, keyEquivalent: "")
         let indentMenu = NSMenu(title: "Convert Indentation")
+        // TSK-1480: the Indent submenu offers DIRECTIONS (not values), so a
+        // check-mark can't express "current" — instead a disabled header row
+        // shows the current indent (updated on open) so the user isn't blind.
+        let indentHeader = NSMenuItem(title: "Current: —", action: nil, keyEquivalent: "")
+        indentHeader.isEnabled = false
+        indentMenu.addItem(indentHeader)
+        indentMenu.addItem(.separator())
+        convertIndentHeaderItem = indentHeader
         let toSpacesItem = NSMenuItem(title: "Tabs → Spaces",
                                       action: #selector(convertIndentToSpaces(_:)), keyEquivalent: "")
         toSpacesItem.target = self
@@ -2628,6 +2682,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                     action: #selector(convertIndentToTabs(_:)), keyEquivalent: "")
         toTabsItem.target = self
         indentMenu.addItem(toTabsItem)
+        indentMenu.delegate = self
+        convertIndentMenu = indentMenu
         indentItem.submenu = indentMenu
         formatMenu.addItem(indentItem)
         // TSK-675: insert/refresh a Markdown table of contents from the file's

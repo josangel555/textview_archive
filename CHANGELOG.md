@@ -10,6 +10,12 @@
   (line + type, never the raw value). TextView never modifies the file. On by default;
   switch it off under Settings ▸ Privacy & Permissions ▸ Secret detection.
 
+### Changed
+- **Convert menus show the current value.** Format ▸ Convert Encoding / Convert Line
+  Endings now check-mark what the open file currently is, and Convert Indentation shows a
+  "Current: …" header — so you're no longer converting blind. (The status bar already
+  shows encoding · EOL · indent.)
+
 ### Added
 - **Markdown "Contents" outline panel in the sidebar.** Opening a markdown file now shows
   a live heading outline in the sidebar — a filterable list you can click to jump to a

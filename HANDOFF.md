@@ -49,6 +49,13 @@ GOTCHA (2026-07-09): `.task`/`.onAppear` on a conditionally-EMPTY Group renders 
 the modifier NEVER FIRES — anchor async work (scans, loads) on an always-present Color.clear, not
 a `Group { if x {…} }`. This hid the secret badge on the first render until fixed (ZStack + a
 zero-height Color.clear owning the .task).
+
+TSK-1480 (format menus, review — commit pending): the Convert Encoding/Line-Endings submenus now
+check-mark the active file's current value + Convert Indentation shows a "Current: <indent>"
+header (menuNeedsUpdate → FileFormatMenuState.resolve, host-tested 5/5). The footer ALREADY showed
+enc/EOL/indent (existing StatusBar chips) so that half was pre-met. ON-SCREEN submenu check-mark is
+UNVERIFIED — the aqua-runner captures windows, not menu-drill navigation, so submenu-checkmark UAT
+is impractical; the logic is host-tested with teeth + the footer shows the state on-screen.
 NEXT tails to UAT: plugins(1478, Settings→Plugins nav — Settings is a SwiftUI Settings scene,
 hard to drive to a tab; needs a settings-tab override or a mount). MOUNT follow-ons filed:
 TSK-1570 (outline scroll-highlight+preview-jump), TSK-1571 (mount the Monitor as a menu item —
