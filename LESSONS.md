@@ -3911,3 +3911,16 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   liveness check, NOT a fresh-render validator.
 - **The UTM VM clock is skewed ~3 days behind real time (2026-07-09: VM said Jul-6).** So file
   mtimes on the VM read old; judge dist freshness by `git log` correlation, not the VM's clock.
+
+- **CONSULT memory BEFORE VM build ops — I ignored my own note and caused an outage (2026-07-09).**
+  reference_vm_memory_pressure_build_cache explicitly says "NEVER rm -rf .build on the VM" (it's
+  OFFLINE — no github; SPM deps live in .build/{checkouts,repositories}; a wipe → refetch →
+  "couldn't connect to github" build failure) AND gives the recovery. I `rm -rf .build`'d anyway
+  chasing a mixed-toolchain cache, breaking the offline build, then rediscovered the documented
+  fix the hard way. Also: the VM is **6 GiB** (bumped 2026-06-13), NOT 4 — my "4GiB/OOM-risk"
+  blocking was a stale assumption from an old ssh-config comment. LESSONS: (1) the VM build lane
+  is robust — do NOT treat it as scary/blocked; run it. (2) never rm -rf .build on the VM; to fix
+  a toolchain-mixed cache, ship deps from host (`rsync -az .build/checkouts .build/repositories
+  Package.resolved macOS15:markdown_viewer/.build/`) + `swift package resolve`, or build with
+  `--disable-automatic-resolution`. (3) build dist with the 6.3 toolchain (default 6.1.2 can
+  crash the frontend).

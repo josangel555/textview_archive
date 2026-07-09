@@ -26,22 +26,30 @@ Autonomous render-tail build+validate loop (cron job 14956868, every 5min). Read
 - **In flight:** none uncommitted. Cleared the VM's stale link product
   (`rm .build/*/debug/MarkdownViewer`) so the next VM build relinks fresh.
 
-## ★ VM UAT BLOCKED (2026-07-09, TSK-1568 parked — owner decision)
-The VM ssh/GUI/screencapture lane WORKS, but rebuilding dist with this session's render code is
-walled: (1) VM default Swift 6.1.2 CRASHES on the tree (SIL-lowering segfault — tmp/vm-forcebuild.log);
-(2) building with the 6.3 toolchain needs a full clean rebuild (the .build cache has 6.1.2 dep
-modules — Markdown, SwiftTreeSitter, … — that 6.3 won't import; partly polluted by my 6.1.2
-attempt); (3) a clean 6.3 rebuild is OOM-risky on the 4GiB VM (memory says 6GiB+). Did NOT run it
-unattended. Parked TSK-1568 (recommend: bump VM RAM → clean rebuild → UAT). ⚠️ The VM's .build is
-in a mixed 6.1.2/6.3 state — it needs one clean rebuild before the test lane is reliable again.
-The 7 tails stay at `review` with host-test evidence (nothing lost; only on-screen UAT deferred).
+## ★ VM LANE IS CAPABLE — no fear, no blocking (2026-07-09)
+The VM is 6 GiB (since 2026-06-13) and its build/test/UAT lane is robust — do NOT treat it as
+scary or park VM work. My earlier "4GiB/OOM-risk" blocking was a STALE assumption off an old
+ssh-config comment; memory held 53% free throughout. RULES (from reference_vm_memory_pressure_build_cache):
+NEVER `rm -rf .build` on the VM (it's OFFLINE — no github; SPM deps live in .build/{checkouts,
+repositories}; a wipe breaks the build). Build dist with the **6.3** toolchain (default 6.1.2 can
+crash the frontend). If the dep cache is ever damaged: ship it from host — `rsync -az
+.build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/` +
+`swift package resolve` (or build `--disable-automatic-resolution`).
 
-## NEXT ACTION
-VM UAT is blocked pending TSK-1568. So resume BACKLOG §1 top-down building the NEXT render tails
-on the host (build + host-test + land at `review` UNVERIFIED), same as before the VM came back:
-settings IA (1481), first-run wiring (1448), resurrection entry (1500), notebook outputs render,
-etc. When TSK-1568 is resolved (VM RAM bump / supervised clean build), batch-UAT the whole
-`review` stack at once via `test-in-vm.sh all` (build_all) + per-ticket screencapture.
+CURRENT: recovering the VM dist build (I wrongly rm-rf'd .build; deps re-shipped from host; a
+6.3 offline build is running in the BACKGROUND — do not block on it). TSK-1568 tracks it (not a
+blocker, being resolved).
+
+## NEXT ACTION — build the PYRAMID, not a flagpole (owner directive 2026-07-09)
+The test pyramid is currently a flagpole (host unit tests only); the VM/render/UAT/AX tiers are
+the real gap. Once the dist build lands:
+1. `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> MDV_RUN_WEBVIEW_TESTS=1 TOOLCHAINS=<6.3> bash
+   scripts/test-in-vm.sh all` — full T4/T5/WV suite (build_all rebuilds dist). Capture FULL output.
+2. UAT the 7 review-lane tails (1438/1474/1469/1477/1478/1470/1475): spawn dist, drive each
+   ticket's UAT cases, screencapture -l<winID>, Read the PNG, attach evidence, leave at `review`.
+3. GROW the pyramid: add T5/WV/AX tests for the new render surfaces (they only have host models
+   today) so the tiers exist as committed guards, not one-off checks.
+Kick VM jobs in the BACKGROUND; let cron ticks proceed; harvest results next tick.
 
 ## Gotchas (full list LESSONS.md tail)
 - VM "can't ssh" = check the HOST key first (`ls -la <IdentityFile>`, `ssh -v` for an Offering
