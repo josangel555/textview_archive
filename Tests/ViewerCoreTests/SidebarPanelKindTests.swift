@@ -30,6 +30,8 @@ final class SidebarPanelKindTests: XCTestCase {
                        "MarkdownViewer.sidebar.claudeTimeline.height")
         XCTAssertEqual(SidebarPanelKind.lspOutline.appStorageKey,
                        "MarkdownViewer.sidebar.lspOutline.height")
+        XCTAssertEqual(SidebarPanelKind.markdownOutline.appStorageKey,
+                       "MarkdownViewer.sidebar.markdownOutline.height")
         XCTAssertEqual(SidebarPanelKind.lspNavigation.appStorageKey,
                        "MarkdownViewer.sidebar.lspNavigation.height")
         XCTAssertEqual(SidebarPanelKind.lspProblems.appStorageKey,
@@ -121,6 +123,7 @@ final class SidebarPanelKindTests: XCTestCase {
                 .git,
                 .claudeTimeline,
                 .lspOutline,
+                .markdownOutline,
                 .lspNavigation,
                 .lspProblems,
                 .recentlyOpened,

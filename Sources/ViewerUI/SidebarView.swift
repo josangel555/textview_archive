@@ -110,6 +110,8 @@ struct SidebarView: View {
     private var claudeHeight: Double = Double(SidebarPanelKind.claudeTimeline.defaultHeight)
     @AppStorage(SidebarPanelKind.lspOutline.appStorageKey)
     private var lspHeight: Double = Double(SidebarPanelKind.lspOutline.defaultHeight)
+    @AppStorage(SidebarPanelKind.markdownOutline.appStorageKey)
+    private var markdownOutlineHeight: Double = Double(SidebarPanelKind.markdownOutline.defaultHeight)
     @AppStorage(SidebarPanelKind.lspNavigation.appStorageKey)
     private var lspNavHeight: Double = Double(SidebarPanelKind.lspNavigation.defaultHeight)
     @AppStorage(SidebarPanelKind.lspProblems.appStorageKey)
@@ -427,7 +429,8 @@ struct SidebarView: View {
                 LSPLanguageRegistry.default.language(for: $0)
             } != nil,
             claudeHasTranscripts: sidebar.claudeHasTranscripts,
-            hasRecents: !model.recents.isEmpty
+            hasRecents: !model.recents.isEmpty,
+            hasMarkdownFile: EditorCoordinator.isMarkdownProse(url: model.currentURL)
         )
     }
 
@@ -446,7 +449,7 @@ struct SidebarView: View {
         let presence = SidebarDataPresence.evaluate(presenceInputs)
         let accordionOrder: [SidebarPanelKind] = [
             .bookmarks, .searchAnywhere, .git, .claudeTimeline,
-            .lspOutline, .lspNavigation, .lspProblems, .recentlyOpened,
+            .lspOutline, .markdownOutline, .lspNavigation, .lspProblems, .recentlyOpened,
         ]
         return accordionOrder.map { kind in
             // UX-E: a panel moved off the LEFT rail (docked to the right /
@@ -519,7 +522,7 @@ struct SidebarView: View {
     private var accordionStoredHeights: [CGFloat] {
         [
             bookmarksHeight, searchHeight, gitHeight, claudeHeight,
-            lspHeight, lspNavHeight, lspProblemsHeight, recentsHeight,
+            lspHeight, markdownOutlineHeight, lspNavHeight, lspProblemsHeight, recentsHeight,
         ].map { CGFloat($0) }
     }
 
@@ -533,6 +536,7 @@ struct SidebarView: View {
         case .git:            return gitHeight
         case .claudeTimeline: return claudeHeight
         case .lspOutline:     return lspHeight
+        case .markdownOutline: return markdownOutlineHeight
         case .lspNavigation:  return lspNavHeight
         case .lspProblems:    return lspProblemsHeight
         case .recentlyOpened: return recentsHeight
@@ -552,6 +556,7 @@ struct SidebarView: View {
         case .git:            return heightBinding($gitHeight)
         case .claudeTimeline: return heightBinding($claudeHeight)
         case .lspOutline:     return heightBinding($lspHeight)
+        case .markdownOutline: return heightBinding($markdownOutlineHeight)
         case .lspNavigation:  return heightBinding($lspNavHeight)
         case .lspProblems:    return heightBinding($lspProblemsHeight)
         case .recentlyOpened: return heightBinding($recentsHeight)
@@ -1747,6 +1752,49 @@ struct LSPOutlineWrapper: View {
             return
         }
         outline.setFile(url, text: file.contents)
+    }
+}
+
+/// Sidebar wrapper for the Markdown outline section (TSK-1438). Owns the
+/// `MarkdownOutlineModel` so it survives body re-evals + reacts to the active
+/// tab changing. Rebuilds the heading list from the active document's source;
+/// self-gates to markdown files (renders "No headings." otherwise, which
+/// `panelVisibility` already keeps hidden for non-markdown via presence).
+/// Mirrors `LSPOutlineWrapper`.
+@MainActor
+struct MarkdownOutlineWrapper: View {
+    @ObservedObject var model: DocumentModel
+    @StateObject private var outline = MarkdownOutlineModel()
+
+    var body: some View {
+        MarkdownOutlineSection(
+            model: outline,
+            onJump: { line in
+                // Make the outline's document the active tab, then scroll its
+                // source view to the heading's 1-based line (mirrors the LSP
+                // outline jump; preview-mode scroll-on-jump is a follow-on).
+                if let url = model.currentURL, !model.selectTab(forURL: url) {
+                    model.openPath(url)
+                }
+                model.scrollSource(toLine: line)
+            },
+            uiSize: model.uiSize
+        )
+        .onAppear { refresh() }
+        .onChange(of: model.currentURL) { _, _ in refresh() }
+        // Rebuild when the async read completes (.loading → .loaded): the URL
+        // is set before the contents arrive (same race LSPOutlineWrapper fixed).
+        .onChange(of: model.currentState) { _, _ in refresh() }
+    }
+
+    private func refresh() {
+        guard let url = model.currentURL,
+              EditorCoordinator.isMarkdownProse(url: url),
+              case .loaded(let file) = model.currentState else {
+            outline.rebuild(fromSource: "")
+            return
+        }
+        outline.rebuild(fromSource: file.contents)
     }
 }
 

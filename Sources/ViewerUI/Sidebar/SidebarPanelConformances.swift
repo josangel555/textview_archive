@@ -40,6 +40,10 @@ extension LSPOutlineSection: SidebarPanelProtocol {
     public static var kind: SidebarPanelKind { .lspOutline }
 }
 
+extension MarkdownOutlineSection: SidebarPanelProtocol {
+    static var kind: SidebarPanelKind { .markdownOutline }
+}
+
 extension LSPNavigationPanel: SidebarPanelProtocol {
     public static var kind: SidebarPanelKind { .lspNavigation }
 }

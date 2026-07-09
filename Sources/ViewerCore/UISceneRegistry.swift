@@ -211,6 +211,11 @@ public enum UISceneRegistry {
             fixture: .folderRoot,
             closesExistingTabs: true,
             summary: "Import-dependency graph over a 3-file folder (Alpha→Beta→Gamma) → DependencyGraphView hosted tab (TSK-1470)"),
+        SceneSpec(
+            id: "outline",
+            fixture: .throwawaySource(name: "outline-doc.md"),
+            closesExistingTabs: true,
+            summary: "Markdown doc with ≥6 headings + sidebar open → the mounted .markdownOutline panel lists them (TSK-1438)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

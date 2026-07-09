@@ -96,6 +96,20 @@ final class SidebarDataPresenceTests: XCTestCase {
         XCTAssertEqual(p[.lspOutline], false)
     }
 
+    // MARK: - markdown outline (per-FILE, not root-gated) — TSK-1438
+
+    func test_markdownOutline_gatedOnMarkdownFile_notRoot() {
+        // Present whenever the active file is markdown, EVEN with no folder open
+        // (the outline is per-document structure, not a folder view).
+        XCTAssertEqual(presence(SidebarDataPresence.Inputs(hasMarkdownFile: true))[.markdownOutline], true)
+        // Absent for a non-markdown file, even with a root + LSP language.
+        XCTAssertEqual(
+            presence(SidebarDataPresence.Inputs(hasRoot: true, hasLSPLanguage: true))[.markdownOutline],
+            false)
+        // A root alone (no markdown file) does not summon it.
+        XCTAssertEqual(presence(SidebarDataPresence.Inputs(hasRoot: true))[.markdownOutline], false)
+    }
+
     // MARK: - root + claude transcripts
 
     func test_rootAndClaude_timelinePresent() {

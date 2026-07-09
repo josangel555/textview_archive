@@ -2,6 +2,11 @@
 
 ## 2026-07-09
 
+### Added
+- **Markdown "Contents" outline panel in the sidebar.** Opening a markdown file now shows
+  a live heading outline in the sidebar — a filterable list you can click to jump to a
+  section. It sits below the code Outline panel and appears only for markdown documents.
+
 ### System work
 - **Render-tail on-screen UAT lane (VM pyramid).** Built deterministic `MDV_UI_SCENE`
   scenes that drive each built-but-unreachable render tail to its exact on-screen state,

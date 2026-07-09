@@ -60,6 +60,9 @@ enum SidebarPanelBody {
             LSPOutlineWrapper(model: model,
                               forcedShown: panelLayout.override(for: .lspOutline) == .shown)
                 .environment(\.sidebarSectionBodyHeight, bodyHeight)
+        case .markdownOutline:
+            MarkdownOutlineWrapper(model: model)
+                .environment(\.sidebarSectionBodyHeight, bodyHeight)
         case .lspNavigation:
             LSPNavigationPanel(
                 store: model.lspNavigation,

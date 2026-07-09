@@ -20,6 +20,10 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
     case git
     case claudeTimeline
     case lspOutline
+    /// Live Markdown heading outline for the active document (TSK-1438).
+    /// Distinct from `.lspOutline` (code symbols) — this is prose-heading
+    /// structure, shown when the active file is markdown.
+    case markdownOutline
     /// References / workspace-symbol panel (LSP Phase B).
     case lspNavigation
     /// "Problems" panel — server-pushed LSP diagnostics (LSP Phase E).
@@ -44,6 +48,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .git:            return "MarkdownViewer.sidebar.gitPanel.height"
         case .claudeTimeline: return "MarkdownViewer.sidebar.claudeTimeline.height"
         case .lspOutline:     return "MarkdownViewer.sidebar.lspOutline.height"
+        case .markdownOutline: return "MarkdownViewer.sidebar.markdownOutline.height"
         case .lspNavigation:  return "MarkdownViewer.sidebar.lspNavigation.height"
         case .lspProblems:    return "MarkdownViewer.sidebar.lspProblems.height"
         // Fresh, stable key (pinned by SidebarPanelHeightsTests). Derived
@@ -110,6 +115,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .git:            return "Git"
         case .claudeTimeline: return "Claude"
         case .lspOutline:     return "Outline"
+        case .markdownOutline: return "Contents"
         case .lspNavigation:  return "References"
         case .lspProblems:    return "Problems"
         case .recentlyOpened: return "Recent"
@@ -128,6 +134,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .git:            return "arrow.triangle.branch"
         case .claudeTimeline: return "sparkles"
         case .lspOutline:     return "list.bullet.indent"
+        case .markdownOutline: return "number"
         case .lspNavigation:  return "arrow.triangle.turn.up.right.circle"
         case .lspProblems:    return "exclamationmark.triangle"
         case .recentlyOpened: return "clock.arrow.circlepath"

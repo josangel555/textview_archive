@@ -24,6 +24,7 @@ public enum SidebarPanelRegistry {
         .git,
         .claudeTimeline,
         .lspOutline,
+        .markdownOutline,
         .lspNavigation,
         .lspProblems,
         .recentlyOpened,

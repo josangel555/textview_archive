@@ -53,6 +53,7 @@ scene_expect() {
     archive-preview) echo "mdv.archive.browser" ;;
     notebook) echo "mdv.notebook.cellList" ;;
     depgraph) echo "mdv.depgraph.canvas" ;;
+    outline) echo "mdv.markdownOutline" ;;
     *) echo "" ;;
   esac
 }

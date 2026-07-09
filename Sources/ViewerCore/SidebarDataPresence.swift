@@ -21,19 +21,25 @@ public enum SidebarDataPresence {
         public var hasLSPLanguage: Bool
         public var claudeHasTranscripts: Bool
         public var hasRecents: Bool
+        /// The active document is a Markdown file (drives the `.markdownOutline`
+        /// panel). Per-FILE, not per-folder — a single .md with no folder open
+        /// still gets its outline.
+        public var hasMarkdownFile: Bool
 
         public init(
             hasRoot: Bool = false,
             hasRepo: Bool = false,
             hasLSPLanguage: Bool = false,
             claudeHasTranscripts: Bool = false,
-            hasRecents: Bool = false
+            hasRecents: Bool = false,
+            hasMarkdownFile: Bool = false
         ) {
             self.hasRoot = hasRoot
             self.hasRepo = hasRepo
             self.hasLSPLanguage = hasLSPLanguage
             self.claudeHasTranscripts = claudeHasTranscripts
             self.hasRecents = hasRecents
+            self.hasMarkdownFile = hasMarkdownFile
         }
     }
 
@@ -55,6 +61,9 @@ public enum SidebarDataPresence {
             .git:             i.hasRoot && i.hasRepo,
             .claudeTimeline:  i.hasRoot && i.claudeHasTranscripts,
             .lspOutline:      i.hasRoot && i.hasLSPLanguage,
+            // Per-file (not root-gated): the outline is document structure, so
+            // it shows for a lone .md opened without a folder too.
+            .markdownOutline: i.hasMarkdownFile,
             .lspNavigation:   i.hasRoot,
             .lspProblems:     i.hasRoot,
             // Recently-opened is global (not root-scoped): present whenever

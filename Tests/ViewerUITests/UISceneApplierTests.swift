@@ -157,6 +157,28 @@ final class UISceneApplierTests: XCTestCase {
                                     "Alpha→Beta→Gamma = 2 edges; got \(graph.edges.count)")
     }
 
+    func test_outlineScene_opensMarkdownWithSidebarForTheOutlinePanel() {
+        // TSK-1438 render tail: the .markdownOutline panel is mounted; this
+        // scene must open a markdown doc with the sidebar visible so the panel
+        // is on screen for the VM capture. Pins the scene→model contract: a
+        // markdown tab is selected, the sidebar is forced visible, the terminal
+        // is closed. The panel's presence (hasMarkdownFile) + heading list are
+        // covered by SidebarDataPresenceTests + MarkdownOutlineModelTests; the
+        // on-screen render is the VM pixel assertion (mdv.markdownOutline).
+        let model = makeModel()
+        let status = apply("outline", model)
+        XCTAssertEqual(model.tabs.tabs.count, 1, "one markdown tab open")
+        XCTAssertEqual(model.tabs.selected?.url?.pathExtension, "md",
+                       "the selected tab is the markdown doc")
+        XCTAssertTrue(model.sidebar.isVisible, "the sidebar is forced open for the capture")
+        XCTAssertFalse(model.terminalPane.isOpen, "no restored terminal covering the sidebar")
+        XCTAssertEqual(model.panelLayout.override(for: .markdownOutline), .shown,
+                       "the outline panel is forced shown so it's on screen")
+        XCTAssertEqual(model.panelLayout.override(for: .bookmarks), .hidden,
+                       "the noisy bookmarks panel is hidden so it doesn't bury the outline")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

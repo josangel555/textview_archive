@@ -185,6 +185,58 @@ public enum UISceneApplier {
             return "ui-scene: applied 'depgraph' root=\(model.sidebar.rootURL != nil) tabs=\(model.tabs.tabs.count) terminalOpen=\(model.terminalPane.isOpen)"
         }
 
+        // Markdown outline scene (TSK-1438 render tail): the .markdownOutline
+        // sidebar panel is now MOUNTED (registry/presence/body); this scene
+        // drives it on screen. Open a single .md with ≥6 headings (no folder →
+        // the accordion is short: bookmarks + the outline + plugins, so the
+        // panel isn't scrolled below the fold), force the sidebar open, and
+        // close any restored terminal. The panel self-gates to markdown via
+        // presence, so it lists exactly MarkdownOutline.headings() (UAT U1).
+        if scene == "outline" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("outline-doc.md")
+            let md = """
+            # Introduction
+            Intro prose for the outline panel.
+
+            ## Getting Started
+            Setup steps.
+
+            ## Configuration
+            Options you can set.
+
+            ### Advanced Options
+            Deep configuration knobs.
+
+            ## Usage
+            How to drive it.
+
+            ## Troubleshooting
+            Common issues and fixes.
+
+            ## Résumé Section
+            A diacritic heading for the filter test.
+            """
+            try? md.write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.sidebar.isVisible = true
+            // The always-on Bookmarks panel (persisted entries) otherwise fills
+            // the accordion and pushes the outline below the fold — force the
+            // outline SHOWN and the noisy sibling panels HIDDEN so the mounted
+            // panel is actually ON SCREEN (present-in-tree ≠ visible). These are
+            // overrides on the throwaway test instance only.
+            let hide: [SidebarPanelKind] = [
+                .bookmarks, .searchAnywhere, .git, .claudeTimeline, .lspOutline,
+                .lspNavigation, .lspProblems, .recentlyOpened, .pluginSections,
+            ]
+            for k in hide { model.panelLayout.setOverride(k, .hidden) }
+            model.panelLayout.setOverride(.markdownOutline, .shown)
+            model.open(url: f)
+            return "ui-scene: applied 'outline' tabs=\(model.tabs.tabs.count) sidebar=\(model.sidebar.isVisible) outline=\(model.panelLayout.override(for: .markdownOutline).rawValue) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —
