@@ -15,27 +15,32 @@ task_park "Need me".
 ## ★ Current state (2026-07-09)
 - **VM lane RESTORED + PROVEN** (TSK-1550 fixed): `ssh macOS15` passwordless; offline dist build +
   window-id capture pipeline works end-to-end. The pyramid is real, not a flagpole.
-- **This session: ~13 render tails BUILT + (mostly) UAT-verified on the VM**, all at `review`
-  (owner validates). Verified on-screen: 1474 video-fallback · 1469 archive-browser · 1440
-  notebook-outputs · 1470 dep-graph-canvas · 1438 markdown-outline-panel (MOUNTED) · 1475 terminal-
-  favorites-editor (MOUNTED) · 1477 Claude-monitor (launch-mode lane) · 1496 secret-warn-badge ·
-  1489 new-tab-omnibox · 1476 structural-search-examples · 1249 terminal-header · 1500 recover-
-  deleted-file · 1448 first-run-sample-tour. Host-tested + UNVERIFIED-flagged (real-event/AX lane):
-  1480 format-menu-checkmarks · 1085 image-shape-gallery.
+- **§1 "Fresh models" render tails are DRAINED** — all ~20 are at `fixed`/`review` (owner
+  validates). Build frontier has moved to §1 "Older pool" (genuinely-`reported` features where a
+  deep backend has no user-facing front): 1443 git panel · 1444 LSP status (JUST DONE) · 1445 CR
+  journey · 1168 vector editing · 1441 image-editor feel · 1494 cursor mode · follow-ons 1571/1572/
+  1575/1505.
+- **THIS TICK — TSK-1444 LSP footer status chip → `review`** (commit `ddd8aa4d`). Pure ViewerCore
+  classifier (running/idle/failed/notInstalled) + StatusBar chip + per-language popover + Restart +
+  `LSPPool.restart(language:)`. 22 host tests green + gate green. **VM footer render UNVERIFIED** —
+  see the NEW GOTCHA below; **filed TSK-1576** to fix the footer-capture lane.
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
-- **1123 terminal DOCK control** (in flight this tick): added a Dock menu to the terminal tab
-  strip (Left/Bottom/Right → setPaneEdge, current edge check-marked) — the owner's "can't get the
-  terminal to the right" pain (setPaneEdge existed, nothing called it). The unified Settings-matrix
-  placement (all tool windows via PanelPlacement + TerminalPanelEdgeBridge) is the REMAINING 1123
-  slice. UAT scene "terminal-dock-right".
-- **In flight:** none uncommitted after this tick's commit.
+- **In flight:** none uncommitted after `ddd8aa4d`.
 
-## Follow-ons filed this session
-1570 outline scroll-highlight+preview-jump · 1571 mount Monitor as menu item (openClaudeMonitorWindow
-clobbers self.window — needs a separate ref) · 1572 omnibox launchpad sections/arrow-nav/git-clone/
-paste · 1573 recover-deleted full enumeration (path manifest) + version picker · 1574 shape-gallery
-freeform (heart/lightning/callouts) + AX UAT · 1575 first-run Capabilities page (bundle
-CAPABILITIES.md) + walkthrough launch points. STILL to UAT: 1478 plugins (Settings→tab, hard to drive).
+## ⚠ NEW GOTCHA (2026-07-09) — VM UAT can't capture STATUS-BAR FOOTER chips (TSK-1576)
+`screencapture -l<windowid>` returns a fixed 1200x776 frame with NO footer — the VM display is
+~1200x800, menu bar ~24px, and the window's bottom (StatusBar h=22) lands at/below screen y=800 →
+clipped. Confirmed on 2 scenes (secrets.png + lsp-status.png both cut at 776, footer absent). AND
+the ax-reader does NOT descend into `mdv.statusBar.*` chip children (only the parent surfaces). So
+EVERY footer chip (git/LSP/memory/vim/macro) is un-verifiable on the VM lane until TSK-1576 (cap the
+scene-mode window height in main.swift's WindowGeometry path so the footer is on-screen). Footer
+render tails land at `review` UNVERIFIED (host-tested + gate-green) meanwhile.
+
+## Follow-ons filed
+1570 outline scroll-highlight+preview-jump · 1571 mount Monitor as menu item · 1572 omnibox launchpad
+· 1573 recover-deleted full enumeration · 1574 shape-gallery freeform · 1575 first-run Capabilities
+page · **1576 footer-capture UAT lane** (blocks VM-verifying footer chips). STILL to UAT: 1478
+plugins (Settings→tab, hard to drive).
 
 ## VM UAT recipe (proven)
 1. Add a scene to `UISceneRegistry.staticScenes` + an inline handler in `UISceneApplier` that

@@ -21,6 +21,19 @@ hours.
   banner's `mdv.secretBanner` id was absent from the ax-reader anyway (doc-content overlays +
   `.sheet` content don't surface — only sidebar panels, separate-window roots, and overlays/menus
   do), so the ONLY signal was the pixels. Always READ the PNG for content/overlay tails.
+- **The VM UAT lane CANNOT capture STATUS-BAR FOOTER chips — the footer sits below the ~800px VM
+  display (TSK-1576).** `screencapture -l<windowid>` returns a fixed 1200x776 frame with NO footer:
+  the VM screen is ~1200x800, the menu bar eats ~24px, and the window's bottom (the StatusBar,
+  height 22) lands at/below screen y=800 → clipped. Confirmed on TWO independent scenes
+  (`secrets.png` + `lsp-status.png` both cut at exactly 776px, footer absent). AND the ax-reader
+  does NOT descend into `mdv.statusBar.*` chip children (only the `mdv.statusBar` parent surfaces),
+  so a11y-presence can't substitute. NET: every footer chip (git · LSP · memory · vim · macro ·
+  path/metrics) is un-verifiable on the VM lane as configured. Hit building TSK-1444 (LSP status
+  chip): host-tested exhaustively + gate-green, but VM render UNVERIFIED. Fix (TSK-1576): cap the
+  scene-mode window content height in `main.swift`'s `WindowGeometry` path so the footer is always
+  on-screen. Until then, footer render tails land at `review` UNVERIFIED. Don't burn rounds trying
+  to capture a footer element — check the window/screen geometry FIRST (compare capture height to
+  a known scene: if both clip at 776 with no footer, it's this limit, not your view).
 
 ## Session 2026-07-02 (late) — VM webview lane: boot cured, channel-death residual (M3.S1b)
 
