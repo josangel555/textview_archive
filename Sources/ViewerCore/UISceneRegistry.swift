@@ -191,6 +191,11 @@ public enum UISceneRegistry {
             overlay: .codeActionPicker,
             isDebugOnly: true,
             summary: "LSP code-action picker over an editor backdrop (TSK-640, DEBUG)"),
+        SceneSpec(
+            id: "video-unsupported",
+            fixture: .throwawaySource(name: "sample.mkv"),
+            closesExistingTabs: true,
+            summary: "Unsupported video container (.mkv) → VideoFallbackCard, not a black AVPlayerView (TSK-1474)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

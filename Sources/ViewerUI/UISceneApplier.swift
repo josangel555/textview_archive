@@ -96,6 +96,23 @@ public enum UISceneApplier {
             return "ui-scene: applied 'folder-only' tabs=\(model.tabs.tabs.count) root=\(model.sidebar.rootURL != nil) hasContext=\(model.hasOpenContext)"
         }
 
+        // Unsupported-video scene (TSK-1474 render tail): FileCategory.video
+        // routes mkv/webm/wmv/flv here but AVFoundation can't decode them — the
+        // old code showed a BLACK AVPlayerView. Open a .mkv so MediaPreviewView
+        // takes the VideoPlayability.unsupported branch → VideoFallbackCard.
+        // The VM harness asserts mdv.video.fallbackCard is VISIBLE (a black
+        // player would fail the a11y-presence check). VideoPlayability is
+        // extension-based, so the file content is irrelevant.
+        if scene == "video-unsupported" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("sample.mkv")
+            try? Data("not a real mkv".utf8).write(to: f)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            return "ui-scene: applied 'video-unsupported' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
+        }
+
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
         // dark built-in theme so the VM lane can assert the CHROME surface
         // actually PAINTS dark (the stale-chrome / non-republishing-view risk —
