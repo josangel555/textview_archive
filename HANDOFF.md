@@ -64,6 +64,8 @@ land at `review` UNVERIFIED; UAT/AX/T5 batch when the VM returns.
   black-player for mkv/webm/etc). Tail: UAT U1-U6 (U2 = .mkv card non-black on T5).
 - T47: TSK-1469 archive preview-on-select + Extract (e4f76ffd) → review UNVERIFIED. Master/detail
   ArchiveBrowserView; previewPlan gate (no extract for >2MiB); capped-read peek. Tail: UAT U1-U7.
+- T48: TSK-1477 monitor empty-states + auto-refresh (eb5e64e9) → review UNVERIFIED. Actionable
+  empty messages (rootMissing/notAClaudeDir/noTranscripts) + 5s fingerprint-gated poll. Tail: UAT U1-U6.
 - Gate flake filed TSK-1567 (EditorAssistToggleTests shared-UserDefaults parallel race).
 
 ## P0 INCIDENT RESOLVED (2026-07-07 ~23:15, TSK-1566 → fixed, 12f6e392)
