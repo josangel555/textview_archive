@@ -302,6 +302,27 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_gitPanelScene_buildsMixedStatusRepo_andFocusesStatusTab() throws {
+        // TSK-1577 render tail: the scene must set up a fixture repo with staged +
+        // unstaged + untracked files and open it as the workspace root, so the VM
+        // capture shows the Git ▸ Status tab's three groups + commit bar (TSK-1443).
+        // Pins the scene→model contract; the on-screen panel is the VM pixel/AX assert.
+        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else {
+            throw XCTSkip("/usr/bin/git not available")
+        }
+        let model = makeModel()
+        let status = apply("git-panel", model)
+        XCTAssertFalse(status.contains("unknown"), "recognised scene: \(status)")
+        let root = try XCTUnwrap(model.sidebar.rootURL, "the fixture repo is the workspace root")
+        let entries = GitClient(repoRoot: root).status()
+        XCTAssertTrue(entries.contains { $0.path == "staged.txt" && $0.indexStatus == "A" },
+                      "staged.txt is staged (index A)")
+        XCTAssertTrue(entries.contains { $0.path == "modified.txt" && $0.workingStatus == "M" },
+                      "modified.txt is an unstaged modification")
+        XCTAssertTrue(entries.contains { $0.path == "untracked.txt" && $0.isUntracked },
+                      "untracked.txt is untracked")
+    }
+
     func test_terminalDockRightScene_docksTheTerminalRight() {
         // TSK-1123: the scene docks the terminal to the RIGHT edge via setPaneEdge
         // (the path the new Dock control uses). Pins the scene→model contract; the

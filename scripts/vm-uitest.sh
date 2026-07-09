@@ -64,6 +64,7 @@ scene_expect() {
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;
+    git-panel) echo "mdv.git.statusTab" ;;
     *) echo "" ;;
   esac
 }

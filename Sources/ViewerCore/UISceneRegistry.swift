@@ -258,6 +258,11 @@ public enum UISceneRegistry {
             fixture: .throwawaySource(name: "sample.swift"),
             closesExistingTabs: true,
             summary: "A Swift file open → the footer LSP status chip (mdv.statusBar.lsp) shows the language-server state; MDV_LSP_STATUS_FAKE forces a deterministic state (TSK-1444)"),
+        SceneSpec(
+            id: "git-panel",
+            fixture: .folderRoot,
+            closesExistingTabs: true,
+            summary: "A fixture git repo (staged + unstaged + untracked) open with Git ▸ Status focused → the three groups + per-row stage/unstage + the commit bar render (TSK-1443/1577)"),
     ]
 
     /// Every CANONICAL scene id the registry knows — the static scenes plus one

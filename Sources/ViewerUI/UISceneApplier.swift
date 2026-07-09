@@ -185,6 +185,56 @@ public enum UISceneApplier {
             return "ui-scene: applied 'depgraph' root=\(model.sidebar.rootURL != nil) tabs=\(model.tabs.tabs.count) terminalOpen=\(model.terminalPane.isOpen)"
         }
 
+        // Git panel scene (TSK-1577 render tail): a fixture repo with STAGED +
+        // UNSTAGED + UNTRACKED files so the Git ▸ Status tab shows all three
+        // groups + the per-row stage/unstage + the commit bar (TSK-1443). git
+        // runs synchronously here; openFolder sets the workspace root, the
+        // sidebar git section's followFocus picks it up, showGitPanel focuses
+        // the Status tab.
+        if scene == "git-panel" {
+            let repo = tabsBaseDir
+            try? FileManager.default.createDirectory(
+                at: repo, withIntermediateDirectories: true)
+            func git(_ args: [String]) {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                p.currentDirectoryURL = repo
+                p.arguments = args
+                p.standardOutput = FileHandle.nullDevice
+                p.standardError = FileHandle.nullDevice
+                try? p.run(); p.waitUntilExit()
+            }
+            let modified = repo.appendingPathComponent("modified.txt")
+            try? "v1\n".write(to: modified, atomically: true, encoding: .utf8)
+            git(["init", "-q"])
+            git(["config", "user.email", "scene@example.com"])
+            git(["config", "user.name", "Scene"])
+            git(["add", "."]); git(["commit", "-q", "-m", "init"])
+            // Mixed status: an unstaged modification, a staged new file, an untracked file.
+            try? "v2 modified\n".write(to: modified, atomically: true, encoding: .utf8)
+            try? "staged new\n".write(to: repo.appendingPathComponent("staged.txt"),
+                                     atomically: true, encoding: .utf8)
+            git(["add", "staged.txt"])
+            try? "untracked new\n".write(to: repo.appendingPathComponent("untracked.txt"),
+                                        atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.setSidebarWidth(320)
+            model.openFolder(repo)
+            model.sidebar.isVisible = true
+            // Force the Git panel SHOWN + hide the noisy siblings so the Status
+            // tab is actually on screen (present-in-tree ≠ visible; the always-on
+            // Bookmarks/Outline otherwise fill the accordion). Test-instance only.
+            let hide: [SidebarPanelKind] = [
+                .bookmarks, .searchAnywhere, .markdownOutline, .claudeTimeline,
+                .lspOutline, .lspNavigation, .lspProblems, .recentlyOpened, .pluginSections,
+            ]
+            for k in hide { model.panelLayout.setOverride(k, .hidden) }
+            model.panelLayout.setOverride(.git, .shown)
+            model.showGitPanel(tab: .status)
+            return "ui-scene: applied 'git-panel' root=\(model.sidebar.rootURL != nil) git=\(model.panelLayout.override(for: .git).rawValue)"
+        }
+
         // Markdown outline scene (TSK-1438 render tail): the .markdownOutline
         // sidebar panel is now MOUNTED (registry/presence/body); this scene
         // drives it on screen. Open a single .md with ≥6 headings (no folder →

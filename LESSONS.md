@@ -7,6 +7,22 @@ hours.
 
 ## Session 2026-07-09 — SwiftUI `.task` on a conditionally-empty view never fires
 
+- **VM `MDV_UI_SCENE` = "unknown scene" DESPITE the scene string being in the dist binary → the
+  SwiftPM cross-module STALENESS trap, triggered by `rsync -a` preserving mtimes.** Added a new
+  scene (SceneSpec in ViewerCore `UISceneRegistry.staticScenes` + a `scene == "x"` branch in ViewerUI
+  `UISceneApplier`), rsynced, ran `build-app.sh` on the VM — and the app said `ui-scene: unknown
+  scene 'git-panel'` even though `strings dist/…/MarkdownViewer | grep git-panel` = 6 hits. Root: the
+  6 hits were all from the RECOMPILED ViewerUI (the applier branch + the "applied 'x'" return string);
+  ViewerCore `UISceneRegistry` (the `resolve` that gates recognition) was NOT recompiled, so
+  `staticScenes` lacked the new spec → resolve returns nil → unknown. Why not recompiled: `rsync -az`
+  PRESERVES the source mtime, and SwiftPM's incremental build decides by timestamp — if the VM's
+  cached `.swiftmodule` is newer than the preserved mtime, it reuses the stale module. FIX: after
+  rsyncing a cross-module change, `ssh VM 'cd repo && touch Sources/ViewerCore/UISceneRegistry.swift
+  Sources/ViewerUI/UISceneApplier.swift'` BEFORE `build-app.sh` (force-newer mtime → recompile).
+  Confirm with `grep "Compiling.*UISceneRegistry"` in the build log. Cost 2 wasted VM rebuild+capture
+  rounds before spotting it (the binary-has-the-string red herring). Suspect this whenever a
+  rsync-then-VM-build behaves as if a ViewerCore change didn't land.
+
 - **`.task` / `.onAppear` attached to a `Group { if cond {…} }` that starts FALSE does not
   run** — an empty Group renders as `EmptyView`, and modifiers on EmptyView are elided, so the
   async work never schedules. Live miss: the TSK-1496 secret warn-badge computed its findings in
