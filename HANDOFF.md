@@ -20,22 +20,22 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-D/CH-E stragglers (security + test-infra): 1203 (core) + 1567 → `review`** (host-only).
-  **1203 consent-gated network** = the trust-mode CSP fence can now escalate a TRUSTED page's
-  `connect-src` to explicit user-consented https origins: `HTMLDocumentPolicy.cspString(allowedConnectHosts:)`
-  + `connectSource` validator (https-only, no wildcards/path/scheme) + `HTMLNetworkConsentStore` (per-page)
-  + `DocumentModel.htmlAllowedConnectHosts/allowHTMLNetwork/revokeHTMLNetwork` (fail-closed: untrusted→[]),
-  threaded live through HTMLRenderedView→envelope→CSP. Empty consent ⇒ `connect-src 'none'` (unchanged).
-  Security invariants host-tested (HTMLDocumentPolicy +6, HTMLTrustPolicy +6, DocumentModelHTMLTrust +4).
-  Render tail (failure banner + grant UI + blocked-host detection) SPLIT → **TSK-1580**. **1567**: fixed
-  the EditorAssistToggleTests `--parallel` flake — injected `assistDefaults` into EditorCoordinator
-  (threaded from the model's prefs suite); added a per-model isolation guard.
-- **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS (not a quick chunk):** 1482 menu-audit (buildMenu is
-  ~1300 lines imperative + AppMenuActions is a 3-method protocol → needs a declarative-menu refactor OR
-  VM testing), 1191 git-history migration (retire FileHistoryView onto UnifiedHistoryView, render VM-val),
-  1205 spreadsheet-grid (render). Take each as its OWN focused tick, not a 3-5 batch.
-- **PRIOR — CH-C: 1505 spelling verbs + 1570 U2 outline-highlight → `review`** (`62697ec1`); deferred
-  1170/1173/1504 (models DONE, render/JS tail — board spike comments); 1570-U3 split → TSK-1579.
+- **THIS TICK — CH-F (chrome/first-run): 1573 + 1575 (part 1) → `review`** (host-only).
+  **1573 recover-deleted** = full enumeration + version picker. ROOT-CAUSE WIN: the ticket claimed the
+  store "can't enumerate its paths" but each pathKey dir ALREADY has a `_path` sidecar → added
+  `LocalHistoryStore.allTrackedPaths()` (reads the sidecars) so `recoverableDeletedFiles()` surfaces
+  LONG-deleted files (not just recents); `resurrectFile(at:version:)` + `recoverableVersions` recreate a
+  CHOSEN version; RecoverDeletedFileView got a per-row version Menu. Host-tested (LocalHistoryStore +2,
+  DocumentModelResurrection +3). **1575 part 1** = Help ▸ Capabilities: `CapabilitiesDocument` (bundled
+  `docs/CAPABILITIES.md` via build-app.sh copy — SINGLE source — + embedded fallback), `openCapabilities`,
+  Help menu item. Host-tested (CapabilitiesDocument +3, DocumentModelFirstRun +2). 1575-part2 (walkthrough
+  launch points) SPLIT → **TSK-1581**. Render tails (the picker Menu + rendered Capabilities page) = VM-UAT.
+- **CH-F remaining:** 1572 launchpad (4 sub-items: sections + arrow-nav model + git-clone plan + universal
+  paste — host-testable models + render tail), 1104 multi-window (VM), 1111 bookmarks-open-in-new (VM).
+- **CH-D/CH-E remaining are SUBSTANTIAL SINGLETONS:** 1482 menu-audit (declarative-menu refactor OR VM),
+  1191 git-history migration (render VM-val), 1205 spreadsheet-grid (render). Each = its OWN focused tick.
+- **PRIOR — CH-D/CH-E: 1203-core+1567 (`8253d8cb`); CH-C: 1505+1570-U2 (`62697ec1`); CH-D data-safety
+  1423/1269/1165 (`5ed63734`)** — all at `review`. Deferred spikes on the board: 1170/1173/1504/1482/1191/1205.
 - **PRIOR — CH-D (data-safety): 1423 + 1269 + 1165 → `review`** (`5ed63734`): hex-search-over-dirty-bytes
   + external-edit 3-way auto-merge wire (host pyramid; CM6 redisplay = render tail).
 - **PRIOR (at `review`):** CH-B image tools (`1a6eef77`: 1083/1084/1086/1089; 1090 parked) · CH-A image

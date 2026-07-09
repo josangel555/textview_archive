@@ -7,35 +7,58 @@ import ViewerCore
 /// recoverable deleted files, and recreate+open one.
 extension DocumentModel {
 
-    /// Recently-opened FILES that are GONE from disk but still have Local History
-    /// versions → recoverable. Reuses `recents` because it retains the real path
-    /// (the history store keys paths by a one-way hash, so it can't enumerate
-    /// them itself). Deduped, newest-recent first.
+    /// FILES that are GONE from disk but still have Local History versions →
+    /// recoverable. TSK-1573: enumerates the FULL set of history-tracked paths
+    /// (`localHistoryStore.allTrackedPaths()`, read from the `_path` sidecars) so a
+    /// file deleted LONG AGO / dropped from recents is still recoverable — not just
+    /// recently-opened ones. Recents are unioned in first so the most-relevant
+    /// (recently-touched) deletions sort ahead of the long-tail. Deduped.
     public func recoverableDeletedFiles() -> [URL] {
         var seen = Set<String>()
         var out: [URL] = []
-        for entry in recents where entry.kind == .file {
-            let url = entry.url.standardizedFileURL
-            let path = url.path
-            if seen.contains(path) { continue }
-            seen.insert(path)
-            guard !FileManager.default.fileExists(atPath: path) else { continue }
-            guard !localHistoryStore.versions(for: path).isEmpty else { continue }
-            out.append(url)
+        // Recents first (they retain ordering relevance), then the store's full set.
+        let recentPaths = recents
+            .filter { $0.kind == .file }
+            .map { $0.url.standardizedFileURL.path }
+        for path in recentPaths + localHistoryStore.allTrackedPaths() {
+            let std = URL(fileURLWithPath: path).standardizedFileURL
+            let key = std.path
+            guard seen.insert(key).inserted else { continue }
+            guard !FileManager.default.fileExists(atPath: key) else { continue }
+            guard !localHistoryStore.versions(for: key).isEmpty else { continue }
+            out.append(std)
         }
         return out
     }
 
+    /// The recoverable versions of a deleted file (newest-first) — drives the
+    /// version PICKER in the recover sheet (TSK-1573). Empty when the file exists
+    /// or has no history.
+    public func recoverableVersions(for url: URL) -> [LocalHistoryStore.Version] {
+        localHistoryStore.versions(for: url.standardizedFileURL.path)
+    }
+
     /// Recreate a deleted file from its LATEST Local History version, then open
-    /// it. Posts a toast for the outcome; returns it for tests. Never overwrites
-    /// (the primitive's O_EXCL guard) — if the file reappeared, opens the live
-    /// one instead.
+    /// it. Convenience over `resurrectFile(at:version:)` — passes `nil` to pick
+    /// the newest version.
     @discardableResult
     public func resurrectFile(at url: URL) -> FileResurrection.Outcome {
+        resurrectFile(at: url, version: nil)
+    }
+
+    /// Recreate a deleted file from a CHOSEN Local History version (TSK-1573
+    /// picker), or the latest when `version` is nil, then open it. Posts a toast
+    /// for the outcome; returns it for tests. Never overwrites (the primitive's
+    /// O_EXCL guard) — if the file reappeared, opens the live one instead.
+    @discardableResult
+    public func resurrectFile(
+        at url: URL, version: LocalHistoryStore.Version?
+    ) -> FileResurrection.Outcome {
         let path = url.standardizedFileURL.path
-        // `versions(for:)` is newest-first, so the latest is `.first`.
-        guard let latest = localHistoryStore.versions(for: path).first,
-              let content = localHistoryStore.contentString(of: latest, for: path) else {
+        // `versions(for:)` is newest-first, so nil ⇒ the latest is `.first`.
+        let chosen = version ?? localHistoryStore.versions(for: path).first
+        guard let chosen,
+              let content = localHistoryStore.contentString(of: chosen, for: path) else {
             _ = toasts.post(.error, "No history to recover “\(url.lastPathComponent)”.")
             return .failed("no history")
         }

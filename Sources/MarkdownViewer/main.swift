@@ -2855,6 +2855,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             title: "Open Sample Document",
             action: #selector(openSampleDocument(_:)),
             keyEquivalent: ""))
+        // TSK-1575 — the full capabilities guide, rendered (docs/CAPABILITIES.md).
+        helpMenu.addItem(NSMenuItem(
+            title: "Capabilities",
+            action: #selector(openCapabilities(_:)),
+            keyEquivalent: ""))
         // TSK-696 — install the `textview` command-line launcher on PATH.
         helpMenu.addItem(NSMenuItem(
             title: "Install '\(CLILauncher.commandName)' Command…",
@@ -3883,6 +3888,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// TSK-1448 — Help ▸ Open Sample Document: write + open the first-run tour.
     @objc func openSampleDocument(_ sender: Any?) {
         model.openFirstRunSample()
+    }
+
+    /// TSK-1575 — Help ▸ Capabilities: open the bundled capabilities guide rendered.
+    @objc func openCapabilities(_ sender: Any?) {
+        model.openCapabilities()
     }
 
     @objc func showKeyboardShortcuts(_ sender: Any?) {

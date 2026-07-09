@@ -85,4 +85,49 @@ final class DocumentModelResurrectionTests: XCTestCase {
         XCTAssertEqual(try? String(contentsOf: file, encoding: .utf8),
                        "LIVE — do not clobber\n", "the live file is untouched")
     }
+
+    // MARK: - TSK-1573: full enumeration (not recents-bound) + version picker
+
+    /// A file deleted LONG AGO — no longer in recents — must still surface,
+    /// enumerated from the store's `_path` sidecars (the gap 1 fix).
+    func test_recoverableDeletedFiles_surfacesLongDeleted_notInRecents() {
+        let model = makeModel()
+        let file = seedDeletedFileWithHistory(model, content: "ancient\n")
+        model.recents = []   // dropped from recents entirely
+        XCTAssertEqual(model.recoverableDeletedFiles().map(\.standardizedFileURL),
+                       [file.standardizedFileURL],
+                       "full enumeration (allTrackedPaths) must surface a long-deleted file")
+    }
+
+    /// `resurrectFile(at:version:)` recreates the CHOSEN version's bytes, not just
+    /// the latest — the version-picker path.
+    func test_resurrect_withChosenOlderVersion_recreatesThatVersionBytes() {
+        let model = makeModel()
+        let file = workspace.appendingPathComponent("notes/todo.md")
+        try? FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let path = file.standardizedFileURL.path
+        // Two versions, distinct content + timestamps.
+        _ = model.localHistoryStore.snapshot(
+            path: path, content: "V1 old\n", at: Date(timeIntervalSince1970: 1_000_000))
+        _ = model.localHistoryStore.snapshot(
+            path: path, content: "V2 new\n", at: Date(timeIntervalSince1970: 2_000_000))
+        model.openFolder(workspace)
+
+        let versions = model.recoverableVersions(for: file)
+        XCTAssertEqual(versions.count, 2)
+        // newest-first ⇒ the OLDER version is `.last`.
+        let outcome = model.resurrectFile(at: file, version: versions.last)
+        XCTAssertEqual(outcome, .created)
+        XCTAssertEqual(try? String(contentsOf: file, encoding: .utf8), "V1 old\n",
+                       "must recreate the CHOSEN (older) version's bytes, not the latest")
+    }
+
+    func test_recoverableVersions_emptyForLiveFile() {
+        let model = makeModel()
+        let file = workspace.appendingPathComponent("live.md")
+        try? "here\n".write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertTrue(model.recoverableVersions(for: file).isEmpty,
+                      "a never-versioned file has no recoverable versions")
+    }
 }

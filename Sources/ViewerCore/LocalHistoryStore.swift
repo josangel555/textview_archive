@@ -277,6 +277,29 @@ public final class LocalHistoryStore: Sendable {
         try? FileManager.default.removeItem(at: fileDirectory(for: path))
     }
 
+    /// TSK-1573 — every absolute path Local History has EVER tracked, read from
+    /// the per-directory `_path` sidecars (NOT the recents list). This lets the
+    /// recover-deleted flow surface a file deleted long ago / dropped from
+    /// recents — the store keys dirs by a one-way hash, but each dir records its
+    /// origin path in `_path`, so the set is fully enumerable. Deduped; a dir with
+    /// no readable sidecar (legacy/corrupt) is skipped; a listing failure ⇒ [].
+    public func allTrackedPaths() -> [String] {
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]) else { return [] }
+        var seen = Set<String>()
+        var out: [String] = []
+        for dir in dirs {
+            let sidecar = dir.appendingPathComponent("_path")
+            guard let data = try? Data(contentsOf: sidecar),
+                  let path = String(data: data, encoding: .utf8),
+                  !path.isEmpty, seen.insert(path).inserted else { continue }
+            out.append(path)
+        }
+        return out
+    }
+
     // MARK: - Diff API (added for the history UI — TSK-1103)
 
     /// Diff between two stored versions of `path` (`from` → `to`), as grouped

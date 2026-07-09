@@ -24,7 +24,7 @@ struct RecoverDeletedFileView: View {
             }
             Divider()
             if files.isEmpty {
-                Text("No recoverable files. Recently-opened files that were deleted but still have Local History appear here.")
+                Text("No recoverable files. Files that were deleted but still have Local History appear here — including ones deleted long ago.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -68,16 +68,43 @@ struct RecoverDeletedFileView: View {
                     .truncationMode(.head)
             }
             Spacer(minLength: 8)
-            Button("Recreate") {
-                let outcome = model.resurrectFile(at: url)
-                // Refresh the list (the recreated file drops off); a created /
-                // reappeared file also opens, so dismiss to reveal it.
-                files = model.recoverableDeletedFiles()
-                if outcome == .created || outcome == .refusedExists { onClose?() }
+            // TSK-1573: the primary click recreates the LATEST version; the
+            // dropdown picks a SPECIFIC older version (date · size). Both route
+            // through the host-tested `resurrectFile(at:version:)`.
+            let versions = model.recoverableVersions(for: url)
+            Menu {
+                ForEach(versions) { v in
+                    Button(versionLabel(v)) { recreate(url, version: v) }
+                }
+            } label: {
+                Text("Recreate")
+            } primaryAction: {
+                recreate(url, version: nil)
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(versions.isEmpty)
+            .help(versions.count > 1
+                  ? "Recreate the latest version — or ▾ to pick an older one"
+                  : "Recreate from Local History")
             .accessibilityIdentifier("mdv.recover.recreate")
         }
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func recreate(_ url: URL, version: LocalHistoryStore.Version?) {
+        let outcome = model.resurrectFile(at: url, version: version)
+        // Refresh the list (a recreated file drops off); a created / reappeared
+        // file also opens, so dismiss to reveal it.
+        files = model.recoverableDeletedFiles()
+        if outcome == .created || outcome == .refusedExists { onClose?() }
+    }
+
+    /// "Jul 9, 2026 at 2:34 PM · 1.2 KB" — the label for a version menu row.
+    private func versionLabel(_ v: LocalHistoryStore.Version) -> String {
+        let when = v.savedAt.formatted(date: .abbreviated, time: .shortened)
+        let size = ByteCountFormatter.string(fromByteCount: Int64(v.byteSize), countStyle: .file)
+        return "\(when) · \(size)"
     }
 }

@@ -49,6 +49,20 @@ final class LocalHistoryStoreTests: XCTestCase {
         XCTAssertEqual(versions[0].savedAt, date(1_700_000_000))
     }
 
+    // MARK: - TSK-1573: allTrackedPaths (full enumeration over `_path` sidecars)
+
+    func test_allTrackedPaths_enumeratesEverySnapshottedPath_deduped() {
+        _ = store.snapshot(path: "/a/one.md", content: "1", at: date(1))
+        _ = store.snapshot(path: "/a/one.md", content: "1b", at: date(2))   // 2nd version, same path
+        _ = store.snapshot(path: "/b/two.txt", content: "2", at: date(3))
+        XCTAssertEqual(Set(store.allTrackedPaths()), ["/a/one.md", "/b/two.txt"],
+                       "every snapshotted path surfaces exactly once (deduped)")
+    }
+
+    func test_allTrackedPaths_emptyStore_isEmpty() {
+        XCTAssertEqual(store.allTrackedPaths(), [])
+    }
+
     func test_versions_areNewestFirst() {
         store.snapshot(path: path, content: "v1\nbody", at: date(1_700_000_000))
         store.snapshot(path: path, content: "v2\nbody", at: date(1_700_000_100))

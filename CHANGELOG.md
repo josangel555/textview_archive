@@ -11,6 +11,11 @@
   switch it off under Settings ▸ Privacy & Permissions ▸ Secret detection.
 
 ### Changed
+- **Recover files deleted long ago — and pick which version.** File ▸ Recover Deleted File now
+  lists **every** file that has Local History but is gone from disk, not just recently-opened ones
+  (so a file you deleted weeks back is still recoverable). Each row's **Recreate** button recreates
+  the latest version; its **▾** menu lets you pick an **older version** (by date and size) to restore
+  instead. It still never overwrites a file that has reappeared.
 - **Convert menus show the current value.** Format ▸ Convert Encoding / Convert Line
   Endings now check-mark what the open file currently is, and Convert Indentation shows a
   "Current: …" header — so you're no longer converting blind. (The status bar already
@@ -20,6 +25,9 @@
   of staying put). Jumping to the section in the rendered preview is still coming.
 
 ### Added
+- **Help ▸ Capabilities.** A new Help menu entry opens the full capabilities guide as a rendered
+  page in a tab — a one-click tour of what TextView can do (previously the guide only lived in the
+  repo). It reads the same `CAPABILITIES.md` that ships with the app.
 - **Spelling is now a full, drivable feature.** Beyond the squiggles, the ⌘K palette (and
   automation) gained the whole loop: **Next / Previous Misspelling** (jump between flagged words),
   **Fix Misspelling** (replace with the top suggestion), **Add to Dictionary** / **Ignore Spelling**,

@@ -52,4 +52,26 @@ final class DocumentModelFirstRunTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: mine, encoding: .utf8), "MY notes — keep me\n",
                        "the user's file is untouched (U5)")
     }
+
+    // MARK: - TSK-1575: Help ▸ Capabilities
+
+    func test_openCapabilities_writesTheGuide_andOpensIt() throws {
+        let model = makeModel()
+        // No bundled resource under test ⇒ the fallback content is used.
+        let url = try XCTUnwrap(model.openCapabilities(dir: tmp))
+        XCTAssertEqual(url.lastPathComponent, "Capabilities.md")
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8),
+                       CapabilitiesDocument.markdown(in: .main),
+                       "the opened file carries the capabilities content")
+        XCTAssertTrue(model.tabs.tabs.contains { $0.url?.standardizedFileURL == url.standardizedFileURL },
+                      "capabilities opens in a tab")
+    }
+
+    func test_openCapabilities_overwritesItsOwnCopy_noProliferation() throws {
+        let model = makeModel()
+        let first = try XCTUnwrap(model.openCapabilities(dir: tmp))
+        let second = try XCTUnwrap(model.openCapabilities(dir: tmp))
+        XCTAssertEqual(first.standardizedFileURL, second.standardizedFileURL,
+                       "re-opening reuses the same Capabilities.md (no Capabilities-2.md)")
+    }
 }

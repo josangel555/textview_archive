@@ -250,6 +250,14 @@ if [[ -f "$ICON_SRC" ]]; then
   cp "$ICON_SRC" "$CONTENTS/Resources/AppIcon.icns"
 fi
 
+# TSK-1575: the Help ▸ Capabilities page reads docs/CAPABILITIES.md from the app
+# bundle (CapabilitiesDocument.markdown → Bundle.main). Copy it in so the doc
+# stays the SINGLE source (dev/tests fall back to an embedded pointer).
+CAPS_SRC="$ROOT_DIR/docs/CAPABILITIES.md"
+if [[ -f "$CAPS_SRC" ]]; then
+  cp "$CAPS_SRC" "$CONTENTS/Resources/CAPABILITIES.md"
+fi
+
 # Copy SPM-generated resource bundles (one per target with resources, e.g.
 # MarkdownViewer_ViewerUI.bundle containing markdown.css) into Contents/Resources.
 # This is the canonical, codesign-sealable, notarizable location — and where the
