@@ -17,6 +17,10 @@ public struct DependencyGraphView: View {
     private let onOpenFile: (URL) -> Void
 
     @State private var selectedNodeID: String?
+    /// TSK-1470 — the pan/zoom transform (host-tested math). Committed value;
+    /// live gestures compose against it and commit on end.
+    @State private var transform = DependencyGraphInteraction.Transform.identity
+    @State private var gestureStart: DependencyGraphInteraction.Transform?
 
     public init(
         graph: DependencyGraph.Graph,
@@ -29,6 +33,11 @@ public struct DependencyGraphView: View {
     public var body: some View {
         if graph.isEmpty {
             ContentUnavailablePlaceholder()
+        } else if DependencyGraphInteraction.exceedsCap(nodeCount: graph.nodes.count) {
+            // Past the cap a force layout + N node views freeze the UI —
+            // surface the count instead of drawing everything (TSK-1470;
+            // subtree-filter is the follow-on).
+            LargeGraphPlaceholder(nodeCount: graph.nodes.count)
         } else {
             GeometryReader { geo in
                 let bounds = CGRect(origin: .zero, size: geo.size).insetBy(dx: 28, dy: 28)
@@ -46,9 +55,56 @@ public struct DependencyGraphView: View {
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
+                // Origin-based transform (anchor .topLeading) so the applied
+                // scale+offset matches DependencyGraphInteraction.Transform's
+                // toView math — the zoom's anchor-fixed contract holds on screen.
+                .scaleEffect(transform.scale, anchor: .topLeading)
+                .offset(x: transform.offset.x, y: transform.offset.y)
+                .contentShape(Rectangle())
+                .gesture(panGesture)
+                .gesture(zoomGesture(viewSize: geo.size))
                 .background(Color(NSColor.textBackgroundColor))
+                .overlay(alignment: .topTrailing) { zoomControls }
             }
         }
+    }
+
+    // MARK: - Interaction (pan / zoom / fit)
+
+    private var panGesture: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                let base = gestureStart ?? transform
+                if gestureStart == nil { gestureStart = base }
+                transform = base.panned(
+                    by: CGPoint(x: value.translation.width, y: value.translation.height))
+            }
+            .onEnded { _ in gestureStart = nil }
+    }
+
+    private func zoomGesture(viewSize: CGSize) -> some Gesture {
+        let anchor = CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
+        return MagnificationGesture()
+            .onChanged { value in
+                let base = gestureStart ?? transform
+                if gestureStart == nil { gestureStart = base }
+                transform = base.zoomed(by: value, around: anchor)
+            }
+            .onEnded { _ in gestureStart = nil }
+    }
+
+    private var zoomControls: some View {
+        HStack(spacing: 4) {
+            Button { transform = .identity } label: {
+                Image(systemName: "arrow.up.left.and.down.right.magnifyingglass")
+            }
+            .help("Reset zoom & pan")
+            .accessibilityIdentifier("mdv.depgraph.fit")
+        }
+        .buttonStyle(.borderless)
+        .padding(6)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .padding(8)
     }
 
     // MARK: - Edges
@@ -139,6 +195,31 @@ public struct DependencyGraphView: View {
         case .external: return Color.secondary.opacity(0.12)
         case .package: return Color.accentColor.opacity(0.10)
         }
+    }
+}
+
+/// TSK-1470 — shown past `DependencyGraphInteraction.nodeCap`: drawing a
+/// force layout + hundreds of node views would freeze the UI, so we report
+/// the size instead of hanging. Subtree-filtering is the planned follow-on.
+private struct LargeGraphPlaceholder: View {
+    let nodeCount: Int
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "point.3.filled.connected.trianglepath.dotted")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+            Text("Graph too large to draw")
+                .font(.headline)
+            Text("\(nodeCount) nodes exceed the \(DependencyGraphInteraction.nodeCap)-node "
+                 + "interactive limit. Filter to a subtree to explore it (coming soon).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.textBackgroundColor))
+        .accessibilityIdentifier("mdv.depgraph.tooLarge")
     }
 }
 
