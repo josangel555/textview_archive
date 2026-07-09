@@ -20,16 +20,18 @@ task_park "Need me".
   pyramid per ticket → ONE gate at chunk end → ONE commit (all TSK ids) → board each to review with
   a SHARED checks artifact. Cron `beb85b23` (every 20 min) carries the new prompt (session-only —
   the BACKLOG mandate is the durable copy). Test pyramid per ticket = mandatory (see BACKLOG).
-- **THIS TICK — CH-A (image editor) → all 5 at `review`** (commit `a51f9564`). 1114 fillSelection +
-  deleteSelection-undo-fix (data-loss bug) · 1574 heart/lightning/callout gallery shapes · 1088/1441
-  ImageViewport model (zoom/pan/grid/ruler/coords, host-tested) + save-vs-copy tooltips · 1055
-  reconcile (already done via TSK-1424). 17 host tests. **Render integration (zoom/pan/grid/rulers
-  on-screen) filed TSK-1578** (image editor = view-local @StateObject → VM/owner glance).
-- **PRIOR (at `review`):** 1168 vector-edit (`a403011d`) · 1445 CR journey (`5ce2a901`) · 1443 git
-  panel (`8a09f977`; U1=1577) · 1444 LSP chip (`ddd8aa4d`, VM-verified) · 1576 footer-capture
-  (`ebf056fe`, VM-verified).
-- **Next chunk:** CH-B (image advanced tools) or CH-C (devtools). **Verify-before-build: many §1
-  items are already done** — task_get + grep before building (CH-A's 1055 was already shipped).
+- **THIS TICK — CH-B (image advanced tools) → 4 at `review`** (commit `1a6eef77`). Verify-before-build:
+  the raster OPS already existed (drawCurve AA bezier · fill/strokePolygon · drawText + retained .text
+  shape) → wired the TOOLS. 1083 curve tool · 1084 polygon multi-click + Close · 1089 text tool
+  (retained editable .text) · 1086 AA reconcile (CGContext/Canvas AA + editable overlay). 6 host tests.
+  **1090 layers PARKED (Need-me: epic-scale, recommend design-first).** 1087 brush-gallery stays
+  reported (future image chunk). Live drag/multi-click = VM/AX tail.
+- **PRIOR (at `review`):** CH-A image (`a51f9564`: 1055/1088/1114/1441/1574; render→1578) · 1168
+  vector-edit (`a403011d`) · 1445 CR journey (`5ce2a901`) · 1443 git panel (`8a09f977`; U1=1577) ·
+  1444 LSP chip (`ddd8aa4d`) · 1576 footer-capture (`ebf056fe`).
+- **Next chunk:** CH-C (devtools: 1571 monitor-menu · 1577 git-render-scene · 1482 menu-audit · 1191
+  git-history · 318/1108 CR Q&A). **Verify-before-build: many §1 items already done** — task_get +
+  grep first (CH-A's 1055 + CH-B's 1086 were already shipped; CH-B's ops pre-existed).
 - **Per-ticket detail lives on the board (task_get) + git log** — not here.
 
 ## ✅ FOOTER-CAPTURE ROOT (2026-07-09, TSK-1576 — corrects a wrong first theory)
