@@ -105,9 +105,24 @@ body.dark .cm-invisible {
  * Theme-aware to read on both host backgrounds; pointer-only, so it never
  * persists or interferes with selection. Mirrors the Source view's native
  * NSTextView hover highlight (SourceHoverHighlight). */
-.cm-line:hover            { background: rgba(127, 127, 127, 0.05); }
-body.dark  .cm-line:hover { background: rgba(255, 255, 255, 0.05); }
-body.light .cm-line:hover { background: rgba(0, 0, 0, 0.04); }
+/* TSK-1606 (owner 2026-07-25) — the hover line is gated on the
+ * `cm-pointer-live` body class, NOT bare `:hover`. A CSS-only hover follows
+ * where the pointer physically IS, so pressing Enter or scrolling moved the
+ * CONTENT under a stationary mouse and lit up an unrelated line — reading as
+ * a second, buggy "current line" fighting the blue one. The page now drops
+ * the class the moment the caret/doc/scroll changes and restores it only on
+ * REAL pointer movement (a coordinate change), so hover returns when the
+ * user actually moves the mouse again. */
+body.cm-pointer-live .cm-line:hover            { background: rgba(127, 127, 127, 0.05); }
+body.cm-pointer-live.dark  .cm-line:hover      { background: rgba(255, 255, 255, 0.05); }
+body.cm-pointer-live.light .cm-line:hover      { background: rgba(0, 0, 0, 0.04); }
+
+/* TSK-1606 — ACTIVE indent guide (the caret's own nesting level). Faint
+ * guides mark every level; the active one is accent-tinted so a deep block's
+ * column is traceable up the file ("am I at the right indent?"). Theme-aware:
+ * the light default reads on white, the dark override on the editor's dark bg. */
+body { --mdv-indent-active: #3b7fd4; }
+body.dark { --mdv-indent-active: #6cb0ff; }
 
 /* Owner ask: a slightly wider caret so the insertion point is easier to spot
  * (CM's default cursor border-left is ~1.2px). Render-validated on the VM. */

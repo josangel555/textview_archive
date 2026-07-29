@@ -37,10 +37,14 @@ public enum GitLogDiffActions {
         }
     }
 
-    /// Plain click: select the row and open the commit's diff tab. Uses
-    /// `doc.open(url:)` (not `openInNewTab`) so re-clicking the SAME commit
-    /// focuses its existing diff tab instead of stacking duplicates — the
-    /// `<sha>.diff` cache path is deterministic per commit (TSK-907).
+    /// Plain click: select the row and open the commit's diff in the ONE
+    /// ephemeral PREVIEW slot (TSK-1594) — VSCode-style, matching the sidebar
+    /// file browser. A single click previews (italic, reused slot: clicking
+    /// another commit replaces it in place, so browsing commits never stacks
+    /// tabs); clicking the SAME commit again (i.e. a double-click) finds it
+    /// already open and promotes it to a permanent tab via `openOrReveal`. The
+    /// `<sha>.diff` cache path is deterministic per commit (TSK-907), so the
+    /// dedup + promote works off the URL.
     public static func showCommit(sha: String,
                                   panel: GitPanelModel,
                                   doc: DocumentModel) {
@@ -55,7 +59,7 @@ public enum GitLogDiffActions {
             lastTrace = "showCommit(\(sha)): cache WRITE FAILED (body=\(body.count)B)"
             return
         }
-        doc.open(url: out)
+        doc.openPreview(url: out)
         lastTrace = "showCommit(\(sha)): root=\(root.lastPathComponent) "
             + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
     }
@@ -80,7 +84,7 @@ public enum GitLogDiffActions {
             lastTrace = "cumulativeDiff: cache WRITE FAILED (body=\(body.count)B)"
             return
         }
-        doc.open(url: out)
+        doc.openPreview(url: out)   // TSK-1594: ephemeral preview slot
         lastTrace = "cumulativeDiff(\(range.baseRef)..\(range.tipRef)): "
             + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
     }

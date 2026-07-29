@@ -15,6 +15,10 @@ struct GitLogTab: View {
     /// repo refresh that didn't actually change). Now @State + .onChange
     /// keyed on the logEntries identity.
     @State private var layout: GraphLayout.Layout? = nil
+    /// TSK-1603 — branch run under the pointer: hovering a row dims every
+    /// other branch in the graph and tints that branch's rows, answering
+    /// "which commits and lines belong to this branch?".
+    @State private var hoveredBranchID: Int? = nil
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     /// The rows the tab renders — search match set while a search is
@@ -80,13 +84,30 @@ struct GitLogTab: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: doc.uiSize(9)))
                 .foregroundStyle(.secondary)
-            TextField("Search messages", text: $model.logSearchQuery)
+            // TSK-1600: the query matches a commit-id / branch / worktree
+            // PREFIX, the subject, or (git-backed) the message body.
+            TextField("sha · branch · worktree · message", text: $model.logSearchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: doc.uiSize(11)))
                 .onChange(of: model.logSearchQuery) { _, q in
                     model.runLogSearch(q)
                 }
+                .help("Search by commit-id prefix, branch/tag/remote prefix, "
+                      + "worktree prefix, subject, or message body")
                 .accessibilityIdentifier("mdv.gitLog.searchField")
+            // TSK-1602: ALL-REFS graph — every worktree's branch tips in one
+            // topo-ordered graph, so divergence points are visible without
+            // switching worktrees. Prominent once a sibling worktree exists.
+            Toggle("All refs", isOn: Binding(
+                get: { model.showAllRefs },
+                set: { model.showAllRefs = $0 }))
+                .toggleStyle(.checkbox)
+                .font(.system(size: doc.uiSize(10)))
+                .help(model.worktreeEntries.count > 1
+                      ? "Show every branch — including the \(model.worktreeEntries.count - 1) "
+                        + "other worktree(s) — in one graph"
+                      : "Show all branches and tags in one graph, not just the current branch")
+                .accessibilityIdentifier("mdv.gitLog.allRefsToggle")
             if model.isLogSearchActive {
                 Text("\(entries.count)")
                     .font(.system(size: doc.uiSize(9), design: .monospaced))
@@ -180,9 +201,20 @@ struct GitLogTab: View {
                 authorLine: authorLine(c),
                 isSelected: model.selectedLogSHAs.contains(c.sha)
                     || c.sha == model.selectedLogSHA,
-                uiSize: doc.uiSize)
+                uiSize: doc.uiSize,
+                // TSK-1601: typed decorations → per-kind chip colors, with a
+                // sibling worktree's branch called out by name.
+                typedRefs: GitRefKind.classifyAll(
+                    c.refs,
+                    remoteNames: model.remoteNamesForRefs,
+                    worktreeBranches: model.worktreeBranchMap),
+                hoveredBranchID: hoveredBranchID)
         }
         .buttonStyle(.plain)
+        // TSK-1603: hovering a row lights up its whole branch run.
+        .onHover { inside in
+            hoveredBranchID = inside ? layoutRow?.branchID : nil
+        }
         .help("\(c.sha) — \(c.subject)")
         // TSK-523: start (or reopen) a commit-scoped review — inline
         // structured diff with the add-comment affordance, in the Review tab.

@@ -80,6 +80,10 @@ struct DiffView: View {
         self.reviewSession = reviewSession
         self._files = State(initialValue: initialFiles)
         self._rowSelection = State(initialValue: initialSelection)
+        // TSK-1595: the seam bypasses `.onChange(of: files)`, so seed the
+        // longest-line cache here — layout tests exercise the same width
+        // floor the live parse path uses.
+        self._maxLineChars = State(initialValue: Self.maxLineChars(initialFiles))
     }
 
     var body: some View {
@@ -114,7 +118,12 @@ struct DiffView: View {
         .onAppear { files = RustDiffAdapter.parse(text) }
         .onChange(of: text) { _, newText in files = RustDiffAdapter.parse(newText) }
         .onChange(of: findQuery) { _, q in recomputeFind(query: q) }
-        .onChange(of: files) { _, _ in recomputeFind(query: findQuery) }
+        .onChange(of: files) { _, newFiles in
+            recomputeFind(query: findQuery)
+            // TSK-1595: cache the longest-line scan (O(total chars)) per
+            // parse, not per body eval — `idealRowWidth` reads it cheaply.
+            maxLineChars = Self.maxLineChars(newFiles)
+        }
     }
 
     // MARK: - Find-in-diff (TSK-597)
@@ -203,6 +212,16 @@ struct DiffView: View {
     /// can render this exact tree with ImageRenderer — ScrollView itself is
     /// opaque to every headless oracle (renders nothing), so the alignment
     /// contract is pinned here, one level below it.
+    ///
+    /// TSK-1595 (owner: "the git diff window is very narrow — lines wrap"):
+    /// the LazyVStack inside a two-axis ScrollView proposes ~viewport width
+    /// to its children, so a long diff line WRAPPED at the pane width instead
+    /// of extending into the horizontal scroll — unreadable in a narrow
+    /// docked panel (every line broke into 3-4 fragments). The fix floors the
+    /// stack's width at the diff's IDEAL row width (longest line × measured
+    /// monospace advance + gutters), so rows always lay out single-line and
+    /// the pane scrolls horizontally — wide panes are unchanged (viewport
+    /// still wins when larger).
     internal func scrollBody(viewport: CGSize) -> some View {
         LazyVStack(alignment: .leading, spacing: 16, pinnedViews: []) {
             // TSK-911: commit-diff summary header — the message/author/date the
@@ -216,9 +235,45 @@ struct DiffView: View {
             }
         }
         .padding(.vertical, 8)
-        .frame(minWidth: viewport.width,
+        .frame(minWidth: max(viewport.width, idealRowWidth),
                minHeight: viewport.height,
                alignment: .topLeading)
+    }
+
+    // MARK: - Ideal row width (TSK-1595)
+
+    /// Longest content line (in characters) across the parsed diff. Pure +
+    /// static so the host test pins it without a view. O(total chars), runs
+    /// once per parse (cached in `maxLineChars`), not per body eval.
+    internal static func maxLineChars(_ files: [UnifiedDiff.File]) -> Int {
+        var maxChars = 0
+        for file in files {
+            for hunk in file.hunks {
+                for line in hunk.lines where line.content.count > maxChars {
+                    maxChars = line.content.count
+                }
+            }
+        }
+        return maxChars
+    }
+
+    /// Cached longest-line length; recomputed only when the parse changes.
+    @State private var maxLineChars: Int = 0
+
+    /// Fixed row chrome to the LEFT/RIGHT of the content column: the review
+    /// gutter slot (18) + two line-number cells (44 + 6 each) + the +/- prefix
+    /// (14) + trailing padding (8), rounded up for safety margin. A slight
+    /// overshoot only adds a few points of horizontal scroll.
+    private static let rowGutterWidth: CGFloat = 148
+
+    /// The width at which every diff row lays out on ONE line: longest line ×
+    /// the body font's real monospace advance, plus the gutter chrome. Zero
+    /// when the diff is empty/unparsed (the viewport floor then rules alone).
+    private var idealRowWidth: CGFloat {
+        guard maxLineChars > 0 else { return 0 }
+        let font = NSFont.monospacedSystemFont(ofSize: bodyFontSize, weight: .regular)
+        let charW = ("0" as NSString).size(withAttributes: [.font: font]).width
+        return ceil(CGFloat(maxLineChars) * charW) + Self.rowGutterWidth
     }
 
     private var empty: some View {

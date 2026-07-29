@@ -178,8 +178,14 @@ struct UnifiedHistoryView: View {
                 case .content(let text):
                     versionContentView(text)
                 case .diff(let text):
-                    DiffView(text: text, doc: doc)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // TSK-1596: web diff renderer (kill-switch MDV_WEB_DIFF=0).
+                    if WebDiffGate.isEnabled() {
+                        WebDiffPane(text: text, doc: doc, navAvailable: false)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        DiffView(text: text, doc: doc)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
         }

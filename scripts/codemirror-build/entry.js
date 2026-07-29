@@ -51,6 +51,11 @@ import {
 // defines defaultHighlightStyle + oneDark in terms of these tags) —
 // re-exporting `tags` adds no new package, just surfaces it on window.CM.
 import { tags } from "@lezer/highlight";
+// TSK-1599: syntax highlighting in the WEB diff view — `highlightCode` walks
+// a Lezer tree emitting styled spans; `classHighlighter` maps tags to stable
+// `tok-*` CSS classes the diff page styles for both themes. Both ship inside
+// @lezer/highlight (already in the bundle); re-exporting adds no package.
+import { highlightCode, classHighlighter } from "@lezer/highlight";
 import {
   linter, lintGutter, setDiagnostics, forEachDiagnostic, Diagnostic,
 } from "@codemirror/lint";
@@ -93,6 +98,16 @@ import { oneDark } from "@codemirror/theme-one-dark";
 // handle for `vim-mode-change` events → the footer mode indicator).
 import { vim, Vim, getCM } from "@replit/codemirror-vim";
 
+// TSK-1596 (owner-approved dep 2026-07-24): @codemirror/merge backs the WEB
+// diff view. `diff` (raw char-level Change[]) and `presentableDiff`
+// (word-boundary-cleaned Change[]) drive the Line|Word|Char intra-line
+// granularity in diffweb.html's patch renderer; MergeView/unifiedMergeView
+// are exported for the side-by-side / two-document modes.
+import {
+  MergeView, unifiedMergeView, diff, presentableDiff,
+  getChunks, goToNextChunk, goToPreviousChunk,
+} from "@codemirror/merge";
+
 // EditorState.tabSize is a facet on the namespace object, not a named
 // export. Re-export as `EditorStateTabSize` for use from the HTML host
 // (where `EditorState` is destructured into a local).
@@ -128,4 +143,9 @@ export {
   // with the Lezer pack names above.
   swiftMode, luaMode, shellMode, yamlMode, rubyMode, kotlinMode, csharpMode,
   vim, Vim, getCM,
+  // TSK-1596: @codemirror/merge surface for the web diff view.
+  MergeView, unifiedMergeView, diff, presentableDiff,
+  getChunks, goToNextChunk, goToPreviousChunk,
+  // TSK-1599: diff-view syntax highlighting.
+  highlightCode, classHighlighter,
 };

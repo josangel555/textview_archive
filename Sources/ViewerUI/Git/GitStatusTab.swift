@@ -315,7 +315,10 @@ struct GitStatusTab: View {
             ? "(no diff output — file may be unchanged at HEAD or untracked. Path: \(e.path))\n"
             : diff
         try? body.write(to: out, atomically: true, encoding: .utf8)
-        doc.openInNewTab(out)
+        // TSK-1594: ephemeral preview slot (VSCode-style) — clicking through
+        // changed files reuses one tab; a second click on the same file
+        // (double-click) promotes it to permanent.
+        doc.openPreview(url: out)
     }
 
     // MARK: - Grouping

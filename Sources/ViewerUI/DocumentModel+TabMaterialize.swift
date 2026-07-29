@@ -65,6 +65,13 @@ extension DocumentModel {
                 }
                 var t2 = current
                 t2.state = state
+                // TSK-1588: a restored lazy tab may carry the size-blind
+                // `.editor` default; past the CM6 cap coerce to read-only
+                // Source (same rule as both open paths).
+                if case .loaded(let f) = state {
+                    t2.viewMode = Self.editorDefaultSizeCoercion(
+                        mode: t2.viewMode, byteCount: f.byteCount)
+                }
                 self.tabCoordinator.replace(at: idx, with: t2)
                 // UX-K (#231): the lazy tab's content is now laid out — restore
                 // its persisted scroll position. The `selectTab` immediate

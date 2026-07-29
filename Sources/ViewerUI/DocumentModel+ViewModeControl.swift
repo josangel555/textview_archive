@@ -56,6 +56,22 @@ extension DocumentModel {
         return upgraded == .hex ? current : upgraded
     }
 
+    /// TSK-1588 — the SIZE-AWARE half of the editor-by-default lens. The
+    /// category→lens map (`ViewMode.canonicalDefaultLens`) now defaults text
+    /// families to `.editor`, but it is size-blind by design; a file past the
+    /// CM6 cap (`codeMirrorEditorMaxBytes`, 50 MiB) must open in the read-only
+    /// Source lens instead — CM6-read-only under the `WebSourceViewGate`
+    /// threshold, the NSTextView large-file fallback beyond it — rather than
+    /// dead-ending in `LargeEditorPlaceholderView`. Applied wherever an
+    /// open-time mode meets its loaded byte count (sync open, off-main open,
+    /// lazy-tab materialize); the manual picker path has its own refusal in
+    /// `setCurrentViewMode`.
+    nonisolated static func editorDefaultSizeCoercion(
+        mode: ViewMode, byteCount: Int
+    ) -> ViewMode {
+        (mode == .editor && byteCount > codeMirrorEditorMaxBytes) ? .source : mode
+    }
+
     /// How the toolbar should render itself for the current mode (which
     /// primary button is selected, whether ViewOnly reads on, whether the
     /// Format button is the active lens).

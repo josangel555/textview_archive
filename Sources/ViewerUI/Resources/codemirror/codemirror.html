@@ -400,6 +400,43 @@
   // `isDragging` is owned here (mousedown→true, mouseup/blur→false on the
   // document so a release outside the editor still clears it). An explicit
   // `update()` on dragging-end forces the decoration to recompute.
+  // ---- hover-line gating (TSK-1606) ------------------------------------
+  // The grey hover line is CSS `:hover` under `body.cm-pointer-live`. Bare
+  // `:hover` tracks where the pointer physically is, so ANY content movement
+  // (Enter, arrow keys, scroll) slid a different line under a stationary
+  // mouse and lit it up — a phantom second "current line" that fought the
+  // blue active line and looked buggy.
+  //
+  // Rule (owner): the moment the active line changes, HIDE the hover line;
+  // bring it back only when the mouse actually MOVES. "Actually moves" is a
+  // coordinate change — WebKit also emits mousemove when content scrolls
+  // beneath a still pointer, and honoring those would reintroduce the bug.
+  let cmPointerX = null, cmPointerY = null;
+  function cmSuppressHoverLine() {
+    document.body.classList.remove("cm-pointer-live");
+  }
+  function cmPointerMoved(e) {
+    if (e.clientX === cmPointerX && e.clientY === cmPointerY) return;  // content moved, not the mouse
+    cmPointerX = e.clientX; cmPointerY = e.clientY;
+    document.body.classList.add("cm-pointer-live");
+  }
+  document.addEventListener("mousemove", cmPointerMoved, true);
+  // Scrolling (wheel/trackpad/programmatic) re-parks lines under the pointer.
+  document.addEventListener("wheel", cmSuppressHoverLine, { passive: true, capture: true });
+  document.addEventListener("scroll", cmSuppressHoverLine, { passive: true, capture: true });
+  // Typing/navigating never means "hover here".
+  document.addEventListener("keydown", cmSuppressHoverLine, true);
+
+  /// Extension half: any caret move, doc edit, or viewport scroll suppresses
+  /// the hover line until the pointer moves again.
+  function hoverLineGateExtension() {
+    return EditorView.updateListener.of((u) => {
+      if (u.docChanged || u.selectionSet || u.viewportChanged) {
+        cmSuppressHoverLine();
+      }
+    });
+  }
+
   function shouldShowActiveLine(state, isDragging) {
     if (isDragging) return false;
     const sel = state.selection;
@@ -585,32 +622,63 @@
   // of the current `indentUnit` for every visible line. Decoration is
   // recomputed on docChanged / viewportChanged so cost stays bounded by
   // the viewport.
-  class IndentGuideWidget extends WidgetType {
-    constructor(depth, unitSize) {
-      super(); this.depth = depth; this.unitSize = unitSize;
+  // TSK-1606 (owner: "hard to know if I'm in the correct indent level for
+  // long deep nested files") — the guide for the caret's OWN indent level is
+  // drawn ACTIVE (accent-tinted, opaque) while the rest stay faint, so the
+  // column you're editing in is traceable up the file. `activeDepth` is the
+  // 0-based guide index to light up, or -1 for none.
+  // TSK-1607 (owner 2026-07-25: "indent guides not matching actual indents…
+  // I think the guide itself adding spacing?") — YES, that was the bug. The
+  // guides used to be a WIDGET decoration (`display:inline-block`, width
+  // depth×unit) inserted at line start, i.e. BEFORE the real leading
+  // whitespace: it occupied layout and pushed the text right, so every
+  // indented line rendered at roughly DOUBLE its true indent and no guide
+  // lined up with where the text actually starts.
+  //
+  // Guides now PAINT instead of occupying: a `Decoration.line` whose inline
+  // style layers background gradients under the text. Zero layout impact,
+  // so the rules land exactly on the real indent columns, and the caret /
+  // click targets inside the indent are untouched.
+  //
+  // `background-origin: content-box` matters — CM6 gives `.cm-line` a left
+  // padding, and without it every guide would sit that many px right of the
+  // text origin.
+  function indentGuideStyle(depth, unitSize, activeDepth) {
+    const step = (unitSize) + "ch";
+    const span = (depth * unitSize) + "ch";
+    const images = [], sizes = [], positions = [];
+    // Active level first so it paints ON TOP of the faint rule.
+    if (activeDepth >= 0 && activeDepth < depth) {
+      images.push("linear-gradient(to right, var(--mdv-indent-active, #3b7fd4) 0 1px, transparent 1px)");
+      sizes.push(step + " 100%");
+      positions.push((activeDepth * unitSize) + "ch 0");
     }
-    eq(o) { return o.depth === this.depth && o.unitSize === this.unitSize; }
-    toDOM() {
-      const wrap = document.createElement("span");
-      wrap.className = "cm-indent-guides";
-      wrap.style.display = "inline-block";
-      wrap.style.width = (this.depth * this.unitSize) + "ch";
-      // One ::before per depth level via inline boxes. Cheaper than
-      // building N child spans for short indents (depth max ≤ 32).
-      for (let i = 0; i < this.depth; i++) {
-        const bar = document.createElement("span");
-        bar.className = "cm-indent-guide";
-        bar.style.display = "inline-block";
-        bar.style.width = this.unitSize + "ch";
-        bar.style.borderLeft = "1px solid currentColor";
-        bar.style.opacity = "0.15";
-        bar.style.height = "1.2em";
-        bar.style.verticalAlign = "text-bottom";
-        wrap.appendChild(bar);
-      }
-      return wrap;
+    images.push(
+      "repeating-linear-gradient(to right, var(--mdv-indent-guide, rgba(127,127,127,0.30)) 0 1px, transparent 1px "
+      + step + ")");
+    sizes.push(span + " 100%");
+    positions.push("0 0");
+    return "background-image:" + images.join(",")
+      + ";background-size:" + sizes.join(",")
+      + ";background-position:" + positions.join(",")
+      + ";background-repeat:no-repeat;background-origin:content-box;";
+  }
+
+  /// Leading-whitespace depth of `text` in indent units (shared by the guide
+  /// builder and the active-level probe so they can never disagree).
+  function indentDepthOf(text, unitSize) {
+    let depth = 0, i = 0;
+    while (i < text.length) {
+      const ch = text.charCodeAt(i);
+      if (ch === 0x20) {
+        let runEnd = i;
+        while (runEnd < text.length && text.charCodeAt(runEnd) === 0x20) runEnd++;
+        depth += Math.floor((runEnd - i) / unitSize);
+        i = runEnd;
+      } else if (ch === 0x09) { depth += 1; i++; }
+      else { break; }
     }
-    ignoreEvent() { return true; }
+    return depth;
   }
   function detectIndentUnitSize(state) {
     // Pull unit from the indentUnit facet; fall back to 2.
@@ -625,12 +693,34 @@
     return ViewPlugin.fromClass(class {
       constructor(view) { this.decorations = this.compute(view); }
       update(u) {
-        if (u.docChanged || u.viewportChanged) {
+        // TSK-1606: also recompute on caret moves — the ACTIVE guide follows
+        // the cursor's indent level.
+        if (u.docChanged || u.viewportChanged || u.selectionSet) {
           this.decorations = this.compute(u.view);
         }
       }
+      /// The indent level to highlight: the caret line's own depth, or — when
+      /// the caret sits on a blank/dedented line inside a block — the depth of
+      /// the nearest non-empty line above, so the guide doesn't blink off
+      /// while typing on an empty line in a deep block.
+      activeDepth(view, unitSize) {
+        const sel = view.state.selection;
+        if (sel.ranges.length !== 1) return -1;   // multi-cursor: no single level
+        const line = view.state.doc.lineAt(sel.main.head);
+        if (line.text.trim().length > 0) {
+          return indentDepthOf(line.text, unitSize) - 1;
+        }
+        for (let n = line.number - 1; n >= 1 && n > line.number - 200; n--) {
+          const prev = view.state.doc.line(n);
+          if (prev.text.trim().length > 0) {
+            return indentDepthOf(prev.text, unitSize) - 1;
+          }
+        }
+        return -1;
+      }
       compute(view) {
         const unitSize = detectIndentUnitSize(view.state);
+        const active = this.activeDepth(view, unitSize);
         const ranges = [];
         for (const { from, to } of view.visibleRanges) {
           let pos = from;
@@ -638,23 +728,12 @@
             const line = view.state.doc.lineAt(pos);
             // Count leading spaces / tabs only — mixed treated as
             // unitSize-wide each.
-            let depth = 0, i = 0;
-            const text = line.text;
-            while (i < text.length) {
-              const ch = text.charCodeAt(i);
-              if (ch === 0x20) {
-                // Run of spaces = floor(count / unitSize)
-                let runEnd = i;
-                while (runEnd < text.length && text.charCodeAt(runEnd) === 0x20) runEnd++;
-                depth += Math.floor((runEnd - i) / unitSize);
-                i = runEnd;
-              } else if (ch === 0x09) { depth += 1; i++; }
-              else { break; }
-            }
+            const depth = indentDepthOf(line.text, unitSize);
             if (depth > 0) {
-              ranges.push(Decoration.widget({
-                widget: new IndentGuideWidget(depth, unitSize),
-                side: -1,
+              // TSK-1607: a LINE decoration — paints under the text, adds no
+              // width (the widget form doubled every indent).
+              ranges.push(Decoration.line({
+                attributes: { style: indentGuideStyle(depth, unitSize, active) },
               }).range(line.from));
             }
             if (line.to === view.state.doc.length) break;
@@ -1121,6 +1200,9 @@
       // (replaces stock `highlightActiveLine()`; same `.cm-activeLine` class
       // so CM6's default styling still applies).
       activeLineExtension(),
+      // TSK-1606: caret/doc/scroll changes hide the grey hover line until
+      // the pointer really moves (see cmSuppressHoverLine).
+      hoverLineGateExtension(),
       // TSK-890: drag-gated so the viewport-wide occurrence scan doesn't run
       // on every mousemove during a drag-select. `installDragSelectionMatchGate`
       // reconfigures this OFF for the drag's duration and back ON at drag-end.
@@ -1132,7 +1214,13 @@
         snippetTabBinding,
         snippetShiftTabBinding,
         saveBinding,
-        ...searchKeymap,   // ⌘F open search, ⌘G next, ⇧⌘G prev
+        // ⌘F open search, ⌘G next. ⇧⌘G (find-prev) is DROPPED on purpose
+        // (TSK-1589): the app binds ⇧⌘G to "Go to File or Folder…" as a
+        // native menu key-equivalent, but CM6's searchKeymap was
+        // preventDefault-ing it so the menu never fired while the editor had
+        // focus. Removing only that one binding lets ⇧⌘G bubble to the menu;
+        // find-prev stays reachable via ⇧-Enter in the search field.
+        ...searchKeymap.filter(function (b) { return b.key !== "Mod-Shift-g" && b.mac !== "Cmd-Shift-g"; }),
         ...historyKeymap,  // ⌘Z / ⇧⌘Z
         ...foldKeymap,
         literalTabBinding,
@@ -1188,6 +1276,10 @@
   // live editor through this. Same exposure class as cmDispatch — the
   // page is local, sandboxed, and never loads remote content.
   window.__mdvView = view;
+  // TSK-1607: pin the CSS tab-size to the boot indent width so a literal tab
+  // renders at the configured size even before Swift pushes setIndentation
+  // (otherwise the browser's default 4 shows through at a setting of 2).
+  applyCSSTabSize(detectIndentUnitSize(view.state));
   attachScrollListener();
 
   // ---- TSK-890: drag-gate for selection-match highlighting -------------
@@ -1501,6 +1593,17 @@
     });
   }
 
+  /// TSK-1607 (owner: "selected is 2, but tabbing 4") — the RENDERED width of
+  /// a literal `\t` is the CSS `tab-size` property, NOT CM6's `tabSize` facet
+  /// (that one only drives CM6's own column math). Nothing set the CSS
+  /// property, so tabs fell back to the browser default (4) and ignored the
+  /// configured indent width entirely — and since a plain Tab at the caret
+  /// inserts a real `\t` by design, every Tab looked 4 wide at a setting of 2.
+  function applyCSSTabSize(size) {
+    const content = view && view.dom && view.dom.querySelector(".cm-content");
+    if (content) content.style.tabSize = String(size);
+  }
+
   function applySetIndentation(msg) {
     const size = Math.max(1, Math.min(16, Number(msg.size) || 2));
     const unit = msg.useTabs ? "\t" : " ".repeat(size);
@@ -1510,6 +1613,7 @@
         tabSizeCompartment.reconfigure(EditorStateTabSize.of(size)),
       ],
     });
+    applyCSSTabSize(size);
   }
 
   function applyGotoLine(msg) {

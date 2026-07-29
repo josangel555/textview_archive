@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<!--
+  TSK-1596 — the WEB diff view (diffweb.html).
+
+  Renders a parsed unified diff (DiffWebPayload JSON from Swift) as DOM rows:
+  per-file blocks, hunk headers, dual line-number gutters, +/- tinted rows,
+  and INTRA-LINE change marks computed with the vendored @codemirror/merge
+  diff engine (codemirror.js → window.CM) at the selected granularity:
+
+    line → no intra-line marks (whole-row tint only)
+    word → CM.presentableDiff (change ranges cleaned to word boundaries)
+    char → CM.diff             (raw character-precise ranges)
+
+  Swift contract (DiffWebView.swift):
+    window.mdvDiffRender(payload, granularity) -> Int   row count (verified
+        apply — Swift checks the returned count; -1 = failure => it can fall
+        back / log, the TSK-1587 lesson: never fire-and-forget an apply)
+    window.mdvDiffSetGranularity(g) -> Int              re-render, same count
+    window.mdvDiffSetTheme(dark: Bool)
+    window.mdvDiffSetFontSize(px: Number)
+    window.mdvDiffSetWrap(on: Bool)      wrap long lines at EXACTLY the window
+        width (no h-scroll, rows never narrower than the window — the TSK-1595
+        class); off = single-line rows + horizontal scroll
+    window.mdvDiffSetNav(on: Bool)       show/hide the changed-files tree; a
+        file row click jumps to that file's block
+    window.mdvDiffJumpToFile(i) -> Bool  programmatic jump (also the nav-click
+        path, exposed for tests)
+
+  SECURITY: diff content enters the DOM exclusively via createTextNode /
+  textContent — never innerHTML — so hostile diff text cannot inject markup.
+  The page loads only the sibling codemirror.js (script-src 'self' + the boot
+  inline script); WKWebView API-injected JS (evaluateJavaScript) is exempt
+  from page CSP by WebKit design, which is how the Swift calls arrive.
+
+  Long lines NEVER wrap: rows are white-space:pre inside a page that scrolls
+  both axes natively — the same contract the SwiftUI DiffView needed the
+  TSK-1595 width-floor for, free here.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'">
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1d1d1f; --dim: #8e8e93;
+    --hunk-bg: #f2f2f7; --hunk-fg: #6e6e73;
+    --file-bg: #e8e8ed; --file-fg: #1d1d1f;
+    --add-bg: rgba(52,199,89,0.14); --del-bg: rgba(255,59,48,0.12);
+    --add-mark: rgba(52,199,89,0.38); --del-mark: rgba(255,59,48,0.34);
+    --gutter-fg: #aeaeb2; --sep: #d1d1d6;
+  }
+  body.dark {
+    --bg: #1e1e1e; --fg: #d4d4d4; --dim: #8e8e93;
+    --hunk-bg: #2a2a2e; --hunk-fg: #9a9aa0;
+    --file-bg: #333338; --file-fg: #e5e5e7;
+    --add-bg: rgba(48,209,88,0.16); --del-bg: rgba(255,69,58,0.15);
+    --add-mark: rgba(48,209,88,0.42); --del-mark: rgba(255,69,58,0.40);
+    --gutter-fg: #6e6e73; --sep: #3a3a3f;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+    -webkit-text-size-adjust: none;
+    --nav-w: 0px;
+  }
+  #root { min-width: max-content; padding-bottom: 24px; }
+  /* WRAP mode: rows fill EXACTLY the window (minus the nav) — no h-scroll,
+     never narrower than the window (the TSK-1595 class), long lines wrap
+     inside the content cell with the gutters pinned to the first line. */
+  body.wrap { overflow-x: hidden; }
+  body.wrap #root { min-width: 0; }
+  body.wrap .txt {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    flex: 1 1 auto; min-width: 0;
+  }
+  /* Changed-files nav: fixed so it survives both-axis content scrolling.
+     Width + typography SCALE with the pushed content font size (the diff
+     body and the nav must read at the same UI text size): the JS sets
+     --nav-w-size from mdvDiffSetFontSize, and the row fonts are em-based
+     off the body font. */
+  #nav {
+    display: none;
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: var(--nav-w-size, 220px);
+    overflow: auto; z-index: 2; box-sizing: border-box;
+    background: var(--file-bg); border-right: 1px solid var(--sep);
+    padding: 6px 0; user-select: none;
+  }
+  body.nav { --nav-w: var(--nav-w-size, 220px); }
+  body.nav #nav { display: block; }
+  body.nav #root { margin-left: var(--nav-w-size, 220px); }
+  .nav-dir {
+    display: flex; gap: 3px; align-items: baseline; cursor: pointer;
+    color: var(--dim); padding: 2px 8px 2px calc(8px + var(--ind) * 12px);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: -apple-system, sans-serif; font-size: 0.92em;
+  }
+  .nav-dir:hover { background: var(--hunk-bg); }
+  .nav-dir .tri { flex: 0 0 auto; font-size: 0.8em; width: 1em; }
+  .nav-children.collapsed { display: none; }
+  .nav-file {
+    display: flex; gap: 6px; align-items: baseline; cursor: pointer;
+    padding: 2px 8px 2px calc(8px + var(--ind) * 12px);
+    white-space: nowrap; overflow: hidden;
+    font-family: -apple-system, sans-serif; font-size: 0.92em; color: var(--fg);
+  }
+  .nav-file:hover { background: var(--hunk-bg); }
+  .nav-file.active { background: var(--add-mark); }
+  .nav-file .nm { overflow: hidden; text-overflow: ellipsis; }
+  .nav-file .st { font-weight: 700; flex: 0 0 auto; }
+  .st.A { color: #34c759; } .st.D { color: #ff3b30; }
+  .st.M { color: #ff9500; } .st.R { color: #af52de; } .st.B { color: var(--dim); }
+  .nav-file .cnt { color: var(--dim); flex: 0 0 auto; margin-left: auto; font-size: 0.9em; }
+  /* Commit summary (TSK-1599): preamble (message/author/date) + totals. */
+  #summary {
+    position: sticky; left: var(--nav-w);
+    padding: 10px 12px; border-bottom: 1px solid var(--sep);
+    background: var(--hunk-bg);
+    max-width: 100vw; box-sizing: border-box;
+  }
+  #summary .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #summary .stat { color: var(--dim); font-weight: 600; margin-top: 6px;
+                   font-family: -apple-system, sans-serif; font-size: 0.92em; }
+  .file { margin-top: 10px; }
+  .file-header {
+    position: sticky; left: var(--nav-w);
+    background: var(--file-bg); color: var(--file-fg);
+    font-weight: 600; padding: 5px 10px;
+    border-top: 1px solid var(--sep); border-bottom: 1px solid var(--sep);
+    white-space: pre;
+    display: flex; align-items: baseline; gap: 8px;
+    max-width: 100vw; box-sizing: border-box;
+  }
+  .file-header .fh-name { overflow: hidden; text-overflow: ellipsis; }
+  .fh-btns { margin-left: auto; display: flex; gap: 4px; flex: 0 0 auto; }
+  .fh-btn {
+    font: 10px -apple-system, sans-serif; color: var(--fg);
+    background: var(--bg); border: 1px solid var(--sep); border-radius: 4px;
+    padding: 1px 7px; cursor: pointer;
+  }
+  .fh-btn:hover { background: var(--hunk-bg); }
+  /* Syntax tokens (TSK-1599) — classHighlighter's tok-* classes, Xcode-ish
+     palette for both themes. Colors only; the +/- row tints stay beneath. */
+  .tok-keyword { color: #9b2393; font-weight: 600; }
+  .tok-string, .tok-string2, .tok-regexp { color: #c41a16; }
+  .tok-comment, .tok-lineComment, .tok-blockComment, .tok-docComment { color: #707f8c; font-style: italic; }
+  .tok-number, .tok-integer, .tok-float, .tok-bool, .tok-atom { color: #1c00cf; }
+  .tok-typeName, .tok-className, .tok-namespace { color: #3900a0; }
+  .tok-propertyName, .tok-attributeName { color: #326d74; }
+  .tok-labelName, .tok-macroName, .tok-meta { color: #643820; }
+  .tok-link, .tok-url { color: #0f68a0; text-decoration: underline; }
+  .tok-heading { font-weight: 700; }
+  body.dark .tok-keyword { color: #fc5fa3; }
+  body.dark .tok-string, body.dark .tok-string2, body.dark .tok-regexp { color: #fc6a5d; }
+  body.dark .tok-comment, body.dark .tok-lineComment, body.dark .tok-blockComment,
+  body.dark .tok-docComment { color: #6c7986; }
+  body.dark .tok-number, body.dark .tok-integer, body.dark .tok-float,
+  body.dark .tok-bool, body.dark .tok-atom { color: #d0bf69; }
+  body.dark .tok-typeName, body.dark .tok-className, body.dark .tok-namespace { color: #5dd8ff; }
+  body.dark .tok-propertyName, body.dark .tok-attributeName { color: #67b7a4; }
+  body.dark .tok-labelName, body.dark .tok-macroName, body.dark .tok-meta { color: #fd8f3f; }
+  body.dark .tok-link, body.dark .tok-url { color: #6699ff; }
+  .file-badge { color: var(--dim); font-weight: 400; margin-left: 8px; }
+  .hunk-header {
+    background: var(--hunk-bg); color: var(--hunk-fg);
+    padding: 2px 10px; white-space: pre;
+  }
+  .row { display: flex; white-space: pre; }
+  .row.add { background: var(--add-bg); }
+  .row.del { background: var(--del-bg); }
+  .no {
+    flex: 0 0 44px; text-align: right; padding-right: 6px;
+    color: var(--gutter-fg); user-select: none;
+  }
+  .pfx { flex: 0 0 14px; text-align: center; user-select: none; }
+  .row.add .pfx { color: #34c759; }
+  .row.del .pfx { color: #ff3b30; }
+  .txt { padding-right: 12px; }
+  .txt mark { background: transparent; color: inherit; border-radius: 2px; }
+  .row.add .txt mark { background: var(--add-mark); }
+  .row.del .txt mark { background: var(--del-mark); }
+  #empty { color: var(--dim); padding: 28px; font: 13px -apple-system, sans-serif; }
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="root"></div>
+<script src="codemirror.js"></script>
+<script>
+(function () {
+  "use strict";
+  let payload = [];
+  let payloadPre = null;
+  let granularity = "word";
+  let fontPx = 12;
+  /// Above this many total rows, per-hunk syntax highlighting is skipped
+  /// (keeps giant commit diffs snappy; the +/- tints still render).
+  const HIGHLIGHT_ROW_CAP = 8000;
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.appendChild(document.createTextNode(text));
+    return e;
+  }
+
+  // Bridge to Swift (file-header buttons). Outside the app (the in-process
+  // page tests) there is no handler — messages fall into a test sink.
+  function post(msg) {
+    try {
+      window.webkit.messageHandlers.mdvDiff.postMessage(msg);
+    } catch (e) {
+      (window.__mdvDiffBridgeSink = window.__mdvDiffBridgeSink || []).push(msg);
+    }
+  }
+
+  // ---- Syntax highlighting (TSK-1599, vendored Lezer via window.CM) ----
+
+  function languageParserFor(path) {
+    const ext = (String(path).split(".").pop() || "").toLowerCase();
+    const CM = window.CM;
+    if (!CM) return null;
+    try {
+      if (ext === "ts" || ext === "tsx") {
+        return CM.javascript({ typescript: true, jsx: ext === "tsx" }).language.parser;
+      }
+      const lezer = {
+        js: CM.javascript, mjs: CM.javascript, cjs: CM.javascript, jsx: CM.javascript,
+        py: CM.python, json: CM.json, rs: CM.rust, java: CM.java,
+        c: CM.cpp, cc: CM.cpp, cpp: CM.cpp, h: CM.cpp, hpp: CM.cpp,
+        sql: CM.sql, html: CM.html, htm: CM.html, css: CM.css, xml: CM.xml,
+        go: CM.go, md: CM.markdown, markdown: CM.markdown,
+      };
+      if (lezer[ext]) return lezer[ext]().language.parser;
+      const stream = {
+        swift: CM.swiftMode, kt: CM.kotlinMode, kts: CM.kotlinMode, cs: CM.csharpMode,
+        lua: CM.luaMode, sh: CM.shellMode, bash: CM.shellMode, zsh: CM.shellMode,
+        yaml: CM.yamlMode, yml: CM.yamlMode, rb: CM.rubyMode,
+      };
+      if (stream[ext]) return CM.StreamLanguage.define(stream[ext]).parser;
+    } catch (e) {}
+    return null;
+  }
+
+  /// Highlight a multi-line text once; return per-line token arrays
+  /// [[text, cls], ...] (cls "" = plain). null on any failure.
+  function lineTokens(text, parser) {
+    if (!parser || !window.CM || !window.CM.highlightCode) return null;
+    try {
+      const tree = parser.parse(text);
+      const lines = [[]];
+      window.CM.highlightCode(
+        text, tree, window.CM.classHighlighter,
+        function (tok, cls) { lines[lines.length - 1].push([tok, cls || ""]); },
+        function () { lines.push([]); });
+      return lines;
+    } catch (e) { return null; }
+  }
+
+  // Intra-line change ranges for a removed/added line pair at the current
+  // granularity. Returns {a: [[from,to]...], b: [[from,to]...]} or null.
+  function intraRanges(a, b) {
+    if (granularity === "line") return null;
+    try {
+      const fn = granularity === "char" ? window.CM.diff : window.CM.presentableDiff;
+      const changes = fn(a, b);
+      if (!changes || !changes.length) return null;
+      return {
+        a: changes.map(function (c) { return [c.fromA, c.toA]; }),
+        b: changes.map(function (c) { return [c.fromB, c.toB]; }),
+      };
+    } catch (e) { return null; }
+  }
+
+  // Build the content cell composing SYNTAX TOKENS ([text, cls] spans) with
+  // intra-line change MARK ranges ([from,to), ascending, non-overlapping —
+  // merge's Change[] contract). Tokens are split at mark boundaries; a
+  // marked sub-segment renders as <mark class="tok-…">, so token color and
+  // change background stack.
+  function contentCell(text, ranges, tokens) {
+    const cell = el("div", "txt");
+    if (!text.length) {
+      cell.appendChild(document.createTextNode(" "));
+      return cell;
+    }
+    const marks = (ranges || []).map(function (r) {
+      return [Math.max(0, Math.min(r[0], text.length)),
+              Math.max(0, Math.min(r[1], text.length))];
+    }).filter(function (r) { return r[1] > r[0]; });
+    const toks = (tokens && tokens.length)
+      ? tokens : [[text, ""]];   // single plain token when unhighlighted
+    const inMark = function (pos) {
+      for (const m of marks) { if (pos >= m[0] && pos < m[1]) return m; }
+      return null;
+    };
+    let pos = 0;
+    for (const t of toks) {
+      let tokText = t[0], cls = t[1];
+      while (tokText.length) {
+        const m = inMark(pos);
+        // Distance to the next boundary (mark start or mark end).
+        let boundary = tokText.length;
+        if (m) {
+          boundary = Math.min(boundary, m[1] - pos);
+        } else {
+          for (const mm of marks) {
+            if (mm[0] > pos) { boundary = Math.min(boundary, mm[0] - pos); break; }
+          }
+        }
+        const seg = tokText.slice(0, boundary);
+        if (m) {
+          cell.appendChild(el("mark", cls || null, seg));
+        } else if (cls) {
+          cell.appendChild(el("span", cls, seg));
+        } else {
+          cell.appendChild(document.createTextNode(seg));
+        }
+        tokText = tokText.slice(boundary);
+        pos += boundary;
+      }
+    }
+    return cell;
+  }
+
+  function makeRow(line, aRanges, bRanges, tokens) {
+    const k = line.k;
+    const row = el("div", "row" + (k === 1 ? " add" : k === 2 ? " del" : ""));
+    row.appendChild(el("div", "no", line.o != null ? String(line.o) : ""));
+    row.appendChild(el("div", "no", line.n != null ? String(line.n) : ""));
+    row.appendChild(el("div", "pfx", k === 1 ? "+" : k === 2 ? "-" : k === 3 ? "\\" : " "));
+    row.appendChild(contentCell(line.t, k === 2 ? aRanges : k === 1 ? bRanges : null, tokens));
+    return row;
+  }
+
+  // Render one hunk: pair the i-th line of each consecutive removed-run with
+  // the i-th line of the following added-run for intra-line marks (the
+  // standard unified-diff pairing). `parser` (nullable) drives per-hunk
+  // syntax highlighting: the OLD side (ctx+removed) and NEW side (ctx+added)
+  // are each highlighted as one contiguous text so multi-line constructs
+  // inside the hunk tokenize correctly; rows then consume their side's
+  // token lines in order (context rows read the NEW side).
+  function renderHunk(hunk, root, parser) {
+    root.appendChild(el("div", "hunk-header", "@@ " + (hunk.h || "")));
+    const lines = hunk.lines;
+    // Token lines come from the per-hunk CACHE (survives granularity
+    // re-renders — the tokens depend only on the payload).
+    const cached = cachedHunkTokens(hunk, parser);
+    const oldToks = cached ? cached.oldToks : null;
+    const newToks = cached ? cached.newToks : null;
+    let oldCursor = 0, newCursor = 0;
+    const tokensFor = function (k) {
+      if (k === 0) { oldCursor++; return newToks ? newToks[newCursor++] : null; }
+      if (k === 2) { return oldToks ? oldToks[oldCursor++] : null; }
+      if (k === 1) { return newToks ? newToks[newCursor++] : null; }
+      return null;
+    };
+    let i = 0, rows = 0;
+    while (i < lines.length) {
+      if (lines[i].k === 2) {
+        let j = i;
+        while (j < lines.length && lines[j].k === 2) j++;
+        let k2 = j;
+        while (k2 < lines.length && lines[k2].k === 1) k2++;
+        const dels = lines.slice(i, j), adds = lines.slice(j, k2);
+        for (let d = 0; d < dels.length; d++) {
+          const pair = d < adds.length ? intraRanges(dels[d].t, adds[d].t) : null;
+          root.appendChild(makeRow(dels[d], pair ? pair.a : null, null, tokensFor(2))); rows++;
+        }
+        for (let a = 0; a < adds.length; a++) {
+          const pair = a < dels.length ? intraRanges(dels[a].t, adds[a].t) : null;
+          root.appendChild(makeRow(adds[a], null, pair ? pair.b : null, tokensFor(1))); rows++;
+        }
+        i = k2;
+      } else {
+        root.appendChild(makeRow(lines[i], null, null, tokensFor(lines[i].k))); rows++;
+        i++;
+      }
+    }
+    return rows;
+  }
+
+  function badge(f) {
+    if (f.bin) return "(binary)";
+    if (f.add) return "(new file)";
+    if (f.del) return "(deleted)";
+    if (f.ren) return "(renamed from " + f.op + ")";
+    return "";
+  }
+
+  function statusOf(f) {
+    if (f.bin) return "B";
+    if (f.add) return "A";
+    if (f.del) return "D";
+    if (f.ren) return "R";
+    return "M";
+  }
+
+  // ---- Changed-files nav (tree by path components; file rows jump) ----
+
+  function fileCounts(f) {
+    let adds = 0, dels = 0;
+    for (const h of (f.hunks || [])) {
+      for (const l of h.lines) {
+        if (l.k === 1) adds++; else if (l.k === 2) dels++;
+      }
+    }
+    return { adds: adds, dels: dels };
+  }
+
+  // The path a human should SEE for a file entry: a deleted file's identity
+  // is its OLD path (np is only a fallback; the rust parser already refuses
+  // /dev/null, this is belt-and-suspenders for foreign patches).
+  function displayPath(f) {
+    const p = f.del ? (f.op || f.np) : (f.np || f.op);
+    return (p && p !== "/dev/null") ? p : (f.op || "(unnamed)");
+  }
+
+  function navFileRow(f, idx, indent, name) {
+    const row = el("div", "nav-file");
+    row.style.setProperty("--ind", String(indent));
+    row.dataset.fileIndex = String(idx);
+    const st = el("span", "st " + statusOf(f), statusOf(f));
+    row.appendChild(st);
+    const nm = el("span", "nm", name);
+    nm.title = displayPath(f);
+    row.appendChild(nm);
+    const c = fileCounts(f);
+    if (c.adds || c.dels) {
+      row.appendChild(el("span", "cnt", "+" + c.adds + " −" + c.dels));
+    }
+    row.addEventListener("click", function () { window.mdvDiffJumpToFile(idx); });
+    return row;
+  }
+
+  // Nested tree: directory rows are EXPAND/COLLAPSE toggles over a nested
+  // children container; files indented beneath. Single-child directory
+  // chains are compressed ("a/b/c" on one row). Entries keep the PATCH
+  // ORDER (each subtree ordered by its first appearance in the diff), so
+  // the nav's top-to-bottom order always matches the file blocks below.
+  function buildNav() {
+    const nav = document.getElementById("nav");
+    nav.textContent = "";
+    const rootNode = { dirs: new Map(), files: [], minIdx: 0 };
+    payload.forEach(function (f, idx) {
+      const parts = displayPath(f).split("/");
+      let node = rootNode;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!node.dirs.has(parts[i])) {
+          node.dirs.set(parts[i], { dirs: new Map(), files: [], minIdx: idx });
+        }
+        node = node.dirs.get(parts[i]);
+        if (idx < node.minIdx) node.minIdx = idx;
+      }
+      node.files.push({ f: f, idx: idx, name: parts[parts.length - 1] });
+    });
+    (function emit(node, indent, container) {
+      // Dirs + files INTERLEAVED in patch order (minIdx of each entry).
+      const entries = [];
+      for (const [name, child] of node.dirs) {
+        entries.push({ order: child.minIdx, dirName: name, child: child });
+      }
+      for (const file of node.files) {
+        entries.push({ order: file.idx, file: file });
+      }
+      entries.sort(function (a, b) { return a.order - b.order; });
+      for (const e of entries) {
+        if (e.file) {
+          container.appendChild(navFileRow(e.file.f, e.file.idx, indent, e.file.name));
+          continue;
+        }
+        let label = e.dirName, child = e.child;
+        // Compress single-child directory chains with no files.
+        while (child.files.length === 0 && child.dirs.size === 1) {
+          const only = Array.from(child.dirs.keys())[0];
+          label += "/" + only;
+          child = child.dirs.get(only);
+        }
+        const dir = el("div", "nav-dir");
+        dir.style.setProperty("--ind", String(indent));
+        dir.appendChild(el("span", "tri", "▾"));
+        dir.appendChild(el("span", null, label + "/"));
+        container.appendChild(dir);
+        const children = el("div", "nav-children");
+        container.appendChild(children);
+        dir.addEventListener("click", function () {
+          const collapsed = children.classList.toggle("collapsed");
+          dir.querySelector(".tri").textContent = collapsed ? "▸" : "▾";
+        });
+        emit(child, indent + 1, children);
+      }
+    })(rootNode, 0, nav);
+  }
+
+  function applyFont() {
+    document.body.style.fontSize = fontPx + "px";
+    // Nav width tracks the text size (≈18em) so the tree never reads
+    // smaller/larger than the diff body at any zoom.
+    document.body.style.setProperty("--nav-w-size", Math.round(fontPx * 18) + "px");
+  }
+
+  // ---- Perf caches (owner: "it's a bit slow") ----
+  // Parsers memoized per extension (building a LanguageSupport per FILE was
+  // wasteful), and per-hunk token lines cached across renders — a
+  // granularity switch re-renders rows but reuses every token array (the
+  // tokens depend only on the payload, not the granularity). Both caches
+  // clear when a NEW payload arrives.
+  const parserCache = new Map();
+  let tokenCache = new WeakMap();
+
+  function cachedParserFor(path) {
+    const ext = (String(path).split(".").pop() || "").toLowerCase();
+    if (!parserCache.has(ext)) parserCache.set(ext, languageParserFor(path));
+    return parserCache.get(ext);
+  }
+
+  function cachedHunkTokens(hunk, parser) {
+    if (!parser) return null;
+    let entry = tokenCache.get(hunk);
+    if (!entry) {
+      const lines = hunk.lines;
+      const oldText = lines.filter(function (l) { return l.k === 0 || l.k === 2; })
+        .map(function (l) { return l.t; }).join("\n");
+      const newText = lines.filter(function (l) { return l.k === 0 || l.k === 1; })
+        .map(function (l) { return l.t; }).join("\n");
+      entry = { oldToks: lineTokens(oldText, parser), newToks: lineTokens(newText, parser) };
+      tokenCache.set(hunk, entry);
+    }
+    return entry;
+  }
+
+  function totalRows() {
+    let n = 0;
+    for (const f of payload) {
+      for (const h of (f.hunks || [])) n += h.lines.length;
+    }
+    return n;
+  }
+
+  function summaryBlock() {
+    let adds = 0, dels = 0;
+    for (const f of payload) {
+      const c = fileCounts(f);
+      adds += c.adds; dels += c.dels;
+    }
+    const box = el("div");
+    box.id = "summary";
+    if (payloadPre) box.appendChild(el("div", "pre", payloadPre));
+    box.appendChild(el("div", "stat",
+      payload.length + " file" + (payload.length === 1 ? "" : "s") + " changed, "
+      + "+" + adds + " −" + dels));
+    return box;
+  }
+
+  function fileHeaderButtons(f) {
+    const btns = el("span", "fh-btns");
+    const path = displayPath(f);
+    function add(label, msg) {
+      const b = el("button", "fh-btn", label);
+      b.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        post(msg);
+      });
+      btns.appendChild(b);
+    }
+    if (f.ob && !f.add) add("Old", { action: "open", version: "old", path: path, blob: f.ob });
+    if (f.nb && !f.del) add("New", { action: "open", version: "new", path: path, blob: f.nb });
+    if (!f.del) add("Current", { action: "open", version: "current", path: path });
+    return btns;
+  }
+
+  function setActiveNav(idx) {
+    const nav = document.getElementById("nav");
+    for (const rowEl of nav.querySelectorAll(".nav-file")) {
+      const active = rowEl.dataset.fileIndex === String(idx);
+      rowEl.classList.toggle("active", active);
+      if (active) rowEl.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  // Scrollspy: the LAST file block whose top is at/above the viewport top
+  // (+small margin) is the one being read — keep its nav row highlighted as
+  // the user scrolls (rAF-throttled; owner ask 2026-07-24).
+  let spyTicking = false;
+  window.addEventListener("scroll", function () {
+    if (spyTicking) return;
+    spyTicking = true;
+    requestAnimationFrame(function () {
+      spyTicking = false;
+      const blocks = document.querySelectorAll(".file");
+      if (!blocks.length) return;
+      let current = 0;
+      const y = window.scrollY + 60;
+      blocks.forEach(function (b, i) { if (b.offsetTop <= y) current = i; });
+      setActiveNav(current);
+    });
+  }, { passive: true });
+
+  function render() {
+    const root = document.getElementById("root");
+    root.textContent = "";
+    applyFont();
+    buildNav();
+    if (!payload || !payload.length) {
+      const empty = el("div", null, "No differences.");
+      empty.id = "empty";
+      root.appendChild(empty);
+      return 0;
+    }
+    root.appendChild(summaryBlock());
+    const highlight = totalRows() <= HIGHLIGHT_ROW_CAP;
+    let rows = 0;
+    payload.forEach(function (f, idx) {
+      const block = el("div", "file");
+      block.id = "file-" + idx;
+      const header = el("div", "file-header");
+      header.appendChild(el("span", "fh-name", displayPath(f)));
+      const b = badge(f);
+      if (b) header.appendChild(el("span", "file-badge", b));
+      header.appendChild(fileHeaderButtons(f));
+      block.appendChild(header);
+      const parser = (highlight && !f.bin) ? cachedParserFor(displayPath(f)) : null;
+      for (const h of (f.hunks || [])) rows += renderHunk(h, block, parser);
+      root.appendChild(block);
+    });
+    return rows;
+  }
+
+  window.mdvDiffRender = function (p, g) {
+    try {
+      const obj = (typeof p === "string") ? JSON.parse(p) : p;
+      if (Array.isArray(obj)) {          // legacy bare-array payload
+        payload = obj; payloadPre = null;
+      } else {
+        payload = (obj && obj.files) || [];
+        payloadPre = (obj && obj.pre) || null;
+      }
+      tokenCache = new WeakMap();        // new payload → new token cache
+      if (g) granularity = g;
+      return render();
+    } catch (e) { return -1; }
+  };
+  window.mdvDiffSetGranularity = function (g) {
+    if (g !== "line" && g !== "word" && g !== "char") return -1;
+    granularity = g;
+    return render();                     // token cache is REUSED (perf)
+  };
+  window.mdvDiffSetTheme = function (dark) {
+    document.body.classList.toggle("dark", !!dark);
+  };
+  window.mdvDiffSetFontSize = function (px) {
+    fontPx = Number(px) || 12;
+    applyFont();
+  };
+  window.mdvDiffSetWrap = function (on) {
+    document.body.classList.toggle("wrap", !!on);
+  };
+  window.mdvDiffSetNav = function (on) {
+    document.body.classList.toggle("nav", !!on);
+  };
+  window.mdvDiffJumpToFile = function (idx) {
+    const block = document.getElementById("file-" + idx);
+    if (!block) return false;
+    // Reset any horizontal scroll so the jump lands at the line-number edge,
+    // then pin the file header to the top.
+    window.scrollTo({ left: 0, top: block.offsetTop, behavior: "auto" });
+    setActiveNav(idx);
+    return true;
+  };
+})();
+</script>
+</body>
+</html>

@@ -145,27 +145,38 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         env != "0"
     }
 
-    /// TSK-1183: attempt a same-file incremental DOM patch instead of a full reload.
-    /// Computes the block diff (old→new rendered HTML); IF the change is small enough
-    /// to be worth patching, injects `BlockPatchJS` and applies it to `document.body`
-    /// (the live body IS the splitBlocks grain — VM-proven by BlockPatchAlignmentProbe
-    /// Tests). Returns true iff it patched; false (no block-level change / too large)
-    /// tells the caller to fall back to `loadHTMLString`. Correctness does NOT depend
-    /// on the size heuristic — the apply is VM-proven (BlockPatchApplyWebViewTests);
-    /// the heuristic only trades a patch for a reload.
-    static func tryApplyDOMPatch(oldHTML: String, newHTML: String, webView: WKWebView) -> Bool {
+    /// TSK-1183/838: the PURE half of the same-file incremental DOM patch — computes
+    /// the block diff (old→new rendered HTML) and, IF the change is small enough to
+    /// be worth patching, returns the apply-JS plus the block count the patched body
+    /// MUST end up with (`splitBlocks(newHTML).count`). `nil` = not eligible (no
+    /// block-level change / too large a rewrite) — the caller does the full
+    /// `loadHTMLString` reload instead.
+    ///
+    /// The apply itself is VERIFIED, not fire-and-forget (the TSK-838 external-change
+    /// staleness fix, 2026-07-17): `updateNSView` evaluates `plan.js` with a
+    /// completion handler, compares the returned post-apply `children.length` against
+    /// `expectedBlockCount`, and falls back to the exact full reload on a thrown JS
+    /// error / `-1` / any count mismatch. That closes the silent-failure hole where a
+    /// live body that drifted from the splitBlocks grain (mermaid/math post-
+    /// processing, a mid-load race) made the bounds-checked JS no-op "succeed" while
+    /// the pixels stayed permanently stale — `lastHTML` had already advanced, so the
+    /// stale page could never heal until a tab switch.
+    struct DOMPatchPlan: Equatable {
+        let js: String
+        let expectedBlockCount: Int
+    }
+    static func domPatchPlan(oldHTML: String, newHTML: String) -> DOMPatchPlan? {
         let oldBlocks = RenderedBlockDiff.splitBlocks(oldHTML)
         let newBlocks = RenderedBlockDiff.splitBlocks(newHTML)
         let ops = RenderedBlockDiff.diff(old: oldBlocks, new: newBlocks)
         // Patch only a SMALL diff; a large rewrite is simpler + safer as a full reload
         // (the per-keystroke storm this kills is the single-block-edit case).
-        guard !ops.isEmpty, ops.count <= max(4, newBlocks.count / 2) else { return false }
+        guard !ops.isEmpty, ops.count <= max(4, newBlocks.count / 2) else { return nil }
         let payload = RenderedBlockDiff.jsPayload(ops)
-        webView.evaluateJavaScript(
-            BlockPatchJS.applyFunction
-            + "; window.mdvApplyBlockPatch('body', JSON.stringify(\(payload)));",
-            completionHandler: nil)
-        return true
+        return DOMPatchPlan(
+            js: BlockPatchJS.applyFunction
+                + "; window.mdvApplyBlockPatch('body', JSON.stringify(\(payload)));",
+            expectedBlockCount: newBlocks.count)
     }
 
     /// JS to scroll the rendered page for a find-bar-forwarded scroll key
@@ -347,17 +358,36 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         if coord.lastHTML != html,
            Self.domPatchEnabled,
            coord.currentURL == fileURL,
+           // TSK-838 staleness fix: never patch a page that hasn't finished loading —
+           // the eval would run against the OLD (or blank) document and the in-flight
+           // load would then paint the pre-change HTML while lastHTML claims new.
+           coord.documentReady,
            let patchOldHTML = coord.lastHTML,
-           Self.tryApplyDOMPatch(oldHTML: patchOldHTML, newHTML: html, webView: webView) {
-            // TSK-1183: SAME-FILE re-render DOM-patched IN PLACE (gated MDV_DOM_PATCH,
-            // default OFF). Only the changed top-level blocks are mutated; scroll is
-            // preserved and there is NO full loadHTMLString reload — the whole point
-            // (kills the 2–9s reload storm on every keystroke re-render). The OFF
-            // default + the eligibility gate + the loadHTMLString fallback (the
-            // `else if` below, taken when tryApplyDOMPatch returns false) make this
-            // non-regressing. Alignment (live body.children == splitBlocks grain) and
-            // the apply itself are VM-webview-proven (BlockPatchApply/AlignmentProbe).
+           let plan = Self.domPatchPlan(oldHTML: patchOldHTML, newHTML: html) {
+            // TSK-1183/838: SAME-FILE re-render DOM-patched IN PLACE. Only the changed
+            // top-level blocks are mutated; scroll is preserved and there is NO full
+            // loadHTMLString reload on the happy path (kills the 2–9s reload storm on
+            // every keystroke re-render). The apply is VERIFIED: the JS returns the
+            // post-apply children.length, and a thrown error / -1 / count mismatch
+            // triggers the full-reload fallback below — the documented contract that
+            // fire-and-forget `completionHandler: nil` never actually enforced, which
+            // left externally-changed markdown permanently stale on any silent
+            // misapply (owner repro 2026-07-17). lastHTML is set BEFORE the async
+            // completion on purpose: re-entrant updateNSView ticks must not re-patch.
             coord.lastHTML = html
+            let fallbackHTML = html
+            let fallbackBase = baseURL
+            webView.evaluateJavaScript(plan.js) { [weak coord, weak webView] value, error in
+                let landed = (value as? NSNumber)?.intValue ?? -1
+                guard error != nil || landed != plan.expectedBlockCount else { return }
+                guard let coord, let webView else { return }
+                // The patch did NOT take — run the exact full-reload path (same
+                // bookkeeping as the reload branch below). lastHTML already == html.
+                coord.expectingProgrammaticLoad = true
+                coord.loadToFinishToken = PerfSignpost.begin(
+                    .render, "WKWebView.loadToFinish")
+                webView.loadHTMLString(fallbackHTML, baseURL: fallbackBase)
+            }
         } else if coord.lastHTML != html {
             // TSK-821: before this reload (a file switch / re-render into the
             // MountedPanesLRU-retained WebView) resets scroll to the top,

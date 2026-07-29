@@ -132,6 +132,10 @@ struct FileHistoryView: View {
             Divider()
             if model.isLoadingDiff {
                 centeredPlaceholder("Loading diff…")
+            } else if WebDiffGate.isEnabled() {
+                // TSK-1596: web diff renderer (kill-switch MDV_WEB_DIFF=0).
+                WebDiffPane(text: model.diffText, doc: doc, navAvailable: false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 DiffView(text: model.diffText, doc: doc)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -135,12 +135,42 @@ struct GitWorktreesTab: View {
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 18)
             }
+            // TSK-1604 (owner ask): last commit — id · relative time · subject,
+            // so "how stale is this worktree, and what's on it?" reads without
+            // opening it. Metadata is batch-loaded with the tab.
+            lastCommitLine(w)
+                .padding(.leading, 18)
         }
         .padding(.horizontal, doc.uiSize(10))
         .padding(.vertical, doc.uiSize(4))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isCurrent ? Color.accentColor.opacity(0.10) : .clear)
         .help(w.path.path)
+    }
+
+    /// TSK-1604 — "abc1234 · 2h ago · subject" for the worktree's HEAD.
+    /// Degrades to the bare sha when metadata hasn't loaded (or the head is
+    /// unreachable), never to an empty row.
+    @ViewBuilder
+    private func lastCommitLine(_ w: GitClient.WorktreeEntry) -> some View {
+        let meta = model.worktreeHeadMetas[w.head]
+        HStack(spacing: 5) {
+            Text(meta?.sha ?? w.head)
+                .font(.system(size: doc.uiSize(9), design: .monospaced))
+                .foregroundStyle(.secondary)
+            if let meta {
+                Text("·").font(.system(size: doc.uiSize(9))).foregroundStyle(.quaternary)
+                Text(GitRelativeTime.format(unix: meta.timestamp))
+                    .font(.system(size: doc.uiSize(9)))
+                    .foregroundStyle(.secondary)
+                Text(meta.subject)
+                    .font(.system(size: doc.uiSize(9)))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .accessibilityIdentifier("mdv.git.worktree.lastCommit")
     }
 
     @ViewBuilder

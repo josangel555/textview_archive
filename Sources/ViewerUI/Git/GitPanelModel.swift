@@ -88,9 +88,58 @@ public final class GitPanelModel: ObservableObject {
     /// The live search-field text. The Log tab binds its TextField here
     /// and calls `runLogSearch` on change.
     @Published public var logSearchQuery: String = ""
+    /// TSK-1600 — the search is TWO-PHASE: instant local hits (sha / ref /
+    /// worktree prefixes + subject over the loaded rows) publish immediately,
+    /// then the debounced `git log --grep` body pass merges in. `false` while
+    /// that second pass is in flight, so callers (and tests) can tell "showing
+    /// early hits" from "final match set".
+    @Published public private(set) var logSearchIsSettled: Bool = true
     @Published public var stashEntries: [GitClient.StashEntry] = []
     @Published public var worktreeEntries: [GitClient.WorktreeEntry] = []
+    /// TSK-1604 — last-commit metadata for each worktree head, keyed by sha
+    /// (both abbreviated and full). Loaded with the Trees tab in one batched
+    /// `git show`, so the tab can show "sha · 2h ago · subject".
+    @Published public var worktreeHeadMetas: [String: GitClient.CommitMeta] = [:]
     @Published public var remoteEntries: [GitClient.RemoteEntry] = []
+
+    /// TSK-1602 — when true the Log tab loads the ALL-REFS graph (`--all`),
+    /// so every worktree's branch tip and their divergence points render in
+    /// ONE graph instead of only the current worktree's history. Persisted
+    /// app-wide; flipping it reloads the log.
+    @Published public var showAllRefs: Bool =
+        GitLogPrefs.resolveShowAllRefs(UserDefaults.standard) {
+        didSet {
+            guard showAllRefs != oldValue else { return }
+            UserDefaults.standard.set(showAllRefs, forKey: GitLogPrefs.showAllRefsKey)
+            refreshCurrent()
+        }
+    }
+
+    /// TSK-1601/1602 — local branch → the OTHER worktree's directory name
+    /// that has it checked out. Feeds `GitRefKind.classify` so a branch held
+    /// by a sibling worktree gets its own chip color + worktree subtitle.
+    public var worktreeBranchMap: [String: String] {
+        var map: [String: String] = [:]
+        for wt in worktreeEntries where wt.state != .current {
+            if let b = wt.branch { map[b] = wt.path.lastPathComponent }
+        }
+        return map
+    }
+
+    /// The worktree list in the shape the pure search matcher wants.
+    public var searchWorktrees: [GitLogSearchQuery.Worktree] {
+        worktreeEntries.map {
+            GitLogSearchQuery.Worktree(
+                name: $0.path.lastPathComponent, branch: $0.branch, head: $0.head)
+        }
+    }
+
+    /// Remote names for ref classification (falls back to the conventional
+    /// set before the Remotes tab has loaded).
+    public var remoteNamesForRefs: Set<String> {
+        let names = Set(remoteEntries.map(\.name))
+        return names.isEmpty ? ["origin", "upstream"] : names
+    }
 
     /// Unresolved-comment count for the active review, surfaced as the
     /// Review tab's badge (§6.4). `nil` = no active review / nothing to badge.
@@ -416,6 +465,7 @@ public final class GitPanelModel: ObservableObject {
         var log: [GitClient.GraphCommit]?
         var stash: [GitClient.StashEntry]?
         var trees: [GitClient.WorktreeEntry]?
+        var treeMetas: [String: GitClient.CommitMeta]?
         var remotes: [GitClient.RemoteEntry]?
     }
 
@@ -423,6 +473,9 @@ public final class GitPanelModel: ObservableObject {
         guard let root = repoRoot else { return }
         let tab = selectedTab
         let page = logPageSize
+        // TSK-1602: snapshot the all-refs flag on the main actor (like `page`)
+        // so the detached loader never touches @Published state.
+        let allRefs = showAllRefs
         refreshTask?.cancel()
         // A refresh that re-fetches the initial log page wholesale-replaces the
         // list; cancel any in-flight pagination so it can't append onto it. The
@@ -441,9 +494,14 @@ public final class GitPanelModel: ObservableObject {
                 var p = Payload(head: client.headInfo())
                 switch tab {
                 case .status:  p.status  = client.status()
-                case .log:     p.log     = client.graphLog(maxEntries: page, skip: 0)
+                case .log:     p.log     = client.graphLog(
+                                            maxEntries: page, skip: 0, allRefs: allRefs)
                 case .stash:   p.stash   = client.stashList()
-                case .trees:   p.trees   = client.worktreeList()
+                case .trees:
+                    let trees = client.worktreeList()
+                    p.trees = trees
+                    // TSK-1604: one batched lookup for every worktree head.
+                    p.treeMetas = client.commitMetas(shas: trees.map(\.head))
                 case .remotes: p.remotes = client.remoteList()
                 case .review:  break  // reviews load from .textview/ (ReviewStore), not a git command
                 }
@@ -468,10 +526,14 @@ public final class GitPanelModel: ObservableObject {
         // (and `repoRoot` / `logLoadedCount`) move out from under us, and we
         // must discard `more` rather than append a stale or cross-repo page.
         let gen = logGen
+        // TSK-1602: page with the SAME ref set the initial page used, or the
+        // topo order shifts under the skip and rows duplicate/vanish.
+        let allRefs = showAllRefs
         loadMoreTask?.cancel()
         loadMoreTask = Task { @MainActor [weak self] in
             let more = await Task.detached(priority: .utility) {
-                GitClient(repoRoot: root).graphLog(maxEntries: take, skip: skip)
+                GitClient(repoRoot: root).graphLog(
+                    maxEntries: take, skip: skip, allRefs: allRefs)
             }.value
             guard let self, !Task.isCancelled else { return }
             // The list must still be the exact one we paged off of: same repo,
@@ -503,6 +565,7 @@ public final class GitPanelModel: ObservableObject {
         }
         if let s = p.stash, stashEntries != s { stashEntries = s }
         if let t = p.trees, worktreeEntries != t { worktreeEntries = t }
+        if let m = p.treeMetas, worktreeHeadMetas != m { worktreeHeadMetas = m }
         if let r = p.remotes, remoteEntries != r { remoteEntries = r }
         lastRefreshed[tab] = Date()
         if isRefreshing { isRefreshing = false }
@@ -610,6 +673,18 @@ public final class GitPanelModel: ObservableObject {
         }
         let gen = logSearchGen
         let debounce = logSearchDebounceNanos
+        // TSK-1600: INSTANT local pass over the already-loaded rows — commit-id
+        // prefix, branch/tag/remote-ref prefix, worktree prefix, and subject
+        // substring resolve with no subprocess, so the list narrows as the user
+        // types. The debounced `--grep` pass below adds BODY/description hits
+        // (the loaded rows carry only the subject) and the union is published.
+        let localHits = GitLogSearchQuery.filter(
+            commits: logEntries, worktrees: searchWorktrees,
+            refsFor: { $0.refs }, rawQuery: q)
+        // Publish early hits ONLY when there are some: an empty local pass
+        // would flash "0 results" before the authoritative grep lands.
+        if !localHits.isEmpty { logSearchResults = localHits }
+        logSearchIsSettled = false
         logSearchTask = Task { @MainActor [weak self] in
             if debounce > 0 {
                 try? await Task.sleep(nanoseconds: debounce)
@@ -623,7 +698,8 @@ public final class GitPanelModel: ObservableObject {
             guard !Task.isCancelled,
                   self.logSearchGen == gen,
                   self.repoRoot == root else { return }
-            self.logSearchResults = hits
+            self.logSearchResults = GitLogSearchQuery.merge(local: localHits, body: hits)
+            self.logSearchIsSettled = true
         }
     }
 
@@ -631,6 +707,7 @@ public final class GitPanelModel: ObservableObject {
         logSearchTask?.cancel()
         logSearchTask = nil
         logSearchGen &+= 1
+        logSearchIsSettled = true
         if logSearchResults != nil { logSearchResults = nil }
         if !logSearchQuery.isEmpty { logSearchQuery = "" }
     }

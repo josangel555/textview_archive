@@ -422,10 +422,26 @@ public final class GitClient: Sendable {
     static let graphLogFormat = "--pretty=format:\u{1E}%h\u{1F}%p\u{1F}%an\u{1F}%ct\u{1F}%d\u{1F}%s"
 
     public func graphLog(maxEntries: Int = 100, skip: Int = 0) -> [GraphCommit] {
-        let args = [
+        graphLog(maxEntries: maxEntries, skip: skip, allRefs: false)
+    }
+
+    /// TSK-1602 (owner 2026-07-24) — ALL-REFS graph. Worktrees of one repo
+    /// share a single object database, so `--all` from ANY worktree yields
+    /// every worktree's branch tips in ONE topologically-ordered graph: the
+    /// divergence points between them become visible without checking each
+    /// worktree out in turn ("hard to navigate back and forth between each
+    /// worktree and figure out where the branching happened").
+    ///
+    /// `--all` covers refs/heads + refs/remotes + refs/tags; `HEAD` is added
+    /// explicitly so a DETACHED head (a worktree parked on a bare sha) still
+    /// appears. Paging (`skip`) stays valid because `--topo-order` is stable
+    /// for a fixed ref set.
+    public func graphLog(maxEntries: Int, skip: Int, allRefs: Bool) -> [GraphCommit] {
+        var args = [
             "log", "--topo-order", "--shortstat", Self.graphLogFormat,
             "-n", "\(maxEntries)", "--skip", "\(skip)",
         ]
+        if allRefs { args.append(contentsOf: ["--all", "HEAD"]) }
         guard let out = try? run(args) else { return [] }
         return Self.parseGraphLog(out)
     }
@@ -560,6 +576,36 @@ public final class GitClient: Sendable {
         public let branch: String?    // nil = detached HEAD
         public let head: String       // sha
         public let state: State
+    }
+
+    /// TSK-1604 — commit metadata for the Trees tab's "last commit" line.
+    public struct CommitMeta: Equatable, Sendable {
+        public let sha: String
+        public let timestamp: Int
+        public let subject: String
+    }
+
+    /// Batched metadata for `shas` — ONE `git show --no-walk` for the whole
+    /// set rather than a subprocess per worktree. Unknown shas are absent
+    /// from the result (callers fall back to showing the sha alone).
+    public func commitMetas(shas: [String]) -> [String: CommitMeta] {
+        let safe = shas.filter { Self.isSafeRevision($0) && !$0.isEmpty }
+        guard !safe.isEmpty else { return [:] }
+        let args = ["show", "-s", "--no-walk",
+                    "--pretty=format:%H\u{1F}%h\u{1F}%ct\u{1F}%s"] + safe
+        guard let out = try? run(args) else { return [:] }
+        var result: [String: CommitMeta] = [:]
+        for line in out.split(separator: "\n") {
+            let parts = line.split(separator: "\u{1F}", omittingEmptySubsequences: false)
+            guard parts.count >= 4 else { continue }
+            let full = String(parts[0]), short = String(parts[1])
+            let meta = CommitMeta(
+                sha: short, timestamp: Int(parts[2]) ?? 0, subject: String(parts[3]))
+            // Key by BOTH forms so a caller holding either can look it up.
+            result[full] = meta
+            result[short] = meta
+        }
+        return result
     }
 
     public func worktreeList() -> [WorktreeEntry] {
@@ -1104,6 +1150,16 @@ public final class GitClient: Sendable {
     }
 
     /// Full unified diff for a commit (all files).
+    /// TSK-1599 — raw blob contents by (possibly abbreviated) object sha, for
+    /// the web diff's "view Old / New version" buttons. The sha comes from the
+    /// patch's own `index <old>..<new>` line, so an abbreviation is resolvable
+    /// in this repo. `nil` on any failure (unknown/ambiguous sha, binary read
+    /// error) — callers surface a toast.
+    public func blobContents(sha: String) -> String? {
+        guard Self.isSafeRevision(sha) else { return nil }
+        return try? run(["cat-file", "-p", sha])
+    }
+
     public func commitDiff(sha: String) -> String {
         // Option-injection guard: a `sha` beginning with `-` could be read as a
         // `git show` flag. Mirror the per-revision diff guards.

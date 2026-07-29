@@ -214,9 +214,20 @@ public enum ViewModeOptions {
         // WYSIWYG/rich text families open in their rendered lens.
         case .markdown, .mermaid, .canvas:
             return .rendered
-        // Text families open in Source (html's Rendered lens is an explicit
-        // opt-in, never the default — untrusted HTML stays conservative).
-        case .plainText, .code, .html:
+        // TSK-1588 (owner 2026-07-21/24): text families open EDITABLE by
+        // default — the Editor (CM6) lens, with the View-Only toggle reading
+        // OFF. The prior `.source` default made every yaml/code/txt open
+        // read-only, which the owner flagged twice. Files past the CM6 cap
+        // (`codeMirrorEditorMaxBytes`) are coerced back to `.source` at open
+        // time by `DocumentModel.editorDefaultSizeCoercion` — the size-aware
+        // half of this default lives there because category mapping is
+        // size-blind by design.
+        case .plainText, .code:
+            return .editor
+        // html's Rendered lens is an explicit opt-in, never the default —
+        // untrusted HTML stays conservative; and html keeps the read-only
+        // Source default (editing HTML is the rarer intent than inspecting).
+        case .html:
             return .source
         // Media / structured-binary families with a first-class native preview.
         case .image, .audio, .video, .pdf, .sqlite, .archive:

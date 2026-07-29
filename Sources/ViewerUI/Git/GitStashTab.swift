@@ -103,7 +103,7 @@ struct GitStashTab: View {
             .replacingOccurrences(of: "}", with: "")
         let out = dir.appendingPathComponent("\(safeRef).diff")
         try? body.write(to: out, atomically: true, encoding: .utf8)
-        doc.openInNewTab(out)
+        doc.openPreview(url: out)   // TSK-1594: ephemeral preview slot
     }
 
 }

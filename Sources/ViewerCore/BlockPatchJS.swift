@@ -13,10 +13,19 @@ import Foundation
 /// storm). It replays `RenderedBlockDiff.apply`'s exact index semantics: ops in
 /// order, each `index` against the container's CURRENT element list; `insert`
 /// clamps to `[0, count]` (append past the end), `replace`/`remove` are
-/// bounds-checked no-ops out of range. Returns `true` on a clean apply, `false`
-/// if the container is missing or the payload won't parse — the Swift caller
-/// treats `false` (and any thrown JS) as "fall back to loadHTMLString", so the
-/// patch path is non-regressing by construction.
+/// bounds-checked no-ops out of range.
+///
+/// RETURN CONTRACT (TSK-838 external-change staleness fix, 2026-07-17):
+/// returns the container's POST-APPLY `children.length` (a Number ≥ 0) so the
+/// Swift caller can verify the patched DOM landed on the expected block count,
+/// or `-1` when the container is missing / the payload won't parse. The Swift
+/// caller (`MarkdownRenderedView.updateNSView`) treats a thrown JS error, a
+/// `-1`, or a count that differs from `splitBlocks(newHTML).count` as "the
+/// patch did NOT take" and falls back to a full `loadHTMLString` reload — the
+/// previously *documented* fallback is now actually enforced, which is what
+/// makes the patch path non-regressing: a bounds-mismatch silent no-op (a live
+/// DOM that drifted from the splitBlocks grain) can no longer leave stale
+/// pixels behind.
 public enum BlockPatchJS {
     public static let applyFunction = #"""
     (function () {
@@ -27,10 +36,10 @@ public enum BlockPatchJS {
       }
       window.mdvApplyBlockPatch = function (containerSelector, opsJSON) {
         var container = document.querySelector(containerSelector);
-        if (!container) { return false; }
+        if (!container) { return -1; }
         var ops;
-        try { ops = JSON.parse(opsJSON); } catch (e) { return false; }
-        if (!Array.isArray(ops)) { return false; }
+        try { ops = JSON.parse(opsJSON); } catch (e) { return -1; }
+        if (!Array.isArray(ops)) { return -1; }
         for (var i = 0; i < ops.length; i++) {
           var op = ops[i];
           var n = container.children.length;
@@ -48,7 +57,7 @@ public enum BlockPatchJS {
             if (iEl) { container.insertBefore(iEl, container.children[clamped] || null); }
           }
         }
-        return true;
+        return container.children.length;
       };
     })();
     """#
