@@ -182,17 +182,12 @@ struct SplitPaneView: View {
             // when the file isn't an open, dirty editor buffer).
             let sourceText = model.splitPaneText(for: url, fallback: diskText)
             if cat == .markdown || cat == .mermaid {
-                // `.mmd` standalone files get wrapped into a single mermaid
-                // fence so the same renderer path handles them.
-                let body: String = (cat == .mermaid)
-                    ? "```mermaid\n\(sourceText)\n```\n"
-                    : sourceText
-                MarkdownRenderedView(
-                    html: HTMLRenderer().renderPage(
-                        body,
-                        stylesheet: MarkdownStylesheet.cached,
-                        extraStylesheet: MermaidBundle.shimCSS
-                    ),
+                // Rendered OFF-MAIN with a debounce (SplitMarkdownRenderModel)
+                // — this used to render the whole document synchronously in
+                // body, on the main thread, per keystroke (audit THEME 6).
+                SplitMarkdownPane(
+                    text: sourceText,
+                    isMermaid: cat == .mermaid,
                     baseURL: url.deletingLastPathComponent(),
                     zoom: zoom
                 )
@@ -228,5 +223,32 @@ struct SplitPaneView: View {
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// Markdown/mermaid half of the split, backed by the debounced off-main
+/// renderer. A separate leaf view so the render model rides `@StateObject`
+/// (allocated once per pane) — a fresh-object `@State` here would cost the
+/// parent SwiftUI's body-skip (LESSONS 2026-07-27).
+private struct SplitMarkdownPane: View {
+    let text: String
+    let isMermaid: Bool
+    let baseURL: URL
+    let zoom: Double
+
+    @StateObject private var render = SplitMarkdownRenderModel()
+
+    var body: some View {
+        Group {
+            if let html = render.html {
+                MarkdownRenderedView(html: html, baseURL: baseURL, zoom: zoom)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear { render.schedule(text: text, isMermaid: isMermaid) }
+        .onChange(of: text) { _, new in render.schedule(text: new, isMermaid: isMermaid) }
     }
 }

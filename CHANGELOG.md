@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-07-29 (later)
+
+### Fixed
+- **Opening a CSV with a malformed formula can no longer crash the app.** A cell like `=(((((…`
+  (thousands deep) aborted the whole app on auto-recalc; it now just shows an error value in that
+  cell. Formulas nest up to 128 levels — twice Excel's own limit.
+- **If the app crashes twice while restoring your last session, the third launch starts fresh**
+  instead of crashing forever. Your sessions stay on disk and the launch after that tries again —
+  previously a document that crashed on open made the app permanently unstartable.
+- **Saving failures are no longer silent.** If bookmarks, history or sessions can't be written
+  (usually a full disk), you now get a toast naming the file — first failure immediately, then at
+  most one summary a minute instead of a storm.
+- **Windows-style (CRLF) files work with code intelligence again.** They used to collapse to a
+  single line internally, so diagnostics, folding, go-to and formatter edits all landed at the
+  wrong place — a formatter run could corrupt the buffer. Old-Mac (CR) files had the same bug.
+- **Diff view: clicking a file in the tree now pins it to the top, and the highlight follows you
+  as you scroll** — including the last file in the diff. Verified on the VM's live WebView; the
+  scrollspy also no longer stalls when the window isn't frontmost.
+- **Typing in a split-pane markdown view no longer freezes on big files.** The preview used to
+  re-render the whole document on the main thread per keystroke; it now renders in the background
+  — instantly on open, ~150 ms behind your typing for normal files, and on a typing pause for
+  files over 1 MB.
+- **Find in huge source files no longer stalls per keystroke.** Files up to 1 MB keep the instant
+  full scan (same behaviour as before); bigger ones run the same full scan in the background and
+  show "Searching…" until the count lands — nothing was removed, it just stopped blocking.
+
+### Changed
+- **Mermaid upgraded 11.4.1 → 11.16.0.** The old vendored copy carried six published security
+  advisories (two sanitizer bypasses, one denial-of-service) for ~11 months.
+- **The app now ships its legal attributions.** `THIRD_PARTY_NOTICES.md` is bundled into the app
+  (it never was, despite the generator claiming so) and now also covers the 47 statically-linked
+  Rust crates, which shipped unattributed.
+
 ## 2026-07-29
 
 ### Changed

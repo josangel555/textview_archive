@@ -818,7 +818,7 @@ These ship as pre-built minified files under `Contents/Resources/`
 `docs/MERMAID_IMPL.md` (Mermaid). Update the version strings in this
 generator when re-vendoring.
 
-### Mermaid 11.4.1
+### Mermaid 11.16.0
 
 ```
 MIT License

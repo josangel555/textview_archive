@@ -64,7 +64,17 @@
     -webkit-text-size-adjust: none;
     --nav-w: 0px;
   }
-  #root { min-width: max-content; padding-bottom: 24px; }
+  /* Scroll-past-end tail (the VM-caught nav bug, 2026-07-29): with only a
+     small bottom padding, a file block near the END of the document could
+     never reach the viewport top — scrollTo clamps at max-scroll, so the
+     nav JUMP undershot ("pins the header to the top" failed) and the
+     SCROLLSPY could never mark the last file active. A file pins iff
+     everything from its top downward (block + this padding) fills a full
+     viewport, so the padding must be 100vh minus the SMALLEST trailing
+     block we must support — a bare file header (~24px). Measured on the
+     VM: a `- 120px` sliver left a short last file 19px shy of pinnable.
+     Same scrollPastEnd convention CM6 and VS Code use. */
+  #root { min-width: max-content; padding-bottom: calc(100vh - 24px); }
   /* WRAP mode: rows fill EXACTLY the window (minus the nav) — no h-scroll,
      never narrower than the window (the TSK-1595 class), long lines wrap
      inside the content cell with the gutters pinned to the first line. */
@@ -581,20 +591,27 @@
 
   // Scrollspy: the LAST file block whose top is at/above the viewport top
   // (+small margin) is the one being read — keep its nav row highlighted as
-  // the user scrolls (rAF-throttled; owner ask 2026-07-24).
-  let spyTicking = false;
+  // the user scrolls (owner ask 2026-07-24).
+  //
+  // Throttled with a trailing setTimeout, NOT requestAnimationFrame: rAF
+  // only ticks while the view is being composited, so it never fires in an
+  // unparented/occluded WKWebView — the VM harness proved the spy simply
+  // never ran there (rafFired=false), and a real occluded window pauses the
+  // same way. A 32ms timer is equivalent in cost, fires everywhere, and the
+  // trailing edge means the LAST scroll position always gets spied.
+  let spyTimer = 0;
+  function runSpy() {
+    spyTimer = 0;
+    const blocks = document.querySelectorAll(".file");
+    if (!blocks.length) return;
+    let current = 0;
+    const y = window.scrollY + 60;
+    blocks.forEach(function (b, i) { if (b.offsetTop <= y) current = i; });
+    setActiveNav(current);
+  }
   window.addEventListener("scroll", function () {
-    if (spyTicking) return;
-    spyTicking = true;
-    requestAnimationFrame(function () {
-      spyTicking = false;
-      const blocks = document.querySelectorAll(".file");
-      if (!blocks.length) return;
-      let current = 0;
-      const y = window.scrollY + 60;
-      blocks.forEach(function (b, i) { if (b.offsetTop <= y) current = i; });
-      setActiveNav(current);
-    });
+    if (spyTimer) return;
+    spyTimer = setTimeout(runSpy, 32);
   }, { passive: true });
 
   function render() {

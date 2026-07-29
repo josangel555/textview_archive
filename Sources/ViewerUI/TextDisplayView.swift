@@ -378,6 +378,17 @@ public final class SourceTextController: NSViewController {
     private var findHighlightsLive = false
     private var findMatches: [NSRange] = []
     private var currentMatchIndex: Int?
+
+    /// Owner policy (2026-07-29): files at/under 1 MiB keep the full
+    /// synchronous per-keystroke scan (fast at that size, full match count,
+    /// zero behaviour change). ABOVE it the same full scan runs OFF-MAIN with
+    /// the results applied when they land — the count still arrives, typing
+    /// just stops paying O(document) on the main thread per keystroke (this
+    /// view services the >16 MiB files past the CM6 gate, where that scan was
+    /// an undebounced main-thread stall up to the 512 MiB source cap).
+    static let syncFindMaxBytes = 1 * 1024 * 1024
+    private var asyncFindTask: Task<Void, Never>?
+    private var asyncFindGeneration = 0
     private var lastNextNonce: Int = 0
     private var lastPrevNonce: Int = 0
     /// Tracks which `currentMatchIndex` we last scrolled to. Stops the
@@ -1322,14 +1333,59 @@ public final class SourceTextController: NSViewController {
             content: ContentFingerprint(text)
         )
         if cacheKey != lastFindKey {
-            findMatches = Self.findRanges(
-                in: text, query: query, caseSensitive: findState.caseSensitive,
-                isRegex: findState.isRegex
-            )
-            lastFindKey = cacheKey
-            currentMatchIndex = findMatches.isEmpty ? nil : 0
-            lastNextNonce = findState.nextNonce
-            lastPrevNonce = findState.prevNonce
+            if text.utf8.count <= Self.syncFindMaxBytes {
+                // Small file: the original synchronous scan, unchanged.
+                findMatches = Self.findRanges(
+                    in: text, query: query, caseSensitive: findState.caseSensitive,
+                    isRegex: findState.isRegex
+                )
+                lastFindKey = cacheKey
+                currentMatchIndex = findMatches.isEmpty ? nil : 0
+                lastNextNonce = findState.nextNonce
+                lastPrevNonce = findState.prevNonce
+            } else {
+                // Large file: identical full scan, OFF the main thread.
+                // `lastFindKey` is set BEFORE the kick so the completion's
+                // re-entry into this method skips the scan branch and goes
+                // straight to painting; a newer keystroke bumps the
+                // generation and cancels this one (last query wins).
+                lastFindKey = cacheKey
+                findMatches = []
+                currentMatchIndex = nil
+                lastNextNonce = findState.nextNonce
+                lastPrevNonce = findState.prevNonce
+                asyncFindGeneration &+= 1
+                let gen = asyncFindGeneration
+                if let cb = onFindSummary, lastFindSummary != "Searching…" {
+                    lastFindSummary = "Searching…"
+                    DispatchQueue.main.async { cb("Searching…") }
+                }
+                let q = query
+                let cs = findState.caseSensitive
+                let rx = findState.isRegex
+                asyncFindTask?.cancel()
+                // Outer Task inherits the MainActor (self/findState stay
+                // isolated); only the inner detached scan crosses threads,
+                // and it captures nothing but Sendable value types.
+                asyncFindTask = Task { [weak self] in
+                    let ranges = await Task.detached(priority: .userInitiated) {
+                        SourceTextController.findRanges(
+                            in: text, query: q, caseSensitive: cs, isRegex: rx)
+                    }.value
+                    guard !Task.isCancelled,
+                          let self, gen == self.asyncFindGeneration else { return }
+                    self.findMatches = ranges
+                    self.currentMatchIndex = ranges.isEmpty ? nil : 0
+                    self.findHighlightsLive = false
+                    self.applyFindHighlights(
+                        text: text, findState: findState,
+                        onFindSummary: onFindSummary)
+                }
+                // Paint nothing now (stale highlights were cleared above);
+                // the completion re-enters and paints the real results.
+                publishFindMatchSet(text: text)
+                return
+            }
         }
         if !findMatches.isEmpty {
             if findState.nextNonce != lastNextNonce {
@@ -1448,17 +1504,17 @@ public final class SourceTextController: NSViewController {
     /// `NSRegularExpression` on every key is wasteful and shows up
     /// as latency on long patterns. One slot is enough — find
     /// queries are sticky.
-    private static let regexCacheLock = NSLock()
-    private static var lastRegexKey: String?
-    private static var lastRegex: NSRegularExpression?
+    private nonisolated static let regexCacheLock = NSLock()
+    private nonisolated(unsafe) static var lastRegexKey: String?
+    private nonisolated(unsafe) static var lastRegex: NSRegularExpression?
     /// Separate slot for the last KNOWN-INVALID pattern. Previously
     /// the negative cache stored `lastRegex = nil` in the same slot
     /// the positive cache used — so the `if lastRegexKey == key,
     /// let re = lastRegex` check fell through on the optional unwrap
     /// and we recompiled the invalid pattern on every keystroke.
-    private static var lastFailedRegexKey: String?
+    private nonisolated(unsafe) static var lastFailedRegexKey: String?
 
-    internal static func cachedRegex(pattern: String,
+    internal nonisolated static func cachedRegex(pattern: String,
                                     caseSensitive: Bool) -> NSRegularExpression? {
         var opts: NSRegularExpression.Options = [.anchorsMatchLines]
         if !caseSensitive { opts.insert(.caseInsensitive) }
@@ -1493,7 +1549,7 @@ public final class SourceTextController: NSViewController {
     /// Pure substring/regex search over `haystack`. Exposed internal so
     /// `@testable import ViewerUI` can exercise edge cases directly
     /// without spinning up an NSTextView.
-    internal static func findRanges(in haystack: String, query: String, caseSensitive: Bool,
+    internal nonisolated static func findRanges(in haystack: String, query: String, caseSensitive: Bool,
                                     isRegex: Bool = false) -> [NSRange] {
         guard !query.isEmpty else { return [] }
         if isRegex {

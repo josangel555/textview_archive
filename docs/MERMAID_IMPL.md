@@ -62,7 +62,7 @@ picks it up).
 
 ### 2.1 Version pin
 
-**Pinned version: `mermaid@11.4.1`** (current `11.x` LTS at time of writing).
+**Pinned version: `mermaid@11.16.0`** (current `11.x` LTS at time of writing).
 Mermaid 11 is the line that ships ES2020+ output, fixed XSS regressions from
 the `10.x` line, and has a stable `mermaid.run({ nodes })` entry point. We
 re-pin only on a deliberate upgrade decision; floating ranges are forbidden
@@ -84,7 +84,7 @@ version, served gzipped over TLS, no Node toolchain required:
 ```bash
 # From the repo root, in a throwaway shell:
 curl -L -o /tmp/mermaid.min.js \
-  'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js'
+  'https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js'
 
 shasum -a 256 /tmp/mermaid.min.js
 # Expect (record at implementation time — the SHA below is a placeholder):
@@ -98,9 +98,9 @@ integrity:
 ```bash
 # Anywhere with npm available; throwaway dir:
 mkdir -p /tmp/mermaid-fetch && cd /tmp/mermaid-fetch
-npm pack mermaid@11.4.1
-# Produces mermaid-11.4.1.tgz
-tar -xzf mermaid-11.4.1.tgz
+npm pack mermaid@11.16.0
+# Produces mermaid-11.16.0.tgz
+tar -xzf mermaid-11.16.0.tgz
 shasum -a 256 package/dist/mermaid.min.js
 ```
 
@@ -130,8 +130,8 @@ Create `Sources/ViewerUI/Resources/mermaid/VENDOR.md` with:
 
 - Package:    mermaid
 - Version:    11.4.1
-- Source:     https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js
-- npm verify: npm pack mermaid@11.4.1 → package/dist/mermaid.min.js
+- Source:     https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js
+- npm verify: npm pack mermaid@11.16.0 → package/dist/mermaid.min.js
 - License:    MIT (see ./LICENSE)
 - Fetched:    2026-05-17
 - SHA-256:    <fill in at vendoring time>
@@ -1530,7 +1530,7 @@ Linear order. Each item is a discrete commit-sized step.
 ### Phase A — vendor + bundle scaffolding
 
 - [ ] **A1.** Create directory `Sources/ViewerUI/Resources/mermaid/`.
-- [ ] **A2.** Download `mermaid@11.4.1` from jsDelivr (URL in §2.2 Path A).
+- [ ] **A2.** Download `mermaid@11.16.0` from jsDelivr (URL in §2.2 Path A).
       Cross-check against `npm pack` (Path B). Confirm SHA-256.
 - [ ] **A3.** Drop the file into `Sources/ViewerUI/Resources/mermaid/mermaid.min.js`.
       Do not edit.

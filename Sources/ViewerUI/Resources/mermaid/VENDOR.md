@@ -1,13 +1,17 @@
 # Vendored: mermaid.min.js
 
 - Package:    mermaid
-- Version:    11.4.1
-- Source:     https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js
-- npm verify: npm pack mermaid@11.4.1 -> package/dist/mermaid.min.js
+- Version:    11.16.0
+- Source:     https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js
+- npm verify: npm pack mermaid@11.16.0 -> package/dist/mermaid.min.js
+              (byte-identical to the CDN bundle: same SHA-256, verified 2026-07-29)
 - License:    MIT (see ./LICENSE)
-- Fetched:    2026-05-17
-- SHA-256:    a43bc1afd446f9c4cc66ac5dd45d02e8d65e26fc5344ec0ef787f88d6ddb6f9e
-- File size:  ~2.45 MB (2,571,900 bytes; ~600 KB gzipped; we ship the un-gzipped UMD)
+- Fetched:    2026-07-29
+- SHA-256:    74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b
+- File size:  ~3.57 MB (3,565,102 bytes; we ship the un-gzipped UMD)
+- Why bumped: 11.4.1 carried 6 published advisories (2 XSS sanitizer-bypass,
+  1 DoS) that sat unseen for ~11 months — the advisory-watch nightly never
+  runs locally (no GH remote). 11.16.0 was latest at bump time.
 
 ## How to refresh
 1. Re-download from the URL above (or `npm pack mermaid@<version>`).

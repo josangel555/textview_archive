@@ -278,7 +278,7 @@ RUST_UNICODE
   echo "\`docs/MERMAID_IMPL.md\` (Mermaid). Update the version strings in this"
   echo "generator when re-vendoring."
   echo
-  echo "### Mermaid 11.4.1"
+  echo "### Mermaid 11.16.0"
   echo
   echo '```'
   cat <<'MERMAID_LICENSE'

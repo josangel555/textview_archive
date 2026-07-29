@@ -12,6 +12,44 @@ import XCTest
 @MainActor
 final class TextSearchTests: XCTestCase {
 
+    // MARK: - Off-main threshold (owner policy 2026-07-29)
+
+    /// ≤ 1 MiB keeps the synchronous per-keystroke scan (full count, zero
+    /// behaviour change); above it the SAME scan runs off-main. This view
+    /// services the >16 MiB files past the CM6 gate, where the synchronous
+    /// scan was an undebounced main-thread stall (audit THEME 6).
+    func test_syncFindThreshold_isTheOwnersOneMiBLine() {
+        XCTAssertEqual(SourceTextController.syncFindMaxBytes, 1 * 1024 * 1024)
+    }
+
+    /// The scan helper must stay callable OFF the main actor — that is the
+    /// whole mechanism. (Would fail to compile if someone re-isolates it;
+    /// the runtime assertion documents intent.)
+    func test_findRanges_runsOffMain() async {
+        let ranges = await Task.detached {
+            SourceTextController.findRanges(
+                in: "a b a b a", query: "a", caseSensitive: false)
+        }.value
+        XCTAssertEqual(ranges.count, 3)
+    }
+
+    /// The regex cache behind it is lock-guarded — hammering it from
+    /// concurrent tasks must neither crash nor mis-resolve.
+    func test_regexCache_isThreadSafeUnderConcurrentScans() async {
+        await withTaskGroup(of: Int.self) { group in
+            for i in 0..<16 {
+                group.addTask {
+                    SourceTextController.findRanges(
+                        in: "x1 x2 x3 y", query: i.isMultiple(of: 2) ? #"x\d"# : #"y"#,
+                        caseSensitive: false, isRegex: true).count
+                }
+            }
+            var results: [Int] = []
+            for await c in group { results.append(c) }
+            XCTAssertEqual(results.sorted(), [1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3])
+        }
+    }
+
     // MARK: - Empty inputs
 
     func test_empty_query_returns_nothing() {

@@ -87,8 +87,12 @@ final class MermaidVendorTests: XCTestCase {
         let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
         XCTAssertGreaterThan(size, 1_000_000,
             "mermaid.min.js looks suspiciously small (\(size) bytes) — incomplete download?")
-        XCTAssertLessThan(size, 3_145_728,
-            "mermaid.min.js exceeds 3 MB ceiling — did someone vendor a non-minified build?")
+        // Ceiling raised 3 MB → 4 MB for the 11.16.0 security bump (2026-07-29):
+        // the minified 11.16 UMD is 3.57 MB (mermaid grew ~1 MB across 11.5–11.16).
+        // The tripwire's purpose is unchanged — a NON-minified build is ~10 MB+
+        // and still trips it.
+        XCTAssertLessThan(size, 4_194_304,
+            "mermaid.min.js exceeds 4 MB ceiling — did someone vendor a non-minified build?")
     }
 
     func test_licenseFileShipped() throws {

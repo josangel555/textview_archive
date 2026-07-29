@@ -130,6 +130,15 @@ UNVERIFIED** (WebView/SwiftUI pixels) and **UNCOMMITTED** — see HANDOFF.md.
   DRAG, the lifted-tab visual and the insertion caret are still **ON-SCREEN UNVERIFIED** — no test
   synthesizes a real drag. **M**
 
+- **Local History: smarter retention beyond gap-thinning (owner ask 2026-07-29).** Today: 100 MB/
+  file budget, no age expiry, over-budget drops the interior version leaving the smallest time gap
+  (first + newest never dropped), and small edits store as diffs against the nearest full anchor.
+  Smarter follow-ups, roughly in value order: (a) **re-diff on eviction** — when a FULL snapshot is
+  the thinning victim, re-encode its neighbours as diffs against a surviving anchor instead of
+  deleting outright (keep the version, shrink the bytes); (b) **tiered density targets** — e.g.
+  keep every version <1h old, hourly to a week, daily beyond, applied per-file; (c) **cross-version
+  compression** (zstd the record payloads — they're plain UTF-8 today); (d) surface per-file
+  history size + a "compact now" action in the Local History UI. **M–L**
 - **Recently Closed is NOT persisted across launches.** `RecentlyClosedStore` lives for the run of
   the app (deliberate: persisting adds an Application Support file plus `AppCacheReset` /
   `SettingsRelocation` wiring, and would resurrect entries pointing at files deleted since). If the
@@ -152,12 +161,12 @@ VM_RC=1, ~29 failing cases. The lane had NOT been run against that session's unc
 most of these are its untested tail, NOT the tab-reorder change (verified: the reorder change was
 reverted to HEAD and re-run, see below).
 
-- **[REAL] Web diff nav is broken on the live WebView** — `DiffWebPageTests`
-  `test_fileNav_treeRendersAndJumps` ("jump pins the target file's header to the top") and
-  `test_scrollspy_tracksVisibleFile` ("scrolling into file-1 marks its nav row active") both FAIL.
-  These are two features the owner explicitly asked for (click a file to jump; auto-highlight the
-  file while scrolling). The rest of the suite passes, so the page renders — it's the jump +
-  scrollspy behaviour. **FIX FIRST of the diff follow-ups. M**
+- **[FIXED 2026-07-29] Web diff nav jump + scrollspy** — two mechanisms, both measured on the VM
+  (diagnostic eval, not guessed): (1) only 24px of tail below the last file, so a trailing file
+  could never scroll to the top (`scrollTo` clamps at max-scroll — landed 19px short even after a
+  first `100vh - 120px` attempt; now `100vh - 24px`, pinnable down to a bare header); (2) the
+  scrollspy was rAF-throttled and **rAF never ticks in an unparented/occluded WKWebView** — the
+  spy simply never ran. Now a 32ms trailing setTimeout. Lane re-run green.
 - **[TEST BUG, not product] `FileTabStripVisualRegressionTests`** — `test_lastTab_hasVisibleRightBorder`
   fails with "Separator columns at [393, 400, 791, 798] (gap 3 pt) don't look like tab edges".
   IDENTICAL failure with the reorder change and with a pristine `HEAD` `TabBar`/`SessionTabBar`, so
