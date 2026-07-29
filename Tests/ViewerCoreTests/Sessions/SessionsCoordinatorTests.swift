@@ -524,6 +524,95 @@ final class SessionsCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.sessions.count, preCount)
     }
 
+    // MARK: move / drag-to-reorder ------------------------------------
+
+    /// Open three sessions and return them in strip order.
+    private func threeSessions() throws -> [SessionSnapshot] {
+        let a = coord.openFolder(try makeTmpFolder(name: "alpha"))
+        let b = coord.openFolder(try makeTmpFolder(name: "beta"))
+        let c = coord.openFolder(try makeTmpFolder(name: "gamma"))
+        XCTAssertEqual(coord.sessions.map(\.id), [a.id, b.id, c.id])
+        return [a, b, c]
+    }
+
+    func test_move_dragRightward_landsAtTheInsertionGap() throws {
+        let s = try threeSessions()
+        // Drag the FIRST pill past the second: gap 2 in original coords.
+        coord.move(from: 0, to: 2)
+        XCTAssertEqual(coord.sessions.map(\.id), [s[1].id, s[0].id, s[2].id])
+    }
+
+    func test_move_dragLeftward_landsAtTheInsertionGap() throws {
+        let s = try threeSessions()
+        coord.move(from: 2, to: 0)
+        XCTAssertEqual(coord.sessions.map(\.id), [s[2].id, s[0].id, s[1].id])
+    }
+
+    func test_move_toEitherAdjacentGap_isANoOp() throws {
+        let s = try threeSessions()
+        let before = coord.sessions.map(\.id)
+        // Both gaps bordering the dragged pill leave the order untouched —
+        // the same pair `StripReorder.isNoOp` filters in the UI layer.
+        coord.move(from: 1, to: 1)
+        coord.move(from: 1, to: 2)
+        XCTAssertEqual(coord.sessions.map(\.id), before)
+        XCTAssertEqual(before, [s[0].id, s[1].id, s[2].id])
+    }
+
+    func test_move_outOfRangeIndices_areIgnored() throws {
+        let s = try threeSessions()
+        let before = coord.sessions.map(\.id)
+        coord.move(from: -1, to: 1)
+        coord.move(from: 3, to: 0)
+        coord.move(from: 0, to: 99)
+        coord.move(from: 0, to: -1)
+        XCTAssertEqual(coord.sessions.map(\.id), before)
+        XCTAssertEqual(before.count, s.count)
+    }
+
+    /// Reordering must NOT disturb the LRU used to pick the next active
+    /// session on close — arranging the strip is not "using" a session.
+    func test_move_leavesLastActiveAtUntouched() throws {
+        let s = try threeSessions()
+        let stamps = Dictionary(uniqueKeysWithValues:
+            coord.sessions.map { ($0.id, $0.lastActiveAt) })
+        coord.move(from: 0, to: 3)
+        for snap in coord.sessions {
+            XCTAssertEqual(snap.lastActiveAt, stamps[snap.id],
+                           "reorder must not bump lastActiveAt (LRU corruption)")
+        }
+        XCTAssertEqual(coord.sessions.map(\.id), [s[1].id, s[2].id, s[0].id])
+    }
+
+    /// The arrangement is the user's; it has to survive a relaunch.
+    /// `restore()` rebuilds from `index.json`, so this proves the moved
+    /// order was actually PERSISTED, not just held in memory.
+    func test_move_persistsTheNewOrderAcrossRestore() throws {
+        let s = try threeSessions()
+        coord.move(from: 2, to: 0)
+        let expected = coord.sessions.map(\.id)
+        coord.flushPersistenceSync()
+
+        let fresh = SessionsCoordinator(store: SessionStore(directory: tmp),
+                                        lifecycle: LifecycleRecorder())
+        fresh.restore()
+        XCTAssertEqual(fresh.sessions.map(\.id), expected,
+                       "a manual strip arrangement must survive relaunch")
+        XCTAssertEqual(expected.first, s[2].id)
+    }
+
+    /// Switching sessions must not silently re-sort the strip out from
+    /// under a manual arrangement (activate bumps `lastActiveAt` in
+    /// place — it must not reorder).
+    func test_activate_doesNotReorderTheStrip() throws {
+        let s = try threeSessions()
+        coord.move(from: 0, to: 3)
+        let arranged = coord.sessions.map(\.id)
+        coord.activate(id: s[0].id)
+        coord.activate(id: s[1].id)
+        XCTAssertEqual(coord.sessions.map(\.id), arranged)
+    }
+
     // MARK: helpers --------------------------------------------------
 
     /// Create a real directory in tmp so `standardizedFileURL` /

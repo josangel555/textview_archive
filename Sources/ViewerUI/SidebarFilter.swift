@@ -69,10 +69,17 @@ enum SidebarFilter {
     }
 }
 
-/// TSK-284 (owner choice (a)): drag a file OUT of the app — sidebar rows,
-/// filter results, and tabs are drag sources carrying the REAL file
-/// reference, so a drop on Finder copies, on Mail attaches, on another
-/// editor opens.
+/// TSK-284 (owner choice (a)): drag a file OUT of the app — sidebar rows
+/// and filter results are drag sources carrying the REAL file reference,
+/// so a drop on Finder copies, on Mail attaches, on another editor opens.
+///
+/// The TAB STRIP is deliberately NOT a drag-out source (2026-07-27): a tab
+/// drag reorders the strip instead. Registering a file URL on a tab drag is
+/// what made a reorder attempt read as a file drag, which the window-level
+/// `.onDrop(of: [.fileURL])` then caught and tried to open. The companion
+/// `attachFileURL(_:to:)` composer went with it — reinstate it only
+/// alongside a real tear-off drag (see BACKLOG), never as a bare `.onDrag`
+/// on a tab.
 enum FileDragProvider {
     /// Drag-out provider for a file on disk. `NSItemProvider(contentsOf:)`
     /// registers the file's OWN content type plus `public.file-url` — the
@@ -82,13 +89,6 @@ enum FileDragProvider {
     /// provider can't stat the file (e.g. it vanished mid-drag-start).
     static func make(for url: URL) -> NSItemProvider {
         NSItemProvider(contentsOf: url) ?? urlOnly(url)
-    }
-
-    /// Compose the file reference ONTO an existing provider (the tab strip's
-    /// reorder payload): in-app drop targets keep reading their custom
-    /// `.plainText` payload; external targets see the file.
-    static func attachFileURL(_ url: URL, to provider: NSItemProvider) {
-        provider.registerObject(url as NSURL, visibility: .all)
     }
 
     private static func urlOnly(_ url: URL) -> NSItemProvider {

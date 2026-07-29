@@ -49,75 +49,12 @@ struct SessionTabBar: View {
         #endif
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(Array(core.sessions.enumerated()), id: \.element.id) { index, snap in
-                        SessionTabBarItem(
-                            snapshot: snap,
-                            isSelected: core.activeID == snap.id,
-                            isRenaming: renamingID == snap.id,
-                            uiSize: model.uiSize,
-                            onSelect: { sessionsApp.activate(id: snap.id) },
-                            onClose: { sessionsApp.close(id: snap.id) },
-                            onCommitRename: { newName in
-                                sessionsApp.rename(id: snap.id, to: newName)
-                                renamingID = nil
-                            },
-                            onCancelRename: { renamingID = nil }
-                        )
-                        .contextMenu {
-                            SessionTabContextMenu(
-                                sessionsApp: sessionsApp,
-                                snapshot: snap,
-                                onRequestRename: { renamingID = snap.id }
-                            )
-                        }
-                        // TSK-274: a document tab dragged from the tab
-                        // strip drops onto a session pill to MOVE the
-                        // file into that session.
-                        .onDrop(of: [.plainText], delegate: SessionTabDropDelegate(
-                            sessionsApp: sessionsApp, targetSessionID: snap.id))
-                        // B4-adjacent: a full top-to-bottom divider reads
-                        // cleaner between a taller two-line cell than the old
-                        // 16pt stub did. (B4 proper is a separate item.)
-                        if index < core.sessions.count - 1 {
-                            Divider().frame(height: rowHeight - model.uiSize(12))
-                        }
-                    }
-                    // TSK-261: the "+" sits BESIDE the last session tab (inside
-                    // the scrolling content), not pinned at the far-right edge.
-                    // TSK-373: it's now a Menu — a bare click opens a folder in a
-                    // new session (the long-standing primaryAction), while the
-                    // menu offers "New Session ▸ Kind" (Code Review / Agent
-                    // Session / Project view / …), each seeding that kind's panel
-                    // layout via the already-wired openNewSession(kind:) path.
-                    Menu {
-                        Button("Open Folder in New Session…", action: openNewSession)
-                        Divider()
-                        ForEach(NewSessionMenuItems.all) { item in
-                            Button {
-                                sessionsApp.openNewSession(kind: item.kind)
-                            } label: {
-                                Label(item.title, systemImage: item.symbolName)
-                            }
-                            .accessibilityIdentifier("mdv.sessionTab.new.kind.\(item.kind.rawValue)")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: model.uiSize(11), weight: .medium))
-                            .frame(width: model.uiSize(24), height: model.uiSize(24))
-                    } primaryAction: {
-                        openNewSession()
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .frame(width: model.uiSize(28))
-                    .helpInfo(title: "New Session",
-                              description: "Open a folder in a new session — or pick a kind")
-                    .padding(.horizontal, 4)
-                    .accessibilityIdentifier("mdv.sessionTab.new")
-                    .uiClickTarget("mdv.sessionTab.new")
-                    .accessibilityLabel("New Session")
-                }
+                SessionStripContent(sessionsApp: sessionsApp,
+                                    core: core,
+                                    model: model,
+                                    rowHeight: rowHeight,
+                                    renamingID: $renamingID,
+                                    openNewSession: openNewSession)
             }
             // TSK-313: double-click the EMPTY strip area = new session at ~
             // (browser idiom). Buttons/tab cells sit above this in the hit
@@ -185,6 +122,137 @@ struct SessionTabBar: View {
 }
 
 // MARK: - Item ---------------------------------------------------------
+
+/// The scrolling row of session pills, split out of `SessionTabBar` so the
+/// reorder drag state lives at a leaf.
+///
+/// Same PERF #1 reasoning as `TabStripContent` (see its doc comment): the
+/// drag needs `@State private var frameBox = StripFrameBox()`, whose
+/// initializer allocates a fresh object on every view-value rebuild, costing
+/// the owning view SwiftUI's body-skip — it would then re-body on every
+/// unrelated parent republish. That is worse here than on the file strip:
+/// each `SessionTabBarItem` body calls `SessionGitInfo.badge(forRootPath:)`,
+/// which touches the filesystem. Guarded by `SessionStripReBodyTests`
+/// (shown RED on the real break before shipping).
+private struct SessionStripContent: View {
+    @ObservedObject var sessionsApp: SessionsAppCoordinator
+    @ObservedObject var core: SessionsCoordinator
+    @ObservedObject var model: DocumentModel
+    let rowHeight: CGFloat
+    @Binding var renamingID: UUID?
+    let openNewSession: () -> Void
+
+    /// Coordinate space the reorder geometry is measured in (the strip's
+    /// scrolling content) — see `StripReorder`.
+    private static let stripSpace = "mdv.sessionTabStrip"
+
+    @State private var frameBox = StripFrameBox()
+    @State private var reorder: StripReorderState?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(core.sessions.enumerated()), id: \.element.id) { index, snap in
+                SessionTabBarItem(
+                    snapshot: snap,
+                    isSelected: core.activeID == snap.id,
+                    isRenaming: renamingID == snap.id,
+                    uiSize: model.uiSize,
+                    // A reorder must not switch sessions — swallow the click
+                    // that terminates a drag (`StripFrameBox`).
+                    onSelect: {
+                        guard !frameBox.shouldSuppressSelect() else { return }
+                        sessionsApp.activate(id: snap.id)
+                    },
+                    onClose: { sessionsApp.close(id: snap.id) },
+                    onCommitRename: { newName in
+                        sessionsApp.rename(id: snap.id, to: newName)
+                        renamingID = nil
+                    },
+                    onCancelRename: { renamingID = nil }
+                )
+                .contextMenu {
+                    SessionTabContextMenu(
+                        sessionsApp: sessionsApp,
+                        snapshot: snap,
+                        onRequestRename: { renamingID = snap.id }
+                    )
+                }
+                // Drag-to-reorder, same mechanism as the file tab strip
+                // (`StripReorder`). Session pills size to their content, so
+                // the gap is computed from MEASURED item frames rather than
+                // an index × width estimate.
+                .stripReorderable(
+                    id: snap.id,
+                    index: index,
+                    ids: core.sessions.map(\.id),
+                    space: Self.stripSpace,
+                    frames: frameBox,
+                    state: $reorder,
+                    commit: { draggedID, gap in
+                        // Re-resolve against the LIVE session list — a
+                        // session can close mid-drag; see
+                        // `StripReorder.resolveMove`.
+                        guard let move = StripReorder.resolveMove(
+                            itemID: draggedID,
+                            ids: core.sessions.map(\.id),
+                            gap: gap) else { return }
+                        // Animated by the shared drop transaction — see TabBar.
+                        sessionsApp.moveSession(from: move.source,
+                                                to: move.destination)
+                    }
+                )
+                // B4-adjacent: a full top-to-bottom divider reads
+                // cleaner between a taller two-line cell than the old
+                // 16pt stub did. (B4 proper is a separate item.)
+                if index < core.sessions.count - 1 {
+                    Divider().frame(height: rowHeight - model.uiSize(12))
+                }
+            }
+            // TSK-261: the "+" sits BESIDE the last session tab (inside
+            // the scrolling content), not pinned at the far-right edge.
+            // TSK-373: it's now a Menu — a bare click opens a folder in a
+            // new session (the long-standing primaryAction), while the
+            // menu offers "New Session ▸ Kind" (Code Review / Agent
+            // Session / Project view / …), each seeding that kind's panel
+            // layout via the already-wired openNewSession(kind:) path.
+            Menu {
+                Button("Open Folder in New Session…", action: openNewSession)
+                Divider()
+                ForEach(NewSessionMenuItems.all) { item in
+                    Button {
+                        sessionsApp.openNewSession(kind: item.kind)
+                    } label: {
+                        Label(item.title, systemImage: item.symbolName)
+                    }
+                    .accessibilityIdentifier("mdv.sessionTab.new.kind.\(item.kind.rawValue)")
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: model.uiSize(11), weight: .medium))
+                    .frame(width: model.uiSize(24), height: model.uiSize(24))
+            } primaryAction: {
+                openNewSession()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: model.uiSize(28))
+            .helpInfo(title: "New Session",
+                      description: "Open a folder in a new session — or pick a kind")
+            .padding(.horizontal, 4)
+            .accessibilityIdentifier("mdv.sessionTab.new")
+            .uiClickTarget("mdv.sessionTab.new")
+            .accessibilityLabel("New Session")
+        }
+        // Reorder geometry — pill frames and the drag pointer share this
+        // coordinate space so the caret lands on the real gap.
+        .coordinateSpace(name: Self.stripSpace)
+        .overlay(alignment: .leading) {
+            if let x = reorder?.caretX {
+                StripInsertionCaret(x: x, height: rowHeight - model.uiSize(12))
+            }
+        }
+    }
+}
 
 struct SessionTabBarItem: View {
     let snapshot: SessionSnapshot
@@ -397,25 +465,15 @@ public enum SessionTabLabel {
     }
 }
 
-/// TSK-274: drop target on a session pill for a dragged document tab
-/// (payload: `TabDragPayload`, the same wire format the tab strip's
-/// reorder delegate consumes). Resolution to a live tab + the move
-/// itself happen in `SessionsAppCoordinator.moveTab` at drop time.
-private struct SessionTabDropDelegate: DropDelegate {
-    let sessionsApp: SessionsAppCoordinator
-    let targetSessionID: UUID
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.plainText]).first else {
-            return false
-        }
-        _ = provider.loadObject(ofClass: NSString.self) { obj, _ in
-            guard let str = obj as? String,
-                  let tabID = TabDragPayload.tabID(from: str) else { return }
-            Task { @MainActor in
-                sessionsApp.moveTab(withID: tabID, toSessionID: targetSessionID)
-            }
-        }
-        return true
-    }
-}
+// TSK-274's `SessionTabDropDelegate` lived here: a drop target on each
+// session pill that accepted a document tab dragged off the file tab strip
+// and moved that file into the session. Its only producer was `TabBar`'s
+// `.onDrag`, which drag-to-reorder replaced, so the delegate could no
+// longer fire — a dead channel that also SWALLOWED file drops (it returned
+// true unconditionally, so a file dragged from the sidebar onto a pill did
+// nothing instead of falling through to the window's open handler).
+//
+// The capability itself is preserved, and is now discoverable rather than
+// hidden behind a drag: the tab context menu's "Move to Session ▸" calls
+// the same `SessionsAppCoordinator.moveTab(withID:toSessionID:)`, which
+// keeps its own host tests (`TabToNewSessionTests`).

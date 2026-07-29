@@ -348,6 +348,27 @@ public final class SessionsCoordinator: ObservableObject {
         activate(id: sessions[n].id)
     }
 
+    /// Reorder the session strip: move the session at `src` to the
+    /// insertion gap `dst` (an index in the ORIGINAL array, `0...count` —
+    /// the same convention as `TabsState.move(from:to:)`, so both strips
+    /// share `StripReorder`'s geometry).
+    ///
+    /// Display order IS array order and nothing re-sorts it behind the
+    /// user's back: `activate` only bumps `lastActiveAt` in place, and
+    /// `restore` rebuilds the list in index-file order. So a manual
+    /// arrangement survives session switches AND relaunches — which is
+    /// the point of letting the user arrange it. `lastActiveAt` is left
+    /// untouched: reordering is not "using" a session, and bumping it
+    /// would corrupt the LRU that picks the next active session on close.
+    public func move(from src: Int, to dst: Int) {
+        guard sessions.indices.contains(src), dst >= 0, dst <= sessions.count else { return }
+        let insertAt = (src < dst) ? (dst - 1) : dst
+        guard insertAt != src else { return }
+        let moved = sessions.remove(at: src)
+        sessions.insert(moved, at: min(max(insertAt, 0), sessions.count))
+        persist()
+    }
+
     // MARK: Mutation surface for in-memory sessions ------------------
 
     /// Update a session in place. Used by tests and any future code

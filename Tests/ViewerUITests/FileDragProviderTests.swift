@@ -34,26 +34,8 @@ final class FileDragProviderTests: HeadlessUITestCase {
             "the fallback registration must still carry the file reference")
     }
 
-    /// The tab-strip compose contract: attaching the file URL must PRESERVE
-    /// the reorder payload's .plainText representation — breaking it breaks
-    /// in-app tab drag-reorder (TabDropDelegate reads .plainText).
-    func test_attachFileURL_preservesThePlainTextReorderPayload() throws {
-        let url = try tempFile()
-        defer { try? FileManager.default.removeItem(at: url) }
-        let provider = NSItemProvider(object: NSString(string: "tab-payload"))
-        XCTAssertTrue(provider.hasItemConformingToTypeIdentifier(
-            UTType.plainText.identifier))
-        FileDragProvider.attachFileURL(url, to: provider)
-        XCTAssertTrue(
-            provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
-            "the reorder payload must survive the file-URL attachment")
-        XCTAssertTrue(
-            provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
-            "and the file reference must be added alongside it")
-    }
-
-    /// Wiring pins (the TSK-561 dead-channel idiom): the three drag-out
-    /// sources actually attach the provider.
+    /// Wiring pins (the TSK-561 dead-channel idiom): the drag-out sources
+    /// actually attach the provider — and the tab strips actually reorder.
     func test_dragSources_areWired() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -65,9 +47,40 @@ final class FileDragProviderTests: HeadlessUITestCase {
         XCTAssertEqual(
             sidebar.components(separatedBy: "FileDragProvider.make(for:").count - 1, 2,
             "both the tree row and the filter row must be drag-out sources")
-        let tabBar = try source("Sources/ViewerUI/TabBar.swift")
-        XCTAssertTrue(tabBar.contains("FileDragProvider.attachFileURL"),
-                      "the tab strip must compose the file reference onto "
-                      + "its reorder payload (TSK-284)")
+
+        // Both strips reorder by DRAG GESTURE.
+        for rel in ["Sources/ViewerUI/TabBar.swift",
+                    "Sources/ViewerUI/Sessions/SessionTabBar.swift"] {
+            let strip = try source(rel)
+            XCTAssertTrue(strip.contains(".stripReorderable("),
+                          "\(rel) must wire drag-to-reorder")
+            XCTAssertTrue(strip.contains("StripInsertionCaret"),
+                          "\(rel) must show WHERE the drag will land — an "
+                          + "invisible reorder reads as 'not supported'")
+        }
+    }
+
+    /// REGRESSION GUARD for the 2026-07-27 symptom ("dragging a tab acts
+    /// like dragging a file; the window tries to open it"). An `.onDrag`
+    /// on a tab registers `public.file-url`, so the drag reads as a FILE
+    /// drag and the window-level `.onDrop(of: [.fileURL])` in ContentView
+    /// catches it — which also means the reorder never happens. The strips
+    /// must own their pointer via the gesture instead.
+    func test_tabStrips_doNotReintroduceAFileDrag() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        for rel in ["Sources/ViewerUI/TabBar.swift",
+                    "Sources/ViewerUI/Sessions/SessionTabBar.swift"] {
+            let strip = try String(contentsOf: root.appendingPathComponent(rel),
+                                   encoding: .utf8)
+            XCTAssertFalse(strip.contains(".onDrag {"),
+                           "\(rel): an .onDrag on a tab turns a reorder into a "
+                           + "file drag the window opens — reorder via the "
+                           + "gesture, and add tear-off deliberately if wanted")
+            XCTAssertFalse(strip.contains("NSItemProvider"),
+                           "\(rel): the pasteboard round-trip was removed; "
+                           + "reorder geometry lives in StripReorder")
+        }
     }
 }

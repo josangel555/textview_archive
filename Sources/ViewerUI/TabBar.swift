@@ -71,89 +71,9 @@ struct TabBar: View {
         HStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 0) {
-                        ForEach(Array(model.tabs.tabs.enumerated()), id: \.element.id) { index, tab in
-                            TabBarItem(
-                                tab: tab,
-                                isSelected: model.tabs.selectedIndex == index,
-                                isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
-                                // TSK-923: right-pane indicator. The tab whose
-                                // file is currently shown in the split (right)
-                                // pane gets a sidebar-right badge so the user
-                                // can see WHICH open file is pinned there.
-                                isInSplit: tabCoordinator.splitTabID == tab.id,
-                                scale: CGFloat(model.zoom),
-                                width: tabWidth,
-                                onSelect: { model.selectTab(at: index) },
-                                onClose: { model.closeTab(at: index) }
-                            )
-                            // item12a: scroll anchor so the active tab can be
-                            // brought into view via ScrollViewReader.
-                            .id(tab.id)
-                            .contextMenu {
-                                TabContextMenu(model: model, tabIndex: index, tab: tab)
-                            }
-                            .onDrag {
-                                // Encode the tab's stable id, not its index.
-                                // Indices go stale the instant tabs reorder
-                                // (another drag, a close, a programmatic
-                                // move) between drag-start and drop, which
-                                // would move the wrong tab. The id is
-                                // resolved back to a live index at drop time.
-                                let provider = NSItemProvider(
-                                    object: NSString(string: TabDragPayload.encode(tab.id)))
-                                // TSK-284 (a): the SAME provider also carries
-                                // the real file reference — in-app reorder
-                                // keeps reading the .plainText payload;
-                                // dragging a tab to Finder copies the file.
-                                if let url = tab.url {
-                                    FileDragProvider.attachFileURL(url, to: provider)
-                                }
-                                return provider
-                            }
-                            .onDrop(
-                                of: [.plainText],
-                                delegate: TabDropDelegate(model: model, targetID: tab.id)
-                            )
-                            // B4: full-height vertical rule between tabs.
-                            // The old `Divider().frame(height: 16)` only
-                            // spanned the middle 16pt of the 28pt-tall tab
-                            // row, so the seam looked partial and read
-                            // asymmetrically when one neighbor was the
-                            // tinted-active tab and the other was clear. A
-                            // fixed-width separator rectangle pinned to the
-                            // tab height draws a clean top-to-bottom line
-                            // that is identical regardless of which side is
-                            // active.
-                            //
-                            // TSK-268: drawn after EVERY tab — including the
-                            // last/only one — so the trailing tab has a visible
-                            // right edge (previously gated `index < count-1`,
-                            // leaving the last tab's right border missing before
-                            // the `+` button).
-                            Rectangle()
-                                .fill(Palette.separator)
-                                .frame(width: 1, height: model.uiSize(28))
-                                .accessibilityIdentifier("mdv.tab.divider")
-                        }
-                        // TSK-261: the "+" sits BESIDE the last tab (inside the
-                        // scrolling content), not pinned at the far-right edge.
-                        // `computedTabWidth` still reserves ~32pt for it so it
-                        // stays visible beside the last tab until the strip
-                        // genuinely overflows.
-                        Button(action: { model.newTab() }) {
-                            Image(systemName: "plus")
-                                .font(.system(size: model.uiSize(11), weight: .medium))
-                                .frame(width: model.uiSize(24), height: model.uiSize(24))
-                        }
-                        // UX-H (#230): shared icon style for hover/press feedback.
-                        .buttonStyle(IconHoverButtonStyle())
-                        // 0c: uniform HelpInfo model — native tooltip + status-bar
-                        // description + a11y label/hint from one source.
-                        .helpInfo(title: "New Tab (⌘T)",
-                                  description: "Open a new empty tab in the current session")
-                        .padding(.horizontal, model.uiSize(4))
-                    }
+                    TabStripContent(model: model,
+                                    tabCoordinator: tabCoordinator,
+                                    tabWidth: tabWidth)
                 }
                 // item12a: keep the active tab visible. Fires on programmatic
                 // selection too (⌘1-9, command palette, revealInSidebar,
@@ -254,38 +174,147 @@ struct TabBar: View {
     }
 }
 
-private struct TabDropDelegate: DropDelegate {
-    let model: DocumentModel
-    let targetID: UUID
+/// The scrolling row of tabs, split out of `TabBar` so the reorder drag
+/// state can live at a leaf.
+///
+/// ## Why this is a separate view (PERF #1 — do not inline it back)
+///
+/// The drag needs `@State private var frameBox = StripFrameBox()`. That
+/// property initializer runs every time a parent builds the view value, so it
+/// allocates a NEW object each pass; the fresh view value therefore never
+/// compares equal to the previous one and SwiftUI cannot SKIP the body when
+/// `ContentView` re-bodies for unrelated reasons. Put it on `TabBar` and the
+/// strip re-bodies on EVERY republish — including a find keystroke that
+/// touches no tab state. `ChromeBodyEvalCountTests` caught exactly that
+/// (`TabBar=1` on find typeahead, sidebar recency tick, and panel toggle).
+///
+/// It is the fresh ALLOCATION that costs the skip, not "non-POD state":
+/// measured on `TabBar`, a `@State var x: [Int] = []` keeps it green while
+/// `@State var x = StripFrameBox()` reproduces all three failures. Holding
+/// the state one level down keeps `TabBar`'s own stored properties
+/// unchanged, so the skip still applies and the strip only re-bodies for
+/// tab/selection/dirty ticks and live drags. See LESSONS.md 2026-07-27.
+private struct TabStripContent: View {
+    @ObservedObject var model: DocumentModel
+    @ObservedObject var tabCoordinator: TabCoordinator
+    let tabWidth: CGFloat
 
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
-        _ = provider.loadObject(ofClass: NSString.self) { obj, _ in
-            guard let str = obj as? String,
-                  let srcID = TabDragPayload.tabID(from: str) else { return }
-            Task { @MainActor in
-                Self.reorder(model: self.model, srcID: srcID, targetID: self.targetID)
+    /// Coordinate space the reorder geometry is measured in — the strip's
+    /// scrolling content, so item frames and the drag pointer share an
+    /// origin even when the strip is scrolled.
+    private static let stripSpace = "mdv.tabStrip"
+
+    @State private var frameBox = StripFrameBox()
+    @State private var reorder: StripReorderState?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(model.tabs.tabs.enumerated()), id: \.element.id) { index, tab in
+                TabBarItem(
+                    tab: tab,
+                    isSelected: model.tabs.selectedIndex == index,
+                    isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
+                    // TSK-923: right-pane indicator. The tab whose
+                    // file is currently shown in the split (right)
+                    // pane gets a sidebar-right badge so the user
+                    // can see WHICH open file is pinned there.
+                    isInSplit: tabCoordinator.splitTabID == tab.id,
+                    scale: CGFloat(model.zoom),
+                    width: tabWidth,
+                    // A reorder must NOT change which tab you are in: swallow
+                    // the click that terminates a drag (see
+                    // `StripFrameBox.armSelectSuppression`). `index` is also
+                    // stale by then — the strip has already reordered — so
+                    // acting on it would switch to an unrelated tab.
+                    onSelect: {
+                        guard !frameBox.shouldSuppressSelect() else { return }
+                        model.selectTab(at: index)
+                    },
+                    onClose: { model.closeTab(at: index) }
+                )
+                // item12a: scroll anchor so the active tab can be
+                // brought into view via ScrollViewReader.
+                .id(tab.id)
+                .contextMenu {
+                    TabContextMenu(model: model, tabIndex: index, tab: tab)
+                }
+                // Drag-to-reorder. Driven by a DragGesture, NOT
+                // `.onDrag`/`.onDrop`: the old pasteboard round-trip
+                // carried `public.file-url` alongside the reorder payload,
+                // so the drag read as a FILE drag and ContentView's
+                // window-level `.onDrop(of: [.fileURL])` caught it and
+                // tried to OPEN the tab's file, while the reorder itself
+                // was invisible (no insertion indicator). See
+                // `StripReorder` for the full rationale + the payload
+                // measurement that cleared the data layer.
+                .stripReorderable(
+                    id: tab.id,
+                    index: index,
+                    ids: model.tabs.tabs.map(\.id),
+                    space: Self.stripSpace,
+                    frames: frameBox,
+                    state: $reorder,
+                    commit: { draggedID, gap in
+                        // Re-resolve against the LIVE tab list — see
+                        // `StripReorder.resolveMove`.
+                        guard let move = StripReorder.resolveMove(
+                            itemID: draggedID,
+                            ids: model.tabs.tabs.map(\.id),
+                            gap: gap) else { return }
+                        // No withAnimation here: the caller already runs this
+                        // inside the drop transaction that releases the drag
+                        // offset, so the tab glides from where it was dropped.
+                        model.moveTab(from: move.source, to: move.destination)
+                    }
+                )
+                // B4: full-height vertical rule between tabs.
+                // The old `Divider().frame(height: 16)` only
+                // spanned the middle 16pt of the 28pt-tall tab
+                // row, so the seam looked partial and read
+                // asymmetrically when one neighbor was the
+                // tinted-active tab and the other was clear. A
+                // fixed-width separator rectangle pinned to the
+                // tab height draws a clean top-to-bottom line
+                // that is identical regardless of which side is
+                // active.
+                //
+                // TSK-268: drawn after EVERY tab — including the
+                // last/only one — so the trailing tab has a visible
+                // right edge (previously gated `index < count-1`,
+                // leaving the last tab's right border missing before
+                // the `+` button).
+                Rectangle()
+                    .fill(Palette.separator)
+                    .frame(width: 1, height: model.uiSize(28))
+                    .accessibilityIdentifier("mdv.tab.divider")
+            }
+            // TSK-261: the "+" sits BESIDE the last tab (inside the
+            // scrolling content), not pinned at the far-right edge.
+            // `computedTabWidth` still reserves ~32pt for it so it
+            // stays visible beside the last tab until the strip
+            // genuinely overflows.
+            Button(action: { model.newTab() }) {
+                Image(systemName: "plus")
+                    .font(.system(size: model.uiSize(11), weight: .medium))
+                    .frame(width: model.uiSize(24), height: model.uiSize(24))
+            }
+            // UX-H (#230): shared icon style for hover/press feedback.
+            .buttonStyle(IconHoverButtonStyle())
+            // 0c: uniform HelpInfo model — native tooltip + status-bar
+            // description + a11y label/hint from one source.
+            .helpInfo(title: "New Tab (⌘T)",
+                      description: "Open a new empty tab in the current session")
+            .padding(.horizontal, model.uiSize(4))
+        }
+        // Reorder geometry: the strip content is the coordinate space every
+        // item frame and the drag pointer are measured in, so the caret
+        // lands exactly where the gap is.
+        .coordinateSpace(name: Self.stripSpace)
+        .overlay(alignment: .leading) {
+            if let x = reorder?.caretX {
+                StripInsertionCaret(x: x, height: model.uiSize(28))
             }
         }
-        return true
-    }
-
-    /// Resolve both the dragged tab and the drop-target tab back to
-    /// live indices *at drop time* (not at drag-start), then move.
-    /// Index-based payloads went stale whenever the strip reordered
-    /// between picking up a tab and dropping it; resolving by id here
-    /// always targets the tabs the user actually grabbed and aimed at,
-    /// and bails cleanly if either has since been closed.
-    @MainActor
-    static func reorder(model: DocumentModel, srcID: UUID, targetID: UUID) {
-        guard srcID != targetID else { return }
-        let tabs = model.tabs.tabs
-        guard let src = tabs.firstIndex(where: { $0.id == srcID }),
-              let target = tabs.firstIndex(where: { $0.id == targetID }) else { return }
-        // Drop onto a row → place the dragged tab in that row's
-        // position; the target tab slides to the other side.
-        let dst = src < target ? target + 1 : target
-        model.moveTab(from: src, to: dst)
     }
 }
 
@@ -358,6 +387,24 @@ private struct TabContextMenu: View {
                     url, removingFromCurrent: true)
             }
             .disabled(model.sessionsCoordinator == nil)
+            // TSK-274 continuity: moving a tab into an EXISTING session used
+            // to be drag-only (drop the tab onto a session pill). The strip's
+            // drag now reorders, so the move gets an explicit affordance —
+            // discoverable, and host-testable instead of pixel-only.
+            if let sessions = model.sessionsCoordinator?.core.sessions,
+               let activeID = model.sessionsCoordinator?.core.activeID {
+                let others = sessions.filter { $0.id != activeID }
+                if !others.isEmpty {
+                    Menu("Move to Session") {
+                        ForEach(others, id: \.id) { snap in
+                            Button(snap.displayName) {
+                                model.sessionsCoordinator?.moveTab(
+                                    withID: tab.id, toSessionID: snap.id)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

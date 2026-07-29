@@ -378,6 +378,10 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// pipeline runs as for any other close.
     public func close(id: UUID) { core.close(id: id) }
 
+    /// Reorder the session strip (drag-to-rearrange). `dst` is an
+    /// insertion gap in the original array — see `SessionsCoordinator.move`.
+    public func moveSession(from src: Int, to dst: Int) { core.move(from: src, to: dst) }
+
     /// Close every session except `id`. Surface for the session-tab
     /// context menu's "Close Other Sessions" item.
     public func closeOthers(except id: UUID) { core.closeOthers(except: id) }
