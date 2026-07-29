@@ -13,6 +13,8 @@ license; the full license text for every component is reproduced here.
 
 - SwiftPM dependencies (swift-markdown, cmark, SwiftTreeSitter,
   tree-sitter runtime, and the per-language grammars).
+- Statically-linked Rust crates (the `mdvcore` engine linked into the
+  main executable via `libmdvcore_ffi.a`).
 - Vendored JavaScript bundles shipped under `Contents/Resources/`
   (Mermaid, CodeMirror 6).
 
@@ -666,6 +668,144 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+---
+
+## Statically-linked Rust crates (mdvcore)
+
+The `mdvcore` engine is compiled from the Rust workspace under
+`rust-core/` and statically linked into the main executable
+(`libmdvcore_ffi.a`), so every crate in its dependency closure is
+redistributed in the shipped binary. Copyright rests with each crate's
+respective authors (as identified on crates.io); the license texts are
+reproduced once per license below the crate list.
+
+<!-- RUST-CRATES-BEGIN -->
+- `aho-corasick v1.1.4` — Unlicense OR MIT
+- `bitflags v2.11.1` — MIT OR Apache-2.0
+- `byteorder v1.5.0` — Unlicense OR MIT
+- `memchr v2.8.1` — Unlicense OR MIT
+- `num-traits v0.2.19` — MIT OR Apache-2.0
+- `proc-macro2 v1.0.106` — MIT OR Apache-2.0
+- `pulldown-cmark v0.13.4` — MIT
+- `quote v1.0.45` — MIT OR Apache-2.0
+- `regex v1.12.3` — MIT OR Apache-2.0
+- `regex-automata v0.4.14` — MIT OR Apache-2.0
+- `regex-lite v0.1.8` — MIT OR Apache-2.0
+- `regex-syntax v0.8.10` — MIT OR Apache-2.0
+- `rmp v0.8.15` — MIT
+- `rmp-serde v1.3.0` — MIT
+- `serde v1.0.228` — MIT OR Apache-2.0
+- `serde_core v1.0.228` — MIT OR Apache-2.0
+- `serde_derive v1.0.228` — MIT OR Apache-2.0
+- `streaming-iterator v0.1.9` — MIT OR Apache-2.0
+- `syn v2.0.117` — MIT OR Apache-2.0
+- `thiserror v2.0.18` — MIT OR Apache-2.0
+- `thiserror-impl v2.0.18` — MIT OR Apache-2.0
+- `tree-sitter v0.25.10` — MIT
+- `tree-sitter-bash v0.25.1` — MIT
+- `tree-sitter-c v0.24.2` — MIT
+- `tree-sitter-c-sharp v0.23.5` — MIT
+- `tree-sitter-cpp v0.23.4` — MIT
+- `tree-sitter-css v0.25.0` — MIT
+- `tree-sitter-go v0.25.0` — MIT
+- `tree-sitter-highlight v0.25.10` — MIT
+- `tree-sitter-html v0.23.2` — MIT
+- `tree-sitter-java v0.23.5` — MIT
+- `tree-sitter-javascript v0.25.0` — MIT
+- `tree-sitter-json v0.24.8` — MIT
+- `tree-sitter-kotlin-ng v1.1.0` — MIT
+- `tree-sitter-language v0.1.7` — MIT
+- `tree-sitter-lua v0.5.0` — MIT
+- `tree-sitter-md v0.5.3` — MIT
+- `tree-sitter-python v0.25.0` — MIT
+- `tree-sitter-ruby v0.23.1` — MIT
+- `tree-sitter-rust v0.24.0` — MIT
+- `tree-sitter-sequel v0.3.11` — MIT
+- `tree-sitter-swift v0.7.3` — MIT
+- `tree-sitter-typescript v0.23.2` — MIT
+- `tree-sitter-xml v0.7.0` — MIT
+- `tree-sitter-yaml v0.7.2` — MIT
+- `unicase v2.9.0` — MIT OR Apache-2.0
+- `unicode-ident v1.0.24` — (MIT OR Apache-2.0) AND Unicode-3.0
+<!-- RUST-CRATES-END -->
+
+### MIT License (crates listed as MIT, or the MIT arm of a dual license)
+
+```
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### Apache License 2.0 (the Apache-2.0 arm of dual-licensed crates)
+
+Apache-2.0-licensed crates are redistributed under the terms of the
+Apache License, Version 2.0. The full text is available at
+<https://www.apache.org/licenses/LICENSE-2.0>; its terms apply to each
+crate above that names Apache-2.0, with the copyright held by that
+crate's authors.
+
+### The Unlicense (crates listed as Unlicense OR MIT)
+
+```
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or distribute
+this software, either in source code form or as a compiled binary, for any
+purpose, commercial or non-commercial, and by any means.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+### Unicode License v3 (unicode-ident's data tables)
+
+```
+UNICODE LICENSE V3
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright (c) 1991-2023 Unicode, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of data files and any associated documentation (the "Data Files") or software
+and any associated documentation (the "Software") to deal in the Data Files
+or Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, and/or sell copies of the Data
+Files or Software, and to permit persons to whom the Data Files or Software
+are furnished to do so, provided that either (a) this copyright and permission
+notice appear with all copies of the Data Files or Software, or (b) this
+copyright and permission notice appear in associated Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+THIRD PARTY RIGHTS. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS
+INCLUDED IN THIS NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR
+CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
+OF THE DATA FILES OR SOFTWARE.
 ```
 
 ---

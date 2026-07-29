@@ -258,6 +258,22 @@ if [[ -f "$CAPS_SRC" ]]; then
   cp "$CAPS_SRC" "$CONTENTS/Resources/CAPABILITIES.md"
 fi
 
+# LICENSING SHIP-BLOCKER (audit THEME 4, fixed 2026-07-29): the bundle
+# redistributes MIT/Apache/BSD code (SwiftPM deps, ~47 Rust crates, Mermaid,
+# CodeMirror), so the aggregated attribution file MUST ship inside it. The
+# notices generator's header has claimed since day one that build-app.sh
+# copies the file — this cp did not exist, so every assembled .app shipped
+# with zero attribution. HARD-FAIL if the file is missing: an unattributed
+# bundle is not a valid build, and the file is committed so this only fires
+# if someone deletes it.
+NOTICES_SRC="$ROOT_DIR/THIRD_PARTY_NOTICES.md"
+if [[ ! -f "$NOTICES_SRC" ]]; then
+  echo "ERROR: THIRD_PARTY_NOTICES.md missing — cannot assemble a legally" >&2
+  echo "redistributable bundle. Run scripts/gen-third-party-notices.sh." >&2
+  exit 1
+fi
+cp "$NOTICES_SRC" "$CONTENTS/Resources/THIRD_PARTY_NOTICES.md"
+
 # Copy SPM-generated resource bundles (one per target with resources, e.g.
 # MarkdownViewer_ViewerUI.bundle containing markdown.css) into Contents/Resources.
 # This is the canonical, codesign-sealable, notarizable location — and where the
