@@ -52,6 +52,15 @@ final class BlockPatchApplyWebViewTests: WebViewTestCase {
             }
         }
     }
+    /// The TSK-838 verified-apply contract: `mdvApplyBlockPatch` returns the
+    /// post-apply `children.length` (or -1 on container/parse failure).
+    private func evalInt(_ js: String) async -> Int {
+        await withCheckedContinuation { (cont: CheckedContinuation<Int, Never>) in
+            webView.evaluateJavaScript(js) { v, _ in
+                cont.resume(returning: (v as? NSNumber)?.intValue ?? Int.min)
+            }
+        }
+    }
     private func evalStr(_ js: String) async -> String {
         await withCheckedContinuation { (cont: CheckedContinuation<String, Never>) in
             webView.evaluateJavaScript(js) { v, _ in cont.resume(returning: (v as? String) ?? "") }
@@ -99,8 +108,10 @@ final class BlockPatchApplyWebViewTests: WebViewTestCase {
         let payload = RenderedBlockDiff.jsPayload(ops)
         try await loadBody(oldHTML)
         await dispatch(BlockPatchJS.applyFunction)
-        let ok = await evalBool("window.mdvApplyBlockPatch('body', JSON.stringify(\(payload)))")
-        XCTAssertTrue(ok, "mdvApplyBlockPatch returned false (\(message))", file: file, line: line)
+        let landed = await evalInt("window.mdvApplyBlockPatch('body', JSON.stringify(\(payload)))")
+        XCTAssertEqual(landed, new.count,
+            "mdvApplyBlockPatch must return the post-apply children.length (\(message))",
+            file: file, line: line)
         let summary = await bodySummary()
         XCTAssertEqual(summary, expectedSummary, "\(message) — got: \(summary)", file: file, line: line)
     }
@@ -133,36 +144,52 @@ final class BlockPatchApplyWebViewTests: WebViewTestCase {
             "no-op patch leaves the DOM intact")
     }
 
-    // MARK: - The production helper (MarkdownRenderedView.tryApplyDOMPatch) on a live WebView
+    // MARK: - The production plan (MarkdownRenderedView.domPatchPlan) on a live WebView
 
-    func test_tryApplyDOMPatch_smallDiff_patchesLiveBody() async throws {
+    func test_domPatchPlan_smallDiff_patchesLiveBody_andCountVerifies() async throws {
         let oldHTML = "<p>Alpha</p>\n<p>Beta</p>\n<p>Gamma</p>\n"
         try await loadBody(oldHTML)
         let newHTML = "<p>Alpha</p>\n<p>Beta EDITED</p>\n<p>Gamma</p>\n"
-        // The EXACT production helper the gated updateNSView same-file path calls.
-        let patched = MarkdownRenderedView.tryApplyDOMPatch(
-            oldHTML: oldHTML, newHTML: newHTML, webView: webView)
-        XCTAssertTrue(patched, "a small same-file diff should patch in place")
-        // tryApplyDOMPatch's evaluateJavaScript is async — poll until it lands.
-        var summary = ""
-        for _ in 0..<60 {
-            summary = await bodySummary()
-            if summary == "p:Alpha|p:Beta EDITED|p:Gamma" { break }
-            try? await Task.sleep(for: .milliseconds(50))
+        // The EXACT production plan the gated updateNSView same-file path evaluates.
+        guard let plan = MarkdownRenderedView.domPatchPlan(oldHTML: oldHTML, newHTML: newHTML) else {
+            return XCTFail("a small same-file diff should produce a patch plan")
         }
+        XCTAssertEqual(plan.expectedBlockCount, 3)
+        let landed = await evalInt(plan.js)
+        XCTAssertEqual(landed, plan.expectedBlockCount,
+            "a clean apply must land on the expected block count (the verify contract)")
+        let summary = await bodySummary()
         XCTAssertEqual(summary, "p:Alpha|p:Beta EDITED|p:Gamma",
             "the live body must reflect the patched block; got: \(summary)")
     }
 
-    func test_tryApplyDOMPatch_largeDiff_returnsFalseForFallback() async throws {
+    /// TSK-838 external-change staleness fix — the DETECTION teeth: when the live
+    /// body has drifted from the splitBlocks grain (the silent-no-op class that left
+    /// externally-changed markdown stale), the returned count MISMATCHES the plan's
+    /// expectation, which is exactly the signal `updateNSView` uses to fall back to
+    /// a full reload. Before the fix this scenario "succeeded" fire-and-forget.
+    func test_domPatchPlan_misalignedLiveBody_countMismatchSignalsFallback() async throws {
+        let oldHTML = "<p>Alpha</p>\n<p>Beta</p>\n<p>Gamma</p>\n"
+        let newHTML = "<p>Alpha</p>\n<p>Beta EDITED</p>\n<p>Gamma</p>\n"
+        // Live body has ONE EXTRA block vs the splitBlocks grain of oldHTML —
+        // the mermaid/math post-processing drift class.
+        try await loadBody(oldHTML + "<div>injected-by-postprocessing</div>\n")
+        guard let plan = MarkdownRenderedView.domPatchPlan(oldHTML: oldHTML, newHTML: newHTML) else {
+            return XCTFail("plan expected for a small diff")
+        }
+        let landed = await evalInt(plan.js)
+        XCTAssertNotEqual(landed, plan.expectedBlockCount,
+            "a drifted body must NOT count-verify — this mismatch is the fallback trigger")
+        XCTAssertEqual(landed, plan.expectedBlockCount + 1,
+            "returned value is the real post-apply children.length")
+    }
+
+    func test_domPatchPlan_largeDiff_isNilForFallback() async throws {
         let oldHTML = (0..<10).map { "<p>old \($0)</p>\n" }.joined()
-        try await loadBody(oldHTML)
         let newHTML = (0..<10).map { "<p>new \($0)</p>\n" }.joined()  // all 10 blocks differ
         // A large rewrite (10/10 blocks) exceeds the eligibility threshold, so the
-        // helper declines (false) and the caller falls back to loadHTMLString.
-        let patched = MarkdownRenderedView.tryApplyDOMPatch(
-            oldHTML: oldHTML, newHTML: newHTML, webView: webView)
-        XCTAssertFalse(patched,
+        // plan declines (nil) and the caller falls back to loadHTMLString.
+        XCTAssertNil(MarkdownRenderedView.domPatchPlan(oldHTML: oldHTML, newHTML: newHTML),
             "a large diff should NOT patch — caller falls back to a full loadHTMLString reload")
     }
 }

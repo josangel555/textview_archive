@@ -266,8 +266,16 @@ final class EditorCoordinatorInteractionTests: XCTestCase {
         try "external write".write(to: url, atomically: true, encoding: .utf8)
         model.editor.externalEditPromptOverride = { _ in .discardAndReload }
         model.editor.presentExternalEditConflict(forTabID: id, at: 0, url: url)
-        // Buffer dropped + reload pulled from disk.
-        XCTAssertNil(model.editorBuffers[id])
+        // Dirty buffer dropped + reload pulled from disk. TSK-1588: with the
+        // editor lens now the text default, a CLEAN buffer may re-seed lazily
+        // from the reloaded state — that's the editor's steady state, not a
+        // surviving edit. The contract is: no dirty edits remain, and any
+        // buffer present mirrors the post-external disk content.
+        if let buf = model.editorBuffers[id] {
+            XCTAssertFalse(buf.isDirty, "discard must not leave dirty edits")
+            XCTAssertEqual(buf.text, "external write",
+                           "a re-seeded buffer must mirror the reloaded disk content")
+        }
         XCTAssertFalse(model.tabs.tabs[0].isDirty)
         // The reload runs `controller.open(url:)` which puts the new
         // disk contents into the tab's .loaded state.

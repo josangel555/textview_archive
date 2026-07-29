@@ -77,15 +77,26 @@ final class NewFileActionTests: HeadlessUITestCase {
         let main = try src("Sources/MarkdownViewer/main.swift")
         XCTAssertTrue(main.contains("#selector(newFile(_:))"),
                       "File menu must have a New File item")
-        XCTAssertTrue(main.contains("model.createNewFile(in: dir)"),
-                      "newFile action must call the model")
+        // TSK-1605: every entry point now routes through the NAME-FIRST
+        // prompt (`promptForNewFile`) instead of creating `Untitled.txt` and
+        // leaving the user to rename it. Pinning the prompting call keeps a
+        // regression back to silent-Untitled creation RED.
+        XCTAssertTrue(main.contains("model.promptForNewFile(in: dir)"),
+                      "newFile action must call the model's name-first prompt")
+        XCTAssertTrue(main.contains("model.promptForNewFile(in: dir, type: type)"),
+                      "the typed New File ▸ … items must prompt for the name too")
         XCTAssertTrue(main.contains("model.newFileTargetDirectory != nil"),
                       "the item must disable when no folder is open")
         let sidebar = try src("Sources/ViewerUI/SidebarView.swift")
-        // TSK-747: the right-click "New File" is now a typed submenu
-        // (txt/md/csv/json) routing through createNewFile(in:type:).
-        XCTAssertTrue(sidebar.contains("model.createNewFile(in: node.url, type: type)"),
+        // TSK-747: the right-click "New File" is a typed submenu
+        // (txt/md/csv/json); TSK-1605: it prompts for the name first.
+        XCTAssertTrue(sidebar.contains("model.promptForNewFile(in: node.url, type: type)"),
                       "the folder context menu must offer New File (the "
-                      + "right-click entry point TSK-329 named, TSK-747 typed)")
+                      + "right-click entry point TSK-329 named, TSK-747 typed) "
+                      + "and prompt for the name (TSK-1605)")
+        let content = try src("Sources/ViewerUI/ContentView.swift")
+        XCTAssertTrue(content.contains("model.promptForNewFileForLanding()"),
+                      "the empty-state landing button must prompt too — it was "
+                      + "the other silent-Untitled path")
     }
 }

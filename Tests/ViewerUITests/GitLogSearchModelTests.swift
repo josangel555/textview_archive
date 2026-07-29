@@ -56,9 +56,14 @@ final class GitLogSearchModelTests: XCTestCase {
     }
 
     /// Spin until the async search lands (detached git shell-out).
+    ///
+    /// TSK-1600: search is now TWO-PHASE — instant local hits (sha/ref/
+    /// worktree prefix + subject over loaded rows) can publish before the
+    /// `--grep` body pass merges in — so "landed" means `logSearchIsSettled`,
+    /// not merely "results is non-nil".
     private func waitForSearch(_ m: GitPanelModel, timeout: TimeInterval = 5) async {
         let deadline = Date().addingTimeInterval(timeout)
-        while m.logSearchResults == nil && Date() < deadline {
+        while (m.logSearchResults == nil || !m.logSearchIsSettled) && Date() < deadline {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
     }
@@ -113,6 +118,32 @@ final class GitLogSearchModelTests: XCTestCase {
         m.logRowClicked(sha: "abc1234", shift: true)
         XCTAssertTrue(m.selectedLogSHAs.isEmpty,
                       "multi-select is disabled while a search is active")
+    }
+
+    /// TSK-1600 — a sha/ref/worktree/subject hit over ALREADY-LOADED rows
+    /// publishes INSTANTLY (no subprocess, no debounce wait), so the list
+    /// narrows as the user types; the body pass then merges in and settles.
+    func test_localHits_publishBeforeTheGrepSettles() async throws {
+        let m = makeModel()
+        // Real rows, loaded the way the Log tab loads them.
+        m.logEntries = GitClient(repoRoot: repo).graphLog(maxEntries: 20)
+        let target = try XCTUnwrap(
+            m.logEntries.first { $0.subject == "add waveform reducer" })
+
+        m.runLogSearch(String(target.sha.prefix(3)))   // commit-id PREFIX
+        XCTAssertEqual(m.logSearchResults?.map(\.sha), [target.sha],
+                       "a local sha-prefix hit is published synchronously")
+        XCTAssertFalse(m.logSearchIsSettled, "the body pass is still in flight")
+        await waitForSearch(m)
+        XCTAssertTrue(m.logSearchIsSettled)
+        XCTAssertTrue(m.displayedLogEntries.contains { $0.sha == target.sha },
+                      "the early hit survives the merge")
+
+        m.runLogSearch("waveform")                    // SUBJECT substring
+        XCTAssertEqual(m.logSearchResults?.map(\.sha), [target.sha],
+                       "a subject hit also resolves locally, before the grep")
+        m.clearLogSearch()
+        XCTAssertTrue(m.logSearchIsSettled, "clearing settles the search")
     }
 
     func test_loadMoreLog_isNoOpWhileSearchActive() async {

@@ -87,6 +87,12 @@ extension CommandRegistry {
             id: "file.closeTab", title: "Close Tab", category: .file,
             defaultShortcut: Shortcut(key: "w", modifiers: [.command]),
             scriptVerb: "close-tab"),
+        // Reopen the most recently closed tab — the browser chord (⇧⌘T), and
+        // repeatable: each invocation walks one step further back.
+        CommandDescriptor(
+            id: "file.reopenClosedTab", title: "Reopen Closed Tab", category: .file,
+            defaultShortcut: Shortcut(key: "t", modifiers: [.command, .shift]),
+            scriptVerb: "reopen-closed-tab"),
         CommandDescriptor(
             id: "file.save", title: "Save", category: .file,
             defaultShortcut: Shortcut(key: "s", modifiers: [.command]),

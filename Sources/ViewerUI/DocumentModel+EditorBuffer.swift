@@ -43,7 +43,12 @@ extension DocumentModel {
         // promote it to a permanent tab (VSCode parity — TSK-306 §2.2). No-op
         // for a non-preview tab. Cheap: `previewTabID` is one scan of the tab
         // list, only equal when there IS a preview and it's the edited tab.
-        if tabs.previewTabID == id { tabCoordinator.promoteTab(id: id) }
+        if tabs.previewTabID == id {
+            tabCoordinator.promoteTab(id: id)
+            // Now it's a real open, so it belongs in Open Recent — the
+            // transient peek that created it was deliberately skipped.
+            notePreviewPromoted(tabID: id)
+        }
         // Recompute folds against the edited text (TSK-466). Only for the
         // selected tab — a background tab's editor isn't on screen.
         if tabs.selected?.id == id { refreshEditorFolds() }

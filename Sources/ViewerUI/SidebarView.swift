@@ -191,7 +191,10 @@ struct SidebarView: View {
             //   2. `BoundedAccordionScroll` hugs its content up to a
             //      window-derived ceiling and SCROLLS past it — the hard
             //      guarantee that N panels at their floor can't overflow.
-            BoundedAccordionScroll(availableHeight: sidebarContentHeight) {
+            BoundedAccordionScroll(
+                availableHeight: sidebarContentHeight,
+                panelCount: accordionPanelCount
+            ) {
                 // Divider placement is now driven by `SidebarSectionPlanner`
                 // (ViewerCore) — a hidden panel (no git repo, no Claude
                 // transcripts, non-LSP file) drops both itself AND the
@@ -262,7 +265,9 @@ struct SidebarView: View {
                         if SidebarPanelHeights.shouldCommitAvailableHeight(
                             current: sidebarContentHeight,
                             measured: h,
-                            storedHeights: accordionStoredHeights
+                            storedHeights: accordionStoredHeights,
+                            fraction: SidebarPanelHeights.ceilingFraction(
+                                visiblePanelCount: accordionPanelCount)
                         ) {
                             sidebarContentHeight = h
                         }
@@ -464,6 +469,12 @@ struct SidebarView: View {
         }
     }
 
+    /// Count of accordion panels that resolve VISIBLE — drives the per-panel
+    /// ceiling fraction (a lone panel may fill the band; TSK-1590).
+    private var accordionPanelCount: Int {
+        SidebarSectionPlanner.plan(panelVisibility).count
+    }
+
     @ViewBuilder
     private var accordionStack: some View {
         let plan = SidebarSectionPlanner.plan(panelVisibility)
@@ -508,7 +519,9 @@ struct SidebarView: View {
                 panelLayout: panelLayout,
                 bodyHeight: SidebarPanelHeights.clamp(
                     CGFloat(accordionHeight(for: kind)),
-                    availableHeight: sidebarContentHeight
+                    availableHeight: sidebarContentHeight,
+                    fraction: SidebarPanelHeights.ceilingFraction(
+                        visiblePanelCount: accordionPanelCount)
                 )
             )
         }
@@ -1200,7 +1213,8 @@ private struct FileRowContextMenu: View {
             // The submenu offers the text-based types (txt/md/csv/json).
             Menu("New File") {
                 ForEach(NewFileType.allCases, id: \.self) { type in
-                    Button(type.title) { model.createNewFile(in: node.url, type: type) }
+                    // TSK-1605: prompt for the name, then create it.
+                    Button(type.title) { model.promptForNewFile(in: node.url, type: type) }
                 }
                 // TSK-1167: Image (binary) — create a blank image in this folder + open.
                 Button("Image") {
@@ -1856,14 +1870,19 @@ final class WorkspaceSymbolDispatch {
 //     measurement settles one pass later and the ceiling engages.
 private struct BoundedAccordionScroll<Content: View>: View {
     let availableHeight: CGFloat
+    /// Number of visible accordion panels (TSK-1590). A single tool window
+    /// gets a taller band so it can fill the sidebar instead of being pinned
+    /// under the multi-panel share.
+    var panelCount: Int = 0
     @ViewBuilder var content: Content
 
     /// Fraction of the sidebar's content height the accordion run may
-    /// occupy before it scrolls. The remainder is FILES' floor. 0.62
-    /// leaves FILES ~38% — comfortably more than its own ~120pt minimum
-    /// on a normal window while letting the accordion dominate when the
-    /// user has many panels open.
-    private static var accordionFraction: CGFloat { 0.62 }
+    /// occupy before it scrolls. The remainder is FILES' floor. With MANY
+    /// panels 0.62 leaves FILES ~38%; with a SINGLE tool window (no siblings
+    /// to balance) the band grows to 0.85 so a lone Git/Outline panel fills
+    /// the sidebar rather than stranding the lower half empty — FILES keeps a
+    /// ~15% floor (owner report 2026-07-21).
+    private var accordionFraction: CGFloat { panelCount <= 1 ? 0.85 : 0.62 }
 
     /// Minimum height delta (points) that commits a `contentHeight` write.
     /// Suppresses sub-point measure jitter from re-bodying the view every
@@ -1880,7 +1899,7 @@ private struct BoundedAccordionScroll<Content: View>: View {
 
     private var ceiling: CGFloat? {
         guard availableHeight.isFinite, availableHeight > 0 else { return nil }
-        return availableHeight * Self.accordionFraction
+        return availableHeight * accordionFraction
     }
 
     var body: some View {

@@ -1354,13 +1354,30 @@ final class DocumentModelTests: XCTestCase {
     /// Plain-text file opens in `.source` mode by default; the
     /// line-jump should bump `sourceScrollLineNonce` and stash the
     /// target line. Editor goto is left unset (we're not in `.editor`).
-    func test_openPathAtLine_sourceMode_setsSourceScrollRequest() throws {
+    func test_openPathAtLine_editorDefault_drivesCM6GotoChannel() throws {
+        // TSK-1588: plain text now opens EDITABLE (.editor), so an at-line
+        // open drives the CM6 goto channel (and still fires scrollSource so a
+        // later switch-to-source picks the caret up).
         let model = makeModel()
         let url = try writeFile("notes.txt", "a\nb\nc\nd\n")
+        model.openPath(url, atLine: 3)
+        XCTAssertEqual(model.currentViewMode, .editor,
+                       "plain-text default mode is .editor (TSK-1588)")
+        XCTAssertEqual(model.editorGotoLine?.line, 3,
+                       "editor mode routes the jump through the CM6 goto channel")
+        XCTAssertEqual(model.sourceScrollLineTarget, 3,
+                       "the source channel is still seeded for a later lens switch")
+    }
+
+    func test_openPathAtLine_sourceMode_setsSourceScrollRequest() throws {
+        // html keeps the read-only Source default (TSK-1588 kept it
+        // conservative), so it pins the SOURCE scroll channel contract.
+        let model = makeModel()
+        let url = try writeFile("page.html", "<p>a</p>\n<p>b</p>\n<p>c</p>\n<p>d</p>\n")
         let baselineNonce = model.sourceScrollLineNonce
         model.openPath(url, atLine: 3)
         XCTAssertEqual(model.currentViewMode, .source,
-                       "plain-text default mode is .source")
+                       "html default mode is .source")
         XCTAssertEqual(model.sourceScrollLineTarget, 3)
         XCTAssertNotEqual(model.sourceScrollLineNonce, baselineNonce,
                           "scrollSource must bump the nonce so the view re-fires")

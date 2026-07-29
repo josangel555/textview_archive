@@ -100,16 +100,48 @@ final class GitLogDiffActionsTests: XCTestCase {
             "exactly one tab for the commit's diff")
     }
 
-    func test_twoDifferentCommits_openTwoDistinctTabs() {
-        // The dedup must be per-URL: distinct commits still get distinct tabs.
+    func test_twoDifferentCommits_reuseOneEphemeralPreviewSlot() {
+        // TSK-1594: single-clicking commits is EPHEMERAL (VSCode-style, like the
+        // file browser) — browsing from one commit to another REUSES the one
+        // preview slot instead of stacking a tab per commit. The slot ends up
+        // showing the most recently clicked commit's diff.
         let (panel, doc, log) = makePanelAndDoc()
         GitLogDiffActions.rowClicked(
             sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
         let afterFirst = doc.tabs.tabs.count
         GitLogDiffActions.rowClicked(
             sha: log[1].sha, command: false, shift: false, panel: panel, doc: doc)
-        XCTAssertEqual(doc.tabs.tabs.count, afterFirst + 1,
-            "a different commit must open its own diff tab")
+        XCTAssertEqual(doc.tabs.tabs.count, afterFirst,
+            "browsing to a different commit reuses the one ephemeral preview slot (no stacking)")
+        XCTAssertEqual(doc.tabs.selected?.url?.lastPathComponent, "\(log[1].sha).diff",
+            "the reused slot now shows the latest commit's diff")
+        XCTAssertEqual(doc.tabs.tabs.filter { $0.isPreview }.count, 1,
+            "exactly one ephemeral preview tab")
+    }
+
+    func test_pinnedCommit_thenBrowse_keepsPinAndPreviewsTheNext() {
+        // TSK-1594: double-clicking (two clicks on the same commit) PROMOTES its
+        // diff to a permanent tab; a subsequent single-click on a DIFFERENT commit
+        // opens its own fresh preview alongside the pinned one — so distinct
+        // commits DO coexist once the earlier one is pinned.
+        let (panel, doc, log) = makePanelAndDoc()
+        // Double-click commit 0 → promote to permanent.
+        GitLogDiffActions.rowClicked(
+            sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
+        GitLogDiffActions.rowClicked(
+            sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
+        XCTAssertEqual(doc.tabs.tabs.filter { $0.isPreview }.count, 0, "commit 0 is now pinned")
+        let afterPin = doc.tabs.tabs.count
+
+        // Single-click commit 1 → a NEW preview tab beside the pinned one.
+        GitLogDiffActions.rowClicked(
+            sha: log[1].sha, command: false, shift: false, panel: panel, doc: doc)
+        XCTAssertEqual(doc.tabs.tabs.count, afterPin + 1,
+            "with commit 0 pinned, a different commit opens its own preview tab")
+        XCTAssertEqual(doc.tabs.tabs.filter { $0.isPreview }.count, 1)
+        XCTAssertEqual(
+            doc.tabs.tabs.filter { $0.url?.lastPathComponent == "\(log[0].sha).diff" }.count, 1,
+            "the pinned commit-0 diff tab survives")
     }
 
     func test_cmdClick_buildsMultiSelection_withoutOpeningDiff() {

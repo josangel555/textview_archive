@@ -79,6 +79,17 @@ public enum SidebarPanelHeights {
         return min(stored, ceiling)
     }
 
+    /// TSK-1590 — the per-panel ceiling fraction as a function of how many
+    /// accordion panels are visible. The 0.5 default exists to stop ONE panel
+    /// hogging the band away from its siblings — but with a SINGLE visible
+    /// panel there are no siblings, so that cap just strands the bottom half of
+    /// the sidebar empty (owner report: "git only fills half the height when
+    /// it's the only tool window"). A lone panel may claim the whole band
+    /// (1.0); two or more keep the sibling-protecting 0.5 split.
+    public static func ceilingFraction(visiblePanelCount count: Int) -> CGFloat {
+        count <= 1 ? 1.0 : 0.5
+    }
+
     /// TSK-592 — RESIZE-JANK SUPPRESSION.
     ///
     /// The sidebar measures its allotted content height via a background

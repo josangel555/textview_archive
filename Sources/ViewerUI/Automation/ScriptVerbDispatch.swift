@@ -212,6 +212,7 @@ public enum ScriptVerb {
                 }
             }
         case "close-tab":      model.closeCurrentTab()
+        case "reopen-closed-tab": model.reopenLastClosedTab()
         case "new-tab":        model.newTab()
         case "next-tab":       model.selectNextTab()
         case "prev-tab":       model.selectPreviousTab()

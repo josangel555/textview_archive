@@ -154,6 +154,10 @@ struct CommandPaletteView: View {
         )
         .shadow(radius: 24)
         .background(keyboardShortcuts)
+        // TSK-1592: reliable Esc-dismiss in EVERY mode — a query field holding
+        // `#`/`@` text otherwise swallows Esc in its field editor before the ✕
+        // button's key-equivalent fires. Alive only while the palette is up.
+        .background(PaletteEscMonitor { model.dismissPalette() })
         .onAppear {
             fieldFocused = true
             selectedIndex = 0

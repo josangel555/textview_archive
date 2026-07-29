@@ -422,6 +422,18 @@ public struct ContentView: View {
             DoubleShiftMonitor(isActive: true) { [model] in model.showPalette() }
                 .frame(width: 0, height: 0)
         )
+        // Extra tab-nav shortcuts (TSK-1591): ⌃Tab / ⌃⇧Tab and ⌘] / ⌘[.
+        // Sees the event before CM6 so it works with the editor focused; the
+        // ⌘[/⌘] pair defers to an active walkthrough (same combo = step nav).
+        .background(
+            TabNavKeyMonitor(
+                isActive: true,
+                walkthroughActive: walkthrough.isActive,
+                onNext: { [model] in model.selectNextTab() },
+                onPrev: { [model] in model.selectPreviousTab() }
+            )
+            .frame(width: 0, height: 0)
+        )
         // Esc returns keyboard focus to the active document tab (TSK-938) when
         // it's parked in a tool surface; a no-op (passes Esc through) when focus
         // is already on the document.
@@ -776,6 +788,19 @@ public struct ContentView: View {
                         model.resolveDiskConflict(intent)
                     }
                     .zIndex(1)
+                    // "Merge…" opens the real 3-pane resolution (TSK-1171),
+                    // which shipped unmounted — the button used to fall through
+                    // to Keep Mine.
+                    .sheet(item: Binding(
+                        get: { model.activeConflictResolution },
+                        set: { if $0 == nil { model.cancelActiveConflictResolution() } }
+                    )) { session in
+                        ConflictResolutionView(
+                            model: session.model,
+                            onApply: { model.applyActiveConflictResolution($0) },
+                            onCancel: { model.cancelActiveConflictResolution() }
+                        )
+                    }
                 }
                 // TSK-1496: credential warn-badge — the shipped SecretDetector,
                 // surfaced. Only the ACTIVE tab scans (the banner self-hides when
@@ -1038,7 +1063,16 @@ public struct ContentView: View {
             }
             } // end size-cap else
         } else if tab.viewMode == .diff {
-            DiffView(text: file.contents, doc: model)
+            // TSK-1596: the WEB diff view (diffweb.html + @codemirror/merge)
+            // is the shipped .diff renderer — Line|Word|Char granularity,
+            // native selection, no narrow-pane wrapping. The SwiftUI DiffView
+            // remains ONLY as the MDV_WEB_DIFF=0 kill-switch fallback and the
+            // review-mode renderer (comment threads) until the review port.
+            if WebDiffGate.isEnabled() {
+                WebDiffPane(text: file.contents, doc: model)
+            } else {
+                DiffView(text: file.contents, doc: model)
+            }
         } else if (category == .markdown && tab.viewMode == .rendered)
                     || (category == .mermaid && tab.viewMode == .rendered) {
             // Soft cap on rendered-markdown size. The parser → HTML →
@@ -1267,11 +1301,15 @@ struct SourceModeView: View {
             if isActive && model.isSourceFindBarPresented {
                 SourceFindBar(find: model.find, uiSize: model.uiSize)
             }
-            // TSK-1530 (M6, gated OFF): the web route — read-only CM6 replaces
-            // the NSTextView stack (virtualized rendering, rust highlights,
-            // CM6's own gutter/find/folds). The AppKit branch below stays the
-            // shipped default until the VM render slice validates the swap.
-            if WebSourceViewGate.isEnabled() {
+            // TSK-1530 (M6, ON since 2026-07-17): the web route — read-only CM6
+            // replaces the NSTextView stack (virtualized rendering, rust
+            // highlights, CM6's own gutter/folds; the source find-bar drives
+            // CM6 search below). The AppKit branch survives ONLY as the
+            // large-file fallback: CM6 has no size guard, so documents over
+            // WebSourceViewGate.maxBytes stay on NSTextView (which opens up
+            // to 512 MiB) until the windowed CM6 feed (TSK-1527 pattern)
+            // retires it entirely.
+            if WebSourceViewGate.shouldUseWebSource(byteLength: displayedInfo.byteLength) {
                 CodeMirrorEditorView(
                     text: displayed,
                     fontSize: model.effectiveContentFontSize,
@@ -1283,8 +1321,21 @@ struct SourceModeView: View {
                     readOnly: true,
                     lineNumbers: true,
                     showInvisibles: model.showInvisibleChars,
+                    findQuery: (isActive && model.isSourceFindBarPresented) ? model.sourceFindQuery : "",
+                    findCaseSensitive: model.sourceFindCaseSensitive,
+                    findRegex: model.sourceFindIsRegex,
+                    findNextRequest: model.sourceFindNextRequest,
+                    findPrevRequest: model.sourceFindPrevRequest,
                     paneTabID: tabID,
-                    onTextChange: { _ in }   // read-only: no edits arrive
+                    isActivePane: isActive,
+                    onTextChange: { _ in },   // read-only: no edits arrive
+                    onFindResultChange: { result in
+                        if result.matches == 0 {
+                            model.setSourceFindMatchSummary("")
+                        } else {
+                            model.setSourceFindMatchSummary("\(result.current)/\(result.matches)")
+                        }
+                    }
                 )
             } else {
             HStack(spacing: 0) {
@@ -1922,7 +1973,8 @@ struct EmptyStateView: View {
                 // landing (folder if one is open, else a temp scratch the user
                 // Saves-As from). ⌘N matches File → New File.
                 Button("New File") {
-                    model.newTextFileForLanding()
+                    // TSK-1605: name-first prompt (landing falls back to temp).
+                    model.promptForNewFileForLanding()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
                 .accessibilityIdentifier("mdv.emptyState.newFile")

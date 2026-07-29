@@ -153,6 +153,7 @@ public enum ScriptVerbCatalog {
         // ---- Tabs ----
         ScriptVerb("new-tab", .tabs, .none, "Open a new blank tab"),
         ScriptVerb("close-tab", .tabs, .none, "Close the current tab"),
+        ScriptVerb("reopen-closed-tab", .tabs, .none, "Reopen the most recently closed tab"),
         ScriptVerb("next-tab", .tabs, .none, "Select the next tab"),
         ScriptVerb("prev-tab", .tabs, .none, "Select the previous tab"),
         ScriptVerb("select-tab", .tabs, .int, "Select a tab by 1-based index"),

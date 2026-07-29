@@ -96,7 +96,10 @@ final class OpenAsViewerApplicabilityTests: XCTestCase {
             XCTAssertTrue(m.contains(.table), "\(cat) ⇒ Table (forced text lens)")
             XCTAssertTrue(m.contains(.formatted), "\(cat) ⇒ Formatted (forced text lens)")
             XCTAssertTrue(m.contains(.hex), "\(cat) ⇒ HEX")
-            XCTAssertEqual(defaultMode(cat), .source, "\(cat) default ⇒ Source")
+            // TSK-1588: plainText/code default to the editable Editor lens;
+            // html keeps the conservative read-only Source default.
+            let expectedDefault: ViewMode = (cat == .html) ? .source : .editor
+            XCTAssertEqual(defaultMode(cat), expectedDefault, "\(cat) default lens")
         }
     }
 

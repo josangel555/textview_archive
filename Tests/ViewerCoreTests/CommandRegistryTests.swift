@@ -67,6 +67,7 @@ final class CommandRegistryTests: XCTestCase {
         let known: Set<String> = [
             "toggle-view", "toggle-sidebar", "zoom-in", "zoom-out", "zoom-reset",
             "close-tab", "new-tab", "next-tab", "prev-tab", "show-palette",
+            "reopen-closed-tab",
             "dismiss-palette", "show-goto", "toggle-format", "editor-save",
             "toggle-bookmark", "show-cross-search", "show-find", "find-next",
             "find-prev", "sidebar-select-next", "sidebar-select-prev",

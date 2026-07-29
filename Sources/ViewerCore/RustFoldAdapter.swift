@@ -28,15 +28,54 @@ public enum RustFoldAdapter {
         try mdvCoreFoldRegions(text: text, lang: language.rawValue).compactMap(mapRegion)
     }
 
+    /// TSK-1609 (owner 2026-07-26, reported log line:
+    /// `fold DEGRADED (twin deleted): decode("fold_regions: unsupported
+    /// language 'plain'")`) — languages that have NO syntax folds at all.
+    ///
+    /// Plain text can't have fold regions by definition, so asking the core
+    /// for them was never a fault — but the core answers `supported: false`,
+    /// the client turns that into a thrown `decode` error, and the production
+    /// adapter logged it as a DEGRADED bridge fault. That fired on every fold
+    /// pass in any plain-text buffer: a false alarm that also buried real
+    /// bridge faults in noise, plus a pointless FFI round-trip per text change.
+    public static func hasNoFoldSupport(_ language: HighlightLanguage) -> Bool {
+        language == .plainText
+    }
+
+    /// True when `error` is the core's "this language has no fold support"
+    /// answer rather than a real bridge fault. Matched on the client's own
+    /// message (one hop away, and pinned by a test) because widening
+    /// `RustCore.CoreError` with a new case would re-lay-out a cross-module
+    /// enum — the SwiftPM staleness trap CLAUDE.md documents.
+    public static func isUnsupportedLanguage(_ error: Error) -> Bool {
+        String(describing: error).contains("fold_regions: unsupported language")
+    }
+
     /// The production entry: fold regions for `text`, degrading to `[]` on a
     /// bridge fault (empty gutter for this pass, observable log).
+    ///
+    /// A language with no fold support returns `[]` QUIETLY — it is a normal
+    /// answer, not a degradation, so it must not trip the DEGRADED alarm.
     public static func foldRegions(
         _ text: String, language: HighlightLanguage
     ) -> [FoldRegion] {
-        RustCoreFallback.runRustOnly(
-            .fold,
-            rust: { try rustFolds(text, language: language) },
-            degraded: []
-        ).value
+        // Cheap client-side skip: no FFI call at all for a language that
+        // cannot fold.
+        guard !hasNoFoldSupport(language) else { return [] }
+        do {
+            return try rustFolds(text, language: language)
+        } catch where isUnsupportedLanguage(error) {
+            // The core says this language has no fold engine. Empty gutter,
+            // no alarm — same outcome the guard above short-circuits.
+            return []
+        } catch {
+            // A REAL bridge fault still degrades loudly through the shared
+            // path (so the runRustOnly log/telemetry keeps its teeth).
+            return RustCoreFallback.runRustOnly(
+                .fold,
+                rust: { throw error },
+                degraded: []
+            ).value
+        }
     }
 }

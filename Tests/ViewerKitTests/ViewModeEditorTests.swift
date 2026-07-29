@@ -79,10 +79,11 @@ final class ViewModeEditorTests: XCTestCase {
         XCTAssertEqual(e, s + 1, "editor should slot directly after source; got \(m)")
     }
 
-    func test_defaultMode_isNotEditor() {
-        // Adding `.editor` to the picker must not change the
-        // default-on view mode for any existing file type.
-        XCTAssertNotEqual(ViewModeOptions.defaultMode(for: URL(fileURLWithPath: "/tmp/x.txt")), .editor)
+    func test_defaultMode_editorForText_notForRichOrTable() {
+        // TSK-1588 (owner): text families now default to the EDITABLE Editor
+        // lens (View-Only reads OFF). Rich/table families keep their own
+        // defaults — markdown renders, csv tables — never the editor.
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: URL(fileURLWithPath: "/tmp/x.txt")), .editor)
         XCTAssertNotEqual(ViewModeOptions.defaultMode(for: URL(fileURLWithPath: "/tmp/r.md")), .editor)
         XCTAssertNotEqual(ViewModeOptions.defaultMode(for: URL(fileURLWithPath: "/tmp/d.csv")), .editor)
     }

@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// launch mode the monitor IS the only window and stays on `window`.
     private var monitorWindow: NSWindow?
     private var openRecentMenu: NSMenu?
+    private var recentlyClosedMenu: NSMenu?
     private var sessionJumpMenu: NSMenu?
     private var languageMenu: NSMenu?
     private var windowMenu: NSMenu?
@@ -1091,7 +1092,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// and opens it. validateMenuItem disables it when no folder is open.
     @objc func newFile(_ sender: Any?) {
         guard let dir = model.newFileTargetDirectory else { return }
-        model.createNewFile(in: dir)
+        // TSK-1605: ask for the name FIRST (no Untitled.txt-then-rename).
+        model.promptForNewFile(in: dir)
     }
 
     /// File → New File ▸ {Markdown,CSV,JSON} (TSK-747). The menu item's `tag`
@@ -1102,7 +1104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let cases = NewFileType.allCases
         let tag = (sender as? NSMenuItem)?.tag ?? 0
         let type = cases.indices.contains(tag) ? cases[tag] : .text
-        model.createNewFile(in: dir, type: type)
+        model.promptForNewFile(in: dir, type: type)   // TSK-1605: name first
     }
 
     /// File → New Tab from Clipboard (TSK-935). Scratch tab seeded with the
@@ -1288,6 +1290,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openPath(url)  // recents may include folders
     }
 
+    /// ⇧⌘T. Repeatable — each press walks one step further back through the
+    /// close history. Beeps when there is nothing left rather than failing
+    /// silently (the menu item is also disabled in that state).
+    @objc func reopenClosedTab(_ sender: Any?) {
+        if !model.reopenLastClosedTab() { NSSound.beep() }
+    }
+
+    @objc func reopenClosedItem(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        model.reopenClosedTab(url: url)
+    }
+
+    @objc func clearRecentlyClosed(_ sender: Any?) {
+        model.recentlyClosed.clear()
+    }
+
     @objc func clearRecents(_ sender: Any?) {
         // UX-10: "Clear Menu" wipes the recents history irreversibly.
         // Confirm first so an accidental click (it sits right below the
@@ -1310,6 +1328,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === openRecentMenu {
             rebuildRecentsMenu(menu)
+        } else if menu === recentlyClosedMenu {
+            rebuildRecentlyClosedMenu(menu)
         } else if menu === windowMenu {
             rebuildWindowMenu(menu)
         } else if menu === sessionJumpMenu {
@@ -1498,6 +1518,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         )
         clear.target = self
         clear.isEnabled = !model.recents.isEmpty
+        menu.addItem(clear)
+    }
+
+    /// File ▸ Recently Closed. Mirrors `rebuildRecentsMenu`: newest first,
+    /// full path in the tooltip so same-named files are distinguishable.
+    private func rebuildRecentlyClosedMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let entries = model.recentlyClosed.entries
+        if entries.isEmpty {
+            let placeholder = NSMenuItem(
+                title: "(no recently closed tabs)", action: nil, keyEquivalent: ""
+            )
+            placeholder.isEnabled = false
+            menu.addItem(placeholder)
+        } else {
+            for entry in entries {
+                let item = NSMenuItem(
+                    title: entry.displayName,
+                    action: #selector(reopenClosedItem(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = entry.url
+                item.toolTip = entry.url.path
+                menu.addItem(item)
+            }
+        }
+        menu.addItem(.separator())
+        let clear = NSMenuItem(
+            title: "Clear Menu",
+            action: #selector(clearRecentlyClosed(_:)),
+            keyEquivalent: ""
+        )
+        clear.target = self
+        clear.isEnabled = !entries.isEmpty
         menu.addItem(clear)
     }
 
@@ -1915,6 +1970,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         recentItem.submenu = recentMenu
         openRecentMenu = recentMenu
         fileMenu.addItem(recentItem)
+
+        // Recently Closed — the counterpart to Open Recent. ⇧⌘T reopens the
+        // most recent (browser chord, repeatable); the submenu lists the rest.
+        let reopenItem = NSMenuItem(
+            title: "Reopen Closed Tab",
+            action: #selector(reopenClosedTab(_:)),
+            keyEquivalent: "t"
+        )
+        reopenItem.target = self
+        applyShortcut("file.reopenClosedTab", to: reopenItem)
+        fileMenu.addItem(reopenItem)
+
+        let closedItem = NSMenuItem(
+            title: "Recently Closed", action: nil, keyEquivalent: ""
+        )
+        let closedMenu = NSMenu(title: "Recently Closed")
+        closedMenu.delegate = self
+        closedMenu.autoenablesItems = false
+        closedItem.submenu = closedMenu
+        recentlyClosedMenu = closedMenu
+        fileMenu.addItem(closedItem)
 
         fileMenu.addItem(.separator())
 
@@ -3585,6 +3661,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(newTabFromClipboard(_:)):
             // TSK-935: only when the clipboard has text.
             return model.canNewTabFromClipboard
+        case #selector(reopenClosedTab(_:)):
+            // Nothing closed yet this run → nothing to bring back.
+            return !model.recentlyClosed.isEmpty
         case #selector(selectViewModeSlot(_:)):
             // TSK-899: name the slot after the current file's Nth mode + enable
             // only when that slot exists. Keeps ⌘1/⌘2/⌘3 mapped to the bar.

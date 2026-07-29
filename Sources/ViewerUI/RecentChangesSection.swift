@@ -154,7 +154,7 @@ struct RecentChangesSection: View {
             body = diff
         }
         try? body.write(to: out, atomically: true, encoding: .utf8)
-        model.openInNewTab(out)
+        model.openPreview(url: out)   // TSK-1594: ephemeral preview slot
     }
 
     private func statusBadge(_ e: GitClient.StatusEntry) -> String {

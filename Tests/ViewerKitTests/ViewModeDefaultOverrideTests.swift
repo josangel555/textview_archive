@@ -68,7 +68,7 @@ final class ViewModeDefaultOverrideTests: XCTestCase {
         XCTAssertFalse(ViewModeOptions.availableModes(for: txt).contains(.table))
         XCTAssertEqual(
             ViewModeOptions.defaultMode(for: txt, preferred: [.plainText: .table]),
-            .source,
+            .editor,   // TSK-1588: text's built-in default is now the Editor lens
             "a pinned mode the file doesn't offer must degrade to the built-in default")
     }
 
@@ -77,7 +77,7 @@ final class ViewModeDefaultOverrideTests: XCTestCase {
         XCTAssertFalse(ViewModeOptions.availableModes(for: code).contains(.rendered))
         XCTAssertEqual(
             ViewModeOptions.defaultMode(for: code, preferred: [.code: .rendered]),
-            .source)
+            .editor)   // TSK-1588: code's built-in default is now the Editor lens
     }
 
     // MARK: No-op / non-matching pins
@@ -92,7 +92,7 @@ final class ViewModeDefaultOverrideTests: XCTestCase {
         // A pin on `.markdown` must not affect a `.code` file.
         XCTAssertEqual(
             ViewModeOptions.defaultMode(for: code, preferred: [.markdown: .source]),
-            .source,  // code's own built-in default, untouched
+            .editor,  // code's own built-in default (TSK-1588: Editor), untouched
             "a markdown pin must not change a swift file")
         XCTAssertEqual(
             ViewModeOptions.defaultMode(for: csv, preferred: [.markdown: .source]),

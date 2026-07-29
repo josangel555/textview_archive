@@ -67,6 +67,13 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
         m.sidebar.isVisible = true
         for i in 0..<3 {
             m.open(url: folderRoot.appendingPathComponent("file_\(i).txt"))
+            // TSK-1588: .txt now defaults to the EDITOR lens, whose chrome
+            // graph (editor-assist chips etc.) these re-body pins were never
+            // written for. Pin the fixture to the read-only Source lens so
+            // the suite keeps guarding the SOURCE-mode chrome contract
+            // verbatim; the editor-lens chrome-eval budget is a separate,
+            // unpinned surface (follow-up noted on TSK-1588).
+            m.setCurrentViewMode(.source)
         }
         return m
     }

@@ -84,15 +84,17 @@ final class ContentToolbarMappingTests: XCTestCase {
     func test_setViewOnly_swapsSourceAndEditor() throws {
         let m = makeModel()
         m.open(url: try writeFile("code.swift", "let x = 1\n"))
-        // Swift opens in Source by default → Editor primary, ViewOnly on.
+        // TSK-1588: Swift opens EDITABLE by default → Editor primary, ViewOnly OFF.
         XCTAssertEqual(m.viewModePresentation.primary, .editor)
-        XCTAssertTrue(m.viewModePresentation.viewOnly)
-        // Turn View Only OFF → editable editor.
-        m.setViewOnly(false)
-        XCTAssertEqual(m.currentViewMode, .editor)
-        // Back ON → read-only source.
+        XCTAssertFalse(m.viewModePresentation.viewOnly,
+                       "text/code opens editable — View Only reads OFF by default")
+        // Turn View Only ON → read-only source.
         m.setViewOnly(true)
         XCTAssertEqual(m.currentViewMode, .source)
+        XCTAssertTrue(m.viewModePresentation.viewOnly)
+        // Back OFF → editable editor.
+        m.setViewOnly(false)
+        XCTAssertEqual(m.currentViewMode, .editor)
     }
 
     func test_hex_primary_mapsToHex() throws {

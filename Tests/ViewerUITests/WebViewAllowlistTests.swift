@@ -14,6 +14,7 @@ final class WebViewAllowlistTests: XCTestCase {
     private static let allowlist: Set<String> = [
         "Sources/ViewerUI/CanvasWebViewHost.swift",        // canvas documents
         "Sources/ViewerUI/CodeMirrorEditorView.swift",     // the CM6 editor
+        "Sources/ViewerUI/DiffWebView.swift",              // web diff (TSK-1596; real-render: DiffWebPageTests)
         "Sources/ViewerUI/HTMLRenderedView.swift",         // html documents
         "Sources/ViewerUI/MarkdownRenderedView.swift",     // rendered markdown
         "Sources/ViewerUI/Walkthrough/WalkthroughMermaidWebView.swift", // walkthrough mermaid

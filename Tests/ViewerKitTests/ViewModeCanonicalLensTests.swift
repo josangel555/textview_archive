@@ -22,8 +22,12 @@ final class ViewModeCanonicalLensTests: XCTestCase {
         .markdown: .rendered,
         .mermaid:  .rendered,
         .canvas:   .rendered,
-        .plainText: .source,
-        .code:      .source,
+        // TSK-1588 (owner): text families open EDITABLE by default — the
+        // View-Only toggle reads OFF. Files past the CM6 cap are coerced back
+        // to .source at open time (DocumentModel.editorDefaultSizeCoercion).
+        .plainText: .editor,
+        .code:      .editor,
+        // html keeps the conservative read-only Source default.
         .html:      .source,
         .image:   .preview,
         .audio:   .preview,
@@ -59,8 +63,9 @@ final class ViewModeCanonicalLensTests: XCTestCase {
         XCTAssertEqual(ViewModeOptions.defaultMode(for: url("README.md")), .rendered)
         XCTAssertEqual(ViewModeOptions.defaultMode(for: url("diagram.mmd")), .rendered)
         XCTAssertEqual(ViewModeOptions.defaultMode(for: url("board.canvas")), .rendered)
-        XCTAssertEqual(ViewModeOptions.defaultMode(for: url("notes.txt")), .source)
-        XCTAssertEqual(ViewModeOptions.defaultMode(for: url("main.swift")), .source)
+        // TSK-1588: text families open EDITABLE by default.
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: url("notes.txt")), .editor)
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: url("main.swift")), .editor)
         // html defaults to Source — Rendered is an explicit opt-in, never default.
         XCTAssertEqual(ViewModeOptions.defaultMode(for: url("page.html")), .source)
         XCTAssertEqual(ViewModeOptions.defaultMode(for: url("pic.png")), .preview)
@@ -89,7 +94,7 @@ final class ViewModeCanonicalLensTests: XCTestCase {
         // canonical lens for the chosen category.
         let anyURL = url("mystery.bin")
         XCTAssertEqual(ViewModeOptions.defaultMode(for: anyURL, forcedCategory: .markdown), .rendered)
-        XCTAssertEqual(ViewModeOptions.defaultMode(for: anyURL, forcedCategory: .plainText), .source)
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: anyURL, forcedCategory: .plainText), .editor)
         XCTAssertEqual(ViewModeOptions.defaultMode(for: anyURL, forcedCategory: .image), .preview)
         XCTAssertEqual(ViewModeOptions.defaultMode(for: anyURL, forcedCategory: .unknown), .hex)
     }

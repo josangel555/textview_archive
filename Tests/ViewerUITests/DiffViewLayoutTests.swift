@@ -128,4 +128,56 @@ final class DiffViewLayoutTests: HeadlessUITestCase {
         XCTAssertGreaterThan(bounds.height, 80,
             "expected header + hunk rows to render (got \(bounds))")
     }
+
+    // MARK: - TSK-1595: long lines must NOT wrap at a narrow viewport
+
+    /// One 200-char line in a 300pt-wide viewport. BROKEN layout (the owner's
+    /// "git diff window is very narrow" report): the LazyVStack proposes the
+    /// viewport width, the line wraps into 4-5 fragments, and the stack's
+    /// ideal width stays ~300. FIXED layout: `scrollBody` floors its width at
+    /// the diff's ideal row width, so rendered unconstrained the stack takes
+    /// ~(200 × charW + gutters) ≫ 300 — the horizontal-scroll contract.
+    func test_longLine_narrowViewport_laysOutAtIdealWidth_noWrap() throws {
+        let longLine = String(repeating: "x", count: 200)
+        let longDiff = """
+        diff --git a/a.txt b/a.txt
+        index 0000000..1111111 100644
+        --- a/a.txt
+        +++ b/a.txt
+        @@ -1,1 +1,1 @@
+        +\(longLine)
+        """
+        let narrow = CGSize(width: 300, height: 480)
+        let view = DiffView(
+            text: longDiff, doc: makeDoc(), reviewSession: nil,
+            initialFiles: RustDiffAdapter.parse(longDiff)
+        ).scrollBody(viewport: narrow)
+        // Render UNCONSTRAINED: ImageRenderer sizes to the view's ideal
+        // size, i.e. the stack's width floor — exactly what the two-axis
+        // ScrollView offers as the horizontal scroll range.
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+        let cg = try XCTUnwrap(renderer.cgImage)
+        // 200 monospace chars at the default body size is ≫ 700pt; the broken
+        // (wrap-at-viewport) layout renders ~300pt wide.
+        XCTAssertGreaterThan(cg.width, 700,
+            "a 200-char line must widen the scroll body past the narrow "
+            + "viewport (single-line + h-scroll), not wrap inside it "
+            + "(got width \(cg.width))")
+    }
+
+    func test_maxLineChars_scansAllFilesAndHunks() {
+        let files = RustDiffAdapter.parse("""
+        diff --git a/a.txt b/a.txt
+        index 0000000..1111111 100644
+        --- a/a.txt
+        +++ b/a.txt
+        @@ -1,1 +1,2 @@
+         short
+        +\(String(repeating: "y", count: 57))
+        """)
+        XCTAssertEqual(DiffView.maxLineChars(files), 57,
+            "the longest content line drives the width floor")
+        XCTAssertEqual(DiffView.maxLineChars([]), 0, "empty diff → no floor")
+    }
 }

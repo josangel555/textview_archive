@@ -107,6 +107,13 @@ final class LSPGotoCommandTests: HeadlessUITestCase {
         let url = try harness.writeFile("nobuf.swift", "let x = 1\n")
         let model = harness.model
         model.open(url: url)
+        // TSK-1588: .swift now opens in the editor lens, which seeds a buffer —
+        // force the no-buffer precondition this test exists to pin: park the
+        // tab in read-only Source and drop any seeded buffer.
+        let id = model.tabs.selected!.id
+        model.setCurrentViewMode(.source)
+        model.tabCoordinator.discardEditorBuffer(forTabID: id)
+        XCTAssertNil(model.editorBuffers[id], "precondition: no buffer")
         // No editor buffer materialized → refuse rather than format a
         // buffer that doesn't exist.
         XCTAssertFalse(model.formatActiveEditorViaLSP())
