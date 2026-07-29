@@ -244,9 +244,24 @@ enum BinOp {
     Concat,
 }
 
+/// Max expression-nesting depth the parser will descend before refusing.
+///
+/// The descent is recursive on two axes — `primary` re-enters `compare` for a
+/// parenthesised group, and `unary` re-enters itself for a sign run — so both
+/// `=((((((…` and `=------…` consume one stack frame per character. Unbounded,
+/// a single pathological cell HARD-CRASHES the app: a stack overflow is an
+/// abort that `catch_unwind` cannot catch, and formulas auto-recalc, so merely
+/// opening the CSV is enough to trigger it.
+///
+/// 128 is far past any real spreadsheet formula (Excel itself stops at 64
+/// nesting levels) while keeping the worst case to a few KB of stack.
+const MAX_PARSE_DEPTH: usize = 128;
+
 struct Parser {
     toks: Vec<Token>,
     pos: usize,
+    /// Current recursion depth; see `MAX_PARSE_DEPTH`.
+    depth: usize,
 }
 
 impl Parser {
@@ -262,8 +277,31 @@ impl Parser {
         Ok(e)
     }
 
+    /// Enter one recursion level, refusing past `MAX_PARSE_DEPTH`. On refusal
+    /// the error propagates out of the whole parse, so the counter is never
+    /// unwound — that is fine, the `Parser` is discarded.
+    fn enter(&mut self) -> Result<(), FormulaError> {
+        self.depth += 1;
+        if self.depth > MAX_PARSE_DEPTH {
+            return Err(FormulaError::Parse);
+        }
+        Ok(())
+    }
+
+    fn exit(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+    }
+
     // Comparisons bind looser than +/-; non-chaining (Excel doesn't chain them).
+    // Depth-guarded: this is where a parenthesised group re-enters the descent.
     fn compare(&mut self) -> Result<Expr, FormulaError> {
+        self.enter()?;
+        let out = self.compare_inner();
+        self.exit();
+        out
+    }
+
+    fn compare_inner(&mut self) -> Result<Expr, FormulaError> {
         let left = self.concat()?;
         let op = match self.peek() {
             Some(Token::Eq) => CmpOp::Eq,
@@ -321,7 +359,15 @@ impl Parser {
     }
 
     // Unary ± binds LOOSER than ^ (so `-2^2` is `-(2^2)`).
+    // Depth-guarded: a sign run (`=-----1`) recurses here, not through compare.
     fn unary(&mut self) -> Result<Expr, FormulaError> {
+        self.enter()?;
+        let out = self.unary_inner();
+        self.exit();
+        out
+    }
+
+    fn unary_inner(&mut self) -> Result<Expr, FormulaError> {
         match self.peek() {
             Some(Token::Minus) => {
                 self.pos += 1;
@@ -2184,7 +2230,7 @@ pub fn evaluate_with(formula: &str, resolver: &dyn Fn(CellRef) -> Option<String>
     if toks.is_empty() {
         return Value::Blank;
     }
-    let mut p = Parser { toks, pos: 0 };
+    let mut p = Parser { toks, pos: 0, depth: 0 };
     // The public API takes a raw-text resolver; compose `coerce_cell` once so the
     // internal evaluator resolves refs to `Value` (lets recalc resolve a formula
     // cell to its computed value — bool/error can't round-trip as text).
@@ -2259,7 +2305,7 @@ impl Recalc<'_> {
         let value = match tokenize(body) {
             Ok(toks) if toks.is_empty() => Value::Blank,
             Ok(toks) => {
-                let mut p = Parser { toks, pos: 0 };
+                let mut p = Parser { toks, pos: 0, depth: 0 };
                 match p.parse() {
                     Ok(expr) => eval(&expr, &|cr| self.resolve(&cr.a1(), depth + 1)),
                     Err(e) => Value::Error(e),
@@ -2395,6 +2441,50 @@ mod tests {
             // Must RETURN (any Value, including Error) — never panic.
             let _ = evaluate(&s);
         }
+    }
+
+    // CRASH REGRESSION (audit THEME 2, fixed 2026-07-29). The recursive-descent
+    // parser had no depth bound, so `=(((((…` or `=-----…` consumed one stack
+    // frame per character until the process ABORTED. A stack overflow is not a
+    // panic — `catch_unwind` cannot catch it — and CSV formulas auto-recalc, so
+    // opening a file with such a cell killed the app outright.
+    //
+    // TEETH: these cannot use `should_panic`; without the guard the test binary
+    // dies with SIGSEGV/SIGABRT and the whole suite fails loudly, which is the
+    // signal. With the guard they must return an Error value instead.
+    #[test]
+    fn deeply_nested_parens_are_refused_not_crashed() {
+        let depth = 5_000;
+        let expr = format!("{}1{}", "(".repeat(depth), ")".repeat(depth));
+        // Must RETURN (an Error) rather than blowing the stack.
+        assert!(matches!(evaluate(&expr), Value::Error(_)),
+                "over-deep nesting must be a parse error, not an abort");
+    }
+
+    #[test]
+    fn long_unary_sign_run_is_refused_not_crashed() {
+        // `unary` recurses into ITSELF, a separate axis from the paren nesting.
+        let expr = format!("{}1", "-".repeat(5_000));
+        assert!(matches!(evaluate(&expr), Value::Error(_)),
+                "an over-long sign run must be a parse error, not an abort");
+    }
+
+    #[test]
+    fn unclosed_deep_nesting_is_refused_not_crashed() {
+        // The realistic typo: opened but never closed.
+        let expr = format!("{}1", "(".repeat(5_000));
+        assert!(matches!(evaluate(&expr), Value::Error(_)));
+    }
+
+    #[test]
+    fn nesting_within_the_limit_still_evaluates() {
+        // The bound must not break legitimate formulas. 40 levels is deeper
+        // than any real spreadsheet and well under MAX_PARSE_DEPTH.
+        let depth = 40;
+        let expr = format!("{}1+1{}", "(".repeat(depth), ")".repeat(depth));
+        num(&expr, 2.0);
+        num("---1", -1.0);
+        num("(((2+3)*2))", 10.0);
     }
 
     #[test]
