@@ -18,8 +18,9 @@ it behaves the same broken way. **A host-green / model-green result is NOT a fix
 for on-screen behavior — it is "model fixed, on-screen UNVERIFIED" at most.**
 
 This is **T6** — agent-driven journey UAT, the tier above T5 (T1/T1m/T2' headless ·
-T4 LiveApp · T5 Pixel · **T6 agent-driven journey UAT**, run via the `run-uat`
-skill, NOT `swift test`). Two modes (do NOT conflate them):
+T4 LiveApp · T5 Pixel · **T6**), NOT `swift test`. (⚠️ the `run-uat`/`vm-ui-testing`
+skills below DON'T EXIST — 2026-07-11; use the VM GUI lane + `screencapture`.)
+Two modes (do NOT conflate them):
 - **PARTIAL T6 — mandatory for EVERY render-path change.** Before claiming any
   on-screen behavior is fixed (to the owner OR via `task_validate`), CONFIRM YOUR
   OWN CHANGE WITH YOUR OWN EYES on the real UI — the SCOPED slice that exercises
@@ -298,8 +299,7 @@ ViewerCoreTests is the unambiguous host-safe target).
   60.4 MB organically, no static-link regression); most of the ~60 MB exec is double-carried
   tree-sitter grammar parse tables, so REDUCING the cap (lazy-load /
   dedup) is the real reclaim — tracked by TSK-1214/TSK-1098, an owner
-  call on the target budget. (The older "48/26" and "25 MB" figures
-  predated those bumps.)
+  call on the target budget.
 - Never write to `~/Documents`, `~/Desktop`, `~/Downloads` from
   automated paths. Use `FileManager.default.temporaryDirectory` (per-
   user `/var/folders/...`) for test scratch.
@@ -360,6 +360,23 @@ generously and keep the board honest:
 - **One task per unit of work** — every finding, bug, feature, sub-task,
   refactor, decision. When in doubt, file it. A task is cheaper than a lost
   thread.
+- **⛔ AVOID OVER-DECOMPOSITION (owner directive 2026-07-10).** "File generously"
+  means track every distinct THREAD — NOT shatter one coherent piece of work into a
+  swarm of micro-tickets. A ticket is the unit a reasonable engineer would ship in
+  one PR/commit, not each edit, file, or step inside it. Do NOT file a separate
+  ticket for every implementation step (write the model, write the test, wire the
+  view, add the command) of a single change — those are ONE ticket. The chunk-loop
+  already groups 3–5 RELATED tickets per tick; don't then re-atomize a single
+  ticket below that. **Legit splits** (keep filing these): a genuinely different
+  TIER/LANE that can't ship together (host model core now vs a VM/AX render tail —
+  the TSK-1578..1585 pattern), an independently-shippable slice of an epic, a real
+  blocker, or unrelated work discovered along the way. **Illegitimate splits**
+  (fold back into the parent): "step N of implementing X", near-duplicates of an
+  existing ticket, or a sub-ticket whose only acceptance criterion is a fragment of
+  the parent's. Heuristic: if closing the sub-ticket alone leaves nothing a user or
+  test can observe, it wasn't a ticket — it was a checklist item; put it in the
+  parent's body. Fewer, well-scoped tickets > a fragmented board that hides the real
+  state and multiplies grooming/gate/commit overhead.
 - **Status discipline.** Mark a task `in_progress` BEFORE starting it and
   `completed` only when it's *fully* done **and validated** (headless gate green
   / tests pass). Never mark done on a partial or failing change. If blocked,
@@ -526,6 +543,8 @@ continue", document blockers and move on):
   load-bearing; UI-opening captures run on the UTM VM via the script
   (modes open|resize, configs release|debug — debug for symbolicated
   stacks).
+- **Main-thread rule (2026-07-26):** best-effort work never sits on a user action's
+  path (⌘S/open) — measure it, move it off-main, drain-seam the tests.
 - `MANUAL_TESTING.md` — checklist for features without automation.
 - `docs/TEST_PYRAMID.md` — THE canonical test-pyramid map (tiers + base
   classes, gating, the structural-AX vs human-screenshot UAT lanes);

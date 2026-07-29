@@ -5,6 +5,166 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## 2026-07-27 — `@State` initialized with a FRESH OBJECT costs a view its re-body skip
+
+Adding drag-to-reorder state to `TabBar` made it re-body on EVERY unrelated republish —
+a find keystroke, a sidebar recency tick, a panel toggle. `ChromeBodyEvalCountTests`
+caught it (`TabBar=1`, expected 0).
+
+**The mechanism, narrowed by experiment (do not trust the looser version):**
+
+- SwiftUI SKIPS a child's body when a parent re-bodies and the newly-built child view value
+  compares equal to the old one.
+- `@State private var box = SomeClass()` breaks that: **the property initializer runs every
+  time the parent builds the view value, allocating a NEW object**, so the fresh view value
+  never equals the previous one and the child re-bodies unconditionally.
+- **It is specifically the fresh allocation, NOT "non-POD state".** Verified on `TabBar` with
+  `ChromeBodyEvalCountTests`: `@State var probe: [Int] = []` → still GREEN;
+  `@State var probe = StripFrameBox()` → all 3 failures reproduce exactly. A nil
+  `@State var reorder: StripReorderState?` (array payload, no allocation) is also fine.
+  `@State private var availableWidth: CGFloat` was never a problem.
+- **Fix used: keep such state at a LEAF.** `TabStripContent` / `SessionStripContent` own the
+  drag state; `TabBar`'s / `SessionTabBar`'s own stored properties are unchanged, so the skip
+  survives. (`@StateObject`'s autoclosure init avoids the repeat allocation and is the other
+  way out if the holder is an `ObservableObject`.)
+- This costs more on the SESSION strip: each `SessionTabBarItem` body calls
+  `SessionGitInfo.badge(forRootPath:)`, which hits the filesystem per pill per pass.
+  `SessionStripReBodyTests` guards it; both guards were shown RED on the real break first.
+
+**Two testing traps hit while proving this — both produce false confidence:**
+
+1. **A re-body guard must host the view under a PARENT that re-bodies.** The first version of
+   `SessionStripReBodyTests` hosted `SessionTabBar` as the ROOT, so nothing ever re-created it
+   and the test passed no matter how broken the strip was. It needs a parent observing
+   something the strip does NOT (there: `FindCoordinator`), mirroring `ContentView` vs `TabBar`.
+2. **Retry semantics matter: keep the LAST attempt, not the WORST.** Accumulating
+   `max()` across attempts turns one stray async body into a permanent red (it produced a
+   confident-but-wrong "still failing" reading twice). `evalsExpectingZero`'s rule is the
+   correct one: a genuine per-republish re-body shows on EVERY attempt; noise clears on a
+   clean one.
+3. **Bisecting a body-count regression: the stored properties ARE part of the change.** I first
+   bisected by deleting only the modifiers, left the `@State` vars in, and concluded
+   "pre-existing" — wrong. Reverting the file to HEAD settled it in one run.
+
+Also from this item: **measure the payload before rewriting the transport.** The old
+`.onDrag`/`.onDrop` reorder was assumed broken because the file URL clobbered the reorder
+payload. A 20-line probe (`NSItemProvider` + `registerObject` + `loadObject`) showed the
+payload round-trips FINE, which correctly moved the search to drop routing/feedback and
+justified replacing the mechanism rather than patching the data layer.
+
+## 2026-07-24..27 — UI/perf work session: five root causes worth remembering
+
+Owner-reported symptoms whose ACTUAL causes were each somewhere other than the obvious place.
+All five were found by reading the mechanism (or measuring), not by pattern-matching the symptom.
+
+- **⌘S beachball = snapshot-on-save on the MAIN thread (TSK-1608).** `EditorCoordinator.saveEditor`
+  called `LocalHistoryStore.snapshot` synchronously. That call reads EVERY existing `.rev` record
+  for the file, may reconstruct the newest version (diff-chain replay) to dedup, runs a line-diff,
+  writes, then prunes under the byte cap. **Measured ~220 ms per ⌘S on an 80 KB file** (54 ms first
+  save, then a steady 220–250 ms — right at the macOS spinner threshold), worsening with history
+  depth. Fix: `snapshotInBackground` on a private SERIAL utility queue → **0.14 ms** on the save
+  path. Snapshotting is best-effort BY CONTRACT ("a snapshot failure must never fail a save that
+  landed"), so it never belonged on the critical path. Harness: `LocalHistorySnapshotCostTests`
+  prints the per-save curve — reuse it before/after any save-path change.
+- **CM6 indent guides "not matching actual indents" = the guides ADDED the spacing (TSK-1607).**
+  They were a WIDGET decoration (`display:inline-block`, width depth×unit) inserted at line start,
+  i.e. BEFORE the real leading whitespace — so they occupied layout and pushed text right, rendering
+  every indent ~DOUBLE. Guides must PAINT, not occupy: now a `Decoration.line` with background
+  gradients. Also needs `background-origin: content-box` — CM6 pads `.cm-line`, so without it every
+  guide sits a few px right of the true text origin.
+- **"Tab inserts 4 when the setting says 2" = two different things named tab size (TSK-1607).**
+  CM6's `EditorState.tabSize` FACET drives CM6's own column math; the RENDERED width of a literal
+  `\t` is the **CSS `tab-size` property**, which nothing was setting → browser default 4. Relevant
+  because a plain Tab at the caret inserts a real `\t` by prior owner design. Fix: set
+  `content.style.tabSize` on every `setIndentation` AND at boot.
+- **CM6 grey hover line "buggy" = bare CSS `:hover` (TSK-1606).** CSS hover tracks where the pointer
+  physically IS, so Enter/arrows/scroll slid a different line under a stationary mouse. Gate it on a
+  body class that any caret/doc/scroll change drops, restored only on REAL pointer movement — and
+  compare coordinates, because WebKit also fires `mousemove` when content scrolls under a still
+  cursor (honoring those reintroduces the bug exactly).
+- **Git graph "lines disconnected / branch origin unclear" = missing EDGE data, not styling (TSK-1603).**
+  In `GraphLayout`, a parent already pending in another lane hit `continue` and recorded NOTHING, so
+  the renderer had no join to draw and the branch line just stopped. Row now carries `parentLanes`
+  (an edge per parent) + a `branchID` per lane RUN (lane indices get recycled, so coloring by lane
+  made a finished branch and its lane's next occupant share a color). Row padding also inset each
+  graph canvas → a visible gap per row; the graph column must span edge-to-edge.
+- **Process note that paid off twice:** writing the repro test FIRST refuted two confident
+  hypotheses (rename-follow-through was already correct; `/var` vs `/private/var` is NOT an
+  asymmetry — `/var/folders` is an APFS firmlink, both forms resolve identically). Cheaper than
+  "fixing" the wrong layer.
+
+## 2026-07-11 — Greenfield-learnings corpus shipped; two harness gaps + board ground truth found on the way
+
+- **The full rebuild-learnings corpus lives at `docs/research/greenfield-learnings-2026-07-11/`**
+  (start: `MASTER_SYNTHESIS.md`; day-1 artifacts in `PORTABLE/`). Built by ~111 agents / ~11.5M
+  subagent tokens in 4 waves (Haiku per-file+per-commit corpus → Sonnet aspects + 3 Fable holistic →
+  Opus synthesis → adversarial-critic gap-closure). Every file (2,159, 98.3% individually covered —
+  `summaries/COVERAGE_AUDIT.md`), every commit (3,733), every md doc summarized.
+- **⚠️ The `run-uat` / `vm-ui-testing` skills cited as MANDATORY by this repo's CLAUDE.md DO NOT
+  EXIST** — repo `.claude/` is empty and `~/.claude/skills/` lacks them (exhaustive find, 2026-07-11).
+  T6 directives point at phantom skills; drive the VM GUI lane + `screencapture` procedure directly.
+  Fix CLAUDE.md or author the skills. (`summaries/docs/d-global-claude-dir.md`)
+- **⚠️ The safe-writes hooks are written but UNREGISTERED**: `~/.claude/hooks/backup-on-write.sh` +
+  `block-edit-fullfile-rewrite.sh` exist, but `settings.json` wires only the SessionStart
+  handoff-reinject. The safe-writes policy currently has no mechanical enforcement — prose only.
+- **Board ground truth (2026-07-11): 1,474 tickets** on the shared project (commit-trailer grep said
+  ~1,168; "~1,500" was folklore). True revert count: **6** (4 formal + 2 informal), not 2 or 12.
+- **11 pre-launch-audit findings now VERIFIED against main@3536dfa8** (5/6 data-loss CONFIRMED incl.
+  the CM6 debounce-never-flushed-on-save and the hot-exit-spill self-delete; MCP-socket/no-notices/
+  notarization-unexercised CONFIRMED; "FormulaEngine dead" REFUTED — rust bridge live). Evidence:
+  `docs/research/greenfield-learnings-2026-07-11/aspects/VERIFICATION_*.md`; BACKLOG ⏸ section updated.
+
+## 2026-07-10 — The text-engine reality: `.editor` is CM6, CM6-read-only-view is already wired, NSTextView is the only holdout, and CM6 has NO large-file guard
+
+Investigated for the owner's "default to Editor + use CM6 for view-only, kill NSTextView" ask.
+The map that isn't obvious from a skim:
+- **`.editor` mode is already CM6** (`CodeMirrorEditorView`), NOT NSTextView. The doc comment on
+  `Sources/ViewerKit/ViewMode.swift:10` ("editable NSTextView") is STALE — believe the code, not
+  the comment. CM6 already carries a `readOnly` flag (`ContentView.swift:939`).
+- **A CM6 read-only *view* path already exists**, gated OFF behind `WebSourceViewGate` (TSK-1530,
+  "M6"): `ContentView.swift:1274` swaps `.source` from `TextDisplayView` (NSTextView) to CM6
+  read-only when `MDV_WEB_SOURCE=1` / the persisted default. It's off pending a VM render-validation
+  slice, and its doc lists v1 GAPS still to wire before the default can flip: the AppKit gutter
+  extras (**bookmark pins, diff marks**) and the **source find-bar**.
+- **The lens default funnels through ONE function** — `ViewMode.canonicalDefaultLens`
+  (`ViewMode.swift:212`). Text categories → `.source`; markdown/mermaid/canvas → `.rendered`; media
+  → `.preview`. Changing the text default is ~3 lines; the cost is ~125 test files that assert
+  `.source`.
+- **The load-bearing reason NSTextView still exists = LARGE FILES.** `TextDisplayView` opens up to
+  **512 MiB** (`TextFileLoader.readableMaxBytes`), degrading past 64 MiB (`isLargeReadOnly`). **CM6
+  has NO large-file guard at all** — it pushes the whole doc through the JS bridge into CM6's
+  in-memory model, so it chokes far below 512 MiB. The ticket's "chokes at 1MB" refers to
+  NSTextView's per-interaction *overlay* cost, NOT its ability to open the file — NSTextView is
+  currently the ONLY thing that opens a 300 MB log. ⇒ Deleting NSTextView outright REGRESSES
+  large-file viewing. Correct path: demote NSTextView to a size-gated internal fallback, then
+  replace it with a windowed/virtualized CM6 feed (the rust windowed-snapshot path TSK-1527 uses)
+  before it can truly die. (Owner said "ignore for now" 2026-07-10 — parked, not active.)
+
+## 2026-07-09 — Workflow `args` object silently fails to reach the script; embed constants instead
+
+- **The `Workflow` tool's `args` object did NOT marshal into the script — `args.ownerDimensions`
+  came through `undefined` and the run died at 20ms with `undefined is not an object (evaluating
+  'args.ownerDimensions.map')`.** Passing a large/nested JSON object as `args` proved unreliable (the
+  resume hint even re-serialized it to a STRING). FIX: for any non-trivial workflow input, EMBED the
+  data as `const` literals directly in the script body rather than threading it through `args`. The
+  corrected pre-launch-audit script lives at `tmp/prelaunch-audit.js` with `OWNER_DIMS`/`ROOT`/`RDIR`/
+  `SESSION` inline; re-launched via `{scriptPath}` and it cleared Scope cleanly. Corollary: after a
+  Workflow failure, read the task-output `Error:` trace + line number — a first-line `args.*` access
+  that throws means the input never arrived.
+
+## 2026-07-09 — Big multi-agent workflows hit the ACCOUNT session limit; split models + resume
+
+- **A ~45-agent audit workflow died mid-run: 61/69 agents failed with "You've hit your session limit ·
+  resets <HH:MM> <TZ>" (an ACCOUNT-wide cap, not per-model), and the synthesis agent threw so the whole
+  run failed.** Lessons: (1) a workflow whose agents all run on ONE model exhausts that quota fast —
+  SPLIT the fleet across models (`opus`/`fable` via `agent(..., {model})`) so load spreads across
+  limits; owner's rule here = **Fable for high-priority/safety-critical dims, Opus for the bulk**.
+  (2) On a limit-kill, SALVAGE first: completed agents' report FILES persist on disk (10 of ~45 survived)
+  and worktrees may be orphaned (reap: none here). (3) `resume` re-runs only agents whose `(prompt,opts)`
+  are UNCHANGED-and-cached — but **changing `model` busts the cache** (opts differ → re-run), so a
+  re-route == a fresh run cost-wise; the on-disk reports still survive either way. (4) The limit RESETS
+  at the stated wall-clock time (`TZ=America/Toronto date` to check) — resume/relaunch just after.
+
 ## Session 2026-07-09 — SwiftUI `.task` on a conditionally-empty view never fires
 
 - **VM `MDV_UI_SCENE` = "unknown scene" DESPITE the scene string being in the dist binary → the

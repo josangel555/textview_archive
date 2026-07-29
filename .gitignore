@@ -32,3 +32,6 @@ scripts/AppIcon.iconset/
 # !.claude/settings.json
 # Perf-capture scratch (vm-profile / interact-signposted fixture files).
 .profiling/
+
+# Session scratch: gate/VM logs, captures, probes. 500 MB+ of throwaway.
+tmp/

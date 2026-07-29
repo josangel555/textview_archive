@@ -1,5 +1,110 @@
 # Changelog
 
+## 2026-07-29
+
+### Changed
+- **Local History now keeps far more, and keeps the RIGHT ones.** The per-file budget went from
+  20 MB to **100 MB**, and going over it no longer eats your history from the oldest end. It now
+  thins the *densest* stretch — fifty saves from this afternoon get thinned long before anything
+  from last month — and the original version and the newest version are never dropped. Nothing
+  expires by age.
+
+### Fixed
+- **Switching sessions no longer loses large unsaved edits.** Unsaved work over 1 MB is written to
+  a sidecar so it can come back when you switch to that session again — but the tab drain deleted
+  that sidecar one step later, so anything over 1 MB was silently gone. Edits under 1 MB were never
+  affected, which is why this was easy to miss.
+
+### Fixed
+- **Dropping a dragged tab no longer rewinds first.** The tab used to snap back to where the drag
+  started and only then animate to its new slot; it now glides from where you actually let go.
+- **"Merge…" now actually merges.** When a file changed on disk while you had unsaved edits, the
+  Merge button silently did *Keep Mine* — it cleared the conflict without merging anything. It now
+  opens the three-way merge: your version, the disk version and the common ancestor side by side,
+  one choice per conflicting region (Ours / Theirs / Both / Original). When the two sides don't
+  overlap it merges them automatically and keeps **both**.
+
+### Changed
+- **Nothing is discarded any more — every version goes to Local History first.** Whichever way you
+  resolve a conflict, the side you didn't take is saved before it disappears: *Take Disk* keeps your
+  unsaved edits, *Keep Mine* keeps the on-disk version that your next save will overwrite, and a
+  merge keeps both inputs. Same for the save-time conflict prompt's Overwrite and Reload.
+- **If a copy can't be kept, you're asked first.** Local History declines some content (secrets,
+  oversize, binary, or history turned off). Rather than destroying it anyway, the app now says what
+  can't be kept and why, and defaults to Cancel.
+
+### System work
+- `LocalHistoryStore.capture` returns `.stored` / `.alreadyPresent` / `.refused(reason)` so callers
+  can PROVE a discarded version is recoverable before destroying it; `snapshot` delegates to it and
+  keeps its old contract. 8 tests.
+- Mounted the TSK-1171 resolution stack, which shipped with zero callers (the audit's dead-UI
+  finding): `ConflictResolutionView` is now presented as a sheet from the conflict banner.
+- Preservation added at the SHARED funnel (`applyExternalEditOutcome`) so the explicit Refresh path
+  and the save-conflict prompt can't bypass it. 10 behaviour tests; the merge tests were shown RED
+  against the old `.merge → .keepEdits` collapse first.
+
+## 2026-07-28
+
+### Added
+- **Reopen a tab you closed by mistake.** `File ▸ Reopen Closed Tab` (**⇧⌘T**) brings back the
+  last tab you closed, and pressing it again keeps walking further back. It reopens the file in
+  the same view (Render/Editor/Hex) it was closed in.
+- **`File ▸ Recently Closed`** lists the tabs you've closed this session — pick any one to
+  reopen it directly, or Clear Menu to forget them. Also available from ⌘K and to agents as the
+  `reopen-closed-tab` verb.
+
+### Changed
+- **"Open Recent" no longer fills up with files you only glanced at.** Single-click previews in
+  the sidebar, git-diff tabs and clipboard comparisons are transient, so they're left out; a
+  preview you commit to (by editing it, or opening it properly) is still recorded.
+
+### Fixed
+- **Rearranging tabs no longer switches which tab you're in.** Dropping a dragged tab used to
+  select whichever tab you'd dragged it over. The move now leaves you in the tab you were
+  already in — whether you dragged that tab or a different one. Same for session pills.
+
+### System work
+- Root cause: a `DragGesture` alongside a Button does not stop the button's action firing on the
+  mouse-up that ends the drag, and by then the strip has reordered (and the captured index is
+  stale), so the click landed on whatever sat under the pointer. The model layer was already
+  correct — `TabsState.move` carries the selection with the moved tab. Fix is a self-expiring
+  select-suppression on `StripFrameBox`, armed for the duration of a drag plus a short tail;
+  5 host tests + a source pin that both strips route select through it.
+
+## 2026-07-27
+
+### Added
+- **Drag a tab to rearrange it.** Both strips reorder by dragging now — the file tabs and
+  the session pills above them. Pick a tab up and an accent line shows exactly which gap it
+  will drop into; release and it lands there, keeping its selection. Dropping a tab back
+  where it started changes nothing.
+- **Move a tab to another session from its menu.** Right-click a tab ▸ **Move to Session** and
+  pick one. (This used to be possible only by dragging a tab onto a session pill.)
+
+### Changed
+- **Dragging a tab no longer looks like dragging a file.** A tab drag used to hand the window
+  a file reference, so the window highlighted as a drop target and tried to re-open the file —
+  and the tab never moved. Tabs are now reorder-only; dragging files *out* of the app still
+  works from the sidebar.
+
+### System work
+- Reorder geometry extracted to a pure, host-tested `StripReorder` (gap/no-op/caret math,
+  10 tests incl. parameterized tables + composition against the real `TabsState`); shared
+  SwiftUI wiring in `StripDragReorder`. Replaces the `.onDrag`/`.onDrop` + `NSItemProvider`
+  round-trip, whose payload was measured intact — the fault was in drop routing/feedback, not data.
+- `SessionsCoordinator.move(from:to:)` + 6 tests: persistence across `restore()`, LRU
+  (`lastActiveAt`) left untouched, and activation proven not to re-sort the strip.
+- Perf: strip content split into `TabStripContent` / `SessionStripContent` so the drag's
+  non-POD `@State` sits at a leaf — `ChromeBodyEvalCountTests` caught the whole-strip re-body
+  it otherwise caused on every unrelated republish.
+- Dead code removed: `TabDragPayload` (+ tests), `FileDragProvider.attachFileURL`,
+  `SessionTabDropDelegate`. New regression pin: neither strip may reintroduce a tab `.onDrag`.
+- A finished drag commits by item ID re-resolved against the live list (`StripReorder.resolveMove`),
+  not the start-time index — a tab closing mid-drag would otherwise move the wrong tab.
+- VM lane run (first since 07-24): tab strip verified on real pixels; surfaced two REAL web-diff
+  regressions (nav jump + scrollspy) and confirmed the tab-strip pixel guard's own detector is
+  mis-calibrated. See BACKLOG "VM lane findings".
+
 ## 2026-07-09
 
 ### Security
