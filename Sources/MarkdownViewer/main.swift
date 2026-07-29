@@ -486,7 +486,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // launches, but the machinery for opening new sessions must stay live.
         sessions.wireLifecycle()
         if Self.mdvLiveEnv("MDV_SKIP_WORKSPACE_RESTORE") != "1" {
-            sessions.bootstrap()
+            // Crash-loop breaker: restore is unconditional, so a document that
+            // crashes the app DURING restore gets reopened by the next launch
+            // and crashes again — the app becomes permanently unstartable with
+            // no way to reach a menu and undo it. The guard drops a marker
+            // before restoring and clears it after; two consecutive unfinished
+            // attempts mean restore is what's killing us, so skip it once.
+            let guardMarker = RestoreCrashGuard(
+                markerURL: RestoreCrashGuard.defaultMarkerURL())
+            switch guardMarker.beginAttempt() {
+            case .restore:
+                sessions.bootstrap()
+                guardMarker.markSucceeded()
+            case .skipRestore(let failures):
+                ToastCenter.shared.post(
+                    .error,
+                    "Couldn't restore your last session — it crashed on the last "
+                    + "\(failures) launches. Starting fresh; your sessions are still saved.")
+            }
         }
         // One-way callback: folder context menus invoke this to spawn a
         // new session via the coordinator without DocumentModel needing
