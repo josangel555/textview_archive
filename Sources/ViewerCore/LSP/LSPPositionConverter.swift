@@ -52,7 +52,7 @@ public struct LSPPositionConverter: Sendable {
             codeUnits += Self.codeUnitCount(of: ch, in: encoding)
             utf16Units += ch.utf16.count
             let next = text.index(after: idx)
-            if ch == "\n" {
+            if Self.isLineTerminator(ch) {
                 starts.append(codeUnits)
                 indexStarts.append(next)
                 utf16Starts.append(utf16Units)
@@ -62,6 +62,23 @@ public struct LSPPositionConverter: Sendable {
         self.lineStartCodeUnits = starts
         self.lineStartCharacterIndices = indexStarts
         self.lineStartUTF16 = utf16Starts
+    }
+
+    /// LSP line terminators: `\n`, `\r\n`, `\r` (the spec's three).
+    ///
+    /// THE CRLF BUG (audit THEME 2, fixed 2026-07-29): the scan compared
+    /// `ch == "\n"`, but in Swift `\r\n` is ONE grapheme cluster and that
+    /// Character does NOT equal `"\n"` — so a CRLF file recorded zero line
+    /// starts and the whole document became line 0. Every LSP feature keyed by
+    /// line — diagnostics, folds, goto, formatter edits — then landed at the
+    /// wrong offsets (a formatter edit against "line 40" applied at line 0,
+    /// corrupting the buffer). A lone `\r` (classic-Mac) had the same failure.
+    ///
+    /// Deliberately NOT `Character.isNewline`: that also matches U+2028/U+2029/
+    /// U+000B/U+000C/U+0085, which LSP servers do not treat as line breaks —
+    /// splitting on those would desync our line numbering from the server's.
+    static func isLineTerminator(_ ch: Character) -> Bool {
+        ch == "\n" || ch == "\r\n" || ch == "\r"
     }
 
     private static func codeUnitCount(
@@ -123,7 +140,9 @@ public struct LSPPositionConverter: Sendable {
         var remaining = position.character
         while remaining > 0 && idx < text.endIndex {
             let ch = text[idx]
-            if ch == "\n" { break }
+            // Same terminator set as the init scan — `== "\n"` here walked
+            // PAST the end of a CRLF line into the next one.
+            if Self.isLineTerminator(ch) { break }
             let units = Self.codeUnitCount(of: ch, in: encoding)
             // S2-H: if the server position lands "inside" a multi-
             // code-unit grapheme (surrogate pair / emoji), consuming

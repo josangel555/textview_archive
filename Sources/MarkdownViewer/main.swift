@@ -484,6 +484,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // the disk-restore step is gated by MDV_SKIP_WORKSPACE_RESTORE — we
         // skip rehydrating the user's last session for test/automation
         // launches, but the machinery for opening new sessions must stay live.
+        // Silent-persistence-failure fix (audit THEME 1): every store writes
+        // through JSONFileStore and every caller discards the Bool, so a full
+        // disk lost sessions/bookmarks/history with no signal. One hook at the
+        // choke point; the reporter coalesces (a full disk fails EVERY write —
+        // first failure reports immediately, then at most one per minute).
+        let persistenceReporter = PersistenceFailureReporter()
+        JSONFileStore.onWriteFailure = { url in
+            guard let report = persistenceReporter.record(url: url) else { return }
+            DispatchQueue.main.async {
+                ToastCenter.shared.post(.error, report.message)
+            }
+        }
+
         sessions.wireLifecycle()
         if Self.mdvLiveEnv("MDV_SKIP_WORKSPACE_RESTORE") != "1" {
             // Crash-loop breaker: restore is unconditional, so a document that

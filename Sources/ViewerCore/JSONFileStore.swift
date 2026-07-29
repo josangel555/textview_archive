@@ -69,20 +69,41 @@ public enum JSONFileStore {
         }
     }
 
+    /// Central failure hook (audit THEME 1, "silent persistence failures").
+    ///
+    /// Every store in the app writes through this type, and every caller
+    /// discards the returned Bool — so a full disk at quit lost sessions,
+    /// bookmarks and hot-exit edits with NO signal anywhere. Rather than
+    /// teaching ~a dozen call sites to handle the Bool (best-effort is the
+    /// right CONTRACT for them), the failure is reported once, here, at the
+    /// choke point every path funnels through (sync `write`, the coalesced
+    /// queue, `flushSync`, and SessionStore's direct calls).
+    ///
+    /// The app installs a handler that surfaces a rate-limited toast (see
+    /// `PersistenceFailureReporter`); invoked on whatever thread the write ran
+    /// on, so handlers must hop themselves. Nil (tests, CLI tools) keeps the
+    /// old silent behaviour.
+    nonisolated(unsafe) public static var onWriteFailure: (@Sendable (URL) -> Void)?
+
     /// Write `value` to `url`, creating parent dirs as needed. Atomic
     /// write; on disk failure the existing file is preserved.
     ///
     /// Returns true on success. Callers historically ignored the
-    /// return value (best-effort persistence), but the bool is
-    /// surfaced for tests + future loud-on-error paths.
+    /// return value (best-effort persistence); failures are surfaced
+    /// centrally via `onWriteFailure` instead.
     @discardableResult
     public static func write<T: Encodable>(_ value: T, to url: URL) -> Bool {
         let dir = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )
-        guard let data = try? Self.encoder.encode(value) else { return false }
-        return writeDurably(data, to: url)
+        guard let data = try? Self.encoder.encode(value) else {
+            onWriteFailure?(url)
+            return false
+        }
+        let ok = writeDurably(data, to: url)
+        if !ok { onWriteFailure?(url) }
+        return ok
     }
 
     /// Atomic + DURABLE write (TSK-1011). `Data.write(.atomic)` does a temp +

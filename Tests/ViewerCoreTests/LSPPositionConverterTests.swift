@@ -110,4 +110,70 @@ final class LSPPositionConverterTests: XCTestCase {
         let pos = c.lspPosition(for: combining.endIndex)
         XCTAssertEqual(pos.character, 2)
     }
+
+    // MARK: CRLF / CR line endings (audit THEME 2, fixed 2026-07-29)
+    //
+    // `\r\n` is ONE Swift grapheme, and that Character != "\n" — so the line
+    // scan recorded zero line starts and a CRLF file collapsed to line 0.
+    // Diagnostics/folds/goto/formatter edits keyed by line then all landed at
+    // the wrong offsets. A Windows-authored source file is enough to hit this.
+
+    func test_crlf_file_has_real_lines_not_one() {
+        let text = "abc\r\ndef\r\nghi"
+        let c = LSPPositionConverter(text: text, encoding: .utf16)
+        // 'd' (after "abc\r\n" = 4 graphemes: a b c \r\n) is line 1, char 0.
+        let d = text.index(text.startIndex, offsetBy: 4)
+        XCTAssertEqual(c.lspPosition(for: d), LSPPosition(line: 1, character: 0),
+                       "a CRLF file must not collapse to a single line")
+        // 'g' is line 2, char 0.
+        let g = text.index(text.startIndex, offsetBy: 8)
+        XCTAssertEqual(c.lspPosition(for: g), LSPPosition(line: 2, character: 0))
+    }
+
+    func test_crlf_lspPosition_roundtrips_throughStringIndex() {
+        let text = "one\r\ntwo\r\nthree"
+        let c = LSPPositionConverter(text: text, encoding: .utf16)
+        let pos = LSPPosition(line: 2, character: 3)          // 'e' in "three"
+        let idx = c.stringIndex(for: pos)
+        XCTAssertEqual(text[idx], "e")
+        XCTAssertEqual(c.lspPosition(for: idx), pos)
+    }
+
+    /// An over-long character offset on a CRLF line must clamp at ITS end —
+    /// the old `== "\n"` check walked straight through into the next line.
+    func test_crlf_characterOverrun_clampsAtEndOfLine_notNextLine() {
+        let text = "ab\r\ncd"
+        let c = LSPPositionConverter(text: text, encoding: .utf16)
+        let idx = c.stringIndex(for: LSPPosition(line: 0, character: 99))
+        // Clamped to the \r\n terminator of line 0 — never into "cd".
+        XCTAssertEqual(text.distance(from: text.startIndex, to: idx), 2,
+                       "overrun must stop at the CRLF, not bleed into line 1")
+    }
+
+    func test_classicMac_cr_only_alsoSplitsLines() {
+        let text = "abc\rdef"
+        let c = LSPPositionConverter(text: text, encoding: .utf16)
+        let d = text.index(text.startIndex, offsetBy: 4)
+        XCTAssertEqual(c.lspPosition(for: d), LSPPosition(line: 1, character: 0))
+    }
+
+    /// The terminator set is exactly LSP's three — NOT `Character.isNewline`,
+    /// which also matches U+2028 etc. and would desync us from the server.
+    func test_unicodeLineSeparator_isNotALineBreak() {
+        let text = "ab\u{2028}cd\nef"
+        let c = LSPPositionConverter(text: text, encoding: .utf16)
+        let e = text.index(text.startIndex, offsetBy: 6)      // 'e'
+        XCTAssertEqual(c.lspPosition(for: e).line, 1,
+                       "U+2028 must not count as a line break (server parity)")
+    }
+
+    func test_crlf_nsRange_targetsTheRightLine() {
+        let text = "aa\r\nbb\r\ncc"
+        let c = LSPPositionConverter(text: text, encoding: .utf16)
+        let r = c.nsRange(for: LSPRange(
+            start: LSPPosition(line: 2, character: 0),
+            end: LSPPosition(line: 2, character: 2)))
+        // "cc" starts at UTF-16 offset 8 (a a \r \n b b \r \n).
+        XCTAssertEqual(r, NSRange(location: 8, length: 2))
+    }
 }
