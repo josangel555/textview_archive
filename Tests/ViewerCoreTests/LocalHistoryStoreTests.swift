@@ -160,9 +160,14 @@ final class LocalHistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.contentString(of: v2!, for: path), edited)
     }
 
-    // MARK: - 20 MB/file byte cap
+    // MARK: - per-file byte cap
 
-    func test_byteCap_prunesOldest_keepsNewest_underCap() {
+    /// CONTRACT CHANGE (owner, 2026-07-29): *"We don't want to lose the oldest
+    /// ones. We have to be smart about it."* The cap used to eat the timeline
+    /// from the oldest end; it now THINS the densest stretch instead, so the
+    /// first version and the newest both survive. This test was asserting the
+    /// old "oldest gets pruned" behaviour — it now pins the new one.
+    func test_byteCap_thinsUnderCap_keepingOldestAndNewest() {
         // Drive pruning at a SMALL injected cap (TSK-836): same prune logic as the
         // 20 MiB default, but ~100x less IO — this test was ~8s writing ~24 MiB to
         // hit the real cap. Sizes scaled ÷100 consistently (cap 20MiB→200KiB,
@@ -191,8 +196,12 @@ final class LocalHistoryStoreTests: XCTestCase {
         let newest = vs[0]
         XCTAssertEqual(newest.id, ids.last)
         XCTAssertNotNil(capStore.contentString(of: newest, for: path))
-        // The OLDEST written id was pruned (cap forced it out).
-        XCTAssertFalse(vs.map(\.id).contains(ids.first!), "oldest version pruned by the byte cap")
+        // The cap really did evict — but from the MIDDLE, not the start.
+        XCTAssertLessThan(vs.count, ids.count, "the byte cap must still evict")
+        XCTAssertTrue(vs.map(\.id).contains(ids.first!),
+                      "the ORIGINAL version must survive thinning (owner 2026-07-29)")
+        XCTAssertNotNil(capStore.contentString(of: vs.last!, for: path),
+                        "and it must still reconstruct after anchor promotion")
     }
 
     func test_byteCap_promotesAnchor_soSurvivingDiffsStillReconstruct() {

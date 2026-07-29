@@ -84,15 +84,42 @@ final class DiskConflictBannerWiringTests: XCTestCase {
                           "takeDisk discards the unsaved edits")
     }
 
-    func test_resolveMerge_keepsEditsForNow_andClearsBanner() throws {
+    /// CONTRACT CHANGE (owner, 2026-07-28): `Merge…` used to fall through to
+    /// `.keepEdits` — it silently did Keep Mine while claiming to merge, and
+    /// cleared the banner as if the conflict were resolved. It must not resolve
+    /// anything by itself.
+    ///
+    /// Here the file on disk still matches the buffer's baseline, so there is
+    /// nothing to merge: the banner STAYS (the user can still pick a side) and
+    /// the buffer is left exactly as it was.
+    func test_resolveMerge_withNothingToMerge_resolvesNothingAndKeepsTheBanner() throws {
         let url = try writeFile("a.txt", "disk")
         let model = makeModel()
         let id = openDirtyWithConflict(url, in: model)
 
         model.resolveDiskConflict(.merge)
-        XCTAssertNil(model.activeDiskConflict, "resolving clears the banner")
+
+        XCTAssertNotNil(model.activeDiskConflict,
+                        "merge must never resolve the conflict on its own")
+        XCTAssertNil(model.activeConflictResolution, "nothing to hand-resolve")
         XCTAssertEqual(model.editor.editorBuffers[id]?.text, "my unsaved edit",
-                       "merge keeps the edits for now (three-way merge UI is future work)")
+                       "the buffer is untouched")
+    }
+
+    /// With a REAL divergence, merge opens the 3-pane resolution sheet.
+    func test_resolveMerge_withRealDivergence_opensTheResolutionSheet() throws {
+        let url = try writeFile("a.txt", "disk")
+        let model = makeModel()
+        let id = openDirtyWithConflict(url, in: model)
+        try "THEIR CHANGE".write(to: url, atomically: true, encoding: .utf8)
+
+        model.resolveDiskConflict(.merge)
+
+        let session = try XCTUnwrap(model.activeConflictResolution,
+                                    "Merge… must present the 3-pane merge")
+        XCTAssertEqual(session.id, id)
+        XCTAssertNotNil(model.activeDiskConflict,
+                        "unresolved until the user applies the merge")
     }
 
     func test_resolve_withNoActiveConflict_isNoOp() {

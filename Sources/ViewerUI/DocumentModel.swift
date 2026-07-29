@@ -209,6 +209,18 @@ public final class DocumentModel: ObservableObject {
     /// tick when a dirty buffer's file changed on disk; cleared by `resolveDiskConflict`.
     @Published public var activeDiskConflict: DiskConflictBannerInfo?
 
+    /// The in-flight 3-pane merge for a disk conflict — set when the user picks
+    /// "Merge…", presented as a sheet, cleared on Apply/Cancel. Before this,
+    /// "Merge…" silently did Keep Mine (the resolution stack shipped unmounted);
+    /// see `DocumentModel+DiskConflict`.
+    @Published public var activeConflictResolution: ConflictResolutionSession?
+
+    /// Test seam for the "Local History could not keep this copy" confirmation.
+    /// Host tests install a closure; production runs the NSAlert. Kept off the
+    /// gate the same way `saveConflictPromptOverride` is.
+    public var unpreservedDiscardPromptOverride:
+        ((String, ConflictSide, String) -> UnpreservedDiscardChoice)?
+
     /// TSK-1325 — the Image Convert panel (pick target format + quality → new tab). Transient;
     /// driven by `openConvertImage()`.
     @Published public var showConvertImage = false
@@ -411,6 +423,11 @@ public final class DocumentModel: ObservableObject {
     /// or zoomed since restore (see `ScrollMemoryStore.shouldPersist`).
     public let scrollMemory: ScrollMemoryStore
     public let bookmarksStore: BookmarksStore
+    /// Closed tabs, newest first — File ▸ Recently Closed + ⇧⌘T. In-memory
+    /// for the run of the app and deliberately NOT `@Published`: the menu is
+    /// rebuilt on demand, so nothing observes it and recording a close costs
+    /// no republish. See `RecentlyClosedStore`.
+    public let recentlyClosed = RecentlyClosedStore()
     /// User-defined snippets merged over the built-ins (TSK-705). Read by the
     /// Insert-Snippet menu + `insertSnippet`.
     public let snippetStore: SnippetStore
@@ -750,6 +767,27 @@ public final class DocumentModel: ObservableObject {
         createNewFile(in: directory, baseName: type.baseName)
     }
 
+    /// TSK-1605 (owner 2026-07-25) — THE entry point every New-File UI action
+    /// uses: ask for the name FIRST, then create the file with it. No more
+    /// `Untitled.txt`-then-rename (which is where the rename bugs bit).
+    /// Returns nil when the user cancels. The name is validated in the prompt
+    /// (empty / separator / collision re-prompt with the reason), so by here
+    /// it's a single legal in-directory component.
+    @discardableResult
+    public func promptForNewFile(in directory: URL, type: NewFileType = .text) -> URL? {
+        guard let name = NewFilePrompt.run(in: directory, type: type) else { return nil }
+        return createNewFile(in: directory, baseName: name)
+    }
+
+    /// TSK-1605 — landing-page / no-folder variant: same prompt, with the
+    /// `newTextFileForLanding` fallback target (temp scratch when no workspace
+    /// folder is open) so the landing button always works.
+    @discardableResult
+    public func promptForNewFileForLanding(type: NewFileType = .text) -> URL? {
+        let dir = newFileTargetDirectory ?? FileManager.default.temporaryDirectory
+        return promptForNewFile(in: dir, type: type)
+    }
+
     /// TSK-760: "New text file" from the empty-tab landing. Creates an editable
     /// Untitled.txt and opens it. Unlike File→New (⌘N, which `validateMenuItem`
     /// disables when no folder is open), the landing button must ALWAYS work —
@@ -875,6 +913,11 @@ public final class DocumentModel: ObservableObject {
             if bookmarksStore.relocate(from: url, to: newURL) > 0 {
                 refreshBookmarks()
             }
+            // TSK-1605: RE-BIND the file watcher. It was still bound to the
+            // pre-rename path, so `reloadCurrentFile(matching:)` bailed on the
+            // URL guard and the renamed file silently stopped being watched —
+            // external edits to it no longer reloaded the tab.
+            startWatchingCurrentFile()
             return newURL
         } catch {
             Obs.shared.emit(.warn, "files",
@@ -1726,10 +1769,10 @@ public final class DocumentModel: ObservableObject {
     ) {
         let menu = NSMenu(title: "Editor")
 
-        // Key for the side-storage entry, captured so the `defer` at the
-        // end of this method can drop it once `popUp` returns. nil when
-        // no LSP item was added (no target to park).
-        var menuTargetKey: ObjectIdentifier?
+        // Keys for the side-storage entries, captured so the `defer` at the
+        // end of this method can drop them once `popUp` returns. Empty when
+        // no closure-backed item was added (no targets to park).
+        var menuTargetKeys: [ObjectIdentifier] = []
 
         // LSP nav submenu — only when a language is configured. Gates on the
         // POOL's registry (TSK-963) so the menu item appears exactly when the
@@ -1754,7 +1797,7 @@ public final class DocumentModel: ObservableObject {
             // a side dict for the duration of the (synchronous) popUp.
             let key = ObjectIdentifier(goDef)
             editorMenuTargets[key] = target
-            menuTargetKey = key
+            menuTargetKeys.append(key)
             menu.addItem(NSMenuItem.separator())
         }
 
@@ -1770,6 +1813,26 @@ public final class DocumentModel: ObservableObject {
         cut.isEnabled = request.hasSelection
         copy.isEnabled = request.hasSelection
         menu.addItem(cut); menu.addItem(copy); menu.addItem(paste)
+
+        // TSK-1597: selection → clipboard comparison, opened in the ephemeral
+        // web diff preview. Offered whenever there IS a selection; an empty /
+        // non-text clipboard degrades to an info toast inside the action.
+        if request.hasSelection {
+            menu.addItem(NSMenuItem.separator())
+            let selection = request.selection
+            let cmpTarget = EditorMenuTarget { [weak self] in
+                self?.compareSelectionWithClipboard(selection: selection)
+            }
+            let cmp = NSMenuItem(
+                title: "Compare with Clipboard",
+                action: #selector(EditorMenuTarget.invoke(_:)),
+                keyEquivalent: "")
+            cmp.target = cmpTarget
+            menu.addItem(cmp)
+            let cmpKey = ObjectIdentifier(cmp)
+            editorMenuTargets[cmpKey] = cmpTarget
+            menuTargetKeys.append(cmpKey)
+        }
 
         // WebKit posts CM6's contextmenu coordinates as `screenX/Y`,
         // which originate top-left. NSMenu.popUp expects AppKit
@@ -1795,7 +1858,7 @@ public final class DocumentModel: ObservableObject {
         // with a fresh ObjectIdentifier, no overwrite ever happened and
         // the dict leaked one EditorMenuTarget per right-click.)
         defer {
-            if let key = menuTargetKey {
+            for key in menuTargetKeys {
                 editorMenuTargets.removeValue(forKey: key)
             }
         }
@@ -2332,9 +2395,14 @@ public final class DocumentModel: ObservableObject {
         // resolution so an unknown-/binary-EXTENSION file that decoded as
         // text (`.loaded`) opens as Source instead of the extension-only
         // HEX default (and offers Source in the picker).
-        let mode = resolveOpenMode(
+        var mode = resolveOpenMode(
             resolved, forceNewTab: forceNewTab,
             isRenderableText: Self.renderableTextHint(state))
+        // TSK-1588: editor-by-default is size-gated — past the CM6 cap the
+        // open lands in read-only Source (which has its own large-file stack).
+        if case .loaded(let f) = state {
+            mode = Self.editorDefaultSizeCoercion(mode: mode, byteCount: f.byteCount)
+        }
         if forceNewTab {
             tabCoordinator.append(Tab(url: resolved, state: state, viewMode: mode))
         } else if preview {
@@ -2415,7 +2483,7 @@ public final class DocumentModel: ObservableObject {
             }
         }
         updateDerived()
-        recordOpenedFile(state: state, resolved: resolved)
+        recordOpenedFile(state: state, resolved: resolved, transient: preview)
         startWatchingCurrentFile()
         // item9: follow-mode reveal for opens (open doesn't route through
         // selectTab). Select + expand within the current root only.
@@ -2585,6 +2653,13 @@ public final class DocumentModel: ObservableObject {
                     current: t.viewMode,
                     isLoadedText: Self.renderableTextHint(state) == true,
                     url: resolved, preferred: self.preferences.viewModeDefaults)
+                // TSK-1588: the pre-read mode resolution was size-blind, and
+                // every >4 MiB text open lands HERE — coerce an editor default
+                // past the CM6 cap back to the read-only Source lens.
+                if case .loaded(let f) = state {
+                    t.viewMode = Self.editorDefaultSizeCoercion(
+                        mode: t.viewMode, byteCount: f.byteCount)
+                }
                 self.tabCoordinator.replace(at: idx, with: t)
                 // Carry HEX mode (mirrors the sync path + materializeIfNeeded).
                 // Exclude `.preview`: a native-preview category whose default
@@ -2603,7 +2678,8 @@ public final class DocumentModel: ObservableObject {
                     }
                 }
                 self.updateDerived()
-                self.recordOpenedFile(state: state, resolved: resolved)
+                self.recordOpenedFile(state: state, resolved: resolved,
+                                      transient: preview)
             }
         }
         tabCoordinator.setMaterializeTask(task, forTabID: tabID)
@@ -2614,11 +2690,27 @@ public final class DocumentModel: ObservableObject {
     /// Errors / empty / still-loading states record nothing. Extracted so
     /// both the synchronous open path and the off-main large-file
     /// completion run identical bookkeeping.
-    func recordOpenedFile(state: DocumentState, resolved: URL) {
+    /// - Parameter transient: this open went into the EPHEMERAL preview slot
+    ///   (a single-click sidebar peek, a git-diff tab, a clipboard compare).
+    ///   Those are browsing, not opening: recording them buries the files the
+    ///   user actually worked in under a wall of files they merely glanced at
+    ///   (owner, 2026-07-28: "ignore the transient file openings from the
+    ///   'Recent opened' list"). The sidebar auto-root below still runs — it
+    ///   is about having a workspace, not about recency. A preview that is
+    ///   later PROMOTED to a permanent tab is recorded then, by
+    ///   `notePreviewPromoted`.
+    ///   NOTE `DocumentState.preview` is a RENDERER state (image/PDF/…), a
+    ///   different axis entirely — a permanent tab can be `.preview`, and a
+    ///   transient tab can be `.loaded`.
+    func recordOpenedFile(state: DocumentState, resolved: URL, transient: Bool = false) {
         switch state {
         case .loaded, .binary, .preview:
-            history.record(url: resolved, kind: .file)
-            recents = history.recent()
+            if !transient {
+                history.record(url: resolved, kind: .file)
+                recents = history.recent()
+                // Reopening a file means it is no longer "recently closed".
+                recentlyClosed.forget(url: resolved)
+            }
             // Auto-root the sidebar to the file's containing folder if
             // no folder is currently open. The user explicitly opened
             // a file, so we already have read access to its parent.
@@ -3219,12 +3311,26 @@ public final class DocumentModel: ObservableObject {
             captureScroll(forTabAt: index)
         }
         let closedURL = tabs.tabs[index].url
+        // Recently Closed (⇧⌘T). Recorded only for a DESTRUCTIVE close — a
+        // session-switch drain (`isBulkDraining`) restores its tabs on
+        // switch-back, so listing them as "closed" would be a lie.
+        if !isBulkDraining {
+            noteTabClosed(at: index)
+        }
         // TSK-1026: a DESTRUCTIVE close orphans any >1 MiB hot-exit spill for
         // this file (no tab will re-capture it) — drop it so it can't leak on
         // disk. NOT done on the session-SWITCH close
         // (`closeAllTabsPreservingDirty`), which intentionally keeps the dirty
         // buffer for switch-back.
-        if let p = closedURL?.path {
+        //
+        // DATA-LOSS FIX (2026-07-29): that second sentence described the intent
+        // but the guard was missing — the remove ran on EVERY close, including
+        // the bulk drain. `captureUnsavedTextForAllTabs` had just written the
+        // spill for a >1 MiB dirty buffer (buffers under that go inline into
+        // `tab.unsavedText`), so switching sessions wrote the sidecar and then
+        // deleted it one call later: 1–32 MiB of unsaved edits, gone, silently.
+        // Small buffers were unaffected, which is why this hid for so long.
+        if !isBulkDraining, let p = closedURL?.path {
             HotExitSpill.remove(forPath: p, in: hotExitSpillDirectory)
         }
         // Coordinator handles the tabs mutation + all six per-tab dict

@@ -300,4 +300,52 @@ final class HotExitTests: XCTestCase {
         XCTAssertNil(HotExitSpill.read(forPath: url.path, in: model.hotExitSpillDirectory),
                      "closing the tab removes its orphaned spill")
     }
+
+    /// DATA-LOSS REGRESSION (2026-07-29). A session SWITCH drains its tabs
+    /// through the same `closeTabUnconditionally`, but must NOT delete the
+    /// spill — `closeAllTabsPreservingDirty` writes it moments earlier
+    /// precisely so switching back restores the edits.
+    ///
+    /// The orphan-cleanup above ran unguarded, so the drain wrote the sidecar
+    /// and deleted it one call later: every unsaved edit over 1 MiB vanished on
+    /// a session switch, silently. Buffers UNDER the cap go inline into
+    /// `tab.unsavedText` and were never affected — which is why this hid.
+    func test_sessionSwitchDrain_keepsTheSpill_soLargeEditsSurvive() throws {
+        let url = try writeFile("big.txt", "disk")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        let huge = String(repeating: "z", count: DocumentModel.hotExitMaxBytes + 4096)
+        model.editor.updateEditorText(huge, forTabID: id)
+
+        // The session-switch path: capture + drain, no destructive close.
+        model.closeAllTabsPreservingDirty()
+
+        XCTAssertEqual(
+            HotExitSpill.read(forPath: url.path, in: model.hotExitSpillDirectory), huge,
+            "switching sessions must PRESERVE the >1 MiB unsaved buffer")
+
+        // And switching back restores it.
+        model.open(url: url)
+        let restoredID = try XCTUnwrap(model.tabs.selected?.id)
+        XCTAssertTrue(model.restoreUnsavedTextIfNeeded(forTabAt: 0))
+        XCTAssertEqual(model.editor.editorBuffer(forTabID: restoredID)?.text, huge,
+                       "the edits come back on switch-back")
+    }
+
+    /// The small-buffer half of a switch travels a DIFFERENT road: it is
+    /// captured onto `tab.unsavedText` and rides the session SNAPSHOT, so it is
+    /// covered by the capture/restore tests above (items 1–3) rather than here.
+    /// Only the >1 MiB sidecar is path-keyed and therefore drain-sensitive.
+    func test_sessionSwitchDrain_capturesSmallEditsOntoTheTabBeforeDraining() throws {
+        let url = try writeFile("small.txt", "disk")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        model.editor.updateEditorText("my unsaved work", forTabID: id)
+
+        // Capture is what the drain runs first; assert it stamped the tab
+        // (which is what `makeSnapshot` then serialises for switch-back).
+        model.captureUnsavedTextForAllTabs()
+        XCTAssertEqual(model.tabs.tabs[0].unsavedText, "my unsaved work",
+                       "small edits ride the session snapshot, not the sidecar")
+    }
 }

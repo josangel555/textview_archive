@@ -266,6 +266,11 @@ final class EditorSaveNoClobberTests: XCTestCase {
         model.editor.updateEditorText("v2 saved\n", forTabID: id)
         XCTAssertTrue(model.editor.saveEditor(forTabID: id))
 
+        // TSK-1608: snapshot-on-save now runs OFF the main thread (it was
+        // ~220 ms of blocked UI per ⌘S). The save's CONTRACT is unchanged —
+        // a successful save still records a version — so the assertion stands;
+        // it just has to await the background write.
+        LocalHistoryStore.drainBackgroundSnapshots()
         let versions = model.editor.localHistoryStore.versions(for: url.path)
         XCTAssertEqual(versions.count, 1, "a successful save records exactly one version")
         let restored = versions.first.flatMap {
@@ -286,13 +291,24 @@ final class EditorSaveNoClobberTests: XCTestCase {
         model.editor.saveConflictPromptOverride = { _, _ in .overwrite }
         XCTAssertTrue(model.editor.saveEditor(forTabID: id))
 
+        // TSK-1608: snapshot-on-save now runs OFF the main thread (it was
+        // ~220 ms of blocked UI per ⌘S). The save's CONTRACT is unchanged —
+        // a successful save still records a version — so the assertion stands;
+        // it just has to await the background write.
+        LocalHistoryStore.drainBackgroundSnapshots()
         let versions = model.editor.localHistoryStore.versions(for: url.path)
-        XCTAssertEqual(versions.count, 1)
-        XCTAssertEqual(
-            versions.first.flatMap {
-                model.editor.localHistoryStore.contentString(of: $0, for: url.path)
-            },
-            "mine kept\n")
+        let stored = versions.compactMap {
+            model.editor.localHistoryStore.contentString(of: $0, for: url.path)
+        }
+        // CONTRACT STRENGTHENED (owner, 2026-07-28: "never silently overwrite a
+        // change that happened outside the app"). Overwriting now ALSO captures
+        // the disk version it is about to destroy, so BOTH sides are
+        // recoverable — which is exactly what this test's premise demands.
+        XCTAssertEqual(versions.count, 2,
+            "the overwritten disk version AND the saved text must both be kept")
+        XCTAssertTrue(stored.contains("mine kept\n"), "the just-saved text")
+        XCTAssertTrue(stored.contains("theirs\n"),
+                      "the external change we overwrote must stay recoverable")
     }
 
     func test_failedConflict_cancel_recordsNoHistory() throws {
@@ -304,6 +320,11 @@ final class EditorSaveNoClobberTests: XCTestCase {
         model.editor.saveConflictPromptOverride = { _, _ in .cancel }
         XCTAssertFalse(model.editor.saveEditor(forTabID: id))
 
+        // TSK-1608: snapshot-on-save now runs OFF the main thread (it was
+        // ~220 ms of blocked UI per ⌘S). The save's CONTRACT is unchanged —
+        // a successful save still records a version — so the assertion stands;
+        // it just has to await the background write.
+        LocalHistoryStore.drainBackgroundSnapshots()
         XCTAssertTrue(model.editor.localHistoryStore.versions(for: url.path).isEmpty,
             "a save that never wrote must record no history version")
     }
@@ -316,6 +337,11 @@ final class EditorSaveNoClobberTests: XCTestCase {
             model.editor.updateEditorText(text, forTabID: id)
             XCTAssertTrue(model.editor.saveEditor(forTabID: id))
         }
+        // TSK-1608: snapshot-on-save now runs OFF the main thread (it was
+        // ~220 ms of blocked UI per ⌘S). The save's CONTRACT is unchanged —
+        // a successful save still records a version — so the assertion stands;
+        // it just has to await the background write.
+        LocalHistoryStore.drainBackgroundSnapshots()
         let versions = model.editor.localHistoryStore.versions(for: url.path)
         XCTAssertEqual(versions.count, 3,
             "three distinct successful saves record three versions")

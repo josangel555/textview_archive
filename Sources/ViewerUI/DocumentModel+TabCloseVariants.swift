@@ -43,6 +43,12 @@ extension DocumentModel {
                 .filter { $0.id != keepID }
                 .map { ($0.id, $0.url) }
         )
+        // Recently Closed (⇧⌘T) — record BEFORE the coordinator mutates
+        // `tabs`. Oldest-first so the leftmost tab ends up deepest in the
+        // stack and ⇧⌘T walks back right-to-left, matching browsers.
+        for i in tabs.tabs.indices where tabs.tabs[i].id != keepID {
+            noteTabClosed(at: i)
+        }
         let closedIDs = tabCoordinator.closeOtherTabs(keeping: index)
         for id in closedIDs {
             purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)
@@ -81,6 +87,11 @@ extension DocumentModel {
                 .suffix(from: index + 1)
                 .map { ($0.id, $0.url) }
         )
+        // Recently Closed (⇧⌘T) — record BEFORE the mutation, left-to-right
+        // so ⇧⌘T brings them back right-to-left.
+        for i in (index + 1)..<tabs.tabs.count {
+            noteTabClosed(at: i)
+        }
         let closedIDs = tabCoordinator.closeTabsToRight(of: index)
         for id in closedIDs {
             purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)

@@ -33,12 +33,18 @@ struct DiskConflictBanner: View {
 
             Spacer(minLength: 8)
 
+            // Every option keeps the version it sets aside: the discarded side
+            // is captured into Local History first, so any of these is
+            // reversible from File ▸ Local History.
             Button("Keep Mine") { onResolve(.keepMine) }
-                .help("Keep your unsaved edits and ignore the on-disk change.")
+                .help("Keep your unsaved edits. The on-disk version is saved to "
+                      + "Local History first, so you can still get it back.")
             Button("Take Disk") { onResolve(.takeDisk) }
-                .help("Discard your edits and reload the file from disk.")
+                .help("Reload the file from disk. Your unsaved edits are saved to "
+                      + "Local History first, so you can still get them back.")
             Button("Merge…") { onResolve(.merge) }
-                .help("Capture both versions for a three-way merge (coming soon).")
+                .help("Open a three-way merge: resolve each conflicting region "
+                      + "yourself, keeping work from both sides.")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

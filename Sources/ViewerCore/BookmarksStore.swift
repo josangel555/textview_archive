@@ -240,8 +240,15 @@ public final class BookmarksStore {
     // MARK: - Persistence
 
     private func load() {
-        guard let decoded = JSONFileStore.read(
-            [BookmarkEntry].self, from: storeURL, maxSize: maxStoreFileBytes
+        // LENIENT per-element decode (PERSIST-02). A STRICT array decode makes
+        // ONE malformed entry — a path the encoder couldn't represent, a future
+        // `kind` an old build doesn't understand — fail the whole decode, so
+        // `entries` stays empty and the next bookmark toggle SAVES that empty
+        // list over the file: every bookmark gone, permanently, from one bad
+        // row. `HistoryStore`/`FeedSubscriptionStore` already read leniently;
+        // bookmarks were the outlier.
+        guard let decoded = JSONFileStore.readLenientArray(
+            BookmarkEntry.self, from: storeURL, maxSize: maxStoreFileBytes
         ) else { return }
         entries = Array(decoded.prefix(maxEntries))
         rebuildIndex()

@@ -977,7 +977,14 @@ public final class EditorCoordinator: ObservableObject {
             // text `EditorBuffer` (binary/hex saves route through
             // `saveHexEdits`, which does NOT call here), so this is inherently
             // scoped to text and never snapshots raw binary.
-            localHistoryStore.snapshot(
+            // TSK-1608 (owner: "saves are choking … beach ball"): this runs
+            // OFF the main actor now. Measured at ~220 ms per call on an 80 KB
+            // file (LocalHistorySnapshotCostTests) — reading every existing
+            // .rev record, diffing, writing, pruning — and it was blocking the
+            // UI on every ⌘S. It's best-effort by contract, so it has no place
+            // on the save's critical path; the serial queue inside the store
+            // keeps concurrent saves from interleaving.
+            localHistoryStore.snapshotInBackground(
                 path: savedURL.path, content: buf.text, at: Date())
             return true
         } catch {
@@ -1058,11 +1065,26 @@ public final class EditorCoordinator: ObservableObject {
             // Keep mine: fall through to the write. The post-write `markSaved`
             // re-baselines the buffer's fingerprint against the bytes we write,
             // so the now-overwritten external change won't re-trigger the guard.
+            //
+            // The external change is about to be destroyed by our write, so
+            // capture it into Local History first (owner directive 2026-07-28:
+            // never overwrite an outside change without keeping a copy). The
+            // CHOICE here is explicit — the user picked Overwrite in a modal
+            // that names the consequence — so a failed capture is reported
+            // rather than blocking; see `DocumentModel+ConflictPreservation`
+            // for the stricter pre-confirm the banner path uses.
+            preserveDiscardedSide(
+                text: (try? String(contentsOf: url, encoding: bufferEncoding(forTabID: id))),
+                path: url.path, what: "the version on disk", fileName: url.lastPathComponent)
             return .proceed
 
         case .reload:
             // Take disk: drop the edits and reload. Mirrors the external-edit
             // "Discard & Reload" branch.
+            preserveDiscardedSide(
+                text: tabCoordinator.editorBuffers[id]?.text,
+                path: url.path, what: "your unsaved edits",
+                fileName: url.lastPathComponent)
             discardEditorBuffer(forTabID: id)
             let tabs = tabsSnapshot()
             if let idx = tabs.firstIndex(where: { $0.id == id }) {
@@ -1086,6 +1108,28 @@ public final class EditorCoordinator: ObservableObject {
         case .cancel:
             return .abort
         }
+    }
+
+    /// Encoding of a tab's buffer, defaulting to UTF-8 when there is none — so a
+    /// captured copy round-trips the same bytes the editor was working with.
+    private func bufferEncoding(forTabID id: UUID) -> String.Encoding {
+        tabCoordinator.editorBuffers[id]?.encoding ?? .utf8
+    }
+
+    /// Capture a version that a save-conflict branch is about to destroy.
+    /// Reports (never swallows) a refusal: Local History legitimately declines
+    /// secrets/oversize/binary content, and the user must not be left believing
+    /// a copy exists when it does not.
+    private func preserveDiscardedSide(
+        text: String?, path: String, what: String, fileName: String
+    ) {
+        guard let text, !text.isEmpty else { return }
+        let outcome = localHistoryStore.capture(path: path, content: text, at: Date())
+        guard !outcome.isPreserved else { return }
+        let reason = outcome.refusal?.explanation ?? "it could not be saved"
+        ToastCenter.shared.post(
+            .error,
+            "\(fileName): couldn't keep a copy of \(what) — \(reason)")
     }
 
     /// The AppKit modal for the write-time save conflict. Built from the offered
@@ -1249,9 +1293,25 @@ public final class EditorCoordinator: ObservableObject {
     ) {
         switch outcome {
         case .discardAndReload:
+            // Belt-and-braces preservation at the SHARED funnel: every caller
+            // that discards a buffer (the banner's Take Disk, the explicit
+            // `refreshTab` modal, the save-conflict Reload) passes through here,
+            // so nothing can drop unsaved edits without a Local History copy.
+            // Dedup makes the banner path's earlier capture a no-op, and that
+            // path additionally PRE-CONFIRMS when the copy can't be kept.
+            preserveDiscardedSide(
+                text: tabCoordinator.editorBuffers[id]?.text,
+                path: url.path, what: "your unsaved edits",
+                fileName: url.lastPathComponent)
             discardEditorBuffer(forTabID: id)
             onReloadFromDisk?(url, index)
         case .keepEdits:
+            // Keeping the edits means the next save overwrites whatever the
+            // other program wrote — capture that version before we forget it.
+            preserveDiscardedSide(
+                text: try? String(contentsOf: url, encoding: bufferEncoding(forTabID: id)),
+                path: url.path, what: "the version on disk",
+                fileName: url.lastPathComponent)
             // Refresh the fingerprint so the next watcher tick (often
             // a duplicate event from the same write) doesn't re-prompt.
             // Crucially we MUST NOT touch `originalText` — keeping the

@@ -26,9 +26,13 @@ import Foundation
 ///     the "store whichever is smaller" rule promotes that version to a new full
 ///     snapshot, re-anchoring the chain. This keeps reconstruction O(1) records
 ///     while keeping storage near-minimal.
-/// - **20 MB cap PER FILE.** A file's total on-disk history is pruned
-///   oldest-first until under `maxFileHistoryBytes`. The newest version is
-///   always retained. Pruning a FULL snapshot that later diffs depend on first
+/// - **100 MB cap PER FILE, thinned — not truncated.** A file's total on-disk
+///   history is reduced until under `maxFileHistoryBytes` by dropping the
+///   least-valuable version each round: the interior version whose removal
+///   leaves the smallest time gap (`thinningVictimIndex`). The FIRST and
+///   NEWEST versions are never candidates, so a dense burst of saves is thinned
+///   long before anything old, and the original draft survives. Nothing expires
+///   by AGE. Pruning a FULL snapshot that later diffs depend on first
 ///   re-materialises (promotes) the oldest surviving dependent into a new full
 ///   snapshot, so the chain is never orphaned.
 /// - **Text-only & secret-excluding.** `snapshot` refuses binary content and
@@ -77,9 +81,22 @@ public final class LocalHistoryStore: Sendable {
     /// shared `LineDiff.DiffHunk` so callers have one hunk model.
     public typealias DiffHunk = LineDiff.DiffHunk
 
-    /// Per-file byte cap (owner policy TSK-1103): a file's total history is
-    /// pruned oldest-first until its on-disk records sum under this.
-    public static let maxFileHistoryBytes = 20 * 1024 * 1024  // 20 MiB
+    /// Per-file byte cap: a file's total history is THINNED (see
+    /// `thinningVictimIndex`) until its on-disk records sum under this.
+    ///
+    /// Raised 20 MiB → 100 MiB on owner instruction (2026-07-29): *"I don't
+    /// want it to be cleared, unless say 100MB or so for that file. even then
+    /// evict old, or do some compaction."* History is the safety net the
+    /// conflict-resolution work now leans on, so it should be hard to lose.
+    ///
+    /// There is NO time-based expiry — age alone never deletes a version, only
+    /// this byte budget does, and it thins the densest stretch rather than
+    /// eating the timeline from the oldest end. Records are already compacted: each version is stored
+    /// as a line-DIFF against the nearest full snapshot when that is smaller
+    /// (see `capture`), and pruning a full snapshot that later diffs depend on
+    /// first re-materialises the oldest surviving dependent so a chain is never
+    /// orphaned.
+    public static let maxFileHistoryBytes = 100 * 1024 * 1024  // 100 MiB
 
     /// Skip snapshotting a single version larger than this — a version bigger
     /// than the whole per-file budget could never be retained anyway, and it
@@ -180,24 +197,136 @@ public final class LocalHistoryStore: Sendable {
     /// smaller) and prunes the file's history under `maxFileHistoryBytes`.
     /// Best-effort; never throws.
     @discardableResult
+    /// TSK-1608 (owner 2026-07-26: "saves are choking … beach ball when I
+    /// save") — the OFF-MAIN snapshot entry point.
+    ///
+    /// `snapshot(path:content:at:)` is genuinely expensive: it reads every
+    /// existing `.rev` record for the file, may reconstruct the newest version
+    /// to dedup, runs a line-diff, writes the record, then prunes under the
+    /// byte cap. Measured at ~220 ms per call on an 80 KB file
+    /// (`LocalHistorySnapshotCostTests`) — and it was being called
+    /// SYNCHRONOUSLY on the main actor from `EditorCoordinator.saveEditor`,
+    /// so every ⌘S blocked the UI for about a quarter second.
+    ///
+    /// Snapshotting is best-effort by contract (a failure must never fail a
+    /// save that already landed on disk), so it does not belong on the save's
+    /// critical path at all. This runs it on a private SERIAL queue: the main
+    /// thread returns immediately, and serialization keeps concurrent saves of
+    /// the same file from interleaving their read-modify-write of the history
+    /// directory.
+    ///
+    /// Ordering note: snapshots land slightly after the save. A snapshot still
+    /// in flight when the app quits is dropped — acceptable for a best-effort
+    /// recovery aid, and the on-disk file itself is already saved.
+    public func snapshotInBackground(path: String, content: String, at date: Date) {
+        Self.snapshotQueue.async { [self] in
+            _ = snapshot(path: path, content: content, at: date)
+        }
+    }
+
+    /// Serial queue for background snapshots. `utility` QoS: recovery history
+    /// is useful but never urgent, and this must not compete with the UI.
+    private static let snapshotQueue = DispatchQueue(
+        label: "com.markdownviewer.localhistory.snapshot", qos: .utility)
+
+    /// Test seam: block until every queued background snapshot has finished,
+    /// so a test can assert on the resulting history deterministically.
+    public static func drainBackgroundSnapshots(timeout: TimeInterval = 10) {
+        let sem = DispatchSemaphore(value: 0)
+        snapshotQueue.async { sem.signal() }
+        _ = sem.wait(timeout: .now() + timeout)
+    }
+
     public func snapshot(path: String, content: String, at date: Date) -> Version? {
-        guard isEnabled() else { return nil }
-        guard !content.isEmpty else { return nil }
-        guard content.utf8.count <= capBytes else { return nil }
-        guard !HistoryContentFilter.isProbablyBinary(content) else { return nil }
-        guard !HistoryContentFilter.looksLikeSecret(content) else { return nil }
+        capture(path: path, content: content, at: date).version
+    }
+
+    /// Why a capture did not store a new revision. Callers that are about to
+    /// DESTROY the content being captured (conflict resolution discarding one
+    /// side) must distinguish these: `.alreadyPresent` is as safe as `.stored`,
+    /// every other case means the content would be **gone**.
+    public enum CaptureRefusal: String, Sendable, Equatable {
+        case historyDisabled
+        case empty
+        case tooLarge
+        case looksBinary
+        case looksLikeSecret
+        case secretLikePath
+        case storageCollision
+        case writeFailed
+
+        /// User-facing reason, for a prompt that has to admit the copy can't
+        /// be kept.
+        public var explanation: String {
+            switch self {
+            case .historyDisabled: return "Local History is turned off"
+            case .empty:           return "the content is empty"
+            case .tooLarge:        return "the file is larger than the Local History size cap"
+            case .looksBinary:     return "the content looks binary"
+            case .looksLikeSecret: return "the content looks like it contains a secret"
+            case .secretLikePath:  return "this file name is excluded from Local History"
+            case .storageCollision: return "its history folder is in use by another file"
+            case .writeFailed:     return "writing the history record failed"
+            }
+        }
+    }
+
+    /// Outcome of an attempted capture.
+    public enum CaptureOutcome: Sendable, Equatable {
+        /// A new revision was written.
+        case stored(Version)
+        /// The newest existing revision already holds exactly this content, so
+        /// nothing needed writing — the content IS recoverable.
+        case alreadyPresent
+        /// Nothing was stored; this content is NOT recoverable from history.
+        case refused(CaptureRefusal)
+
+        public var version: Version? {
+            if case .stored(let v) = self { return v }
+            return nil
+        }
+
+        /// True when the content is retrievable from Local History afterwards.
+        /// The precondition for any caller that is about to discard it.
+        public var isPreserved: Bool {
+            switch self {
+            case .stored, .alreadyPresent: return true
+            case .refused:                 return false
+            }
+        }
+
+        public var refusal: CaptureRefusal? {
+            if case .refused(let r) = self { return r }
+            return nil
+        }
+    }
+
+    /// `snapshot` with a REASON when nothing was stored.
+    ///
+    /// Added for conflict resolution (2026-07-28): discarding one side of a
+    /// disk conflict is only non-destructive if the discarded bytes actually
+    /// landed in history, and this store legitimately declines several classes
+    /// of content (secrets, oversize, binary, disabled). A caller that assumed
+    /// success would silently destroy exactly the content the user was told was
+    /// being kept. Single code path — `snapshot` delegates here.
+    public func capture(path: String, content: String, at date: Date) -> CaptureOutcome {
+        guard isEnabled() else { return .refused(.historyDisabled) }
+        guard !content.isEmpty else { return .refused(.empty) }
+        guard content.utf8.count <= capBytes else { return .refused(.tooLarge) }
+        guard !HistoryContentFilter.isProbablyBinary(content) else { return .refused(.looksBinary) }
+        guard !HistoryContentFilter.looksLikeSecret(content) else { return .refused(.looksLikeSecret) }
         // Filename-based secret exclusion (TSK-1103 merge): the viewer's
         // LocalHistoryPolicy excludes by NAME (.env / *.pem / credentials…),
         // which catches secret files whose CONTENT alone wouldn't trip the
         // content filter. Unified here so EVERY save path is gated at the store.
-        guard !LocalHistoryPolicy.isSecretLike(path: path) else { return nil }
+        guard !LocalHistoryPolicy.isSecretLike(path: path) else { return .refused(.secretLikePath) }
 
         let dir = fileDirectory(for: path)
         let fm = FileManager.default
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         // TSK-1027: if this dir already belongs to a DIFFERENT path (FNV-1a-64
         // collision), don't pollute another file's history — bail.
-        guard dirBelongsTo(path, dir: dir) else { return nil }
+        guard dirBelongsTo(path, dir: dir) else { return .refused(.storageCollision) }
 
         let existing = records(in: dir)              // ascending by millis
         let contentHash = LineDiff.fnv1a(content)
@@ -205,7 +334,7 @@ public final class LocalHistoryStore: Sendable {
         // Dedup: skip if the newest existing version already holds this content.
         if let newest = existing.last, newest.header.hash == contentHash,
            reconstruct(newest, allRecords: existing) == content {
-            return nil
+            return .alreadyPresent
         }
 
         let id = freshID(for: date, in: dir)
@@ -238,7 +367,9 @@ public final class LocalHistoryStore: Sendable {
         }
 
         let url = dir.appendingPathComponent("\(id).rev")
-        guard writeRecord(header: chosenHeader, payload: chosenPayload, to: url) else { return nil }
+        guard writeRecord(header: chosenHeader, payload: chosenPayload, to: url) else {
+            return .refused(.writeFailed)
+        }
 
         // Record the original path once (best-effort; display + collision guard).
         let pathFile = dir.appendingPathComponent("_path")
@@ -247,7 +378,7 @@ public final class LocalHistoryStore: Sendable {
         }
 
         pruneUnderByteCap(in: dir)
-        return Version(id: id, savedAt: date, byteSize: contentSize)
+        return .stored(Version(id: id, savedAt: date, byteSize: contentSize))
     }
 
     /// All stored revisions of `path`, newest-first.
@@ -447,13 +578,49 @@ public final class LocalHistoryStore: Sendable {
     /// deleting a FULL snapshot that surviving diffs anchor to, the oldest
     /// surviving dependent is PROMOTED to a full snapshot (re-materialised) so no
     /// chain is orphaned.
+    /// Which version to drop when a file is over budget.
+    ///
+    /// NOT simply the oldest (owner, 2026-07-29: *"We don't want to lose the
+    /// oldest ones. We have to be smart about it."*). Dropping oldest-first
+    /// eats a file's history from the beginning, so the original draft — often
+    /// the single most valuable version — is the first casualty, while fifty
+    /// near-identical saves from this afternoon all survive.
+    ///
+    /// Instead this THINS the densest stretch: for each interior version it
+    /// measures the time gap its removal would leave (`next - previous`) and
+    /// drops the smallest one. A burst of rapid saves is thinned long before
+    /// anything from last month, and the timeline keeps an even spread as it
+    /// shrinks — the backup-rotation idea, applied per file.
+    ///
+    /// The FIRST and LAST versions are never candidates: the original state and
+    /// the newest state both survive until nothing else is left.
+    ///
+    /// Returns nil when there is no interior version to thin (fewer than 3), so
+    /// the caller can fall back. Pure → host-tested.
+    static func thinningVictimIndex(millis: [Int64]) -> Int? {
+        guard millis.count > 2 else { return nil }
+        var best: (index: Int, span: Int64)?
+        for i in 1..<(millis.count - 1) {
+            let span = millis[i + 1] - millis[i - 1]
+            // `<=` keeps the LAST minimum on ties, biasing removal toward the
+            // newer side of an evenly-spaced run — older versions are the ones
+            // we are trying hardest to keep.
+            if best == nil || span <= best!.span { best = (i, span) }
+        }
+        return best?.index
+    }
+
     private func pruneUnderByteCap(in dir: URL) {
         let fm = FileManager.default
         var recs = records(in: dir)                          // ascending
         func total() -> Int { recs.reduce(0) { $0 + $1.onDiskBytes } }
 
         while total() > capBytes, recs.count > 1 {
-            let victim = recs[0]                             // oldest
+            // Thin the densest stretch; with fewer than 3 versions there is no
+            // interior to thin, so the oldest goes and the NEWEST is kept (it
+            // is the one a recovery actually reaches for).
+            let victimIndex = Self.thinningVictimIndex(millis: recs.map(\.millis)) ?? 0
+            let victim = recs[victimIndex]
 
             if victim.header.kind == .full {
                 // Deleting this full would orphan EVERY surviving diff anchored
