@@ -132,4 +132,67 @@ final class SplitEditingModeTests: XCTestCase {
         model.setModeBarSelection(.splitEdit)
         XCTAssertNil(model.tabCoordinator.splitURL)
     }
+
+    // MARK: the REAL surface — ContentToolbar's segment row (TSK-898)
+    //
+    // The first version of this feature edited the legacy ModeBar view, which
+    // is never mounted; the partial-T6 pixel pass caught the toolbar showing
+    // Render | Editor | HEX with no Split. These pin the live control.
+
+    func test_toolbar_markdown_readsRenderSplitEditorHex() throws {
+        let model = makeModel()
+        _ = try open(model, "doc.md")
+        XCTAssertEqual(model.toolbarModeSegments,
+                       [.primary(.render), .split, .primary(.editor), .primary(.hex)],
+                       "the owner's exact spec: Render | Split | Editor | HEX")
+    }
+
+    func test_toolbar_nonMarkdown_hasNoSplitSegment() throws {
+        let model = makeModel()
+        _ = try open(model, "plain.txt", "text\n")
+        XCTAssertFalse(model.toolbarModeSegments.contains(.split),
+                       "plain text has no rendered preview to split with")
+    }
+
+    func test_toolbar_tapSplit_entersAndClaimsSelectionExclusively() throws {
+        let model = makeModel()
+        _ = try open(model, "doc.md")
+
+        model.selectToolbarSegment(.split)
+
+        XCTAssertTrue(model.isSplitEditingActive)
+        let p = model.viewModePresentation
+        XCTAssertTrue(model.isToolbarSegmentSelected(.split, presentation: p))
+        XCTAssertFalse(model.isToolbarSegmentSelected(.primary(.editor), presentation: p),
+                       "two lit segments would read as a broken control")
+    }
+
+    func test_toolbar_tapPrimary_leavesSplitAndClosesTheSameFilePane() throws {
+        let model = makeModel()
+        _ = try open(model, "doc.md")
+        model.selectToolbarSegment(.split)
+
+        model.selectToolbarSegment(.primary(.render))
+
+        XCTAssertFalse(model.isSplitEditingActive)
+        XCTAssertNil(model.tabCoordinator.splitURL)
+        let p = model.viewModePresentation
+        XCTAssertTrue(model.isToolbarSegmentSelected(.primary(.render), presentation: p))
+    }
+
+    /// The toolbar wiring pin: the segment row must iterate
+    /// `toolbarModeSegments`, not the raw primaries — that regression is
+    /// exactly "the segment exists in the model but not on screen".
+    func test_toolbar_iteratesTheSegmentRow_inSource() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let src = try String(
+            contentsOf: root.appendingPathComponent("Sources/ViewerUI/ContentToolbar.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(src.contains("model.toolbarModeSegments"),
+                      "the toolbar must build from the segment row")
+        XCTAssertTrue(src.contains("mdv.viewMode.split"),
+                      "the Split segment carries its AX id (VM tests target it)")
+    }
 }

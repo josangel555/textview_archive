@@ -1641,27 +1641,22 @@ struct ModeBar: View {
             // Unified mode picker. Every file gets Source + HEX at
             // minimum; markdown also gets Rendered; formatter-
             // supported files (JSON/XML/etc.) also get Formatted.
+            // NOTE (2026-07-30): this ModeBar view is LEGACY DEAD CODE — it is
+            // never instantiated (the live mode control is ContentToolbar's
+            // TSK-898 segmented primaries, where the Split segment lives).
+            // Left byte-identical to its pre-Split state; deleting the whole
+            // struct is a separate cleanup.
             let modes = ViewModeOptions.availableModes(for: model.currentURL)
             if modes.count > 1 {
-                // Entries = the available lenses, plus the synthesized
-                // "Split" segment (markdown edit-and-preview) after
-                // Rendered — Render | Split | Editor | HEX (owner ask
-                // 2026-07-29). Split is a LAYOUT (editor + same-file
-                // rendered split), not a ViewMode; see
-                // DocumentModel+SplitEditing.
-                let entries = DocumentModel.modeBarEntries(available: modes)
-                Picker("", selection: Binding(
-                    get: { [weak model] in model?.modeBarSelection ?? .mode(.source) },
-                    set: { [weak model] in model?.setModeBarSelection($0) }
-                )) {
-                    ForEach(entries, id: \.self) { entry in
-                        Text(label(for: entry))
+                Picker("", selection: model.viewModeBinding) {
+                    ForEach(modes, id: \.self) { mode in
+                        Text(label(for: mode))
                             // Honor model.zoom so the picker labels
                             // grow with the rest of the UI. Default
                             // font for segmented controls is ~12pt;
                             // scale from that baseline.
                             .font(.system(size: model.uiSize(12)))
-                            .tag(entry)
+                            .tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -1912,13 +1907,6 @@ struct ModeBar: View {
     /// Short label for each view mode. The picker is tight, so we
     /// keep these to a single word.
     private func label(for mode: ViewMode) -> String { Self.modeLabel(mode) }
-
-    /// Picker labels for the synthesized entries — the compact per-segment
-    /// names (`modeLabel`), plus "Split" for the layout segment.
-    private func label(for entry: ModeBarEntry) -> String {
-        if case .mode(let m) = entry { return Self.modeLabel(m) }
-        return "Split"
-    }
 
     /// Shown when source mode is active. Honors per-tab override so
     /// the chip reflects what's actually being highlighted, not the

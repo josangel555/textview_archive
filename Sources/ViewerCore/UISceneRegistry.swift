@@ -192,6 +192,24 @@ public enum UISceneRegistry {
             isDebugOnly: true,
             summary: "LSP code-action picker over an editor backdrop (TSK-640, DEBUG)"),
         SceneSpec(
+            id: "math-render",
+            fixture: .throwawaySource(name: "math-sample.md"),
+            closesExistingTabs: true,
+            summary: "Markdown with inline + display LaTeX in Rendered mode — "
+                + "MathML must paint real glyphs (2026-07-29 pulldown-latex)"),
+        SceneSpec(
+            id: "md-split",
+            fixture: .throwawaySource(name: "split-sample.md"),
+            closesExistingTabs: true,
+            summary: "Markdown in the mode bar's Split segment: editor left, "
+                + "live rendered preview right (2026-07-29)"),
+        SceneSpec(
+            id: "conflict-merge",
+            fixture: .throwawaySource(name: "conflict-sample.md"),
+            closesExistingTabs: true,
+            summary: "The 3-pane conflict-resolution sheet over a dirty tab "
+                + "whose file diverged on disk (TSK-1171, first mounted 2026-07-29)"),
+        SceneSpec(
             id: "video-unsupported",
             fixture: .throwawaySource(name: "sample.mkv"),
             closesExistingTabs: true,

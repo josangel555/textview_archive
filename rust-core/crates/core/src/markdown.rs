@@ -117,19 +117,31 @@ enum MathDisplay {
 /// The MathML itself is engine output over escaped input, not author markup,
 /// so it bypasses the sanitizer the same way other structural output does.
 fn render_mathml(tex: &str, display: MathDisplay) -> String {
-    let storage = pulldown_latex::Storage::new();
-    let parser = pulldown_latex::Parser::new(tex, &storage);
-    let config = pulldown_latex::RenderConfig {
-        display_mode: match display {
-            MathDisplay::Inline => pulldown_latex::config::DisplayMode::Inline,
-            MathDisplay::Block => pulldown_latex::config::DisplayMode::Block,
-        },
-        ..Default::default()
-    };
-    let mut out = String::new();
-    match pulldown_latex::mathml::push_mathml(&mut out, parser, config) {
-        Ok(()) => out,
-        Err(_) => format!(
+    // Behavior verified 2026-07-30: the engine is TOTAL on malformed input —
+    // an unknown command / unbalanced group renders an inline `<merror>`
+    // (visible to the author) with Ok. The catch_unwind is belt-and-braces
+    // against a future engine panic: this runs behind the FFI, where an
+    // uncaught panic is an app-killing abort (the formula-parser lesson).
+    let rendered = std::panic::catch_unwind(|| {
+        let storage = pulldown_latex::Storage::new();
+        let parser = pulldown_latex::Parser::new(tex, &storage);
+        let config = pulldown_latex::RenderConfig {
+            display_mode: match display {
+                MathDisplay::Inline => pulldown_latex::config::DisplayMode::Inline,
+                MathDisplay::Block => pulldown_latex::config::DisplayMode::Block,
+            },
+            ..Default::default()
+        };
+        let mut out = String::new();
+        pulldown_latex::mathml::push_mathml(&mut out, parser, config)
+            .ok()
+            .map(|()| out)
+    });
+    match rendered {
+        Ok(Some(out)) => out,
+        // Write failure or panic: the escaped SOURCE, visibly flagged —
+        // the document always renders.
+        _ => format!(
             "<code class=\"mdv-math-error\" title=\"invalid LaTeX\">{}</code>",
             escape(tex)
         ),
@@ -730,15 +742,22 @@ mod tests {
         assert!(out.contains("<mfrac>"), "the fraction structure survives: {out}");
     }
 
-    /// TOTAL: broken TeX must not take the document down — the rest still
-    /// renders and the failed expression shows its escaped source.
+    /// TOTAL: broken TeX must not take the document down. Two distinct
+    /// shapes (probed live 2026-07-30):
+    /// - `$\frac{$` never LEXES as math (cmark's dollar rules) → literal
+    ///   prose, unchanged;
+    /// - a lexed-but-invalid expression renders a VISIBLE `<merror>` from
+    ///   the engine — the author sees what failed, the page never dies.
     #[test]
     fn invalid_latex_degrades_to_escaped_source_never_panics() {
         let out = html("ok $\\frac{$ ok");
         assert!(out.contains("ok"), "the document still renders: {out}");
-        // Either an error node from the engine or our escaped-source
-        // fallback — but NEVER a panic, and never raw unescaped TeX.
         assert!(!out.contains("<script"), "no injection path");
+
+        let bad = html("see $\\notacommand{x}$ here");
+        assert!(bad.contains("<merror"),
+                "a lexed-but-invalid expression must show a visible error: {bad}");
+        assert!(bad.contains("here"), "the surrounding prose survives");
     }
 
     /// A dollar amount in prose must not be eaten as math ("$5 and $10"

@@ -26,6 +26,23 @@ public enum ModeBarEntry: Hashable {
     }
 }
 
+/// One segment of the toolbar's mode control (`ContentToolbar`, TSK-898):
+/// the visible primaries plus the synthesized Split segment. The FIRST
+/// version of this feature edited the legacy `ModeBar` view instead — which
+/// is never mounted — and the partial-T6 pixel pass (owner directive) is
+/// what caught the segment missing from the real toolbar.
+public enum ToolbarModeSegment: Hashable {
+    case primary(ViewModeControl.Primary)
+    case split
+
+    public var label: String {
+        switch self {
+        case .split: return "Split"
+        case .primary(let p): return p.label
+        }
+    }
+}
+
 extension DocumentModel {
 
     /// Picker entries: the plain available modes, with `Split` inserted
@@ -38,6 +55,62 @@ extension DocumentModel {
             out.insert(.splitEdit, at: i + 1)
         }
         return out
+    }
+
+    /// Whether the current file supports split-editing at all: it needs a
+    /// rendered preview AND an editor lens (markdown/mermaid; not plain
+    /// text, not HTML, not media).
+    public var splitEditingIsOffered: Bool {
+        showsRenderPrimary && showsEditorPrimary
+            && ViewModeOptions.availableModes(for: currentURL).contains(.rendered)
+    }
+
+    /// The toolbar's segment row: `visibleViewPrimaries` (the TSK-898 single
+    /// source of truth) with Split inserted after Render when offered —
+    /// Render | Split | Editor | HEX for markdown.
+    public var toolbarModeSegments: [ToolbarModeSegment] {
+        var out = visibleViewPrimaries.map(ToolbarModeSegment.primary)
+        if splitEditingIsOffered,
+           let i = out.firstIndex(of: .primary(.render)) {
+            out.insert(.split, at: i + 1)
+        }
+        return out
+    }
+
+    /// Whether `segment` should paint selected. Split-editing claims the
+    /// selection exclusively — Editor is what the MAIN pane shows, but the
+    /// user's chosen arrangement is Split, and two lit segments would read
+    /// as a broken control.
+    public func isToolbarSegmentSelected(
+        _ segment: ToolbarModeSegment, presentation: ViewModeControl.Presentation
+    ) -> Bool {
+        switch segment {
+        case .split:
+            return isSplitEditingActive
+        case .primary(let p):
+            guard !isSplitEditingActive else { return false }
+            // Byte-for-byte the toolbar's original per-case rule (TSK-898):
+            // render/editor deselect under the Format lens; hex does not.
+            switch p {
+            case .render, .editor:
+                return presentation.primary == p && !presentation.isFormatted
+            case .hex:
+                return presentation.primary == .hex
+            }
+        }
+    }
+
+    /// Toolbar tap → model change. Split enters split-editing; a primary tap
+    /// out of split-editing closes the same-file split first (the user asked
+    /// for ONE pane of that lens).
+    public func selectToolbarSegment(_ segment: ToolbarModeSegment) {
+        switch segment {
+        case .split:
+            enterSplitEditing()
+        case .primary(let p):
+            if isSplitEditingActive { closeSplit() }
+            selectViewPrimary(p, viewOnly: viewModePresentation.viewOnly)
+        }
     }
 
     /// True when the current tab is in the split-editing layout: editor lens

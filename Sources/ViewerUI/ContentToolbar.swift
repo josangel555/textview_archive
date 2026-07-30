@@ -238,20 +238,24 @@ private struct ViewModeControlView: View {
     /// the model's single source of truth.
     @ViewBuilder
     private func segmentedPrimaries(_ p: ViewModeControl.Presentation) -> some View {
-        let primaries = model.visibleViewPrimaries
+        // `toolbarModeSegments` = visibleViewPrimaries (the single source of
+        // truth, unchanged) + the synthesized Split segment after Render for
+        // markdown/mermaid — Render | Split | Editor | HEX (owner 2026-07-29).
+        let segments = model.toolbarModeSegments
         let radius = model.uiSize(5)
         HStack(spacing: 0) {
-            ForEach(Array(primaries.enumerated()), id: \.element) { idx, primary in
+            ForEach(Array(segments.enumerated()), id: \.element) { idx, seg in
                 if idx > 0 {
                     // Hairline divider between segments. Dim it next to a
                     // filled segment so the selection's edge reads cleanly.
                     Rectangle()
                         .fill(Color.primary.opacity(
-                            isSelected(primary, p)
-                            || isSelected(primaries[idx - 1], p) ? 0.0 : 0.12))
+                            model.isToolbarSegmentSelected(seg, presentation: p)
+                            || model.isToolbarSegmentSelected(segments[idx - 1], presentation: p)
+                            ? 0.0 : 0.12))
                         .frame(width: 1, height: model.uiSize(13))
                 }
-                segment(primary, selected: isSelected(primary, p))
+                segment(seg, selected: model.isToolbarSegmentSelected(seg, presentation: p))
             }
         }
         .background(
@@ -267,21 +271,17 @@ private struct ViewModeControlView: View {
     }
 
     /// One segment of the segmented group. The selected segment paints an
-    /// accent-tinted fill; the tap still routes through the unchanged
-    /// `selectViewPrimary` (model untouched — TSK-898).
+    /// accent-tinted fill; taps route through `selectToolbarSegment`, which
+    /// preserves the ViewOnly intent for primaries (the owner-resolved
+    /// default) and enters/leaves split-editing for the Split segment.
     @ViewBuilder
     private func segment(
-        _ primary: ViewModeControl.Primary, selected: Bool
+        _ seg: ToolbarModeSegment, selected: Bool
     ) -> some View {
         Button {
-            // Preserve the current ViewOnly intent when switching primary:
-            // the presentation's viewOnly reads the current mode, and
-            // `selectViewPrimary` re-resolves under it. Tapping Editor from
-            // a read-only lens lands on Source (ViewOnly on) — the
-            // owner-resolved default.
-            model.selectViewPrimary(primary, viewOnly: model.viewModePresentation.viewOnly)
+            model.selectToolbarSegment(seg)
         } label: {
-            Text(primary.label)
+            Text(seg.label)
                 .font(.system(size: model.uiSize(11),
                               weight: selected ? .semibold : .regular))
                 .padding(.horizontal, model.uiSize(9))
@@ -298,9 +298,18 @@ private struct ViewModeControlView: View {
                 )
         }
         .buttonStyle(.plain)
-        .helpInfo(title: "\(primary.label) view", description: helpText(primary))
-        .accessibilityIdentifier("mdv.viewMode.\(primary.rawValue)")
+        .helpInfo(title: "\(seg.label) view", description: helpText(seg))
+        .accessibilityIdentifier(segmentAccessibilityID(seg))
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// Stable AX ids: primaries keep their long-standing
+    /// `mdv.viewMode.<raw>` ids (VM tests target them); Split gets its own.
+    private func segmentAccessibilityID(_ seg: ToolbarModeSegment) -> String {
+        switch seg {
+        case .split: return "mdv.viewMode.split"
+        case .primary(let p): return "mdv.viewMode.\(p.rawValue)"
+        }
     }
 
     @ViewBuilder
@@ -327,15 +336,18 @@ private struct ViewModeControlView: View {
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
-    private func helpText(_ primary: ViewModeControl.Primary) -> String {
-        switch primary {
-        case .render:
+    private func helpText(_ seg: ToolbarModeSegment) -> String {
+        switch seg {
+        case .split:
+            return "Edit and preview side by side: the editor on the left, "
+                + "the live rendered page on the right, following your typing."
+        case .primary(.render):
             return "Show the rich rendering for this file "
                 + "(Markdown / image / table / diff / native preview)."
-        case .editor:
+        case .primary(.editor):
             return "Show the file as text. With View Only on it's read-only "
                 + "source; turn View Only off to edit."
-        case .hex:
+        case .primary(.hex):
             return "Show the raw bytes as a hex + ASCII grid."
         }
     }

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-30
+
+### Fixed
+- **The Split segment now actually appears in the view switcher.** It had been added to a legacy
+  control that is never shown; the real toolbar still read Render | Editor | HEX. Caught by the
+  new screenshot-verification pass (below) and moved into the live control — verified on real
+  pixels: Render | **Split** | Editor | HEX, with Split highlighted while active.
+
+### System work
+- **Partial-T6 verification rig** (owner directive: use the whole test pyramid, including pixels).
+  Three new launchable UI scenes (`math-render`, `md-split`, `conflict-merge`) + a T5 capture
+  suite (`PartialT6SceneCaptureTests`) that screenshots the real window per scene, keeps the PNGs
+  for an eyeball pass, and asserts the content pane isn't blank. First pass immediately caught:
+  the Split segment in dead code, a false-green in its own first ink-sampler (it was counting
+  sidebar pixels), and re-confirmed the known blank-WebView-under-capture VM condition (TSK-1247).
+  The 3-pane merge sheet was verified on screen for the first time — banner, three labeled panes,
+  per-conflict picker, Apply gating all correct.
+- MathML verified on live WebKit geometry (webview lane): inline math and display fractions lay
+  out with real boxes; lexed-but-invalid TeX paints a visible `merror` (probed, then pinned);
+  un-lexable pseudo-math stays literal prose. `render_mathml` hardened with catch_unwind (an FFI
+  panic is an app abort — the formula-parser lesson).
+- VM lane gotcha fixed in procedure: the VM clock runs behind the host, so rsync'd staticlibs are
+  timestamped in the VM's future and the STALE-LINK guard loops — `touch` the lib on the VM after
+  every binary sync (LESSONS).
+
 ## 2026-07-29 (later)
 
 ### Fixed

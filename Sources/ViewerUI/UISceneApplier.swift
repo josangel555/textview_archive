@@ -103,6 +103,70 @@ public enum UISceneApplier {
         // The VM harness asserts mdv.video.fallbackCard is VISIBLE (a black
         // player would fail the a11y-presence check). VideoPlayability is
         // extension-based, so the file content is irrelevant.
+        // Math render scene (2026-07-29 partial-T6): inline + display LaTeX
+        // in Rendered mode. The capture must show REAL typeset glyphs (a
+        // fraction bar, superscripts) — markup presence is proven by the
+        // host/webview tiers; this scene exists for the pixels.
+        if scene == "math-render" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("math-sample.md")
+            let md = """
+            # Math sample
+
+            Inline: the identity $e^{i\\pi} + 1 = 0$ sits in prose.
+
+            Display:
+
+            $$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$
+
+            And currency stays prose: costs $5 and $10 total.
+            """
+            try? md.write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            model.setCurrentViewMode(.rendered)
+            return "ui-scene: applied 'math-render' mode=\(model.currentViewMode.rawValue)"
+        }
+
+        // Split-editing scene (2026-07-29): the mode bar's Split segment —
+        // editor left, live rendered preview of the SAME file right.
+        if scene == "md-split" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("split-sample.md")
+            try? "# Split sample\n\nLeft: **editor**. Right: rendered preview.\n"
+                .write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            model.setModeBarSelection(.splitEdit)
+            return "ui-scene: applied 'md-split' splitActive=\(model.isSplitEditingActive)"
+        }
+
+        // Conflict-merge scene (2026-07-29): the TSK-1171 3-pane sheet, first
+        // mounted this week and never yet seen on screen. Builds a REAL
+        // conflict (dirty buffer + diverged disk) and resolves via Merge…,
+        // so the sheet on screen is the production path, not a mock.
+        if scene == "conflict-merge" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("conflict-sample.md")
+            try? "line one\nline two\nline three\n".write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            if let id = model.tabs.selected?.id {
+                _ = model.editor.editorBuffer(forTabID: id)
+                model.updateEditorText("MINE edited\nline two\nline three\n", forTabID: id)
+                try? "THEIRS external\nline two\nline three\n"
+                    .write(to: f, atomically: true, encoding: .utf8)
+                model.activeDiskConflict = DiskConflictBannerInfo(
+                    tabID: id, index: 0, url: f)
+                model.resolveDiskConflict(.merge)
+            }
+            return "ui-scene: applied 'conflict-merge' "
+                + "sheet=\(model.activeConflictResolution != nil)"
+        }
+
         if scene == "video-unsupported" {
             try? FileManager.default.createDirectory(
                 at: tabsBaseDir, withIntermediateDirectories: true)

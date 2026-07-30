@@ -1,5 +1,32 @@
 # LESSONS.md — hard-won knowledge for this codebase
 
+## 2026-07-30 — the partial-T6 pixel pass caught what every host tier missed
+
+The owner called out the "on-screen unverified as usual" habit; the very first
+eyeball pass over real WindowServer captures then caught THREE things at once:
+
+- **The Split segment shipped into DEAD CODE.** The `ModeBar` view (ContentView
+  ~1636) is never instantiated — the LIVE mode control is `ContentToolbar`'s
+  TSK-898 segmented primaries (`visibleViewPrimaries` / `selectViewPrimary`).
+  12 host tests were green against the dead surface; only the capture showed
+  the toolbar still reading Render | Editor | HEX. Before adding UI to a view,
+  grep for its INSTANTIATION — a `struct X: View` existing proves nothing.
+- **A pixel "ink" assertion is itself a false-green risk.** The first sampler
+  started at x=0, so the SIDEBAR's text supplied the ink while the content
+  pane was blank — test green, pane empty. Sample the REGION the claim is
+  about (content pane: right of the sidebar, above the terminal band).
+- **rsync + a skewed VM clock breaks `-nt` staleness guards.** The VM runs
+  ~21h behind the host; rsync preserves host mtimes, so a synced staticlib is
+  timestamped in the VM's FUTURE and build-app.sh's STALE-LINK guard loops
+  forever (every exec the VM builds is "older"). Fix after every sync of
+  binary artifacts: `ssh vm 'touch rust-core/link/*.a'` (+ rm the link
+  product once). Also: `MDV_PIXEL_DEBUG_DIR` copies are `try?` — mkdir the
+  dir FIRST or the copy silently no-ops (bit us twice now).
+- WebView CONTENT panes rendering blank in asuser-bridge captures is the
+  KNOWN TSK-1247 class — in-process webview-lane geometry tests are the
+  authority for "did WebKit lay it out"; the capture verifies chrome and
+  layout arrangement.
+
 Workspace-scoped memory. Read this when you're about to do something
 adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next

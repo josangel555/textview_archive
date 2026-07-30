@@ -297,6 +297,7 @@ run_webview_tests() {
     --filter ViewerUITests.BlockPatchApplyWebViewTests \
     --filter ViewerUITests.BlockPatchAlignmentProbeTests \
     --filter ViewerUITests.DiffWebPageTests \
+    --filter ViewerUITests.MathRenderWebViewTests \
     --filter ViewerUITests.CanvasPatchLoopWebViewTests \
     --filter ViewerUITests.CanvasTabMountWebViewTests \
     --filter ViewerUITests.CanvasSelectionWebViewTests \

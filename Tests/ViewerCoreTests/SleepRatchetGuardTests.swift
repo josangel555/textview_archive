@@ -58,7 +58,11 @@ final class SleepRatchetGuardTests: XCTestCase {
     /// activate-settle, scene-apply/paint settle before capture) — the same
     /// three sleeps every T5 visual suite in this baseline carries; no
     /// pollable signal exists for "the spawned app painted its scene".
-    private static let baseline = 82
+    /// 2026-07-30: 82 → 85 — PartialT6SceneCaptureTests (the owner-directed
+    /// pixel-verification rig) carries the same standard three T5 spawn
+    /// sleeps (terminate-quiesce, windowid poll tick, scene-apply/paint
+    /// settle) as every capture suite above.
+    private static let baseline = 85
 
     func test_noNewFixedDurationSleeps() throws {
         let fm = FileManager.default
