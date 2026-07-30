@@ -173,12 +173,37 @@ final class NewFileCreatorTests: XCTestCase {
     // first (it carries ⌘N in both the File-menu submenu build and the validate
     // path), and each type maps to a sensible Untitled.<ext>.
     func test_newFileType_allCases_orderAndBaseNames() {
-        XCTAssertEqual(NewFileType.allCases, [.text, .markdown, .csv, .json],
+        // .canvas appended 2026-07-29 (owner: canvas_new was MCP-only — the
+        // user had no way to create one). The load-bearing part of the order
+        // is `.text` FIRST (the ⌘N item); additions go at the end.
+        XCTAssertEqual(NewFileType.allCases, [.text, .markdown, .csv, .json, .canvas],
                        "order is load-bearing: .text first = the ⌘N item")
         XCTAssertEqual(NewFileType.text.baseName, "Untitled.txt")
         XCTAssertEqual(NewFileType.markdown.baseName, "Untitled.md")
         XCTAssertEqual(NewFileType.csv.baseName, "Untitled.csv")
         XCTAssertEqual(NewFileType.json.baseName, "Untitled.json")
+        XCTAssertEqual(NewFileType.canvas.baseName, "Untitled.canvas")
+    }
+
+    /// The canvas type's creation contract: seed content that the canvas
+    /// store actually accepts, and a functionally-required extension.
+    @MainActor
+    func test_canvasType_seedsAValidCanvasDocument() throws {
+        XCTAssertTrue(NewFileType.canvas.requiresExtension)
+        XCTAssertFalse(NewFileType.text.requiresExtension,
+                       "text types stay permissive (Makefile must stay Makefile)")
+        let seed = NewFileType.canvas.seedContents
+        XCTAssertFalse(seed.isEmpty, "an empty .canvas file fails the store's parse")
+
+        // Round-trip through the REAL store: create the file, open it.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CanvasSeed-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = try NewFileCreator.create(
+            in: dir, baseName: "Untitled.canvas", contents: seed)
+        XCTAssertNoThrow(try CanvasDocumentStore().open(url: url),
+                         "the seeded document must open as a real canvas")
     }
 
     // Titles are the visible menu labels — distinct + non-empty so no two items

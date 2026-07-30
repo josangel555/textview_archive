@@ -26,6 +26,15 @@
   full scan (same behaviour as before); bigger ones run the same full scan in the background and
   show "Searching…" until the count lands — nothing was removed, it just stopped blocking.
 
+### Added
+- **Markdown gets a real Split mode.** The view picker now reads **Rendered | Split | Editor |
+  HEX** for markdown: Split puts the editor and a live rendered preview side by side, and the
+  preview follows your unsaved typing (background-rendered, so no keystroke lag). Picking any
+  other view closes the split; a split showing a *different* file is left alone.
+- **You can create a Canvas yourself now.** File ▸ New ▸ Canvas (also in the sidebar's New File
+  menu and the landing page) — asks for a name and opens a ready-to-use empty canvas. Previously
+  only agents could create one, through the MCP tool.
+
 ### Fixed (hex & CSV edits — same silent-loss family)
 - **Hex edits can no longer be silently destroyed.** If the file changed on disk since you loaded
   it, saving hex edits now asks before overwriting (it wrote blind); and if it changes *while* you

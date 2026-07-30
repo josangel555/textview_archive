@@ -738,9 +738,11 @@ public final class DocumentModel: ObservableObject {
     /// The single entry point for File→New and the folder right-click →
     /// New File.
     @discardableResult
-    public func createNewFile(in directory: URL, baseName: String = "Untitled.txt") -> URL? {
+    public func createNewFile(in directory: URL, baseName: String = "Untitled.txt",
+                              contents: String = "") -> URL? {
         do {
-            let url = try NewFileCreator.create(in: directory, baseName: baseName)
+            let url = try NewFileCreator.create(
+                in: directory, baseName: baseName, contents: contents)
             // Show it immediately (don't wait for the FSEvents coalesce) — but
             // ONLY when the dir is in the sidebar tree. The landing fallback
             // creates in the temp-scratch dir (no folder open); enumerating that
@@ -764,7 +766,8 @@ public final class DocumentModel: ObservableObject {
     /// the editor's language detection on open.
     @discardableResult
     public func createNewFile(in directory: URL, type: NewFileType) -> URL? {
-        createNewFile(in: directory, baseName: type.baseName)
+        createNewFile(in: directory, baseName: type.baseName,
+                      contents: type.seedContents)
     }
 
     /// TSK-1605 (owner 2026-07-25) — THE entry point every New-File UI action
@@ -775,8 +778,16 @@ public final class DocumentModel: ObservableObject {
     /// it's a single legal in-directory component.
     @discardableResult
     public func promptForNewFile(in directory: URL, type: NewFileType = .text) -> URL? {
-        guard let name = NewFilePrompt.run(in: directory, type: type) else { return nil }
-        return createNewFile(in: directory, baseName: name)
+        guard var name = NewFilePrompt.run(in: directory, type: type) else { return nil }
+        // A functionally-required extension (canvas) is appended when the user
+        // typed a bare stem — the open path would otherwise reject the file.
+        // Text types stay permissive (a deliberate `Makefile` stays `Makefile`).
+        if type.requiresExtension,
+           let ext = type.baseName.split(separator: ".").last,
+           !name.lowercased().hasSuffix(".\(ext)") {
+            name += ".\(ext)"
+        }
+        return createNewFile(in: directory, baseName: name, contents: type.seedContents)
     }
 
     /// TSK-1605 — landing-page / no-folder variant: same prompt, with the

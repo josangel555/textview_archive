@@ -118,6 +118,11 @@ public enum NewFileType: String, CaseIterable, Sendable {
     case markdown
     case csv
     case json
+    /// A `.canvas` document (owner ask 2026-07-29: `canvas_new` existed only
+    /// as an MCP tool — agents could create canvases, the user could not).
+    /// Needs SEED CONTENT (an empty file is not a valid canvas doc) and its
+    /// extension is functionally required, both handled by the creation path.
+    case canvas
 
     /// Menu label.
     public var title: String {
@@ -126,6 +131,7 @@ public enum NewFileType: String, CaseIterable, Sendable {
         case .markdown: return "Markdown File"
         case .csv: return "CSV File"
         case .json: return "JSON File"
+        case .canvas: return "Canvas"
         }
     }
 
@@ -137,8 +143,30 @@ public enum NewFileType: String, CaseIterable, Sendable {
         case .markdown: return "Untitled.md"
         case .csv: return "Untitled.csv"
         case .json: return "Untitled.json"
+        case .canvas: return "Untitled.canvas"
         }
     }
+
+    /// Initial file contents. Empty for the text types; the canvas type
+    /// writes the engine's canonical empty document (an empty `.canvas`
+    /// file would fail the store's JSON parse on open). `@MainActor` because
+    /// the canvas engine adapter is — every caller (the New-File UI paths)
+    /// already is.
+    @MainActor public var seedContents: String {
+        switch self {
+        case .text, .markdown, .csv, .json:
+            return ""
+        case .canvas:
+            return (try? CanvasDocAdapter().save())
+                ?? #"{"v":1,"nodes":[]}"#   // engine-init failure fallback
+        }
+    }
+
+    /// True when the type's extension is functionally REQUIRED (the open
+    /// path rejects the file without it) — the prompt path appends it if
+    /// the user typed a bare stem. Text types stay permissive: a user
+    /// deliberately naming a file `Makefile` must not get `Makefile.txt`.
+    public var requiresExtension: Bool { self == .canvas }
 
     /// Base name for a paste-scratch tab (TSK-935) — same extension, clearer stem.
     public var pastedBaseName: String {
