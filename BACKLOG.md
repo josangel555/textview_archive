@@ -104,31 +104,32 @@ Remaining findings stay "plausible, unconfirmed". Full reports in `docs/research
 (3 verifiers × ~30 dims at once) is what burns the limit — thin the verify panel / cap concurrency before resuming.
 Once `MASTER_REPORT.md` lands, file its findings as a board wave + spin fix worktrees.
 
-## ⚠ OPEN FROM THE 2026-07-24..27 UI/PERF SESSION (owner-facing follow-ups)
+## ⚠ OPEN FOLLOW-UPS (updated at the 2026-07-30 handoff — everything below is COMMITTED)
 
-All items below shipped to `/Applications` and are host-gate green, but are **ON-SCREEN
-UNVERIFIED** (WebView/SwiftUI pixels) and **UNCOMMITTED** — see HANDOFF.md.
+All prior "uncommitted / on-screen unverified" caveats are RESOLVED: the sessions' work is in 14
+commits (081f1fc5..7b2fe687), and the partial-T6 rig (`PartialT6SceneCaptureTests` + scenes)
+verified Split / merge-sheet / math on real pixels. Remaining:
 
-- **Commit the session's work.** ~100 dirty paths on `main`, all gate-green, awaiting the owner's
-  go-ahead. Intended shape: one commit per ticket (TSK-1588..1609 + tab reorder), rebase +
-  fast-forward. **S**
-- **Tab tear-off drag (deliberate re-add, do NOT do it with a bare `.onDrag`).** Drag-to-reorder
-  replaced the tab strip's pasteboard drag, which also cost two capabilities: dragging a tab OUT
-  to Finder/Mail (TSK-284 — the sidebar still does this) and dragging a tab ONTO a session pill
-  to move it (TSK-274 — now the context menu's "Move to Session ▸"). A real tear-off means an
-  `NSDraggingSource` that reorders while the pointer stays in the strip and only promotes to a
-  file drag once it leaves — Safari/Chrome behaviour. A bare `.onDrag` on a tab reinstates the
-  original bug (the window's `.onDrop(of: [.fileURL])` catches it and opens the file) and is
-  blocked by a regression pin in `FileDragProviderTests`. **M**
-- **`SessionTabBar` has no re-body guard.** `ChromeBodyEvalCountTests` hosts `ContentView`, so it
-  covers `TabBar` but not the session strip — which is the more expensive one to re-body
-  (`SessionGitInfo.badge` hits the filesystem per pill). Needs a host that mounts
-  `SessionsAppCoordinator`. See the 2026-07-27 LESSONS entry. **M**
-- **VM rung for drag-to-reorder.** The geometry is host-tested end to end (gap → `TabsState.move`)
-  and the wiring is pinned, and the strip was eyeballed on real VM pixels (2 tabs: separator after
-  every tab incl. the last; 14 tabs: shrink-not-overflow — both correct). But the actual pointer
-  DRAG, the lifted-tab visual and the insertion caret are still **ON-SCREEN UNVERIFIED** — no test
-  synthesizes a real drag. **M**
+- **Owner-directed, next in queue:** tab-drag-onto-session-pill with drop-target highlight then
+  switch+select (successor of the tear-off item below); save/retrieve-session design question
+  (sessions already persist + 30-day trash — is the ask NAMED snapshots?); markdown gap-closures
+  now trivially unlockable via the proven option+writer-arms pattern (footnotes, definition
+  lists, sub/superscript, GFM alerts, wikilinks, heading attrs — the writer currently DISCARDS
+  footnote events, the same near-miss class math had). **M each**
+- **AX tests for new UI work (owner policy shift, 2026-07-29).** Previously "AX tier
+  off-limits"; the owner now WANTS AX tests for new UI. Needs the AX harness groundwork
+  (TSK-1197-1199 family) before per-feature AX tests can land. **L bootstrap, then S/feature**
+- **Delete the dead `ModeBar` struct** (ContentView ~1641) — never instantiated; the Split miss
+  happened because it LOOKS live. Labeled LEGACY in-source; remove outright. **S**
+- **Math typography eyeball on the OWNER's machine.** WebKit MathML geometry is proven (VM
+  webview lane green); the capture lane cannot show WebView content (TSK-1247), so the visual-
+  quality check is one open of a math file on the host. If rough → KaTeX-CSS fallback talk. **XS**
+- **Tab tear-off drag (deliberate re-add, do NOT do it with a bare `.onDrag`).** A real tear-off
+  = `NSDraggingSource` that reorders in-strip and promotes to a file drag on leaving — a bare
+  `.onDrag` reinstates the window-opens-the-file bug and is blocked by a regression pin in
+  `FileDragProviderTests`. **M**
+- **Pointer-drag interaction rung for tab reorder** (caret + lifted-tab visuals need a REAL
+  drag) — exactly the AX-lane item above. **M, blocked on AX bootstrap**
 
 - **Local History: smarter retention beyond gap-thinning (owner ask 2026-07-29).** Today: 100 MB/
   file budget, no age expiry, over-budget drops the interior version leaving the smallest time gap
@@ -151,9 +152,11 @@ UNVERIFIED** (WebView/SwiftUI pixels) and **UNCOMMITTED** — see HANDOFF.md.
   `onViewSaveConflictDiff` has no handler) — it should open the web diff; and its Overwrite/Reload
   branches REPORT a failed capture via toast rather than pre-confirming like the banner does.
   Unify on the pre-confirm if you want one rule everywhere. **S–M**
-- **Merge sheet is ON-SCREEN UNVERIFIED.** `ConflictResolutionView` had never been mounted; the
-  model contract is host-tested (10 tests) but the sheet's rendering/interaction has never been
-  seen. Needs a VM rung. **M**
+- **[VERIFIED 2026-07-30] Merge sheet** — seen on real pixels via the `conflict-merge` scene:
+  banner + three labeled panes + per-conflict picker + Apply gating all correct. Remaining in
+  this family: hex dirty bytes still have NO hot-exit (lost on quit/crash — the clobber paths
+  are closed, loss-on-crash is not), and the interactive sheet flows (pick → Apply) are
+  AX-lane. **M**
 
 ### VM lane findings — full `all` run 2026-07-27 (first since the 07-24..27 session)
 

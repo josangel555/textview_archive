@@ -152,32 +152,32 @@ was diagnosed with the wrong tool. Codified so we catch this class early:
     SourceViewVisualRegressionTests).
 
 > **OWNER DIRECTIVE (2026-06-29): THE VM IS UP — the ENTIRE UI / render lane is
-> agent-workable, build AND validate. The ONLY off-limits tier is AX-driven tests.**
-> There is NO "host-testable vs render" split in WHAT the agent may work: render-path,
-> WebView, SwiftUI/AppKit, live-app, and pixel behavior are ALL first-class drain
-> targets the agent BUILDS *and* VALIDATES on the VM (`scripts/test-in-vm.sh` — webview
-> / T4 `LiveAppTestCase` / T5 `PixelTestCase`). "Render is the owner's lane", "leave it
-> at review", "host-only is my lane", "the host-testable-seam vein is drained" are ALL
-> WRONG framings the agent must NEVER adopt — they are the exact failure this directive
-> exists to kill. The render-confirm directive (above) is SATISFIED BY VM-validating
-> (build the VM test + run it), NOT by handing render off to the owner. A render/UI item
-> is owner/blocked ONLY when: (a) it's an AX-driven test (the sole off-limits tier),
-> (b) a SPECIFIC VM lane is genuinely broken — then file the blocker + take the next, or
-> (c) it needs a true product decision — then `task_park` it. In every other case:
-> build it, VM-validate it, drive it to `validated`. Do NOT manufacture a "host-only"
-> backlog and declare render someone else's job.
+> agent-workable, build AND validate.** (The old "AX tier off-limits" carve-out is
+> **DEAD — AMENDED 2026-07-29: the owner now WANTS AX tests for new UI work**; AX
+> harness bootstrap pending, see BACKLOG.) There is NO "host-testable vs render"
+> split in WHAT the agent may work: render-path, WebView, SwiftUI/AppKit, live-app,
+> and pixel behavior are ALL first-class drain targets the agent BUILDS *and*
+> VALIDATES on the VM (`scripts/test-in-vm.sh` — webview / T4 `LiveAppTestCase` /
+> T5 `PixelTestCase`). "Render is the owner's lane" and every similar framing is
+> WRONG — the exact failure this directive exists to kill. The render-confirm
+> directive is SATISFIED BY VM-validating (build the VM test + run it), NOT by
+> handing render off. A render/UI item is owner/blocked ONLY when: (a) a SPECIFIC
+> VM lane is genuinely broken — file the blocker + take the next, or (b) it needs a
+> true product decision — `task_park` it. Otherwise: build, VM-validate, drive to
+> `validated`. Do NOT manufacture a "host-only" backlog.
+> **After rsyncing binary artifacts (the rust staticlib) to the VM:**
+> `ssh macOS15 'cd markdown_viewer && touch rust-core/link/*.a'` — the VM clock
+> runs behind the host, so host mtimes are in the VM's FUTURE and build-app.sh's
+> STALE-LINK `-nt` guard loops forever otherwise (LESSONS 2026-07-30).
 >
-> **OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — run UI / live-tier
-> tests on the UTM VM only** (this is the COMPANION to the directive above — the host
-> stays window-free; the VM is where UI/render work is built AND validated). Never run
-> T4 `LiveAppTestCase`, T5 `PixelTestCase`,
-> the in-process WebView suites, or the `build-app.sh` pre-install smoke on the
-> host (they open a window / spawn the app). The pre-install smoke is now opt-in
-> (`MDV_RUN_SMOKE_GATE=1`); the headless gate (`test-headless-gate.sh`) is
-> window-free and stays the host merge gate. UI validation → `ssh macOS15` +
-> `bash scripts/test-in-vm.sh` / `bash scripts/vm-smoke.sh`. (The VM's *default*
-> `swift` is 6.1.2, which CANNOT compile the test target — `scripts/test-in-vm.sh`
-> auto-selects the installed Swift 6.3 toolchain via `TOOLCHAINS`; TSK-439 fixed.)
+> **OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — UTM VM only** (companion
+> to the above: the host stays window-free). Never run T4 `LiveAppTestCase`, T5
+> `PixelTestCase`, the in-process WebView suites, or the `build-app.sh` pre-install
+> smoke on the host (they open a window / spawn the app). The smoke is opt-in
+> (`MDV_RUN_SMOKE_GATE=1`); `test-headless-gate.sh` stays the host merge gate. UI
+> validation → `ssh macOS15` + `bash scripts/test-in-vm.sh` / `vm-smoke.sh`. (The
+> VM's default `swift` 6.1.2 CANNOT compile the test target — `test-in-vm.sh`
+> auto-selects the Swift 6.3 toolchain via `TOOLCHAINS`; TSK-439.)
 
 Tier is the **type** (`Tests/ViewerUITests/Harness/TierBaseCases.swift`):
 `HeadlessUITestCase` (T1/T1m/T2', the default) is host-safe; `LiveAppTestCase`
