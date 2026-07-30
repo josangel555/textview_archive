@@ -197,3 +197,21 @@ li:has(> p > input[type="checkbox"][checked]) > p {
   h1, h2, h3 { break-after: avoid; }
   .mdv-find, .mdv-find-current { background: none !important; }
 }
+
+/* Math (pulldown-latex → MathML, 2026-07-29). WebKit renders MathML Core
+   natively; these just give display math breathing room and keep an
+   over-wide equation scrollable instead of blowing out the page width. */
+math[display="block"] {
+  display: block;
+  margin: 0.8em 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* Invalid-LaTeX fallback: the escaped source, visibly flagged. */
+.mdv-math-error {
+  color: #c0392b;
+  background: rgba(192, 57, 43, 0.08);
+  border-radius: 3px;
+  padding: 0 3px;
+}

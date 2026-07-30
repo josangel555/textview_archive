@@ -15,6 +15,13 @@ serde = { workspace = true }
 # find_engine (TSK-630): linear-time regex for the FindEngine port.
 regex-lite = { workspace = true }
 pulldown-cmark = { workspace = true }
+# Owner-approved 2026-07-29 ("use pulldown-latex" — math renders to MathML in
+# the BACKEND, matching the render-HTML-in-rust architecture; no KaTeX JS in
+# the WebContent process, and math survives the script-free export path).
+# Hygiene: 0 features exist, so default-features=false is the whole surface;
+# the only transitive normal dep is bumpalo (arena allocator, vetted leaf).
+# The optional `regex` dep is feature-gated off. MIT.
+pulldown-latex = { workspace = true }
 # The wire module owns BOTH the serde-derived cross-language types AND the
 # MessagePack codec + length-prefix framing (the "proto" role folded into core
 # for the PoC). rmp-serde is therefore a real dependency, not dev-only.

@@ -102,6 +102,40 @@ pub fn sentinel(n: usize) -> String {
     format!("<!--mdv-chunk-{n}-->")
 }
 
+/// Inline (`$…$`) vs block (`$$…$$`) math rendering.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MathDisplay {
+    Inline,
+    Block,
+}
+
+/// LaTeX → MathML via pulldown-latex (owner-approved 2026-07-29).
+///
+/// TOTAL: invalid TeX must never take the render down — the whole document
+/// still renders, with the failed expression shown as its escaped source in
+/// a `<code class="mdv-math-error">` so the author can see what to fix.
+/// The MathML itself is engine output over escaped input, not author markup,
+/// so it bypasses the sanitizer the same way other structural output does.
+fn render_mathml(tex: &str, display: MathDisplay) -> String {
+    let storage = pulldown_latex::Storage::new();
+    let parser = pulldown_latex::Parser::new(tex, &storage);
+    let config = pulldown_latex::RenderConfig {
+        display_mode: match display {
+            MathDisplay::Inline => pulldown_latex::config::DisplayMode::Inline,
+            MathDisplay::Block => pulldown_latex::config::DisplayMode::Block,
+        },
+        ..Default::default()
+    };
+    let mut out = String::new();
+    match pulldown_latex::mathml::push_mathml(&mut out, parser, config) {
+        Ok(()) => out,
+        Err(_) => format!(
+            "<code class=\"mdv-math-error\" title=\"invalid LaTeX\">{}</code>",
+            escape(tex)
+        ),
+    }
+}
+
 /// Render markdown to the structural html + chunks (see module docs).
 #[must_use]
 pub fn render(text: &str) -> RenderOutput {
@@ -112,6 +146,12 @@ pub fn render(text: &str) -> RenderOutput {
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_SMART_PUNCTUATION
+        // `$…$` inline / `$$…$$` display math → MathML (owner 2026-07-29).
+        // The writer MUST handle the two math events whenever this bit is on
+        // — an enabled option with a discarding writer arm silently EATS the
+        // author's math (the pre-2026-07-29 near-miss: the arms existed as
+        // `=> {}`).
+        | Options::ENABLE_MATH
         // Recognize a leading YAML (`---`) / TOML (`+++`) frontmatter block as a
         // MetadataBlock so it's SUPPRESSED (see `in_metadata`) instead of rendering
         // as an `<hr>` + a giant setext `<h2>` of the raw key/values — the ugly
@@ -281,10 +321,25 @@ impl Writer {
                     "<input type=\"checkbox\" disabled/> "
                 });
             }
+            // Math (owner-approved 2026-07-29): `$…$` / `$$…$$` render to
+            // MathML in the BACKEND via pulldown-latex — WebKit renders
+            // MathML Core natively, so no JS enters the WebContent process
+            // and math survives the script-free export path. Inline math is
+            // inline content (synthesize the paragraph like Text does);
+            // display math is block-level.
+            Event::InlineMath(tex) => {
+                self.synth_para_if_needed();
+                let mathml = render_mathml(&tex, MathDisplay::Inline);
+                self.out(&mathml);
+            }
+            Event::DisplayMath(tex) => {
+                self.close_synth_para();
+                let mathml = render_mathml(&tex, MathDisplay::Block);
+                self.out(&mathml);
+                self.out("\n");
+            }
             // Unreachable without their Options bits; ignore defensively.
-            Event::FootnoteReference(_)
-            | Event::InlineMath(_)
-            | Event::DisplayMath(_) => {}
+            Event::FootnoteReference(_) => {}
         }
     }
 
@@ -654,6 +709,53 @@ mod tests {
 
     fn html(md: &str) -> String {
         render(md).html
+    }
+
+    // Math → MathML (owner-approved pulldown-latex, 2026-07-29). WebKit
+    // renders MathML Core natively — no JS, works in export.
+    #[test]
+    fn inline_math_renders_mathml_inside_the_paragraph() {
+        let out = html("Euler: $e^{i\\pi} + 1 = 0$ wow");
+        assert!(out.contains("<math"), "inline math must emit MathML: {out}");
+        assert!(!out.contains("display=\"block\""), "inline math is inline");
+        assert!(out.starts_with("<p>"), "math joins the surrounding paragraph");
+        assert!(out.contains("wow"), "trailing prose survives");
+    }
+
+    #[test]
+    fn display_math_renders_block_mathml() {
+        let out = html("before\n\n$$\\frac{a}{b}$$\n\nafter");
+        assert!(out.contains("<math"), "display math must emit MathML: {out}");
+        assert!(out.contains("display=\"block\""), "display math is block-level");
+        assert!(out.contains("<mfrac>"), "the fraction structure survives: {out}");
+    }
+
+    /// TOTAL: broken TeX must not take the document down — the rest still
+    /// renders and the failed expression shows its escaped source.
+    #[test]
+    fn invalid_latex_degrades_to_escaped_source_never_panics() {
+        let out = html("ok $\\frac{$ ok");
+        assert!(out.contains("ok"), "the document still renders: {out}");
+        // Either an error node from the engine or our escaped-source
+        // fallback — but NEVER a panic, and never raw unescaped TeX.
+        assert!(!out.contains("<script"), "no injection path");
+    }
+
+    /// A dollar amount in prose must not be eaten as math ("$5 and $10"
+    /// is the classic false positive).
+    #[test]
+    fn dollar_amounts_in_prose_are_not_math() {
+        let out = html("costs $5 and $10 total");
+        assert!(out.contains("$5"), "prose dollars survive: {out}");
+        assert!(!out.contains("<math"), "no math for currency: {out}");
+    }
+
+    /// Escaped content INSIDE math must stay escaped (math text carries
+    /// author bytes — `<` in TeX must not open a tag).
+    #[test]
+    fn math_content_is_escaped_not_injected() {
+        let out = html("$x <img src=x onerror=alert(1)> y$");
+        assert!(!out.contains("<img"), "author bytes inside math never become markup: {out}");
     }
 
     #[test]

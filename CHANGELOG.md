@@ -27,6 +27,11 @@
   show "Searching…" until the count lands — nothing was removed, it just stopped blocking.
 
 ### Added
+- **LaTeX math in markdown.** `$x^2$` inline and `$$\frac{a}{b}$$` display equations now render —
+  natively, with no JavaScript: the Rust engine converts LaTeX to MathML at render time, so math
+  also works in exported/Open-in-Browser pages where scripts are deliberately off. Dollar amounts
+  in prose ("costs $5 and $10") are not mistaken for math, and a broken equation shows its source
+  highlighted instead of breaking the page.
 - **Markdown gets a real Split mode.** The view picker now reads **Rendered | Split | Editor |
   HEX** for markdown: Split puts the editor and a live rendered preview side by side, and the
   preview follows your unsaved typing (background-rendered, so no keystroke lag). Picking any

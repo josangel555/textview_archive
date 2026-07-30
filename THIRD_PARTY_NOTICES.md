@@ -684,11 +684,13 @@ reproduced once per license below the crate list.
 <!-- RUST-CRATES-BEGIN -->
 - `aho-corasick v1.1.4` — Unlicense OR MIT
 - `bitflags v2.11.1` — MIT OR Apache-2.0
+- `bumpalo v3.20.3` — MIT OR Apache-2.0
 - `byteorder v1.5.0` — Unlicense OR MIT
 - `memchr v2.8.1` — Unlicense OR MIT
 - `num-traits v0.2.19` — MIT OR Apache-2.0
 - `proc-macro2 v1.0.106` — MIT OR Apache-2.0
 - `pulldown-cmark v0.13.4` — MIT
+- `pulldown-latex v0.8.0` — MIT
 - `quote v1.0.45` — MIT OR Apache-2.0
 - `regex v1.12.3` — MIT OR Apache-2.0
 - `regex-automata v0.4.14` — MIT OR Apache-2.0

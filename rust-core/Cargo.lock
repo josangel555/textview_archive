@@ -427,6 +427,7 @@ dependencies = [
  "memchr",
  "proptest",
  "pulldown-cmark",
+ "pulldown-latex",
  "regex-lite",
  "rmp-serde",
  "serde",
@@ -631,6 +632,15 @@ dependencies = [
  "bitflags",
  "memchr",
  "unicase",
+]
+
+[[package]]
+name = "pulldown-latex"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cf850381ae0dbb131f36e31d6090f55363d079ab3e518ad0323b9cb6a96d115"
+dependencies = [
+ "bumpalo",
 ]
 
 [[package]]

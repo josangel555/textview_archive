@@ -54,6 +54,10 @@ regex-lite = { version = "=0.1.8", default-features = false, features = ["std", 
 # radius (verified in Cargo.lock): bitflags + memchr + unicase, all three
 # already-vetted ecosystem leaf crates.
 pulldown-cmark = { version = "=0.13.4", default-features = false }
+# Owner-approved 2026-07-29 (TSK math): LaTeX → MathML for the markdown
+# renderer's ENABLE_MATH events. Pinned exact; no features exist (the
+# optional regex dep stays feature-gated off); transitive = bumpalo only.
+pulldown-latex = { version = "=0.8.0", default-features = false }
 # Owner-approved 2026-06-27 (TSK-399): SIMD substring (memmem) for the hex_search
 # find-all hot path. ZERO new transitive surface — memchr 2.8.1 is ALREADY in the
 # tree (pulled by pulldown-cmark + regex-lite, verified in Cargo.lock); this only

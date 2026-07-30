@@ -5,6 +5,27 @@ final class HTMLRendererTests: XCTestCase {
 
     private let renderer = HTMLRenderer()
 
+    // MARK: Math (pulldown-latex → MathML, owner-approved 2026-07-29)
+
+    /// End-to-end through the Swift renderer facade: `$…$` must arrive as
+    /// MathML in the page (WebKit renders MathML Core natively — no JS, and
+    /// math survives the script-free export path).
+    func test_inlineMath_rendersMathML() {
+        let out = renderer.render("Euler: $e^{i\\pi} + 1 = 0$")
+        XCTAssertTrue(out.contains("<math"), "inline math must reach the page: \(out)")
+    }
+
+    func test_displayMath_rendersBlockMathML() {
+        let out = renderer.render("$$\\frac{a}{b}$$")
+        XCTAssertTrue(out.contains("display=\"block\""), "display math is block: \(out)")
+        XCTAssertTrue(out.contains("<mfrac>"), "structure survives: \(out)")
+    }
+
+    func test_currencyDollars_areNotMath() {
+        let out = renderer.render("costs $5 and $10 total")
+        XCTAssertFalse(out.contains("<math"), "prose dollars must not become math: \(out)")
+    }
+
     // MARK: Block elements
 
     func test_heading_levels_haveSlugIDs() {
