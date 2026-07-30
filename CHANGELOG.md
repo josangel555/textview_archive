@@ -26,6 +26,17 @@
   full scan (same behaviour as before); bigger ones run the same full scan in the background and
   show "Searching…" until the count lands — nothing was removed, it just stopped blocking.
 
+### Fixed (hex & CSV edits — same silent-loss family)
+- **Hex edits can no longer be silently destroyed.** If the file changed on disk since you loaded
+  it, saving hex edits now asks before overwriting (it wrote blind); and if it changes *while* you
+  have unsaved hex edits, you get the conflict banner instead of the view silently reloading —
+  previously the next save then wrote your stale bytes over the external change. Binary content
+  can't be kept in Local History, so every destructive choice is an explicit confirmation.
+- **Unsaved CSV cell edits are no longer invisible to the app.** The grid's edits were view-only
+  state, so an outside change to the file silently wiped them and closing never warned. Cell edits
+  now count as real unsaved changes: dirty dot, close prompt, conflict banner, three-way merge and
+  session survival all apply. Saving still only happens via the grid's Save button.
+
 ### Changed
 - **Mermaid upgraded 11.4.1 → 11.16.0.** The old vendored copy carried six published security
   advisories (two sanitizer bypasses, one denial-of-service) for ~11 months.

@@ -8,6 +8,26 @@ import ViewerCore
 // stored props (hexDirtyBytes / hexEditArmedTabs / hexSavedNotifier) stay on
 // DocumentModel (extensions can't add storage). Behavior-preserving move out of
 // DocumentModel.swift.
+/// Disk fingerprint for the hex no-clobber baseline. mtime+size — the same
+/// signal `EditorBuffer` uses; content hashing a multi-GB binary per save
+/// would be absurd, and this catches every editor/tool write in practice.
+struct HexDiskStamp: Equatable {
+    let mtime: Date?
+    let size: Int?
+
+    static func current(for url: URL) -> HexDiskStamp {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return HexDiskStamp(mtime: attrs?[.modificationDate] as? Date,
+                            size: attrs?[.size] as? Int)
+    }
+}
+
+/// The user's answer to "the file changed on disk since you loaded it".
+enum HexOverwriteChoice: String {
+    case overwrite
+    case cancel
+}
+
 extension DocumentModel {
 
     /// Test-only read seam for the per-tab HEX dirty stash. Lets the
@@ -68,6 +88,18 @@ extension DocumentModel {
     public func saveHexEdits(_ data: Data, forTabID id: UUID) -> Bool {
         guard let idx = tabs.tabs.firstIndex(where: { $0.id == id }),
               let url = tabs.tabs[idx].url else { return false }
+        // Write-time no-clobber guard (audit THEME 1, fixed 2026-07-29). The
+        // TEXT save path has always re-stat'ed the file and prompted before
+        // overwriting an external change; the hex path wrote blind — an
+        // external write between load and ⌘S was silently destroyed by the
+        // (possibly stale) stash. Binary content can't be preserved in Local
+        // History (it refuses non-text), so the protection is the explicit
+        // prompt: overwrite is a choice, never a default. Cancel is default.
+        if let base = hexDiskBaseline[id], HexDiskStamp.current(for: url) != base {
+            let choice = hexOverwritePromptOverride?(url)
+                ?? runHexOverwriteAlert(url: url)
+            guard choice == .overwrite else { return false }
+        }
         let wasWatchingURL = watchedURL
         pauseFileWatcher()
         defer { if wasWatchingURL == currentURL { startWatchingCurrentFile() } }
@@ -96,6 +128,9 @@ extension DocumentModel {
         t.isDirty = false
         tabCoordinator.replace(at: idx, with: t)
         hexDirtyBytes.removeValue(forKey: id)
+        // Re-baseline against the bytes we just wrote, so the next save's
+        // guard compares against THIS write, not the original load.
+        hexDiskBaseline[id] = HexDiskStamp.current(for: url)
         // Tell the live controller (if mounted) to mark its buffer saved.
         hexSavedNotifier?(id)
         if let url = tabs.tabs.first(where: { $0.id == id })?.url {
@@ -123,6 +158,25 @@ extension DocumentModel {
     public func isHexDirtyTab(at index: Int) -> Bool {
         guard tabs.tabs.indices.contains(index) else { return false }
         return hexDirtyBytes[tabs.tabs[index].id] != nil
+    }
+
+    /// The write-time conflict modal. Cancel is the default button — the
+    /// safe answer when overwriting someone else's change. "Save a Copy…"
+    /// is reachable via File ▸ Save a Copy, named in the copy so the safe
+    /// exit is discoverable. Never runs under the headless gate (tests
+    /// install `hexOverwritePromptOverride`).
+    private func runHexOverwriteAlert(url: URL) -> HexOverwriteChoice {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "\(url.lastPathComponent) changed on disk since you loaded it"
+        alert.informativeText =
+            "Saving your hex edits now would overwrite the change made by "
+            + "another program — and a copy of the current file can't be kept "
+            + "(Local History doesn't store binary content). To keep both, "
+            + "cancel and use File ▸ Save a Copy first."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Overwrite")
+        return alert.runModal() == .alertFirstButtonReturn ? .cancel : .overwrite
     }
 
     private func presentHexSaveFailure(url: URL, error: Error) {

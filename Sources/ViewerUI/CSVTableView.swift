@@ -290,6 +290,28 @@ struct CSVTableView: View {
         .onChange(of: text) { _, _ in
             reparse()
         }
+        // Audit THEME 1 sibling (fixed 2026-07-29, same class as the hex
+        // clobber): the cell-edit overlay is view-local @State, so the MODEL
+        // saw a clean tab while the grid held unsaved edits — an external
+        // file change silently reloaded over them (`reparse()` rebuilds a
+        // clean overlay), and close/quit never prompted. Mirroring the
+        // serialized overlay into the tab's EDITOR BUFFER on every overlay
+        // change buys the entire existing text machinery for free: the tab
+        // dirty dot, the watcher conflict banner + 3-way auto-merge, the
+        // Local History capture on discard, close-confirm, and hot-exit.
+        // Disk writes still happen ONLY via the explicit Save button
+        // (TSK-1472 contract unchanged). Gated on a REAL tab id — the split
+        // pane drives this view with a pseudo-id that must not grow buffers.
+        .onChange(of: editModel?.editedCells.count ?? 0) { _, _ in
+            guard model.tabs.tabs.contains(where: { $0.id == tabID }) else { return }
+            if let m = editModel, m.isDirty {
+                model.updateEditorText(m.serialize(), forTabID: tabID)
+            } else if model.editor.editorBuffers[tabID]?.isDirty == true {
+                // Overlay went clean (Discard) → drop the mirror too
+                // (discardEditorBuffer also clears the tab's dirty dot).
+                model.discardEditorBuffer(forTabID: tabID)
+            }
+        }
         .onChange(of: currentFilter) { _, newFilter in
             scheduleFilterCommit(newFilter)
         }

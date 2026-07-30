@@ -64,6 +64,17 @@ extension DocumentModel {
         let index = tabs.tabs.firstIndex(where: { $0.id == conflict.id }) ?? conflict.index
         let path = conflict.url.path
 
+        // HEX conflicts (audit THEME 1): a hex tab has no editor buffer, so
+        // the text branches below would silently no-op around it. Binary
+        // content also can't be preserved in Local History (it refuses
+        // non-text), so BOTH destructive branches route through the
+        // unpreserved-discard confirmation — the honest "no copy can be
+        // kept" prompt — rather than pretending a safety net exists.
+        if dirtyHexBytes(forTabID: conflict.id) != nil {
+            resolveHexDiskConflict(intent, conflict: conflict, index: index)
+            return
+        }
+
         switch intent {
         case .takeDisk:
             // About to destroy the unsaved buffer — preserve it first.
@@ -90,6 +101,39 @@ extension DocumentModel {
         case .merge:
             beginMergeForActiveConflict(conflict)
             return   // banner stays until the sheet resolves
+        }
+        activeDiskConflict = nil
+    }
+
+    /// The hex arm of `resolveDiskConflict`. No auto-merge and no Local
+    /// History for binary, so the rules collapse to:
+    /// - **takeDisk** — the dirty hex edits are about to be destroyed with no
+    ///   recoverable copy → explicit confirm, then drop the stash and reload.
+    /// - **keepMine** — the external disk version will be overwritten by the
+    ///   next ⌘S with no recoverable copy → the SAME explicit confirm, then
+    ///   re-baseline so the watcher stops re-raising and the save guard
+    ///   honours the user's decision.
+    /// - **merge** — impossible for binary; say so and leave the banner up.
+    private func resolveHexDiskConflict(
+        _ intent: DiskConflictIntent, conflict: DiskConflictBannerInfo, index: Int
+    ) {
+        switch intent {
+        case .takeDisk:
+            guard confirmDiscardIsPreserved(.refused(.looksBinary), side: .mine,
+                                            fileName: conflict.fileName) else { return }
+            setHexDirty(false, forTabID: conflict.id)   // drops the stash + the dot
+            hexDiskBaseline[conflict.id] = HexDiskStamp.current(for: conflict.url)
+            reloadFromDisk(url: conflict.url, at: index)
+
+        case .keepMine:
+            guard confirmDiscardIsPreserved(.refused(.looksBinary), side: .disk,
+                                            fileName: conflict.fileName) else { return }
+            hexDiskBaseline[conflict.id] = HexDiskStamp.current(for: conflict.url)
+
+        case .merge:
+            ToastCenter.shared.post(.error,
+                "Can't merge binary content — choose Keep Mine or Take Disk")
+            return   // banner stays up
         }
         activeDiskConflict = nil
     }

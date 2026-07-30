@@ -31,6 +31,9 @@ extension DocumentModel {
                 var tab = self.tabs.tabs[idx]
                 if let bin = loaded {
                     tab.state = .binary(bin)
+                    // No-clobber baseline for the hex writer + watcher: the
+                    // disk fingerprint these bytes were read at.
+                    self.hexDiskBaseline[id] = HexDiskStamp.current(for: url)
                 } else {
                     // CR-04: surface the failure rather than leaving the
                     // prior (stale) state. `controller.open` maps the

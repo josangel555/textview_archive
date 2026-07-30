@@ -1890,6 +1890,18 @@ public final class DocumentModel: ObservableObject {
     // internal: the HEX edit logic lives in DocumentModel+EditableHex.swift (TSK-1110).
     var hexDirtyBytes: [UUID: Data] = [:]
 
+    /// Disk fingerprint (mtime + size) captured when a HEX tab's bytes were
+    /// LOADED or last SAVED by the hex writer — the no-clobber baseline the
+    /// text path has always had via `EditorBuffer.lastSavedMTime/Size` and
+    /// the hex path never did (audit THEME 1). Consulted by `saveHexEdits`
+    /// (write-time guard) and the watcher (dirty-hex conflict banner).
+    var hexDiskBaseline: [UUID: HexDiskStamp] = [:]
+
+    /// Test seam for the hex overwrite prompt (`saveHexEdits`), mirroring
+    /// `saveConflictPromptOverride` — host tests inject a decision;
+    /// production runs the NSAlert.
+    var hexOverwritePromptOverride: ((URL) -> HexOverwriteChoice)?
+
     // peekHexDirtyBytesForTest / dirtyHexBytes / setHexDirty / stashHexBytes →
     // DocumentModel+EditableHex.swift (TSK-1110 SRP slice).
 
@@ -2882,6 +2894,22 @@ public final class DocumentModel: ObservableObject {
         // but a deleted file persists as `.deleted`.
         refreshDiskState(at: i)
         let tab = tabs.tabs[i]
+        // Dirty HEX tab (audit THEME 1, fixed 2026-07-29): the conflict
+        // branch below is keyed on an EDITOR buffer, which a hex tab never
+        // has — so a dirty hex tab fell through to the unconditional
+        // `reload` at the bottom: the on-screen dump silently swapped to the
+        // external bytes while the dirty stash survived, and the next ⌘S
+        // wrote that stale stash back over the external change. Never
+        // silent-reload a hex-dirty tab; raise the same conflict banner the
+        // text path uses (its resolver has hex-aware branches). No auto-merge
+        // attempt — there is no 3-way merge for binary.
+        if hexDirtyBytes[tab.id] != nil {
+            if hexDiskBaseline[tab.id] != HexDiskStamp.current(for: watchedURL) {
+                activeDiskConflict = DiskConflictBannerInfo(
+                    tabID: tab.id, index: i, url: watchedURL)
+            }
+            return
+        }
         if tab.isDirty, let buf = tabCoordinator.editorBuffers[tab.id] {
             let attrs = try? FileManager.default.attributesOfItem(atPath: watchedURL.path)
             let mtime = attrs?[.modificationDate] as? Date
@@ -2935,6 +2963,12 @@ public final class DocumentModel: ObservableObject {
     /// edit conflict prompt; the prompt's "Discard & Reload" branch
     /// drops the buffer entirely before calling back in, so by the time
     /// we see it the buffer is gone (re-seeds lazily from new state).
+    /// Internal doorway to `reload` for the SRP-slice extensions (the hex
+    /// branch of `resolveDiskConflict` lives in DocumentModel+DiskConflict).
+    func reloadFromDisk(url: URL, at index: Int) {
+        reload(url: url, at: index)
+    }
+
     fileprivate func reload(url: URL, at index: Int) {
         // CORR-3: tolerate a stale index handed across a modal.
         guard tabs.tabs.indices.contains(index),
