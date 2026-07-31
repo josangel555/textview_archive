@@ -159,6 +159,19 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   are closed, loss-on-crash is not), and the interactive sheet flows (pick → Apply) are
   AX-lane. **M**
 
+### VM lane findings — full `all` run 2026-07-31 (release-ship sweep)
+
+- **[TRIAGED 2026-07-31] The ~98-failure flood was EMFILE** (`ulimit -n` capped by
+  `kern.maxfilesperproc`=10240 → the 16384 raise silently fell back to 8192). Fixed
+  self-applyingly in `test-in-vm.sh` (05337de7); headless re-run: 98 → 6 failures.
+  Remaining 6, none from the 07-31 commits: 4 × EBADF ("Bad file descriptor" — same fd
+  family, host-green suites: `VMSmokePathGuardTests` ×3-ish, `ViewModeMatrixSmokeTests`,
+  `ViewModesUATTests` VM_04; likely a shared fixture/helper holding a stale fd — chase the
+  helper, not the suites) + `UISceneApplierTests.gitPanelScene` (the scene's git fixture
+  yields no statuses on the VM — git config/sandbox quirk, host-green). **S–M**
+- **VM system disk at 90% (1.2 GiB free)** — reclaim before it starts failing builds/IO
+  (old dists, /var/folders cross-user temp, logs). **S**
+
 ### VM lane findings — full `all` run 2026-07-27 (first since the 07-24..27 session)
 
 VM_RC=1, ~29 failing cases. The lane had NOT been run against that session's uncommitted work, so
