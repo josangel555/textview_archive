@@ -2,7 +2,7 @@
 # Bundle size guardrail. Fails the build when dist/TextView.app
 # crosses a budget. Two checks:
 #   - total .app size (default 80 MB)
-#   - main executable size (default 65 MB)
+#   - main executable size (default 70 MB)
 #
 # Caps bumped 40->48 / 20->26 (2026-06-03) for the UX-overhaul features
 # (embedded terminal + ANSI parser, command registry/keybindings,
@@ -17,7 +17,7 @@
 #   2. Static-linking libmdvcore_ffi.a adds only ~0.36 MB to the exec
 #      (18.60 -> ~18.96 MB) and ~0.3 MB to the bundle (measured 39 MB total).
 # (At that 2026-05-31 bump the 20 MB exec / 40 MB total caps covered the real
-# baseline + the Rust core + modest headroom; the live caps are now 65 / 80 (exec / total) —
+# baseline + the Rust core + modest headroom; the live caps are now 70 / 80 (exec / total) —
 # see the header above.) The exec sub-cap still catches a TreeSitter grammar
 # silently regressing to static linkage. NOTE: the Rust core is purely ADDITIVE at this
 # beachhead (both Swift CSVParser AND the Rust core ship); the size recovers
@@ -93,7 +93,10 @@ BUDGET_MB="${BUDGET_MB:-${1:-80}}"
 # 60.4 MB, just over the 60 cap — organic growth, NOT a static-link regression
 # (grammars still ship as Frameworks/ dylibs). +~5 MB headroom; the real fix is
 # the reclaim (TSK-1214/1098: lazy-load / dedup the double-carried parse tables).
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-65}"
+# 65→70 (2026-07-31, owner-approved): release exec reached 67.9 MB organically
+# (pulldown-latex math tables + 5 weeks of features; lazy grammar dylibs
+# verified still in Contents/Frameworks/ — no static-link regression).
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-70}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 
