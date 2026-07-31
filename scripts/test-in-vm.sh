@@ -48,9 +48,20 @@ cd "$ROOT_DIR"
 # until temp-file creation fails with EMFILE ("could not open temp file"),
 # cascading into ~158 FALSE file-IO failures while the code is actually fine
 # (the same classes pass in isolation, e.g. XattrIOTests/TextFileLoaderTests).
-# The hard limit is `unlimited`, so bump the soft limit high. Best-effort — never
-# abort the run if a platform refuses the raise.
-ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null || ulimit -n 4096 2>/dev/null || true
+#
+# 2026-07-31: `ulimit -n` is CAPPED by kern.maxfilesperproc (default 10240) —
+# the old 16384 first branch SILENTLY failed and fell back to 8192, which the
+# grown ~10k-test parallel sweep exhausted again (a ~90-case EMFILE flood
+# across host-green pure-logic suites). Two-part fix: best-effort raise the
+# kernel ceilings when sudo is available (the GUI lane always has it), then
+# claim the largest soft limit the kernel allows.
+if [[ -n "${MDV_VM_SUDO_PASS:-}" ]]; then
+  echo "$MDV_VM_SUDO_PASS" | sudo -S sysctl -w \
+    kern.maxfiles=524288 kern.maxfilesperproc=262144 >/dev/null 2>&1 || true
+fi
+ulimit -n 262144 2>/dev/null || ulimit -n 65536 2>/dev/null \
+  || ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null \
+  || ulimit -n "$(sysctl -n kern.maxfilesperproc 2>/dev/null || echo 4096)" 2>/dev/null || true
 printf "==> open-files soft limit: %s\n" "$(ulimit -n)"
 
 # Track results separately from the test runner so we can produce JUnit
@@ -174,7 +185,7 @@ swift_test() {
   # ~180 FALSE file-IO failures across the later suites (TSK-1283; same class as
   # TSK-500/1236). Raise to 16384 with graceful fallback so the limit can only go
   # up, never below the prior 8192.
-  local inner="cd $(printf '%q' "$ROOT_DIR") && { ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null || ulimit -n 4096 2>/dev/null || true; }"
+  local inner="cd $(printf '%q' "$ROOT_DIR") && { ulimit -n 262144 2>/dev/null || ulimit -n 65536 2>/dev/null || ulimit -n 16384 2>/dev/null || ulimit -n 8192 2>/dev/null || true; }"
   # NOTE (TSK-953): the live-app UAT cross-user temp problem is fixed in the
   # TEST HARNESS, not here. The asuser bridge runs xctest as ROOT but the app
   # spawns as the console user; root's per-user temp (`/var/folders/.../T`) is

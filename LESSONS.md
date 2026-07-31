@@ -4189,3 +4189,14 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   real window PNG at /tmp/mdv-vm-ui/<scene>.png. To UAT a NEW surface: add a scene to
   UISceneRegistry (or use MDV_PREVIEW_FILE for media/archive), then run it. `setup`/`teardown`
   are owner-gated (LaunchAgent install + TCC grant); `run` is not.
+
+- **`ulimit -n` is silently CAPPED by `kern.maxfilesperproc` (2026-07-31).** The VM's kernel
+  ceiling was the macOS default 10240, so `test-in-vm.sh`'s `ulimit -n 16384` FAILED its first
+  branch and fell back to 8192 — which the grown ~10k-test parallel sweep exhausted: a ~90-case
+  EMFILE ("Too many open files", POSIX 24) flood across HOST-GREEN pure-logic suites
+  (WalkthroughCatalog, XLSXDocument, URLSchemeRouter…) that looks exactly like mass regression.
+  Diagnosis tell: `grep 'Too many open files'` BEFORE triaging any full-sweep failure list. Fix
+  is two-part and self-applying: `sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144`
+  (test-in-vm.sh does it when MDV_VM_SUDO_PASS is set; runtime-only, reapplied per run) + a
+  laddered `ulimit -n 262144 || 65536 || …`. Also noted: the VM system disk was at 90%
+  (1.2 GiB free) — watch it before blaming code for IO failures.

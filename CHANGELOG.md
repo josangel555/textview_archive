@@ -18,6 +18,14 @@
   literal.
 
 ### System work
+- **Release build shipped to the `mvd_dist` repo** (`TextView-2026-07-31.zip` + sha256): full
+  pipeline — host headless gate, rust-core gate, targeted VM webview/pixel lanes, packaging
+  self-check, bundle-size gate — with the exec cap bumped 65→70 MB (owner-approved; growth
+  attributed to pulldown-latex tables + 5 weeks of features, lazy grammar dylibs verified
+  intact). Also installed release (not debug) to /Applications.
+- VM full-sweep triage: the ~90-case failure flood was EMFILE — `ulimit -n` silently capped by
+  `kern.maxfilesperproc` (10240), so the script's 16384 raise fell back to 8192. Fixed
+  self-applyingly in `test-in-vm.sh` (sysctl ceilings via the lane's sudo + laddered ulimit).
 - Markdown gap-closures: five pulldown-cmark options enabled TOGETHER with their writer arms +
   per-option "content is not eaten" rust tests (the math near-miss discipline), FFI facade
   tests, and a new `MarkdownExtrasWebViewTests` webview-lane suite asserting the constructs
