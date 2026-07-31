@@ -36,7 +36,7 @@
 //! - `<ol>` start numbers are ignored (the Swift visitor does the same).
 
 use pulldown_cmark::{
-    CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
+    BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
 };
 use serde::{Deserialize, Serialize};
 
@@ -169,7 +169,29 @@ pub fn render(text: &str) -> RenderOutput {
         // as an `<hr>` + a giant setext `<h2>` of the raw key/values — the ugly
         // default for every Jekyll/Hugo/Obsidian doc.
         | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
-        | Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS;
+        | Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS
+        // Gap-closures (2026-07-31). THE RULE for every bit below: an enabled
+        // option whose events hit a discarding writer arm silently EATS the
+        // author's content (the math near-miss) — each bit here lands
+        // TOGETHER with its writer arms + tests, never ahead of them.
+        //
+        // `[^name]` references + definitions; definitions are collected into
+        // a `<section class="mdv-footnotes">` appended at the end of the doc.
+        | Options::ENABLE_FOOTNOTES
+        // GFM callouts: `> [!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/
+        // `[!CAUTION]` → a classed blockquote with a title row.
+        | Options::ENABLE_GFM
+        // `term` / `: definition` → `<dl>/<dt>/<dd>`.
+        | Options::ENABLE_DEFINITION_LIST
+        // `^sup^` / `~sub~` (single tilde; `~~del~~` stays strikethrough).
+        // Engine limitation, pinned by test: these delimiters cannot open
+        // INTRA-WORD (pulldown's flanking rules), so `mc^2^`/`H~2~O` stay
+        // literal — only word-boundary forms (`a ^2^`) typeset.
+        | Options::ENABLE_SUPERSCRIPT
+        | Options::ENABLE_SUBSCRIPT
+        // `# Title {#custom-id .cls}` — explicit heading id wins over the
+        // generated slug (and the `{…}` no longer renders as literal text).
+        | Options::ENABLE_HEADING_ATTRIBUTES;
     let mut w = Writer::default();
     for event in Parser::new_ext(text, options) {
         w.event(event);
@@ -212,12 +234,66 @@ struct Writer {
     /// Inside a frontmatter MetadataBlock — suppress ALL inner events (the yaml
     /// text must not render or feed slugs/plain-text).
     in_metadata: bool,
+    /// Footnotes (2026-07-31). Number per name in FIRST-REFERENCE order —
+    /// the visible marker text and the section's ordering key.
+    footnote_numbers: std::collections::HashMap<String, u32>,
+    /// Captured definition bodies in doc order: (name, inner html). Emitted
+    /// as one trailing section by `finish` — definitions are collected, not
+    /// rendered where they appear (the GitHub shape).
+    footnote_defs: Vec<(String, String)>,
+    /// Name of the currently-open footnote definition (its body is being
+    /// captured on the buf stack).
+    footnote_open: Option<String>,
+    /// Explicit heading attributes stashed at `Start(Heading)` for the End
+    /// handler: (`{#id}`, `{.class}`s).
+    heading_id: Option<String>,
+    heading_classes: Vec<String>,
     chunks: Vec<Chunk>,
+}
+
+/// css-class suffix + visible title for a GFM alert kind.
+fn alert_meta(kind: BlockQuoteKind) -> (&'static str, &'static str) {
+    match kind {
+        BlockQuoteKind::Note => ("note", "Note"),
+        BlockQuoteKind::Tip => ("tip", "Tip"),
+        BlockQuoteKind::Important => ("important", "Important"),
+        BlockQuoteKind::Warning => ("warning", "Warning"),
+        BlockQuoteKind::Caution => ("caution", "Caution"),
+    }
 }
 
 impl Writer {
     fn finish(&mut self) -> String {
-        self.bufs.drain(..).next().unwrap_or_default()
+        let mut doc = self.bufs.drain(..).next().unwrap_or_default();
+        if self.footnote_defs.is_empty() {
+            return doc;
+        }
+        // The trailing footnotes section (the GitHub shape). Referenced
+        // definitions order by first-reference number; a definition the text
+        // never references still renders (appended after, stable doc order)
+        // — authored content is never silently eaten.
+        let mut defs = std::mem::take(&mut self.footnote_defs);
+        defs.sort_by_key(|(name, _)| {
+            self.footnote_numbers.get(name).copied().unwrap_or(u32::MAX)
+        });
+        doc.push_str("<section class=\"mdv-footnotes\"><hr/>\n<ol>\n");
+        for (name, body) in defs {
+            let key = escape(&name);
+            let backref = format!(
+                " <a href=\"#mdv-fnref-{key}\" class=\"mdv-fn-back\" \
+                 aria-label=\"Back to reference\">\u{21a9}</a>"
+            );
+            // Tuck the ↩ inside the body's final paragraph so it sits on
+            // the text line instead of a line of its own.
+            let entry = if let Some(stripped) = body.strip_suffix("</p>\n") {
+                format!("{stripped}{backref}</p>\n")
+            } else {
+                format!("{body}{backref}\n")
+            };
+            doc.push_str(&format!("<li id=\"mdv-fn-{key}\">{entry}</li>\n"));
+        }
+        doc.push_str("</ol>\n</section>\n");
+        doc
     }
 
     fn out(&mut self, s: &str) {
@@ -350,8 +426,32 @@ impl Writer {
                 self.out(&mathml);
                 self.out("\n");
             }
-            // Unreachable without their Options bits; ignore defensively.
-            Event::FootnoteReference(_) => {}
+            // `[^name]` → a numbered superscript link into the trailing
+            // footnotes section. Numbers are assigned in first-reference
+            // order; every reference to one name shares its number. Only the
+            // FIRST reference carries the backlink-target id (a repeated id
+            // would be invalid HTML; the section's ↩ then returns to the
+            // first mention, the GitHub behavior for the common case).
+            Event::FootnoteReference(name) => {
+                self.synth_para_if_needed();
+                let next = u32::try_from(self.footnote_numbers.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_add(1);
+                let is_first = !self.footnote_numbers.contains_key(name.as_ref());
+                let n = *self
+                    .footnote_numbers
+                    .entry(name.to_string())
+                    .or_insert(next);
+                let key = escape(&name);
+                let id_attr = if is_first {
+                    format!(" id=\"mdv-fnref-{key}\"")
+                } else {
+                    String::new()
+                };
+                self.out(&format!(
+                    "<sup class=\"mdv-fnref\"><a href=\"#mdv-fn-{key}\"{id_attr}>{n}</a></sup>"
+                ));
+            }
         }
     }
 
@@ -362,17 +462,34 @@ impl Writer {
                 self.containers.push(Container::Other);
                 self.out("<p>");
             }
-            Tag::Heading { .. } => {
+            Tag::Heading { id, classes, .. } => {
                 self.close_synth_para();
                 self.containers.push(Container::Other);
+                // Explicit `{#id .cls}` attributes (ENABLE_HEADING_ATTRIBUTES)
+                // are stashed for the End handler; an explicit id wins over
+                // the generated slug.
+                self.heading_id = id.map(|s| s.to_string());
+                self.heading_classes = classes.iter().map(|c| c.to_string()).collect();
                 // Capture inner html + plain text for the slug.
                 self.bufs.push(String::new());
                 self.plain.push(String::new());
             }
-            Tag::BlockQuote(_) => {
+            Tag::BlockQuote(kind) => {
                 self.close_synth_para();
                 self.containers.push(Container::Other);
-                self.out("<blockquote>\n");
+                match kind {
+                    // GFM alert: classed blockquote + a title row the CSS
+                    // colors per kind. The title is trusted structural
+                    // output (a fixed word), not author bytes.
+                    Some(k) => {
+                        let (class, label) = alert_meta(k);
+                        self.out(&format!(
+                            "<blockquote class=\"mdv-alert mdv-alert-{class}\">\
+                             <p class=\"mdv-alert-title\">{label}</p>\n"
+                        ));
+                    }
+                    None => self.out("<blockquote>\n"),
+                }
             }
             Tag::List(ordered) => {
                 self.close_synth_para();
@@ -451,13 +568,36 @@ impl Writer {
             // Frontmatter block: enter suppression (the event loop swallows the
             // inner events + the matching End until it clears this).
             Tag::MetadataBlock(_) => self.in_metadata = true,
-            // Unreachable without their Options bits; treat as transparent.
-            Tag::FootnoteDefinition(_)
-            | Tag::DefinitionList
-            | Tag::DefinitionListTitle
-            | Tag::DefinitionListDefinition
-            | Tag::Superscript
-            | Tag::Subscript => {}
+            // `[^name]: …` — capture the body on the buf stack; `finish`
+            // emits every definition as one trailing section (collected,
+            // not rendered in place — the GitHub shape).
+            Tag::FootnoteDefinition(name) => {
+                self.close_synth_para();
+                self.containers.push(Container::Other);
+                self.footnote_open = Some(name.to_string());
+                self.bufs.push(String::new());
+            }
+            Tag::DefinitionList => {
+                self.close_synth_para();
+                self.containers.push(Container::Other);
+                self.out("<dl>\n");
+            }
+            Tag::DefinitionListTitle => {
+                self.containers.push(Container::Other);
+                self.out("<dt>");
+            }
+            Tag::DefinitionListDefinition => {
+                self.containers.push(Container::Other);
+                self.out("<dd>");
+            }
+            Tag::Superscript => {
+                self.synth_para_if_needed();
+                self.out("<sup>");
+            }
+            Tag::Subscript => {
+                self.synth_para_if_needed();
+                self.out("<sub>");
+            }
         }
     }
 
@@ -471,9 +611,21 @@ impl Writer {
                 self.containers.pop();
                 let inner = self.bufs.pop().unwrap_or_default();
                 let text = self.plain.pop().unwrap_or_default();
-                let slug = self.unique_slug(&text);
+                // An explicit `{#id}` wins over the generated slug (author
+                // intent; also how every static-site generator reads it).
+                let slug = match self.heading_id.take() {
+                    Some(explicit) => escape(&explicit),
+                    None => self.unique_slug(&text),
+                };
+                let class_attr = if self.heading_classes.is_empty() {
+                    String::new()
+                } else {
+                    let joined = self.heading_classes.join(" ");
+                    self.heading_classes.clear();
+                    format!(" class=\"{}\"", escape(&joined))
+                };
                 let n = heading_level(level);
-                self.out(&format!("<h{n} id=\"{slug}\">{inner}</h{n}>\n"));
+                self.out(&format!("<h{n} id=\"{slug}\"{class_attr}>{inner}</h{n}>\n"));
             }
             TagEnd::BlockQuote(_) => {
                 self.containers.pop();
@@ -541,13 +693,28 @@ impl Writer {
                 let alt = self.plain.pop().unwrap_or_default();
                 self.out(&format!("{}\"/>", escape(&alt)));
             }
-            TagEnd::FootnoteDefinition
-            | TagEnd::DefinitionList
-            | TagEnd::DefinitionListTitle
-            | TagEnd::DefinitionListDefinition
-            | TagEnd::MetadataBlock(_)
-            | TagEnd::Superscript
-            | TagEnd::Subscript => {}
+            TagEnd::FootnoteDefinition => {
+                self.containers.pop();
+                let body = self.bufs.pop().unwrap_or_default();
+                if let Some(name) = self.footnote_open.take() {
+                    self.footnote_defs.push((name, body));
+                }
+            }
+            TagEnd::DefinitionList => {
+                self.containers.pop();
+                self.out("</dl>\n");
+            }
+            TagEnd::DefinitionListTitle => {
+                self.containers.pop();
+                self.out("</dt>\n");
+            }
+            TagEnd::DefinitionListDefinition => {
+                self.containers.pop();
+                self.out("</dd>\n");
+            }
+            TagEnd::Superscript => self.out("</sup>"),
+            TagEnd::Subscript => self.out("</sub>"),
+            TagEnd::MetadataBlock(_) => {}
         }
     }
 
@@ -775,6 +942,136 @@ mod tests {
     fn math_content_is_escaped_not_injected() {
         let out = html("$x <img src=x onerror=alert(1)> y$");
         assert!(!out.contains("<img"), "author bytes inside math never become markup: {out}");
+    }
+
+    // Gap-closures (2026-07-31): each option lands WITH its writer arms —
+    // these are the per-option "the author's content is not eaten" guards
+    // (the math near-miss class).
+
+    #[test]
+    fn footnote_reference_and_definition_link_both_ways() {
+        let out = html("fact[^a] more\n\n[^a]: the source\n");
+        assert!(
+            out.contains(
+                "<sup class=\"mdv-fnref\"><a href=\"#mdv-fn-a\" id=\"mdv-fnref-a\">1</a></sup>"
+            ),
+            "numbered marker links into the section: {out}"
+        );
+        assert!(out.contains("<section class=\"mdv-footnotes\">"), "{out}");
+        assert!(out.contains("<li id=\"mdv-fn-a\">"), "{out}");
+        assert!(out.contains("the source"), "definition body renders: {out}");
+        assert!(
+            out.contains("href=\"#mdv-fnref-a\""),
+            "backlink returns to the reference: {out}"
+        );
+    }
+
+    #[test]
+    fn footnotes_number_in_first_reference_order_and_repeat_refs_share() {
+        let out = html("b[^b] a[^a] b again[^b]\n\n[^a]: A\n\n[^b]: B\n");
+        let b_pos = out.find("<li id=\"mdv-fn-b\">").unwrap();
+        let a_pos = out.find("<li id=\"mdv-fn-a\">").unwrap();
+        assert!(b_pos < a_pos, "section orders by first reference: {out}");
+        assert_eq!(
+            out.matches("id=\"mdv-fnref-b\"").count(),
+            1,
+            "a repeated reference must not duplicate the backlink-target id: {out}"
+        );
+        assert_eq!(
+            out.matches("href=\"#mdv-fn-b\"").count(),
+            2,
+            "both references link to the same definition: {out}"
+        );
+    }
+
+    /// A definition the text never references still renders — visible
+    /// beats eaten (the session's data-safety rule applied to markdown).
+    #[test]
+    fn unreferenced_footnote_definition_still_renders() {
+        let out = html("no refs here\n\n[^orphan]: kept, not eaten\n");
+        assert!(out.contains("kept, not eaten"), "{out}");
+        assert!(out.contains("mdv-footnotes"), "{out}");
+    }
+
+    #[test]
+    fn gfm_alerts_render_classed_blockquotes_with_titles() {
+        for (md_kind, class, label) in [
+            ("NOTE", "note", "Note"),
+            ("TIP", "tip", "Tip"),
+            ("IMPORTANT", "important", "Important"),
+            ("WARNING", "warning", "Warning"),
+            ("CAUTION", "caution", "Caution"),
+        ] {
+            let out = html(&format!("> [!{md_kind}]\n> body text\n"));
+            assert!(
+                out.contains(&format!(
+                    "<blockquote class=\"mdv-alert mdv-alert-{class}\">"
+                )),
+                "{md_kind}: {out}"
+            );
+            assert!(
+                out.contains(&format!("<p class=\"mdv-alert-title\">{label}</p>")),
+                "{md_kind}: {out}"
+            );
+            assert!(out.contains("body text"), "{md_kind}: {out}");
+        }
+    }
+
+    #[test]
+    fn plain_blockquotes_stay_bare() {
+        let out = html("> just a quote\n");
+        assert!(out.contains("<blockquote>\n"), "{out}");
+        assert!(!out.contains("mdv-alert"), "{out}");
+    }
+
+    #[test]
+    fn definition_lists_render_dl_dt_dd() {
+        let out = html("Term\n: the definition\n");
+        assert!(out.contains("<dl>"), "{out}");
+        assert!(out.contains("<dt>Term</dt>"), "{out}");
+        assert!(out.contains("<dd>"), "{out}");
+        assert!(out.contains("the definition"), "{out}");
+    }
+
+    #[test]
+    fn superscript_and_subscript_render_while_del_stays() {
+        let out = html("a ^sup^ b ~sub~ c ~~gone~~");
+        assert!(out.contains("<sup>sup</sup>"), "{out}");
+        assert!(out.contains("<sub>sub</sub>"), "{out}");
+        assert!(
+            out.contains("<del>gone</del>"),
+            "single ~ is sub, double stays strikethrough: {out}"
+        );
+    }
+
+    /// Pulldown's flanking rules: `^`/single-`~` delimiters cannot open
+    /// INTRA-WORD ("`*` and `~~` can be intraword, `_` and `~` cannot"),
+    /// so the classic `mc^2^` / `H~2~O` forms stay literal. Pinned as
+    /// DOCUMENTED engine behavior — if a pulldown upgrade relaxes it,
+    /// this failing is good news (delete the test, celebrate).
+    #[test]
+    fn intra_word_sup_sub_stays_literal_engine_limitation() {
+        let out = html("E = mc^2^ and H~2~O");
+        assert!(out.contains("mc^2^"), "{out}");
+        assert!(out.contains("H~2~O"), "{out}");
+    }
+
+    #[test]
+    fn heading_attributes_explicit_id_wins_and_classes_apply() {
+        let custom = html("# Title {#custom-id}");
+        assert!(
+            custom.contains("<h1 id=\"custom-id\">"),
+            "explicit id wins over the slug: {custom}"
+        );
+        assert!(
+            !custom.contains("{#custom-id}"),
+            "the attr block must not render as literal text: {custom}"
+        );
+        let styled = html("## Styled {.wide .hero}");
+        assert!(
+            styled.contains("id=\"styled\" class=\"wide hero\""),
+            "classes apply, slug still generated: {styled}"
+        );
     }
 
     #[test]

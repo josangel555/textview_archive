@@ -8,8 +8,21 @@
   show where the tab will land; releasing moves the file there, switches to that session, and
   selects the moved tab. Your own session's pill never lights up (nothing would move). The
   context menu's "Move to Session ▸" keeps doing the same thing for discoverability.
+- **Markdown: footnotes, GitHub alerts, definition lists, superscript/subscript, heading ids.**
+  `[^1]` footnotes render as numbered superscript links with a collected section at the end of
+  the document (with ↩ backlinks; a definition you never reference still renders rather than
+  disappearing). `> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` render
+  as colored callout boxes. `term` + `: definition` renders a real definition list. `^sup^` and
+  `~sub~` typeset (word-boundary forms; `~~strikethrough~~` unchanged), and `# Title {#my-id}`
+  pins a heading's link anchor. Known engine limitation: `mc^2^`/`H~2~O` (mid-word) stay
+  literal.
 
 ### System work
+- Markdown gap-closures: five pulldown-cmark options enabled TOGETHER with their writer arms +
+  per-option "content is not eaten" rust tests (the math near-miss discipline), FFI facade
+  tests, and a new `MarkdownExtrasWebViewTests` webview-lane suite asserting the constructs
+  actually PAINT (computed styles + geometry — markup-with-dead-CSS is the false-green shape).
+  Wikilinks deliberately deferred (needs a link-resolution policy call).
 - Cross-strip drag machinery: the reorder gesture gained an optional external-target hook
   (`StripExternalTarget` + `TabSessionDropChannel`), keeping the pasteboard/`.onDrop` round-trip
   dead (the old TSK-274 delegate swallowed real file drops). Reorder caret hides while a pill is

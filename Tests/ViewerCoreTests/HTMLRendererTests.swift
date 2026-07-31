@@ -26,6 +26,44 @@ final class HTMLRendererTests: XCTestCase {
         XCTAssertFalse(out.contains("<math"), "prose dollars must not become math: \(out)")
     }
 
+    // MARK: Markdown gap-closures (2026-07-31) — footnotes / GFM alerts /
+    // definition lists / sup+sub, end-to-end through the FFI facade so a
+    // stale staticlib or a dropped writer arm fails HERE, not on screen.
+    // (Per-option depth lives in the rust suite, markdown.rs::tests.)
+
+    func test_footnotes_renderReferenceAndCollectedSection() {
+        let out = renderer.render("fact[^a]\n\n[^a]: the source\n")
+        XCTAssertTrue(out.contains("mdv-fnref"), "reference marker: \(out)")
+        XCTAssertTrue(out.contains("<section class=\"mdv-footnotes\">"), "section: \(out)")
+        XCTAssertTrue(out.contains("the source"), "definition body renders: \(out)")
+    }
+
+    func test_gfmAlert_rendersClassedBlockquote() {
+        let out = renderer.render("> [!WARNING]\n> beware\n")
+        XCTAssertTrue(out.contains("mdv-alert-warning"), "\(out)")
+        XCTAssertTrue(out.contains("<p class=\"mdv-alert-title\">Warning</p>"), "\(out)")
+        XCTAssertTrue(out.contains("beware"), "\(out)")
+    }
+
+    func test_definitionList_rendersDlDtDd() {
+        let out = renderer.render("Term\n: meaning\n")
+        XCTAssertTrue(out.contains("<dt>Term</dt>"), "\(out)")
+        XCTAssertTrue(out.contains("<dd>"), "\(out)")
+    }
+
+    func test_superscript_subscript_render() {
+        let out = renderer.render("a ^up^ b ~down~ c ~~gone~~")
+        XCTAssertTrue(out.contains("<sup>up</sup>"), "\(out)")
+        XCTAssertTrue(out.contains("<sub>down</sub>"), "\(out)")
+        XCTAssertTrue(out.contains("<del>gone</del>"), "double tilde stays del: \(out)")
+    }
+
+    func test_headingAttributes_explicitIDWins() {
+        let out = renderer.render("# Title {#pinned}")
+        XCTAssertTrue(out.contains("id=\"pinned\""), "\(out)")
+        XCTAssertFalse(out.contains("{#pinned}"), "attr block must not render: \(out)")
+    }
+
     // MARK: Block elements
 
     func test_heading_levels_haveSlugIDs() {

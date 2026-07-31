@@ -215,3 +215,39 @@ math[display="block"] {
   border-radius: 3px;
   padding: 0 3px;
 }
+
+/* GFM alerts (`> [!NOTE]` …, 2026-07-31): classed blockquotes with a
+   colored title row. Saturated hues read on light AND dark; the fill is a
+   translucent tint of the same hue (the .mdv-math-error approach). */
+blockquote.mdv-alert {
+  border-left-width: 3px;
+  border-left-style: solid;
+  padding: 0.15em 1em;
+  margin: 1em 0;
+}
+.mdv-alert-title { font-weight: 600; margin: 0.4em 0; }
+.mdv-alert-note      { border-left-color: #3b82f6; background: rgba(59, 130, 246, 0.07); }
+.mdv-alert-note      .mdv-alert-title { color: #3b82f6; }
+.mdv-alert-tip       { border-left-color: #2da44e; background: rgba(45, 164, 78, 0.07); }
+.mdv-alert-tip       .mdv-alert-title { color: #2da44e; }
+.mdv-alert-important { border-left-color: #8957e5; background: rgba(137, 87, 229, 0.07); }
+.mdv-alert-important .mdv-alert-title { color: #8957e5; }
+.mdv-alert-warning   { border-left-color: #d29922; background: rgba(210, 153, 34, 0.08); }
+.mdv-alert-warning   .mdv-alert-title { color: #d29922; }
+.mdv-alert-caution   { border-left-color: #cf222e; background: rgba(207, 34, 46, 0.07); }
+.mdv-alert-caution   .mdv-alert-title { color: #cf222e; }
+
+/* Footnotes (2026-07-31): superscript markers + the trailing collected
+   section (smaller, secondary — reference matter, not body copy). */
+.mdv-fnref { font-size: 0.78em; line-height: 0; }
+.mdv-footnotes {
+  margin-top: 2.5em;
+  font-size: 0.9em;
+  color: var(--mdv-fg-secondary);
+}
+.mdv-footnotes ol { padding-left: 1.6em; }
+.mdv-fn-back { margin-left: 0.25em; }
+
+/* Definition lists (`term` / `: definition`). */
+dt { font-weight: 600; margin-top: 0.6em; }
+dd { margin: 0.2em 0 0.6em 1.6em; }

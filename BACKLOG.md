@@ -112,11 +112,11 @@ verified Split / merge-sheet / math on real pixels. Remaining:
 
 - **Owner-directed, next in queue:** ~~tab-drag-onto-session-pill~~ (LANDED 2026-07-31:
   `TabSessionDropChannel` + `StripExternalTarget`, pill highlight pixel-verified, negative-control
-  teeth); save/retrieve-session design question (sessions already persist + 30-day trash — is the
-  ask NAMED snapshots?); markdown gap-closures now trivially unlockable via the proven
-  option+writer-arms pattern (footnotes, definition lists, sub/superscript, GFM alerts, wikilinks,
-  heading attrs — the writer currently DISCARDS footnote events, the same near-miss class math
-  had). **M each**
+  teeth); ~~markdown gap-closures~~ (LANDED 2026-07-31: footnotes/alerts/def-lists/sup+sub/heading
+  attrs, option+writer-arms together, rust+FFI+webview-paint tiers; **wikilinks deferred** — needs
+  a link-resolution policy call: what does `[[page]]` resolve to in a folder session?); remaining:
+  save/retrieve-session design question (sessions already persist + 30-day trash — is the ask
+  NAMED snapshots?). **M each**
 - **AX tests for new UI work (owner policy shift, 2026-07-29).** Previously "AX tier
   off-limits"; the owner now WANTS AX tests for new UI. Needs the AX harness groundwork
   (TSK-1197-1199 family) before per-feature AX tests can land. **L bootstrap, then S/feature**
