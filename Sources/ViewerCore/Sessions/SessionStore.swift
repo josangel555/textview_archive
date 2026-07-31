@@ -336,6 +336,59 @@ public final class SessionStore: @unchecked Sendable {
         try? fm.moveItem(at: src, to: dst)
     }
 
+    // MARK: Saved sessions (named save points, 2026-07-31) ------------
+
+    /// NAMED session save points live in `saved/<uuid>.json` — the same
+    /// `SessionSnapshot` schema, under a FRESH id whose `displayName` is
+    /// the user's chosen label. A save point is immutable and outlives
+    /// restores (restoring materializes a new live session from a copy).
+    /// A SUBDIRECTORY on purpose: `liveSnapshotIDs()` / the TSK-438
+    /// recovery self-heal scan only the top level, so save points can
+    /// never be mistaken for live sessions.
+    private func savedURL(for id: UUID) -> URL {
+        directory.appendingPathComponent("saved/\(id.uuidString).json")
+    }
+
+    @discardableResult
+    public func saveNamed(_ snap: SessionSnapshot) -> Bool {
+        let url = savedURL(for: snap.id)
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        return Self.syncWrite(snap, to: url)
+    }
+
+    /// Same forward-compat contract as `load(id:)`: a newer-schema file
+    /// reads as nil rather than a torn value.
+    public func loadSaved(id: UUID) -> SessionSnapshot? {
+        guard let snap = JSONFileStore.read(SessionSnapshot.self,
+                                            from: savedURL(for: id),
+                                            maxSize: Self.maxSnapshotFileSize) else {
+            return nil
+        }
+        if snap.schemaVersion > SessionSnapshot.currentSchema { return nil }
+        return snap
+    }
+
+    /// Every save point, newest first. Corrupt / newer-schema files are
+    /// skipped, never fatal.
+    public func savedSnapshots() -> [SessionSnapshot] {
+        let dir = directory.appendingPathComponent("saved")
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]) else { return [] }
+        return urls
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url in
+                UUID(uuidString: url.deletingPathExtension().lastPathComponent)
+                    .flatMap { loadSaved(id: $0) }
+            }
+            .sorted { $0.savedAt > $1.savedAt }
+    }
+
+    public func deleteSaved(id: UUID) {
+        try? FileManager.default.removeItem(at: savedURL(for: id))
+    }
+
     /// Delete trashed snapshots older than `days` days. Cheap to run
     /// on launch; design §5.6 specifies 30-day TTL.
     public func emptyTrashOlderThan(_ days: Int, now: Date = Date()) {

@@ -334,6 +334,31 @@ public final class SessionsAppCoordinator: ObservableObject {
         model.openPath(url)
     }
 
+    // MARK: Saved sessions (named save points, 2026-07-31) -------------
+
+    /// "Save Session As…": snapshot session `id` under `name`. For the
+    /// ACTIVE session the LIVE state (open tabs, selection, scroll,
+    /// unsaved buffers) is flushed into the coordinator first so the
+    /// save point carries what's on screen; a background session's last
+    /// persisted state is already current (written at detach).
+    @discardableResult
+    public func saveSession(id: UUID, named name: String) -> SessionSnapshot? {
+        if let active, active.id == id {
+            core.replaceSnapshot(id: id, with: active.makeSnapshot())
+        }
+        return core.saveSession(id: id, named: name)
+    }
+
+    /// Restore a save point as a NEW session and switch to it. The save
+    /// point survives (restore again anytime); deleting is explicit.
+    @discardableResult
+    public func restoreSavedSession(id: UUID) -> SessionSnapshot? {
+        core.restoreSavedSession(id: id)
+    }
+
+    public func savedSessions() -> [SessionSnapshot] { core.savedSessions() }
+    public func deleteSavedSession(id: UUID) { core.deleteSavedSession(id: id) }
+
     /// Consume the gate (read+clear). Returns `true` exactly once
     /// after each arm. Exposed for the view layer's `onChange` hook.
     public func consumeFirstPaintGoTo() -> Bool {

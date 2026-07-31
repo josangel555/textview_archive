@@ -369,6 +369,53 @@ public final class SessionsCoordinator: ObservableObject {
         persist()
     }
 
+    // MARK: Saved sessions (named save points, 2026-07-31) ------------
+
+    /// Copy session `id`'s CURRENT in-memory snapshot to a named,
+    /// immutable save point. The UI layer flushes live state into this
+    /// coordinator first (`SessionsAppCoordinator.saveSession`) so the
+    /// save point carries what's on screen, not the last autosave.
+    /// Returns the save point written (fresh id, `displayName` = name),
+    /// or nil for an empty name / unknown session / failed write.
+    @discardableResult
+    public func saveSession(id: UUID, named name: String) -> SessionSnapshot? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let snap = sessions.first(where: { $0.id == id }) else { return nil }
+        let point = snap.with(
+            savedAt: Date(),
+            id: UUID(),
+            displayName: trimmed,
+            displayNameIsUserSet: .some(true)
+        )
+        guard store.saveNamed(point) else {
+            lastError = "Couldn't write the session save point."
+            return nil
+        }
+        return point
+    }
+
+    /// Materialize save point `savedID` as a NEW live session — fresh
+    /// identity, so the save point stays on disk and can be restored
+    /// again — and activate it (detach-then-mount, like `openFolder`).
+    @discardableResult
+    public func restoreSavedSession(id savedID: UUID) -> SessionSnapshot? {
+        guard let point = store.loadSaved(id: savedID) else { return nil }
+        let now = Date()
+        let live = point.with(id: UUID(), createdAt: now, lastActiveAt: now)
+        if let prev = active { lifecycle?.detach(prev) }
+        sessions.append(live)
+        activeID = live.id
+        lifecycle?.mount(live)
+        persist()
+        return live
+    }
+
+    /// Every save point, newest first (store passthrough).
+    public func savedSessions() -> [SessionSnapshot] { store.savedSnapshots() }
+
+    public func deleteSavedSession(id: UUID) { store.deleteSaved(id: id) }
+
     // MARK: Mutation surface for in-memory sessions ------------------
 
     /// Update a session in place. Used by tests and any future code

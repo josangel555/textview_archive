@@ -8,6 +8,11 @@
   show where the tab will land; releasing moves the file there, switches to that session, and
   selects the moved tab. Your own session's pill never lights up (nothing would move). The
   context menu's "Move to Session ▸" keeps doing the same thing for discoverability.
+- **Save and retrieve sessions.** Right-click a session tab → **Save Session As…** freezes that
+  session — tabs, selection, scroll, layout, even unsaved edits — under a name you choose.
+  **Saved Sessions** (same context menu, or the session strip's **+** menu) lists your save
+  points newest-first; opening one restores it as a new session and switches to it. Save points
+  are durable: restoring never consumes them, and deleting is an explicit menu action.
 - **Markdown: footnotes, GitHub alerts, definition lists, superscript/subscript, heading ids.**
   `[^1]` footnotes render as numbered superscript links with a collected section at the end of
   the document (with ↩ backlinks; a definition you never reference still renders rather than

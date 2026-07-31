@@ -239,6 +239,11 @@ private struct SessionStripContent: View {
                     }
                     .accessibilityIdentifier("mdv.sessionTab.new.kind.\(item.kind.rawValue)")
                 }
+                // Named save points are also retrievable from the
+                // create-session place (2026-07-31). Menu content builds
+                // on open — the saved-list read never rides a re-body.
+                Divider()
+                SavedSessionsMenuSection(sessionsApp: sessionsApp)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: model.uiSize(11), weight: .medium))
@@ -463,6 +468,22 @@ private struct SessionTabContextMenu: View {
         }
         .disabled(sessionsApp.core.sessions.count <= 1)
         Divider()
+        // Named save points (2026-07-31): freeze this session — tabs,
+        // selection, scroll, unsaved buffers — under a name; restore
+        // later as a NEW session. Menu content builds on OPEN, so the
+        // saved-list disk read never rides a strip re-body.
+        Button("Save Session As\u{2026}") {
+            guard let name = SaveSessionPrompt.run(currentName: snapshot.displayName)
+            else { return }
+            if sessionsApp.saveSession(id: snapshot.id, named: name) != nil {
+                ToastCenter.shared.post(.info, "Saved session \u{201C}\(name)\u{201D}")
+            } else {
+                ToastCenter.shared.post(.error, "Couldn\u{2019}t save the session")
+            }
+        }
+        .accessibilityIdentifier("mdv.sessionTab.saveAs")
+        SavedSessionsMenuSection(sessionsApp: sessionsApp)
+        Divider()
         if let path = snapshot.sidebarRootPath, !path.isEmpty {
             Button("Copy Path") { Pasteboard.copy(path) }
             Button("Reveal in Finder") {
@@ -470,6 +491,51 @@ private struct SessionTabContextMenu: View {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
         }
+    }
+}
+
+// MARK: - Saved sessions menu section -----------------------------------
+
+/// The "Saved Sessions ▸" retrieval surface, shared by the session-pill
+/// context menu and the "+" menu. Its body runs when the OWNING MENU is
+/// opened — never on a strip re-body — so listing save points (a small
+/// directory read + decode) stays off the render path. Renders nothing
+/// when there are no save points.
+struct SavedSessionsMenuSection: View {
+    @ObservedObject var sessionsApp: SessionsAppCoordinator
+
+    var body: some View {
+        let saved = sessionsApp.savedSessions()
+        if !saved.isEmpty {
+            Menu("Saved Sessions") {
+                ForEach(saved, id: \.id) { point in
+                    Menu(SessionTabLabel.truncated(point.displayName)) {
+                        Button("Open as New Session") {
+                            _ = sessionsApp.restoreSavedSession(id: point.id)
+                        }
+                        .accessibilityIdentifier(
+                            "mdv.sessionTab.savedRestore.\(point.id.uuidString)")
+                        Text(Self.subtitle(for: point))
+                        Divider()
+                        Button("Delete Save Point", role: .destructive) {
+                            sessionsApp.deleteSavedSession(id: point.id)
+                        }
+                        .accessibilityIdentifier(
+                            "mdv.sessionTab.savedDelete.\(point.id.uuidString)")
+                    }
+                }
+            }
+            .accessibilityIdentifier("mdv.sessionTab.savedSessions")
+        }
+    }
+
+    /// "3 tabs · saved Jul 31, 14:02" — enough to tell twins apart.
+    static func subtitle(for point: SessionSnapshot) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d, HH:mm"
+        let tabs = point.openTabs.count
+        let tabWord = tabs == 1 ? "1 tab" : "\(tabs) tabs"
+        return "\(tabWord) \u{00B7} saved \(fmt.string(from: point.savedAt))"
     }
 }
 
