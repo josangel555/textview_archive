@@ -52,6 +52,7 @@ struct SessionTabBar: View {
                 SessionStripContent(sessionsApp: sessionsApp,
                                     core: core,
                                     model: model,
+                                    dropChannel: sessionsApp.tabDragChannel,
                                     rowHeight: rowHeight,
                                     renamingID: $renamingID,
                                     openNewSession: openNewSession)
@@ -138,6 +139,14 @@ private struct SessionStripContent: View {
     @ObservedObject var sessionsApp: SessionsAppCoordinator
     @ObservedObject var core: SessionsCoordinator
     @ObservedObject var model: DocumentModel
+    /// Cross-strip drop channel: a live TAB drag hit-tests these pills and
+    /// publishes which one it hovers (`hoveredSessionID` → the drop-target
+    /// highlight). Observed HERE (the leaf) so the highlight re-bodies the
+    /// strip, but only when the hovered pill CHANGES — the channel dedups.
+    /// The stable instance comes from `sessionsApp`, so observing it does
+    /// not cost this view its body-skip (unlike a fresh `= Object()`
+    /// initializer — see the PERF note above).
+    @ObservedObject var dropChannel: TabSessionDropChannel
     let rowHeight: CGFloat
     @Binding var renamingID: UUID?
     let openNewSession: () -> Void
@@ -156,6 +165,7 @@ private struct SessionStripContent: View {
                     snapshot: snap,
                     isSelected: core.activeID == snap.id,
                     isRenaming: renamingID == snap.id,
+                    isDropTarget: dropChannel.hoveredSessionID == snap.id,
                     uiSize: model.uiSize,
                     // A reorder must not switch sessions — swallow the click
                     // that terminates a drag (`StripFrameBox`).
@@ -201,6 +211,9 @@ private struct SessionStripContent: View {
                                                 to: move.destination)
                     }
                 )
+                // Cross-strip drop target: publish this pill's GLOBAL frame
+                // so a live TAB drag can hit-test it (tab → session move).
+                .sessionDropTargetFrame(id: snap.id, into: dropChannel)
                 // B4-adjacent: a full top-to-bottom divider reads
                 // cleaner between a taller two-line cell than the old
                 // 16pt stub did. (B4 proper is a separate item.)
@@ -258,6 +271,10 @@ struct SessionTabBarItem: View {
     let snapshot: SessionSnapshot
     let isSelected: Bool
     let isRenaming: Bool
+    /// A live tab drag is hovering this pill: light it up as the drop
+    /// target (accent ring + tint) so the user can see WHERE the tab will
+    /// land before releasing. Driven by `TabSessionDropChannel`.
+    let isDropTarget: Bool
     /// Zoom-aware sizing helper threaded from `SessionTabBar` (== `DocumentModel
     /// .uiSize`). Every font / glyph / pill dimension scales through it.
     let uiSize: (CGFloat) -> CGFloat
@@ -327,6 +344,20 @@ struct SessionTabBarItem: View {
             .frame(minWidth: uiSize(120), idealWidth: uiSize(190), maxWidth: uiSize(260))
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
+            // Drop-target ring: unambiguous "the tab lands HERE" affordance
+            // over the tint. Gated by the codified negative-control switch
+            // (TSK-1134 pattern) so the T5 pixel guard can prove its own
+            // teeth without hand-reverting.
+            .overlay {
+                if isDropTarget, !MDVNegativeControl.isBroken("SESSION_DROP_HIGHLIGHT") {
+                    RoundedRectangle(cornerRadius: uiSize(5))
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                        .padding(uiSize(2))
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier(
+                            "mdv.sessionTab.dropTarget.\(snapshot.id.uuidString)")
+                }
+            }
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -380,6 +411,11 @@ struct SessionTabBarItem: View {
     }
 
     private var background: Color {
+        // Drop-target tint outranks selection: while a drag is over this
+        // pill, "the tab lands here" is the message that matters.
+        if isDropTarget, !MDVNegativeControl.isBroken("SESSION_DROP_HIGHLIGHT") {
+            return Color(nsColor: .controlAccentColor).opacity(0.28)
+        }
         if isSelected {
             return Color(nsColor: .controlAccentColor).opacity(0.18)
         }
@@ -473,7 +509,13 @@ public enum SessionTabLabel {
 // true unconditionally, so a file dragged from the sidebar onto a pill did
 // nothing instead of falling through to the window's open handler).
 //
-// The capability itself is preserved, and is now discoverable rather than
-// hidden behind a drag: the tab context menu's "Move to Session ▸" calls
-// the same `SessionsAppCoordinator.moveTab(withID:toSessionID:)`, which
-// keeps its own host tests (`TabToNewSessionTests`).
+// 2026-07-31: the DRAG affordance is BACK, on the reorder gesture rather
+// than the pasteboard — `TabSessionDropChannel` + `StripExternalTarget`
+// let the tab strip's DragGesture hit-test these pills directly (with the
+// hovered pill highlighted), so no drop-delegate/item-provider round-trip
+// and no swallowed file drops. (`FileDragProviderTests` greps this file to
+// keep the pasteboard forms out — don't name them here.) The context
+// menu's "Move to Session ▸" stays as the discoverable, host-testable
+// path; both call the same
+// `SessionsAppCoordinator.moveTab(withID:toSessionID:)`
+// (`TabToNewSessionTests`).

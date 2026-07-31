@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-31
+
+### Added
+- **Drag a tab onto a session pill to move the file into that session.** While you drag a file
+  tab up over the session strip, the pill under the pointer lights up (accent ring + tint) to
+  show where the tab will land; releasing moves the file there, switches to that session, and
+  selects the moved tab. Your own session's pill never lights up (nothing would move). The
+  context menu's "Move to Session ▸" keeps doing the same thing for discoverability.
+
+### System work
+- Cross-strip drag machinery: the reorder gesture gained an optional external-target hook
+  (`StripExternalTarget` + `TabSessionDropChannel`), keeping the pasteboard/`.onDrop` round-trip
+  dead (the old TSK-274 delegate swallowed real file drops). Reorder caret hides while a pill is
+  targeted. New host tests (channel hit-testing/prune/dedup, caret-hide, wiring pins, scene
+  behavior) + a T5 capture scene (`tab-session-drop`) with a codified negative-control teeth
+  switch (`MDV_ENABLE_BROKEN_SESSION_DROP_HIGHLIGHT`). Capture rig now isolates session
+  persistence (`MDV_SESSIONS_DIR`) so scenes that create sessions can't touch real state.
+
 ## 2026-07-30
 
 ### Fixed

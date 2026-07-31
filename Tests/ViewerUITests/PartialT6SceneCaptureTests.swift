@@ -30,6 +30,35 @@ final class PartialT6SceneCaptureTests: PixelTestCase {
         try Self.assertHasInk(cg, scene: "conflict-merge")
     }
 
+    /// Tab→session drop-target highlight (2026-07-31): the scene forces the
+    /// second session's pill into the hovered-drop-target state a live tab
+    /// drag produces; the strip must show the accent ring/tint on THAT pill,
+    /// far to the right of the active pill's own accent.
+    func test_capture_tabSessionDrop() throws {
+        let cg = try Self.capture(scene: "tab-session-drop")
+        let span = Self.accentSpanInSessionStrip(cg)
+        XCTAssertGreaterThan(span, Double(cg.width) * 0.10,
+            "tab-session-drop: no drop-target highlight on the second pill — "
+            + "saturated ink spans only \(Int(span))px of \(cg.width) "
+            + "(the active pill's glyph alone). Eyeball the PNG.")
+    }
+
+    /// TEETH (the TSK-1134 codified negative control): with the highlight
+    /// deliberately broken via MDV_ENABLE_BROKEN_SESSION_DROP_HIGHLIGHT, the
+    /// same scene must make the guard above go RED — i.e. the accent span
+    /// collapses back to the active pill's glyph. Proves the detector
+    /// detects absence, not just presence.
+    func test_capture_tabSessionDrop_negativeControl() throws {
+        let cg = try Self.capture(
+            scene: "tab-session-drop",
+            extraEnv: ["MDV_ENABLE_BROKEN_SESSION_DROP_HIGHLIGHT": "1"],
+            debugName: "tab-session-drop-broken")
+        let span = Self.accentSpanInSessionStrip(cg)
+        XCTAssertLessThanOrEqual(span, Double(cg.width) * 0.10,
+            "negative control: the highlight is broken yet the detector still "
+            + "sees a wide accent span (\(Int(span))px) — the guard has no teeth")
+    }
+
     // MARK: - rig (the shared per-suite T5 pattern)
 
     private static let appExe: String = {
@@ -43,7 +72,9 @@ final class PartialT6SceneCaptureTests: PixelTestCase {
     private static let windowIDFile = FileManager.default.temporaryDirectory
         .appendingPathComponent("com.markdownviewer.MarkdownViewer.windowid")
 
-    static func capture(scene: String) throws -> CGImage {
+    static func capture(scene: String,
+                        extraEnv: [String: String] = [:],
+                        debugName: String? = nil) throws -> CGImage {
         guard FileManager.default.isExecutableFile(atPath: appExe) else {
             throw XCTSkip("App not built at dist/ — run the VM `pixel`/`all` lane.")
         }
@@ -54,6 +85,15 @@ final class PartialT6SceneCaptureTests: PixelTestCase {
         env["MDV_UI_SCENE"] = scene
         env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
         env["MDV_TEST_INSTANCE"] = "1"
+        // Isolate session persistence: scenes that CREATE sessions
+        // (tab-session-drop) must never write into the machine's real
+        // session store.
+        let sessionsDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-t6-sessions-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(
+            at: sessionsDir, withIntermediateDirectories: true)
+        env["MDV_SESSIONS_DIR"] = sessionsDir.path
+        for (k, v) in extraEnv { env[k] = v }
         p.environment = env
         try p.run()
         defer {
@@ -64,7 +104,9 @@ final class PartialT6SceneCaptureTests: PixelTestCase {
             }
         }
 
-        let windowID = try waitForWindowID(timeout: 5.0)
+        // 12s, not 5: the Nth spawn in a suite run can exceed 5s under VM
+        // load (the negative-control test skipped on exactly that).
+        let windowID = try waitForWindowID(timeout: 12.0)
         let activate = Process()
         activate.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         activate.arguments = ["-e", "tell application \"MarkdownViewer\" to activate"]
@@ -90,7 +132,9 @@ final class PartialT6SceneCaptureTests: PixelTestCase {
         if let dbg = ProcessInfo.processInfo.environment["MDV_PIXEL_DEBUG_DIR"], !dbg.isEmpty {
             let dir = URL(fileURLWithPath: dbg)
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let dest = dir.appendingPathComponent("\(scene).png")
+            // `debugName` keeps variant captures (the negative control)
+            // from clobbering the scene's canonical eyeball artifact.
+            let dest = dir.appendingPathComponent("\(debugName ?? scene).png")
             try? FileManager.default.removeItem(at: dest)
             if let data = image.tiffRepresentation,
                let rep = NSBitmapImageRep(data: data),
@@ -136,6 +180,40 @@ final class PartialT6SceneCaptureTests: PixelTestCase {
         XCTAssertGreaterThan(distinct.count, 12,
             "\(scene): the CONTENT PANE is near-uniform (\(distinct.count) distinct "
             + "sampled colors) — blank/occluded (the TSK-1247 class), eyeball the PNG")
+    }
+
+    /// Horizontal spread (px) of SATURATED pixels across the window's top
+    /// band (titlebar + session strip, y < 9% of height). Saturation
+    /// (max−min channel > 55) is channel-order-agnostic and sits ABOVE the
+    /// active pill's 0.18-alpha tint (Δ≈46) but BELOW the drop-target's
+    /// 0.28 tint (Δ≈71) and full-accent ring (Δ=255) — so:
+    ///   - highlight ON:  span reaches from the active pill's accent glyph
+    ///     to the hovered pill's ring/tint (≫ 10% of width);
+    ///   - highlight OFF: only the glyph (+ traffic lights at far left)
+    ///     register — a narrow left-edge cluster.
+    /// Window-width agnostic by design (no fixed pill positions).
+    static func accentSpanInSessionStrip(_ cg: CGImage) -> Double {
+        guard let data = cg.dataProvider?.data as Data? else { return 0 }
+        let bpr = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
+        let yEnd = Int(Double(cg.height) * 0.09)
+        var minX = Int.max, maxX = Int.min
+        var y = 0
+        while y < yEnd {
+            var x = 0
+            while x < cg.width {
+                let o = y * bpr + x * bpp
+                if o + 3 < data.count {
+                    let a = Int(data[o]), b = Int(data[o + 1]), c = Int(data[o + 2])
+                    if max(a, b, c) - min(a, b, c) > 55 {
+                        minX = min(minX, x)
+                        maxX = max(maxX, x)
+                    }
+                }
+                x += 4
+            }
+            y += 4
+        }
+        return maxX >= minX ? Double(maxX - minX) : 0
     }
 
     private static func waitForWindowID(timeout: TimeInterval) throws -> Int {

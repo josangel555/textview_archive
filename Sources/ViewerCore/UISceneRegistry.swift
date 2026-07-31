@@ -210,6 +210,12 @@ public enum UISceneRegistry {
             summary: "The 3-pane conflict-resolution sheet over a dirty tab "
                 + "whose file diverged on disk (TSK-1171, first mounted 2026-07-29)"),
         SceneSpec(
+            id: "tab-session-drop",
+            fixture: .throwawaySource(name: "drag-sample.md"),
+            closesExistingTabs: true,
+            summary: "Two sessions; the second pill lit as the drop target of a "
+                + "live tab drag (tab→session move, 2026-07-31)"),
+        SceneSpec(
             id: "video-unsupported",
             fixture: .throwawaySource(name: "sample.mkv"),
             closesExistingTabs: true,

@@ -100,6 +100,11 @@ final class TabToNewSessionTests: XCTestCase {
         XCTAssertEqual(coord.core.activeID, sessionC, "target session must activate")
         XCTAssertTrue(coord.model.tabs.tabs.contains { $0.url == file },
             "the file must be open in the target session")
+        // Owner's contract for the drag-onto-pill flow (2026-07-31): after
+        // the move you are IN the target session ON the moved tab — not
+        // watching it land somewhere in the background.
+        XCTAssertEqual(coord.model.tabs.selected?.url, file,
+            "the moved tab must be the SELECTED tab in the target session")
         coord.activate(id: sessionA)
         XCTAssertFalse(coord.model.tabs.tabs.contains { $0.url == file },
             "the source session must lose the moved tab")

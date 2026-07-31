@@ -47,6 +47,13 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// here until the multi-window UI lands real per-window coordinators.
     public private(set) var primaryWindowID: WindowID?
 
+    /// Cross-strip drag seam (2026-07-31): the session strip records its
+    /// pill frames here; the file-tab strip's reorder drag hit-tests them
+    /// so a tab dropped onto a pill routes to `moveTab(withID:toSessionID:)`.
+    /// Owned here because it is the one object both strips can reach
+    /// (the tab strip via `model.sessionsCoordinator`).
+    let tabDragChannel = TabSessionDropChannel()
+
     /// The currently-mounted session state. Phase 1: nil only when
     /// the user has zero sessions (fresh install, never opened a
     /// folder).

@@ -167,6 +167,43 @@ public enum UISceneApplier {
                 + "sheet=\(model.activeConflictResolution != nil)"
         }
 
+        // Tab→session drop-target scene (2026-07-31 render tail): the session
+        // strip's SECOND pill lit as the drop target of a live tab drag. The
+        // drag itself is a pointer gesture (not reachable headlessly), so the
+        // scene drives the same channel state the gesture writes: two REAL
+        // sessions, a file tab open in the active one, the other session's
+        // pill highlight forced on via `TabSessionDropChannel.setHovered`.
+        if scene == "tab-session-drop" {
+            guard let sessionsApp = model.sessionsCoordinator else {
+                return "ui-scene: 'tab-session-drop' needs a sessions coordinator"
+            }
+            let dirA = tabsBaseDir.appendingPathComponent("sess-a")
+            let dirB = tabsBaseDir.appendingPathComponent("sess-b")
+            try? FileManager.default.createDirectory(
+                at: dirA, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(
+                at: dirB, withIntermediateDirectories: true)
+            sessionsApp.openFolder(dirA, forceNew: true)
+            guard let a = sessionsApp.core.activeID else {
+                return "ui-scene: 'tab-session-drop' failed to create session A"
+            }
+            sessionsApp.openFolder(dirB, forceNew: true)
+            guard let b = sessionsApp.core.activeID, b != a else {
+                return "ui-scene: 'tab-session-drop' failed to create session B"
+            }
+            sessionsApp.activate(id: a)
+            let f = dirA.appendingPathComponent("drag-sample.md")
+            try? "# Drag me\n\nThis tab is mid-drag onto the second session's pill.\n"
+                .write(to: f, atomically: true, encoding: .utf8)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            sessionsApp.tabDragChannel.setHovered(b)
+            return "ui-scene: applied 'tab-session-drop' "
+                + "sessions=\(sessionsApp.core.sessions.count) "
+                + "activeIsA=\(sessionsApp.core.activeID == a) "
+                + "hoveredIsB=\(sessionsApp.tabDragChannel.hoveredSessionID == b)"
+        }
+
         if scene == "video-unsupported" {
             try? FileManager.default.createDirectory(
                 at: tabsBaseDir, withIntermediateDirectories: true)

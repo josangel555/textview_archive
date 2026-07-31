@@ -254,6 +254,9 @@ private struct TabStripContent: View {
                     space: Self.stripSpace,
                     frames: frameBox,
                     state: $reorder,
+                    // The same drag can also target a SESSION pill: dropping
+                    // there moves the file into that session (and follows it).
+                    external: sessionDropTarget(for: tab),
                     commit: { draggedID, gap in
                         // Re-resolve against the LIVE tab list — see
                         // `StripReorder.resolveMove`.
@@ -310,11 +313,42 @@ private struct TabStripContent: View {
         // item frame and the drag pointer are measured in, so the caret
         // lands exactly where the gap is.
         .coordinateSpace(name: Self.stripSpace)
+        // Cross-strip geometry: the content's global origin converts drag
+        // locations to the space the session pills measure in.
+        .stripContentGlobalOrigin(into: frameBox)
         .overlay(alignment: .leading) {
             if let x = reorder?.caretX {
                 StripInsertionCaret(x: x, height: model.uiSize(28))
             }
         }
+    }
+
+    /// Cross-strip capability for one tab's drag (TSK-274's affordance,
+    /// back as a real gesture): dropping the tab onto a session pill calls
+    /// `SessionsAppCoordinator.moveTab(withID:toSessionID:)` — moves the
+    /// file into that session, activates it, selects the moved file.
+    /// Offered only when the tab HAS a file (`moveTab` no-ops on untitled
+    /// tabs) and a sessions coordinator is attached (nil in standalone/
+    /// test hosts). The ACTIVE session's pill is excluded — a same-session
+    /// drop is a no-op, so it must never light up as a target.
+    private func sessionDropTarget(for tab: ViewerCore.Tab) -> StripExternalTarget? {
+        guard tab.url != nil,
+              let sessionsApp = model.sessionsCoordinator else { return nil }
+        let channel = sessionsApp.tabDragChannel
+        let box = frameBox
+        return StripExternalTarget(
+            toGlobal: { box.globalPoint(fromStrip: $0) },
+            hitTest: { point in
+                let core = sessionsApp.core
+                return channel.sessionID(
+                    at: point,
+                    live: Set(core.sessions.map(\.id)),
+                    excluding: core.activeID)
+            },
+            setHovered: { channel.setHovered($0) },
+            commit: { tabID, sessionID in
+                sessionsApp.moveTab(withID: tabID, toSessionID: sessionID)
+            })
     }
 }
 

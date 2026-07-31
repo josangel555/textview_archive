@@ -380,6 +380,47 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "recognised scene: \(status)")
     }
 
+    /// tab-session-drop (2026-07-31): with a sessions coordinator attached
+    /// the scene must build TWO real sessions, re-activate the first with a
+    /// file tab open, and force the SECOND pill's drop-target highlight —
+    /// the exact state the T5 capture photographs.
+    func test_tabSessionDropScene_buildsTwoSessions_andLightsTheSecondPill() throws {
+        let model = makeModel()
+        let sessionsDir = tmp.appendingPathComponent("Sessions")
+        try FileManager.default.createDirectory(
+            at: sessionsDir, withIntermediateDirectories: true)
+        let coord = SessionsAppCoordinator(
+            model: model, store: SessionStore(directory: sessionsDir), initialRoot: nil)
+        coord.bootstrap()
+        model.sessionsCoordinator = coord
+
+        let status = apply("tab-session-drop", model)
+
+        XCTAssertTrue(status.contains("applied 'tab-session-drop'"), "status: \(status)")
+        XCTAssertEqual(coord.core.sessions.count >= 2, true,
+                       "two sessions must exist (got \(coord.core.sessions.count))")
+        let active = try XCTUnwrap(coord.core.activeID)
+        let hovered = try XCTUnwrap(coord.model.sessionsCoordinator?
+            .tabDragChannel.hoveredSessionID,
+            "the drop-target highlight must be forced on")
+        XCTAssertNotEqual(hovered, active,
+            "the highlighted pill must be the OTHER session — the active "
+            + "session is never a valid drop target")
+        XCTAssertEqual(model.tabs.selected?.url?.lastPathComponent, "drag-sample.md",
+            "the dragged-tab backdrop must be the selected tab")
+    }
+
+    /// Without a coordinator (standalone/test hosts) the scene is a guarded
+    /// no-op that says so — never a silent partial apply.
+    func test_tabSessionDropScene_withoutCoordinator_isAGuardedNoop() {
+        let model = makeModel()
+        let tabsBefore = model.tabs.tabs.count
+        let status = apply("tab-session-drop", model)
+        XCTAssertTrue(status.contains("needs a sessions coordinator"), "status: \(status)")
+        XCTAssertEqual(model.tabs.tabs.count, tabsBefore,
+                       "the refusal path must not open or close tabs")
+    }
+
     func test_unknownScene_isReportedNotApplied() {
         let model = makeModel()
         let status = apply("bogus-scene", model)

@@ -68,6 +68,24 @@ final class StripFrameBox {
         now < selectSuppressedUntil
     }
 
+    // MARK: cross-strip geometry (tab → session-pill drop)
+
+    /// Origin of the strip's named coordinate space in GLOBAL (window-root)
+    /// space, recorded by `stripContentGlobalOrigin`. Lets a drag whose
+    /// gesture reports strip-space points be hit-tested against targets
+    /// OUTSIDE this strip (the session pills), which measure globally —
+    /// see `TabSessionDropChannel`.
+    private var contentOriginInGlobal: CGPoint = .zero
+
+    func recordContentOrigin(_ origin: CGPoint) {
+        contentOriginInGlobal = origin
+    }
+
+    func globalPoint(fromStrip p: CGPoint) -> CGPoint {
+        CGPoint(x: contentOriginInGlobal.x + p.x,
+                y: contentOriginInGlobal.y + p.y)
+    }
+
     /// Frames for exactly `ids`, in that order — so the array index of a
     /// frame always equals the item's model index, which is what
     /// `StripReorder`'s gap arithmetic assumes.
@@ -107,15 +125,41 @@ struct StripReorderState: Equatable {
     /// the frame it reports, so live frames would feed the drag's own
     /// displacement back into the gap and make the caret oscillate.
     let frames: [StripReorder.ItemFrame]
+    /// Non-nil while the pointer is over an EXTERNAL drop target (a
+    /// session pill): the drop would leave this strip entirely, so the
+    /// insertion caret hides — a caret would promise a reorder that
+    /// isn't going to happen. See `StripExternalTarget`.
+    var externalTargetID: UUID? = nil
 
     var isNoOp: Bool { StripReorder.isNoOp(source: sourceIndex, gap: gap) }
 
     /// Caret x, or nil when the drop would not move anything (so a tab
-    /// nudged a few points doesn't flash a misleading indicator).
+    /// nudged a few points doesn't flash a misleading indicator), or when
+    /// the pointer is over an external target (the pill highlight is the
+    /// indicator then, not the caret).
     var caretX: CGFloat? {
-        guard !isNoOp else { return nil }
+        guard externalTargetID == nil, !isNoOp else { return nil }
         return StripReorder.caretX(gap: gap, frames: frames)
     }
+}
+
+/// Optional cross-strip drop capability for `stripReorderable`: while a
+/// drag is live, each pointer sample is converted to global space and
+/// hit-tested against targets outside the strip (the session pills).
+/// Hovering one hides the reorder caret and highlights the target
+/// (`setHovered`); dropping on one commits via `commit` INSTEAD of a
+/// reorder. The file-tab strip passes this; the session strip (whose
+/// items have no external destination) passes nil.
+struct StripExternalTarget {
+    /// Strip-space → global space (the space `hitTest` rects live in).
+    let toGlobal: (CGPoint) -> CGPoint
+    /// The external target under a global point, or nil.
+    let hitTest: (CGPoint) -> UUID?
+    /// Hover feedback for the target's highlight. May be called once per
+    /// pointer sample — the receiver dedups (`TabSessionDropChannel`).
+    let setHovered: (UUID?) -> Void
+    /// Drop commit: (dragged item id, external target id).
+    let commit: (UUID, UUID) -> Void
 }
 
 extension View {
@@ -136,6 +180,21 @@ extension View {
         )
     }
 
+    /// Record the strip CONTENT's origin in GLOBAL space into `box`, so
+    /// drag locations (measured in the strip's named space) can be
+    /// converted for cross-strip hit-testing (`StripExternalTarget`).
+    /// Same non-invalidating background-reader pattern as `stripItemFrame`.
+    func stripContentGlobalOrigin(into box: StripFrameBox) -> some View {
+        background(
+            GeometryReader { geo in
+                let f = geo.frame(in: .global)
+                Color.clear
+                    .onAppear { box.recordContentOrigin(f.origin) }
+                    .onChange(of: f) { _, new in box.recordContentOrigin(new.origin) }
+            }
+        )
+    }
+
     /// Make one strip item draggable-to-reorder.
     ///
     /// `ids` is the strip's items in visual order; `commit` receives the
@@ -149,6 +208,10 @@ extension View {
     /// would then move the WRONG tab. Call sites re-resolve it against the
     /// live list, which is the property the old drop-delegate had and this
     /// must not lose.
+    ///
+    /// `external` (optional) additionally lets the drag target drop zones
+    /// OUTSIDE the strip — the tab→session-pill move. See
+    /// `StripExternalTarget`.
     func stripReorderable(
         id: UUID,
         index: Int,
@@ -156,10 +219,12 @@ extension View {
         space: String,
         frames: StripFrameBox,
         state: Binding<StripReorderState?>,
+        external: StripExternalTarget? = nil,
         commit: @escaping (UUID, Int) -> Void
     ) -> some View {
         modifier(StripReorderableItem(id: id, index: index, ids: ids, space: space,
-                                      frames: frames, state: state, commit: commit))
+                                      frames: frames, state: state,
+                                      external: external, commit: commit))
     }
 }
 
@@ -175,6 +240,7 @@ private struct StripReorderableItem: ViewModifier {
     let space: String
     let frames: StripFrameBox
     @Binding var state: StripReorderState?
+    let external: StripExternalTarget?
     let commit: (UUID, Int) -> Void
 
     private var isDragging: Bool { state?.itemID == id }
@@ -214,6 +280,14 @@ private struct StripReorderableItem: ViewModifier {
                 live.translation = value.translation.width
                 live.gap = StripReorder.insertionGap(pointerX: value.location.x,
                                                      frames: live.frames)
+                // Cross-strip targeting: is the pointer over a session pill?
+                // (`setHovered` drives the pill's highlight; the receiver
+                // dedups, so calling per-sample is fine.)
+                if let ext = external {
+                    let target = ext.hitTest(ext.toGlobal(value.location))
+                    ext.setHovered(target)
+                    live.externalTargetID = target
+                }
                 state = live
             }
             .onEnded { value in
@@ -222,6 +296,20 @@ private struct StripReorderableItem: ViewModifier {
                 // The button's action fires AFTER this; keep it swallowed
                 // whether or not the drop turns out to be a real move.
                 frames.armSelectSuppression()
+                // Cross-strip drop: released over an external target, the
+                // item leaves this strip entirely — commit the move instead
+                // of a reorder. The highlight clears either way (the drag
+                // is over).
+                if let ext = external {
+                    ext.setHovered(nil)
+                    if let target = ext.hitTest(ext.toGlobal(value.location)) {
+                        withAnimation(Self.dropAnimation) {
+                            state = nil
+                            ext.commit(s.itemID, target)
+                        }
+                        return
+                    }
+                }
                 let gap = StripReorder.insertionGap(pointerX: value.location.x,
                                                     frames: s.frames)
                 guard !StripReorder.isNoOp(source: s.sourceIndex, gap: gap) else {
