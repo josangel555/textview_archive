@@ -372,6 +372,9 @@ one pass. Related-by-design so context is shared and the tests overlap.
    the central gate on every new committed HEAD and reports `CI <sha> GATE rc=<n>`; a red
    line = triage now (bench-only failures under load: re-run quiet, TSK-1499). Run the gate
    inline only if the loop is down. (+ `scripts/rust-core-gate.sh` targeted if rust touched.)
+   **Round completion is reported at COMMIT — never wait on CI. Install release to
+   /Applications only AFTER the commit's CI line comes back rc=0** (owner amendment
+   2026-08-01); a red line = fix-forward, CI retests, then install.
 4. **ONE commit for the whole chunk** — list EVERY TSK id in the subject/body + the
    `Claude-Session:` trailer. Fold the CHANGELOG/HANDOFF/LESSONS updates into it.
 5. **VM/AX rung** (only if render behaviour changed AND the VM lane is up, TSK-1550): batch the
