@@ -199,7 +199,7 @@ final class GitLogDiffActionsTests: XCTestCase {
         // rewrites the same cache file) until git actually produced output;
         // a REAL truncation break still fails after the retries.
         var body = ""
-        for attempt in 0..<3 {
+        for _ in 0..<3 {
             GitLogDiffActions.rowClicked(
                 sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
             if let url = doc.tabs.tabs.last?.url,
@@ -207,7 +207,9 @@ final class GitLogDiffActionsTests: XCTestCase {
                 body = b
                 break
             }
-            if attempt < 2 { Thread.sleep(forTimeInterval: 0.3) }
+            // No inter-attempt sleep (the sleep ratchet stays at baseline):
+            // each retry re-spawns git, whose own 10–100ms runtime is the
+            // natural spacing for a transient spawn failure.
         }
         XCTAssertFalse(body.isEmpty, "git produced no diff output after 3 attempts")
         XCTAssertTrue(body.hasPrefix("⚠ DIFF TRUNCATED"),
