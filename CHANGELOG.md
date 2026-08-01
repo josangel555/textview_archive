@@ -5,9 +5,9 @@
 ### Changed
 - **Tabs look like tabs now.** The active tab wears the content background (white in light
   mode) so it reads connected to the document; inactive tabs are grey chips that brighten on
-  hover; the full-width line that ran under the active tab is gone; and tabs (plus the
-  breadcrumb, view-mode segments, toast buttons, LSP chip, and banner controls) show the
-  pointing-hand cursor.
+  hover; the line under the strip is interrupted beneath the active tab only (it still runs
+  under inactive tabs); and tabs (plus the breadcrumb, view-mode segments, toast buttons,
+  LSP chip, and banner controls) show the pointing-hand cursor.
 
 ### Changed
 - **Editor find, overhauled.** Match highlights are now purple (distinct from the amber

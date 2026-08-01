@@ -123,9 +123,19 @@ struct TabBar: View {
         // behavior unchanged.
         .background(
             GeometryReader { geo in
-                Palette.windowBackground
-                    .onAppear { availableWidth = geo.size.width }
-                    .onChange(of: geo.size.width) { _, w in availableWidth = w }
+                // I-16a CORRECTION (owner 2026-08-01): the bottom hairline is
+                // BACK — it runs under the inactive tabs and the empty strip,
+                // and lives in the strip's BACKGROUND so the ACTIVE tab's
+                // bottom extension (TabBarItem) paints over its segment: the
+                // line is interrupted under the active tab only.
+                ZStack(alignment: .bottom) {
+                    Palette.windowBackground
+                    Rectangle()
+                        .fill(Palette.separator)
+                        .frame(height: 1)
+                }
+                .onAppear { availableWidth = geo.size.width }
+                .onChange(of: geo.size.width) { _, w in availableWidth = w }
             }
         )
     }
@@ -589,6 +599,21 @@ struct TabBarItem: View {
             // than overflowing its neighbor when the tab is at the floor.
             .frame(width: width, height: 28 * scale)
             .clipped()
+            // I-16a correction: the ACTIVE tab interrupts the strip's bottom
+            // hairline — a same-color extension reaches from inside the tab
+            // (invisible overlap) down to exactly the strip's bottom edge
+            // (item bottom 29·s + offset 2·s − nothing protrudes: 28·s frame,
+            // 3·s tall, bottom lands at 30·s for every zoom scale). Inactive
+            // tabs keep the line.
+            .overlay(alignment: .bottom) {
+                if isSelected {
+                    Rectangle()
+                        .fill(Palette.textBackground)
+                        .frame(height: 3 * scale)
+                        .offset(y: 2 * scale)
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

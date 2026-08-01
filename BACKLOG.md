@@ -31,7 +31,10 @@ I-## → TSK-### when the tasked board reconnects.
   "⚠ DIFF TRUNCATED" notice + `git show` escape hatch, toast). Pure suite + a seam-driven
   click test. RESIDUE (**S**): if the owner still FEELS a stall on huge commits, move the
   `git show` subprocess off-main — deferred because it flips `showCommit`/the script verbs
-  async, which ripples through the sync automation contracts; measure first.
+  async, which ripples through the sync automation contracts; measure first. ALSO (**S**,
+  from the CI flakes): `commitDiff`'s `try? run ?? ""` maps EVERY git failure (spawn EAGAIN
+  under load, partial drain) to a SILENT empty diff — a user clicking a commit under load
+  gets an empty tab with no explanation; surface the failure (toast + lastTrace) instead.
 - ~~**I-03 (bug)**~~ **FOLDED INTO I-01** — "Merge did nothing" was the false-conflict
   dead-end (real divergence DOES open the 3-pane sheet; pinned by test). Fixed with I-01.
 - ~~**I-04 (bug)**~~ **FIXED (R8, 2026-08-01)** — the detector's result never reached the

@@ -136,11 +136,12 @@ public struct ContentView: View {
                     // `BottomAttributesBar` (above the StatusBar).
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
-                // I-16a (owner 2026-08-01): the full-width Divider that ran
-                // UNDER the tab strip is gone — it drew "the line below the
-                // active tab" and broke the tab-connects-to-content look now
-                // that the active tab wears the content background. The
-                // strip/toolbar boundary is carried by the fills.
+                // I-16a (owner 2026-08-01, corrected same day): the full-width
+                // Divider that lived HERE moved into TabBar's background as a
+                // bottom hairline — still under the inactive tabs and empty
+                // strip, but INTERRUPTED under the active tab (its fill
+                // extends over the segment), so active tab + content read as
+                // one surface.
                 // MARK: - Shoulder rails + body band
                 //
                 // The rails frame the MIDDLE band only (between ModeBar
