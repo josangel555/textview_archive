@@ -102,6 +102,17 @@ final class MarkdownExtrasWebViewTests: WebViewTestCase {
         XCTAssertLessThan(subSize, proseSize, "sub typesets smaller than prose")
     }
 
+    func test_wikilink_paintsAsDottedUnderlineLink() async throws {
+        await loadRendered("see [[Design Notes]] here")
+        let w = await evalDouble(
+            "document.querySelector('a.mdv-wikilink')?.getBoundingClientRect().width ?? -1")
+        XCTAssertGreaterThan(w, 20, "the wikilink lays out as real link ink (\(w))")
+        let deco = await evalString(
+            "getComputedStyle(document.querySelector('a.mdv-wikilink')).textDecorationStyle")
+        XCTAssertEqual(deco, "dotted",
+            "the wikilink's distinguishing style must apply (got '\(deco)')")
+    }
+
     func test_definitionList_titleReadsBold() async throws {
         await loadRendered("Term\n: the definition\n")
         let dtWeight = await evalString(

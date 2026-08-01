@@ -4222,3 +4222,11 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   `.accessibilityElement(children: .contain)` (on the container and/or the control). Rule of
   thumb: any `mdv.*` id you expect the AX tier to find needs a `.contain` somewhere between it
   and the nearest bare-id container — and the AX tier is how you PROVE it materialized.
+
+- **AX child-frame quirk: NOT fixable by modifier order (2026-08-01, probed).** Under a parent
+  with `.accessibilityElement(children: .contain)`, a child element reports the PARENT's AX
+  frame — moving the id innermost and adding `.contain` on the child changes nothing. Driver
+  pattern: DERIVE small-control positions from the parent frame (the tab × = maxX −
+  height·18/28, zoom-agnostic because paddings scale with height); a pinned equality test
+  (`close.width == tab.width`) trips if SwiftUI ever fixes child frames so drivers can switch
+  to true geometry.

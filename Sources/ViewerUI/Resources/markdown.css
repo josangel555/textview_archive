@@ -251,3 +251,11 @@ blockquote.mdv-alert {
 /* Definition lists (`term` / `: definition`). */
 dt { font-weight: 600; margin-top: 0.6em; }
 dd { margin: 0.2em 0 0.6em 1.6em; }
+
+/* Wikilinks (`[[page]]`, 2026-08-01): same link color, dotted underline so
+   an in-workspace note link reads differently from a web link. */
+a.mdv-wikilink {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}

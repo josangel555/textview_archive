@@ -118,7 +118,10 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   ~~save/retrieve-session~~ (LANDED 2026-07-31 as NAMED SAVE POINTS: `SessionStore` `saved/`
   shelf + coordinator save/restore/delete + context-menu & +-menu surfaces; save flushes live
   state incl. unsaved buffers; restore = new session, point survives; 12 host tests + isolation
-  pin vs the TSK-438 recovery scan). Queue drained — next: AX harness bootstrap. **M each**
+  pin vs the TSK-438 recovery scan). ~~wikilinks~~ (LANDED 2026-08-01: `[[page]]`/pothole →
+  `mdv-wikilink` anchors; host-side `WikiLinkResolver` ladder — beside-file → `.md` → bare-name
+  at workspace root; the interception also un-deadened ORDINARY relative file links, which
+  `decide` had been cancelling; rust+resolver+paint tests green). Queue fully drained. **M each**
 - **AX tests for new UI work (owner policy shift, 2026-07-29).** ~~L bootstrap~~ **BOOTSTRAPPED
   2026-07-31**: `AXInteractionTestCase` tier (GUI-lane + `AXIsProcessTrusted` gated) +
   `AXChromeInteractionTests` green on the VM (find-by-`mdv.*`-id with real frames; HID click at
@@ -130,7 +133,11 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   inner-control AX frame fidelity (a `.contain` parent's children can report the parent's
   frame — the tab close button does; fix or offset-click before targeting small controls),
   **(d)** fold the suites into the nightly `all` lane notes + grow `AXIdentifierCatalog`.
-  **S per feature**
+  ~~(b) child-frame fidelity~~ (RESOLVED-AS-DOCUMENTED 2026-08-01: structural bridge behavior,
+  modifier order can't fix it; drivers derive small-control positions from the parent frame —
+  the tab × close-by-click test passes that way, and a pinned equality tripwire flips if
+  SwiftUI ever fixes child frames). Remaining: **(d)** fold the AX suites into the nightly
+  lane notes + grow `AXIdentifierCatalog`. **S per feature**
 - ~~Delete the dead `ModeBar` struct~~ **DONE 2026-08-01**: ~300 lines removed; the three
   still-live label statics rehomed to `LensLabels`; the two chrome-harness tests now mirror
   the real `ContentToolbar` band (same height math, green).

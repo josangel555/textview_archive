@@ -35,10 +35,53 @@ final class AXChromeInteractionTests: AXInteractionTestCase {
         }
         XCTAssertTrue(tabsOK, "all 3 tabs must be AX-addressable by their ids "
             + "(got \(AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root).count))")
-        XCTAssertGreaterThanOrEqual(
-            AXDriverCore.findAll(AXQuery("mdv.tab.closeButton"), in: root).count, 1,
+        let closes = AXDriverCore.findAll(AXQuery("mdv.tab.closeButton"), in: root)
+        XCTAssertGreaterThanOrEqual(closes.count, 1,
             "at least the SELECTED tab's close button must be in the tree "
             + "(unhovered ones may fade at opacity 0)")
+        // DOCUMENTED LIMITATION, pinned (2026-08-01, probed twice incl. an
+        // innermost-id + .contain attempt): under a `.contain` parent the
+        // child element reports the PARENT's frame. Drivers derive small-
+        // control positions from the parent frame instead. If SwiftUI ever
+        // fixes child frames this flips — celebrate, then switch drivers
+        // to the true frame and delete the derivation.
+        if let close = closes.first?.axFrame,
+           let tab = AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root)
+               .first?.axFrame {
+            XCTAssertEqual(close.width, tab.width,
+                "child-frame quirk changed — revisit the derived-click drivers")
+        }
+    }
+
+    /// The bootstrap's original goal: a REAL click on the × closes a REAL
+    /// tab. The ×'s AX frame is unusable (the child-frame quirk above), so
+    /// the click point is DERIVED from the tab frame: the × centers
+    /// 10pt padding + 8pt half-width from the trailing edge = 18pt at
+    /// zoom 1, and every one of those lengths scales with the tab height
+    /// (28pt at zoom 1) — so maxX − height·(18/28) is zoom-agnostic.
+    func test_hidClick_closeButton_closesARealTab() throws {
+        let root = try spawnAndAttach(scene: "tabs-3")
+        _ = waitUntil(5) {
+            AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root).count == 3
+        }
+        XCTAssertEqual(AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root).count, 3)
+        let tabs = AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root)
+            .sorted { ($0.axFrame?.minX ?? .infinity) < ($1.axFrame?.minX ?? .infinity) }
+        guard let tab0 = tabs.first?.axFrame else {
+            return XCTFail("the selected (leftmost) tab must expose a frame")
+        }
+
+        let closeCenter = CGPoint(
+            x: tab0.maxX - tab0.height * (18.0 / 28.0),
+            y: tab0.midY)
+        AXClickExecutor.click(at: closeCenter)
+
+        let closed = waitUntil(5) {
+            AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root).count == 2
+        }
+        XCTAssertTrue(closed,
+            "clicking the derived × position must close the tab (count "
+            + "\(AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root).count))")
     }
 
     /// THE first real-event interaction, end-to-end: HID-click the

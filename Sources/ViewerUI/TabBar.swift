@@ -571,6 +571,11 @@ struct TabBarItem: View {
                     .animation(.easeInOut(duration: 0.12), value: isHovering || isSelected)
                     .animation(.easeInOut(duration: 0.12), value: isHoveringClose)
                     .onHover { isHoveringClose = $0 }
+                    // NOTE (2026-08-01, probed): under the tab Button's
+                    // `.contain`, this child element reports the PARENT
+                    // tab's AX frame no matter where the id sits in the
+                    // chain — AX drivers must derive the ×'s position from
+                    // the tab frame (see AXChromeInteractionTests).
                     .accessibilityIdentifier("mdv.tab.closeButton")
                     // 0c: uniform HelpInfo — title for the bubble, longer
                     // description fed to the status bar on hover.

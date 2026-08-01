@@ -50,6 +50,12 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     public let fileURL: URL?
     public let restoreScrollY: Double?
     public let onScrollCapture: ((URL, Double) -> Void)?
+    /// In-document file links (2026-08-01): `[[wikilinks]]` + plain relative
+    /// links to local files, resolved via `WikiLinkResolver` (file's dir,
+    /// then workspace root) and opened IN-APP through this callback. Nil
+    /// (tests, split pane) keeps the old cancel-only behavior.
+    public let workspaceRoot: URL?
+    public let onOpenLocalFile: ((URL) -> Void)?
     /// Rendered-markdown content scale (TSK-358): `markdown.css` multiplies its
     /// intrinsic px by `var(--mdv-content-scale)`; 1.0 = neutral. Applied live
     /// via JS (no reload), mirroring `pageZoom`, so the render cache is untouched.
@@ -86,7 +92,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         findScrollCommand: FindCoordinator.RenderedScrollCommand = .pageDown,
         fileURL: URL? = nil,
         restoreScrollY: Double? = nil,
-        onScrollCapture: ((URL, Double) -> Void)? = nil
+        onScrollCapture: ((URL, Double) -> Void)? = nil,
+        workspaceRoot: URL? = nil,
+        onOpenLocalFile: ((URL) -> Void)? = nil
     ) {
         self.html = html
         self.baseURL = baseURL
@@ -108,6 +116,8 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.fileURL = fileURL
         self.restoreScrollY = restoreScrollY
         self.onScrollCapture = onScrollCapture
+        self.workspaceRoot = workspaceRoot
+        self.onOpenLocalFile = onOpenLocalFile
     }
 
     /// Perf P1 (TSK-1042): the warm-WebView cache key for this pane, or nil to
@@ -204,6 +214,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         // — which only receives the coordinator, not the view — knows where to
         // park this pane's WebView. Set even on the cache-MISS path below.
         context.coordinator.cacheKey = cacheKey
+        context.coordinator.pageBaseURL = baseURL
+        context.coordinator.workspaceRoot = workspaceRoot
+        context.coordinator.onOpenLocalFile = onOpenLocalFile
         // Perf P1 (TSK-1042): re-attach a parked WebView for this file instead
         // of building a fresh one. We copy the parked coordinator's in-flight
         // navigation state onto THIS (SwiftUI-owned) coordinator and re-point
@@ -263,6 +276,10 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         // representable lifecycle (a tab reused for a different file), and
         // `dismantleNSView` parks under whatever this resolves to.
         coord.cacheKey = cacheKey
+        // Keep the local-link resolution inputs current across file switches.
+        coord.pageBaseURL = baseURL
+        coord.workspaceRoot = workspaceRoot
+        coord.onOpenLocalFile = onOpenLocalFile
         // Lazy mermaid runtime injection / eviction. The host element
         // pattern is stable from HTMLRenderer's mermaid interceptor.
         // User scripts are added BEFORE loadHTMLString so the
@@ -745,6 +762,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         var lastScrollNonce: Int = 0
         /// Reported back via SwiftUI: true/false = last find's matchFound.
         var onFindResult: ((Bool?) -> Void)? = nil
+        /// In-document file links (2026-08-01): resolution inputs + the
+        /// open-in-app callback, kept current by make/updateNSView.
+        var pageBaseURL: URL? = nil
+        var workspaceRoot: URL? = nil
+        var onOpenLocalFile: ((URL) -> Void)? = nil
         /// Match count + current index + pre-formatted "n/N" summary,
         /// emitted after each find run. (total, currentIndexOrNil, summary).
         var onFindCountChange: ((Int, Int?, String) -> Void)? = nil
@@ -1042,6 +1064,28 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             // only when first load finished AND this `.other` isn't the
             // programmatic reload we just kicked off.
             let guardAsPostLoad = didFinishFirstLoad && !wasExpectingOurLoad
+            // In-document file links (2026-08-01): a clicked `[[wikilink]]`
+            // or relative markdown link arrives here as a `file:` URL
+            // (WebKit resolved it against the page's base = the file's dir)
+            // — which `decide` rightly CANCELS for the browser path. When
+            // the host wired `onOpenLocalFile`, resolve it (dir → workspace
+            // root, exact → `.md`) and open IN-APP instead; an unresolvable
+            // target says so out loud rather than dying silently.
+            if navigationAction.navigationType == .linkActivated,
+               let clicked = navigationAction.request.url, clicked.isFileURL,
+               let open = onOpenLocalFile {
+                if let hit = WikiLinkResolver.resolve(
+                    clicked: clicked, baseDir: pageBaseURL,
+                    workspaceRoot: workspaceRoot) {
+                    open(hit)
+                } else {
+                    ToastCenter.shared.post(.error,
+                        "No file named \u{201C}\(clicked.lastPathComponent)\u{201D} "
+                        + "beside this file or at the workspace root")
+                }
+                decisionHandler(.cancel)
+                return
+            }
             let decision = Coordinator.decide(
                 url: navigationAction.request.url,
                 navigationType: navigationAction.navigationType,

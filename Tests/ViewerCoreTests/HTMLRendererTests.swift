@@ -58,6 +58,13 @@ final class HTMLRendererTests: XCTestCase {
         XCTAssertTrue(out.contains("<del>gone</del>"), "double tilde stays del: \(out)")
     }
 
+    func test_wikilinks_renderMarkedAnchors() {
+        let out = renderer.render("see [[Design Notes]] and [[design.md|the doc]]")
+        XCTAssertTrue(out.contains("class=\"mdv-wikilink\""), "\(out)")
+        XCTAssertTrue(out.contains(">Design Notes</a>"), "bare form label: \(out)")
+        XCTAssertTrue(out.contains(">the doc</a>"), "pothole form label: \(out)")
+    }
+
     func test_headingAttributes_explicitIDWins() {
         let out = renderer.render("# Title {#pinned}")
         XCTAssertTrue(out.contains("id=\"pinned\""), "\(out)")

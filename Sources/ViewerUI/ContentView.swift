@@ -1247,6 +1247,12 @@ public struct ContentView: View {
             restoreScrollY: model.renderedScrollOffset(for: file.url),
             onScrollCapture: { url, y in
                 Task { @MainActor in model.rememberRenderedScroll(y, for: url) }
+            },
+            // [[wikilinks]] + relative file links (2026-08-01): resolve
+            // against the file's dir → workspace root and open IN-APP.
+            workspaceRoot: model.sidebar.rootURL,
+            onOpenLocalFile: { url in
+                Task { @MainActor in model.openPath(url) }
             }
         )
     }

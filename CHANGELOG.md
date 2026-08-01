@@ -26,7 +26,17 @@
   container swallowed them). Found by the AX tier; both verified end-to-end on the VM — a
   real HID click on the ⌘ button opens an AX-addressable palette.
 
+### Added
+- **Wikilinks and working relative links.** `[[Page]]` and `[[page.md|label]]` render as
+  dotted-underline links; clicking resolves beside the current file first (then with `.md`
+  appended, then a bare name at the workspace root) and opens the file in the app. Plain
+  relative markdown links to local files now open in-app too — previously every local link
+  click was silently cancelled. An unresolvable target shows a toast naming what was searched.
+
 ### System work
+- AX tier: the tab ×'s close-by-click test now passes via DERIVED positioning — probed that the
+  child-frame quirk is structural (modifier order doesn't fix it); the quirk is pinned with a
+  tripwire that flips if SwiftUI ever fixes child frames (LESSONS).
 - Tab-strip visual suite false-red fixed: the separator detector's cluster window (3pt) split
   one separator's two edges (7px apart under the VM's 110% zoom) into "two separators", which
   the gap sanity check then rejected. Calibrated to 5pt with the real capture data documented;

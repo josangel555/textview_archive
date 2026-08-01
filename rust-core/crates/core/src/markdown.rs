@@ -36,7 +36,7 @@
 //! - `<ol>` start numbers are ignored (the Swift visitor does the same).
 
 use pulldown_cmark::{
-    BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
+    BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
 };
 use serde::{Deserialize, Serialize};
 
@@ -191,7 +191,10 @@ pub fn render(text: &str) -> RenderOutput {
         | Options::ENABLE_SUBSCRIPT
         // `# Title {#custom-id .cls}` — explicit heading id wins over the
         // generated slug (and the `{…}` no longer renders as literal text).
-        | Options::ENABLE_HEADING_ATTRIBUTES;
+        | Options::ENABLE_HEADING_ATTRIBUTES
+        // `[[page]]` / `[[page|label]]` → `<a class="mdv-wikilink">`; the
+        // HOST resolves the target at click time (core is sans-IO).
+        | Options::ENABLE_WIKILINKS;
     let mut w = Writer::default();
     for event in Parser::new_ext(text, options) {
         w.event(event);
@@ -546,7 +549,7 @@ impl Writer {
                 self.synth_para_if_needed();
                 self.out("<del>");
             }
-            Tag::Link { dest_url, title, .. } => {
+            Tag::Link { link_type, dest_url, title, .. } => {
                 self.synth_para_if_needed();
                 let href = safe_url(&dest_url, UrlContext::Link);
                 let title_attr = if title.is_empty() {
@@ -554,7 +557,18 @@ impl Writer {
                 } else {
                     format!(" title=\"{}\"", escape(&title))
                 };
-                self.out(&format!("<a href=\"{}\"{}>", escape(&href), title_attr));
+                // `[[page]]` / `[[page|label]]` (ENABLE_WIKILINKS,
+                // 2026-08-01): the core is sans-IO, so RESOLUTION happens
+                // host-side at click time (current file's dir, then the
+                // workspace root; exact name, then `.md`). The class marks
+                // the anchor so the host's navigation interceptor knows to
+                // probe instead of treating it as a plain relative link.
+                let class_attr = match link_type {
+                    LinkType::WikiLink { .. } => " class=\"mdv-wikilink\"",
+                    _ => "",
+                };
+                self.out(&format!(
+                    "<a href=\"{}\"{}{}>", escape(&href), title_attr, class_attr));
             }
             Tag::Image { dest_url, .. } => {
                 self.synth_para_if_needed();
@@ -1054,6 +1068,29 @@ mod tests {
         let out = html("E = mc^2^ and H~2~O");
         assert!(out.contains("mc^2^"), "{out}");
         assert!(out.contains("H~2~O"), "{out}");
+    }
+
+    #[test]
+    fn wikilinks_render_marked_anchors() {
+        let plain = html("see [[Design Notes]] here");
+        assert!(
+            plain.contains("<a href=\"Design Notes\" class=\"mdv-wikilink\">Design Notes</a>"),
+            "bare wikilink: target is the href AND the label: {plain}"
+        );
+        let pothole = html("see [[design.md|the design]] here");
+        assert!(
+            pothole.contains("<a href=\"design.md\" class=\"mdv-wikilink\">the design</a>"),
+            "pothole form: target|label split: {pothole}"
+        );
+        // Ordinary links must NOT grow the marker class.
+        let normal = html("[x](https://example.com)");
+        assert!(!normal.contains("mdv-wikilink"), "{normal}");
+    }
+
+    #[test]
+    fn wikilink_target_cannot_inject_markup() {
+        let out = html("[[a\"><script>alert(1)</script>]]");
+        assert!(!out.contains("<script"), "wikilink target is escaped: {out}");
     }
 
     #[test]
