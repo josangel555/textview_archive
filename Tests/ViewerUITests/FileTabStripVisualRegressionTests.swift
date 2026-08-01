@@ -290,6 +290,9 @@ final class FileTabStripVisualRegressionTests: PixelTestCase {
             "/usr/bin/osascript", "-e",
             "tell application \"MarkdownViewer\" to activate",
         ])
+        // A stray hover tooltip must not photobomb the capture (2026-08-01:
+        // the ⌘ button's bubble hid 3 separators → a false 11/14).
+        AppLauncher.parkPointerAwayFromChrome()
         // Scene apply (0.6 s) + N file opens + first paint.
         Thread.sleep(forTimeInterval: 2.5)
 

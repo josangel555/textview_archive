@@ -230,6 +230,44 @@ private struct IconHoverEffect: ViewModifier {
     }
 }
 
+// MARK: - Pointer-only cursor affordance (I-07, owner 2026-08-01)
+//
+// For interactive controls that KEEP `.buttonStyle(.plain)` because they draw
+// their own hover/selection visuals (tabs, chips with custom fills) — a full
+// hover style would double-tint, but the arrow cursor still lies about
+// clickability. Same global-cursor-stack push/pop-balance discipline as the
+// hover styles above (see the file header).
+
+struct PointingCursorModifier: ViewModifier {
+    @State private var pushed = false
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                if hovering {
+                    if !pushed {
+                        NSCursor.pointingHand.push()
+                        pushed = true
+                    }
+                } else if pushed {
+                    NSCursor.pop()
+                    pushed = false
+                }
+            }
+            .onDisappear {
+                if pushed {
+                    NSCursor.pop()
+                    pushed = false
+                }
+            }
+    }
+}
+
+extension View {
+    /// Show the pointing-hand cursor while hovering this view. Cursor ONLY —
+    /// no fill, no scale; use the hover button styles when feedback fits.
+    func pointingCursor() -> some View { modifier(PointingCursorModifier()) }
+}
+
 // MARK: - Reduce Motion helper (A11Y-06 support)
 //
 // Pure decision function so the "should this animation run?" rule is

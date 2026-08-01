@@ -64,6 +64,7 @@ struct SecretWarningBanner: View {
                     .font(.system(size: 10, weight: .semibold))
             }
             .buttonStyle(.plain)
+            .pointingCursor()   // I-07
             .help("Dismiss")
         }
         .padding(.horizontal, 12)

@@ -3,6 +3,13 @@
 ## 2026-08-01
 
 ### Changed
+- **Tabs look like tabs now.** The active tab wears the content background (white in light
+  mode) so it reads connected to the document; inactive tabs are grey chips that brighten on
+  hover; the full-width line that ran under the active tab is gone; and tabs (plus the
+  breadcrumb, view-mode segments, toast buttons, LSP chip, and banner controls) show the
+  pointing-hand cursor.
+
+### Changed
 - **Editor find, overhauled.** Match highlights are now purple (distinct from the amber
   text-selection matches; light + dark tuned); a Chrome-style overview ruler beside the
   scrollbar shows a tick per match (current match emphasized) so you can see WHERE the hits

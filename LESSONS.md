@@ -4223,6 +4223,16 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   thumb: any `mdv.*` id you expect the AX tier to find needs a `.contain` somewhere between it
   and the nearest bare-id container — and the AX tier is how you PROVE it materialized.
 
+- **Pixel captures can be PHOTOBOMBED by hover tooltips (2026-08-01).** The GUI session's
+  cursor sits wherever the last test left it; if that's over a helpInfo control, the tooltip
+  bubble renders INTO the window capture (live case: the ⌘ toolbar button's bubble covered
+  the tab strip's right side → the separator detector found 11/14 and the crowded-strip test
+  went red with the product pixels CORRECT). Fix in the rig, not the detector:
+  `AppLauncher.parkPointerAwayFromChrome()` (CGWarpMouseCursorPosition to the bottom-left
+  corner) after activation, before the settle sleep — in EVERY capture rig. Diagnosis tell:
+  eyeball the debug PNG before touching thresholds; the earlier git-panel capture had the
+  same bubble in frame.
+
 - **Don't rsync to the VM while a host build/gate is running (2026-08-01).** `swift build`
   (and thus the headless gate) rewrites `rust-core/link/mdv-serve` + `mdvcore.h`; rsync
   racing that write dies with exit 23 ("read errors mapping … No message available on

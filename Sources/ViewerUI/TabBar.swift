@@ -592,6 +592,7 @@ struct TabBarItem: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .pointingCursor()   // I-16a/I-07: tabs are clickable — say so
         .onHover { isHovering = $0 }
         .helpInfo(title: tab.title, description: tabHelpText)
         // `.contain`, NOT `.ignore` (AX tier bootstrap, 2026-07-31):
@@ -608,13 +609,17 @@ struct TabBarItem: View {
     }
 
     private var background: Color {
+        // I-16a (owner 2026-08-01): the ACTIVE tab wears the CONTENT
+        // background (white in light mode) so it reads connected to the
+        // document — replacing the accent tint; inactive tabs are grey
+        // chips, hover brightens one toward active.
         if isSelected {
-            return Color(nsColor: .controlAccentColor).opacity(0.18)
+            return Palette.textBackground
         }
         if isHovering {
-            return Palette.controlBackground.opacity(0.4)
+            return Palette.controlBackground.opacity(0.70)
         }
-        return Color.clear
+        return Palette.controlBackground.opacity(0.45)
     }
 
     private var tabHelpText: String {

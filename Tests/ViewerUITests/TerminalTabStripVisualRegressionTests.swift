@@ -185,6 +185,8 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
             "/usr/bin/osascript", "-e",
             "tell application \"MarkdownViewer\" to activate",
         ])
+        // No tooltip photobombs (see AppLauncher.parkPointerAwayFromChrome).
+        AppLauncher.parkPointerAwayFromChrome()
         // Scene-apply delay (0.6s) + open animation + first paint. Matches
         // ui-snapshot.sh's budget.
         Thread.sleep(forTimeInterval: 2.5)

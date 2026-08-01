@@ -298,6 +298,7 @@ private struct ViewModeControlView: View {
                 )
         }
         .buttonStyle(.plain)
+        .pointingCursor()   // I-07
         .helpInfo(title: "\(seg.label) view", description: helpText(seg))
         .accessibilityIdentifier(segmentAccessibilityID(seg))
         .accessibilityAddTraits(selected ? .isSelected : [])

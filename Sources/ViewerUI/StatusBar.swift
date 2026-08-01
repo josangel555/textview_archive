@@ -164,6 +164,7 @@ struct StatusBar: View {
                     }
                     Button(seg.name) { model.revealInSidebar(seg.url) }
                         .buttonStyle(.plain)
+                        .pointingCursor()   // I-07
                         .font(.system(size: model.uiSize(11)))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

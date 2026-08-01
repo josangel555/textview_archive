@@ -52,6 +52,7 @@ struct LSPStatusChipView: View {
                 .foregroundStyle(Self.color(for: chip.tint))
             }
             .buttonStyle(.plain)
+            .pointingCursor()   // I-07
             .fixedSize()
             .help(chip.accessibilityDescription)
             .accessibilityIdentifier("mdv.statusBar.lsp")

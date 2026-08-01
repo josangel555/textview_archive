@@ -51,8 +51,12 @@ I-## → TSK-### when the tasked board reconnects.
   inline/side-by-side option (@codemirror/merge MergeView is bundled but unused). **S–M**
 - ~~**I-06 — Git-status list polish**~~ **DONE (R6)**: gapless full-height hover fill,
   pointer + hover feedback on stage/unstage buttons.
-- **I-07 — Pointer-cursor FULL AUDIT**: every interactable shows pointer/correct cursor,
-  non-interactables don't lie. Ultracode-eligible sweep + fix pass. **M**
+- **I-07 — Pointer-cursor FULL AUDIT**: batch 1 **DONE (R10)** — shared `.pointingCursor()`
+  modifier (push/pop-balanced) applied to the always-visible chrome that keeps `.plain`
+  (tabs, breadcrumb segments, view-mode segments, toast dismiss/cancel, secret banner, LSP
+  chip); pinned by `PointerCursorAuditTests`. REMAINING batch 2 (**M**): the ~75 other
+  `.plain` sites (sidebar sections, palette rows, settings, feed reader, spreadsheet…) —
+  triage each for hover-style vs cursor-only vs deliberately-inert; ultracode-eligible.
 - ~~**I-08 — Local History usability**~~ **SHIPPED (R8, 2026-08-01)**: (a) "Merge into
   Current…" = per-hunk picker over (current × version) reusing the pixel-verified 3-pane
   sheet (`VersionPickMerge` synthesizes pickable regions from a 2-way Myers diff; Apply =
@@ -84,11 +88,12 @@ I-## → TSK-### when the tasked board reconnects.
 - **I-15 — LSP occurrences**: caret/selection on a symbol highlights all instances
   (documentHighlight) + "Find References" in the editor context menu (palette-only today). **M**
 - **I-16 — Tab & chrome UX overhaul** (slices, each independently shippable):
-  (a) tab visuals — active = white bg / inactive grey, pointer cursor, drop the active
-  underline; (b) strip placement — tabs start after the left nav, end before the right nav;
+  ~~(a) tab visuals~~ **DONE (R10)** — active = content bg (Palette.textBackground),
+  inactive grey chips + hover brighten, the under-strip Divider removed, pointer cursor.
+  REMAINING: (b) strip placement — tabs start after the left nav, end before the right nav;
   (c) split panes get their OWN tab strips; (d) per-tab footer — tab-specific info moves off
   the global footer; (e) Wrap / Special-chars / Plain-Text(type) controls move beside the
-  Editor|Hex group. **L total, S–M per slice**
+  Editor|Hex group. **M per slice**
 - ~~**I-17 — Double recents limits**~~ **DONE (R6)**: store 20→40, Open Recent menu
   prefix 20→40, history 100→200.
 - ~~**I-18 — Crash-guard toast**~~ **DONE (R9)**: "Restore Now" action re-runs the GUARDED

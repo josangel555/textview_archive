@@ -48,6 +48,7 @@ struct ToastOverlayView: View {
             if op.isCancellable {
                 Button("Cancel") { center.requestCancel(op.id) }
                     .buttonStyle(.plain)
+                    .pointingCursor()   // I-07
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("mdv.progress.cancel")
             }
@@ -87,6 +88,7 @@ struct ToastOverlayView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .pointingCursor()   // I-07
             .accessibilityIdentifier("mdv.toast.dismiss")
         }
         .padding(.horizontal, 12)

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Shared helpers for spawning the MarkdownViewer .app from L4/L5 tests.
@@ -16,6 +17,17 @@ import Foundation
 /// All L4/L5 tests funnel through `AppLauncher.runScript` so they share
 /// the same focus-correct behavior.
 enum AppLauncher {
+
+    /// Park the pointer in the screen's bottom-left corner before a pixel
+    /// capture. Wherever the previous test (or the GUI session) left the
+    /// cursor, a hover tooltip can pop over the chrome and photobomb the
+    /// shot — live flake 2026-08-01: the ⌘ toolbar button's helpInfo bubble
+    /// covered the tab strip's right side and hid 3 of 14 separators. Call
+    /// after activation, before the settle sleep, in every capture rig.
+    static func parkPointerAwayFromChrome() {
+        let h = CGDisplayPixelsHigh(CGMainDisplayID())
+        CGWarpMouseCursorPosition(CGPoint(x: 2, y: CGFloat(h) - 2))
+    }
 
     /// Run the app with the given script + file argument. Spawns the
     /// app directly (passing args reliably), best-effort attempts to
