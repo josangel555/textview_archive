@@ -45,6 +45,11 @@ struct GitStatusTab: View {
             // affordance is discoverable; Commit is disabled with nothing staged.
             commitBar
         }
+        // 2026-08-01: a BARE container id implicitly combines loose pure-SwiftUI
+        // descendants and (as the git-panel scene capture showed) the container
+        // itself never materialized out-of-process. `.contain` makes the id a
+        // real AX element AND keeps the rows/toggle addressable (LESSONS rule).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.git.statusTab")
         // Destructive discard NEVER runs without this confirmation
         // (GitStageOp.discard.requiresConfirm) — the model only reverts the file

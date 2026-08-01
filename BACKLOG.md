@@ -261,6 +261,19 @@ TSK-1214/1098 reclaim is nearly due.
   text — the debounced snapshot rides `$tabs` ticks). Remaining in the family: the
   interactive merge-sheet flows (pick → Apply) are AX-lane. **S**
 
+### VM lane findings — git-panel scene capture 2026-08-01 (R6 render rung)
+
+- **GOOD: the git-panel scene's fixture now yields statuses on the VM** (staged/unstaged/
+  untracked all render — the 07-31 "no statuses" quirk is gone; capture:
+  `tmp/git-panel-r6.png`). The R6 header toggle + rows + commit bar confirmed on pixels.
+- **`vm-uitest.sh`'s AX reader dumps ONLY the menu-bar tree for the git-panel scene** — the
+  `.ax` file holds Apple-menu selectors + traffic-light buttons, ZERO window-content ids
+  (not just the new ones; `mdv.git.statusTab` with `.contain` applied is absent too, and so
+  is every other `mdv.*`). So the scene's a11y assertion can't pass for ANY expectation —
+  reader permission/attachment/timing issue, not a view materialization bug. TSK-1577 tail:
+  fix the reader (compare against the scenes where the a11y gate DOES pass), then re-arm
+  `git-panel`'s expected-ids. **S–M**
+
 ### VM lane findings — full `all` run 2026-07-31 (release-ship sweep)
 
 - **[TRIAGED 2026-07-31] The ~98-failure flood was EMFILE** (`ulimit -n` capped by
