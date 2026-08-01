@@ -93,3 +93,73 @@ struct RecentlyClosedStoreTests {
         #expect(s.entries.first?.displayName == "notes.md")
     }
 }
+
+/// Persistence contract (2026-08-01): ⇧⌘T survives a relaunch. A nil
+/// storeURL (every test above) stays purely in-memory.
+@Suite struct RecentlyClosedPersistenceTests {
+
+    private let tmp: URL
+    private let store: URL
+
+    init() throws {
+        tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rc-persist-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        store = tmp.appendingPathComponent("recently-closed.json")
+    }
+
+    private func realFile(_ name: String) throws -> URL {
+        let u = tmp.appendingPathComponent(name)
+        try Data("x".utf8).write(to: u)
+        return u
+    }
+
+    @Test("entries survive a relaunch (new instance, same file)")
+    func roundTrip() throws {
+        let a = try realFile("a.md")
+        let b = try realFile("b.md")
+        let first = RecentlyClosedStore(storeURL: store)
+        first.record(url: a, viewMode: .source)
+        first.record(url: b)
+        JSONFileStore.flushSync()
+
+        let relaunched = RecentlyClosedStore(storeURL: store)
+        #expect(relaunched.entries.map(\.url) == [b, a])
+        #expect(relaunched.entries.last?.viewMode == .source,
+                "the remembered lens survives too")
+    }
+
+    @Test("files deleted since the last run do not resurrect")
+    func deletedFilesFiltered() throws {
+        let kept = try realFile("kept.md")
+        let doomed = try realFile("doomed.md")
+        let first = RecentlyClosedStore(storeURL: store)
+        first.record(url: doomed)
+        first.record(url: kept)
+        JSONFileStore.flushSync()
+        try FileManager.default.removeItem(at: doomed)
+
+        let relaunched = RecentlyClosedStore(storeURL: store)
+        #expect(relaunched.entries.map(\.url) == [kept],
+                "a deleted file must not be offered for reopening")
+    }
+
+    @Test("a corrupt store file reads as empty, never fatal")
+    func corruptTolerated() throws {
+        try Data("{not json".utf8).write(to: store)
+        let s = RecentlyClosedStore(storeURL: store)
+        #expect(s.isEmpty)
+        // …and the store still works from there.
+        s.record(url: try realFile("after.md"))
+        #expect(s.entries.count == 1)
+    }
+
+    @Test("load respects the limit even if the file grew beyond it")
+    func loadCaps() throws {
+        let s1 = RecentlyClosedStore(limit: 20, storeURL: store)
+        for i in 0..<12 { s1.record(url: try realFile("f\(i).md")) }
+        JSONFileStore.flushSync()
+        let small = RecentlyClosedStore(limit: 5, storeURL: store)
+        #expect(small.entries.count == 5, "load trims to the configured cap")
+    }
+}

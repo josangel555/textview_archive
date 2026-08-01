@@ -153,11 +153,12 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   keep every version <1h old, hourly to a week, daily beyond, applied per-file; (c) **cross-version
   compression** (zstd the record payloads — they're plain UTF-8 today); (d) surface per-file
   history size + a "compact now" action in the Local History UI. **M–L**
-- **Recently Closed is NOT persisted across launches.** `RecentlyClosedStore` lives for the run of
-  the app (deliberate: persisting adds an Application Support file plus `AppCacheReset` /
-  `SettingsRelocation` wiring, and would resurrect entries pointing at files deleted since). If the
-  owner wants ⇧⌘T to survive a relaunch, that's the follow-up. It is also PER-SESSION (each
-  session's `DocumentModel` owns its own list) — arguably right, but worth confirming. **S**
+- ~~Recently Closed is NOT persisted across launches~~ **DONE 2026-08-01**:
+  `recently-closed.json` beside `history.json` (coalescing JSONFileStore queue), deleted-since
+  files filtered at load, `AppCacheReset` `.recents` wired, injectable nil-URL in-memory mode
+  for tests; 4 persistence tests + the 10 semantics tests green. Still ONE list for the whole
+  app (the store lives on the shared `DocumentModel`) — fine unless the owner wants per-session
+  lists.
 
 - **Disk-conflict follow-ups (from the 2026-07-29 fix).** The banner + save-prompt paths now
   preserve every discarded side and never pick silently. ~~viewDiff no-op stub~~ (WIRED
@@ -196,17 +197,12 @@ reverted to HEAD and re-run, see below).
   first `100vh - 120px` attempt; now `100vh - 24px`, pinnable down to a bare header); (2) the
   scrollspy was rAF-throttled and **rAF never ticks in an unparented/occluded WKWebView** — the
   spy simply never ran. Now a 32ms trailing setTimeout. Lane re-run green.
-- **[TEST BUG, not product] `FileTabStripVisualRegressionTests`** — `test_lastTab_hasVisibleRightBorder`
-  fails with "Separator columns at [393, 400, 791, 798] (gap 3 pt) don't look like tab edges".
-  IDENTICAL failure with the reorder change and with a pristine `HEAD` `TabBar`/`SessionTabBar`, so
-  it is pre-existing. The captures (`MDV_PIXEL_DEBUG_DIR`, eyeballed) show the strip is CORRECT:
-  separators after every tab including the last, `+` beside the last tab, and 14 tabs shrink
-  instead of overflowing. The detector reports each separator TWICE (~3 pt apart — it's picking up
-  both edges of the tab-background transition), so the "looks like tab edges" gap heuristic
-  rejects it. Recalibrate the detector/band; do NOT chase a product bug. **S**
-  (In the full sweep this suite showed 2 failures instead of 1 — that extra one did not reproduce
-  in a targeted `pixel` run and coincided with host gates running on the machine that hosts the
-  VM. Don't trust heavy-tier results taken under host CPU contention.)
+- ~~[TEST BUG] `FileTabStripVisualRegressionTests` separator detector~~ **FIXED 2026-08-01**:
+  exactly the predicted cause — the 3pt cluster window split one separator's two edges (7px at
+  2x under 110% zoom) into two "separators" and the gap sanity check rejected them. Calibrated
+  to 5pt (~20× under min tab width) with the capture data in the comment; suite green on the
+  VM, crowded/plus-button tests unaffected. (Reminder that survives: don't trust heavy-tier
+  results taken under host CPU contention.)
 - **[PRE-EXISTING, untriaged] ~27 further UAT/visual failures** across `ViewModesUATTests`,
   `Cm6EditorUATTests`, `LSPUATTests`, `PreviewsUATTests`, `PluginsAndMcpAutomationUATTests`,
   `WalkthroughAndCodeReviewUATTests`, `ScrollRestoreUATTests`, `TabsAndWindowChromeUATTests`,

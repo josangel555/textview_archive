@@ -34,6 +34,10 @@ final class RecentlyClosedTabsTests: XCTestCase {
         DocumentModel(
             controller: DocumentController(),
             history: HistoryStore(storeURL: tmpDir.appendingPathComponent("history.json")),
+            // In-memory (nil URL): these tests assert close/reopen SEMANTICS;
+            // the persistence contract has its own suite
+            // (RecentlyClosedStoreTests) against an injected temp file.
+            recentlyClosed: RecentlyClosedStore(),
             sidebar: SidebarModel(),
             preferences: PreferencesStore(defaults: defaults)
         )

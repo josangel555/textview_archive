@@ -170,11 +170,17 @@ final class FileTabStripVisualRegressionTests: PixelTestCase {
             }
             if Double(dark) >= 0.85 * Double(yHi - yLo) { hits.append(x) }
         }
-        // Cluster adjacent columns (a 1-pt line is `scale` px wide, AA can
-        // double it) into one detected line, keyed by the cluster's first x.
+        // Cluster adjacent columns into one detected line, keyed by the
+        // cluster's first x. A separator can register as TWO qualifying
+        // columns — the divider line itself plus the tab-background
+        // transition beside it — measured 7px apart at 2x under the VM's
+        // 110% zoom (real capture 2026-07-27: [393, 400, 791, 798], which
+        // the old 3·scale window split into four "separators" and the
+        // gap sanity check then rejected). 5pt-equivalent merges an edge
+        // pair while staying ~20× below any real tab width (min 40pt).
         var clustered: [Int] = []
         for x in hits {
-            if let prev = clustered.last, x - prev <= 3 * max(1, scale) { continue }
+            if let prev = clustered.last, x - prev <= 5 * max(1, scale) { continue }
             clustered.append(x)
         }
         return clustered

@@ -9,7 +9,17 @@
   decide with real information. An mtime-only conflict (identical text) says so explicitly
   instead of showing an empty diff.
 
+### Added
+- **Recently Closed now survives a relaunch.** ⇧⌘T and File ▸ Recently Closed pick up where
+  the last run left off (the browser idiom) — including each tab's remembered view mode.
+  Files deleted since the last run are dropped rather than offered, and File ▸ Reset's
+  recents domain wipes the list along with the other recents.
+
 ### System work
+- Tab-strip visual suite false-red fixed: the separator detector's cluster window (3pt) split
+  one separator's two edges (7px apart under the VM's 110% zoom) into "two separators", which
+  the gap sanity check then rejected. Calibrated to 5pt with the real capture data documented;
+  suite green on the VM, crowded-strip and plus-button tests unaffected.
 - Deleted the legacy `ModeBar` view (dead since the mode control moved to `ContentToolbar`;
   looking alive is how the Split segment briefly shipped into it). Its three still-live label
   helpers moved to `LensLabels`; the two chrome-layout test harnesses now mirror the REAL

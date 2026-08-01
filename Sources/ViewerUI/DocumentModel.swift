@@ -423,11 +423,11 @@ public final class DocumentModel: ObservableObject {
     /// or zoomed since restore (see `ScrollMemoryStore.shouldPersist`).
     public let scrollMemory: ScrollMemoryStore
     public let bookmarksStore: BookmarksStore
-    /// Closed tabs, newest first — File ▸ Recently Closed + ⇧⌘T. In-memory
-    /// for the run of the app and deliberately NOT `@Published`: the menu is
-    /// rebuilt on demand, so nothing observes it and recording a close costs
-    /// no republish. See `RecentlyClosedStore`.
-    public let recentlyClosed = RecentlyClosedStore()
+    /// Closed tabs, newest first — File ▸ Recently Closed + ⇧⌘T. Persisted
+    /// (2026-08-01) so the list survives a relaunch; deliberately NOT
+    /// `@Published`: the menu is rebuilt on demand, so nothing observes it
+    /// and recording a close costs no republish. See `RecentlyClosedStore`.
+    public let recentlyClosed: RecentlyClosedStore
     /// User-defined snippets merged over the built-ins (TSK-705). Read by the
     /// Insert-Snippet menu + `insertSnippet`.
     public let snippetStore: SnippetStore
@@ -507,6 +507,10 @@ public final class DocumentModel: ObservableObject {
         viewModeLocks: ViewModeLockStore = ViewModeLockStore(
             storeURL: ViewModeLockStore.defaultStoreURL()
         ),
+        // ⇧⌘T survives a relaunch (2026-08-01). Injectable; tests pass an
+        // in-memory store (nil URL) to stay hermetic.
+        recentlyClosed: RecentlyClosedStore = RecentlyClosedStore(
+            storeURL: RecentlyClosedStore.defaultStoreURL()),
         sidebar: SidebarModel = SidebarModel(),
         preferences: PreferencesStore = PreferencesStore(),
         // On-disk Local History store (TSK-301/1103). Injectable so tests can
@@ -522,6 +526,7 @@ public final class DocumentModel: ObservableObject {
     ) {
         self.lspPool = lspPool
         self.localHistoryStore = localHistory
+        self.recentlyClosed = recentlyClosed
         self.controller = controller
         self.history = history
         self.goToPathHistory = goToPathHistory
