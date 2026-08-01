@@ -192,11 +192,24 @@ final class GitLogDiffActionsTests: XCTestCase {
         GitLogDiffActions.maxDiffBytes = 64
         defer { GitLogDiffActions.maxDiffBytes = old }
 
-        GitLogDiffActions.rowClicked(
-            sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
-
-        let url = try XCTUnwrap(doc.tabs.tabs.last?.url, "diff tab must open")
-        let body = try String(contentsOf: url, encoding: .utf8)
+        // CI-flake hardening (2026-08-01, CI 3e54d32d): under the parallel
+        // sweep a transient git SPAWN failure makes commitDiff return "" (the
+        // `try? run` contract), which writes an EMPTY diff — that's load, not
+        // a truncation regression. Retry the click (idempotent — same sha
+        // rewrites the same cache file) until git actually produced output;
+        // a REAL truncation break still fails after the retries.
+        var body = ""
+        for attempt in 0..<3 {
+            GitLogDiffActions.rowClicked(
+                sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
+            if let url = doc.tabs.tabs.last?.url,
+               let b = try? String(contentsOf: url, encoding: .utf8), !b.isEmpty {
+                body = b
+                break
+            }
+            if attempt < 2 { Thread.sleep(forTimeInterval: 0.3) }
+        }
+        XCTAssertFalse(body.isEmpty, "git produced no diff output after 3 attempts")
         XCTAssertTrue(body.hasPrefix("⚠ DIFF TRUNCATED"),
             "an over-cap diff must carry the explicit truncation notice")
         XCTAssertTrue(body.contains("git show \(log[0].sha)"),
