@@ -2905,7 +2905,10 @@ public final class DocumentModel: ObservableObject {
     /// NSAlert (Keep mine / Reload disk) rather than blindly
     /// clobbering the user's typing. Clean tabs reload unconditionally
     /// — the existing behavior for the read-only Source view.
-    private func reloadCurrentFile(matching watchedURL: URL) {
+    /// Internal (not private) so the watcher-tick classification — including the
+    /// false-conflict content check — is host-testable; production callers are
+    /// the FileWatcher closure and the resume hook only.
+    func reloadCurrentFile(matching watchedURL: URL) {
         guard let i = tabs.selectedIndex,
               tabs.tabs.indices.contains(i),
               tabs.tabs[i].url == watchedURL else { return }
@@ -2957,24 +2960,48 @@ public final class DocumentModel: ObservableObject {
             let mtime = attrs?[.modificationDate] as? Date
             let size = attrs?[.size] as? Int
             if buf.hasExternalEdit(currentMTime: mtime, currentSize: size) {
-                // TSK-1269/1165: try a CLEAN 3-way auto-merge first. When the
-                // external change and the local edits don't overlap, the
-                // reconciler merges them and we apply silently (both preserved) —
-                // no banner, no data loss. Only a real overlapping conflict falls
-                // through to the DiskConflictBanner below.
-                if applyExternalAutoMerge(
-                    forTabID: tab.id, url: watchedURL, diskMTime: mtime, diskSize: size) {
+                // The (mtime, size) fingerprint is CONTENT-BLIND: git checkout /
+                // stash / backup tooling rewrite files with identical bytes, and
+                // that touch used to raise a FALSE conflict banner over a dirty
+                // buffer (live incident 2026-08-01 — "Reload" then swapped the
+                // buffer to the last-saved text and the edits survived only in
+                // Local History). Classify by content before claiming conflict.
+                switch reconcileExternalEdit(forTabID: tab.id, url: watchedURL) {
+                case .noExternalChange?:
+                    // Same bytes, new stamp — not a conflict. Adopt the stamp so
+                    // this touch stops re-firing; the dirty buffer stays intact.
+                    refreshEditorFingerprint(
+                        forTabID: tab.id, diskMTime: mtime, diskSize: size)
+                    return
+                case .cleanReload?:
+                    // The buffer holds no real edits (local == baseline) even
+                    // though the tab is flagged dirty — nothing to lose; fall
+                    // through to the clean-tab reload below.
+                    break
+                case .autoMerged?:
+                    // TSK-1269/1165: non-overlapping edits on both sides →
+                    // CLEAN 3-way auto-merge, applied silently (both preserved),
+                    // no banner. Re-raced content falls through to the banner.
+                    if applyExternalAutoMerge(
+                        forTabID: tab.id, url: watchedURL,
+                        diskMTime: mtime, diskSize: size) {
+                        return
+                    }
+                    activeDiskConflict = DiskConflictBannerInfo(
+                        tabID: tab.id, index: i, url: watchedURL)
+                    return
+                case .conflict?, nil:
+                    // TSK-1166: a PASSIVE watcher conflict (the user didn't ask
+                    // to reload) surfaces as a non-modal `DiskConflictBanner`
+                    // above the editor rather than a blocking NSAlert.
+                    // Idempotent: a duplicate watcher event for the same tab
+                    // just re-sets the (Equatable-equal) info. Backstop: even if
+                    // the banner is missed, the write-time `SaveConflictDecision`
+                    // still catches the conflict on save.
+                    activeDiskConflict = DiskConflictBannerInfo(
+                        tabID: tab.id, index: i, url: watchedURL)
                     return
                 }
-                // TSK-1166: a PASSIVE watcher conflict (the user didn't ask to
-                // reload) surfaces as a non-modal `DiskConflictBanner` above the
-                // editor rather than a blocking NSAlert. Idempotent: a duplicate
-                // watcher event for the same tab just re-sets the (Equatable-equal)
-                // info. Backstop: even if the banner is missed, the write-time
-                // `SaveConflictDecision` still catches the conflict on save.
-                activeDiskConflict = DiskConflictBannerInfo(
-                    tabID: tab.id, index: i, url: watchedURL)
-                return
             }
         }
         reload(url: watchedURL, at: i)
@@ -3177,6 +3204,16 @@ public final class DocumentModel: ObservableObject {
         tabCoordinator.setEditorBuffer(buf, forTabID: id)
         ToastCenter.shared.post(.info, "Merged external changes into your edits")
         return true
+    }
+
+    /// Adopt a new on-disk (mtime, size) stamp for a tab's buffer WITHOUT touching
+    /// its text or dirty baseline. Used when a fingerprint mismatch turns out to be
+    /// content-identical churn (git checkout, backup tooling): the stamp must
+    /// advance so the touch stops re-firing, but nothing about the edits changes.
+    func refreshEditorFingerprint(forTabID id: UUID, diskMTime: Date?, diskSize: Int?) {
+        guard var buf = editor.editorBuffers[id] else { return }
+        buf.refreshSavedFingerprint(diskMTime: diskMTime, diskSize: diskSize)
+        tabCoordinator.setEditorBuffer(buf, forTabID: id)
     }
 
     /// TSK-1171 — build the 3-pane conflict-resolution model for a dirty tab whose

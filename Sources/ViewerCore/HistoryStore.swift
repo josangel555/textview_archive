@@ -65,7 +65,7 @@ public final class HistoryStore {
 
     public init(
         storeURL: URL,
-        maxEntries: Int = 100,
+        maxEntries: Int = 200,   // doubled 2026-08-01 (owner intake I-17)
         maxStoreFileBytes: Int = 1 * 1024 * 1024,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {

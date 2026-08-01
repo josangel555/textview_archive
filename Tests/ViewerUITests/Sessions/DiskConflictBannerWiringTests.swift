@@ -84,26 +84,70 @@ final class DiskConflictBannerWiringTests: XCTestCase {
                           "takeDisk discards the unsaved edits")
     }
 
-    /// CONTRACT CHANGE (owner, 2026-07-28): `Merge…` used to fall through to
-    /// `.keepEdits` — it silently did Keep Mine while claiming to merge, and
-    /// cleared the banner as if the conflict were resolved. It must not resolve
-    /// anything by itself.
-    ///
-    /// Here the file on disk still matches the buffer's baseline, so there is
-    /// nothing to merge: the banner STAYS (the user can still pick a side) and
-    /// the buffer is left exactly as it was.
-    func test_resolveMerge_withNothingToMerge_resolvesNothingAndKeepsTheBanner() throws {
+    /// CONTRACT CHANGE (2026-08-01, live false-conflict incident): when disk
+    /// still MATCHES the buffer's last-saved baseline, the banner itself was a
+    /// false alarm — a content-blind (mtime, size) mismatch from a same-bytes
+    /// touch. `Merge…` used to dead-end here ("Couldn't merge", banner stuck),
+    /// and the plausible-looking escape — Reload — swapped the buffer to the
+    /// last-saved text. Now Merge… on a false conflict CLEARS the banner,
+    /// keeps the edits, and adopts the fresh disk stamp. (The 2026-07-28
+    /// "merge must never silently pick a side" rule is about REAL divergence —
+    /// the next test still pins that: a real conflict opens the 3-pane sheet
+    /// and the banner stays until it resolves.)
+    func test_resolveMerge_onFalseConflict_clearsBanner_andKeepsEdits() throws {
         let url = try writeFile("a.txt", "disk")
         let model = makeModel()
         let id = openDirtyWithConflict(url, in: model)
 
         model.resolveDiskConflict(.merge)
 
-        XCTAssertNotNil(model.activeDiskConflict,
-                        "merge must never resolve the conflict on its own")
+        XCTAssertNil(model.activeDiskConflict,
+                     "a false conflict (disk == baseline) must clear, not dead-end")
         XCTAssertNil(model.activeConflictResolution, "nothing to hand-resolve")
         XCTAssertEqual(model.editor.editorBuffers[id]?.text, "my unsaved edit",
-                       "the buffer is untouched")
+                       "the unsaved edits are untouched")
+        XCTAssertTrue(model.editor.editorBuffers[id]?.isDirty == true,
+                      "the buffer stays dirty — nothing was saved or discarded")
+    }
+
+    /// I-01 root cause (2026-08-01): a watcher tick whose fingerprint mismatch
+    /// is CONTENT-IDENTICAL churn (git checkout / stash / backup tooling) must
+    /// not raise the conflict banner over a dirty buffer — the new stamp is
+    /// adopted and the edits are left alone. This is the exact live-incident
+    /// shape that previously led to Reload "restoring the previous version".
+    func test_watcherTick_sameContentTouch_raisesNoBanner_andAdoptsStamp() throws {
+        let url = try writeFile("a.txt", "disk")
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        model.editor.updateEditorText("my unsaved edit", forTabID: id)
+
+        // Rewrite IDENTICAL content until the mtime provably moves off the
+        // buffer's load-time baseline (size can't move — same bytes).
+        let baseline = model.editor.editorBuffers[id]?.lastSavedMTime
+        var moved = false
+        for _ in 0..<200 {
+            try "disk".write(to: url, atomically: true, encoding: .utf8)
+            let a = try? FileManager.default.attributesOfItem(atPath: url.path)
+            if let m = a?[.modificationDate] as? Date, m != baseline {
+                moved = true; break
+            }
+        }
+        XCTAssertTrue(moved, "test rig: mtime never moved off the baseline")
+
+        model.reloadCurrentFile(matching: url)
+
+        XCTAssertNil(model.activeDiskConflict,
+                     "content-identical churn must not raise the conflict banner")
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, "my unsaved edit",
+                       "the dirty buffer is untouched")
+        XCTAssertTrue(model.editor.editorBuffers[id]?.isDirty == true)
+        XCTAssertNotEqual(model.editor.editorBuffers[id]?.lastSavedMTime, baseline,
+                          "the fresh disk stamp is adopted so the touch stops re-firing")
+        // Idempotent: a duplicate tick with the adopted stamp stays silent.
+        model.reloadCurrentFile(matching: url)
+        XCTAssertNil(model.activeDiskConflict)
     }
 
     /// With a REAL divergence, merge opens the 3-pane resolution sheet.

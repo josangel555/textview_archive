@@ -3,6 +3,27 @@
 ## 2026-08-01
 
 ### Fixed
+- **False "file changed on disk" conflicts are dead.** The change detector compared only
+  (mtime, size) — so anything that rewrote a file with identical bytes (git checkout/stash,
+  backup tools) raised a conflict banner over your unsaved edits, "Merge…" dead-ended with
+  "Couldn't merge", and the plausible escape — Reload — swapped your buffer to the last-saved
+  text (today's live incident; the edits survived only via Local History). Now the content is
+  checked before claiming conflict: identical bytes ⇒ no banner, no ⌘S interruption, your
+  edits untouched. Merge… on a stale banner clears it and says why instead of trapping you.
+
+### Added
+- **Git Status opens what you actually want to see.** A new Diff | Source toggle sits atop the
+  Status list: clicking a changed file now opens its DIFF by default (or the file itself in
+  Source mode) — both as an ephemeral preview tab that's reused as you click through the
+  changeset (double-click keeps it). The permanent "Open File" stays on the right-click menu.
+- **Recent lists doubled.** Open Recent and Recently Closed now keep 40 entries each (was 20);
+  the on-disk history behind them keeps 200 (was 100).
+
+### Changed
+- **Git Status list feel:** the hover highlight is now gapless (full row height, reaches the
+  edge), and the stage/unstage buttons show hover feedback + the pointing-hand cursor.
+
+### Fixed
 - **The save-conflict prompt's "View Diff…" button now actually shows the diff.** It was a
   silent no-op. Now it opens a unified your-buffer-vs-disk diff in a preview tab (the same
   viewer git diffs use) without touching your edits or the file — read it, then ⌘S again to

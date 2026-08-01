@@ -110,6 +110,8 @@ public enum AXIdentifierCatalog {
         Entry("mdv.claudeMonitor", .tools, "Claude session monitor window."),
         Entry("mdv.gitPanel", .tools, "Git panel (log / diff / status tool window)."),
         Entry("mdv.gitLog.searchField", .tools, "Git log search field."),
+        Entry("mdv.git.openModeToggle", .tools,
+              "Git Status header: Diff | Source open-mode toggle (I-05, 2026-08-01)."),
         Entry("mdv.terminal.pane", .tools, "Terminal pane (PTY tool window) surface."),
         Entry("mdv.settings.languages", .tools, "Settings: supported syntax-highlighting languages list."),
         Entry("mdv.review.composer", .tools, "Code-review comment composer."),

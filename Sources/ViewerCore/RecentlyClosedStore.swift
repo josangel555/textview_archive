@@ -38,17 +38,17 @@ public final class RecentlyClosedStore {
     /// Newest first.
     public private(set) var entries: [ClosedTab] = []
 
-    /// Bounded so a long session can't grow it without limit; 20 matches the
-    /// Open Recent menu's cap.
+    /// Bounded so a long session can't grow it without limit; 40 matches the
+    /// Open Recent menu's cap (both doubled 2026-08-01, owner intake I-17).
     public let limit: Int
 
     /// nil = in-memory only.
     private let storeURL: URL?
 
-    /// Generous for 20 small records; the read cap just bounds a corrupt file.
+    /// Generous for 40 small records; the read cap just bounds a corrupt file.
     private let maxStoreFileBytes = 256 * 1024
 
-    public init(limit: Int = 20, storeURL: URL? = nil) {
+    public init(limit: Int = 40, storeURL: URL? = nil) {
         self.limit = max(1, limit)
         self.storeURL = storeURL
         load()

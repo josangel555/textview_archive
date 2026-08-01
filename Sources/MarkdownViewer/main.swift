@@ -1520,7 +1520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     private func rebuildRecentsMenu(_ menu: NSMenu) {
         menu.removeAllItems()
-        let entries = model.recents.prefix(20)
+        let entries = model.recents.prefix(40)   // doubled 2026-08-01 (I-17)
         if entries.isEmpty {
             let placeholder = NSMenuItem(
                 title: "(no recent files)", action: nil, keyEquivalent: ""

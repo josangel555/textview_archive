@@ -15,28 +15,33 @@ round = ONE user-facing improvement + one or more quality items, both named. Own
 I-## → TSK-### when the tasked board reconnects.
 
 **P0 — bugs the owner hit live (quality items, pair one per round):**
-- **I-01 (bug, find-it)** — FALSE "file changed on disk" conflict; Reload then showed the
-  PREVIOUS version (owner's edits survived only via Local History). Suspect the baseline
-  (mtime/content snapshot) isn't refreshed after OUR OWN save → the watcher echo of the save
-  flags a conflict; reload then "restores" the on-disk state the user already had. Root-cause
-  FIRST (owner: "find it"), fix the detection, pin with a save→watcher-echo test. **M**
+- ~~**I-01 (bug, find-it)**~~ **ROOT-CAUSED + FIXED (R6, 2026-08-01).** NOT a save-echo: the
+  detector's (mtime, size) fingerprint is CONTENT-BLIND — any same-bytes rewrite (git
+  checkout/stash, backup tooling) under a dirty buffer raised a FALSE banner;
+  `ExternalEditReconciler` even classified it `.noExternalChange` but both call sites dropped
+  that outcome on the floor. Fixed at all 3 layers (watcher classify → adopt stamp silently;
+  Merge on a false conflict → clear banner + explain; ⌘S guard → content check before
+  prompting). Pinned: watcher-tick, merge-escape, and save-through tests. Residue: hex tabs
+  keep the content-blind stamp (binary read cost) — banner may still false-fire there (**S**);
+  `.cleanReload` via the Merge button still dead-ends (rare tab-dirty/buffer-clean skew, **S**).
 - **I-02 (bug)** — Viewing a LARGE commit (e.g. `bd506dae`, the docs-corpora commit) breaks
   commit history: no diff shown, file tree frozen. Likely an unbounded diff load on the main
   thread / WebView payload cap. Repro on the fixture repo, then bound + async it. **M**
-- **I-03 (bug)** — Conflict banner "Merge…" does NOTHING on click (recurred live; the
-  pixel-verified merge sheet exists but the BANNER path may still map .merge→keep-mine —
-  audit THEME-1's `DiskConflictBanner.swift:40` finding). Wire banner → 3-pane sheet. **S**
+- ~~**I-03 (bug)**~~ **FOLDED INTO I-01** — "Merge did nothing" was the false-conflict
+  dead-end (real divergence DOES open the 3-pane sheet; pinned by test). Fixed with I-01.
 - **I-04 (bug)** — Indent guides render at 2-space pitch on a file detected as 4-space
   indent — the detected unit isn't plumbed into guide spacing. **S**
 
 **P1 — user-facing queue (one leads each round; big swings welcome):**
-- **I-05 — Git-status file-open experience** (the flagship): (a) status-file clicks open as
-  EPHEMERAL temp tabs (like git-diff tabs already do); (b) a Diff|Source toggle header on
-  git-opened tabs (owner sees full source today, wants just-the-diff per file); (c) diff
-  rows get full-line light green/red BACKGROUNDS, not just changed-text marks; (d) evaluate
-  an inline/side-by-side option (@codemirror/merge MergeView is bundled but unused). **L**
-- **I-06 — Git-status list polish**: gapless hover highlight (no inter-item gaps) + pointer
-  cursor on rows. **S**
+- **I-05 — Git-status file-open experience** (the flagship): ~~(a) status-file clicks open
+  as EPHEMERAL temp tabs~~ + ~~(b) Diff|Source toggle header~~ **DONE (R6, 2026-08-01)** —
+  row clicks route through `GitStatusOpenMode.clickAction` (diff default, untracked→source,
+  both ephemeral; permanent open stays on the context menu; toggle
+  `mdv.git.openModeToggle` persisted). REMAINING: (c) diff rows get full-line light
+  green/red BACKGROUNDS, not just changed-text marks; (d) evaluate an inline/side-by-side
+  option (@codemirror/merge MergeView is bundled but unused). **M**
+- ~~**I-06 — Git-status list polish**~~ **DONE (R6)**: gapless full-height hover fill,
+  pointer + hover feedback on stage/unstage buttons.
 - **I-07 — Pointer-cursor FULL AUDIT**: every interactable shows pointer/correct cursor,
   non-interactables don't lie. Ultracode-eligible sweep + fix pass. **M**
 - **I-08 — Local History usability**: (a) "Apply this version/diff to file" action (today
@@ -65,8 +70,8 @@ I-## → TSK-### when the tasked board reconnects.
   (c) split panes get their OWN tab strips; (d) per-tab footer — tab-specific info moves off
   the global footer; (e) Wrap / Special-chars / Plain-Text(type) controls move beside the
   Editor|Hex group. **L total, S–M per slice**
-- **I-17 — Double recents limits**: Recently Closed 20→40 (`RecentlyClosedStore.limit`),
-  history/recent-opened 100→200 (`HistoryStore.maxEntries`). **XS — fold into any round**
+- ~~**I-17 — Double recents limits**~~ **DONE (R6)**: store 20→40, Open Recent menu
+  prefix 20→40, history 100→200.
 - **I-18 — Crash-guard toast**: add a "Restore now" action to the "Starting fresh" toast
   (today the recovery is quit+relaunch, undiscoverable). **S**
 

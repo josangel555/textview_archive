@@ -4223,6 +4223,18 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   thumb: any `mdv.*` id you expect the AX tier to find needs a `.contain` somewhere between it
   and the nearest bare-id container — and the AX tier is how you PROVE it materialized.
 
+- **A dropped enum case ≠ a safe default (2026-08-01, the false-conflict incident).** The
+  external-edit pipeline HAD the right classifier — `ExternalEditReconciler` returns
+  `.noExternalChange` when disk == last-saved baseline — but both call sites pattern-matched
+  ONLY `.autoMerged` and treated every other outcome as "conflict". Net effect: a same-bytes
+  rewrite (git checkout/stash, backup tooling; the (mtime,size) fingerprint is content-blind)
+  raised a FALSE banner over a dirty buffer, Merge dead-ended ("Couldn't merge"), and Reload
+  "restored the previous version" (= disk, which never changed). When a classifier returns a
+  rich enum, `switch` it EXHAUSTIVELY at every call site — a `case X → act, everything else →
+  scariest path` collapse turns benign outcomes into user-facing alarms. Fixed at watcher
+  classify + Merge escape + ⌘S content-rescue; pinned in DiskConflictBannerWiringTests /
+  EditorSaveNoClobberTests.
+
 - **Backup-mirror refresh must run from the MIRROR side (2026-08-01).** The `icloud-backup`
   remote is a checked-out CloudDocs working copy, so `git push icloud-backup main` is
   REJECTED ("branch is currently checked out"). Refresh it after each committed round with:

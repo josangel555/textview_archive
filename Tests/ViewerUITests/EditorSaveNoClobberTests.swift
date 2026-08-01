@@ -101,6 +101,37 @@ final class EditorSaveNoClobberTests: XCTestCase {
         XCTFail("background write never produced an observable fingerprint change")
     }
 
+    /// I-01 (live incident 2026-08-01): the (mtime, size) fingerprint is
+    /// content-blind. A background touch that rewrites the file with IDENTICAL
+    /// bytes (git checkout / stash / backup tooling) used to interrupt ⌘S with
+    /// a conflict prompt for a file nobody edited. The write-time guard now
+    /// reads the disk once on a fingerprint mismatch: content equal to the
+    /// buffer's last-saved baseline ⇒ no external edit ⇒ write through.
+    func test_dirtyBuffer_diskTouchedWithSameContent_savesWithoutPrompt() throws {
+        let url = try writeFile("touch.md", "original line\n")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        model.editor.updateEditorText("my unsaved edit\n", forTabID: id)
+
+        // Background touch: SAME bytes, new stamp (the helper loops until the
+        // mtime provably moves — size can't, the content is identical).
+        try backgroundWrite(url, "original line\n")
+
+        var promptShown = false
+        model.editor.saveConflictPromptOverride = { _, _ in
+            promptShown = true
+            return .cancel
+        }
+        let ok = model.editor.saveEditor(forTabID: id)
+        XCTAssertTrue(ok, "a same-content touch is not a conflict — the save must complete")
+        XCTAssertFalse(promptShown,
+            "no conflict prompt for a content-identical disk touch")
+        XCTAssertEqual(diskString(at: url), "my unsaved edit\n",
+            "the save wrote the buffer through")
+        XCTAssertTrue(model.editor.editorBuffers[id]?.isDirty == false,
+            "a completed save leaves the buffer clean")
+    }
+
     // MARK: - The data-loss reproduction (TEETH)
 
     func test_dirtyBuffer_diskChangedUnderneath_doesNotSilentlyOverwrite() throws {

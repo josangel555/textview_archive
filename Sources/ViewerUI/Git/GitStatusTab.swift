@@ -19,12 +19,23 @@ struct GitStatusTab: View {
     @State private var grouped: Groups = Groups()
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
+    /// I-05 (owner intake 2026-08-01): what a row click opens — the file's
+    /// DIFF (default) or its SOURCE — both into the ephemeral preview slot.
+    /// Persisted so the choice survives relaunch; routing is the pure
+    /// `GitStatusOpenMode.clickAction` (host-tested).
+    @AppStorage(GitStatusOpenMode.defaultsKey)
+    private var openModeRaw: String = GitStatusOpenMode.diff.rawValue
+    private var openMode: GitStatusOpenMode {
+        GitStatusOpenMode(rawValue: openModeRaw) ?? .diff
+    }
+
     /// Which group a row is rendered in — determines its primary action
     /// (stage vs unstage) and whether discard applies (TSK-1443).
     enum RowGroup { case staged, unstaged, untracked }
 
     var body: some View {
         VStack(spacing: 0) {
+            openModeHeader
             if model.statusEntries.isEmpty {
                 empty
             } else {
@@ -51,6 +62,31 @@ struct GitStatusTab: View {
         } message: {
             if let copy = discardCopy { Text(copy.message) }
         }
+    }
+
+    /// I-05: slim header band with the Diff | Source open-mode toggle. Rendered
+    /// above BOTH the populated list and the clean-tree placeholder so the
+    /// control never vanishes with the content.
+    private var openModeHeader: some View {
+        HStack(spacing: doc.uiSize(6)) {
+            Text("Open as")
+                .font(.system(size: doc.uiSize(10)))
+                .foregroundStyle(.secondary)
+            Picker("Open as", selection: $openModeRaw) {
+                Text("Diff").tag(GitStatusOpenMode.diff.rawValue)
+                Text("Source").tag(GitStatusOpenMode.source.rawValue)
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .labelsHidden()
+            .frame(width: doc.uiSize(120))
+            .accessibilityIdentifier("mdv.git.openModeToggle")
+            .help("What clicking a changed file opens: its diff or its source")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, doc.uiSize(10))
+        .padding(.vertical, doc.uiSize(4))
+        .background(.background.secondary)
     }
 
     private var statusList: some View {
@@ -154,9 +190,15 @@ struct GitStatusTab: View {
     }
 
     private func row(_ entry: GitClient.StatusEntry, group: RowGroup) -> some View {
+        // I-06 (owner intake 2026-08-01): the hover fill must be GAPLESS — it
+        // spans the row's full 20pt height and reaches the leading edge. The
+        // horizontal inset therefore lives INSIDE the button label (part of
+        // the fill), and the label stretches to the row height; previously
+        // the fill hugged the text and left bands between hovered rows.
         HStack(spacing: doc.uiSize(6)) {
-            // The path area opens the file (UIRESP-05 hover background + cursor).
-            Button(action: { open(entry) }) {
+            // The path area opens diff/source per the header toggle
+            // (UIRESP-05 hover background + pointing-hand cursor).
+            Button(action: { rowClick(entry) }) {
                 HStack(spacing: doc.uiSize(6)) {
                     Text(badge(entry))
                         .font(.system(size: doc.uiSize(9), weight: .bold, design: .monospaced))
@@ -165,6 +207,8 @@ struct GitStatusTab: View {
                     pathView(entry.path)
                     Spacer(minLength: 0)
                 }
+                .padding(.leading, doc.uiSize(10))
+                .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
             }
             .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
@@ -174,8 +218,8 @@ struct GitStatusTab: View {
             // unstage (−) for staged. The full set (incl. destructive discard)
             // is on the row's context menu.
             primaryAction(entry, group: group)
+                .padding(.trailing, doc.uiSize(10))
         }
-        .padding(.horizontal, doc.uiSize(10))
         .frame(height: doc.uiSize(20))
         .contextMenu {
             Button("Open File") { open(entry) }
@@ -208,7 +252,9 @@ struct GitStatusTab: View {
                 .foregroundStyle(.secondary)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // I-06: pointer + hover feedback on the stage/unstage control too —
+        // `.plain` left it visually inert with an arrow cursor.
+        .buttonStyle(IconHoverButtonStyle(cornerRadius: 3))
         .help(help)
         .disabled(model.isMutating)
         .accessibilityIdentifier("mdv.git.row.\(id)")
@@ -284,6 +330,25 @@ struct GitStatusTab: View {
         }
     }
 
+    /// Row click — routed by the header toggle (pure rule:
+    /// `GitStatusOpenMode.clickAction`). Both destinations are the EPHEMERAL
+    /// preview slot (TSK-1594): clicking through a changeset reuses one temp
+    /// tab; a second click on the same file promotes it to permanent. The
+    /// explicit permanent open stays on the context menu.
+    private func rowClick(_ e: GitClient.StatusEntry) {
+        switch GitStatusOpenMode.clickAction(mode: openMode, isUntracked: e.isUntracked) {
+        case .showDiff:
+            showDiff(e)
+        case .previewSource:
+            guard let root = model.repoRoot else { return }
+            let url = root.appendingPathComponent(e.path)
+            if FileManager.default.fileExists(atPath: url.path) {
+                doc.openPreview(url: url)
+            }
+        }
+    }
+
+    /// Context-menu "Open File": a deliberate, PERMANENT open.
     private func open(_ e: GitClient.StatusEntry) {
         guard let root = model.repoRoot else { return }
         let url = root.appendingPathComponent(e.path)

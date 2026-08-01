@@ -1041,6 +1041,18 @@ public final class EditorCoordinator: ObservableObject {
             return .abort
 
         case .conflict(let actions):
+            // The (mtime, size) fingerprint is content-blind — a same-content
+            // touch (git checkout / stash / backup tooling) stats as "changed"
+            // and would interrupt ⌘S with a conflict prompt for a file nobody
+            // edited (live false-conflict incident 2026-08-01). Read the disk
+            // once before prompting: still equal to the buffer's last-saved
+            // baseline ⇒ no external edit — write through (the post-write
+            // `markSaved` adopts the fresh stamp). Any read failure falls back
+            // to the prompt: "can't tell" must stay a conflict.
+            if let disk = try? String(contentsOf: url, encoding: buffer.encoding),
+               disk == buffer.originalText {
+                return .proceed
+            }
             return resolveSaveConflictPrompt(
                 forTabID: id, url: url, actions: actions)
         }

@@ -148,6 +148,24 @@ extension DocumentModel {
     /// inputs already in Local History.
     private func beginMergeForActiveConflict(_ conflict: DiskConflictBannerInfo) {
         let path = conflict.url.path
+        // FALSE conflict (live incident 2026-08-01): the fingerprint mismatched
+        // on a content-identical touch, so disk still equals the last-saved
+        // baseline. "Merge…" used to dead-end here ("Couldn't merge", banner
+        // stuck) and the plausible-looking escape — Reload — swapped the buffer
+        // to the last-saved text. There is nothing to merge and nothing at
+        // risk: adopt the new stamp, clear the banner, and say so.
+        if case .noExternalChange? = reconcileExternalEdit(
+            forTabID: conflict.id, url: conflict.url) {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+            refreshEditorFingerprint(
+                forTabID: conflict.id,
+                diskMTime: attrs?[.modificationDate] as? Date,
+                diskSize: attrs?[.size] as? Int)
+            activeDiskConflict = nil
+            ToastCenter.shared.post(.info,
+                "\(conflict.fileName) on disk matches your last save — nothing to merge; your edits are intact")
+            return
+        }
         let mine = editor.editorBuffers[conflict.id]?.text ?? ""
         let mineOutcome = preserveConflictSide(.mine, text: mine, path: path)
         guard confirmDiscardIsPreserved(mineOutcome, side: .mine,
