@@ -1699,6 +1699,37 @@
     emitFindResult();
   }
 
+  // I-11 (owner 2026-08-01): Chrome-style match ticks beside the scrollbar.
+  // Rebuilt on every find-state change (query edit / step) from the SAME
+  // match list emitFindResult already walks; tick tops are DOCUMENT
+  // fractions (char offset / doc length), so the strip reads as an overview
+  // ruler. DOM capped at ~400 ticks by even sampling (beyond that they
+  // visually merge anyway); the CURRENT match always gets its tick.
+  let matchRulerEl = null;
+  function updateMatchRuler(matches, current) {
+    if (!matchRulerEl) {
+      matchRulerEl = document.createElement("div");
+      matchRulerEl.id = "mdvMatchRuler";
+      view.dom.appendChild(matchRulerEl);   // .cm-editor is position:relative
+    }
+    matchRulerEl.textContent = "";
+    if (!matches || matches.length === 0) return;
+    const total = Math.max(1, view.state.doc.length);
+    const step = Math.max(1, Math.ceil(matches.length / 400));
+    for (let i = 0; i < matches.length; i += step) {
+      const t = document.createElement("div");
+      t.className = "tick" + (i + 1 === current ? " current" : "");
+      t.style.top = (matches[i].from / total * 100) + "%";
+      matchRulerEl.appendChild(t);
+    }
+    if (current > 0 && (current - 1) % step !== 0 && matches[current - 1]) {
+      const t = document.createElement("div");
+      t.className = "tick current";
+      t.style.top = (matches[current - 1].from / total * 100) + "%";
+      matchRulerEl.appendChild(t);
+    }
+  }
+
   // Count matches for the current query and post a `findResultChanged`
   // event so the SwiftUI find bar can render n/N. Done in JS because
   // CM6's matcher already knows how to honor case/regex/word options;
@@ -1707,6 +1738,7 @@
     try {
       const q = getSearchQuery(view.state);
       if (!q || !q.search) {
+        updateMatchRuler([], 0);
         post("findResultChanged", { matches: 0, current: 0 });
         return;
       }
@@ -1740,6 +1772,7 @@
         }
         if (current === 0) current = matches.length;
       }
+      updateMatchRuler(matches, current);
       post("findResultChanged", { matches: matches.length, current: current });
     } catch (e) {
       post("errorOccurred", {

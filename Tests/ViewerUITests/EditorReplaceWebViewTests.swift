@@ -73,6 +73,50 @@ final class EditorReplaceWebViewTests: WebViewTestCase {
         XCTAssertTrue(done, "replaceAll must turn every 'foo' into 'bar' — got '\(text)'")
     }
 
+    /// I-11 (owner 2026-08-01): find matches paint PURPLE (not CM6's default
+    /// yellow) and populate the Chrome-style overview ruler beside the
+    /// scrollbar; clearing the query empties the ruler.
+    func test_findMatches_paintPurple_andPopulateTheOverviewRuler() async throws {
+        try await loadEditorPage()
+        _ = try await webView.evaluateJavaScript("""
+        window.cmDispatch({ v: 2, type: "setLanguage", lang: "plain" });
+        window.cmDispatch({ v: 2, type: "setText",
+            text: Array.from({length: 60}, (_, i) => i % 7 === 0 ? "needle line " + i : "hay " + i).join("\\n") });
+        window.cmDispatch({ v: 2, type: "openSearch" });
+        window.cmDispatch({ v: 2, type: "setSearchQuery", query: "needle" });
+        """)
+        // The visible match decoration is purple: red & blue dominate green
+        // (systemPurple ≈ rgb(175, 82, 222); the old default was yellow, where
+        // green ≈ red and this predicate fails).
+        let purple = await evalUntil("""
+        (function () {
+          const m = document.querySelector(".cm-searchMatch");
+          if (!m) return false;
+          const c = getComputedStyle(m).backgroundColor.match(/[0-9.]+/g);
+          if (!c || c.length < 3) return false;
+          const [r, g, b] = c.map(Number);
+          return r > 140 && b > 190 && g < 120;
+        })()
+        """, deadline: 5)
+        XCTAssertTrue(purple, "find matches must paint purple, not the default yellow")
+
+        let rulerPopulated = await evalUntil("""
+        (function () {
+          const r = document.getElementById("mdvMatchRuler");
+          return !!r && r.querySelectorAll(".tick").length >= 8;
+        })()
+        """, deadline: 5)
+        XCTAssertTrue(rulerPopulated,
+            "the overview ruler must carry one tick per match (9 needles)")
+
+        _ = try await webView.evaluateJavaScript(
+            "window.cmDispatch({ v: 2, type: \"setSearchQuery\", query: \"\" })")
+        let rulerCleared = await evalUntil("""
+        document.getElementById("mdvMatchRuler").querySelectorAll(".tick").length === 0
+        """, deadline: 5)
+        XCTAssertTrue(rulerCleared, "clearing the query must empty the ruler")
+    }
+
     func test_replaceNext_replacesOneMatch_notAll() async throws {
         try await loadEditorPage()
         // CM6 replaceNext is SELECT-then-replace: it replaces the current

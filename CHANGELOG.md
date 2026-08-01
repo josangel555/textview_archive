@@ -2,6 +2,16 @@
 
 ## 2026-08-01
 
+### Changed
+- **Editor find, overhauled.** Match highlights are now purple (distinct from the amber
+  text-selection matches; light + dark tuned); a Chrome-style overview ruler beside the
+  scrollbar shows a tick per match (current match emphasized) so you can see WHERE the hits
+  are before stepping; and the find/replace bar now scales with the content zoom instead of
+  staying small next to zoomed-in text. (The n/N match count was already live.)
+- **The "Starting fresh" recovery toast now carries a "Restore Now" button** — one click
+  brings the skipped session back (still crash-guarded), instead of the undiscoverable
+  quit-and-relaunch dance.
+
 ### Added
 - **Local History can now merge a version back selectively.** "Merge into Current…" opens a
   per-change picker (the same 3-pane UI disk conflicts use): for each differing region choose

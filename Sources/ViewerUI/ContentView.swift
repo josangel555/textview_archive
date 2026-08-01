@@ -947,7 +947,12 @@ public struct ContentView: View {
                 : file.url.resolvingSymlinksInPath().standardizedFileURL.path
             VStack(spacing: 0) {
                 if isActive && model.isEditorFindBarPresented {
-                    EditorFindBar(find: model.find, uiSize: model.uiSize)
+                    // I-11 (owner 2026-08-01): the find bar rides the CONTENT
+                    // zoom, not just the chrome scale — zoomed-in text next to
+                    // a tiny find bar read as a mismatch.
+                    EditorFindBar(
+                        find: model.find,
+                        uiSize: { model.uiSize($0) * CGFloat(model.zoom) })
                 }
                 CodeMirrorEditorView(
                     text: buf?.text ?? file.contents,

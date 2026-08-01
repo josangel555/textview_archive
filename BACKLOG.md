@@ -67,9 +67,13 @@ I-## → TSK-### when the tasked board reconnects.
   already web. Sequence as its own rounds; each sub-item is one round's user-facing slot. **XL**
 - **I-10 — Settings cleanup**: flat inline (keep), but reorder/regroup/label; screenshot
   before/after on the VM; kill the "mess" feel. **M**
-- **I-11 — CM6 Find/Replace overhaul**: native-mac look (icons/symbols/spacing), panel scales
-  with zoom level, match COUNT readout, scrollbar match ticks (Chrome-style), match highlight
-  yellow→purple. **M–L**
+- ~~**I-11 — CM6 Find/Replace overhaul**~~ **SHIPPED (R9, 2026-08-01)**: match highlight
+  yellow→purple (light+dark, current-match solid); Chrome-style overview ruler
+  (`#mdvMatchRuler`, rides `emitFindResult`'s existing match walk, 400-tick sampling cap);
+  bar scales with content zoom. Already-native pieces kept (magnifier field, segmented
+  stepper, n/N count was live). Webview pin in `EditorReplaceWebViewTests`. NOTE: the
+  ruler rebuilds on find-state changes only — geometry drift between finds (resize) is
+  tolerated v1.
 - **I-12 — CM6 gutter/selection ergonomics**: line numbers unselectable; click/drag on gutter
   selects whole lines; no wasted shoulder space when nothing renders there; selection-match
   highlight LIVE during drag (not only after mouse-up). **M**
@@ -87,8 +91,9 @@ I-## → TSK-### when the tasked board reconnects.
   Editor|Hex group. **L total, S–M per slice**
 - ~~**I-17 — Double recents limits**~~ **DONE (R6)**: store 20→40, Open Recent menu
   prefix 20→40, history 100→200.
-- **I-18 — Crash-guard toast**: add a "Restore now" action to the "Starting fresh" toast
-  (today the recovery is quit+relaunch, undiscoverable). **S**
+- ~~**I-18 — Crash-guard toast**~~ **DONE (R9)**: "Restore Now" action re-runs the GUARDED
+  restore (skip cleared the marker, so the retry is breaker-protected; `skipIsOneShot`
+  pins the semantics; wiring pinned source-level — main.swift isn't test-importable).
 
 **Already done (intake asks that turned out shipped):** third-party notices ARE bundled
 (`build-app.sh:275` + missing-file hard fail); "Find References" exists in the palette

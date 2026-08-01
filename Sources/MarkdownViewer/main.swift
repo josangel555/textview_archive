@@ -512,10 +512,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 sessions.bootstrap()
                 guardMarker.markSucceeded()
             case .skipRestore(let failures):
+                // I-18 (owner 2026-08-01): the recovery used to be an
+                // undiscoverable quit-and-relaunch. "Restore Now" re-runs the
+                // SAME guarded restore: the skip cleared the marker, so this
+                // attempt is protected exactly like a fresh launch — a crash
+                // mid-restore re-trips the breaker next time.
                 ToastCenter.shared.post(
                     .error,
                     "Couldn't restore your last session — it crashed on the last "
-                    + "\(failures) launches. Starting fresh; your sessions are still saved.")
+                    + "\(failures) launches. Starting fresh; your sessions are still saved.",
+                    actionLabel: "Restore Now",
+                    action: { [weak self] in
+                        guard let self else { return }
+                        let retryGuard = RestoreCrashGuard(
+                            markerURL: RestoreCrashGuard.defaultMarkerURL())
+                        if case .restore = retryGuard.beginAttempt() {
+                            self.sessions.bootstrap()
+                            retryGuard.markSucceeded()
+                        }
+                    },
+                    ttl: 30)
             }
         }
         // One-way callback: folder context menus invoke this to spawn a
