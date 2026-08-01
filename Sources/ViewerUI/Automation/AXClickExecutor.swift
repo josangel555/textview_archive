@@ -43,4 +43,30 @@ public enum AXClickExecutor {
     public static func click(centerOf frame: CGRect) {
         click(at: CGPoint(x: frame.midX, y: frame.midY))
     }
+
+    /// Post a real drag: down at `from`, `steps` interpolated
+    /// `leftMouseDragged` moves, up at `to` — the shape a
+    /// `DragGesture(minimumDistance:)` recognizes. Steps are paced ~12ms
+    /// apart: a teleporting two-event drag can be coalesced into a click,
+    /// and gesture recognizers sample velocity between events.
+    public static func drag(from: CGPoint, to: CGPoint, steps: Int = 16) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        func post(_ type: CGEventType, _ p: CGPoint) {
+            CGEvent(mouseEventSource: source, mouseType: type,
+                    mouseCursorPosition: p, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+        }
+        post(.leftMouseDown, from)
+        usleep(30_000)
+        let n = max(2, steps)
+        for i in 1...n {
+            let t = CGFloat(i) / CGFloat(n)
+            post(.leftMouseDragged,
+                 CGPoint(x: from.x + (to.x - from.x) * t,
+                         y: from.y + (to.y - from.y) * t))
+            usleep(12_000)
+        }
+        usleep(30_000)
+        post(.leftMouseUp, to)
+    }
 }

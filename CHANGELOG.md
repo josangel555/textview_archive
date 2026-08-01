@@ -29,6 +29,11 @@
   per-tab identifiers, like the session pills.
 
 ### System work
+- **Real-drag AX tests for the strip drags** (`AXStripDragTests`, VM-green): a HID-synthesized
+  drag drives the actual `DragGesture` end-to-end for tab reorder (visual order flips) and
+  tab-onto-session-pill (the file moves sessions) — the interaction rung both features were
+  missing. `AXClickExecutor.drag` added as the shared substrate; spawn rig hoisted into
+  `AXInteractionTestCase` so per-suite copies don't tax the sleep ratchet.
 - **AX test tier bootstrapped** (TSK-1254; owner policy: AX tests for new UI). New
   `AXInteractionTestCase` (VM GUI lane + Accessibility-trust gated) + `AXChromeInteractionTests`
   green on the VM: out-of-process find-by-`mdv.*`-id with real geometry, and a real HID click at

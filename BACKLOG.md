@@ -138,8 +138,10 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   = `NSDraggingSource` that reorders in-strip and promotes to a file drag on leaving — a bare
   `.onDrag` reinstates the window-opens-the-file bug and is blocked by a regression pin in
   `FileDragProviderTests`. **M**
-- **Pointer-drag interaction rung for tab reorder** (caret + lifted-tab visuals need a REAL
-  drag) — exactly the AX-lane item above. **M, blocked on AX bootstrap**
+- ~~Pointer-drag interaction rung for tab reorder~~ **DONE 2026-07-31**: `AXStripDragTests`
+  (VM-green) — a HID-synthesized drag drives the real `DragGesture` for BOTH strip drags:
+  reorder (frame-sorted id order flips) and tab-onto-session-pill (the file moves sessions).
+  `AXClickExecutor.drag(from:to:)` is the shared substrate.
 
 - **Local History: smarter retention beyond gap-thinning (owner ask 2026-07-29).** Today: 100 MB/
   file budget, no age expiry, over-budget drops the interior version leaving the smallest time gap

@@ -1,6 +1,8 @@
 import ApplicationServices
 import XCTest
 import Foundation
+import ViewerCore
+import ViewerUI
 
 /// Per-tier base classes (§3.3.1, §4) — *tier is the type*.
 ///
@@ -194,6 +196,94 @@ class AXInteractionTestCase: XCTestCase {
                 (kTCCServiceAccessibility) via the ssh+sudo path.
                 """)
         }
+    }
+
+    // MARK: shared spawn rig (ONE home for the fixed spawn waits — the
+    // sleep-ratchet counts source lines, so per-suite copies tax it)
+
+    private static let appExe: String = {
+        let here = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // (file) → Harness/
+            .deletingLastPathComponent()   // → ViewerUITests/
+            .deletingLastPathComponent()   // → Tests/
+            .deletingLastPathComponent()   // → repo root
+        return here.appendingPathComponent(
+            "dist/TextView.app/Contents/MacOS/MarkdownViewer").path
+    }()
+
+    private static let windowIDFile = FileManager.default.temporaryDirectory
+        .appendingPathComponent("com.markdownviewer.MarkdownViewer.windowid")
+
+    /// The spawned app under test; reaped in tearDown.
+    private(set) var app: Process?
+
+    override func tearDown() {
+        if let p = app, p.isRunning {
+            p.terminate()
+            Thread.sleep(forTimeInterval: 0.2)
+            if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            p.waitUntilExit()
+        }
+        app = nil
+        super.tearDown()
+    }
+
+    /// Spawn `dist/TextView.app` into `scene` (isolated session store,
+    /// test-instance tagged), activate it (SwiftUI event routing needs a
+    /// foreground app), and return its out-of-process AX root.
+    func spawnAndAttach(scene: String) throws -> AXUIElementNode {
+        guard FileManager.default.isExecutableFile(atPath: Self.appExe) else {
+            throw XCTSkip("App not built at dist/ — run the VM `pixel`/`all` lane.")
+        }
+        try? FileManager.default.removeItem(at: Self.windowIDFile)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: Self.appExe)
+        var env = ProcessInfo.processInfo.environment
+        env["MDV_UI_SCENE"] = scene
+        env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
+        env["MDV_TEST_INSTANCE"] = "1"
+        let sessionsDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-ax-sessions-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(
+            at: sessionsDir, withIntermediateDirectories: true)
+        env["MDV_SESSIONS_DIR"] = sessionsDir.path
+        p.environment = env
+        try p.run()
+        app = p
+
+        let deadline = Date().addingTimeInterval(12)
+        var sawWindow = false
+        while Date() < deadline {
+            if let data = try? Data(contentsOf: Self.windowIDFile),
+               let s = String(data: data, encoding: .utf8),
+               Int(s.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0 > 0 {
+                sawWindow = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        guard sawWindow else {
+            throw XCTSkip("no window id published — app failed to launch a window")
+        }
+        let activate = Process()
+        activate.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        activate.arguments = ["-e", "tell application \"MarkdownViewer\" to activate"]
+        try? activate.run()
+        activate.waitUntilExit()
+        Thread.sleep(forTimeInterval: 2.0)   // scene apply + first paint settle
+        return AXUIElementNode.application(pid: p.processIdentifier)
+    }
+
+    /// Poll `condition` until it holds or `timeout` passes — condition-
+    /// polling; the sleep is the sampling interval.
+    @discardableResult
+    func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        return condition()
     }
 }
 
