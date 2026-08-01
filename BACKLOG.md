@@ -104,11 +104,15 @@ Remaining findings stay "plausible, unconfirmed". Full reports in `docs/research
 (3 verifiers × ~30 dims at once) is what burns the limit — thin the verify panel / cap concurrency before resuming.
 Once `MASTER_REPORT.md` lands, file its findings as a board wave + spin fix worktrees.
 
-## ⚠ OPEN FOLLOW-UPS (updated at the 2026-07-30 handoff — everything below is COMMITTED)
+## ⚠ OPEN FOLLOW-UPS (updated at the 2026-08-01 handoff — everything below is COMMITTED)
 
-All prior "uncommitted / on-screen unverified" caveats are RESOLVED: the sessions' work is in 14
-commits (081f1fc5..7b2fe687), and the partial-T6 rig (`PartialT6SceneCaptureTests` + scenes)
-verified Split / merge-sheet / math on real pixels. Remaining:
+State: main @ f711c2b8 (17 commits landed 07-31..08-01: owner-queue drain + release pipeline +
+AX tier + 5 paired rounds). The struck-through items in this section are the audit trail; the
+LIVE open set is: VM tail triage (TSK-1247 = the big one; EBADF stragglers; gitPanelScene
+quirk), Local History smarter retention (re-diff on eviction first), merge-sheet interactive
+flows (AX-unblocked now), owner-side: mvd_dist zip refresh (7 features behind) + tasked-board
+reconciliation on reconnect + math-typography eyeball. Exec size sits at 68 of 70 MB — the
+TSK-1214/1098 reclaim is nearly due.
 
 - **Owner-directed, next in queue:** ~~tab-drag-onto-session-pill~~ (LANDED 2026-07-31:
   `TabSessionDropChannel` + `StripExternalTarget`, pill highlight pixel-verified, negative-control
