@@ -2,6 +2,21 @@
 
 ## 2026-08-01
 
+### Added
+- **Local History can now merge a version back selectively.** "Merge into Current…" opens a
+  per-change picker (the same 3-pane UI disk conflicts use): for each differing region choose
+  Current or the version — bring back lost lines WITHOUT undoing newer edits (Restore still
+  does the whole-buffer swap). Nothing touches disk until you save; the result is a normal
+  undoable edit. Plus a one-click **Copy Version** button — no more fighting text selection
+  in the diff pane.
+
+### Fixed
+- **Indent guides now match the file's real indentation.** A 4-space-indented file drew
+  guides every 2 spaces (and Tab inserted 2) because only the status bar ever saw the
+  detected indent — the editor always used the global Settings default. The detected indent
+  now overrides per-file: guides, Tab, and indent commands follow the file; Settings remains
+  the default for files with no clear indentation.
+
 ### Fixed
 - **False "file changed on disk" conflicts are dead.** The change detector compared only
   (mtime, size) — so anything that rewrote a file with identical bytes (git checkout/stash,

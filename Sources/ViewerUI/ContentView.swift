@@ -963,7 +963,10 @@ public struct ContentView: View {
                     wordWrap: model.sourceWordWrap,
                     readOnly: model.isEditorReadOnly,   // TSK-936
                     lineNumbers: true,
-                    indentation: model.editorIndentation,
+                    // I-04: the file's DETECTED indent (per-tab override)
+                    // beats the global Settings default — guides/Tab match
+                    // the file, not the preference.
+                    indentation: model.editor.effectiveIndentation(forTabID: tid),
                     gotoLineRequest: model.editorGotoLine,
                     insertRequest: model.editorInsertRequest,
                     selectRequest: model.editorSelectRequest,

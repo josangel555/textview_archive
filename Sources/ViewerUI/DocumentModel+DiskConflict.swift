@@ -215,4 +215,42 @@ extension DocumentModel {
     public func cancelActiveConflictResolution() {
         activeConflictResolution = nil
     }
+
+    /// I-08 (2026-08-01) — "Merge into Current…" from the version-history
+    /// viewer: a PER-HUNK picker over (current buffer × a history version),
+    /// reusing the 3-pane resolution sheet. Every differing run shows as a
+    /// pickable region — ours = keep current, theirs = take the version's
+    /// lines — so lost content comes back WITHOUT replacing the whole buffer
+    /// (Restore's job). Open-then-apply idiom: never a disk write; Apply lands
+    /// as a dirty, undoable buffer edit through the shared
+    /// `applyActiveConflictResolution` funnel.
+    ///
+    /// Returns false (with a toast) when the texts are identical or no buffer
+    /// could be produced for the file.
+    @discardableResult
+    public func beginVersionMergePick(
+        versionText: String, url: URL, versionLabel: String = "This version"
+    ) -> Bool {
+        let target = url.standardizedFileURL
+        if !tabs.tabs.contains(where: { $0.url?.standardizedFileURL == target }) {
+            open(url: target)
+        }
+        guard let tab = tabs.tabs.first(where: { $0.url?.standardizedFileURL == target }),
+              let buf = editor.editorBuffer(forTabID: tab.id) else {
+            ToastCenter.shared.post(.error,
+                "Couldn't open \(url.lastPathComponent) to merge into")
+            return false
+        }
+        guard let result = VersionPickMerge.regions(
+            current: buf.text, version: versionText) else {
+            ToastCenter.shared.post(.info,
+                "\(url.lastPathComponent) already matches this version — nothing to merge")
+            return false
+        }
+        let model = ConflictResolutionModel(
+            result: result, oursLabel: "Current", theirsLabel: versionLabel)
+        activeConflictResolution = ConflictResolutionSession(
+            tabID: tab.id, url: target, model: model)
+        return true
+    }
 }

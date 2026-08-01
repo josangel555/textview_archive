@@ -223,6 +223,37 @@ public final class EditorCoordinator: ObservableObject {
     /// the bundle's `applySetIndentation` default).
     @Published public var editorIndentation: CMIndentation = .spaces(2)
 
+    /// I-04 (2026-08-01): per-tab DETECTED indentation — the file's own indent
+    /// beats the global Settings default (a 4-space file was getting 2-space
+    /// guides + Tab inserts because only the status bar ever saw the
+    /// detection). Populated once per tab when its buffer first seeds; cleared
+    /// with the buffer so a reload re-detects.
+    @Published public private(set) var editorIndentationOverrides: [UUID: CMIndentation] = [:]
+    private var indentDetectionAttempted: Set<UUID> = []
+
+    /// The indentation the editor should USE for `id`: the file's detected
+    /// override when one exists, else the global preference.
+    public func effectiveIndentation(forTabID id: UUID?) -> CMIndentation {
+        guard let id else { return editorIndentation }
+        return editorIndentationOverrides[id] ?? editorIndentation
+    }
+
+    /// Run the detector over `text` and record an override for `id` when the
+    /// result is confident AND differs from the global preference. Internal so
+    /// tests drive it synchronously; production reaches it via the async hop
+    /// in `editorBuffer(forTabID:)` (never mutate @Published mid-body-eval).
+    func applyDetectedIndentation(text: String, forTabID id: UUID) {
+        let tabWidth: Int = {
+            if case .tabs(let w) = editorIndentation { return w }
+            return 4
+        }()
+        guard let detected = CMIndentation.parseDetected(
+            RustIndentAdapter.detect(in: text), tabWidth: tabWidth),
+            detected != editorIndentation
+        else { return }
+        editorIndentationOverrides[id] = detected
+    }
+
     /// Save the active editor when the WKWebView loses focus. Off by
     /// default — opt-in via Settings. The CM6 host always posts
     /// `editorBlurred`; this flag gates whether Swift acts on it.
@@ -511,8 +542,20 @@ public final class EditorCoordinator: ObservableObject {
 
     /// Returns the cached buffer for `id`, or seeds one from the tab's
     /// `.loaded` state if not yet present. Forwarder.
+    ///
+    /// Also schedules the ONE-SHOT indentation detection for the tab (I-04):
+    /// async because this accessor runs during SwiftUI body evaluation and
+    /// the override dict is @Published.
     public func editorBuffer(forTabID id: UUID) -> EditorBuffer? {
-        tabCoordinator.editorBuffer(forTabID: id)
+        let buf = tabCoordinator.editorBuffer(forTabID: id)
+        if let buf, !indentDetectionAttempted.contains(id) {
+            indentDetectionAttempted.insert(id)
+            let text = buf.text
+            DispatchQueue.main.async { [weak self] in
+                self?.applyDetectedIndentation(text: text, forTabID: id)
+            }
+        }
+        return buf
     }
 
     /// Idempotent seed — preserves an existing buffer with unsaved
@@ -526,6 +569,10 @@ public final class EditorCoordinator: ObservableObject {
     /// of truth and dropping it without resyncing leaves a stale dot.
     public func discardEditorBuffer(forTabID id: UUID) {
         tabCoordinator.discardEditorBuffer(forTabID: id)
+        // I-04: the override belongs to the buffer's CONTENT — a discarded
+        // buffer (reload / close) re-detects on the next seed.
+        editorIndentationOverrides[id] = nil
+        indentDetectionAttempted.remove(id)
         let tabs = tabsSnapshot()
         if let idx = tabs.firstIndex(where: { $0.id == id }), tabs[idx].isDirty {
             var t = tabs[idx]

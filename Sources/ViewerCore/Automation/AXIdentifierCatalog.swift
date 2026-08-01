@@ -119,6 +119,10 @@ public enum AXIdentifierCatalog {
         // was replaced by the unified version viewer for ALL entry points.
         Entry("mdv.history.versionList", .tools, "Version-history timeline list (Local History + git)."),
         Entry("mdv.history.restore", .tools, "Version-history Restore button."),
+        Entry("mdv.history.mergePick", .tools,
+              "Version-history Merge into Current… (per-hunk picker, I-08)."),
+        Entry("mdv.history.copyVersion", .tools,
+              "Version-history Copy Version button (I-08)."),
         Entry("mdv.packageExplorer.list", .tools, "Dependency-package explorer list."),
         Entry("mdv.walkthrough.player", .tools, "The walkthrough player surface."),
         Entry("mdv.walkthroughs.browser", .tools, "The walkthrough catalog/browser."),

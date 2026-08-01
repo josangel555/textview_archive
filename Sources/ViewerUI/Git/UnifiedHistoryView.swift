@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ViewerCore
 
@@ -31,16 +32,22 @@ struct UnifiedHistoryView: View {
     /// undoable edit (NOT a disk write). nil ⇒ no Restore affordance (e.g. when
     /// the viewer is opened for a file with no editor tab).
     private let onRestore: ((String) -> Void)?
+    /// I-08: "Merge into Current…" — the host opens the per-hunk picker
+    /// (`DocumentModel.beginVersionMergePick`) over this version's content.
+    /// nil ⇒ no merge affordance.
+    private let onMergePick: ((String) -> Void)?
 
     init(
         doc: DocumentModel,
         source: VersionSource,
         kind: VersionRef.Kind,
-        onRestore: ((String) -> Void)? = nil
+        onRestore: ((String) -> Void)? = nil,
+        onMergePick: ((String) -> Void)? = nil
     ) {
         self.doc = doc
         _model = StateObject(wrappedValue: UnifiedHistoryViewModel(source: source, kind: kind))
         self.onRestore = onRestore
+        self.onMergePick = onMergePick
     }
 
     var body: some View {
@@ -214,6 +221,8 @@ struct UnifiedHistoryView: View {
                 .frame(maxWidth: 360)
                 .accessibilityIdentifier("mdv.history.modePicker")
                 restoreButton
+                mergePickButton
+                copyVersionButton
             case .range:
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.left.arrow.right")
@@ -266,6 +275,45 @@ struct UnifiedHistoryView: View {
                 Text("The editor contents are replaced with this version. You can undo with ⌘Z, and nothing is written to disk until you save.")
             }
         }
+    }
+
+    /// I-08: per-hunk merge — brings lines from this version into the current
+    /// file WITHOUT replacing it (Restore's job). The host opens the 3-pane
+    /// picker; ours = current, theirs = this version.
+    @ViewBuilder
+    private var mergePickButton: some View {
+        if let onMergePick {
+            Button {
+                if let text = model.restoreCandidateContent() {
+                    onMergePick(text)
+                }
+            } label: {
+                Label("Merge into Current…", systemImage: "arrow.triangle.merge")
+                    .font(.system(size: doc.uiSize(11)))
+            }
+            .buttonStyle(.borderless)
+            .help("Pick per-change which side to keep — bring lines from this version into the current file without replacing it")
+            .accessibilityIdentifier("mdv.history.mergePick")
+        }
+    }
+
+    /// I-08: one-click copy of the WHOLE version — no text-selection fight
+    /// with the diff pane's gutters.
+    @ViewBuilder
+    private var copyVersionButton: some View {
+        Button {
+            if let text = model.restoreCandidateContent() {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                ToastCenter.shared.post(.info, "Version copied to clipboard")
+            }
+        } label: {
+            Label("Copy Version", systemImage: "doc.on.doc")
+                .font(.system(size: doc.uiSize(11)))
+        }
+        .buttonStyle(.borderless)
+        .help("Copy this version's full content to the clipboard")
+        .accessibilityIdentifier("mdv.history.copyVersion")
     }
 
     /// Read-only full-content view for "View this version". A monospaced,

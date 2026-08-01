@@ -112,6 +112,10 @@ extension DocumentModel {
                 // restore, select + editor mode, then an undoable buffer edit
                 // (never a disk write).
                 self?.restoreLocalHistoryVersion(text, at: url)
+            },
+            onMergePick: { [weak self] text in
+                // I-08 — per-hunk picker instead of a whole-buffer swap.
+                self?.beginVersionMergePick(versionText: text, url: url)
             })
         openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
     }
@@ -154,6 +158,9 @@ extension DocumentModel {
             doc: self, source: source, kind: .localHistory,
             onRestore: { [weak self] text in
                 self?.restoreLocalHistoryVersion(text, at: url)
+            },
+            onMergePick: { [weak self] text in
+                self?.beginVersionMergePick(versionText: text, url: url)
             })
         openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
     }

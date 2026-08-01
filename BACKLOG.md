@@ -34,8 +34,10 @@ I-## → TSK-### when the tasked board reconnects.
   async, which ripples through the sync automation contracts; measure first.
 - ~~**I-03 (bug)**~~ **FOLDED INTO I-01** — "Merge did nothing" was the false-conflict
   dead-end (real divergence DOES open the 3-pane sheet; pinned by test). Fixed with I-01.
-- **I-04 (bug)** — Indent guides render at 2-space pitch on a file detected as 4-space
-  indent — the detected unit isn't plumbed into guide spacing. **S**
+- ~~**I-04 (bug)**~~ **FIXED (R8, 2026-08-01)** — the detector's result never reached the
+  editor (global-pref-only `indentUnit`). Per-tab detected override now feeds CM6
+  (guides/Tab/indent commands); detection once per buffer seed, cleared on discard;
+  6 host tests incl. end-to-end through the rust detector + a ContentView wiring pin.
 
 **P1 — user-facing queue (one leads each round; big swings welcome):**
 - **I-05 — Git-status file-open experience** (the flagship): ~~(a) status-file clicks open
@@ -51,9 +53,15 @@ I-## → TSK-### when the tasked board reconnects.
   pointer + hover feedback on stage/unstage buttons.
 - **I-07 — Pointer-cursor FULL AUDIT**: every interactable shows pointer/correct cursor,
   non-interactables don't lie. Ultracode-eligible sweep + fix pass. **M**
-- **I-08 — Local History usability**: (a) "Apply this version/diff to file" action (today
-  copy-out is manual); (b) copy UX — selecting version text must NOT grab line numbers /
-  shoulder chrome. **M**
+- ~~**I-08 — Local History usability**~~ **SHIPPED (R8, 2026-08-01)**: (a) "Merge into
+  Current…" = per-hunk picker over (current × version) reusing the pixel-verified 3-pane
+  sheet (`VersionPickMerge` synthesizes pickable regions from a 2-way Myers diff; Apply =
+  dirty undoable edit, never a disk write; 6 pure + 4 host tests); (b) one-click "Copy
+  Version" button + `-webkit-user-select` belt on the web-diff gutters. RESIDUE (**S**):
+  on-screen rung for the viewer's toolbar buttons (hosted window — no scene exists; the AX
+  tier can drive it: open Local History → click `mdv.history.mergePick`); the git
+  file-history host doesn't wire merge-pick yet (Local History only); the `MDV_WEB_DIFF=0`
+  fallback `DiffView` still selects its line numbers (kill-switch path only).
 - **I-09 — Web-migrate wave (owner: "do it")**: CSV grid (1527) · read-only source →CM6
   (1530) · hex grid (1531) · log/transcript streams (1532) · git-log/blame (1533). Diff is
   already web. Sequence as its own rounds; each sub-item is one round's user-facing slot. **XL**
