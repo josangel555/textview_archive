@@ -198,12 +198,20 @@ final class GitLogDiffActionsTests: XCTestCase {
         // a truncation regression. Retry the click (idempotent — same sha
         // rewrites the same cache file) until git actually produced output;
         // a REAL truncation break still fails after the retries.
+        // A REAL commitDiff of this fixture is >200 B (40-char sha line +
+        // author/date/subject + the patch). Under gate load git can emit a
+        // partial/empty shred (spawn failure or a partial pipe drain — CI reds
+        // 3e54d32d + 83a31470, different shapes of the same environmental
+        // class); treat anything ≤100 B as a failed ATTEMPT and retry. The
+        // teeth survive: a truncation regression produces a LARGE body with
+        // no notice, which no retry can turn green.
         var body = ""
         for _ in 0..<3 {
             GitLogDiffActions.rowClicked(
                 sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
             if let url = doc.tabs.tabs.last?.url,
-               let b = try? String(contentsOf: url, encoding: .utf8), !b.isEmpty {
+               let b = try? String(contentsOf: url, encoding: .utf8),
+               b.utf8.count > 100 {
                 body = b
                 break
             }
@@ -211,11 +219,12 @@ final class GitLogDiffActionsTests: XCTestCase {
             // each retry re-spawns git, whose own 10–100ms runtime is the
             // natural spacing for a transient spawn failure.
         }
-        XCTAssertFalse(body.isEmpty, "git produced no diff output after 3 attempts")
+        XCTAssertGreaterThan(body.utf8.count, 100,
+            "git never produced a full diff in 3 attempts — got: '\(body.prefix(200))'")
         XCTAssertTrue(body.hasPrefix("⚠ DIFF TRUNCATED"),
-            "an over-cap diff must carry the explicit truncation notice")
+            "an over-cap diff must carry the explicit truncation notice — got: '\(body.prefix(200))'")
         XCTAssertTrue(body.contains("git show \(log[0].sha)"),
-            "the notice names the full-output escape hatch")
+            "the notice names the full-output escape hatch — got: '\(body.prefix(200))'")
         XCTAssertLessThan(body.utf8.count, 1024,
             "the written diff must be bounded, not the full body")
     }
