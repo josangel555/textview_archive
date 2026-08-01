@@ -618,6 +618,32 @@ public final class DocumentModel: ObservableObject {
         editor.onReloadFromDisk = { [weakSelfBox2] url, index in
             weakSelfBox2.value?.reload(url: url, at: index)
         }
+        // Save-conflict "View Diff…" (2026-08-01; was a no-op seam — a
+        // DEAD BUTTON in the conflict prompt): unified buffer-vs-disk
+        // diff into the ephemeral preview slot, the same scratch-file +
+        // openPreview shape the git diff tabs use (GitLogDiffActions).
+        // The prompt aborts the save either way, so after reading the
+        // diff the user ⌘S-es again to re-decide with real information.
+        editor.onViewSaveConflictDiff = { [weakSelfBox2, tc] tabID, url in
+            guard let self2 = weakSelfBox2.value else { return }
+            let disk = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            let buffer = tc.editorBuffers[tabID]?.text ?? ""
+            var body = UnifiedDiffGenerator.generate(
+                old: disk, new: buffer, path: url.lastPathComponent)
+            if body.isEmpty {
+                // Same TEXT, different mtime/metadata — say so instead of
+                // presenting a blank tab the user reads as a broken button.
+                body = "The text on disk and your buffer are identical — "
+                    + "the file's timestamp or metadata changed, not its content.\n"
+            }
+            let dir = ScratchStore.cacheSubdir("diffs")
+            ScratchStore.prune(directory: dir)
+            let out = dir.appendingPathComponent(
+                "save-conflict-\(url.lastPathComponent).diff")
+            guard (try? body.write(to: out, atomically: true, encoding: .utf8)) != nil
+            else { return }
+            self2.openPreview(url: out)
+        }
         editor.onDidSaveToDisk = { [weakSelfBox2] url, text in
             // textDocument/didSave (TSK-464): a notification, not a request —
             // fire-and-forget is the correct shape. The pool no-ops unless the

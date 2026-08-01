@@ -80,10 +80,15 @@ final class ChromeLayoutGateTests: HeadlessUITestCase {
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
                 Divider()
-                ModeBar(model: model)
+                // 2026-08-01: the legacy ModeBar view was DELETED (dead since
+                // UX-A moved the mode control); the mid-band chrome under
+                // pin-test is its live successor, ContentToolbar — same
+                // ~22pt control + the same 6pt vertical padding, so the
+                // band arithmetic below is unchanged.
+                ContentToolbar(model: model)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .accessibilityIdentifier("mdv.modebar")
+                    .accessibilityIdentifier("mdv.harness.toolbar")
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
                 Divider()

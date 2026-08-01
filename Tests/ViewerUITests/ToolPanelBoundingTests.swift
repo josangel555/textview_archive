@@ -132,10 +132,12 @@ final class ToolPanelBoundingTests: HeadlessUITestCase {
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
                 Divider()
-                ModeBar(model: model)
+                // 2026-08-01: ModeBar deleted — ContentToolbar is the live
+                // mid-band chrome (same height + padding arithmetic).
+                ContentToolbar(model: model)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .accessibilityIdentifier("mdv.modebar")
+                    .accessibilityIdentifier("mdv.harness.toolbar")
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
                 Divider()

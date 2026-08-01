@@ -1122,7 +1122,7 @@ private struct FileRowContextMenu: View {
             // Image, …), including for binaries.
             Menu("Open As…") {
                 ForEach(model.openAsCategories(for: node.url), id: \.self) { cat in
-                    Button(ModeBar.categoryLabel(cat)) {
+                    Button(LensLabels.categoryLabel(cat)) {
                         model.openAs(url: node.url, category: cat)
                     }
                 }

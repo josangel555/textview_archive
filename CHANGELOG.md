@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-01
+
+### Fixed
+- **The save-conflict prompt's "View Diff…" button now actually shows the diff.** It was a
+  silent no-op. Now it opens a unified your-buffer-vs-disk diff in a preview tab (the same
+  viewer git diffs use) without touching your edits or the file — read it, then ⌘S again to
+  decide with real information. An mtime-only conflict (identical text) says so explicitly
+  instead of showing an empty diff.
+
+### System work
+- Deleted the legacy `ModeBar` view (dead since the mode control moved to `ContentToolbar`;
+  looking alive is how the Split segment briefly shipped into it). Its three still-live label
+  helpers moved to `LensLabels`; the two chrome-layout test harnesses now mirror the REAL
+  mid-band chrome (`ContentToolbar`) instead of the deleted view. ~300 lines of dead UI gone.
+
 ## 2026-07-31
 
 ### Added

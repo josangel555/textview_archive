@@ -129,8 +129,9 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   parent's frame — the tab close button does; fix or offset-click before targeting small
   controls), **(c)** `CommandPaletteView` carries NO AX ids at all, **(d)** fold the suite into
   the nightly `all` lane notes + grow `AXIdentifierCatalog`. **S per feature**
-- **Delete the dead `ModeBar` struct** (ContentView ~1641) — never instantiated; the Split miss
-  happened because it LOOKS live. Labeled LEGACY in-source; remove outright. **S**
+- ~~Delete the dead `ModeBar` struct~~ **DONE 2026-08-01**: ~300 lines removed; the three
+  still-live label statics rehomed to `LensLabels`; the two chrome-harness tests now mirror
+  the real `ContentToolbar` band (same height math, green).
 - **Math typography eyeball on the OWNER's machine.** WebKit MathML geometry is proven (VM
   webview lane green); the capture lane cannot show WebView content (TSK-1247), so the visual-
   quality check is one open of a math file on the host. If rough → KaTeX-CSS fallback talk. **XS**
@@ -159,11 +160,11 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   session's `DocumentModel` owns its own list) — arguably right, but worth confirming. **S**
 
 - **Disk-conflict follow-ups (from the 2026-07-29 fix).** The banner + save-prompt paths now
-  preserve every discarded side and never pick silently. Remaining gaps in the same family: the
-  save-conflict prompt's **`viewDiff` branch is still a no-op stub** (`EditorCoordinator`
-  `onViewSaveConflictDiff` has no handler) — it should open the web diff; and its Overwrite/Reload
-  branches REPORT a failed capture via toast rather than pre-confirming like the banner does.
-  Unify on the pre-confirm if you want one rule everywhere. **S–M**
+  preserve every discarded side and never pick silently. ~~viewDiff no-op stub~~ (WIRED
+  2026-08-01: unified buffer-vs-disk diff into the ephemeral preview slot, identical-text
+  conflicts self-explain; `SaveConflictViewDiffTests`). Remaining in the family: the
+  save-prompt's Overwrite/Reload branches REPORT a failed capture via toast rather than
+  pre-confirming like the banner does — unify on the pre-confirm for one rule everywhere. **S**
 - **[VERIFIED 2026-07-30] Merge sheet** — seen on real pixels via the `conflict-merge` scene:
   banner + three labeled panes + per-conflict picker + Apply gating all correct. Remaining in
   this family: hex dirty bytes still have NO hot-exit (lost on quit/crash — the clobber paths

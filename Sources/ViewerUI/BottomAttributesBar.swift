@@ -177,7 +177,7 @@ private struct TypeControlMenu: View {
     /// the effective language name.
     private var labelText: String {
         if model.hasCategoryOverride, let cat = model.tabs.selected?.categoryOverride {
-            return ModeBar.categoryLabel(cat)
+            return LensLabels.categoryLabel(cat)
         }
         guard let id = model.tabs.selected?.id else { return "Type" }
         return model.effectiveLanguage(forTabID: id, url: url).displayName
@@ -190,14 +190,14 @@ private struct TypeControlMenu: View {
         Section("Open as") {
             Button(action: { model.setCurrentCategoryOverride(nil) }) {
                 HStack {
-                    Text("Auto (\(ModeBar.categoryLabel(FileTypeDetector.category(for: url))))")
+                    Text("Auto (\(LensLabels.categoryLabel(FileTypeDetector.category(for: url))))")
                     if !model.hasCategoryOverride { Image(systemName: "checkmark") }
                 }
             }
             ForEach(model.openAsCategories(for: url), id: \.self) { cat in
                 Button(action: { model.setCurrentCategoryOverride(cat) }) {
                     HStack {
-                        Text(ModeBar.categoryLabel(cat))
+                        Text(LensLabels.categoryLabel(cat))
                         if model.tabs.selected?.categoryOverride == cat {
                             Image(systemName: "checkmark")
                         }
@@ -223,10 +223,10 @@ private struct TypeControlMenu: View {
         if modes.count > 1 {
             let builtin = ViewModeOptions.defaultMode(for: url, forcedCategory: override)
             let pinned = model.defaultViewMode(for: cat)
-            Section("Default view for \(ModeBar.categoryShortLabel(cat))") {
+            Section("Default view for \(LensLabels.categoryShortLabel(cat))") {
                 Button(action: { model.setDefaultViewMode(nil, for: cat) }) {
                     HStack {
-                        Text("Auto (\(ModeBar.modeLabel(builtin)))")
+                        Text("Auto (\(LensLabels.modeLabel(builtin)))")
                         if pinned == nil { Image(systemName: "checkmark") }
                     }
                 }
@@ -237,7 +237,7 @@ private struct TypeControlMenu: View {
                         model.setDefaultViewMode(mode == builtin ? nil : mode, for: cat)
                     }) {
                         HStack {
-                            Text(ModeBar.modeLabel(mode))
+                            Text(LensLabels.modeLabel(mode))
                             if pinned == mode { Image(systemName: "checkmark") }
                         }
                     }
