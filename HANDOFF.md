@@ -1,10 +1,18 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — queue drain + release ship + AX tier + paired rounds (2026-08-01 17:05)
+# Handoff — 08-01 intake + round 6 (false-conflict fix, git-status UX) (2026-08-01 18:00)
 
-**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @ f711c2b8
-(clean tree; only the 4 protected untracked files: OwnerWishlist.md/.bak, Untitled.txt,
-archive/Untitled.txt — NEVER touch them). /Applications/TextView.app = RELEASE build @ f711c2b8
-(installed 2026-08-01 17:00 — the owner runs release now, keep installing release, not debug).
+**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @ the
+R6-tail commit (git log -4: R6-tail .contain+findings · R6 chunk · intake bookkeeping ·
+adcebf7d handoff). Clean tree; only the 4 protected untracked files: OwnerWishlist.md/.bak,
+Untitled.txt, archive/Untitled.txt — NEVER touch them. /Applications/TextView.app = RELEASE
+@ head. **NEW (owner intake 2026-08-01): the active queue is BACKLOG § "★ OWNER INTAKE
+2026-08-01" (I-## ids, board still down); answers doc = docs/INTAKE_ANSWERS_2026-08-01.md.
+R6 done: I-01+I-03 false-conflict root-cause+fix (3 layers, pinned) · I-05a/b git-status
+Diff|Source toggle + ephemeral opens (pixel-verified tmp/git-panel-r6.png) · I-06 gapless
+hover+pointer · I-17 recents ×2. Proposed R7: user-facing = I-05c diff line backgrounds;
+quality = I-02 large-commit diff (commitDiff = UNBOUNDED sync git-show on main thread —
+GitLogDiffActions.showCommit → GitClient.swift:1163). Refresh the icloud-backup mirror
+after every round (LESSONS 2026-08-01).**
 
 ## Mission
 Owner-driven drain. Standing owner mode (2026-08-01, in memory): **every round = one
