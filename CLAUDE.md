@@ -395,8 +395,7 @@ generously and keep the board honest:
   section of `docs/AUTONOMOUS_PROGRESS.md` — then move on to other work.
 - **Check `mcp__tasked__task_list` before creating** to avoid duplicates;
   **read the latest with `mcp__tasked__task_get` before updating** (staleness).
-  (These are the BOARD tools — not the built-in Claude Code TaskList, whose
-  `#NNN` numbering is a different system from board `TSK-NNN`.)
+  (BOARD tools — not the built-in TaskList; `#NNN` ≠ board `TSK-NNN`.)
 - **Before validating/closing any `fixed` board ticket, match its recorded
   `understanding`/transition reasons against the board TITLE.** The #NNN trap has
   produced mislabeled-as-fixed tickets (work for a different finding recorded on a
@@ -493,7 +492,8 @@ continue", document blockers and move on):
   rebase + fast-forward (no merge bubbles). Re-verify with the CENTRAL gate on the
   **committed** commit, not a torn worktree:
   `bash scripts/test-headless-gate.sh` (Swift) / `bash scripts/rust-core-gate.sh`
-  (rust-core). New deps need explicit owner approval.
+  (rust-core). New deps need explicit owner approval. Refresh the icloud-backup
+  mirror each round (LESSONS 2026-08-01).
 - **Commit hygiene — NO process-noise commits (owner directive 2026-06-22).** Do
   NOT make standalone doc-churn commits. FOLD the `LESSONS.md` / `HANDOFF.md` /
   `AUTONOMOUS_PROGRESS.md` / `CHANGELOG.md` updates for an item INTO that item's CODE

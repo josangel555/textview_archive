@@ -7,6 +7,73 @@
 > Repo (canonical): `/Users/me/Documents/workspaces/claude/markdown_viewer`.
 > ⚠️ If Desktop&Documents iCloud sync is EVER re-enabled, relocate the repo out of ~/Documents FIRST.
 
+## ★ OWNER INTAKE 2026-08-01 — THE ACTIVE QUEUE (work top-down; board down → placeholder ids I-##)
+
+Answers to the intake's six questions: `docs/INTAKE_ANSWERS_2026-08-01.md`. Governance: every
+round = ONE user-facing improvement + one or more quality items, both named. Owner recal:
+**don't limit to small-effort tasks** — big user-facing swings lead this queue. Reconcile
+I-## → TSK-### when the tasked board reconnects.
+
+**P0 — bugs the owner hit live (quality items, pair one per round):**
+- **I-01 (bug, find-it)** — FALSE "file changed on disk" conflict; Reload then showed the
+  PREVIOUS version (owner's edits survived only via Local History). Suspect the baseline
+  (mtime/content snapshot) isn't refreshed after OUR OWN save → the watcher echo of the save
+  flags a conflict; reload then "restores" the on-disk state the user already had. Root-cause
+  FIRST (owner: "find it"), fix the detection, pin with a save→watcher-echo test. **M**
+- **I-02 (bug)** — Viewing a LARGE commit (e.g. `bd506dae`, the docs-corpora commit) breaks
+  commit history: no diff shown, file tree frozen. Likely an unbounded diff load on the main
+  thread / WebView payload cap. Repro on the fixture repo, then bound + async it. **M**
+- **I-03 (bug)** — Conflict banner "Merge…" does NOTHING on click (recurred live; the
+  pixel-verified merge sheet exists but the BANNER path may still map .merge→keep-mine —
+  audit THEME-1's `DiskConflictBanner.swift:40` finding). Wire banner → 3-pane sheet. **S**
+- **I-04 (bug)** — Indent guides render at 2-space pitch on a file detected as 4-space
+  indent — the detected unit isn't plumbed into guide spacing. **S**
+
+**P1 — user-facing queue (one leads each round; big swings welcome):**
+- **I-05 — Git-status file-open experience** (the flagship): (a) status-file clicks open as
+  EPHEMERAL temp tabs (like git-diff tabs already do); (b) a Diff|Source toggle header on
+  git-opened tabs (owner sees full source today, wants just-the-diff per file); (c) diff
+  rows get full-line light green/red BACKGROUNDS, not just changed-text marks; (d) evaluate
+  an inline/side-by-side option (@codemirror/merge MergeView is bundled but unused). **L**
+- **I-06 — Git-status list polish**: gapless hover highlight (no inter-item gaps) + pointer
+  cursor on rows. **S**
+- **I-07 — Pointer-cursor FULL AUDIT**: every interactable shows pointer/correct cursor,
+  non-interactables don't lie. Ultracode-eligible sweep + fix pass. **M**
+- **I-08 — Local History usability**: (a) "Apply this version/diff to file" action (today
+  copy-out is manual); (b) copy UX — selecting version text must NOT grab line numbers /
+  shoulder chrome. **M**
+- **I-09 — Web-migrate wave (owner: "do it")**: CSV grid (1527) · read-only source →CM6
+  (1530) · hex grid (1531) · log/transcript streams (1532) · git-log/blame (1533). Diff is
+  already web. Sequence as its own rounds; each sub-item is one round's user-facing slot. **XL**
+- **I-10 — Settings cleanup**: flat inline (keep), but reorder/regroup/label; screenshot
+  before/after on the VM; kill the "mess" feel. **M**
+- **I-11 — CM6 Find/Replace overhaul**: native-mac look (icons/symbols/spacing), panel scales
+  with zoom level, match COUNT readout, scrollbar match ticks (Chrome-style), match highlight
+  yellow→purple. **M–L**
+- **I-12 — CM6 gutter/selection ergonomics**: line numbers unselectable; click/drag on gutter
+  selects whole lines; no wasted shoulder space when nothing renders there; selection-match
+  highlight LIVE during drag (not only after mouse-up). **M**
+- **I-13 — Pretty-print** button beside the Editor|Hex group for eligible types (JSON first;
+  also offered when manually switching type e.g. Plain Text→JSON). **S–M**
+- **I-14 — AutoSave (opt-in)**: afterDelay + on-focus-loss modes on the existing save funnel.
+  ORDER CONSTRAINT: after I-01 (autosave amplifies the false-conflict bug). **M**
+- **I-15 — LSP occurrences**: caret/selection on a symbol highlights all instances
+  (documentHighlight) + "Find References" in the editor context menu (palette-only today). **M**
+- **I-16 — Tab & chrome UX overhaul** (slices, each independently shippable):
+  (a) tab visuals — active = white bg / inactive grey, pointer cursor, drop the active
+  underline; (b) strip placement — tabs start after the left nav, end before the right nav;
+  (c) split panes get their OWN tab strips; (d) per-tab footer — tab-specific info moves off
+  the global footer; (e) Wrap / Special-chars / Plain-Text(type) controls move beside the
+  Editor|Hex group. **L total, S–M per slice**
+- **I-17 — Double recents limits**: Recently Closed 20→40 (`RecentlyClosedStore.limit`),
+  history/recent-opened 100→200 (`HistoryStore.maxEntries`). **XS — fold into any round**
+- **I-18 — Crash-guard toast**: add a "Restore now" action to the "Starting fresh" toast
+  (today the recovery is quit+relaunch, undiscoverable). **S**
+
+**Already done (intake asks that turned out shipped):** third-party notices ARE bundled
+(`build-app.sh:275` + missing-file hard fail); "Find References" exists in the palette
+(the ergonomics gap is I-15); backup-mirror push realigned (SOP now pushes after each round).
+
 ## ⏸ PRE-LAUNCH AUDIT — PAUSED (2026-07-10, resume after owner picks it up)
 
 Multi-agent pre-launch audit workflow (`scripts/workflows/prelaunch-audit.js`, run
