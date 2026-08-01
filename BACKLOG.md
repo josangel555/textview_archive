@@ -353,9 +353,12 @@ one pass. Related-by-design so context is shared and the tests overlap.
    the next actionable one). Don't re-plan mid-tick.
 2. **Implement ALL tickets in the chunk** — code + the full test pyramid per ticket (see below) +
    any evals — in ONE go. Only targeted `swift test --filter` checks BETWEEN tickets, not a gate.
-3. **ONE full gate at the END of the whole chunk** — `bash scripts/test-headless-gate.sh` (+
-   `scripts/rust-core-gate.sh` if rust touched). Read the `GATE_DONE` rc marker in `tmp/`, not the
-   wrapper exit. Bench-only failures: re-run isolated (TSK-1499). NOT a gate per ticket.
+3. **NO inline full gate (owner 2026-08-01)** — per commit run only the TARGETED
+   `swift test --filter` suites for what changed. The **standing CI loop** (`scripts/ci-loop.sh`
+   in the permanent worktree `../markdown_viewer-ci`, armed as a persistent Monitor) re-runs
+   the central gate on every new committed HEAD and reports `CI <sha> GATE rc=<n>`; a red
+   line = triage now (bench-only failures under load: re-run quiet, TSK-1499). Run the gate
+   inline only if the loop is down. (+ `scripts/rust-core-gate.sh` targeted if rust touched.)
 4. **ONE commit for the whole chunk** — list EVERY TSK id in the subject/body + the
    `Claude-Session:` trailer. Fold the CHANGELOG/HANDOFF/LESSONS updates into it.
 5. **VM/AX rung** (only if render behaviour changed AND the VM lane is up, TSK-1550): batch the

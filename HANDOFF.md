@@ -12,7 +12,10 @@ Diff|Source toggle + ephemeral opens (pixel-verified tmp/git-panel-r6.png) · I-
 hover+pointer · I-17 recents ×2. Proposed R7: user-facing = I-05c diff line backgrounds;
 quality = I-02 large-commit diff (commitDiff = UNBOUNDED sync git-show on main thread —
 GitLogDiffActions.showCommit → GitClient.swift:1163). Refresh the icloud-backup mirror
-after every round (LESSONS 2026-08-01).**
+after every round (LESSONS 2026-08-01). CI CADENCE (owner 2026-08-01): NO inline full
+gate — targeted --filter suites per commit; the standing loop `scripts/ci-loop.sh`
+(persistent Monitor, CI worktree ../markdown_viewer-ci) gates each committed HEAD —
+re-arm it after compaction/session restart if no Monitor is live.**
 
 ## Mission
 Owner-driven drain. Standing owner mode (2026-08-01, in memory): **every round = one
