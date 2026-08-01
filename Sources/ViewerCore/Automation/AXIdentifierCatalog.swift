@@ -94,6 +94,18 @@ public enum AXIdentifierCatalog {
         Entry("mdv.recentlyOpened", .nav, "The recently-opened tool window."),
         // tools
         Entry("mdv.commandPaletteButton", .tools, "Command-palette toolbar button."),
+        // 2026-08-01 AX rollout: the palette + session-strip controls the AX
+        // tier drives (AXChromeInteractionTests proves each end-to-end).
+        Entry("mdv.palette.panel", .tools, "Command palette panel (container)."),
+        Entry("mdv.palette.field", .tools, "Command palette search field."),
+        Entry("mdv.sessionTab.new", .chrome, "Session strip + (new session) button."),
+        Entry("mdv.sessionTab.omni", .chrome, "Session strip command-palette button."),
+        Entry("mdv.sessionTab.settings", .chrome, "Session strip Settings button."),
+        Entry("mdv.sessionTab.search", .chrome, "Session strip cross-file-search button."),
+        Entry("mdv.sessionTab.saveAs", .chrome, "Session context menu: Save Session As…"),
+        Entry("mdv.tab.closeButton", .chrome,
+              "Tab close button (AX frame = parent tab's — drivers derive the × position)."),
+        Entry("mdv.goto.panel", .nav, "Go-to-path prompt panel."),
         Entry("mdv.folderStats.showTreemap", .tools, "Folder-stats treemap toggle."),
         Entry("mdv.claudeMonitor", .tools, "Claude session monitor window."),
         Entry("mdv.gitPanel", .tools, "Git panel (log / diff / status tool window)."),

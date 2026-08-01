@@ -106,7 +106,10 @@ struct HexView: View {
                         guard savedTab == boundTab else { return }
                         controller?.markHexSaved()
                     }
-                }
+                },
+                // Hex hot-exit (2026-08-01): a restored/remounted tab's dirty
+                // stash seeds the buffer instead of clean disk bytes.
+                dirtySeed: { model.dirtyHexBytes(forTabID: tabID) }
             )
         }
         .accessibilityIdentifier("mdv.hexView")
@@ -321,6 +324,11 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
     let onDirtyChange: (Bool, Data?) -> Void
     let onRequestSave: (Data) -> Void
     let onControllerReady: (HexTextController) -> Void
+    /// Hex hot-exit (2026-08-01): consulted ONCE per file-identity change —
+    /// a restored session's dirty stash (or a remount's live stash) seeds
+    /// the edit buffer instead of the clean disk bytes, so what the user
+    /// SEES is what ⌘S will write. Nil = seed from disk as always.
+    let dirtySeed: () -> Data?
 
     func makeNSViewController(context: Context) -> HexTextController {
         let c = HexTextController()
@@ -328,6 +336,7 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
         c.onClearClickPattern = onClearClickPattern
         c.onDirtyChange = onDirtyChange
         c.onRequestSave = onRequestSave
+        c.dirtySeed = dirtySeed
         onControllerReady(c)
         return c
     }
@@ -337,6 +346,7 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
         controller.onClearClickPattern = onClearClickPattern
         controller.onDirtyChange = onDirtyChange
         controller.onRequestSave = onRequestSave
+        controller.dirtySeed = dirtySeed
         controller.apply(
             file: file,
             fontSize: fontSize,
@@ -361,6 +371,9 @@ final class HexTextController: NSViewController {
     /// Latest file bytes so the mouse handler can derive the
     /// click-pattern without re-parsing the rendered text.
     fileprivate var fileData: Data = Data()
+    /// Hex hot-exit (2026-08-01): stash consult for the identity-change
+    /// seed — see `HexTextRepresentable.dirtySeed`.
+    fileprivate var dirtySeed: (() -> Data?)?
 
     private var lastDumpKey: DumpKey?
     private var lastHighlightFingerprint: HighlightFingerprint?
@@ -584,12 +597,22 @@ final class HexTextController: NSViewController {
         let fileIdentity = HexFileIdentity(url: file.url, byteCount: file.byteCount)
         if fileIdentity != lastFileIdentity {
             lastFileIdentity = fileIdentity
-            // Seed the buffer from the loaded bytes. If a dirty buffer for
-            // a DIFFERENT file was live, its dirt is dropped here — the
-            // close/switch confirm gate runs before we ever get a new file.
-            editBuffer = HexEditBuffer(data: file.data)
-            editCaret = nil
-            reportDirty(false)
+            // Seed the buffer. Hex hot-exit (2026-08-01): a restored
+            // session's dirty stash (or a remount's live stash) wins over
+            // the clean disk bytes — what the user SEES is what ⌘S writes;
+            // previously a remount silently showed disk bytes under a
+            // dirty badge. If a dirty buffer for a DIFFERENT file was
+            // live, its dirt is dropped here — the close/switch confirm
+            // gate runs before we ever get a new file.
+            if let restored = dirtySeed?() {
+                editBuffer = HexEditBuffer(data: restored)
+                editCaret = nil
+                reportDirty(true)
+            } else {
+                editBuffer = HexEditBuffer(data: file.data)
+                editCaret = nil
+                reportDirty(false)
+            }
         }
 
         if dumpKey != lastDumpKey {

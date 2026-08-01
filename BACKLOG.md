@@ -177,10 +177,13 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   EditorCoordinator, 3 tests; the shared apply-funnel keeps a belt-and-braces reporter since
   its callers pre-confirm upstream). Conflict family: no known gaps.
 - **[VERIFIED 2026-07-30] Merge sheet** — seen on real pixels via the `conflict-merge` scene:
-  banner + three labeled panes + per-conflict picker + Apply gating all correct. Remaining in
-  this family: hex dirty bytes still have NO hot-exit (lost on quit/crash — the clobber paths
-  are closed, loss-on-crash is not), and the interactive sheet flows (pick → Apply) are
-  AX-lane. **M**
+  banner + three labeled panes + per-conflict picker + Apply gating all correct.
+  ~~hex hot-exit~~ (CLOSED 2026-08-01: dirty hex rides `TabSnapshot.unsavedHexBase64` —
+  capture at every text-capture boundary, restore at materialize re-stashes + marks dirty,
+  the hex view seeds from the stash so seen==saved; 512 KB inline cap with a told-not-silent
+  refusal; 4 tests + round-trip. Crash-window note: covered by the same autosave cadence as
+  text — the debounced snapshot rides `$tabs` ticks). Remaining in the family: the
+  interactive merge-sheet flows (pick → Apply) are AX-lane. **S**
 
 ### VM lane findings — full `all` run 2026-07-31 (release-ship sweep)
 

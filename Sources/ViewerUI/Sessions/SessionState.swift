@@ -252,7 +252,10 @@ public final class SessionState: ObservableObject {
                 // TSK-1303: persist the per-image-tab edit state. Stamped onto the
                 // live tab by `captureImageEditStateForAllTabs` at the session-switch
                 // boundary; nil for a non-image / unedited tab → key omitted.
-                imageEditState: t.imageEditState))
+                imageEditState: t.imageEditState,
+                // Hex hot-exit (2026-08-01): stamped by
+                // `captureUnsavedHexForAllTabs` at the same boundary.
+                unsavedHexBase64: t.unsavedHexBase64))
         }
         let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
         return (out, remapped)
@@ -429,6 +432,14 @@ public final class SessionState: ObservableObject {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // Hex hot-exit (2026-08-01): path → persisted unsaved hex bytes.
+        let unsavedHexByPath: [String: String] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, String)? in
+                guard let b = snap.unsavedHexBase64, !b.isEmpty else { return nil }
+                return (snap.path, b)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -444,7 +455,8 @@ public final class SessionState: ObservableObject {
                                 unsavedText: unsavedByPath[t.path],
                                 unsavedBaseMTime: unsavedBaseMTimeByPath[t.path],
                                 unsavedBaseSize: unsavedBaseSizeByPath[t.path],
-                                imageEditState: imageEditStateByPath[t.path])
+                                imageEditState: imageEditStateByPath[t.path],
+                                unsavedHexBase64: unsavedHexByPath[t.path])
         }
         // Restore the per-session sidebar expansion AFTER `setRoot`
         // (which wipes `expanded` down to just the root). We expand the

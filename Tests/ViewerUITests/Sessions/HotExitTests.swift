@@ -206,6 +206,89 @@ final class HotExitTests: XCTestCase {
                        "user typed this")
     }
 
+    // MARK: - Hex hot-exit (2026-08-01) — the one buffer class the
+    // machinery used to DROP at the session-switch drain.
+
+    func test_hexCapture_stampsDirtyBytes_andCleanClears() throws {
+        let url = try writeFile("blob.bin", "0123456789")
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        let bytes = Data([0xDE, 0xAD, 0xBE, 0xEF])
+        model.stashHexBytes(bytes, forTabID: id)
+        model.setHexDirty(true, forTabID: id)
+
+        model.captureUnsavedHexForAllTabs()
+        XCTAssertEqual(model.tabs.tabs[0].unsavedHexBase64,
+                       bytes.base64EncodedString(),
+                       "dirty hex bytes are captured onto the tab")
+
+        model.setHexDirty(false, forTabID: id)   // save/discard clears the stash
+        model.captureUnsavedHexForAllTabs()
+        XCTAssertNil(model.tabs.tabs[0].unsavedHexBase64,
+                     "a clean hex tab must not persist stale bytes")
+    }
+
+    func test_hexCapture_overCap_isNotPersisted() throws {
+        let url = try writeFile("big.bin", "x")
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        model.stashHexBytes(
+            Data(count: DocumentModel.hexHotExitMaxBytes + 1), forTabID: id)
+        model.setHexDirty(true, forTabID: id)
+
+        model.captureUnsavedHexForAllTabs()
+        XCTAssertNil(model.tabs.tabs[0].unsavedHexBase64,
+                     "an over-cap hex buffer is not inlined into the snapshot "
+                     + "(the user is told via toast; the stash itself survives)")
+        XCTAssertNotNil(model.dirtyHexBytes(forTabID: id),
+                        "refusing the CAPTURE must not drop the LIVE bytes")
+    }
+
+    func test_hexRestore_reStashesAndMarksDirty() throws {
+        let url = try writeFile("blob.bin", "0123456789")
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        let bytes = Data([0x01, 0x02, 0x03])
+        var t = model.tabs.tabs[0]
+        t.unsavedHexBase64 = bytes.base64EncodedString()
+        model.tabCoordinator.replace(at: 0, with: t)
+
+        XCTAssertTrue(model.restoreUnsavedHexIfNeeded(forTabAt: 0))
+        XCTAssertEqual(model.dirtyHexBytes(forTabID: id), bytes,
+                       "restored bytes land back in the stash (⌘S writes them; "
+                       + "the hex view seeds from the stash)")
+        XCTAssertTrue(model.tabs.tabs[0].isDirty,
+                      "the tab comes back dirty (the dot reappears)")
+    }
+
+    func test_hexRoundTrip_captureSerializeRestore_preservesBytes() throws {
+        let url = try writeFile("blob.bin", "0123456789")
+        let model = makeModel()
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        let bytes = Data((0..<64).map { UInt8($0) })
+        model.stashHexBytes(bytes, forTabID: id)
+        model.setHexDirty(true, forTabID: id)
+        model.captureUnsavedHexForAllTabs()
+
+        // Through the serializer (the write side of the snapshot)…
+        let (snapTabs, _) = SessionState.dedupedSnapshotTabs(
+            from: model.tabs.tabs, selectedIndex: nil)
+        XCTAssertEqual(snapTabs[0].unsavedHexBase64, bytes.base64EncodedString())
+
+        // …into a fresh model (the relaunch), via the lazy-tab carry.
+        let model2 = makeModel()
+        model2.appendLazyTab(url: url, viewMode: .hex,
+                             unsavedHexBase64: snapTabs[0].unsavedHexBase64)
+        XCTAssertTrue(model2.restoreUnsavedHexIfNeeded(forTabAt: 0))
+        let id2 = model2.tabs.tabs[0].id
+        XCTAssertEqual(model2.dirtyHexBytes(forTabID: id2), bytes,
+                       "the exact bytes survive capture → serialize → restore")
+    }
+
     // MARK: - 4. hot-exit clobber guard (TSK-1025)
 
     func test_restore_seedsHotExitBaseline_soExternalChangeIsDetected() throws {

@@ -87,6 +87,11 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     /// tab so a fresh snapshot stays byte-compatible with pre-TSK-1303 files.
     public let imageEditState: ImageEditState?
 
+    /// Hex hot-exit (2026-08-01): unsaved HEX-editor bytes, base64. Additive-
+    /// optional like `imageEditState` (key omitted when nil); inline-capped
+    /// at the capture side so the snapshot stays far under its read cap.
+    public let unsavedHexBase64: String?
+
     public init(path: String, viewMode: String,
                 categoryOverride: String? = nil,
                 scrollTopLine: Int? = nil,
@@ -94,7 +99,8 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
                 unsavedText: String? = nil,
                 unsavedBaseMTime: Date? = nil,
                 unsavedBaseSize: Int? = nil,
-                imageEditState: ImageEditState? = nil) {
+                imageEditState: ImageEditState? = nil,
+                unsavedHexBase64: String? = nil) {
         self.path = path
         self.viewMode = viewMode
         self.categoryOverride = categoryOverride
@@ -104,6 +110,7 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
         self.unsavedBaseMTime = unsavedBaseMTime
         self.unsavedBaseSize = unsavedBaseSize
         self.imageEditState = imageEditState
+        self.unsavedHexBase64 = unsavedHexBase64
     }
 }
 

@@ -119,6 +119,13 @@ public struct Tab: Sendable, Identifiable {
     public var unsavedBaseMTime: Date?
     public var unsavedBaseSize: Int?
 
+    /// Hex hot-exit (2026-08-01): the unsaved HEX-editor bytes for this tab
+    /// (base64), captured at the same snapshot boundary as `unsavedText` so
+    /// hex edits survive a session switch / relaunch — they used to be the
+    /// one buffer class the hot-exit machinery dropped. Same hot-path rules:
+    /// stamped lazily, persistence-only, EXCLUDED from `Tab`'s Equatable.
+    public var unsavedHexBase64: String?
+
     /// TSK-1303: the in-progress image-editor edit state (tonal/geometry ops +
     /// vector overlay) for an image tab, captured so it survives a SESSION
     /// switch — the view-local `ImageEditorViewModel` otherwise loses it when the

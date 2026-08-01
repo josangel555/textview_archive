@@ -3449,6 +3449,7 @@ public final class DocumentModel: ObservableObject {
         // detach-time capture — the equality guard inside makes a re-capture
         // a no-op.
         captureUnsavedTextForAllTabs()
+        captureUnsavedHexForAllTabs()
         // TSK-1303: fold each image tab's live edit state onto `Tab.imageEditState`
         // before the drain drops the view-local image VMs, so the snapshot (taken
         // after the drain, or by the caller's detach) carries the in-flight edits.

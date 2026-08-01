@@ -21,7 +21,8 @@ extension DocumentModel {
                               unsavedText: String? = nil,
                               unsavedBaseMTime: Date? = nil,
                               unsavedBaseSize: Int? = nil,
-                              imageEditState: ImageEditState? = nil) {
+                              imageEditState: ImageEditState? = nil,
+                              unsavedHexBase64: String? = nil) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Dedup invariant (matches `TabsState.openOrReveal`): never create a
         // SECOND tab for a file that's already open. `appendLazyTab` was the
@@ -52,7 +53,7 @@ extension DocumentModel {
         let safeMode = allowed.contains(viewMode)
             ? viewMode
             : ViewModeOptions.defaultMode(for: resolved, forcedCategory: categoryOverride)
-        tabCoordinator.append(Tab(
+        var lazyTab = Tab(
             url: resolved, state: .empty, viewMode: safeMode,
             categoryOverride: categoryOverride,
             // UX-K (#231): carry the persisted per-file scroll position onto
@@ -73,7 +74,11 @@ extension DocumentModel {
             // TSK-1303: carry the persisted image edit state so
             // `restoreImageEditState` can seed `imageEditStateByURL` for the
             // recreated image editor view once the tab materializes.
-            imageEditState: imageEditState))
+            imageEditState: imageEditState)
+        // Hex hot-exit (2026-08-01): carried the same way; consumed by
+        // `restoreUnsavedHexIfNeeded` at materialization.
+        lazyTab.unsavedHexBase64 = unsavedHexBase64
+        tabCoordinator.append(lazyTab)
     }
 
     /// Open many URLs at once. Files are appended as lazy tabs (state

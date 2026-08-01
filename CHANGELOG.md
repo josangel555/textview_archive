@@ -33,7 +33,17 @@
   relative markdown links to local files now open in-app too — previously every local link
   click was silently cancelled. An unresolvable target shows a toast naming what was searched.
 
+### Fixed
+- **Hex edits now survive a session switch and a relaunch.** Dirty hex bytes were the one
+  buffer class the hot-exit machinery dropped — switching sessions or quitting silently lost
+  them. They now ride the session snapshot like text edits do (capped at 512 KB; a larger hex
+  buffer tells you to ⌘S instead of being dropped silently), the tab comes back dirty, and the
+  hex view shows the restored bytes — what you see is what ⌘S writes. Bonus: remounting a hex
+  tab mid-session no longer silently shows disk bytes under a dirty badge.
+
 ### System work
+- `AXIdentifierCatalog` grew the 2026-08 AX-rollout vocabulary (palette, session-strip
+  controls, tab close with its derived-frame note, GoTo panel) — drift guard green.
 - AX tier: the tab ×'s close-by-click test now passes via DERIVED positioning — probed that the
   child-frame quirk is structural (modifier order doesn't fix it); the quirk is pinned with a
   tripwire that flips if SwiftUI ever fixes child frames (LESSONS).

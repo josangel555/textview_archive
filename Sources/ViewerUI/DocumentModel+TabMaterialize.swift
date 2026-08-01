@@ -93,6 +93,10 @@ extension DocumentModel {
                 // image edit state so the recreated image editor view restores the
                 // user's in-flight edits (the session-switch data-loss fix).
                 self.restoreImageEditState(forTabAt: idx)
+                // Hex hot-exit (2026-08-01): re-stash persisted dirty hex bytes
+                // + mark dirty, so ⌘S/close-confirm operate on the restored
+                // bytes and the hex view seeds from the stash.
+                self.restoreUnsavedHexIfNeeded(forTabAt: idx)
                 // LOADBUG (2026-06-01): PERF #1 severed the
                 // `tabCoordinator.objectWillChange` → `DocumentModel.
                 // objectWillChange` forwarding, so `replace` alone fires the

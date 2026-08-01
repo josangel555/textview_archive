@@ -37,6 +37,55 @@ extension DocumentModel {
     func peekHexDirtyBytesForTest(_ id: UUID) -> Data? { dirtyHexBytes(forTabID: id) }
 
     /// Read the pending dirty HEX bytes for a tab — the most-specific live
+    /// Hex hot-exit inline cap (2026-08-01): base64 of this rides INSIDE the
+    /// session snapshot json, whose READ cap is 8 MiB shared with every
+    /// other tab's state — half a MiB of raw bytes (≈700 KB base64) keeps a
+    /// pathological multi-tab case far from the cliff. Over-cap edits are
+    /// NOT captured and the user is TOLD (never a silent drop).
+    static let hexHotExitMaxBytes = 512 * 1024
+
+    /// Fold each hex-dirty tab's stashed bytes onto `Tab.unsavedHexBase64`
+    /// so the session snapshot carries them across a switch/relaunch —
+    /// hex was the one buffer class the hot-exit machinery dropped
+    /// (`closeAllTabsPreservingDirty` still clears the id-keyed stash; the
+    /// snapshot travels by PATH). Same boundary + idempotence contract as
+    /// `captureUnsavedTextForAllTabs`.
+    public func captureUnsavedHexForAllTabs() {
+        for index in tabs.tabs.indices {
+            let tab = tabs.tabs[index]
+            var captured: String? = nil
+            if let bytes = hexDirtyBytes[tab.id] {
+                if bytes.count <= Self.hexHotExitMaxBytes {
+                    captured = bytes.base64EncodedString()
+                } else {
+                    ToastCenter.shared.post(.error,
+                        "\(tab.title): hex edits are too large to carry across "
+                        + "a session switch — save (⌘S) to keep them")
+                }
+            }
+            guard tab.unsavedHexBase64 != captured else { continue }
+            var t = tab
+            t.unsavedHexBase64 = captured
+            tabCoordinator.replace(at: index, with: t)
+        }
+    }
+
+    /// Re-inject persisted unsaved hex bytes into a tab that materialized
+    /// from a session restore: re-stash + mark dirty, so ⌘S/close-confirm
+    /// operate on the restored bytes and the hex view seeds from the stash
+    /// (`HexView`'s identity-change branch consults it). Mirrors
+    /// `restoreUnsavedTextIfNeeded`. Returns whether it restored (test hook).
+    @discardableResult
+    func restoreUnsavedHexIfNeeded(forTabAt index: Int) -> Bool {
+        guard tabs.tabs.indices.contains(index) else { return false }
+        let tab = tabs.tabs[index]
+        guard let b64 = tab.unsavedHexBase64,
+              let bytes = Data(base64Encoded: b64), !bytes.isEmpty else { return false }
+        stashHexBytes(bytes, forTabID: tab.id)
+        setHexDirty(true, forTabID: tab.id)
+        return true
+    }
+
     /// content source for Save-a-Copy. Vends the private `hexDirtyBytes` stash
     /// WITHOUT exposing the mutable dict, so the SaveCopy extension (a separate
     /// file) reads through this rather than reaching the storage directly
