@@ -24,9 +24,14 @@ I-## → TSK-### when the tasked board reconnects.
   prompting). Pinned: watcher-tick, merge-escape, and save-through tests. Residue: hex tabs
   keep the content-blind stamp (binary read cost) — banner may still false-fire there (**S**);
   `.cleanReload` via the Merge button still dead-ends (rare tab-dirty/buffer-clean skew, **S**).
-- **I-02 (bug)** — Viewing a LARGE commit (e.g. `bd506dae`, the docs-corpora commit) breaks
-  commit history: no diff shown, file tree frozen. Likely an unbounded diff load on the main
-  thread / WebView payload cap. Repro on the fixture repo, then bound + async it. **M**
+- ~~**I-02 (bug)**~~ **FIXED (R7, 2026-08-01)** — large-commit wedge: the proven mechanism
+  was the UNBOUNDED body choking the diff WebView (the payload build was already off-main;
+  git itself is subsecond). All three diff producers (commit / cumulative range / per-file
+  status) now bound via `GitDiffBounds` (4 MB / 40k lines, whole-line cut, explicit
+  "⚠ DIFF TRUNCATED" notice + `git show` escape hatch, toast). Pure suite + a seam-driven
+  click test. RESIDUE (**S**): if the owner still FEELS a stall on huge commits, move the
+  `git show` subprocess off-main — deferred because it flips `showCommit`/the script verbs
+  async, which ripples through the sync automation contracts; measure first.
 - ~~**I-03 (bug)**~~ **FOLDED INTO I-01** — "Merge did nothing" was the false-conflict
   dead-end (real divergence DOES open the 3-pane sheet; pinned by test). Fixed with I-01.
 - **I-04 (bug)** — Indent guides render at 2-space pitch on a file detected as 4-space
@@ -37,9 +42,11 @@ I-## → TSK-### when the tasked board reconnects.
   as EPHEMERAL temp tabs~~ + ~~(b) Diff|Source toggle header~~ **DONE (R6, 2026-08-01)** —
   row clicks route through `GitStatusOpenMode.clickAction` (diff default, untracked→source,
   both ephemeral; permanent open stays on the context menu; toggle
-  `mdv.git.openModeToggle` persisted). REMAINING: (c) diff rows get full-line light
-  green/red BACKGROUNDS, not just changed-text marks; (d) evaluate an inline/side-by-side
-  option (@codemirror/merge MergeView is bundled but unused). **M**
+  `mdv.git.openModeToggle` persisted). ~~(c) diff line backgrounds~~ **DONE (R7)** —
+  diffweb.html row washes strengthened (0.22/0.18 light, 0.24/0.20 dark) + a 3px colored
+  left edge bar per changed row (VS Code idiom); webview-lane pin
+  (`test_changedRows_haveVisibleWash_andEdgeBar`). REMAINING: (d) evaluate an
+  inline/side-by-side option (@codemirror/merge MergeView is bundled but unused). **S–M**
 - ~~**I-06 — Git-status list polish**~~ **DONE (R6)**: gapless full-height hover fill,
   pointer + hover feedback on stage/unstage buttons.
 - **I-07 — Pointer-cursor FULL AUDIT**: every interactable shows pointer/correct cursor,

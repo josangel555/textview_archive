@@ -46,16 +46,20 @@
     --bg: #ffffff; --fg: #1d1d1f; --dim: #8e8e93;
     --hunk-bg: #f2f2f7; --hunk-fg: #6e6e73;
     --file-bg: #e8e8ed; --file-fg: #1d1d1f;
-    --add-bg: rgba(52,199,89,0.14); --del-bg: rgba(255,59,48,0.12);
-    --add-mark: rgba(52,199,89,0.38); --del-mark: rgba(255,59,48,0.34);
+    /* I-05c (owner 2026-08-01): full-line washes must be FINDABLE at a glance
+       — the old 0.14/0.12 read as "no background" next to the 0.38 marks. */
+    --add-bg: rgba(52,199,89,0.22); --del-bg: rgba(255,59,48,0.18);
+    --add-mark: rgba(52,199,89,0.42); --del-mark: rgba(255,59,48,0.38);
+    --add-edge: #34c759; --del-edge: #ff3b30;
     --gutter-fg: #aeaeb2; --sep: #d1d1d6;
   }
   body.dark {
     --bg: #1e1e1e; --fg: #d4d4d4; --dim: #8e8e93;
     --hunk-bg: #2a2a2e; --hunk-fg: #9a9aa0;
     --file-bg: #333338; --file-fg: #e5e5e7;
-    --add-bg: rgba(48,209,88,0.16); --del-bg: rgba(255,69,58,0.15);
-    --add-mark: rgba(48,209,88,0.42); --del-mark: rgba(255,69,58,0.40);
+    --add-bg: rgba(48,209,88,0.24); --del-bg: rgba(255,69,58,0.20);
+    --add-mark: rgba(48,209,88,0.48); --del-mark: rgba(255,69,58,0.44);
+    --add-edge: #30d158; --del-edge: #ff453a;
     --gutter-fg: #6e6e73; --sep: #3a3a3f;
   }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
@@ -178,8 +182,10 @@
     padding: 2px 10px; white-space: pre;
   }
   .row { display: flex; white-space: pre; }
-  .row.add { background: var(--add-bg); }
-  .row.del { background: var(--del-bg); }
+  /* I-05c: colored left edge bar (VS Code idiom) — scannable in the gutter
+     column even when the eye is skimming, without washing out the text. */
+  .row.add { background: var(--add-bg); box-shadow: inset 3px 0 0 var(--add-edge); }
+  .row.del { background: var(--del-bg); box-shadow: inset 3px 0 0 var(--del-edge); }
   .no {
     flex: 0 0 44px; text-align: right; padding-right: 6px;
     color: var(--gutter-fg); user-select: none;

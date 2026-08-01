@@ -54,15 +54,32 @@ public enum GitLogDiffActions {
         }
         panel.selectLogCommit(sha: sha)
         let client = GitClient(repoRoot: root)
-        let body = client.commitDiff(sha: sha)
-        guard let out = writeDiffFile(body, name: "\(sha).diff") else {
-            lastTrace = "showCommit(\(sha)): cache WRITE FAILED (body=\(body.count)B)"
+        // I-02 (owner 2026-08-01): an UNBOUNDED docs-corpora commit (tens of MB)
+        // choked the diff WebView ("no diff shown", panel wedged). Bound the
+        // body — whole-line cut + an explicit truncation notice in the preamble
+        // — before it reaches the .diff file / renderer.
+        let bounded = GitDiffBounds.bound(
+            client.commitDiff(sha: sha),
+            maxBytes: maxDiffBytes,
+            commandHint: "git show \(sha)")
+        guard let out = writeDiffFile(bounded.text, name: "\(sha).diff") else {
+            lastTrace = "showCommit(\(sha)): cache WRITE FAILED (body=\(bounded.text.count)B)"
             return
         }
         doc.openPreview(url: out)
+        if bounded.truncated {
+            ToastCenter.shared.post(.info,
+                "Large commit — diff truncated (full: git show \(String(sha.prefix(10))))")
+        }
         lastTrace = "showCommit(\(sha)): root=\(root.lastPathComponent) "
-            + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
+            + "body=\(bounded.text.count)B/\(bounded.originalBytes)B out=\(out.path) "
+            + "tabs=\(doc.tabs.tabs.count)"
     }
+
+    /// I-02 test seam: the byte cap applied to commit/cumulative diff bodies.
+    /// Production always uses the GitDiffBounds default; tests shrink it to
+    /// drive truncation with a tiny fixture.
+    static var maxDiffBytes = GitDiffBounds.defaultMaxBytes
 
     /// TSK-522: open the cumulative (net) diff for the multi-selection —
     /// `git diff base tip` via `GitClient.cumulativeDiff`.
@@ -78,15 +95,25 @@ public enum GitLogDiffActions {
             return
         }
         let client = GitClient(repoRoot: root)
-        let body = client.cumulativeDiff(baseRef: range.baseRef, tipRef: range.tipRef)
+        // I-02: bounded like showCommit — a multi-commit net diff is the
+        // easiest way to produce a renderer-choking body.
+        let bounded = GitDiffBounds.bound(
+            client.cumulativeDiff(baseRef: range.baseRef, tipRef: range.tipRef),
+            maxBytes: maxDiffBytes,
+            commandHint: "git diff \(range.baseRef) \(range.tipRef)")
         guard let out = writeDiffFile(
-            body, name: "\(range.baseRef)..\(range.tipRef).diff") else {
-            lastTrace = "cumulativeDiff: cache WRITE FAILED (body=\(body.count)B)"
+            bounded.text, name: "\(range.baseRef)..\(range.tipRef).diff") else {
+            lastTrace = "cumulativeDiff: cache WRITE FAILED (body=\(bounded.text.count)B)"
             return
         }
         doc.openPreview(url: out)   // TSK-1594: ephemeral preview slot
+        if bounded.truncated {
+            ToastCenter.shared.post(.info,
+                "Large range — diff truncated (full: git diff \(range.baseRef) \(range.tipRef))")
+        }
         lastTrace = "cumulativeDiff(\(range.baseRef)..\(range.tipRef)): "
-            + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
+            + "body=\(bounded.text.count)B/\(bounded.originalBytes)B out=\(out.path) "
+            + "tabs=\(doc.tabs.tabs.count)"
     }
 
     private static func writeDiffFile(_ body: String, name: String) -> URL? {

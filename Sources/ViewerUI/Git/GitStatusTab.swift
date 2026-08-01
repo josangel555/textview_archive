@@ -368,7 +368,11 @@ struct GitStatusTab: View {
     private func showDiff(_ e: GitClient.StatusEntry) {
         guard let root = model.repoRoot else { return }
         let client = GitClient(repoRoot: root)
-        let diff = client.diff(forPath: e.path)
+        // I-02: bounded like the log-side diffs — a single huge file's diff
+        // chokes the renderer the same way a docs-corpora commit does.
+        let diff = GitDiffBounds.bound(
+            client.diff(forPath: e.path),
+            commandHint: "git diff -- \(e.path)").text
         let cache = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())

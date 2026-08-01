@@ -105,6 +105,46 @@ final class DiffWebPageTests: WebViewTestCase {
         XCTAssertGreaterThan(charMarks, 0, "char granularity restores intra-line marks")
     }
 
+    /// I-05c (owner 2026-08-01): changed rows must be FINDABLE at a glance —
+    /// a real full-line wash (not transparent) plus the inset colored edge
+    /// bar, on BOTH the add and del sides, in light AND dark themes.
+    func test_changedRows_haveVisibleWash_andEdgeBar() async throws {
+        try await loadPage()
+        _ = await evalInt("window.mdvDiffRender(\(fixturePayload()), \"word\")")
+
+        for cls in ["add", "del"] {
+            let bgVisible = await evalBool("""
+                (() => {
+                  const r = document.querySelector('.row.\(cls)');
+                  if (!r) return false;
+                  const m = getComputedStyle(r).backgroundColor
+                      .match(/rgba\\([^,]+,[^,]+,[^,]+,\\s*([0-9.]+)\\)/);
+                  return !!m && parseFloat(m[1]) >= 0.15;
+                })()
+                """)
+            XCTAssertTrue(bgVisible,
+                ".\(cls) rows need a perceptible full-line wash (alpha ≥ 0.15)")
+            let edgeBar = await evalBool("""
+                getComputedStyle(document.querySelector('.row.\(cls)'))
+                    .boxShadow.includes('inset')
+                """)
+            XCTAssertTrue(edgeBar, ".\(cls) rows need the inset colored edge bar")
+        }
+
+        // Dark theme keeps both affordances (the variables are re-declared).
+        _ = await evalInt("(window.mdvDiffSetTheme(true), 1)")
+        let darkStillVisible = await evalBool("""
+            (() => {
+              const m = getComputedStyle(document.querySelector('.row.add'))
+                  .backgroundColor.match(/rgba\\([^,]+,[^,]+,[^,]+,\\s*([0-9.]+)\\)/);
+              return !!m && parseFloat(m[1]) >= 0.15
+                  && getComputedStyle(document.querySelector('.row.del'))
+                      .boxShadow.includes('inset');
+            })()
+            """)
+        XCTAssertTrue(darkStillVisible, "dark theme keeps the wash + edge bar")
+    }
+
     func test_hostileContent_staysText_neverInjects() async throws {
         try await loadPage()
         let diffText = UnifiedDiffGenerator.generate(

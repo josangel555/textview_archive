@@ -58,6 +58,8 @@ final class GitStatusOpenModeTests: XCTestCase {
             "source mode must open the EPHEMERAL preview slot, not a permanent tab")
         XCTAssertTrue(source.contains("mdv.git.openModeToggle"),
             "the Diff|Source toggle must exist (AX id) in the status tab header")
+        XCTAssertTrue(source.contains("GitDiffBounds.bound("),
+            "status-file diffs must be bounded (I-02) before reaching the renderer")
     }
 
     private var statusTabURL: URL {

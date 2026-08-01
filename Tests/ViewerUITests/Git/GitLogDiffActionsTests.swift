@@ -183,6 +183,28 @@ final class GitLogDiffActionsTests: XCTestCase {
         }
     }
 
+    /// I-02 (owner 2026-08-01): a renderer-choking commit body is BOUNDED
+    /// before it reaches the .diff file — whole-line cut + explicit notice.
+    /// Driven through the REAL click closure with the byte-cap seam shrunk.
+    func test_hugeCommitDiff_isTruncatedWithNotice() throws {
+        let (panel, doc, log) = makePanelAndDoc()
+        let old = GitLogDiffActions.maxDiffBytes
+        GitLogDiffActions.maxDiffBytes = 64
+        defer { GitLogDiffActions.maxDiffBytes = old }
+
+        GitLogDiffActions.rowClicked(
+            sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
+
+        let url = try XCTUnwrap(doc.tabs.tabs.last?.url, "diff tab must open")
+        let body = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(body.hasPrefix("⚠ DIFF TRUNCATED"),
+            "an over-cap diff must carry the explicit truncation notice")
+        XCTAssertTrue(body.contains("git show \(log[0].sha)"),
+            "the notice names the full-output escape hatch")
+        XCTAssertLessThan(body.utf8.count, 1024,
+            "the written diff must be bounded, not the full body")
+    }
+
     /// The script-verb bridge: `git-log-cmd-click <sha>` resolves the
     /// LIVE panel (weak registry) and drives the identical closure.
     func test_scriptVerbs_resolveLivePanel_andDriveClosures() {

@@ -22,6 +22,17 @@
 ### Changed
 - **Git Status list feel:** the hover highlight is now gapless (full row height, reaches the
   edge), and the stage/unstage buttons show hover feedback + the pointing-hand cursor.
+- **Diff lines are findable at a glance.** Added/removed rows in the diff view now carry a
+  clearly visible full-line green/red wash plus a colored left edge bar (the VS Code idiom),
+  in both light and dark themes — previously only the changed words were marked and the row
+  wash was too faint to scan by.
+
+### Fixed
+- **Viewing a huge commit no longer wedges the git panel.** A docs-corpora-sized commit
+  produced tens of MB of diff that choked the renderer ("no diff shown", frozen panel). Diff
+  bodies are now bounded (4 MB / 40k lines, whole-line cut) with an explicit "DIFF TRUNCATED"
+  notice in the summary naming the `git show` escape hatch — applies to commit diffs,
+  multi-commit range diffs, and per-file status diffs alike.
 
 ### Fixed
 - **The save-conflict prompt's "View Diff…" button now actually shows the diff.** It was a

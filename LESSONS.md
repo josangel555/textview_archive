@@ -4223,6 +4223,11 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   thumb: any `mdv.*` id you expect the AX tier to find needs a `.contain` somewhere between it
   and the nearest bare-id container — and the AX tier is how you PROVE it materialized.
 
+- **Don't rsync to the VM while a host build/gate is running (2026-08-01).** `swift build`
+  (and thus the headless gate) rewrites `rust-core/link/mdv-serve` + `mdvcore.h`; rsync
+  racing that write dies with exit 23 ("read errors mapping … No message available on
+  STREAM"). Sequence the sync AFTER the gate, or exclude the in-flux artifact.
+
 - **A dropped enum case ≠ a safe default (2026-08-01, the false-conflict incident).** The
   external-edit pipeline HAD the right classifier — `ExternalEditReconciler` returns
   `.noExternalChange` when disk == last-saved baseline — but both call sites pattern-matched
