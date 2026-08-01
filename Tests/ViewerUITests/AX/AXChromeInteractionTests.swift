@@ -70,4 +70,39 @@ final class AXChromeInteractionTests: AXInteractionTestCase {
             "a REAL click on + must open the GoTo prompt (real event → "
             + "SwiftUI action → coordinator → new AX surface)")
     }
+
+    /// The command palette is AX-reachable end-to-end (2026-08-01 — it had
+    /// ZERO accessibility ids before this round): click the strip's ⌘ button,
+    /// the palette panel + its search field materialize in the AX tree.
+    func test_hidClick_paletteButton_opensAnAXReachablePalette() throws {
+        let root = try spawnAndAttach(scene: "tabs-3")
+        // Anchor first: discriminates "attach/launch failed" (nothing
+        // findable) from "this control doesn't materialize" (anchor yes,
+        // omni no) — the two failure shapes need different fixes.
+        _ = waitUntil(8) { AXDriverCore.find("mdv.sessionTabBar", in: root) != nil }
+        XCTAssertNotNil(AXDriverCore.find("mdv.sessionTabBar", in: root),
+            "anchor: the session strip itself must be findable (attach OK)")
+        _ = waitUntil(5) { AXDriverCore.find("mdv.sessionTab.omni", in: root) != nil }
+        guard let omni = AXDriverCore.find("mdv.sessionTab.omni", in: root),
+              let frame = omni.axFrame else {
+            let strip = AXDriverCore.find("mdv.sessionTabBar", in: root)
+            let stripIds = strip.map {
+                AXDriverCore.findAll(AXQuery("mdv.*"), in: $0).compactMap(\.axIdentifier)
+            } ?? []
+            return XCTFail("the palette button must be AX-addressable with a "
+                + "frame; ids under the strip: \(stripIds)")
+        }
+        XCTAssertNil(AXDriverCore.find("mdv.palette.panel", in: root),
+                     "precondition: no palette before the click")
+
+        AXClickExecutor.click(centerOf: frame)
+
+        let appeared = waitUntil(5) {
+            AXDriverCore.find("mdv.palette.panel", in: root) != nil
+                && AXDriverCore.find("mdv.palette.field", in: root) != nil
+        }
+        XCTAssertTrue(appeared,
+            "a REAL click on ⌘ must open a palette whose panel + field are "
+            + "AX-addressable (they carried no ids at all before)")
+    }
 }

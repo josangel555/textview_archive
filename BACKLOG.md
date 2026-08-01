@@ -124,11 +124,13 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   `AXChromeInteractionTests` green on the VM (find-by-`mdv.*`-id with real frames; HID click at
   AX frame → GoTo panel appears — the full real-event round-trip). Mechanism truths in LESSONS
   (AXPress accepted-not-dispatched; postToPid not hit-tested; HID-tap works). Per-feature
-  rollout now unblocked — next targets: **(a)** the pointer-drag reorder/tab-to-session rung,
-  **(b)** inner-control AX frame fidelity (a `.contain` parent's children can report the
-  parent's frame — the tab close button does; fix or offset-click before targeting small
-  controls), **(c)** `CommandPaletteView` carries NO AX ids at all, **(d)** fold the suite into
-  the nightly `all` lane notes + grow `AXIdentifierCatalog`. **S per feature**
+  rollout now unblocked — ~~(a) drag rung~~ (DONE 07-31, `AXStripDragTests`); ~~(c) palette
+  AX ids~~ (DONE 08-01: `mdv.palette.*` vocabulary + pin test + AX round-trip green; the fix
+  also surfaced the implicit-combine container rule — LESSONS). Remaining: **(b)**
+  inner-control AX frame fidelity (a `.contain` parent's children can report the parent's
+  frame — the tab close button does; fix or offset-click before targeting small controls),
+  **(d)** fold the suites into the nightly `all` lane notes + grow `AXIdentifierCatalog`.
+  **S per feature**
 - ~~Delete the dead `ModeBar` struct~~ **DONE 2026-08-01**: ~300 lines removed; the three
   still-live label statics rehomed to `LensLabels`; the two chrome-harness tests now mirror
   the real `ContentToolbar` band (same height math, green).
@@ -163,9 +165,10 @@ verified Split / merge-sheet / math on real pixels. Remaining:
 - **Disk-conflict follow-ups (from the 2026-07-29 fix).** The banner + save-prompt paths now
   preserve every discarded side and never pick silently. ~~viewDiff no-op stub~~ (WIRED
   2026-08-01: unified buffer-vs-disk diff into the ephemeral preview slot, identical-text
-  conflicts self-explain; `SaveConflictViewDiffTests`). Remaining in the family: the
-  save-prompt's Overwrite/Reload branches REPORT a failed capture via toast rather than
-  pre-confirming like the banner does — unify on the pre-confirm for one rule everywhere. **S**
+  conflicts self-explain; `SaveConflictViewDiffTests`). ~~Overwrite/Reload toast-after~~
+  (UNIFIED 2026-08-01 on the banner's pre-confirm — `confirmDiscardIsPreserved` gate in
+  EditorCoordinator, 3 tests; the shared apply-funnel keeps a belt-and-braces reporter since
+  its callers pre-confirm upstream). Conflict family: no known gaps.
 - **[VERIFIED 2026-07-30] Merge sheet** — seen on real pixels via the `conflict-merge` scene:
   banner + three labeled panes + per-conflict picker + Apply gating all correct. Remaining in
   this family: hex dirty bytes still have NO hot-exit (lost on quit/crash — the clobber paths

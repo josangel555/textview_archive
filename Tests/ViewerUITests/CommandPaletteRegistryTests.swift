@@ -258,4 +258,23 @@ final class CommandPaletteRegistryTests: XCTestCase {
         let cmd = model.commandRegistry.command(id: "view.quickOpen")
         XCTAssertEqual(cmd?.defaultShortcut, Shortcut(key: "p", modifiers: [.command]))
     }
+
+    /// AX-id pin (2026-08-01, the TSK-561 dead-channel idiom): the palette
+    /// had ZERO accessibility identifiers — invisible to assistive clients
+    /// and the AX tier alike. Pin the mdv.palette.* vocabulary so a refactor
+    /// can't silently strip it again; the live-tree reachability rung is
+    /// AXChromeInteractionTests (VM).
+    func test_paletteView_carriesTheAXIdVocabulary() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let src = try String(
+            contentsOf: root.appendingPathComponent("Sources/ViewerUI/CommandPaletteView.swift"),
+            encoding: .utf8)
+        for id in ["mdv.palette.panel", "mdv.palette.field", "mdv.palette.close",
+                   "mdv.palette.row.", "mdv.palette.command.", "mdv.palette.jump."] {
+            XCTAssertTrue(src.contains(id),
+                "CommandPaletteView must carry the \(id) accessibility id")
+        }
+    }
 }

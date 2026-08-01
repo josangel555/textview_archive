@@ -89,6 +89,12 @@ struct SessionTabBar: View {
         }
         .frame(height: rowHeight)
         .background(Palette.windowBackground)
+        // Explicit CONTAINER, not a bare id: a bare `.accessibilityIdentifier`
+        // on the row implicitly combined its loose pure-SwiftUI descendants —
+        // the three pinned action buttons never materialized in the AX tree
+        // (AppKit boundaries escaped it: the ScrollView subtree + the Menu).
+        // Probed via ax-reader/AX tier, 2026-08-01.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.sessionTabBar")
         .uiClickTarget("mdv.sessionTabBar")
     }
@@ -107,6 +113,11 @@ struct SessionTabBar: View {
         }
         .buttonStyle(IconHoverButtonStyle())
         .helpInfo(title: title, description: help)
+        // `.contain` so the button MATERIALIZES as an out-of-process AX
+        // element (2026-08-01: the first ax-reader probe showed these three
+        // ids never reached the AX tree at all — the same class as the tab
+        // close button; the TabBarItem/.contain pattern is the fix).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(id)
         .accessibilityLabel(title)
     }

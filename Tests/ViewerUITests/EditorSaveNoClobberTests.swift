@@ -329,6 +329,80 @@ final class EditorSaveNoClobberTests: XCTestCase {
             "a save that never wrote must record no history version")
     }
 
+    // MARK: - Pre-confirm on an unpreservable side (2026-08-01 unification)
+    //
+    // The banner path always PRE-CONFIRMED when Local History refused the
+    // capture; the save-prompt's Overwrite/Reload used to toast AFTER the
+    // destruction. One rule now: the destructive branch only proceeds when
+    // the doomed side is recoverable — or the user explicitly accepts the
+    // loss, told BEFORE anything is destroyed.
+
+    func test_overwrite_unpreservableDiskSide_cancelAborts_nothingDestroyed() throws {
+        let url = try writeFile("bin-disk.md", "original\n")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        model.editor.updateEditorText("my edit\n", forTabID: id)
+        // The external change is BINARY-looking → Local History refuses it.
+        let binary = "BIN\0\0DATA\n"
+        try backgroundWrite(url, binary)
+
+        model.editor.saveConflictPromptOverride = { _, _ in .overwrite }
+        var prompted = false
+        model.editor.unpreservedDiscardPromptOverride = { _, what, _ in
+            prompted = true
+            XCTAssertEqual(what, "the version on disk")
+            return .cancel
+        }
+
+        XCTAssertFalse(model.editor.saveEditor(forTabID: id),
+            "cancelling the unpreservable-discard prompt must abort the save")
+        XCTAssertTrue(prompted, "a refused capture must PRE-confirm, not toast after")
+        XCTAssertEqual(diskString(at: url), binary,
+            "the external change must survive the aborted overwrite")
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, "my edit\n")
+        XCTAssertTrue(model.editor.editorBuffers[id]?.isDirty == true,
+            "the buffer stays dirty — nothing was resolved")
+    }
+
+    func test_overwrite_unpreservableDiskSide_explicitProceed_writes() throws {
+        let url = try writeFile("bin-disk2.md", "original\n")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        model.editor.updateEditorText("my edit\n", forTabID: id)
+        try backgroundWrite(url, "BIN\0\0DATA\n")
+
+        model.editor.saveConflictPromptOverride = { _, _ in .overwrite }
+        model.editor.unpreservedDiscardPromptOverride = { _, _, _ in .proceedAnyway }
+
+        XCTAssertTrue(model.editor.saveEditor(forTabID: id),
+            "an explicit Discard Anyway lets the overwrite complete")
+        XCTAssertEqual(diskString(at: url), "my edit\n")
+    }
+
+    func test_reload_unpreservableEdits_cancelKeepsBuffer() throws {
+        let url = try writeFile("bin-buf.md", "original\n")
+        let model = makeModel()
+        let id = openAndSeed(url, in: model)
+        // The DOOMED side here is the buffer — make IT binary-looking.
+        model.editor.updateEditorText("MINE\0\0\n", forTabID: id)
+        try backgroundWrite(url, "theirs\n")
+
+        model.editor.saveConflictPromptOverride = { _, _ in .reload }
+        var prompted = false
+        model.editor.unpreservedDiscardPromptOverride = { _, what, _ in
+            prompted = true
+            XCTAssertEqual(what, "your unsaved edits")
+            return .cancel
+        }
+
+        XCTAssertFalse(model.editor.saveEditor(forTabID: id))
+        XCTAssertTrue(prompted)
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, "MINE\0\0\n",
+            "cancelling must keep the unpreservable edits in the buffer")
+        XCTAssertEqual(diskString(at: url), "theirs\n",
+            "the disk side is untouched by the aborted reload")
+    }
+
     func test_multipleSaves_accumulateVersions() throws {
         let url = try writeFile("multi.md", "v1\n")
         let model = makeModel()

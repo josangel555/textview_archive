@@ -1068,23 +1068,28 @@ public final class EditorCoordinator: ObservableObject {
             //
             // The external change is about to be destroyed by our write, so
             // capture it into Local History first (owner directive 2026-07-28:
-            // never overwrite an outside change without keeping a copy). The
-            // CHOICE here is explicit — the user picked Overwrite in a modal
-            // that names the consequence — so a failed capture is reported
-            // rather than blocking; see `DocumentModel+ConflictPreservation`
-            // for the stricter pre-confirm the banner path uses.
-            preserveDiscardedSide(
+            // never overwrite an outside change without keeping a copy) — and
+            // GATE on the capture (2026-08-01, unified with the banner path):
+            // if Local History refuses the copy, the user decides with that
+            // fact in hand, BEFORE the disk version is gone. Cancelling
+            // aborts the save; the buffer stays dirty, the disk untouched.
+            guard confirmDiscardIsPreserved(
                 text: (try? String(contentsOf: url, encoding: bufferEncoding(forTabID: id))),
-                path: url.path, what: "the version on disk", fileName: url.lastPathComponent)
+                path: url.path, what: "the version on disk",
+                fileName: url.lastPathComponent)
+            else { return .abort }
             return .proceed
 
         case .reload:
             // Take disk: drop the edits and reload. Mirrors the external-edit
-            // "Discard & Reload" branch.
-            preserveDiscardedSide(
+            // "Discard & Reload" branch — same pre-confirm gate: the edits
+            // are only discarded once they're recoverable (or the user
+            // explicitly accepted the loss). Cancelling keeps the buffer.
+            guard confirmDiscardIsPreserved(
                 text: tabCoordinator.editorBuffers[id]?.text,
                 path: url.path, what: "your unsaved edits",
                 fileName: url.lastPathComponent)
+            else { return .abort }
             discardEditorBuffer(forTabID: id)
             let tabs = tabsSnapshot()
             if let idx = tabs.firstIndex(where: { $0.id == id }) {
@@ -1116,11 +1121,38 @@ public final class EditorCoordinator: ObservableObject {
         tabCoordinator.editorBuffers[id]?.encoding ?? .utf8
     }
 
-    /// Capture a version that a save-conflict branch is about to destroy.
-    /// Reports (never swallows) a refusal: Local History legitimately declines
-    /// secrets/oversize/binary content, and the user must not be left believing
-    /// a copy exists when it does not.
-    private func preserveDiscardedSide(
+    /// Test seam mirroring `DocumentModel.unpreservedDiscardPromptOverride`:
+    /// (fileName, what, reason) → proceed or cancel. Nil in production (the
+    /// modal below runs); host tests install this.
+    public var unpreservedDiscardPromptOverride:
+        ((_ fileName: String, _ what: String, _ reason: String)
+            -> DocumentModel.UnpreservedDiscardChoice)?
+
+    /// Capture a version a save-conflict branch is about to destroy, and
+    /// GATE the branch on it (2026-08-01 — unified with the banner path's
+    /// rule; previously this branch only TOASTED a refusal after the
+    /// destruction). Returns true when it is safe to proceed: the content
+    /// is recoverable, there was nothing to capture, or the user explicitly
+    /// accepted the loss. Local History legitimately declines secrets/
+    /// oversize/binary content — the user must never proceed believing a
+    /// copy exists when it does not.
+    private func confirmDiscardIsPreserved(
+        text: String?, path: String, what: String, fileName: String
+    ) -> Bool {
+        guard let text, !text.isEmpty else { return true }
+        let outcome = localHistoryStore.capture(path: path, content: text, at: Date())
+        if outcome.isPreserved { return true }
+        let reason = outcome.refusal?.explanation ?? "it could not be saved"
+        let choice = unpreservedDiscardPromptOverride?(fileName, what, reason)
+            ?? runUnpreservedDiscardAlert(fileName: fileName, what: what, reason: reason)
+        return choice == .proceedAnyway
+    }
+
+    /// Belt-and-braces variant for the SHARED apply-funnel
+    /// (`applyExternalEditOutcome`), where the decision was already made and
+    /// the gated surfaces upstream have pre-confirmed (their capture dedups
+    /// to a no-op here). Never SWALLOWS a refusal — reports it via toast.
+    private func reportUnpreservedDiscard(
         text: String?, path: String, what: String, fileName: String
     ) {
         guard let text, !text.isEmpty else { return }
@@ -1130,6 +1162,24 @@ public final class EditorCoordinator: ObservableObject {
         ToastCenter.shared.post(
             .error,
             "\(fileName): couldn't keep a copy of \(what) — \(reason)")
+    }
+
+    /// The modal shown when Local History could not keep the copy. Cancel is
+    /// the default — the safe answer when the app cannot promise recovery.
+    /// Same copy as the banner path's alert (one vocabulary, one rule).
+    /// Never runs under the headless gate (tests install the override).
+    private func runUnpreservedDiscardAlert(
+        fileName: String, what: String, reason: String
+    ) -> DocumentModel.UnpreservedDiscardChoice {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Can't keep a copy of \(what)"
+        alert.informativeText =
+            "\(fileName): Local History can't store this version because \(reason). "
+            + "If you continue, \(what) will be lost permanently."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Discard Anyway")
+        return alert.runModal() == .alertFirstButtonReturn ? .cancel : .proceedAnyway
     }
 
     /// The AppKit modal for the write-time save conflict. Built from the offered
@@ -1299,7 +1349,7 @@ public final class EditorCoordinator: ObservableObject {
             // so nothing can drop unsaved edits without a Local History copy.
             // Dedup makes the banner path's earlier capture a no-op, and that
             // path additionally PRE-CONFIRMS when the copy can't be kept.
-            preserveDiscardedSide(
+            reportUnpreservedDiscard(
                 text: tabCoordinator.editorBuffers[id]?.text,
                 path: url.path, what: "your unsaved edits",
                 fileName: url.lastPathComponent)
@@ -1308,7 +1358,7 @@ public final class EditorCoordinator: ObservableObject {
         case .keepEdits:
             // Keeping the edits means the next save overwrites whatever the
             // other program wrote — capture that version before we forget it.
-            preserveDiscardedSide(
+            reportUnpreservedDiscard(
                 text: try? String(contentsOf: url, encoding: bufferEncoding(forTabID: id)),
                 path: url.path, what: "the version on disk",
                 fileName: url.lastPathComponent)

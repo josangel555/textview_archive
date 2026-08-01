@@ -55,6 +55,9 @@ struct CommandPaletteView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($fieldFocused)
+                    // AX ids (2026-08-01): the palette had NONE — invisible to
+                    // the AX tier and assistive clients alike. mdv.palette.*
+                    .accessibilityIdentifier("mdv.palette.field")
                     .onSubmit { submit() }
                     .onChange(of: query) { _, _ in
                         recomputeFiltered()
@@ -66,6 +69,8 @@ struct CommandPaletteView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.escape, modifiers: [])
+                .accessibilityIdentifier("mdv.palette.close")
+                .accessibilityLabel("Close Command Palette")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -110,6 +115,7 @@ struct CommandPaletteView: View {
                                     openSelected()
                                 }
                                 .id(index)
+                                .accessibilityIdentifier("mdv.palette.row.\(index)")
                             }
                         }
                     }
@@ -153,6 +159,8 @@ struct CommandPaletteView: View {
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
         .shadow(radius: 24)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mdv.palette.panel")
         .background(keyboardShortcuts)
         // TSK-1592: reliable Esc-dismiss in EVERY mode — a query field holding
         // `#`/`@` text otherwise swallows Esc in its field editor before the ✕
@@ -443,6 +451,7 @@ struct CommandPaletteView: View {
                         .onHover { if $0 { selectedIndex = index } }
                         .onTapGesture { selectedIndex = index; jumpToSelectedRow() }
                         .id(index)
+                        .accessibilityIdentifier("mdv.palette.jump.\(index)")
                     }
                 }
             }
@@ -554,6 +563,7 @@ struct CommandPaletteView: View {
                                 runSelectedCommand()
                             }
                             .id(index)
+                            .accessibilityIdentifier("mdv.palette.command.\(index)")
                         }
                     }
                 }

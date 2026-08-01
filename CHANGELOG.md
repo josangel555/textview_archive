@@ -15,6 +15,17 @@
   Files deleted since the last run are dropped rather than offered, and File ▸ Reset's
   recents domain wipes the list along with the other recents.
 
+### Fixed
+- **Overwrite/Reload in the save-conflict prompt now pre-confirm when a copy can't be kept.**
+  If Local History refuses the doomed side (binary/oversize/secret content), you're told
+  BEFORE anything is destroyed and can cancel — previously a toast reported it after the
+  fact. Same rule the conflict banner already used; one behavior everywhere.
+- **The session strip's Settings/Search/Palette buttons and the command palette are now
+  visible to assistive technology.** The palette had no accessibility identifiers at all, and
+  the three strip buttons never materialized in the accessibility tree (an implicit-combine
+  container swallowed them). Found by the AX tier; both verified end-to-end on the VM — a
+  real HID click on the ⌘ button opens an AX-addressable palette.
+
 ### System work
 - Tab-strip visual suite false-red fixed: the separator detector's cluster window (3pt) split
   one separator's two edges (7px apart under the VM's 110% zoom) into "two separators", which

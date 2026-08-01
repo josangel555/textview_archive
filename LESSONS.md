@@ -4212,3 +4212,13 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   the session-pill pattern); (5) under a `.contain` parent, an inner control's AX FRAME can
   report the PARENT'S frame (the tab close button did) — verify geometry per control before
   targeting small elements; big controls (the strip "+") report true frames.
+
+- **SwiftUI AX materialization rules, probed (2026-08-01, AX tier).** Two shapes make a control
+  INVISIBLE to the out-of-process AX tree (and assistive clients): (1) `.accessibilityElement(
+  children: .ignore)` — drops every descendant (the tab close button); (2) a BARE
+  `.accessibilityIdentifier` on a CONTAINER implicitly combines its loose pure-SwiftUI
+  descendants — the session strip's three pinned action buttons never materialized, while
+  AppKit boundaries escaped the combine (the ScrollView subtree, a Menu). Fix in both cases:
+  `.accessibilityElement(children: .contain)` (on the container and/or the control). Rule of
+  thumb: any `mdv.*` id you expect the AX tier to find needs a `.contain` somewhere between it
+  and the nearest bare-id container — and the AX tier is how you PROVE it materialized.

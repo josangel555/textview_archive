@@ -67,7 +67,12 @@ final class SleepRatchetGuardTests: XCTestCase {
     /// paint-settle trio as every spawn rig, plus the `waitUntil` poll
     /// INTERVAL tick — which IS condition-polling (returns the instant
     /// the predicate holds); the sleep is its sampling period.
-    private static let baseline = 89
+    /// 2026-08-01: 89 → 90 — the AX rig's activation-retry BACKOFF
+    /// (osascript -609 while a prior same-named instance unwinds in
+    /// WindowServer): a bounded retry-until-rc==0 loop; the sleep only
+    /// burns when activation genuinely failed, and there is no pollable
+    /// predicate for "WindowServer finished unwinding the old instance".
+    private static let baseline = 90
 
     func test_noNewFixedDurationSleeps() throws {
         let fm = FileManager.default

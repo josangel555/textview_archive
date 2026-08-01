@@ -265,11 +265,19 @@ class AXInteractionTestCase: XCTestCase {
         guard sawWindow else {
             throw XCTSkip("no window id published — app failed to launch a window")
         }
-        let activate = Process()
-        activate.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        activate.arguments = ["-e", "tell application \"MarkdownViewer\" to activate"]
-        try? activate.run()
-        activate.waitUntilExit()
+        // Activation can transiently fail (-609 "Connection is invalid")
+        // when a PREVIOUS test's same-named instance is still unwinding in
+        // WindowServer — retry briefly instead of proceeding backgrounded
+        // (clicks need the window frontmost).
+        for attempt in 0..<5 {
+            let activate = Process()
+            activate.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            activate.arguments = ["-e", "tell application \"MarkdownViewer\" to activate"]
+            try? activate.run()
+            activate.waitUntilExit()
+            if activate.terminationStatus == 0 { break }
+            Thread.sleep(forTimeInterval: 0.5 + Double(attempt) * 0.5)
+        }
         Thread.sleep(forTimeInterval: 2.0)   // scene apply + first paint settle
         return AXUIElementNode.application(pid: p.processIdentifier)
     }
