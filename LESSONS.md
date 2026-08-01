@@ -4200,3 +4200,15 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   (test-in-vm.sh does it when MDV_VM_SUDO_PASS is set; runtime-only, reapplied per run) + a
   laddered `ulimit -n 262144 || 65536 || …`. Also noted: the VM system disk was at 90%
   (1.2 GiB free) — watch it before blaming code for IO failures.
+
+- **AX tier mechanics, settled by measurement (2026-07-31, five rounds + a diagnostic).** Driving
+  SwiftUI macOS UI out-of-process: (1) `kAXPressAction` is ACCEPTED (`.success`, advertised)
+  but NEVER DISPATCHED by SwiftUI's AX bridge on plain-style buttons — the System-Events trap
+  wearing a new coat; (2) `CGEvent.postToPid` mouse events are NOT hit-tested — they land in the
+  app's queue and no control fires; (3) the GLOBAL HID-tap post (`.cghidEventTap`) WORKS, even
+  from the asuser/root lane context. Division of labor: AX = find + geometry, HID = the event
+  (`AXClickExecutor`). Also: (4) `.accessibilityElement(children: .ignore)` DROPS children from
+  the AX tree entirely (TabBarItem hid its close button from assistive clients — use `.contain`,
+  the session-pill pattern); (5) under a `.contain` parent, an inner control's AX FRAME can
+  report the PARENT'S frame (the tab close button did) — verify geometry per control before
+  targeting small elements; big controls (the strip "+") report true frames.

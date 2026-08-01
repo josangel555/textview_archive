@@ -62,7 +62,12 @@ final class SleepRatchetGuardTests: XCTestCase {
     /// pixel-verification rig) carries the same standard three T5 spawn
     /// sleeps (terminate-quiesce, windowid poll tick, scene-apply/paint
     /// settle) as every capture suite above.
-    private static let baseline = 85
+    /// 2026-07-31: 85 → 89 — AXChromeInteractionTests (the AX tier
+    /// bootstrap): the same terminate-quiesce + windowid poll tick +
+    /// paint-settle trio as every spawn rig, plus the `waitUntil` poll
+    /// INTERVAL tick — which IS condition-polling (returns the instant
+    /// the predicate holds); the sleep is its sampling period.
+    private static let baseline = 89
 
     func test_noNewFixedDurationSleeps() throws {
         let fm = FileManager.default

@@ -17,7 +17,7 @@ WebView-lane suites · **22** `MultiScenarioTestCase` script-bus UAT suites ·
    │ T6  agent-driven journey UAT      run-uat skill (NOT swift test)      │  owner/major-release
    ├─────────────────────────────────────────────────────────────────────┤
    │ T5  PixelTestCase   WindowServer pixels (screencapture)   VM only     │  7 suites
-   │ AX  native real-interaction (out-of-process AXUIElement)  VM only     │  ← NEW (TSK-1254), being built
+   │ AX  AXInteractionTestCase (out-of-process AXUIElement)    VM only     │  bootstrapped 2026-07-31
    │ T4  LiveAppTestCase spawns dist/TextView.app (--script)   VM only     │  3 suites
    │ WV  WebView lane    in-process live WKWebView (#192)       VM/nightly  │  16 suites
    ├─────────────────────────────────────────────────────────────────────┤
@@ -39,14 +39,14 @@ WebView-lane suites · **22** `MultiScenarioTestCase` script-bus UAT suites ·
 | **T2'** | `HeadlessUITestCase` | in-process `NSHostingView` + `layoutSubtreeIfNeeded` + `DiagnosticDump` | realized-tree **shape/geometry** (not pixels) | host (merge gate) |
 | **WV** | `WebViewTestCase` | real in-process `WKWebView` + `evaluateJavaScript`/`cmDispatch` | CM6 editor / rendered-markdown / mermaid render behavior (the CDP-equivalent) | VM / nightly (`MDV_RUN_WEBVIEW_TESTS=1`) |
 | **T4** | `LiveAppTestCase` | spawns `dist/TextView.app` via `--script`, reads its dump | real process boundary: AppDelegate↔coordinator launch wiring, cross-process persistence, real-`NSWindow` geometry | VM (GUI session) |
-| **AX** | *(TSK-1254, building)* | **out-of-process** `AXUIElement` + `AXDriverCore` find-by-`mdv.*`-id + AXPress / CGEvent-at-frame | native-chrome real-event interaction (click/scroll/read by id) — the missing apex | VM (GUI session + AX TCC) |
+| **AX** | `AXInteractionTestCase` (TSK-1254, bootstrapped 2026-07-31) | **out-of-process** `AXUIElement` + `AXDriverCore` find-by-`mdv.*`-id + AXPress / CGEvent-at-frame; first suite `AXChromeInteractionTests` (spawn → find by id → AXPress → observe the tree change) | native-chrome real-event interaction (click/scroll/read by id) — the missing apex | VM (GUI session + AX TCC; targeted run: `test-in-vm.sh pixel --filter ViewerUITests.AXChromeInteractionTests`) |
 | **T5** | `PixelTestCase` | `screencapture(1)` of the live window | stage-④ WindowServer compositing (occlusion/blank-sibling class) — no headless equivalent | VM (GUI session + Screen-Recording TCC) |
 | **T6** | *(run-uat skill)* | agent-driven journey UAT (PARTIAL per change / FULL per release) | end-to-end on-screen behavior with the agent's own eyes | owner / major release |
 
 ## Gating (who runs what)
 
 - **Merge gate (host, every PR)** — `scripts/test-headless-gate.sh` (= `MDV_HEADLESS_GATE=1 swift test --parallel`, what `.github/workflows/pr.yml` runs). Runs the **headless tiers only**; T4/T5/WebView **self-skip** (no `dist/`, no GUI session, no `MDV_RUN_WEBVIEW_TESTS`). `TierGateObserver` makes this non-regressable: if a heavy-tier body *runs* in the gate, the gate goes RED.
-- **VM / nightly lane** — `scripts/test-in-vm.sh` (`.github/workflows/nightly-vm.yml`) builds `dist/` and runs T4 + T5 + the WebView lane for real (GUI login session + TCC). The AX tier (when built) joins here.
+- **VM / nightly lane** — `scripts/test-in-vm.sh` (`.github/workflows/nightly-vm.yml`) builds `dist/` and runs T4 + T5 + the WebView lane for real (GUI login session + TCC). The AX tier runs here too (`AXInteractionTestCase` gates on `MDV_VM_GUI_SESSION=1` + `AXIsProcessTrusted`, so it rides the same lane; on the VM the ssh chain already holds the Accessibility grant).
 - **rust-core gate** — `scripts/rust-core-gate.sh`: `cargo test` + the ratatui `TestBackend` per-cell pixel-teeth (host pixel coverage for the TUI render, no VM needed).
 
 ## The tier-justify rule (the guardrail)

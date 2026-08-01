@@ -1,3 +1,4 @@
+import ApplicationServices
 import XCTest
 import Foundation
 
@@ -150,6 +151,52 @@ class WebViewTestCase: XCTestCase {
 ///
 /// Not `@MainActor`: same reasoning as `LiveAppTestCase` — it spawns the
 /// app and drives `screencapture(1)` out-of-process.
+// MARK: - AX — out-of-process real-interaction (the TSK-1254 apex tier)
+
+/// Base for the native-AX interaction tier (owner policy 2026-07-29: AX
+/// tests for new UI work; bootstrapped 2026-07-31). Tests spawn
+/// `dist/TextView.app`, attach OUT-OF-PROCESS via
+/// `AXUIElementNode.application(pid:)`, locate elements by their `mdv.*`
+/// accessibility identifier through the host-tested `AXDriverCore`, and
+/// perform REAL actions (`kAXPressAction`) — the only substrate where
+/// SwiftUI materializes an AX tree at all (the in-process tree is empty,
+/// proven 2026-07-04; System Events can't see SwiftUI identifiers).
+///
+/// **A subclass MUST carry a `// TIER-JUSTIFY:` comment** naming the
+/// real-event / out-of-process observable that forces this tier — if the
+/// assertion could read `model.*` after calling the action closure, it's
+/// a T1m test wearing an AX costume.
+///
+/// Runs ONLY in the explicit VM GUI lane (`MDV_VM_GUI_SESSION=1`, same
+/// gate as T5 — spawning would open a window on the owner's screen
+/// anywhere else) AND when the runner holds the Accessibility TCC grant.
+/// On the VM both ssh paths are trusted (`sshd-keygen-wrapper` +
+/// `Terminal` carry `kTCCServiceAccessibility` auth); a missing grant
+/// self-skips with the fix spelled out rather than false-failing.
+class AXInteractionTestCase: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        TierGateObserver.register()
+    }
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        guard LaunchHarness.shouldRunLiveTiers(
+            env: ProcessInfo.processInfo.environment, bundleExists: true) else {
+            throw XCTSkip("AX tier — requires the explicit VM GUI lane (MDV_VM_GUI_SESSION=1).")
+        }
+        guard AXIsProcessTrusted() else {
+            throw XCTSkip("""
+                AX tier — the test runner lacks the Accessibility TCC grant. \
+                On the VM: System Settings → Privacy & Security → Accessibility \
+                → enable the spawning context (Terminal / sshd), or add the \
+                runner to /Library/Application Support/com.apple.TCC/TCC.db \
+                (kTCCServiceAccessibility) via the ssh+sudo path.
+                """)
+        }
+    }
+}
+
 class PixelTestCase: XCTestCase {
     override class func setUp() {
         super.setUp()

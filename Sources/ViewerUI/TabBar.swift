@@ -589,9 +589,17 @@ struct TabBarItem: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .helpInfo(title: tab.title, description: tabHelpText)
-        .accessibilityElement(children: .ignore)
+        // `.contain`, NOT `.ignore` (AX tier bootstrap, 2026-07-31):
+        // `.ignore` dropped every child — including the CLOSE BUTTON —
+        // from the AX tree, making it unreachable to assistive clients
+        // and the out-of-process AX driver alike
+        // (`AXChromeInteractionTests` caught it). Same pattern as the
+        // session pill; the tab also gets its own id so AX tests can
+        // select a specific tab.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("mdv.tab.item.\(tab.id.uuidString)")
     }
 
     private var background: Color {

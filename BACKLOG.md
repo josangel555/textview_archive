@@ -119,9 +119,16 @@ verified Split / merge-sheet / math on real pixels. Remaining:
   shelf + coordinator save/restore/delete + context-menu & +-menu surfaces; save flushes live
   state incl. unsaved buffers; restore = new session, point survives; 12 host tests + isolation
   pin vs the TSK-438 recovery scan). Queue drained — next: AX harness bootstrap. **M each**
-- **AX tests for new UI work (owner policy shift, 2026-07-29).** Previously "AX tier
-  off-limits"; the owner now WANTS AX tests for new UI. Needs the AX harness groundwork
-  (TSK-1197-1199 family) before per-feature AX tests can land. **L bootstrap, then S/feature**
+- **AX tests for new UI work (owner policy shift, 2026-07-29).** ~~L bootstrap~~ **BOOTSTRAPPED
+  2026-07-31**: `AXInteractionTestCase` tier (GUI-lane + `AXIsProcessTrusted` gated) +
+  `AXChromeInteractionTests` green on the VM (find-by-`mdv.*`-id with real frames; HID click at
+  AX frame → GoTo panel appears — the full real-event round-trip). Mechanism truths in LESSONS
+  (AXPress accepted-not-dispatched; postToPid not hit-tested; HID-tap works). Per-feature
+  rollout now unblocked — next targets: **(a)** the pointer-drag reorder/tab-to-session rung,
+  **(b)** inner-control AX frame fidelity (a `.contain` parent's children can report the
+  parent's frame — the tab close button does; fix or offset-click before targeting small
+  controls), **(c)** `CommandPaletteView` carries NO AX ids at all, **(d)** fold the suite into
+  the nightly `all` lane notes + grow `AXIdentifierCatalog`. **S per feature**
 - **Delete the dead `ModeBar` struct** (ContentView ~1641) — never instantiated; the Split miss
   happened because it LOOKS live. Labeled LEGACY in-source; remove outright. **S**
 - **Math typography eyeball on the OWNER's machine.** WebKit MathML geometry is proven (VM

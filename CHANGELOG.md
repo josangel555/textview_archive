@@ -22,7 +22,19 @@
   pins a heading's link anchor. Known engine limitation: `mc^2^`/`H~2~O` (mid-word) stay
   literal.
 
+### Fixed
+- **Tab close buttons are now visible to assistive technology.** The file tab hid its children
+  from the accessibility tree (`.ignore`), so VoiceOver and any AX client couldn't reach the
+  close button at all. Found by the new AX tier's first run; tabs are now AX containers with
+  per-tab identifiers, like the session pills.
+
 ### System work
+- **AX test tier bootstrapped** (TSK-1254; owner policy: AX tests for new UI). New
+  `AXInteractionTestCase` (VM GUI lane + Accessibility-trust gated) + `AXChromeInteractionTests`
+  green on the VM: out-of-process find-by-`mdv.*`-id with real geometry, and a real HID click at
+  an AX-located frame driving a SwiftUI action end-to-end. Five measured rounds settled the
+  mechanism (AXPress accepted-but-not-dispatched; postToPid not hit-tested; global HID-tap
+  works) — recorded in LESSONS; `AXClickExecutor` is the acting substrate.
 - **Release build shipped to the `mvd_dist` repo** (`TextView-2026-07-31.zip` + sha256): full
   pipeline — host headless gate, rust-core gate, targeted VM webview/pixel lanes, packaging
   self-check, bundle-size gate — with the exec cap bumped 65→70 MB (owner-approved; growth
