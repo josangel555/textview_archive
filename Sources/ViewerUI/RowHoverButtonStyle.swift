@@ -14,21 +14,25 @@ import SwiftUI
 //   * a subtle hover background fill (skipped when the row is already
 //     showing its own selection background, to avoid double-tinting),
 //   * a pressed-state fill + slight opacity drop for click feedback,
-//   * an `NSCursor.pointingHand` push on hover / pop on exit, matching
-//     the resize-cursor push/pop pattern used by the column resizers.
+//   * the pointing-hand cursor via SwiftUI's `.pointerStyle(.link)`.
 //
 // Visual-only: there is nothing host-testable here beyond "it builds".
 // The cursor + hover behaviour requires a live NSApplication + window
 // and is exercised by the VM-only UI bundles + the manual checklist.
 //
-// The cursor push/pop discipline matters: `NSCursor.push()` mutates a
-// process-global cursor stack, so every `push()` on hover-in must be
-// balanced by exactly one `pop()` on hover-out. We track a per-view
-// `pushed` flag (in the modifier below) so a view that disappears
-// mid-hover — or receives back-to-back `onHover(true)` callbacks, which
-// AppKit can emit — never leaks an unbalanced push that would strand
-// the pointing-hand cursor over unrelated UI. This is the same class
-// of bug LESSONS.md flags for `NSCursor.set()` leaks.
+// ⛔ CURSOR MECHANISM (owner bug report 2026-08-01: "which pointer renders
+// is very unpredictable"): these modifiers previously drove the GLOBAL
+// `NSCursor` push/pop stack from `.onHover`. That stack is order-sensitive
+// — SwiftUI does NOT guarantee exit-before-enter between adjacent controls,
+// so A→B hovers interleave pushes/pops out of order — and NSTextView /
+// WKWebView set their own cursors OUTSIDE the stack, so a later pop
+// restores a stale entry. With dozens of simultaneous stack users the
+// rendered cursor became a race. The fix is the system-managed
+// `.pointerStyle(.link)` (macOS 15+, our floor): the hover REGION owns the
+// style, AppKit resolves transitions — no stack, no bookkeeping, no races.
+// Do NOT reintroduce global-cursor-stack pushes for the pointing hand
+// (PointerCursorAuditTests greps for the pattern and goes red); the
+// remaining resize-divider stack sites are Phase 2 (BACKLOG).
 
 /// Plain-row button style with hover + pressed affordances.
 ///
@@ -64,9 +68,6 @@ private struct RowHoverEffect: ViewModifier {
     let suppressesHoverFill: Bool
 
     @State private var isHovering = false
-    /// Guards the global `NSCursor` push/pop stack against unbalanced
-    /// pushes — see file header.
-    @State private var pushedCursor = false
 
     func body(content: Content) -> some View {
         content
@@ -75,27 +76,9 @@ private struct RowHoverEffect: ViewModifier {
                     .fill(fillColor)
             )
             .opacity(isPressed ? 0.85 : 1.0)
-            .onHover { hovering in
-                isHovering = hovering
-                if hovering {
-                    // Only push once even if AppKit re-fires onHover(true).
-                    if !pushedCursor {
-                        NSCursor.pointingHand.push()
-                        pushedCursor = true
-                    }
-                } else if pushedCursor {
-                    NSCursor.pop()
-                    pushedCursor = false
-                }
-            }
-            .onDisappear {
-                // A view torn down while hovered would otherwise strand
-                // an unbalanced push on the global cursor stack.
-                if pushedCursor {
-                    NSCursor.pop()
-                    pushedCursor = false
-                }
-            }
+            .onHover { isHovering = $0 }
+            // System-managed pointer — see the file-header cursor note.
+            .pointerStyle(.link)
     }
 
     private var fillColor: Color {
@@ -166,7 +149,6 @@ private struct IconHoverEffect: ViewModifier {
     let isSelected: Bool
 
     @State private var isHovering = false
-    @State private var pushedCursor = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -187,24 +169,9 @@ private struct IconHoverEffect: ViewModifier {
                                      reduceMotion: reduceMotion),
                 value: isPressed
             )
-            .onHover { hovering in
-                isHovering = hovering
-                if hovering {
-                    if !pushedCursor {
-                        NSCursor.pointingHand.push()
-                        pushedCursor = true
-                    }
-                } else if pushedCursor {
-                    NSCursor.pop()
-                    pushedCursor = false
-                }
-            }
-            .onDisappear {
-                if pushedCursor {
-                    NSCursor.pop()
-                    pushedCursor = false
-                }
-            }
+            .onHover { isHovering = $0 }
+            // System-managed pointer — see the file-header cursor note.
+            .pointerStyle(.link)
     }
 
     /// ≤2% scale deltas: a hair up on hover, a hair down on press. Reduce
@@ -235,37 +202,13 @@ private struct IconHoverEffect: ViewModifier {
 // For interactive controls that KEEP `.buttonStyle(.plain)` because they draw
 // their own hover/selection visuals (tabs, chips with custom fills) — a full
 // hover style would double-tint, but the arrow cursor still lies about
-// clickability. Same global-cursor-stack push/pop-balance discipline as the
-// hover styles above (see the file header).
-
-struct PointingCursorModifier: ViewModifier {
-    @State private var pushed = false
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                if hovering {
-                    if !pushed {
-                        NSCursor.pointingHand.push()
-                        pushed = true
-                    }
-                } else if pushed {
-                    NSCursor.pop()
-                    pushed = false
-                }
-            }
-            .onDisappear {
-                if pushed {
-                    NSCursor.pop()
-                    pushed = false
-                }
-            }
-    }
-}
+// clickability. System-managed `.pointerStyle(.link)` — never the global
+// NSCursor stack (see the file-header cursor note).
 
 extension View {
     /// Show the pointing-hand cursor while hovering this view. Cursor ONLY —
     /// no fill, no scale; use the hover button styles when feedback fits.
-    func pointingCursor() -> some View { modifier(PointingCursorModifier()) }
+    func pointingCursor() -> some View { pointerStyle(.link) }
 }
 
 // MARK: - Reduce Motion helper (A11Y-06 support)

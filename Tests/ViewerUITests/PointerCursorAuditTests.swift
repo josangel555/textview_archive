@@ -20,6 +20,27 @@ final class PointerCursorAuditTests: XCTestCase {
         ("LSPStatusChipView.swift", 1),     // the LSP chip
     ]
 
+    /// Owner bug report 2026-08-01 ("which pointer renders is very
+    /// unpredictable"): the pointing-hand mechanism must be the
+    /// system-managed `.pointerStyle(.link)`, NEVER the global NSCursor
+    /// push/pop stack — that stack is order-sensitive across adjacent
+    /// hovers and is clobbered by NSTextView/WKWebView cursor writes.
+    /// Kills the class in the shared styles file; the resize-divider
+    /// sites are tracked as Phase 2 (BACKLOG).
+    func test_pointingHandMechanism_isPointerStyle_neverTheCursorStack() throws {
+        let src = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/ViewerUI/RowHoverButtonStyle.swift"),
+            encoding: .utf8)
+        XCTAssertGreaterThanOrEqual(
+            src.components(separatedBy: ".pointerStyle(.link)").count - 1, 3,
+            "all three hover/cursor modifiers ride the system pointer style")
+        XCTAssertFalse(src.contains("NSCursor.pointingHand.push"),
+            "the global cursor stack must not come back for pointing-hand")
+    }
+
     func test_batchOneChromeSurfaces_carryThePointerAffordance() throws {
         let uiRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // ViewerUITests/
