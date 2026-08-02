@@ -18,9 +18,17 @@ final class GitLogDiffActionsTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         repo = try GitTestRepo.makeRepo(prefix: "GitLogActions", email: "t@t", name: "t")
+        // SALT the fixture content (CI reds 3e54d32d/83a31470/f3e0d600, root-
+        // caused via the assert diagnostics): identical content + author +
+        // same-second commit timestamps produce IDENTICAL SHAs across the
+        // parallel gate's xctest PROCESSES, and the diff cache path is the
+        // deterministic `<sha>.diff` (TSK-907) — so a sibling process's write
+        // races this one's and the read sees the OTHER test's (un)bounded
+        // body. Unique salt ⇒ unique shas ⇒ unique cache paths ⇒ no race.
+        let salt = "salt \(UUID().uuidString)\n"
         for (i, body) in ["one\n", "one\ntwo\n", "one\ntwo\nthree\n"].enumerated() {
-            try body.write(to: repo.appendingPathComponent("f.txt"),
-                           atomically: true, encoding: .utf8)
+            try (salt + body).write(to: repo.appendingPathComponent("f.txt"),
+                                    atomically: true, encoding: .utf8)
             try git("add", "f.txt")
             try git("commit", "-q", "-m", "c\(i + 1)")
         }
