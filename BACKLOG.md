@@ -42,6 +42,14 @@ I-## → TSK-### when the tasked board reconnects.
   (guides/Tab/indent commands); detection once per buffer seed, cleared on discard;
   6 host tests incl. end-to-end through the rust detector + a ContentView wiring pin.
 
+- **resize-tooth DIAG (S–M):** the AX 1:1-tracking drag tooth for the resize-lag fix skips
+  on ZERO movement — a VM-HID mystery: the grab verifiably lands inside
+  `mdv.sidebar.widthHandle`'s own AX frame, the SAME executor's tab drags engage, and the
+  real host mouse works (owner recording) — yet the clear-strip DragGesture never fires
+  under VM HID. Instrument in a DIAG session (is the List/scroll under the strip eating the
+  down? does a visible-fill strip engage?). PARTIAL tracking (the oscillator signature)
+  still fails RED, so the tooth has interim value.
+
 **P1 — user-facing queue (one leads each round; big swings welcome):**
 - **I-05 — Git-status file-open experience** (the flagship): ~~(a) status-file clicks open
   as EPHEMERAL temp tabs~~ + ~~(b) Diff|Source toggle header~~ **DONE (R6, 2026-08-01)** —
@@ -60,6 +68,11 @@ I-## → TSK-### when the tasked board reconnects.
   chip); pinned by `PointerCursorAuditTests`. REMAINING batch 2 (**M**): the ~75 other
   `.plain` sites (sidebar sections, palette rows, settings, feed reader, spreadsheet…) —
   triage each for hover-style vs cursor-only vs deliberately-inert; ultracode-eligible.
+  **Phase 2 also migrates the RESIZE cursors** (DockedToolWindow ×2, TerminalView ×2,
+  CSVTableView, SQLiteBrowserView, DraggableSidebar, ResizableSectionDivider +
+  HoverCursorBalance) off the global NSCursor stack onto `.pointerStyle(.columnResize/
+  .rowResize/.frameResize)` — the pointing-hand class already moved after the owner's
+  "unpredictable pointer" report (stack ordering races + WebView/TextView set() clobbering).
 - ~~**I-08 — Local History usability**~~ **SHIPPED (R8, 2026-08-01)**: (a) "Merge into
   Current…" = per-hunk picker over (current × version) reusing the pixel-verified 3-pane
   sheet (`VersionPickMerge` synthesizes pickable regions from a 2-way Myers diff; Apply =

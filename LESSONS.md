@@ -4223,6 +4223,18 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   thumb: any `mdv.*` id you expect the AX tier to find needs a `.contain` somewhere between it
   and the nearest bare-id container — and the AX tier is how you PROVE it materialized.
 
+- **A resize handle's DragGesture must NEVER use the default `.local` space
+  (2026-08-01, owner screen recording).** The handle MOVES with the view it resizes, so
+  local-space translation under-reports by the applied delta each frame. The recurrence is
+  `W_n = 2·W₀ − W_{n−1} − g_n`: the width OSCILLATES every frame (the "flicker") and its
+  average tracks the pointer at HALF speed (the "lag" — measured ~450px behind on a ~900px
+  drag in the recording, exactly ½). Seven handles had it (sidebar, dock band, right dock,
+  terminal ×2, section divider, CSV/SQLite columns); two ALSO re-read the live value as the
+  drag base each tick (cumulative translation → double-integration runaway). Rules, pinned
+  by `ResizeGestureSpaceAuditTests` + an AX 1:1-tracking drag tooth: (1) resize drags use
+  `coordinateSpace: .global`; (2) the base is captured ONCE at drag start, never re-read
+  from the value being mutated.
+
 - **Pixel captures can be PHOTOBOMBED by hover tooltips (2026-08-01).** The GUI session's
   cursor sits wherever the last test left it; if that's over a helpInfo control, the tooltip
   bubble renders INTO the window capture (live case: the ⌘ toolbar button's bubble covered

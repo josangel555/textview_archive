@@ -593,6 +593,11 @@ public struct ContentView: View {
         HStack(spacing: 0) {
             if leftContainerVisible {
                 DraggableSidebar(model: model)
+                    // .contain (2026-08-01): a BARE container id implicitly
+                    // combines pure-SwiftUI descendants AND reported a
+                    // degenerate AX frame (142pt vs ~226 actual — caught by
+                    // the resize drag tooth). Same rule as the git Status tab.
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("mdv.sidebar")
                 Divider()
             }

@@ -14,6 +14,11 @@ struct CSVTableView: View {
 
     @State private var widths: [CGFloat] = []
     @State private var lastFingerprint: String = ""
+    /// Column-resize drag base (one drag at a time): the width at drag START.
+    /// The old resizer added the CUMULATIVE translation to the LIVE width each
+    /// tick (double-integration) in the handle's own moving space — runaway +
+    /// oscillation (the 2026-08-01 resize-lag class).
+    @State private var columnDrag: (index: Int, start: CGFloat)?
 
     // TSK-1019: in-place cell editing, wired to the host-tested
     // `EditableCSVModel`. Ships DARK behind `CSVEditingGate` (default OFF) —
@@ -1112,13 +1117,21 @@ struct CSVTableView: View {
                         else { NSCursor.pop() }
                     }
                     .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        // .global + drag-start base (see the columnDrag doc).
+                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
                             .onChanged { value in
-                                let newWidth = max(40, widthFor(i) + value.translation.width)
+                                let start: CGFloat
+                                if let d = columnDrag, d.index == i {
+                                    start = d.start
+                                } else {
+                                    start = widthFor(i)
+                                    columnDrag = (i, start)
+                                }
                                 if widths.indices.contains(i) {
-                                    widths[i] = newWidth
+                                    widths[i] = max(40, start + value.translation.width)
                                 }
                             }
+                            .onEnded { _ in columnDrag = nil }
                     )
             )
     }

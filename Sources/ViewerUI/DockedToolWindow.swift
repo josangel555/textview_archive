@@ -340,7 +340,9 @@ struct BottomDockContainer: View {
                 if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // .global — the handle moves with the band; local-space
+                // translation oscillates + half-tracks (see DraggableSidebar).
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         let start = dragStartHeight ?? panelLayout.dockSize(driver, on: .bottom)
                         if dragStartHeight == nil { dragStartHeight = start }
@@ -403,6 +405,11 @@ struct DockedToolWindow: View {
     /// the store (and every section's @Published chain) isn't written
     /// 60 Hz; committed once in `.onEnded`. Same idiom as `DraggableSidebar`.
     @State private var liveWidth: CGFloat?
+    /// Width at drag start — the FIXED base the whole drag is relative to.
+    /// (The old code re-read `liveWidth` as the base each tick, integrating
+    /// the CUMULATIVE translation twice — runaway growth on top of the
+    /// local-space oscillation.)
+    @State private var dragStartWidth: CGFloat?
 
     /// Resolved fixed WIDTH for a `.right` pane: the live drag value if
     /// dragging, else the persisted store value. Content-independent.
@@ -562,19 +569,20 @@ struct DockedToolWindow: View {
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // .global + fixed drag-start base — see DraggableSidebar.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
-                        let start = liveWidth ?? panelLayout.dockSize(kind, on: .right)
-                        if liveWidth == nil { liveWidth = start }
+                        let start = dragStartWidth ?? panelLayout.dockSize(kind, on: .right)
+                        if dragStartWidth == nil { dragStartWidth = start }
                         // Drag LEFT (negative translation.width) grows width.
-                        let raw = start - value.translation.width
-                        liveWidth = clampWidthToWindow(raw)
+                        liveWidth = clampWidthToWindow(start - value.translation.width)
                     }
                     .onEnded { _ in
                         if let w = liveWidth {
                             panelLayout.setDockSize(w, for: kind, on: .right)
                         }
                         liveWidth = nil
+                        dragStartWidth = nil
                     }
             )
             .accessibilityIdentifier("mdv.dock.right.\(kind.rawValue).resize")

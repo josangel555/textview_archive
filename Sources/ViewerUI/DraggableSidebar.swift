@@ -40,6 +40,10 @@ struct DraggableSidebar: View {
                 Color.clear
                     .frame(width: 6)
                     .contentShape(Rectangle())
+                    // AX id so the resize drag tooth can grab the REAL strip
+                    // (derived grab-points missed it — 2026-08-01).
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("mdv.sidebar.widthHandle")
                     .onHover { hover in
                         if hover {
                             NSCursor.resizeLeftRight.push()
@@ -48,7 +52,14 @@ struct DraggableSidebar: View {
                         }
                     }
                     .gesture(
-                        DragGesture(minimumDistance: 1)
+                        // ⛔ .global, NOT the default .local (owner recording
+                        // 2026-08-01): the handle MOVES with the resize, so
+                        // local-space translation under-reports by the applied
+                        // delta each frame — the width becomes an oscillator
+                        // (flicker) tracking the pointer at HALF speed (the
+                        // boundary trailed ~450px on a ~900px drag). Window
+                        // space is static during the drag; translation exact.
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { value in
                                 let start = dragStart ?? model.sidebarWidth
                                 if dragStart == nil { dragStart = model.sidebarWidth }

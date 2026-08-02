@@ -449,7 +449,9 @@ struct TerminalResizeHandle: View {
                 if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // .global — the handle moves with the pane; local-space
+                // translation oscillates + half-tracks (see DraggableSidebar).
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         let start = dragStartHeight ?? store.height
                         if dragStartHeight == nil { dragStartHeight = start }
@@ -481,7 +483,8 @@ struct TerminalSideResizeHandle: View {
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // .global — see DraggableSidebar's oscillator note.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         let start = dragStartWidth ?? store.sideWidth
                         if dragStartWidth == nil { dragStartWidth = start }

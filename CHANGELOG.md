@@ -2,6 +2,18 @@
 
 ## 2026-08-01
 
+### Fixed
+- **Resizing panels no longer flickers or trails the mouse.** Every resize handle (sidebar,
+  bottom tool-window band, right-docked panels, terminal pane both docks, sidebar section
+  dividers, CSV and SQLite column edges) measured its drag in the moving handle's own
+  coordinate space — the width oscillated each frame (the flicker) and tracked the pointer
+  at half speed (the boundary trailing hundreds of pixels on a long drag). All seven now
+  measure in stable window space with a fixed drag-start base; a real-pointer drag test
+  pins 1:1 tracking so the bug class can't return.
+- **The pointer cursor is now predictable.** Hover cursors moved off the global cursor
+  stack (which raced between adjacent controls and was clobbered by text views/web views)
+  onto the system-managed pointer style.
+
 ### Changed
 - **Tabs look like tabs now.** The active tab wears the content background (white in light
   mode) so it reads connected to the document; inactive tabs are grey chips that brighten on

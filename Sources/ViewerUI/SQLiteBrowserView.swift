@@ -393,6 +393,9 @@ internal struct ResultTableView: View {
     /// first render from header + sample of cell widths; user can drag
     /// the separator next to a column header to override.
     @State private var columnWidths: [CGFloat] = []
+    /// Column-resize drag base — same fix as CSVTableView.columnDrag
+    /// (the 2026-08-01 resize-lag class: moving-space + live-base drags).
+    @State private var columnDrag: (index: Int, start: CGFloat)?
     /// Track the result identity so the widths re-compute when a new
     /// query lands (different column set).
     @State private var fingerprint: String = ""
@@ -512,13 +515,21 @@ internal struct ResultTableView: View {
                         else { NSCursor.pop() }
                     }
                     .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        // .global + drag-start base (see the columnDrag doc).
+                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
                             .onChanged { value in
-                                let newWidth = max(40 * uiScale, widthFor(i) + value.translation.width)
+                                let start: CGFloat
+                                if let d = columnDrag, d.index == i {
+                                    start = d.start
+                                } else {
+                                    start = widthFor(i)
+                                    columnDrag = (i, start)
+                                }
                                 if columnWidths.indices.contains(i) {
-                                    columnWidths[i] = newWidth
+                                    columnWidths[i] = max(40 * uiScale, start + value.translation.width)
                                 }
                             }
+                            .onEnded { _ in columnDrag = nil }
                     )
             )
     }

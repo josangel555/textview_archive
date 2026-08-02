@@ -133,7 +133,9 @@ struct ResizableSectionDivider: View {
     }
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
+        // .global — the divider moves as the heights redistribute; local-space
+        // translation oscillates + half-tracks (see DraggableSidebar).
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 guard !isAboveCollapsed else { return }
                 if dragStartAbove == nil {
