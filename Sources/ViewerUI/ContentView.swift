@@ -411,6 +411,12 @@ public struct ContentView: View {
                 uiScale: CGFloat(model.zoom)
             )
         }
+        // TITLEBAR BAND (owner 2026-08-05): the session strip renders INSIDE
+        // the transparent title bar. NSHostingView honors the titlebar's
+        // safe-area inset, which would push the whole stack below it — ignore
+        // the TOP inset so the first chrome row truly occupies the bar (the
+        // strip carries its own traffic-light inset + WindowDragGesture).
+        .ignoresSafeArea(.container, edges: .top)
         // Window-root coordinate space the `.helpInfo` modifier reports
         // its anchor frame in and the overlay positions the bubble
         // against. Both sides reference `.tooltipRoot` (same `name:`

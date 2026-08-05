@@ -56,4 +56,26 @@ final class ImageEditorOverlayExportTests: XCTestCase {
         let b = try vm.exportData(format: .png)
         XCTAssertEqual(a, b, "no overlay → export is stable (compositing is a no-op)")
     }
+
+    /// ⛔ REGRESSION PIN (owner 2026-08-05, "did lot of edits none saved"):
+    /// `saveCopyAsync` — the path BOTH Save and Save-a-Copy actually use —
+    /// re-implemented the encode WITHOUT the overlay composite when it went
+    /// off-main (TSK-1053), silently writing the BARE BASE (a blank file for
+    /// a blank canvas full of vector edits). The async path must produce the
+    /// same annotated pixels `exportData` does.
+    func test_saveCopyAsync_includesOverlayShape() async throws {
+        let vm = ImageEditorViewModel(ImageDocument(data: try solidPNG()))
+        vm.addShape(VectorShape(kind: .rect, frame: CGRect(x: 0.2, y: 0.2, width: 0.5, height: 0.5),
+                                style: ShapeStyle(stroke: .red, lineWidth: 3, fill: .red)))
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("overlay-async-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let ok = await vm.saveCopyAsync(format: .png, to: url)
+        XCTAssertTrue(ok, "save must succeed: \(vm.lastError ?? "-")")
+        let img = try XCTUnwrap(decode(try Data(contentsOf: url)))
+        XCTAssertTrue(hasStrongRed(img),
+            "the SAVED file must contain the red annotation pixels — a bare-base "
+            + "write is the edits-not-saved data-loss bug")
+    }
 }

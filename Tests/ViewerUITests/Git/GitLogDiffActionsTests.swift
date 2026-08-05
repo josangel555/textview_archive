@@ -237,6 +237,30 @@ final class GitLogDiffActionsTests: XCTestCase {
             "the written diff must be bounded, not the full body")
     }
 
+    /// Empty git output (spawn/repo failure) must SAY so — toast + trace —
+    /// instead of opening an empty diff tab (the silent face of the
+    /// 2026-08-01 CI-flake class).
+    func test_emptyGitOutput_toastsAndOpensNoTab() throws {
+        let (panel, doc, log) = makePanelAndDoc()
+        // Point the panel at a NON-repo dir OUTSIDE the fixture (a subdir of
+        // the fixture repo doesn't work — git discovers the enclosing repo
+        // upward and happily shows the commit): commitDiff returns "".
+        let bogus = FileManager.default.temporaryDirectory
+            .appendingPathComponent("not-a-repo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: bogus, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bogus) }
+        panel.repoRoot = bogus
+        let tabsBefore = doc.tabs.tabs.count
+
+        GitLogDiffActions.rowClicked(
+            sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
+
+        XCTAssertEqual(doc.tabs.tabs.count, tabsBefore,
+            "no tab may open for an empty diff body")
+        XCTAssertTrue(GitLogDiffActions.lastTrace.contains("EMPTY"),
+            "the trace must name the empty-output failure; got: \(GitLogDiffActions.lastTrace)")
+    }
+
     /// The script-verb bridge: `git-log-cmd-click <sha>` resolves the
     /// LIVE panel (weak registry) and drives the identical closure.
     func test_scriptVerbs_resolveLivePanel_andDriveClosures() {

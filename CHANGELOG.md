@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-05
+
+### Fixed
+- **Image editor: your edits actually save now.** Save and Save-a-Copy wrote the BARE base
+  image — every shape, arrow, and text you'd drawn was silently missing from the file (a
+  blank canvas full of edits saved as a blank file). The async save path had dropped the
+  overlay composite; it now writes exactly what you see, pinned by a saved-file pixel test.
+- **Clicking a commit that yields no diff now says so** (toast + trace) instead of opening
+  an empty diff tab — git failures under load were silently indistinguishable from an
+  empty commit.
+
+### Changed
+- **Session tabs live in the title bar now** (Safari-style): the strip shares the row with
+  the traffic lights, freeing a full chrome row; dragging the empty band still moves the
+  window; double-click still opens a new session. Session pills are now rounded grey chips
+  (curved shape language, distinct from the rectangular file tabs — no more
+  "tab under tab" ambiguity), with the active session accent-tinted; inactive file tabs
+  read slightly greyer too.
+
 ## 2026-08-01
 
 ### Fixed

@@ -57,6 +57,9 @@ struct SessionTabBar: View {
                                     renamingID: $renamingID,
                                     openNewSession: openNewSession)
             }
+            // TITLEBAR BAND (owner 2026-08-05): the strip renders inside the
+            // transparent title bar — inset past the traffic lights.
+            .padding(.leading, 78)
             // TSK-313: double-click the EMPTY strip area = new session at ~
             // (browser idiom). Buttons/tab cells sit above this in the hit
             // chain, so clicks on tabs / + / close are unaffected.
@@ -64,6 +67,10 @@ struct SessionTabBar: View {
             .onTapGesture(count: 2) {
                 sessionsApp.openHomeSession()
             }
+            // Dragging the EMPTY band moves the WINDOW (this row IS the title
+            // bar now). Pills/buttons sit deeper in the hit chain and their
+            // own gestures (select, reorder-drag, close) win.
+            .gesture(WindowDragGesture())
             // TSK-262: persistent trailing action icons pinned at the far
             // right of the session-tab row — Settings, File search, Omni.
             // (The "+" sits beside the last tab inside the scroll content;
@@ -317,7 +324,12 @@ struct SessionTabBarItem: View {
         let badge = gitBadge
         return Button(action: onSelect) {
             ZStack {
-                Rectangle().fill(background)
+                // Rounded CHIP (owner 2026-08-05): the curve is the session
+                // strip's shape language — visibly distinct from the
+                // rectangular file tabs below, killing the tab-under-tab
+                // ambiguity now that this row is the title bar.
+                RoundedRectangle(cornerRadius: uiSize(8), style: .continuous)
+                    .fill(background)
                 HStack(spacing: uiSize(6)) {
                     Image(systemName: "folder")
                         .font(.system(size: uiSize(11), weight: .medium))
@@ -359,6 +371,9 @@ struct SessionTabBarItem: View {
             }
             .frame(minWidth: uiSize(120), idealWidth: uiSize(190), maxWidth: uiSize(260))
             .frame(maxHeight: .infinity)
+            // Float the chip in the band — the inset is what reads as a pill.
+            .padding(.vertical, uiSize(5))
+            .padding(.horizontal, uiSize(2))
             .contentShape(Rectangle())
             // Drop-target ring: unambiguous "the tab lands HERE" affordance
             // over the tint. Gated by the codified negative-control switch
@@ -366,7 +381,7 @@ struct SessionTabBarItem: View {
             // teeth without hand-reverting.
             .overlay {
                 if isDropTarget, !MDVNegativeControl.isBroken("SESSION_DROP_HIGHLIGHT") {
-                    RoundedRectangle(cornerRadius: uiSize(5))
+                    RoundedRectangle(cornerRadius: uiSize(8), style: .continuous)
                         .strokeBorder(Color.accentColor, lineWidth: 2)
                         .padding(uiSize(2))
                         .allowsHitTesting(false)
@@ -433,12 +448,14 @@ struct SessionTabBarItem: View {
             return Color(nsColor: .controlAccentColor).opacity(0.28)
         }
         if isSelected {
-            return Color(nsColor: .controlAccentColor).opacity(0.18)
+            return Color(nsColor: .controlAccentColor).opacity(0.22)
         }
         if isHovering {
-            return Palette.controlBackground.opacity(0.4)
+            return Palette.controlBackground.opacity(0.75)
         }
-        return Color.clear
+        // Inactive sessions are GREY chips (owner 2026-08-05) — clear read
+        // of active vs inactive at a glance.
+        return Palette.controlBackground.opacity(0.5)
     }
 
     private var helpText: String {

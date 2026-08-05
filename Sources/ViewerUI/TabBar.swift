@@ -642,9 +642,11 @@ struct TabBarItem: View {
             return Palette.textBackground
         }
         if isHovering {
-            return Palette.controlBackground.opacity(0.70)
+            return Palette.controlBackground.opacity(0.78)
         }
-        return Palette.controlBackground.opacity(0.45)
+        // Slightly stronger grey (owner 2026-08-05): inactive must READ
+        // inactive next to the content-colored active tab.
+        return Palette.controlBackground.opacity(0.55)
     }
 
     private var tabHelpText: String {

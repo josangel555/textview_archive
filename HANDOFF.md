@@ -93,7 +93,7 @@ pick→Apply AX rung (unblocked by the tier). Alternatives in BACKLOG §OPEN FOL
 ## Open questions / blockers
 - **tasked board MCP disconnected all session** (ToolSearch: no tools). 17 commits owe tickets
   + the TSK-1594..1609 placeholder reconciliation. Needs owner-side reconnect.
-- mvd_dist zip 7 features behind — refresh on owner's word (standing offer).
+- mvd_dist: CURRENT — TextView-2026-08-05.zip @ 495d2f0e pushed (19efeed).
 - Math typography eyeball on the owner's machine (one open of a math file); TSK-1247 blocks
   the capture lane from showing WebView content.
 - Exec 68 of 70 MB — TSK-1214/1098 grammar-table reclaim nearly due (owner call on target).

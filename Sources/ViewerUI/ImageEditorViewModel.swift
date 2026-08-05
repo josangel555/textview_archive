@@ -1338,25 +1338,31 @@ public final class ImageEditorViewModel: ObservableObject {
         }
     }
 
-    /// TSK-1053 — non-blocking Save-a-Copy: the encode + write run OFF the main
-    /// actor (on a detached task) so a large image doesn't freeze the UI during
-    /// save. All inputs are `Sendable` (document/canvas/spec/url), so the work
-    /// crosses cleanly; `lastError`/the result are set back on the main actor.
+    /// TSK-1053 — non-blocking Save/Save-a-Copy. ⛔ REGRESSION FIXED
+    /// (owner 2026-08-05, "did lot of edits none saved"): this off-main path
+    /// re-implemented the encode WITHOUT `compositingOverlay`, so every
+    /// vector element the user saw — shapes, arrows, text — was silently
+    /// dropped from the written file (the TSK-1422 bug, back through a
+    /// different door). The composite MUST come from the same code
+    /// `exportData` uses. SwiftUI's `ImageRenderer` requires the main actor,
+    /// so the base render + overlay composite happen HERE; only the encode +
+    /// atomic write (the part that actually stalls on big images) run
+    /// detached.
     @discardableResult
     public func saveCopyAsync(
         format: ExportSpec.Format, quality: Double = 0.9, to url: URL
     ) async -> Bool {
         let spec = ExportSpec(format: format, quality: quality)
-        let canvas = paintCanvas      // Sendable snapshot (paint shadows source+ops)
-        let doc = document            // Sendable snapshot
         do {
+            let base: CGImage
+            if let canvas = paintCanvas, let image = canvas.cgImage() {
+                base = image
+            } else {
+                base = try Renderer.render(document)
+            }
+            let composed = UncheckedSendableImage(compositingOverlay(onto: base))
             try await Task.detached(priority: .userInitiated) {
-                let data: Data
-                if let canvas, let image = canvas.cgImage() {
-                    data = try Exporter.encode(image, spec)
-                } else {
-                    data = try Exporter.export(doc, spec)
-                }
+                let data = try Exporter.encode(composed.image, spec)
                 try data.write(to: url, options: .atomic)
             }.value
             lastError = nil

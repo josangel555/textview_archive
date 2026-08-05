@@ -54,12 +54,23 @@ public enum GitLogDiffActions {
         }
         panel.selectLogCommit(sha: sha)
         let client = GitClient(repoRoot: root)
+        let raw = client.commitDiff(sha: sha)
+        // `commitDiff` maps EVERY git failure (spawn pressure, partial drain,
+        // bad repo) to "" — opening an empty diff tab with no explanation was
+        // the silent face of the 2026-08-01 CI-flake class. Say it instead.
+        guard !raw.isEmpty else {
+            lastTrace = "showCommit(\(sha)): EMPTY git output (spawn/repo failure)"
+            ToastCenter.shared.post(.error,
+                "git produced no diff for \(String(sha.prefix(10)))",
+                detail: "Transient under load, or a repo error — try the commit again.")
+            return
+        }
         // I-02 (owner 2026-08-01): an UNBOUNDED docs-corpora commit (tens of MB)
         // choked the diff WebView ("no diff shown", panel wedged). Bound the
         // body — whole-line cut + an explicit truncation notice in the preamble
         // — before it reaches the .diff file / renderer.
         let bounded = GitDiffBounds.bound(
-            client.commitDiff(sha: sha),
+            raw,
             maxBytes: maxDiffBytes,
             commandHint: "git show \(sha)")
         guard let out = writeDiffFile(bounded.text, name: "\(sha).diff") else {
@@ -95,10 +106,18 @@ public enum GitLogDiffActions {
             return
         }
         let client = GitClient(repoRoot: root)
+        let raw = client.cumulativeDiff(baseRef: range.baseRef, tipRef: range.tipRef)
+        guard !raw.isEmpty else {
+            lastTrace = "cumulativeDiff(\(range.baseRef)..\(range.tipRef)): EMPTY git output"
+            ToastCenter.shared.post(.error,
+                "git produced no diff for \(range.baseRef)..\(range.tipRef)",
+                detail: "Transient under load, or a repo error — try again.")
+            return
+        }
         // I-02: bounded like showCommit — a multi-commit net diff is the
         // easiest way to produce a renderer-choking body.
         let bounded = GitDiffBounds.bound(
-            client.cumulativeDiff(baseRef: range.baseRef, tipRef: range.tipRef),
+            raw,
             maxBytes: maxDiffBytes,
             commandHint: "git diff \(range.baseRef) \(range.tipRef)")
         guard let out = writeDiffFile(

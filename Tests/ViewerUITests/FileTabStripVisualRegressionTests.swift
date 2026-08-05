@@ -49,8 +49,11 @@ final class FileTabStripVisualRegressionTests: PixelTestCase {
     /// vertical-column scan. Verified against real VM captures via
     /// MDV_PIXEL_DEBUG_DIR (2026-06-11): 2-tab scene → columns at exactly
     /// the 2 tab edges; 14-tab scene → exactly 14.
-    private static let stripTopPt = 82
-    private static let stripBottomPt = 104
+    // 2026-08-05: the session strip moved INTO the title bar (fullSizeContent
+    // + transparent titlebar), collapsing the old separate ~28pt titlebar —
+    // the file strip band shifted up by exactly that: 82..104 → 54..76.
+    private static let stripTopPt = 54
+    private static let stripBottomPt = 76
 
     // MARK: - tests
 

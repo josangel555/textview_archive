@@ -337,6 +337,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         window.contentViewController = hostingController
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
+        // Session strip lives IN the title bar (owner 2026-08-05, Safari-style):
+        // full-size content + transparent titlebar; the strip band draws its own
+        // background, insets past the traffic lights, and carries a
+        // WindowDragGesture so the window stays movable from the empty band.
+        // The title stays SET (hidden on the bar) for Mission Control/Dock.
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         // Hard minimum content size enforced by AppKit. SwiftUI's
         // `.frame(minWidth:minHeight:)` is a layout request to the parent,
         // not an OS-level floor.

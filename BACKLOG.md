@@ -223,7 +223,7 @@ State: main @ f711c2b8 (17 commits landed 07-31..08-01: owner-queue drain + rele
 AX tier + 5 paired rounds). The struck-through items in this section are the audit trail; the
 LIVE open set is: VM tail triage (TSK-1247 = the big one; EBADF stragglers; gitPanelScene
 quirk), Local History smarter retention (re-diff on eviction first), merge-sheet interactive
-flows (AX-unblocked now), owner-side: mvd_dist zip refresh (7 features behind) + tasked-board
+flows (AX-unblocked now), owner-side: ~~mvd_dist refresh~~ (SHIPPED 2026-08-05 @ 495d2f0e) + tasked-board
 reconciliation on reconnect + math-typography eyeball. Exec size sits at 68 of 70 MB — the
 TSK-1214/1098 reclaim is nearly due.
 
