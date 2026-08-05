@@ -113,7 +113,8 @@ public enum AXIdentifierCatalog {
         Entry("mdv.git.openModeToggle", .tools,
               "Git Status header: Diff | Source open-mode toggle (I-05, 2026-08-01)."),
         Entry("mdv.terminal.pane", .tools, "Terminal pane (PTY tool window) surface."),
-        Entry("mdv.settings.languages", .tools, "Settings: supported syntax-highlighting languages list."),
+        Entry("mdv.settings.languages", .tools,
+              "Help ▸ Supported Languages list (id predates the 2026-08-05 move out of Settings)."),
         Entry("mdv.review.composer", .tools, "Code-review comment composer."),
         // TSK-1462: the old minimal local-history list (mdv.localHistory.list)
         // was replaced by the unified version viewer for ALL entry points.

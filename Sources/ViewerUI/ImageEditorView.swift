@@ -68,7 +68,14 @@ struct ImageEditorView: View {
                 .background(Palette.windowBackground)
             Divider()
             controls
-                .frame(width: 260)
+                // Owner 2026-08-05 ("lot of items off screen and not
+                // responsive"): the panel is fixed-width, and every row
+                // inside must FIT it — the wide rows wrap (adaptive grids;
+                // the 18-segment tool picker became a tool grid). A vertical
+                // ScrollView never compresses intrinsic row width, so a
+                // too-wide row paints across the canvas and off the window.
+                .frame(width: 300)
+                .clipped()
                 .background(.regularMaterial)
         }
         .ignoresSafeArea()
@@ -474,7 +481,12 @@ struct ImageEditorView: View {
                 }
 
                 groupLabel("Geometry")
-                HStack {
+                // Adaptive grid: 9 labeled actions wrap inside the panel
+                // instead of forming one ~900pt row (the off-screen bug).
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 130), spacing: 6)],
+                    alignment: .leading, spacing: 6
+                ) {
                     Button { vm.commitGeometry(.orient(.right90)) } label: {
                         Label("Rotate", systemImage: "rotate.right")
                     }
@@ -629,31 +641,58 @@ struct ImageEditorView: View {
     /// is the preview itself, wired on the VM via `applyTool(atX:y:)` — that
     /// gesture mapping (image point → canvas pixel) is the render-gated remainder
     /// validated on the VM; the model behaviour each control drives is host-tested.
+    /// The paint tool set — (tool, symbol, name). One source for the wrapping
+    /// tool grid below (the old 18-segment Picker was a single ~700pt row —
+    /// the off-screen bug; segments can't wrap, buttons in a grid can).
+    private static let paintTools: [(ImageEditorViewModel.RasterTool, String, String)] = [
+        (.colorPicker, "eyedropper", "Pick Color"),
+        (.brush, "paintbrush.pointed", "Brush"),
+        (.pencil, "pencil", "Pencil"),
+        (.eraser, "eraser", "Eraser"),
+        (.airbrush, "wind", "Airbrush"),
+        (.floodFill, "drop", "Fill"),
+        (.drawRect, "rectangle", "Rectangle"),
+        (.drawEllipse, "circle", "Ellipse"),
+        (.drawRoundedRect, "rectangle.roundedtop", "Rounded Rect"),
+        (.drawLine, "line.diagonal", "Line"),
+        (.drawArrow, "arrow.up.right", "Arrow"),
+        (.selectRect, "rectangle.dashed", "Select Rect"),
+        (.selectLasso, "lasso", "Select Lasso"),
+        // TSK-1168: select + move/resize a placed vector shape on the canvas.
+        (.editShapes, "selection.pin.in.out", "Edit Shapes"),
+        // TSK-1083/1084/1089 — curve · polygon · text tools.
+        (.drawCurve, "scribble", "Curve"),
+        (.drawPolygon, "pentagon", "Polygon"),
+        (.textTool, "textformat", "Text"),
+    ]
+
     @ViewBuilder private var paintControls: some View {
-        Picker("Tool", selection: $vm.tool) {
-            Text("Off").tag(ImageEditorViewModel.RasterTool.none)
-            Image(systemName: "eyedropper").tag(ImageEditorViewModel.RasterTool.colorPicker)
-            Image(systemName: "paintbrush.pointed").tag(ImageEditorViewModel.RasterTool.brush)
-            Image(systemName: "pencil").tag(ImageEditorViewModel.RasterTool.pencil)
-            Image(systemName: "eraser").tag(ImageEditorViewModel.RasterTool.eraser)
-            Image(systemName: "wind").tag(ImageEditorViewModel.RasterTool.airbrush)
-            Image(systemName: "drop").tag(ImageEditorViewModel.RasterTool.floodFill)
-            Image(systemName: "rectangle").tag(ImageEditorViewModel.RasterTool.drawRect)
-            Image(systemName: "circle").tag(ImageEditorViewModel.RasterTool.drawEllipse)
-            Image(systemName: "rectangle.roundedtop").tag(ImageEditorViewModel.RasterTool.drawRoundedRect)
-            Image(systemName: "line.diagonal").tag(ImageEditorViewModel.RasterTool.drawLine)
-            Image(systemName: "arrow.up.right").tag(ImageEditorViewModel.RasterTool.drawArrow)
-            Image(systemName: "rectangle.dashed").tag(ImageEditorViewModel.RasterTool.selectRect)
-            Image(systemName: "lasso").tag(ImageEditorViewModel.RasterTool.selectLasso)
-            // TSK-1168: select + move/resize a placed vector shape on the canvas.
-            Image(systemName: "selection.pin.in.out").tag(ImageEditorViewModel.RasterTool.editShapes)
-            // TSK-1083/1084/1089 — curve · polygon · text tools.
-            Image(systemName: "scribble").tag(ImageEditorViewModel.RasterTool.drawCurve)
-            Image(systemName: "pentagon").tag(ImageEditorViewModel.RasterTool.drawPolygon)
-            Image(systemName: "textformat").tag(ImageEditorViewModel.RasterTool.textTool)
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                vm.tool = .none
+            } label: {
+                Text("Off").font(.system(size: 11, weight: .medium))
+                    .frame(minWidth: 34)
+            }
+            .buttonStyle(IconHoverButtonStyle(isSelected: vm.tool == .none))
+            .help("No paint tool")
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 32), spacing: 4)],
+                alignment: .leading, spacing: 4
+            ) {
+                ForEach(Self.paintTools, id: \.0) { tool, symbol, name in
+                    Button { vm.tool = tool } label: {
+                        Image(systemName: symbol)
+                            .frame(width: 26, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(IconHoverButtonStyle(isSelected: vm.tool == tool))
+                    .help(name)
+                    .accessibilityLabel(name)
+                }
+            }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.imageEditor.paintTool")
 
         // TSK-1085: the extended shape gallery (23 Win7 shapes; the 12 clean

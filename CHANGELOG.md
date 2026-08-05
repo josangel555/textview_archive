@@ -11,6 +11,17 @@
   an empty diff tab — git failures under load were silently indistinguishable from an
   empty commit.
 
+### Fixed
+- **Image editor panel fits the window now.** The tone sliders and tool rows overflowed past
+  the window edge (an 18-segment tool strip and a ~900pt geometry row can't shrink) — tools
+  and geometry actions now wrap in place, and the panel keeps a fixed, clipped width.
+
+### Changed
+- **Spell check and autocomplete toggles moved beside Wrap / Special chars**, and the whole
+  toggle cluster now sits on the right of the bottom bar next to the file-type picker.
+- **Settings slimmed:** the supported-languages reference list moved to
+  Help ▸ Supported Languages (it's documentation, not a preference).
+
 ### Changed
 - **Session tabs live in the title bar now** (Safari-style): the strip shares the row with
   the traffic lights, freeing a full chrome row; dragging the empty band still moves the

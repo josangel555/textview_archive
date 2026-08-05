@@ -25,6 +25,10 @@ struct BottomAttributesBar: View {
         let _ = BodyProbe.tick("BottomAttributesBar")   // TSK-615 re-eval width probe
         #endif
         HStack(spacing: model.uiSize(12)) {
+            // Owner 2026-08-05: the whole toggle cluster lives on the RIGHT,
+            // beside the type chip — leading space stays clean.
+            Spacer(minLength: 8)
+
             // Text-rendering toggles. These control the NSTextView source /
             // editor rendering, so they're only meaningful for the text
             // lenses — hidden in rendered / preview / hex.
@@ -81,7 +85,13 @@ struct BottomAttributesBar: View {
                     .accessibilityIdentifier("mdv.previewInfoToggle")
             }
 
-            Spacer(minLength: 8)
+            // Spell / autocomplete assists (owner 2026-08-05: moved here from
+            // the status bar, beside Wrap/Special-chars). Own view observing
+            // EditorCoordinator directly so its per-keystroke publishes
+            // re-body ONLY the chips, never this bar.
+            if showsTextToggles {
+                EditorAssistChips(editor: model.editor, fontSize: model.uiSize(11))
+            }
 
             // Unified type control (OpenAs viewer + syntax language). One
             // menu: "open this file as …".

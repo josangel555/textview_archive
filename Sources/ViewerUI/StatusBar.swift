@@ -124,9 +124,8 @@ struct StatusBar: View {
                     }
                     metricsGroup
                 }
-                // Spell/autocomplete toggles: own view observing editor
-                // directly, so editor publishes re-body only the chips.
-                EditorAssistChips(editor: model.editor, fontSize: model.uiSize(10))
+                // Spell/autocomplete toggles moved to the BottomAttributesBar
+                // beside Wrap/Special-chars (owner 2026-08-05).
                 StatusBarMemoryChip(
                     tabContentBytes: currentMetrics?.byteCount,
                     fontSize: model.uiSize(10))

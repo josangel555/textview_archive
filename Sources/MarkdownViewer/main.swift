@@ -2990,6 +2990,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             title: "Capabilities",
             action: #selector(openCapabilities(_:)),
             keyEquivalent: ""))
+        // Owner 2026-08-05 — the highlighted-languages reference (moved out
+        // of Settings: it's documentation, not a preference).
+        helpMenu.addItem(NSMenuItem(
+            title: "Supported Languages",
+            action: #selector(showSupportedLanguagesPage(_:)),
+            keyEquivalent: ""))
         // TSK-696 — install the `textview` command-line launcher on PATH.
         helpMenu.addItem(NSMenuItem(
             title: "Install '\(CLILauncher.commandName)' Command…",
@@ -4026,6 +4032,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// TSK-1575 — Help ▸ Capabilities: open the bundled capabilities guide rendered.
     @objc func openCapabilities(_ sender: Any?) {
         model.openCapabilities()
+    }
+
+    @objc func showSupportedLanguagesPage(_ sender: Any?) {
+        model.showSupportedLanguages()
     }
 
     @objc func showKeyboardShortcuts(_ sender: Any?) {

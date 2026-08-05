@@ -109,9 +109,8 @@ public enum SettingsCatalog {
              description: "In-file word completion while typing (plus LSP completions where available).",
              section: .editor, kind: .toggle),
         // Viewer
-        Item(id: "mdv.settings.languages", title: "Highlighted Languages",
-             description: "Languages Source View and the editor highlight, detected by file extension.",
-             section: .viewer, kind: .info),
+        // (Highlighted-languages reference moved to Help ▸ Supported
+        // Languages, 2026-08-05 — not a setting.)
         // Data & Media
         Item(id: "mdv.settings.fileAssociations", title: "File Associations",
              description: "Make TextView the default app for chosen file types; revert any time in Finder.",

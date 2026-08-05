@@ -35,8 +35,6 @@ public struct SettingsView: View {
                     Divider()
                     editorSection
                     Divider()
-                    languagesSection
-                    Divider()
                     terminalSection
                     Divider()
                     viewerSection
@@ -316,26 +314,9 @@ public struct SettingsView: View {
         }
     }
 
-    /// TSK-790 — discoverability: the syntax-highlighting languages the app
-    /// supports, with the file extensions that trigger each. Both the read-only
-    /// source View (TreeSitter) and the CM6 Edit editor highlight this set.
-    private var languagesSection: some View {
-        section("Syntax Highlighting") {
-            Text("Source View and the editor both highlight these languages, detected by file extension:")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 4)
-            ForEach(HighlightLanguage.supportedForDisplay, id: \.self) { lang in
-                row(lang.displayName) {
-                    Text(lang.fileExtensions.map { ".\($0)" }.joined(separator: "  "))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
-        }
-        .accessibilityIdentifier("mdv.settings.languages")
-    }
+    // TSK-790's languages list moved to Help ▸ Supported Languages
+    // (owner 2026-08-05: reference material, not a preference) —
+    // `SupportedLanguagesView`.
 
     private var terminalSection: some View {
         section("Terminal") {
