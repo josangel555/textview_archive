@@ -4,9 +4,13 @@
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @
 `11967e90` (this handoff's doc edits uncommitted at write time — commit them with this
 file). /Applications/TextView.app = RELEASE @ `11967e90` (installed 04:30; owner may still
-need ⌘Q+relaunch). CI loop: GREEN through `11967e90`; the handoff commit gates in
-background (fix-forward on red). tasked board UNREACHABLE all session — BACKLOG + commit
-messages are the state of record; ticket debt keeps accruing for reconnect.
+need ⌘Q+relaunch). CI loop: GREEN through the `71769ff9` checkpoint (fix-forward on red).
+tasked board UNREACHABLE all session — BACKLOG + commit messages are the state of record;
+ticket debt keeps accruing for reconnect. A local SITE test server may still be running:
+`python3 -m http.server 8931` in the CloudDocs josangel.com dir → http://localhost:8931/
+(homepage + /textview/ + /blog/) — kill or reuse. Owner-mode memory:
+`feedback_interactive_drive_mode` (mid-turn batches, install-on-ask, the ⌘Q-relaunch
+trap, full-accent styling).
 
 ## Mission
 Owner-driven interactive drain (owner active, sending batches). Two arcs this session:

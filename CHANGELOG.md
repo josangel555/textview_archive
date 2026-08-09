@@ -2,6 +2,20 @@
 
 ## 2026-08-09
 
+### Changed
+- **The left tool-window column was rebuilt on one rule.** Panels used to be stacked three
+  different ways (some inside a hidden scroll container, the fill panel outside it, plugin
+  sections as a third case) — the source of phantom scrollbars around the upper panels,
+  a missing drag bar and dead gap before Plugins, resizes that pushed other panels away,
+  and the "can't shrink past 50%" wall in a two-panel split. Now every panel (plugins
+  included) is identical: resize a divider and height moves between the two neighbors
+  only; the last panel (or the file tree) always fills to the bottom; a scrollbar can
+  appear only when the window is genuinely too small for even minimized panels.
+- **Panel boundaries look intentional now**: one visible gutter bar with a grab pill per
+  boundary (the whole bar is the click target — no more white-line-white seams), section
+  headers carry a distinct tint, panel content clips to its own slot (no more text
+  bleeding over the footer), and the stray white gap above the file tree is gone.
+
 ### Fixed
 - **Tool windows fill the shoulder for real now** — the first fill fix computed heights
   arithmetically and produced double scrollbars + a dead band (owner screenshots); the fill
