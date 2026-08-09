@@ -39,6 +39,31 @@ public enum UISceneApplier {
             }
         }
         model.sidebar.isVisible = true
+        // Marketing shots render at 100% — a persisted user zoom (the VM
+        // carried 90%) shrinks content AND clips mermaid node labels (the
+        // content-scale vs mermaid-measure interplay, see BACKLOG).
+        model.zoom = 1.0
+        // Park the pointer in the screen's bottom-right corner so a hover
+        // tooltip never photobombs the capture (a "Sort" tooltip did — same
+        // class as the T5 harness's parkPointerAwayFromChrome).
+        let bounds = CGDisplayBounds(CGMainDisplayID())
+        CGWarpMouseCursorPosition(CGPoint(x: bounds.maxX - 4, y: bounds.maxY - 4))
+    }
+
+    /// Marketing scenes: with the launch's single unnamed session the title
+    /// bar reads EMPTY (owner 2026-08-08) — create a real second session
+    /// ("notes") so session pills render, then return to the primary. Same
+    /// coordinator path the tab-session-drop scene uses.
+    @MainActor
+    static func applyMarketingSessions(_ model: DocumentModel, tabsBaseDir: URL) {
+        guard let sessions = model.sessionsCoordinator,
+              sessions.core.sessions.count < 2 else { return }
+        let notes = tabsBaseDir.appendingPathComponent("notes")
+        try? FileManager.default.createDirectory(
+            at: notes, withIntermediateDirectories: true)
+        let primary = sessions.core.activeID
+        sessions.openFolder(notes, forceNew: true)
+        if let primary { sessions.activate(id: primary) }
     }
 
     /// Apply `scene` (already lowercased) to `model`. Returns the status line
@@ -228,6 +253,7 @@ public enum UISceneApplier {
             // tree behind the merge sheet, not leftover bookmarks/git.
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files])
+            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.openFolder(root)
             model.open(url: f)
@@ -642,11 +668,47 @@ public enum UISceneApplier {
             model.selectedThemeID = "xcode-light"
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files])
+            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.terminalPane.setOpen(false)   // no dead-prompt pane in the light shot
             model.openFolder(root)
-            model.openFirstRunSample(dir: tabsBaseDir)
-            model.setCurrentViewMode(.source)
+            // RENDERED markdown tour (owner 2026-08-08): the light shot
+            // showcases the full feature set — table, tasks, mermaid, LaTeX
+            // math, alert, footnote, sup/sub — typeset in the reading view.
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let tour = tabsBaseDir.appendingPathComponent("markdown-tour.md")
+            let md = """
+            # Markdown, all of it
+
+            GitHub-flavored markdown, typeset natively — plus diagrams and math.
+
+            | Feature | Status |
+            | --- | --- |
+            | Tables, task lists, footnotes | rendered |
+            | Mermaid diagrams | rendered |
+            | LaTeX math | rendered |
+
+            - [x] Write in any editor pane
+            - [ ] Watch the preview keep up
+
+            ```mermaid
+            graph LR
+                Edit --> Preview --> Ship{Ship?}
+            ```
+
+            Inline math $e^{i\\pi} + 1 = 0$ sits in prose, and display math typesets:
+
+            $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$
+
+            > [!NOTE]
+            > Alerts, footnotes[^1], H~2~O subscripts and x^2^ superscripts all render.
+
+            [^1]: Like this one.
+            """
+            try? md.write(to: tour, atomically: true, encoding: .utf8)
+            model.open(url: tour)
+            model.setCurrentViewMode(.rendered)
             return "ui-scene: applied 'theme-light' theme=\(model.selectedThemeID ?? "nil") mode=\(model.currentViewMode.rawValue)"
         }
 
@@ -659,6 +721,7 @@ public enum UISceneApplier {
             // sidebars) — the repo tree, not the git panel.
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files])
+            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.openFolder(root)
             model.openFirstRunSample(dir: tabsBaseDir)
@@ -688,6 +751,7 @@ public enum UISceneApplier {
             // the only shown section so the tree dominates the shoulder.
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files])
+            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.openFolder(root)
             model.openFirstRunSample(dir: tabsBaseDir)
@@ -706,6 +770,7 @@ public enum UISceneApplier {
             model.selectedThemeID = "xcode-dark"
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files, .bookmarks])
+            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             // Stale bookmarks from earlier UAT runs pollute the section —
             // clear the store so only this scene's two entries render.
             for e in model.bookmarksStore.all() {
@@ -768,6 +833,7 @@ public enum UISceneApplier {
             model.selectedThemeID = "xcode-dark"
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files, .git])
+            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.terminalPane.setOpen(false)
             model.setSidebarWidth(340)

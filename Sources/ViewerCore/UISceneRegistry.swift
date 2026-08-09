@@ -179,7 +179,7 @@ public enum UISceneRegistry {
             fixture: .defaultDocument,
             closesExistingTabs: true,
             themeID: "xcode-light",
-            summary: "Light theme + aqua appearance, welcome sample in Source (marketing + light chrome paint)"),
+            summary: "Light theme + aqua appearance, RENDERED markdown tour (table/tasks/mermaid/math/alert/footnote) + file nav + sessions (marketing + light chrome paint)"),
         SceneSpec(
             id: "mktg-docs",
             fixture: .defaultDocument,

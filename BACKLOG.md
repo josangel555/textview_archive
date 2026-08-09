@@ -609,3 +609,14 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
 `docs/AGENT_SERVICES_DESIGN_2026-07-07.md` · meta-analysis →
 `docs/research/project-meta-analysis-2026-07-04/SYNTHESIS.md` · usability →
 `docs/FEATURE_INVENTORY.md` · test pyramid → `docs/TEST_PYRAMID.md`.
+
+- **Mermaid node labels clip at NON-100% app zoom (S–M, 2026-08-08, ROOT-CAUSED):** with
+  the app zoom at 90% every flowchart label rendered a few px wider than its measured box
+  ("Preview" → "Previev", any label length, both themes); at zoom 100% the same diagram is
+  pixel-perfect. So the content-scale (`--mdv-content-scale` in markdown.css) scales
+  mermaid's rendered TEXT differently from its measured node boxes. Fix: make the mermaid
+  host immune to the page scale (measure and render under the same effective font size —
+  e.g. re-init mermaid with a scaled fontSize on zoom change, or exempt the mermaid SVG
+  from the calc() scale). A `themeCSS` letter-spacing tuck is INERT in our strict config;
+  label nbsp-padding gets trimmed — neither is a workaround. Repro: any `graph LR` +
+  ⌘-minus once. Surface: `mermaid-shim.js` + markdown.css scale interplay.

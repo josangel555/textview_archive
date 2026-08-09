@@ -29,7 +29,11 @@
   site favicon (JA→JG monogram) + homepage full-name SEO + music section + blog feed links.
 - Capture scenes: `mktg-split`/`mktg-code`/`mktg-git` added, `conflict-merge` fixture made
   realistic, sidebar state now set EXPLICITLY per scene (overrides persist across runs);
-  VM repo got a one-off git-pack sync so the in-app log shows real history.
+  VM repo got a one-off git-pack sync so the in-app log shows real history. Marketing
+  scenes also pin session pills (real second session), 100% zoom, and a parked pointer;
+  the light shot became a RENDERED markdown tour (table/tasks/mermaid/LaTeX/alerts/
+  footnotes). Found + filed while shooting: mermaid node labels clip at non-100% app zoom
+  (root-caused to the content-scale/measure interplay; BACKLOG).
 
 ## 2026-08-05
 
