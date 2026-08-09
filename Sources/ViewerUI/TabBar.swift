@@ -620,6 +620,17 @@ struct TabBarItem: View {
                     .allowsHitTesting(false)
                 }
             }
+            .overlay(alignment: .top) {
+                if isSelected {
+                    // Solid accent bar along the active tab's top edge (owner
+                    // 2026-08-09) — a second, unmissable "you are here" cue on
+                    // top of the tinted fill.
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(height: 2 * scale)
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

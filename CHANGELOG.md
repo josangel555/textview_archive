@@ -17,6 +17,23 @@
   washes that turned large hunks into neon fields; deeper, quieter hues now tint the rows
   (the saturated edge bars stay as the accent).
 - **Git log search bar got breathing room** (was cramped against the tab strip and rows).
+- **Hex editor: the caret is visible now** — the cell you're about to type into is painted
+  (strong tint on the side you clicked, lighter twin on the other), where before nothing
+  showed at all; and selecting bytes on the hex side highlights the matching ascii chars
+  in tandem (and vice versa).
+- **The active file pops everywhere**: the file-nav row, the current file's bookmark, and
+  the selected git-log commit all render full accent-blue with white text (the pale tints
+  were easy to lose); preview-tab files show in italics in the file nav to match their tab;
+  the active tab also carries a solid accent bar along its top edge.
+- **Settings controls line up on one column** — pickers used to center inside their boxes
+  while sliders and checkboxes led, so every row started at a different x.
+- **Session switches show a "Switching session…" HUD** instead of silently freezing.
+- **Tool-window drags always have a target**: an empty right/bottom shoulder now reveals a
+  dashed drop placeholder while you drag a panel icon (the reveal existed but was never
+  wired to a real drag signal).
+- **Section resize handles are easier to grab** (hit zone 4px → 10px) and dragging past a
+  panel's ceiling no longer builds up an invisible dead zone on reverse.
+- **The duplicate folder-name row above the file nav is gone.**
 
 ### System work
 - Capture lane: the git marketing shot now shows STATUS + a real HEAD commit-diff tab (the

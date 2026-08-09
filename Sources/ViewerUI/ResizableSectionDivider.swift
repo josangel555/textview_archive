@@ -57,6 +57,13 @@ struct ResizableSectionDivider: View {
     /// but interaction is disabled — there's nothing meaningful to
     /// resize when only a header is showing.
     var isAboveCollapsed: Bool = false
+    /// The RENDER ceiling for the adjacent panels (the window-fraction
+    /// clamp SidebarView applies). Drag writes are bounded to it: the
+    /// stored height used to run PAST the ceiling while the panel
+    /// stopped moving, so the mouse decorrelated and reversing had a
+    /// dead zone (owner 2026-08-09 "proportions off"). nil = floor-only
+    /// (pre-measurement pass).
+    var maxHeight: CGFloat? = nil
 
     /// Drag origins (the heights the adjacent sections had when the
     /// user first pressed). Nil between drags.
@@ -92,10 +99,11 @@ struct ResizableSectionDivider: View {
             // mode / increased-contrast).
             Divider()
         }
-        // 4-px hit zone — wider than the 1-px hairline so the user
-        // doesn't have to be pixel-perfect. The Divider itself stays
-        // centred inside.
-        .frame(height: 4)
+        // 10-px hit zone (owner 2026-08-09: 4px was "tiny and very hard
+        // to find") — the 1-px hairline stays centred inside, so the
+        // visual weight is unchanged while the grab target more than
+        // doubles.
+        .frame(height: 10)
         .contentShape(Rectangle())
         .onHover { hovering in
             // UIRESP-10: use the balanced push()/pop() cursor stack
@@ -158,10 +166,10 @@ struct ResizableSectionDivider: View {
                 // floating-point drift across deltas.
                 withTransaction(noAnimationTransaction()) {
                     if let above = heightAbove {
-                        above.wrappedValue = SidebarPanelHeights.clamp(above.wrappedValue)
+                        above.wrappedValue = bounded(above.wrappedValue)
                     }
                     if let below = heightBelow {
-                        below.wrappedValue = SidebarPanelHeights.clamp(below.wrappedValue)
+                        below.wrappedValue = bounded(below.wrappedValue)
                     }
                 }
                 dragStartAbove = nil
@@ -184,17 +192,26 @@ struct ResizableSectionDivider: View {
             let baseA = dragStartAbove ?? above.wrappedValue
             let baseB = dragStartBelow ?? below.wrappedValue
             let next = SidebarResize.redistribute(above: baseA, below: baseB, delta: delta)
-            above.wrappedValue = next.above
-            below.wrappedValue = next.below
+            above.wrappedValue = bounded(next.above)
+            below.wrappedValue = bounded(next.below)
         case let (above?, nil):
             let base = dragStartAbove ?? above.wrappedValue
-            above.wrappedValue = SidebarPanelHeights.clamp(base + delta)
+            above.wrappedValue = bounded(base + delta)
         case let (nil, below?):
             let base = dragStartBelow ?? below.wrappedValue
-            below.wrappedValue = SidebarPanelHeights.clamp(base - delta)
+            below.wrappedValue = bounded(base - delta)
         case (nil, nil):
             break
         }
+    }
+
+    /// Floor + (when known) render-ceiling clamp — the stored height a drag
+    /// writes always equals the height that RENDERS, so movement is 1:1 and
+    /// reversing direction responds immediately (no dead zone).
+    func bounded(_ height: CGFloat) -> CGFloat {
+        let floored = SidebarPanelHeights.clamp(height)
+        guard let maxHeight else { return floored }
+        return min(floored, max(maxHeight, SidebarPanelHeights.minExpandedHeight))
     }
 }
 

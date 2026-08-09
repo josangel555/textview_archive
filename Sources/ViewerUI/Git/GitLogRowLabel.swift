@@ -53,7 +53,8 @@ struct GitLogRowLabel: View {
                     // ref chips carry the color signal.
                     Text(commit.sha)
                         .font(.system(size: uiSize(10), design: .monospaced))
-                        .foregroundStyle(GitRefChipStyle.commitID)
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85)
+                                                    : GitRefChipStyle.commitID)
                     // A commit that IS the current HEAD but carries no "HEAD"
                     // decoration (detached, or the decoration was filtered)
                     // still gets its marker.
@@ -68,16 +69,19 @@ struct GitLogRowLabel: View {
                     Spacer(minLength: 4)
                     Text(GitRelativeTime.format(unix: commit.timestamp))
                         .font(.system(size: uiSize(9)))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.75))
+                                                    : AnyShapeStyle(.tertiary))
                 }
                 Text(commit.subject)
                     .font(.system(size: uiSize(12),
                                   weight: commit.isMerge ? .regular : .medium))
-                    .foregroundStyle(commit.isMerge ? Color.secondary : Color.primary)
+                    .foregroundStyle(isSelected ? Color.white
+                                     : (commit.isMerge ? Color.secondary : Color.primary))
                     .lineLimit(2)
                 Text(authorLine)
                     .font(.system(size: uiSize(10)))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.75))
+                                                : AnyShapeStyle(.tertiary))
             }
             // TSK-1603: vertical padding lives on the TEXT column now — the
             // graph column must stay flush so its strokes are continuous.
@@ -93,8 +97,10 @@ struct GitLogRowLabel: View {
         // selection color, which renders grey and invisible (the
         // TSK-488 selectedContentBackgroundColor lesson).
         .background(
+            // FULL accent for the commit whose diff is showing (owner
+            // 2026-08-09) — 0.28 tint was easy to lose; texts invert to white.
             isSelected
-                ? Color.accentColor.opacity(0.28)
+                ? Color.accentColor
                 // TSK-1603: faint tint for rows on the hovered branch.
                 : (isOnHoveredBranch ? Color.accentColor.opacity(0.09) : Color.clear),
             in: RoundedRectangle(cornerRadius: 4)

@@ -924,8 +924,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         sessions.openNewSession(kind: items[item.tag].kind)
     }
 
-    @objc func nextSession(_ sender: Any?)     { sessions.nextSession() }
-    @objc func previousSession(_ sender: Any?) { sessions.previousSession() }
+    @objc func nextSession(_ sender: Any?)     { sessions.nextSessionWithHUD() }
+    @objc func previousSession(_ sender: Any?) { sessions.previousSessionWithHUD() }
     @objc func closeSession(_ sender: Any?)    { sessions.closeActive() }
 
     /// TSK-931: rename the active session from the menu bar. Prompts with the

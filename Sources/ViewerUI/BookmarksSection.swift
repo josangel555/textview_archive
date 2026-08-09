@@ -270,7 +270,8 @@ private struct BookmarkRow: View {
                 Text(entry.displayName)
                     .font(.system(size: model.uiSize(12),
                                   weight: isCurrent ? .semibold : .regular))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isCurrent ? AnyShapeStyle(Color.white)
+                                               : AnyShapeStyle(.primary))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let line = entry.line {
@@ -295,7 +296,9 @@ private struct BookmarkRow: View {
             .padding(.horizontal, model.uiSize(10))
             .frame(height: model.uiSize(22))
             .contentShape(Rectangle())
-            .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
+            // FULL accent for the current file's bookmark (owner 2026-08-09
+            // active-item sweep) — matches the file nav + git log treatment.
+            .background(isCurrent ? Color.accentColor : Color.clear)
         }
         // UIRESP-03: hover background + pointing-hand cursor so the row
         // reads as clickable. Suppress the style's hover fill on the

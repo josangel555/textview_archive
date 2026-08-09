@@ -215,7 +215,7 @@ public struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(maxWidth: 180)
+                .frame(width: 220, alignment: .leading)
                 .accessibilityIdentifier("mdv.settings.fontPicker")
             }
             row("Theme") {
@@ -229,7 +229,7 @@ public struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(maxWidth: 180)
+                .frame(width: 220, alignment: .leading)
             }
             row("") {
                 Button("Import VS Code Theme…") {
@@ -305,7 +305,7 @@ public struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(maxWidth: 180)
+                .frame(width: 220, alignment: .leading)
             }
             Text("Wrap and Show Invisibles apply to source and editor modes. Indentation drives only the CM6 editor (Tab key inserts).")
                 .font(.caption2)
@@ -331,7 +331,7 @@ public struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(maxWidth: 220)
+                .frame(width: 220, alignment: .leading)
                 .accessibilityIdentifier("mdv.settings.terminal.colorScheme")
             }
             // Pane DOCK edge (TSK-491): which shoulder the whole terminal pane
@@ -348,7 +348,7 @@ public struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
+                .frame(width: 220, alignment: .leading)
                 .accessibilityIdentifier("mdv.settings.terminal.paneEdge")
             }
             row("Tab strip position") {
@@ -362,7 +362,7 @@ public struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
+                .frame(width: 220, alignment: .leading)
                 .accessibilityIdentifier("mdv.settings.terminal.tabPosition")
             }
         }
@@ -559,7 +559,7 @@ public struct SettingsView: View {
                     Text("Off").tag(SecretBannerState.treatmentOff)
                 }
                 .labelsHidden()
-                .frame(width: 150)
+                .frame(width: 220, alignment: .leading)
                 .accessibilityIdentifier("mdv.settings.secretTreatment")
             }
             Text("Flags likely credentials (AWS/GitHub/Slack/GCP keys, PEM blocks, JWTs, high-entropy assignments) in the open document with a non-modal badge. Values are shown redacted; TextView never modifies the file. Not a guarantee — see the badge details for what it does and doesn't catch.")

@@ -399,6 +399,15 @@ public struct ContentView: View {
                 .compositingGroup()
                 .zIndex(1)
 
+            // Session-switch HUD (owner 2026-08-09): the synchronous switch
+            // used to freeze with zero feedback — the coordinator now defers
+            // the switch one runloop turn behind this flag so the HUD paints.
+            if let sessions = model.sessionsCoordinator {
+                SessionSwitchHUD(sessions: sessions)
+                    .compositingGroup()
+                    .zIndex(2)
+            }
+
             // UX-H (#230): the custom floating tooltip overlay. Mounted
             // LAST so it sits at the top of the Z-order (above every
             // chrome bar + panel). It observes only the small, dedicated

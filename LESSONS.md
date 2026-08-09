@@ -4374,3 +4374,15 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   the overlay converts through `proxy.frame(in: .tooltipRoot)` — self-correcting under
   any future container shift. Class: any overlay that positions against frames reported
   in a named space must transform ITS OWN origin through that same space.
+
+- **Defer-for-HUD belongs at the GESTURE site, not in the coordinator (2026-08-09).** Making
+  `SessionsAppCoordinator.activate` defer one runloop turn (so a switch HUD can paint) broke
+  the session test suite + every programmatic caller that relies on switch-complete-on-return
+  (scenes, the CLI verb, the drop-target test). The synchronous method IS the contract;
+  user-gesture call sites get explicit `*WithHUD` variants. Same class as any "make it async
+  for a spinner" refactor — wrap at the edge, never mutate the core contract.
+
+- **A zero-length selection draws NO insertion beam in a non-editable NSTextView
+  (2026-08-09).** The hex editor's caret was tracked and synced to a zero-length selection —
+  invisible by construction. A caret in a read-mostly text surface must be PAINTED (cell
+  background) rather than delegated to the system insertion point.

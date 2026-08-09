@@ -189,7 +189,9 @@ private struct SessionStripContent: View {
                     // that terminates a drag (`StripFrameBox`).
                     onSelect: {
                         guard !frameBox.shouldSuppressSelect() else { return }
-                        sessionsApp.activate(id: snap.id)
+                        // HUD variant (owner 2026-08-09): the synchronous
+                        // switch reads as a hang — paint the HUD first.
+                        sessionsApp.activateWithHUD(id: snap.id)
                     },
                     onClose: { sessionsApp.close(id: snap.id) },
                     onCommitRename: { newName in

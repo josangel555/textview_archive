@@ -35,9 +35,44 @@ extension UTType {
     static let mdvPanelDrag = UTType(exportedAs: "com.markdownviewer.panel-drag")
 }
 
+/// Process-wide "a tool-window drag is in flight" signal (owner
+/// 2026-08-09): empty shoulders hide (TSK-1316), so without this there was
+/// NOWHERE to drop an icon onto a bare edge — the reveal parameter existed
+/// but nothing ever drove it. The shared drag-preview chip flips the flag
+/// on appear/disappear (the preview lives exactly as long as the drag
+/// session); a pressed-button poll is the belt-and-braces end signal in
+/// case the preview teardown is ever swallowed.
+@MainActor
+final class PanelDragMonitor: ObservableObject {
+    static let shared = PanelDragMonitor()
+    @Published private(set) var isDragging = false
+    private var pollTimer: Timer?
+
+    func begin() {
+        guard !isDragging else { return }
+        isDragging = true
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
+            // Left button released ⇒ the drag session is over even if the
+            // preview's onDisappear never fired.
+            if NSEvent.pressedMouseButtons & 0x1 == 0 {
+                Task { @MainActor in PanelDragMonitor.shared.end() }
+            }
+        }
+    }
+
+    func end() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+        if isDragging { isDragging = false }
+    }
+}
+
 /// The shared drag-preview chip for a tool-window drag — used by every
 /// drag source (docked header, accordion section header, rail icon) so
 /// the affordance reads identically wherever the drag starts (TSK-327).
+/// Doubles as the drag-session sensor for `PanelDragMonitor` (it appears
+/// when the drag starts and disappears when it ends).
 struct PanelDragChip: View {
     let kind: SidebarPanelKind
 
@@ -49,6 +84,8 @@ struct PanelDragChip: View {
         .font(.system(size: 11, weight: .medium))
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(Palette.windowBackground)
+        .onAppear { PanelDragMonitor.shared.begin() }
+        .onDisappear { PanelDragMonitor.shared.end() }
     }
 }
 

@@ -571,6 +571,23 @@ final class HexTextController: NSViewController {
 
         super.init(nibName: nil, bundle: nil)
         tv.controller = self
+        // Tandem selection (owner 2026-08-09): mirror a hex-side selection
+        // onto the ascii chars and vice versa. Notification-based — no
+        // delegate slot consumed.
+        selectionObserver = NotificationCenter.default.addObserver(
+            forName: NSTextView.didChangeSelectionNotification,
+            object: tv, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.mirrorSelectionChanged() }
+        }
+    }
+
+    nonisolated(unsafe) private var selectionObserver: NSObjectProtocol?
+
+    deinit {
+        if let selectionObserver {
+            NotificationCenter.default.removeObserver(selectionObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -607,10 +624,14 @@ final class HexTextController: NSViewController {
             if let restored = dirtySeed?() {
                 editBuffer = HexEditBuffer(data: restored)
                 editCaret = nil
+                lastCaretPaintedByte = nil
+                lastMirrorPaint = nil
                 reportDirty(true)
             } else {
                 editBuffer = HexEditBuffer(data: file.data)
                 editCaret = nil
+                lastCaretPaintedByte = nil
+                lastMirrorPaint = nil
                 reportDirty(false)
             }
         }
@@ -1064,26 +1085,123 @@ final class HexTextController: NSViewController {
     private func paint(offset: Int, length: Int,
                        color: NSColor, in storage: NSTextStorage) {
         guard length > 0 else { return }
+        paintSide(offset: offset, length: length, side: .hex,
+                  color: color, in: storage)
+        paintSide(offset: offset, length: length, side: .ascii,
+                  color: color, in: storage)
+    }
+
+    /// Which column family of the dump a range lives in — the two-digit hex
+    /// cells or the 1-char ascii gutter. Caret + tandem paints are per-side.
+    enum DumpSide { case hex, ascii }
+
+    /// Per-side variant of `paint` — `nil` color removes the background.
+    private func paintSide(offset: Int, length: Int, side: DumpSide,
+                           color: NSColor?, in storage: NSTextStorage) {
+        guard length > 0, byteCount > 0 else { return }
         let last = min(offset + length - 1, byteCount - 1)
         guard offset <= last else { return }
-        for b in offset...last {
+        for b in max(0, offset)...last {
             let row = HexLayout.row(forOffset: b, width: currentWidth)
             let col = HexLayout.column(forOffset: b, width: currentWidth)
             let rowStart = headerCharCount + row * rowLength
-            let hex = NSRange(
-                location: rowStart + HexLayout.hexCharOffset(inRowColumn: col),
-                length: 2)
-            let ascii = NSRange(
-                location: rowStart + HexLayout.asciiCharOffset(
-                    inRowColumn: col, width: currentWidth),
-                length: 1)
-            if NSMaxRange(hex) <= storage.length {
-                storage.addAttribute(.backgroundColor, value: color, range: hex)
+            let range: NSRange
+            switch side {
+            case .hex:
+                range = NSRange(
+                    location: rowStart + HexLayout.hexCharOffset(inRowColumn: col),
+                    length: 2)
+            case .ascii:
+                range = NSRange(
+                    location: rowStart + HexLayout.asciiCharOffset(
+                        inRowColumn: col, width: currentWidth),
+                    length: 1)
             }
-            if NSMaxRange(ascii) <= storage.length {
-                storage.addAttribute(.backgroundColor, value: color, range: ascii)
+            guard NSMaxRange(range) <= storage.length else { continue }
+            if let color {
+                storage.addAttribute(.backgroundColor, value: color, range: range)
+            } else {
+                storage.removeAttribute(.backgroundColor, range: range)
             }
         }
+    }
+
+    // MARK: Caret cell + tandem selection paints (owner 2026-08-09)
+
+    /// The byte whose caret cells are currently painted, so a caret move
+    /// clears exactly one byte's tint. (A zero-length selection draws NO
+    /// insertion beam in a non-editable NSTextView — the edit caret was
+    /// invisible; the painted cell is the visible caret.)
+    private var lastCaretPaintedByte: Int?
+
+    /// The mirror paint from the last selection change: byte span + the
+    /// side it was painted on (the OPPOSITE of the selected side).
+    private var lastMirrorPaint: (offset: Int, length: Int, side: DumpSide)?
+
+    func repaintCaretCells() {
+        guard let storage = textView.textStorage else { return }
+        if let prev = lastCaretPaintedByte {
+            paintSide(offset: prev, length: 1, side: .hex, color: nil, in: storage)
+            paintSide(offset: prev, length: 1, side: .ascii, color: nil, in: storage)
+            lastCaretPaintedByte = nil
+        }
+        guard let caret = editCaret else { return }
+        let byte: Int
+        let active: DumpSide
+        switch caret {
+        case .hex(let b, _): byte = b; active = .hex
+        case .ascii(let b):  byte = b; active = .ascii
+        }
+        paintSide(offset: byte, length: 1, side: active,
+                  color: NSColor.controlAccentColor.withAlphaComponent(0.55),
+                  in: storage)
+        paintSide(offset: byte, length: 1, side: active == .hex ? .ascii : .hex,
+                  color: NSColor.controlAccentColor.withAlphaComponent(0.28),
+                  in: storage)
+        lastCaretPaintedByte = byte
+    }
+
+    /// View-mode tandem highlight: selecting in the hex columns tints the
+    /// corresponding ascii chars, and vice versa — the selection itself is
+    /// native, only the OTHER side is painted. Span capped so a select-all
+    /// on a huge dump stays O(cap).
+    func mirrorSelectionChanged() {
+        guard let storage = textView.textStorage else { return }
+        if let m = lastMirrorPaint {
+            paintSide(offset: m.offset, length: m.length, side: m.side,
+                      color: nil, in: storage)
+            lastMirrorPaint = nil
+        }
+        let sel = textView.selectedRange()
+        guard sel.length > 1 else { return }
+        // Probe the selection's first hittable char for the selected side.
+        var selectedSide: DumpSide?
+        for idx in sel.location..<min(sel.location + 8, NSMaxRange(sel)) {
+            if let hit = HexCaretMap.hit(charIndex: idx, width: currentWidth,
+                                         byteCount: byteCount,
+                                         headerCharCount: headerCharCount) {
+                if case .hex = hit { selectedSide = .hex } else { selectedSide = .ascii }
+                break
+            }
+        }
+        guard let selectedSide else { return }
+        // Byte span: scan the endpoints inward past gutter/gap chars.
+        var first: Int?
+        for idx in sel.location..<min(sel.location + 8, NSMaxRange(sel)) {
+            if let b = charIndexToByteOffset(idx) { first = b; break }
+        }
+        var last: Int?
+        for idx in stride(from: NSMaxRange(sel) - 1,
+                          through: max(sel.location, NSMaxRange(sel) - 8), by: -1) {
+            if let b = charIndexToByteOffset(idx) { last = b; break }
+        }
+        guard let lo = first, let hi = last, hi >= lo else { return }
+        let length = min(hi - lo + 1, 4096)
+        let mirror: DumpSide = selectedSide == .hex ? .ascii : .hex
+        paintSide(offset: lo, length: length, side: mirror,
+                  color: NSColor.controlAccentColor.withAlphaComponent(0.28),
+                  in: storage)
+        lastMirrorPaint = (lo, length, mirror)
     }
 
     private func scrollByteIntoView(offset: Int) {
@@ -1116,7 +1234,7 @@ final class HexTextController: NSViewController {
     /// Place the edit caret from a click character index. Returns true if
     /// the click landed on an editable hex/ascii cell.
     @discardableResult
-    fileprivate func placeEditCaret(fromCharIndex idx: Int) -> Bool {
+    func placeEditCaret(fromCharIndex idx: Int) -> Bool {
         guard editable, !isStreaming else { return false }
         guard let hit = HexCaretMap.hit(charIndex: idx,
                                         width: currentWidth,
@@ -1307,6 +1425,7 @@ final class HexTextController: NSViewController {
         guard loc <= (textView.textStorage?.length ?? 0) else { return }
         textView.setSelectedRange(NSRange(location: loc, length: 0))
         textView.scrollRangeToVisible(NSRange(location: loc, length: 0))
+        repaintCaretCells()
     }
 
     // MARK: Click-pattern derivation

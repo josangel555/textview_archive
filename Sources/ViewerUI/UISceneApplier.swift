@@ -82,7 +82,7 @@ public enum UISceneApplier {
             at: notes, withIntermediateDirectories: true)
         let primary = sessions.core.activeID
         sessions.openFolder(notes, forceNew: true)
-        if let primary { sessions.activate(id: primary) }
+        if let primary { sessions.activateNow(id: primary) }
     }
 
     /// Apply `scene` (already lowercased) to `model`. Returns the status line
@@ -312,7 +312,7 @@ public enum UISceneApplier {
             guard let b = sessionsApp.core.activeID, b != a else {
                 return "ui-scene: 'tab-session-drop' failed to create session B"
             }
-            sessionsApp.activate(id: a)
+            sessionsApp.activateNow(id: a)
             let f = dirA.appendingPathComponent("drag-sample.md")
             try? "# Drag me\n\nThis tab is mid-drag onto the second session's pill.\n"
                 .write(to: f, atomically: true, encoding: .utf8)

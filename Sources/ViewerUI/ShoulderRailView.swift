@@ -64,6 +64,12 @@ struct ShoulderRailView: View {
         )
     }
 
+    /// Live drag signal (owner 2026-08-09): TSK-1316's `isDraggingPanel`
+    /// parameter was scaffolded but never driven — empty shoulders stayed
+    /// invisible during a drag, leaving nowhere to drop. The shared monitor
+    /// flips while the drag-preview chip is alive.
+    @ObservedObject private var dragMonitor: PanelDragMonitor = .shared
+
     var body: some View {
         #if DEBUG
         let _ = BodyProbe.tick("ShoulderRailView")   // TSK-615 re-eval width probe
@@ -74,8 +80,26 @@ struct ShoulderRailView: View {
         // being dragged — no permanent bare strip. The `if` with no else renders
         // nothing (and collapses to zero size in its container) when hidden.
         let hasContent = !panels.isEmpty || edge == .left
-        if hasContent || isDraggingPanel {
+        if hasContent || isDraggingPanel || dragMonitor.isDragging {
             railContent(panels: panels)
+                .overlay {
+                    // Placeholder affordance on a revealed EMPTY shoulder —
+                    // a dashed accent outline + plus so the bare strip reads
+                    // as "drop here", not a rendering glitch.
+                    if panels.isEmpty, edge != .left,
+                       isDraggingPanel || dragMonitor.isDragging {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(Color.accentColor.opacity(0.6),
+                                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                                .padding(3)
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.accentColor.opacity(0.8))
+                        }
+                        .allowsHitTesting(false)
+                    }
+                }
         }
     }
 

@@ -246,11 +246,47 @@ public final class SessionsAppCoordinator: ObservableObject {
         core.openFolder(url, forceNew: forceNew, kind: kind)
     }
 
+    /// True while a session switch is in flight — drives the switch HUD
+    /// (owner 2026-08-09: the synchronous snapshot+materialize can take long
+    /// enough to read as a hang, with no feedback until the new tabs land).
+    @Published public private(set) var isSwitchingSession = false
+
+    /// Run a session switch with the HUD flag up: flag first, defer ONE
+    /// runloop turn so the overlay actually PAINTS (the switch itself is
+    /// synchronous main-thread work), then switch and drop the flag.
+    private func performSwitch(_ body: @escaping () -> Void) {
+        isSwitchingSession = true
+        DispatchQueue.main.async { [weak self] in
+            body()
+            self?.isSwitchingSession = false
+        }
+    }
+
+    /// Synchronous switch — the coordinator's canonical contract (tests +
+    /// programmatic callers rely on the switch being complete on return).
     public func activate(id: UUID) {
         firstPaintGate.recordActivate(id: id)
         core.activate(id: id)
     }
+    /// Alias kept for call sites that want to be explicit about needing the
+    /// synchronous semantics (capture scenes, the CLI verb).
+    public func activateNow(id: UUID) { activate(id: id) }
     public func activate(index n: Int) { core.activate(index: n) }
+
+    /// USER-GESTURE variants (session pill click, menu items): flag the HUD,
+    /// defer ONE runloop turn so it paints, then run the synchronous switch.
+    /// Kept OUT of `activate(id:)` so the coordinator's synchronous contract
+    /// is untouched for tests and automation.
+    public func activateWithHUD(id: UUID) {
+        firstPaintGate.recordActivate(id: id)
+        performSwitch { [weak self] in self?.core.activate(id: id) }
+    }
+    public func nextSessionWithHUD() {
+        performSwitch { [weak self] in self?.core.nextSession() }
+    }
+    public func previousSessionWithHUD() {
+        performSwitch { [weak self] in self?.core.previousSession() }
+    }
 
     /// TSK-1536 (`mdv session <name>`): activate the saved session whose
     /// name matches `name` — exact match first, then case-insensitive.
@@ -261,7 +297,7 @@ public final class SessionsAppCoordinator: ObservableObject {
         let match = snaps.first(where: { $0.displayName == name })
             ?? snaps.first(where: { $0.displayName.lowercased() == name.lowercased() })
         guard let match else { return false }
-        activate(id: match.id)
+        activateNow(id: match.id)
         return true
     }
     public func nextSession()     { core.nextSession() }

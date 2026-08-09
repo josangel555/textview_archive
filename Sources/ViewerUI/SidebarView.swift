@@ -141,8 +141,10 @@ struct SidebarView: View {
 
     private var sidebarBody: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
+            // (The root-name header row that used to sit here duplicated the
+            // tree's own root node — removed, owner 2026-08-09. A hair of top
+            // padding keeps the first section off the tab strip's hairline.)
+            Spacer().frame(height: 4)
             // MARK: - Panel order
             //
             // FILES leads (matches VSCode / Xcode / IntelliJ
@@ -174,7 +176,8 @@ struct SidebarView: View {
                let first = fullPlan.entries.first {
                 ResizableSectionDivider(
                     heightAbove: nil,
-                    heightBelow: heightBinding(for: first.panel)
+                    heightBelow: heightBinding(for: first.panel),
+                    maxHeight: accordionCeiling
                 )
             }
             // P1 — TOOL-WINDOW BOUNDING. The accordion run + plugin
@@ -235,7 +238,9 @@ struct SidebarView: View {
                 // fill IGNORED — the drag visibly did nothing.)
                 if let lastFixed = SidebarSectionPlanner.plan(panelVisibility)
                     .map(\.panel).filter({ $0 != fill }).last {
-                    ResizableSectionDivider(heightAbove: heightBinding(for: lastFixed))
+                    ResizableSectionDivider(
+                        heightAbove: heightBinding(for: lastFixed),
+                        maxHeight: accordionCeiling)
                 }
                 SidebarPanelBody.make(
                     for: fill,
@@ -496,6 +501,17 @@ struct SidebarView: View {
         SidebarSectionPlanner.plan(panelVisibility).count
     }
 
+    /// The render ceiling a divider drag may write up to (the same
+    /// window-fraction clamp `resolvedBodyHeight` renders with) — keeps the
+    /// stored height equal to the rendered height so drags track the mouse
+    /// 1:1 with no dead zone. nil before the first height measurement.
+    private var accordionCeiling: CGFloat? {
+        guard sidebarContentHeight.isFinite, sidebarContentHeight > 0 else { return nil }
+        return max(SidebarPanelHeights.minExpandedHeight,
+                   sidebarContentHeight * SidebarPanelHeights.ceilingFraction(
+                       visiblePanelCount: accordionPanelCount))
+    }
+
     /// Plugin sections' left-accordion visibility, extracted so the render
     /// gate and the fill-target logic read one expression.
     private var pluginSectionsVisibleOnLeft: Bool {
@@ -535,7 +551,8 @@ struct SidebarView: View {
             if entry.drawTrailingDivider, idx + 1 < plan.count {
                 ResizableSectionDivider(
                     heightAbove: heightBinding(for: entry.panel),
-                    heightBelow: heightBinding(for: plan[idx + 1].panel)
+                    heightBelow: heightBinding(for: plan[idx + 1].panel),
+                    maxHeight: accordionCeiling
                 )
             }
         }
@@ -1118,19 +1135,6 @@ struct SidebarView: View {
         .accessibilityIdentifier("mdv.sidebar.parentNav")
     }
 
-    private var header: some View {
-        HStack(spacing: 6) {
-            Text(sidebar.rootURL?.lastPathComponent ?? "Files")
-                .font(.system(size: model.uiSize(11), weight: .semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-    }
-
     /// True when the sidebar root is inside a git repo — gates the
     /// folder-stats `chart.bar` toggle (WAVE 2b item 3). FolderStatsView
     /// reads repo-wide aggregates, so there's nothing to show outside a
@@ -1399,6 +1403,10 @@ struct FileRowState: Equatable, Sendable {
     let isCurrent: Bool
     let isSelected: Bool
     let isOpenInOtherTab: Bool
+    /// The file sits in the ONE ephemeral preview slot (TSK-306) — its row
+    /// renders in italics to match the preview tab's italic title (owner
+    /// 2026-08-09).
+    let isPreviewTab: Bool
     let isBookmarked: Bool
     let isViewModeLocked: Bool
     let isExpanded: Bool
@@ -1427,6 +1435,8 @@ struct FileRowState: Equatable, Sendable {
             isOpenInOtherTab: !node.isDirectory
                 && model.openTabURLs.contains(node.url)
                 && node.url != model.currentURL,
+            isPreviewTab: !node.isDirectory
+                && model.tabs.tabs.first(where: { $0.url == node.url })?.isPreview == true,
             isBookmarked: model.bookmarksStore.contains(node.url),
             isViewModeLocked: !node.isDirectory
                 && model.viewModeLocks.isLocked(for: node.url),
@@ -1589,8 +1599,13 @@ private struct FileRowView: View, Equatable {
                         // Bold the file's name if it's the currently-
                         // visible tab — matches the bold treatment in
                         // the tab bar so the "current document" is
-                        // obvious in both surfaces.
+                        // obvious in both surfaces. Preview-slot files
+                        // render italic to match their italic tab title;
+                        // the CURRENT row gets white-on-accent (owner
+                        // 2026-08-09 — the active file must pop).
                         .font(.system(size: model.uiSize(12), weight: state.isCurrent ? .semibold : .regular))
+                        .italic(state.isPreviewTab)
+                        .foregroundStyle(state.isCurrent ? Color.white : Color.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if state.isBookmarked {
@@ -1720,7 +1735,9 @@ private struct FileRowView: View, Equatable {
     /// at a glance: which row is about to be activated by ↵, which
     /// file is in front, and which other files are already open.
     private var rowBackground: Color {
-        if state.isCurrent  { return Color.accentColor.opacity(0.22) }
+        // FULL accent for the file you're LOOKING AT (owner 2026-08-09) —
+        // the 0.22 tint was too easy to miss; white label text pairs with it.
+        if state.isCurrent  { return Color.accentColor }
         if state.isSelected { return Color(nsColor: .alternateSelectedControlColor).opacity(0.25) }
         if state.isOpenInOtherTab {
             return Color.accentColor.opacity(0.08)
