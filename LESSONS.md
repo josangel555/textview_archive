@@ -4357,3 +4357,20 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   loses the overrides when the activation lands (async — it raced BOTH call orderings).
   Scenes re-assert sidebar state on a delay AFTER the session dance; the coordinator's
   create/activate round-trip must never sit between "set up the UI" and "capture".
+
+- **Arithmetic fill inside a scroll container loses to layout (2026-08-09, the double-
+  scrollbar round).** The first shoulder-fill cut computed the fill panel's height
+  (available − siblings − chrome-estimate) and rendered it INSIDE the bounded accordion
+  scroll — the chrome estimate drifted per panel, so the band showed BOTH dead space and an
+  outer scrollbar. The correct move was the one the owner named: generalize FILES'
+  treatment — render the fill panel OUTSIDE the scroll with `maxHeight:.infinity` (env
+  sentinel `.infinity` via `sidebarSectionBodyFrame()`), and let layout do it. When a fix
+  needs a per-panel chrome constant, that's the smell that layout should own it.
+
+- **A named coordinate space is only as good as BOTH endpoints (2026-08-09, the tooltip-
+  over-element bug).** `.helpInfo` anchors report in `.tooltipRoot`, but the overlay
+  positioned in its own local space — the titlebar `ignoresSafeArea` rework shifted the
+  two apart by the titlebar height, so every bubble drew ON the hovered control. Fix:
+  the overlay converts through `proxy.frame(in: .tooltipRoot)` — self-correcting under
+  any future container shift. Class: any overlay that positions against frames reported
+  in a named space must transform ITS OWN origin through that same space.

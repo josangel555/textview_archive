@@ -700,7 +700,8 @@ public enum UISceneApplier {
             let md = """
             # Markdown, all of it
 
-            GitHub-flavored markdown, typeset natively — plus diagrams and math.
+            GitHub-flavored markdown, typeset natively — plus diagrams, math, and
+            [links](https://josangel.com/textview/).
 
             | Feature | Status |
             | --- | --- |
@@ -895,16 +896,40 @@ public enum UISceneApplier {
                 + "diff=\(diffFile != nil) root=\(model.sidebar.rootURL != nil)"
         }
 
-        // Sidebar-fill check (owner 2026-08-09): the GIT panel as the ONLY
-        // visible left tool window must FILL the shoulder — panels used to
-        // cap at their persisted height and strand the band below.
-        if scene == "git-fill-check" {
+        // Sidebar-fill checks (owner 2026-08-09): tool windows must fill the
+        // shoulder whatever the combination — each panel SOLO fills 100%;
+        // in a combo the LAST visible panel fills below the fixed run.
+        if scene.hasPrefix("fill-check-") {
+            let which = String(scene.dropFirst("fill-check-".count))
+            let kinds: [SidebarPanelKind]
+            switch which {
+            case "git":       kinds = [.git]
+            case "bookmarks": kinds = [.bookmarks]
+            case "recents":   kinds = [.recentlyOpened]
+            case "combo":     kinds = [.bookmarks, .git, .recentlyOpened]
+            default:
+                return "ui-scene: unknown scene '\(scene)'"
+            }
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
-            Self.applyMarketingSidebar(model, shown: [.git])
+            Self.applyMarketingSidebar(model, shown: kinds)
             model.setSidebarWidth(340)
             model.openFolder(root)
-            model.showGitPanel(tab: .status)
-            return "ui-scene: applied 'git-fill-check' root=\(model.sidebar.rootURL != nil)"
+            if kinds.contains(.bookmarks) {
+                for e in model.bookmarksStore.all() {
+                    model.bookmarksStore.remove(url: e.url, line: e.line)
+                }
+                for rel in ["DESIGN.md", "CHANGELOG.md"] {
+                    let u = root.appendingPathComponent(rel)
+                    if FileManager.default.fileExists(atPath: u.path) {
+                        _ = model.bookmarksStore.toggle(
+                            url: u, displayName: u.lastPathComponent)
+                    }
+                }
+                model.refreshBookmarks()
+            }
+            if kinds.contains(.git) { model.showGitPanel(tab: .status) }
+            return "ui-scene: applied '\(scene)' shown=\(kinds.map(\.rawValue)) "
+                + "root=\(model.sidebar.rootURL != nil)"
         }
 
         // File-info checksum scene (TSK-748 render validation): the MetadataPanel

@@ -78,4 +78,20 @@ public enum SidebarSectionPlanner {
             entries: entries
         )
     }
+
+    /// Owner 2026-08-09 ("tool windows must fill the shoulder, whatever the
+    /// combination"): the accordion panel that takes FILES' flex-fill role.
+    /// FILES fills when it is visible; otherwise the LAST visible accordion
+    /// panel does — rendered outside the bounded scroll with the `.infinity`
+    /// body sentinel. Plugin sections render below the accordion and manage
+    /// their own height, so a visible plugin region disables the accordion
+    /// fill (it would otherwise sit between the fill panel and the bottom).
+    public static func fillTarget(
+        filesVisible: Bool,
+        pluginsVisible: Bool,
+        accordion: [(panel: SidebarPanelKind, isVisible: Bool)]
+    ) -> SidebarPanelKind? {
+        guard !filesVisible, !pluginsVisible else { return nil }
+        return plan(accordion).last?.panel
+    }
 }

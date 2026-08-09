@@ -108,7 +108,7 @@ struct ClaudeTimelineSection: View {
                 }
             }
         }
-        .frame(height: bodyHeight)
+        .sidebarSectionBodyFrame()
     }
 
     // MARK: - Hooks sub-segment (TSK-336 slice (a))

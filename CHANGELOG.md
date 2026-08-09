@@ -3,11 +3,20 @@
 ## 2026-08-09
 
 ### Fixed
-- **Left tool windows fill the sidebar now.** With the file tree hidden, panels (Git,
-  Bookmarks, Outline, …) stopped at their remembered drag-height and stranded the rest of
-  the shoulder as dead space — and since every panel remembers its own height, the cap
-  looked random per panel. The last visible panel now absorbs the remaining band, exactly
-  like the file tree does when it's present; a hand-dragged larger size still wins.
+- **Tool windows fill the shoulder for real now** — the first fill fix computed heights
+  arithmetically and produced double scrollbars + a dead band (owner screenshots); the fill
+  panel now renders OUTSIDE the accordion scroll with true flex-fill, the literal FILES
+  treatment generalized to every panel. Solo panels fill 100%; in a combo the last panel
+  absorbs the leftover; a resize handle sits between the fixed run and the fill panel
+  (dragging it in the old build silently did nothing).
+- **Tooltips no longer cover the control you're pointing at.** The bubble drew a
+  titlebar-height too high (a coordinate-space skew introduced by the title-bar sessions
+  rework), landing ON the hovered element and hiding it; placement now converts through
+  the shared coordinate space so it sits below the control again.
+- **Dark-mode diffs are readable as text.** Added/deleted rows used bright system green/red
+  washes that turned large hunks into neon fields; deeper, quieter hues now tint the rows
+  (the saturated edge bars stay as the accent).
+- **Git log search bar got breathing room** (was cramped against the tab strip and rows).
 
 ### System work
 - Capture lane: the git marketing shot now shows STATUS + a real HEAD commit-diff tab (the

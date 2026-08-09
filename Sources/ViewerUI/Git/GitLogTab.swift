@@ -36,7 +36,7 @@ struct GitLogTab: View {
             }
             listContent
         }
-        .frame(height: bodyHeight)
+        .sidebarSectionBodyFrame()
     }
 
     /// TSK-522: shown while ≥2 commits are multi-selected (Cmd/Shift-
@@ -80,7 +80,7 @@ struct GitLogTab: View {
     /// git-backed (`git log --grep`), so it covers bodies and history
     /// beyond the loaded pages.
     private var searchField: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: doc.uiSize(9)))
                 .foregroundStyle(.secondary)
@@ -121,8 +121,10 @@ struct GitLogTab: View {
                 .accessibilityIdentifier("mdv.gitLog.searchClear")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        // Breathing room (owner 2026-08-09): the field sat cramped against
+        // the tab strip above and the first row below.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Palette.windowBackground.opacity(0.3))
         .overlay(alignment: .bottom) { Divider() }
     }

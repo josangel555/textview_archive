@@ -57,8 +57,12 @@
     --bg: #1e1e1e; --fg: #d4d4d4; --dim: #8e8e93;
     --hunk-bg: #2a2a2e; --hunk-fg: #9a9aa0;
     --file-bg: #333338; --file-fg: #e5e5e7;
-    --add-bg: rgba(48,209,88,0.24); --del-bg: rgba(255,69,58,0.20);
-    --add-mark: rgba(48,209,88,0.48); --del-mark: rgba(255,69,58,0.44);
+    /* Dark washes (owner review 2026-08-09): the bright systemGreen/Red at
+       0.24/0.20 made large hunks read as neon fields. Deeper hues at lower
+       alpha (GitHub-dark territory) keep rows legible as TEXT with a tint;
+       the saturated edge bars stay as the accent. */
+    --add-bg: rgba(46,160,67,0.16); --del-bg: rgba(248,81,73,0.14);
+    --add-mark: rgba(46,160,67,0.42); --del-mark: rgba(248,81,73,0.42);
     --add-edge: #30d158; --del-edge: #ff453a;
     --gutter-fg: #6e6e73; --sep: #3a3a3f;
   }

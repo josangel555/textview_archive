@@ -92,7 +92,7 @@ struct PluginSidebarSections: View {
                         }
                     }
                 }
-                .frame(height: bodyHeight)
+                .sidebarSectionBodyFrame()
             }
         }
     }

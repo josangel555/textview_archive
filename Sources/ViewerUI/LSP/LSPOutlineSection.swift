@@ -136,7 +136,7 @@ public struct LSPOutlineSection: View {
                     ScrollView {
                         outlineBody
                     }
-                    .frame(height: bodyHeight)
+                    .sidebarSectionBodyFrame()
                 }
             }
             .sidebarSectionContainer()

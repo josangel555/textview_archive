@@ -30,7 +30,7 @@ struct RecentlyOpenedSection: View {
                         }
                     }
                 }
-                .frame(height: bodyHeight)
+                .sidebarSectionBodyFrame()
             }
         }
         .sidebarSectionContainer()

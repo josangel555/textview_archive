@@ -222,6 +222,31 @@ struct SidebarView: View {
                                                                availableHeight: sidebarContentHeight))
                 }
             }
+            // The flex-fill panel (owner 2026-08-09): when FILES is hidden the
+            // LAST visible accordion panel takes its place — rendered OUTSIDE
+            // the bounded scroll, `.infinity` = the flex sentinel, so it
+            // absorbs the leftover band by LAYOUT (no computed heights, no
+            // double scrollbars, no dead space).
+            if let fill = accordionFillTarget {
+                // Resizable boundary between the fixed run and the flex panel
+                // — FILES-boundary parity: the drag drives the fixed panel
+                // ABOVE; the flex panel absorbs the slack by layout. (In the
+                // arithmetic-fill cut this divider wrote a stored height the
+                // fill IGNORED — the drag visibly did nothing.)
+                if let lastFixed = SidebarSectionPlanner.plan(panelVisibility)
+                    .map(\.panel).filter({ $0 != fill }).last {
+                    ResizableSectionDivider(heightAbove: heightBinding(for: lastFixed))
+                }
+                SidebarPanelBody.make(
+                    for: fill,
+                    model: model,
+                    sidebar: sidebar,
+                    trackedRepos: trackedRepos,
+                    panelLayout: panelLayout,
+                    bodyHeight: .infinity
+                )
+                .frame(maxHeight: .infinity, alignment: .top)
+            }
         }
         .frame(minWidth: 180, idealWidth: 240)
         // Top-align: without this, a short content stack centers
@@ -258,18 +283,13 @@ struct SidebarView: View {
                         // would actually change — dropping the no-op resize frames
                         // before they touch `@State`. (The old sub-point epsilon
                         // guard only caught jitter, not the pt-scale resize churn.)
-                        // Fill mode (owner 2026-08-09): the fill target's body
-                        // tracks `available` DIRECTLY, so every height change
-                        // is observable — the no-op suppression must not drop
-                        // those frames.
-                        if accordionFillTarget != nil
-                            || SidebarPanelHeights.shouldCommitAvailableHeight(
-                                current: sidebarContentHeight,
-                                measured: h,
-                                storedHeights: accordionStoredHeights,
-                                fraction: SidebarPanelHeights.ceilingFraction(
-                                    visiblePanelCount: accordionPanelCount)
-                            ) {
+                        if SidebarPanelHeights.shouldCommitAvailableHeight(
+                            current: sidebarContentHeight,
+                            measured: h,
+                            storedHeights: accordionStoredHeights,
+                            fraction: SidebarPanelHeights.ceilingFraction(
+                                visiblePanelCount: accordionPanelCount)
+                        ) {
                             sidebarContentHeight = h
                         }
                     }
@@ -487,23 +507,25 @@ struct SidebarView: View {
 
     /// The accordion panel that plays FILES' flex-fill role when FILES is
     /// hidden (owner 2026-08-09: panels capped at their persisted height
-    /// stranded the rest of the shoulder): the LAST visible panel — nothing
-    /// renders below it, so it may absorb the leftover band. nil when FILES
-    /// is visible (it is the designed fill) or plugin sections render below
-    /// the accordion.
+    /// stranded the rest of the shoulder). Selection logic is pure
+    /// (`SidebarSectionPlanner.fillTarget`, host-tested); the panel renders
+    /// OUTSIDE the bounded scroll with the `.infinity` body sentinel — the
+    /// literal FILES treatment, generalized. (The first cut computed a fill
+    /// HEIGHT arithmetically inside the scroll — chrome estimates drifted
+    /// and produced double scrollbars + a dead band; layout does it right.)
     private var accordionFillTarget: SidebarPanelKind? {
-        guard !filesPanelVisible, !pluginSectionsVisibleOnLeft else { return nil }
-        return SidebarSectionPlanner.plan(panelVisibility).last?.panel
+        SidebarSectionPlanner.fillTarget(
+            filesVisible: filesPanelVisible,
+            pluginsVisible: pluginSectionsVisibleOnLeft,
+            accordion: panelVisibility)
     }
-
-    /// Per-panel non-body chrome (header row + divider + card padding) used
-    /// by the fill computation. Slight overshoot beats undershoot: a few
-    /// spare points leave a hairline gap, undershoot makes the band scroll.
-    private static let accordionChromePerPanel: CGFloat = 34
 
     @ViewBuilder
     private var accordionStack: some View {
+        // The fill target renders OUTSIDE the bounded scroll (flex-fill, the
+        // FILES treatment) — exclude it here so it isn't laid out twice.
         let plan = SidebarSectionPlanner.plan(panelVisibility)
+            .filter { $0.panel != accordionFillTarget }
         ForEach(Array(plan.enumerated()), id: \.element.panel) { idx, entry in
             panelView(for: entry.panel)
             // TSK-440: a divider between two fixed-height panels drives
@@ -548,33 +570,17 @@ struct SidebarView: View {
         }
     }
 
-    /// The height a panel's body actually renders at. Normal panels get the
-    /// stored-height clamp (TSK-1590 ceiling); the fill target (last visible
-    /// panel while FILES is hidden) is RAISED to the leftover band so the
-    /// shoulder never strands dead space below a short panel (owner
-    /// 2026-08-09).
+    /// The height a panel's body renders at inside the bounded scroll: the
+    /// stored-height clamp (TSK-1590 ceiling). The fill target never routes
+    /// through here — it renders outside the scroll with the `.infinity`
+    /// flex sentinel.
     private func resolvedBodyHeight(for kind: SidebarPanelKind) -> CGFloat {
-        let clamped = SidebarPanelHeights.clamp(
+        SidebarPanelHeights.clamp(
             CGFloat(accordionHeight(for: kind)),
             availableHeight: sidebarContentHeight,
             fraction: SidebarPanelHeights.ceilingFraction(
                 visiblePanelCount: accordionPanelCount)
         )
-        guard kind == accordionFillTarget else { return clamped }
-        let plan = SidebarSectionPlanner.plan(panelVisibility)
-        let siblings = plan.map(\.panel).filter { $0 != kind }.map {
-            SidebarPanelHeights.clamp(
-                CGFloat(accordionHeight(for: $0)),
-                availableHeight: sidebarContentHeight,
-                fraction: SidebarPanelHeights.ceilingFraction(
-                    visiblePanelCount: plan.count))
-        }
-        return SidebarPanelHeights.fillHeight(
-            stored: CGFloat(accordionHeight(for: kind)),
-            availableHeight: sidebarContentHeight,
-            siblingResolvedHeights: siblings,
-            chromePerPanel: Self.accordionChromePerPanel,
-            panelCount: plan.count)
     }
 
     /// TSK-592: the per-panel stored body heights (pre-clamp `@AppStorage`

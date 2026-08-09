@@ -14,14 +14,14 @@ struct GitStashTab: View {
             ScrollView {
                 SidebarEmptyPlaceholder(message: "No stashes.")
             }
-            .frame(height: bodyHeight)
+            .sidebarSectionBodyFrame()
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.stashEntries, id: \.ref) { row($0) }
                 }
             }
-            .frame(height: bodyHeight)
+            .sidebarSectionBodyFrame()
             .alert(item: $pendingDrop) { entry in
                 Alert(
                     title: Text("Drop \(entry.ref)?"),

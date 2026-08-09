@@ -245,7 +245,7 @@ struct SearchAnywhereSection: View {
         }
         // Fixed envelope — short matches and "type to search" empty
         // state both occupy the same height as a populated list.
-        .frame(height: bodyHeight)
+        .sidebarSectionBodyFrame()
     }
 
     @ViewBuilder

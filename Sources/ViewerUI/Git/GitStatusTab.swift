@@ -111,7 +111,7 @@ struct GitStatusTab: View {
                 }
             }
         }
-        .frame(height: bodyHeight)
+        .sidebarSectionBodyFrame()
         .onAppear { grouped = Self.group(model.statusEntries) }
         .onChange(of: model.statusEntries) { _, new in
             grouped = Self.group(new)
@@ -173,7 +173,7 @@ struct GitStatusTab: View {
         ScrollView {
             SidebarEmptyPlaceholder(message: "Working tree clean.")
         }
-        .frame(height: bodyHeight)
+        .sidebarSectionBodyFrame()
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {

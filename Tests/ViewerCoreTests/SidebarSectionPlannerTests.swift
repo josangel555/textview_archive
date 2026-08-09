@@ -100,4 +100,71 @@ final class SidebarSectionPlannerTests: XCTestCase {
         ])
         XCTAssertEqual(plan.map(\.panel), [.git, .bookmarks, .searchAnywhere])
     }
+
+    // MARK: - fillTarget (owner 2026-08-09: tool windows fill the shoulder
+    // regardless of how many are open, in what combination)
+
+    /// The accordion panel kinds in on-screen order (FILES + plugins render
+    /// outside the accordion).
+    private static let accordionKinds: [SidebarPanelKind] = [
+        .bookmarks, .searchAnywhere, .git, .claudeTimeline,
+        .lspOutline, .markdownOutline, .lspNavigation, .lspProblems, .recentlyOpened,
+    ]
+
+    private func visibility(
+        shown: Set<SidebarPanelKind>
+    ) -> [(panel: SidebarPanelKind, isVisible: Bool)] {
+        Self.accordionKinds.map { ($0, shown.contains($0)) }
+    }
+
+    /// EVERY panel kind, SOLO (files hidden): that panel is the fill target —
+    /// it must occupy 100% of the shoulder.
+    func test_fillTarget_everyPanelSolo_isTheFill() {
+        for kind in Self.accordionKinds {
+            XCTAssertEqual(
+                SidebarSectionPlanner.fillTarget(
+                    filesVisible: false, pluginsVisible: false,
+                    accordion: visibility(shown: [kind])),
+                kind,
+                "\(kind) solo must flex-fill the shoulder")
+        }
+    }
+
+    /// Combinations: the LAST visible panel (accordion order) fills; the ones
+    /// above keep their fixed heights.
+    func test_fillTarget_combinations_lastVisibleFills() {
+        let combos: [(Set<SidebarPanelKind>, SidebarPanelKind)] = [
+            ([.bookmarks, .git], .git),
+            ([.git, .recentlyOpened], .recentlyOpened),
+            ([.bookmarks, .searchAnywhere, .lspOutline], .lspOutline),
+            ([.searchAnywhere, .claudeTimeline, .lspProblems, .recentlyOpened], .recentlyOpened),
+            ([.bookmarks, .markdownOutline], .markdownOutline),
+        ]
+        for (shown, expected) in combos {
+            XCTAssertEqual(
+                SidebarSectionPlanner.fillTarget(
+                    filesVisible: false, pluginsVisible: false,
+                    accordion: visibility(shown: shown)),
+                expected,
+                "\(shown) → \(expected) fills")
+        }
+    }
+
+    /// FILES visible → FILES is the designed fill; no accordion panel takes
+    /// the role. Plugins below the accordion also disable it.
+    func test_fillTarget_filesOrPlugins_disableAccordionFill() {
+        XCTAssertNil(SidebarSectionPlanner.fillTarget(
+            filesVisible: true, pluginsVisible: false,
+            accordion: visibility(shown: [.git])))
+        XCTAssertNil(SidebarSectionPlanner.fillTarget(
+            filesVisible: false, pluginsVisible: true,
+            accordion: visibility(shown: [.git, .bookmarks])))
+    }
+
+    /// No visible panels → nothing to fill.
+    func test_fillTarget_emptyAccordion_isNil() {
+        XCTAssertNil(SidebarSectionPlanner.fillTarget(
+            filesVisible: false, pluginsVisible: false,
+            accordion: visibility(shown: [])))
+    }
 }

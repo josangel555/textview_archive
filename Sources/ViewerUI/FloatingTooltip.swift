@@ -258,18 +258,25 @@ struct FloatingTooltipOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             if let req = presenter.active {
-                let container = proxy.size
+                // Anchors are reported in the `.tooltipRoot` NAMED space; the
+                // overlay's local origin does NOT necessarily coincide with it
+                // (the titlebar band's `ignoresSafeArea` shifted the two apart
+                // by the titlebar height — bubbles drew ON TOP of the hovered
+                // control, hiding what the user was about to click; owner
+                // 2026-08-09). Convert through the named space explicitly so
+                // any container offset cancels out.
+                let overlayFrame = proxy.frame(in: .tooltipRoot)
                 let origin = TooltipPlacement.origin(
                     anchor: req.anchor,
                     bubbleSize: bubbleSize,
-                    container: container
+                    container: overlayFrame.size
                 )
                 TooltipBubble(info: req.info, uiScale: uiScale)
                     .background(bubbleSizeReader)
                     .opacity(bubbleSize == .zero ? 0 : 1)
                     .position(
-                        x: origin.x + bubbleSize.width / 2,
-                        y: origin.y + bubbleSize.height / 2
+                        x: origin.x - overlayFrame.minX + bubbleSize.width / 2,
+                        y: origin.y - overlayFrame.minY + bubbleSize.height / 2
                     )
                     // Re-measure when the content changes (token bumps on
                     // every distinct request).

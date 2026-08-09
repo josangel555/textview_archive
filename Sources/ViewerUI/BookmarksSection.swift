@@ -60,7 +60,7 @@ struct BookmarksSection: View {
                         }
                     }
                 }
-                .frame(height: bodyHeight)
+                .sidebarSectionBodyFrame()
             }
         }
         .sidebarSectionContainer()

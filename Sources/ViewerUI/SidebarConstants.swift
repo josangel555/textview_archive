@@ -77,6 +77,37 @@ extension View {
     }
 }
 
+// MARK: - Section body frame (fixed height vs flex-fill)
+//
+// Owner 2026-08-09 ("see what special treatment we do for filenav and
+// generalize it"): FILES fills the shoulder because it renders OUTSIDE the
+// accordion scroll with `maxHeight: .infinity` — every other panel hard-froze
+// to `\.sidebarSectionBodyHeight`. The env value `.infinity` is now the
+// "flex-fill" sentinel; sections apply their body frame through this ONE
+// modifier so fixed-vs-fill is decided in a single place. `SidebarView`
+// renders the fill-target panel outside its bounded scroll and injects
+// `.infinity` — the literal FILES treatment, generalized.
+
+struct SidebarSectionBodyFrame: ViewModifier {
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
+
+    func body(content: Content) -> some View {
+        if bodyHeight == .infinity {
+            content.frame(maxHeight: .infinity)
+        } else {
+            content.frame(height: bodyHeight)
+        }
+    }
+}
+
+extension View {
+    /// Size a section's scrollable body: the injected fixed height normally,
+    /// flex-fill when the environment carries the `.infinity` sentinel.
+    func sidebarSectionBodyFrame() -> some View {
+        modifier(SidebarSectionBodyFrame())
+    }
+}
+
 // MARK: - Section header recipe
 //
 // Every accordion-section header (FILES, BOOKMARKS, SEARCH, GIT,

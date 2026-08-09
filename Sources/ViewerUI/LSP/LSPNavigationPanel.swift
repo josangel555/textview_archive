@@ -79,7 +79,7 @@ public struct LSPNavigationPanel: View {
                             }
                         }
                     }
-                    .frame(height: bodyHeight)
+                    .sidebarSectionBodyFrame()
                 }
             }
         }

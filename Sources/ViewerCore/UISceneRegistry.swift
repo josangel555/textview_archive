@@ -198,9 +198,21 @@ public enum UISceneRegistry {
             themeID: "xcode-dark",
             summary: "Marketing: file nav on a git root + bookmarks, 3 tabs, Swift source highlighting, command palette overlay"),
         SceneSpec(
-            id: "git-fill-check",
+            id: "fill-check-git",
             fixture: .defaultDocument,
-            summary: "Sidebar-fill validation: GIT as the only left panel must fill the shoulder (owner 2026-08-09)"),
+            summary: "Sidebar-fill validation: GIT solo must fill the shoulder (owner 2026-08-09)"),
+        SceneSpec(
+            id: "fill-check-bookmarks",
+            fixture: .defaultDocument,
+            summary: "Sidebar-fill validation: BOOKMARKS solo must fill the shoulder"),
+        SceneSpec(
+            id: "fill-check-recents",
+            fixture: .defaultDocument,
+            summary: "Sidebar-fill validation: RECENTS solo must fill the shoulder"),
+        SceneSpec(
+            id: "fill-check-combo",
+            fixture: .defaultDocument,
+            summary: "Sidebar-fill validation: bookmarks+git+recents — the LAST panel fills below the fixed run"),
         SceneSpec(
             id: "mktg-git",
             fixture: .defaultDocument,

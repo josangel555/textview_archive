@@ -88,7 +88,7 @@ public struct LSPProblemsPanel: View {
                         }
                     }
                 }
-                .frame(height: bodyHeight)
+                .sidebarSectionBodyFrame()
             }
         }
         // Apply the standard section chrome (subtle bg tint + outer

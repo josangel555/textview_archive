@@ -26,7 +26,7 @@ struct GitWorktreesTab: View {
             Divider()
             content
         }
-        .frame(height: bodyHeight)
+        .sidebarSectionBodyFrame()
         .alert(item: $pendingRemove) { entry in
             removeAlert(for: entry)
         }

@@ -18,14 +18,14 @@ struct GitRemotesTab: View {
             ScrollView {
                 SidebarEmptyPlaceholder(message: "No remotes.")
             }
-            .frame(height: bodyHeight)
+            .sidebarSectionBodyFrame()
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.remoteEntries, id: \.name) { row($0) }
                 }
             }
-            .frame(height: bodyHeight)
+            .sidebarSectionBodyFrame()
         }
     }
 
