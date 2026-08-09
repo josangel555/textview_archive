@@ -13,7 +13,7 @@ struct SessionSwitchHUD: View {
     var body: some View {
         if sessions.isSwitchingSession {
             ZStack {
-                Color.black.opacity(0.15)
+                Color(nsColor: .shadowColor).opacity(0.15)
                 VStack(spacing: 10) {
                     ProgressView()
                         .controlSize(.regular)

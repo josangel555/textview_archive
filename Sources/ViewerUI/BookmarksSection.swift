@@ -270,7 +270,7 @@ private struct BookmarkRow: View {
                 Text(entry.displayName)
                     .font(.system(size: model.uiSize(12),
                                   weight: isCurrent ? .semibold : .regular))
-                    .foregroundStyle(isCurrent ? AnyShapeStyle(Color.white)
+                    .foregroundStyle(isCurrent ? AnyShapeStyle(Palette.selectedRowText)
                                                : AnyShapeStyle(.primary))
                     .lineLimit(1)
                     .truncationMode(.middle)

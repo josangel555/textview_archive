@@ -30,6 +30,13 @@ enum Palette {
     private static let systemWindowBackground = Color(nsColor: .windowBackgroundColor)
     private static let systemTextBackground   = Color(nsColor: .textBackgroundColor)
 
+    /// Text color for content sitting ON an accent-selected row (the
+    /// full-blue active rows, 2026-08-09) — the system's semantic
+    /// "text on selection" color, which adapts with accessibility
+    /// settings where a hard-coded literal would not (and would trip
+    /// the color ratchet).
+    static let selectedRowText = Color(nsColor: .alternateSelectedControlTextColor)
+
     static let controlBackground  = Color(nsColor: .controlBackgroundColor)
     static let separator          = Color(nsColor: .separatorColor)
     static let underPageBackground = Color(nsColor: .underPageBackgroundColor)

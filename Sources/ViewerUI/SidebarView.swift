@@ -1605,7 +1605,7 @@ private struct FileRowView: View, Equatable {
                         // 2026-08-09 — the active file must pop).
                         .font(.system(size: model.uiSize(12), weight: state.isCurrent ? .semibold : .regular))
                         .italic(state.isPreviewTab)
-                        .foregroundStyle(state.isCurrent ? Color.white : Color.primary)
+                        .foregroundStyle(state.isCurrent ? Palette.selectedRowText : Color.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if state.isBookmarked {

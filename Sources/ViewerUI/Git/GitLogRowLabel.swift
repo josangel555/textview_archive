@@ -53,7 +53,7 @@ struct GitLogRowLabel: View {
                     // ref chips carry the color signal.
                     Text(commit.sha)
                         .font(.system(size: uiSize(10), design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.85)
+                        .foregroundStyle(isSelected ? Palette.selectedRowText.opacity(0.85)
                                                     : GitRefChipStyle.commitID)
                     // A commit that IS the current HEAD but carries no "HEAD"
                     // decoration (detached, or the decoration was filtered)
@@ -69,18 +69,18 @@ struct GitLogRowLabel: View {
                     Spacer(minLength: 4)
                     Text(GitRelativeTime.format(unix: commit.timestamp))
                         .font(.system(size: uiSize(9)))
-                        .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.75))
+                        .foregroundStyle(isSelected ? AnyShapeStyle(Palette.selectedRowText.opacity(0.75))
                                                     : AnyShapeStyle(.tertiary))
                 }
                 Text(commit.subject)
                     .font(.system(size: uiSize(12),
                                   weight: commit.isMerge ? .regular : .medium))
-                    .foregroundStyle(isSelected ? Color.white
+                    .foregroundStyle(isSelected ? Palette.selectedRowText
                                      : (commit.isMerge ? Color.secondary : Color.primary))
                     .lineLimit(2)
                 Text(authorLine)
                     .font(.system(size: uiSize(10)))
-                    .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.75))
+                    .foregroundStyle(isSelected ? AnyShapeStyle(Palette.selectedRowText.opacity(0.75))
                                                 : AnyShapeStyle(.tertiary))
             }
             // TSK-1603: vertical padding lives on the TEXT column now — the
