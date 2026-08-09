@@ -1,20 +1,55 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — launch blog + download page + OSS-prep decisions (2026-08-08)
+# Handoff — launch site + commit-ref tool + marketing scenes (2026-08-08, "then proceed")
 
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @
-`e36db17c`. Clean tree; only the 4 protected untracked files (OwnerWishlist.md/.bak,
-Untitled.txt, archive/Untitled.txt — NEVER touch). /Applications/TextView.app = RELEASE at
-the 08-05 batch head (titlebar sessions, image-save fix, footer reorg — see below).
+`7795df3b` + **UNCOMMITTED work in flight** (see below). /Applications/TextView.app = RELEASE
+at the 08-05 batch head (titlebar sessions, image-save fix, footer reorg).
 
-**THIS SESSION (2026-08-08) shipped OUTSIDE the app repo:**
-- **Launch blog post** (Zola): `<CloudDocs>/workspaces/claude/blog/content/textview-native-macos-editor-built-by-an-agent.md`,
-  built into `<CloudDocs>/workspaces/web/josangel.com/blog/…`. Voice matches the `tasked` post.
-- **Download page**: `<CloudDocs>/workspaces/web/josangel.com/textview/index.html` (inline-SVG
-  logo, features grid, 4 real VM screenshots in `textview/shots/`, download →
-  github.com/josangel555/mvd_dist, "open source coming soon (MIT)"). Homepage now lists it.
-  Both sites are CloudDocs-synced, NON-git (Cloudflare deploy) — nothing to commit there.
-  Recipe + screenshot method in memory `blog-and-download-site`.
-- **IN the app repo (committed e36db17c):** `LICENSE` = MIT + BACKLOG § "★ OSS-PREP QUEUE".
+## ⚠ IN FLIGHT — finish this FIRST on resume ("then proceed" after the handoff)
+Uncommitted in the app repo (all host-built + host-tested green; NOT yet committed):
+- `scripts/commit-refs.sh` (NEW) — the commit-id audit/remap tool (see §Tracker/BACKLOG O-5).
+  Verify the remap path once more (map a REAL referenced sha → dummy, dry-run shows
+  WOULD-REWRITE), then commit. Owner interrupted mid-verification — the tool is complete.
+- `Sources/ViewerCore/UISceneRegistry.swift` + `Sources/ViewerUI/UISceneApplier.swift` — two
+  NEW marketing capture scenes: `mktg-docs` (welcome sample in SOURCE lens + bottom terminal
+  running `top`) and `theme-light` (light theme + aqua NSApp appearance + welcome sample).
+  Added because the owner rejected 2 shipped shots: DESIGN.md hero was BLANK, "light" shot
+  was actually dark, terminal shot was a dead prompt. `import AppKit` added to the applier.
+- `LESSONS.md`, `BACKLOG.md` — this handoff's entries.
+- ⚠ **THE VM WENT DOWN mid-capture** (ssh <vm-ip> timed out; the rsync in the capture
+  run died with code 255). The `mktg-docs` + `theme-light` PNGs were NEVER produced. The VM
+  dist WAS rebuilt at this head just before, so once the VM is back (owner boots it; if ssh
+  still fails see memory `vm-ssh-key-restore`), the retake is just:
+  `for s in mktg-docs theme-light; do MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh run $s; done`
+  → PNGs land at `/tmp/mdv-vm-ui/` on the HOST. Then: review both, place into
+  `<CloudDocs>/workspaces/web/josangel.com/textview/shots/` (terminal shot → top running;
+  4th slot → the light shot) and update `textview/index.html`'s `<figure>` captions to match.
+  (Site is non-git CloudDocs — just save.)
+- `commit-refs.sh` **remap mode is UNVERIFIED** (scan mode proven — 2,516 refs; the remap
+  dry-run smoke test was interrupted twice by the owner's pause). On resume: pick any OK ref
+  from `tmp/commit-refs-report.tsv`, map its full sha → a dummy in a temp map file, run
+  `bash scripts/commit-refs.sh remap <map>` (dry-run) and expect WOULD-REWRITE lines; debug
+  the pipeline in the `remap)` case if zero.
+- A local site test server may still be RUNNING: `python3 -m http.server 8931` (background
+  task) → http://localhost:8931/ + /textview/ + /blog/. Kill or reuse.
+
+RESUME STEPS: (1) VM back → retake the 2 scenes → place shots + captions; (2) verify remap
+dry-run; (3) everything else is already committed (see below) — the CI loop gates it.
+Owner-paused here 2026-08-08; do NOT restart change work without their go.
+
+## Already committed/shipped this session
+- **7795df3b** handoff · **e36db17c** LICENSE(MIT) + BACKLOG §OSS-PREP.
+
+**Launch content shipped OUTSIDE the app repo (CloudDocs, NON-git, Cloudflare deploy):**
+- **Blog post** (Zola): `<CloudDocs>/workspaces/claude/blog/content/textview-native-macos-editor-built-by-an-agent.md`,
+  built into `.../web/josangel.com/blog/…`. Voice matches the `tasked` post. Homepage blog
+  list + projects list both updated to include it. Rebuild: `zola --root <blog> build
+  --output-dir <web>/josangel.com/blog --force` (do this again after any post edit).
+- **Download page**: `.../web/josangel.com/textview/index.html` (inline-SVG logo, features
+  grid, screenshot gallery, download → github.com/josangel555/mvd_dist, "open source coming
+  soon (MIT)"). Recipe + screenshot facts in memory `blog-and-download-site`.
+- **A local test server may be RUNNING**: `python3 -m http.server 8931` in the site dir
+  (backgrounded task) → http://localhost:8931/ (homepage), /textview/, /blog/. Kill it when done.
 
 **OSS-PREP (owner decisions 2026-08-08 — the next real work, BACKLOG §OSS-PREP O-1..O-6):**
 MIT ✓ · publish with **FULL history (do NOT squash — owner corrected)** ⇒ history-rewrite to

@@ -175,6 +175,17 @@ public enum UISceneRegistry {
             themeID: "xcode-dark",
             summary: "Dark built-in theme selected over the default doc (TSK-641 chrome paint)"),
         SceneSpec(
+            id: "theme-light",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            themeID: "xcode-light",
+            summary: "Light theme + aqua appearance, welcome sample in Source (marketing + light chrome paint)"),
+        SceneSpec(
+            id: "mktg-docs",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            summary: "Marketing: welcome sample in Source lens + bottom terminal running top (native-drawn surfaces only — WebView lenses capture blank, TSK-1247)"),
+        SceneSpec(
             id: "lsp-rename",
             fixture: .throwawaySource(name: "rename-target.swift"),
             overlay: .lspRenamePrompt,

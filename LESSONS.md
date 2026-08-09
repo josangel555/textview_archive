@@ -4223,6 +4223,31 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   thumb: any `mdv.*` id you expect the AX tier to find needs a `.contain` somewhere between it
   and the nearest bare-id container — and the AX tier is how you PROVE it materialized.
 
+- **`git grep -E` silently ignores `\b` word boundaries on macOS (2026-08-08).** A pattern
+  like `git grep -nIoE '\b[0-9a-f]{7,40}\b'` matches NOTHING through `git grep` (it uses its
+  own regex engine), while the identical pattern via system `grep` works. Symptom: a scan of
+  tracked files returns zero hits. Fix: `git ls-files -z | xargs -0 grep -E …` — feed the
+  tracked-file LIST to real grep. (Found building `scripts/commit-refs.sh`.)
+
+- **Embedded commit-ids are everywhere — a history rewrite will strand them (2026-08-08).**
+  `scripts/commit-refs.sh scan` found **2,516 resolving commit refs** in tracked docs/comments
+  (HANDOFF/BACKLOG/LESSONS/CHANGELOG/AUTONOMOUS_PROGRESS/docs/research/**, code comments) plus
+  the agent-memory dir + the mvd_dist README. The planned FULL-history OSS export
+  (git-filter-repo, no squash) rewrites every sha → all of those go stale. `commit-refs.sh
+  remap <commit-map> --apply` (filter-repo emits the map) rewrites old→new at the same
+  abbreviation length across tracked text. The ~131 "STALE" hits the scan reports are
+  synthetic TEST fixtures (fake shas in GitLog/Blame/Review tests) + design-doc examples +
+  foreign mvd_dist shas — correctly flagged-not-touched (remap only rewrites resolving refs).
+
+- **VM marketing screenshots: native surfaces capture, WebView lenses come back BLANK
+  (2026-08-08).** `vm-uitest.sh run <scene>` → `/tmp/mdv-vm-ui/<scene>.png`. Rendered-markdown
+  / split / any WKWebView CONTENT pane captures EMPTY under the asuser-bridge (TSK-1247, NOT a
+  settle-timing issue — bumping the runner sleep does nothing). Shoot NATIVE-drawn scenes:
+  `conflict-merge` (the hero — git panel + banner + 3-pane merge), `git-panel`, `mktg-docs`
+  (welcome sample in SOURCE + terminal running `top`), `theme-light`/`theme-dark`. For a light
+  shot the VM's SYSTEM appearance is dark, so BOTH `selectedThemeID="xcode-light"` AND
+  `NSApp.appearance = NSAppearance(named: .aqua)` are needed (the `theme-light` scene does both).
+
 - **A resize handle's DragGesture must NEVER use the default `.local` space
   (2026-08-01, owner screen recording).** The handle MOVES with the view it resizes, so
   local-space translation under-reports by the applied delta each frame. The recurrence is

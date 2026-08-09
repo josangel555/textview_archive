@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ViewerCore
 
@@ -549,6 +550,40 @@ public enum UISceneApplier {
         if scene == "theme-dark" {
             model.selectedThemeID = "xcode-dark"
             return "ui-scene: applied 'theme-dark' selectedThemeID=\(model.selectedThemeID ?? "nil")"
+        }
+
+        // Marketing/light-chrome scene (owner 2026-08-08): the VM's SYSTEM
+        // appearance is dark, so a light shot needs both the light theme AND
+        // an aqua NSApp appearance. Welcome sample in SOURCE (NSTextView —
+        // native surfaces paint in captures; WebView lenses come back blank,
+        // TSK-1247).
+        if scene == "theme-light" {
+            NSApp.appearance = NSAppearance(named: .aqua)
+            model.selectedThemeID = "xcode-light"
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.openFirstRunSample(dir: tabsBaseDir)
+            model.setCurrentViewMode(.source)
+            return "ui-scene: applied 'theme-light' theme=\(model.selectedThemeID ?? "nil") mode=\(model.currentViewMode.rawValue)"
+        }
+
+        // Marketing docs+terminal scene (owner 2026-08-08): welcome sample in
+        // SOURCE + a bottom terminal RUNNING `top` — a static prompt made the
+        // shot read dead. The shell spawns on view-appearance, so the keystroke
+        // feed is delayed past the spawn; the capture lands ~3s later.
+        if scene == "mktg-docs" {
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.openFirstRunSample(dir: tabsBaseDir)
+            model.setCurrentViewMode(.source)
+            let pane = model.terminalPane
+            pane.setTabPosition(.top)
+            pane.setPaneEdge(.bottom)
+            pane.setHeight(340)
+            pane.setOpen(true)
+            while pane.tabs.count < 1 { pane.addTab() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak pane] in
+                pane?.terminal?.sendString("top -o cpu\n")
+            }
+            return "ui-scene: applied 'mktg-docs' mode=\(model.currentViewMode.rawValue) terminalOpen=\(pane.isOpen)"
         }
 
         // File-info checksum scene (TSK-748 render validation): the MetadataPanel

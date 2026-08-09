@@ -46,6 +46,14 @@ paths/names, exported into a NEW public repo (this one stays private as-is); ver
   check-no-secrets.sh + `git log -S'<cred>'` across all revs = zero hits; spot-read early
   commits for personal content. `git-filter-repo` is an external tool — needs owner
   dep-approval to install (python, single file; brew or pip).
+  - **TOOL READY: `scripts/commit-refs.sh` (built 2026-08-08).** `scan` finds every commit-id
+    embedded in tracked docs/comments (2,516 resolving refs today) + `--extra <dir>` for the
+    memory dir / mvd_dist; `remap <commit-map> [--apply]` rewrites old→new (filter-repo emits
+    the map as `old new` lines) at the SAME abbreviation length across tracked text — so the
+    ~2.5k in-file refs don't strand when history is rewritten. Run `remap` right AFTER
+    filter-repo, using its `.git/filter-repo/commit-map`. NOTE: `remap` only touches resolving
+    refs — the ~131 "STALE" scan hits (test-fixture fake shas, doc examples, foreign mvd_dist
+    shas) are deliberately left alone.
 - **O-6 — Data-safety tail (verified by subagent 2026-08-08, evidence in the report):**
   - `[PARTIAL→FIX, M]` **CM6 flush-before-read**: flush exists ONLY for in-editor ⌘S/vim-write;
     ⌘W close, ⌘Q quit, session-switch hot-exit, blur-save, and menu-Save all read a ≤200ms-stale
