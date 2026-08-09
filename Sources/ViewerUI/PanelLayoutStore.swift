@@ -45,6 +45,19 @@ public final class PanelLayoutStore: ObservableObject {
     /// this entirely; only `.right` / `.bottom` docks consume it.
     @Published public private(set) var dockSizes: PanelDockLayout
 
+    /// Selected tab of the TABBED bottom dock (owner rework 2026-08-09 —
+    /// one panel visible at a time). The stored value is the user's last
+    /// explicit choice; `BottomDockTabs.resolve` maps it onto the current
+    /// visible set (fallback to first when the choice is hidden). Same
+    /// narrow observation channel as `edges` / `overrides`.
+    @Published public private(set) var bottomSelection: SidebarPanelKind?
+
+    /// The SHARED height of the tabbed bottom dock's band (strip + body).
+    /// One height for the whole dock — panels no longer size the band
+    /// individually (the per-panel `dockSizes` bottom entries are dead
+    /// for the band; `.right` widths still ride `dockSizes`).
+    @Published public private(set) var bottomBandHeight: CGFloat
+
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -52,6 +65,14 @@ public final class PanelLayoutStore: ObservableObject {
         self.edges = PanelEdgeAssignment.load(from: defaults)
         self.overrides = PanelVisibilityOverrides.load(from: defaults)
         self.dockSizes = PanelDockLayout.load(from: defaults)
+        self.bottomSelection = defaults.string(forKey: BottomDockTabs.selectionKey)
+            .flatMap(SidebarPanelKind.init(rawValue:))
+        if defaults.object(forKey: BottomDockTabs.bandHeightKey) != nil {
+            self.bottomBandHeight = PanelDockLayout.clamp(
+                CGFloat(defaults.double(forKey: BottomDockTabs.bandHeightKey)))
+        } else {
+            self.bottomBandHeight = PanelDockLayout.defaultBottomHeight
+        }
     }
 
     // MARK: reads
@@ -181,6 +202,25 @@ public final class PanelLayoutStore: ObservableObject {
             overrides.set(k, .shown)
             overrides.save(to: defaults)
         }
+    }
+
+    /// Select a tab of the tabbed bottom dock. Persists synchronously;
+    /// equality-guarded so re-clicking the active tab doesn't republish.
+    public func selectBottomPanel(_ k: SidebarPanelKind) {
+        guard k != bottomSelection else { return }
+        bottomSelection = k
+        defaults.set(k.rawValue, forKey: BottomDockTabs.selectionKey)
+    }
+
+    /// Resize the tabbed bottom dock's shared band (gutter drag). Clamped
+    /// to the dock floor + corruption ceiling (the live window edge is the
+    /// practical bound, enforced by the container). Equality-guarded;
+    /// persists synchronously (user-paced).
+    public func setBottomBandHeight(_ h: CGFloat) {
+        let clamped = PanelDockLayout.clamp(h)
+        guard clamped != bottomBandHeight else { return }
+        bottomBandHeight = clamped
+        defaults.set(Double(clamped), forKey: BottomDockTabs.bandHeightKey)
     }
 
     /// Resize a docked tool window (UX-E / #227). Sets the panel's fixed

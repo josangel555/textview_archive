@@ -206,23 +206,22 @@ extension View {
 //
 // A "tool window" is a sidebar panel (Git, Problems, Outline, …) that the
 // user has dragged off the classic LEFT accordion onto the RIGHT or
-// BOTTOM rail. Unlike an accordion section (whose body height is one of N
-// stacked, window-clamped slices), a docked tool window is a free-standing
-// pane with a single FIXED, user-controlled size:
+// BOTTOM rail. The two docks render differently (owner rework 2026-08-09):
 //
-//   * RIGHT  → a fixed WIDTH; the pane fills the band's height, the user
-//              drags its LEADING (inner) edge. Dragging inward (left) GROWS
-//              the width — with NO maximum (brief item 2): the only bound
-//              is the live window edge, enforced by the available-width
-//              clamp, never a constant.
-//   * BOTTOM → a fixed HEIGHT; the pane fills the band's width, the user
-//              drags its TOP edge (drag up = taller), like the terminal.
+//   * RIGHT  → each panel is a free-standing `DockedToolWindow` pane with a
+//              fixed WIDTH; the user drags its LEADING (inner) edge.
+//              Dragging inward (left) GROWS the width — with NO maximum
+//              (brief item 2): the only bound is the live window edge,
+//              enforced by the available-width clamp, never a constant.
+//   * BOTTOM → the `BottomDockContainer` TAB BAND: one visible panel at a
+//              time picked by a tab strip, over ONE shared resizable band
+//              height (`PanelLayoutStore.bottomBandHeight`).
 //
-// FIXED-HEIGHT, NOT CONTENT-DRIVEN (brief item 1): the pane's size comes
-// from `panelLayout.dockSize(_:on:)` (persisted via `PanelDockLayout`),
-// NOT from the content's intrinsic size. The body is given the exact size
-// and clipped, so a panel with 2 rows and a panel with 200 rows occupy the
-// identical pane.
+// FIXED-SIZE, NOT CONTENT-DRIVEN (brief item 1): pane sizes come from the
+// store (`dockSize(_:on:)` for right widths, `bottomBandHeight` for the
+// bottom band), NOT from the content's intrinsic size. The body is given
+// the exact size and clipped, so a panel with 2 rows and a panel with 200
+// rows occupy the identical pane.
 //
 // FLICKER-FREE RESIZE (brief item 3 + LESSONS.md): the drag drives a local
 // `@State` size (`liveWidth` for a right pane; `liveBandHeight` on the
@@ -305,12 +304,24 @@ struct RightDockContainer: View {
     }
 }
 
-// MARK: - Bottom-rail dock container
+// MARK: - Bottom-rail dock container (TABBED — owner rework 2026-08-09)
 
-/// Renders the run of BOTTOM-docked tool windows that resolve visible,
-/// laid out side-by-side, each a fixed-HEIGHT pane sharing the band's
-/// height. Hosted below the content (and the terminal pane) in
-/// `ContentView`'s center column.
+/// Renders the bottom dock as a TAB BAND: one visible panel at a time,
+/// picked by a tab strip, over a SHARED resizable band height. The old
+/// side-by-side columns split the band into unusable slivers as soon as
+/// two panels were bottom-docked (owner screenshot 03:44) — tabs give
+/// every panel the full width, like every IDE bottom panel.
+///
+///   ┌────────── 12px gutter band (drag = resize, grabber pill) ─────────┐
+///   │ [◫ Git] [⚠ Problems] [🕓 Recent]              ⣿ move   ✕ hide │  ← tab strip
+///   ├────────────────────────────────────────────────────────────────────┤
+///   │                 selected panel body (full width)                   │
+///   └────────────────────────────────────────────────────────────────────┘
+///
+/// Selection + band height persist on `PanelLayoutStore`
+/// (`bottomSelection` / `bottomBandHeight`); `BottomDockTabs.resolve`
+/// maps the stored choice onto the visible set (hidden choice → first).
+/// Hosted below the content in `ContentView`'s center column.
 struct BottomDockContainer: View {
     @ObservedObject var model: DocumentModel
     @ObservedObject var sidebar: SidebarModel
@@ -324,7 +335,14 @@ struct BottomDockContainer: View {
     /// band frame tracks this @State 1:1, no measure→frame→measure loop.
     @State private var liveBandHeight: CGFloat?
     @State private var dragStartHeight: CGFloat?
+    /// Balanced-push guard for the resize cursor (the UIRESP-10 pattern —
+    /// see `ResizableSectionDivider.updateCursor`).
+    @State private var pushedResizeCursor = false
     private static let measureEpsilon: CGFloat = 0.5
+
+    /// Selected-tab tint — the file-tab-strip idiom (light accent wash +
+    /// solid accent bar), so "active tab" reads identically across strips.
+    private static let selectedTabTint = Color.accentColor.opacity(0.25)
 
     private var visiblePanels: [SidebarPanelKind] {
         DockResolution.visiblePanels(
@@ -333,74 +351,192 @@ struct BottomDockContainer: View {
         )
     }
 
+    private var stripHeight: CGFloat { model.uiSize(26) }
+
     var body: some View {
         let panels = visiblePanels
         if !panels.isEmpty {
-            // All bottom-docked panels share ONE band height (driven by the
-            // first panel's stored height). The container owns the single
-            // resize handle + the live drag, so the band tracks the cursor
-            // 1:1 even with multiple side-by-side panes. Columns split width.
-            let driver = panels[0]
-            let bandHeight = liveBandHeight ?? panelLayout.dockSize(driver, on: .bottom)
+            let selected = BottomDockTabs.resolve(
+                selection: panelLayout.bottomSelection, visible: panels)
+            let bandHeight = liveBandHeight ?? panelLayout.bottomBandHeight
             VStack(spacing: 0) {
-                bandResizeHandle(driver: driver)
-                HStack(spacing: 0) {
-                    ForEach(panels) { kind in
-                        if kind != panels.first { Divider() }
-                        DockedToolWindow(
-                            kind: kind, edge: .bottom,
-                            model: model, sidebar: sidebar,
-                            trackedRepos: trackedRepos, panelLayout: panelLayout,
-                            availableSpace: availableHeight,
-                            // The container owns the band resize, so the pane
-                            // itself draws no handle; it just fills the band.
-                            fixedBandHeight: bandHeight
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
+                resizeGutter
+                tabStrip(panels: panels, selected: selected)
+                Divider()
+                if let selected {
+                    SidebarPanelBody.make(
+                        for: selected,
+                        model: model, sidebar: sidebar,
+                        trackedRepos: trackedRepos, panelLayout: panelLayout,
+                        // Interior hint for sections that size their body as a
+                        // fixed frame; the band frame + clip below are the
+                        // hard envelope.
+                        bodyHeight: max(60, bandHeight - stripHeight)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    // FIXED-SIZE envelope: content overflow can never grow the
+                    // band or bleed past it (the "Nothing staged" bleed class).
+                    .clipped()
                 }
-                .frame(height: bandHeight)
             }
+            // Band = strip + body; the 12px gutter rides on top of it.
+            .frame(height: 12 + bandHeight)
+            .background(Palette.textBackground)
             .background(heightReader)
         }
     }
 
-    /// The single top-edge resize handle for the whole bottom band. Drag up
-    /// → taller (like the terminal). No maximum beyond the live window edge.
-    private func bandResizeHandle(driver: SidebarPanelKind) -> some View {
-        Rectangle()
-            .fill(Palette.separator)
-            .frame(height: 5)
-            .overlay(Rectangle().fill(Palette.windowBackground).frame(height: 3))
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+    // MARK: strip
+
+    private func tabStrip(panels: [SidebarPanelKind], selected: SidebarPanelKind?) -> some View {
+        HStack(spacing: 2) {
+            ForEach(panels) { kind in
+                tabChip(kind, isSelected: kind == selected)
             }
-            .gesture(
-                // .global — the handle moves with the band; local-space
-                // translation oscillates + half-tracks (see DraggableSidebar).
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = dragStartHeight ?? panelLayout.dockSize(driver, on: .bottom)
-                        if dragStartHeight == nil { dragStartHeight = start }
-                        let raw = start - value.translation.height
-                        let floored = max(raw, PanelDockLayout.minSize)
-                        // Clamp to the live window edge (leave ~160pt for the
-                        // content above) — no fixed maximum.
-                        let ceiling = availableHeight > 0
-                            ? max(PanelDockLayout.minSize, availableHeight - 160)
-                            : PanelDockLayout.maxSize
-                        liveBandHeight = min(floored, ceiling)
+            Spacer(minLength: 0)
+            if let selected {
+                redockMenu(for: selected)
+                hideButton(for: selected)
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(height: stripHeight)
+        .background(Palette.windowBackground)
+    }
+
+    private func tabChip(_ kind: SidebarPanelKind, isSelected: Bool) -> some View {
+        Button {
+            panelLayout.selectBottomPanel(kind)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: kind.systemImage)
+                    .font(.system(size: model.uiSize(10), weight: .medium))
+                Text(kind.displayName)
+                    .font(.system(size: model.uiSize(11),
+                                  weight: isSelected ? .semibold : .regular))
+            }
+            .foregroundStyle(isSelected ? Palette.labelColor : Palette.secondaryLabel)
+            .padding(.horizontal, 8)
+            .frame(maxHeight: .infinity)
+            .background(isSelected ? Self.selectedTabTint : Color.clear)
+            .overlay(alignment: .top) {
+                if isSelected {
+                    Rectangle().fill(Color.accentColor).frame(height: 2)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingCursor()   // I-07: tabs are clickable — say so
+        // The chip is a drag source like every tool-window header/icon
+        // (TSK-327): drag it onto a shoulder to redock the panel.
+        .draggable(PanelDragPayload(kind)) { PanelDragChip(kind: kind) }
+        .contextMenu { moveMenuItems(for: kind) }
+        .help(kind.displayName)
+        .accessibilityIdentifier("mdv.dock.bottom.tab.\(kind.rawValue)")
+    }
+
+    private func moveMenuItems(for kind: SidebarPanelKind) -> some View {
+        ForEach(PanelEdge.allCases, id: \.self) { dest in
+            Button {
+                panelLayout.move(kind, to: dest)
+            } label: {
+                Label("Move to \(dest.displayName)", systemImage: dest.systemImage)
+            }
+            .disabled(dest == .bottom || !PanelPlacement.isLegal(kind, to: dest))
+        }
+    }
+
+    private func redockMenu(for kind: SidebarPanelKind) -> some View {
+        Menu {
+            moveMenuItems(for: kind)
+        } label: {
+            Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                .font(.system(size: model.uiSize(10), weight: .medium))
+                .foregroundStyle(Palette.secondaryLabel)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Move this tool window to another dock")
+        .accessibilityIdentifier("mdv.dock.bottom.redock")
+    }
+
+    private func hideButton(for kind: SidebarPanelKind) -> some View {
+        Button {
+            panelLayout.setOverride(kind, .hidden)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: model.uiSize(10), weight: .medium))
+                .foregroundStyle(Palette.secondaryLabel)
+        }
+        .buttonStyle(.plain)
+        .help("Hide this tool window")
+        .accessibilityIdentifier("mdv.dock.bottom.close")
+    }
+
+    // MARK: resize
+
+    /// The visible resize gutter across the top of the band — the sidebar
+    /// divider idiom (owner 2026-08-09): the band you see IS the click
+    /// target, with a centred grabber pill. Drag up → taller. No fixed
+    /// maximum beyond the live window edge.
+    private var resizeGutter: some View {
+        ZStack {
+            Rectangle()
+                .fill(Palette.underPageBackground)
+            Capsule()
+                .fill(Color.secondary.opacity(0.45))
+                .frame(width: 26, height: 3)
+        }
+        .frame(height: 12)
+        .contentShape(Rectangle())
+        .onHover { updateCursor(hovering: $0) }
+        .onDisappear { updateCursor(hovering: false) }
+        .gesture(
+            // .global — the gutter moves with the band; local-space
+            // translation oscillates + half-tracks (see DraggableSidebar).
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged { value in
+                    let start = dragStartHeight ?? panelLayout.bottomBandHeight
+                    if dragStartHeight == nil { dragStartHeight = start }
+                    liveBandHeight = clampBand(start - value.translation.height)
+                }
+                .onEnded { _ in
+                    if let h = liveBandHeight {
+                        panelLayout.setBottomBandHeight(h)
                     }
-                    .onEnded { _ in
-                        if let h = liveBandHeight {
-                            panelLayout.setDockSize(h, for: driver, on: .bottom)
-                        }
-                        liveBandHeight = nil
-                        dragStartHeight = nil
-                    }
-            )
-            .accessibilityIdentifier("mdv.dock.bottom.resize")
+                    liveBandHeight = nil
+                    dragStartHeight = nil
+                }
+        )
+        .accessibilityIdentifier("mdv.dock.bottom.resize")
+    }
+
+    /// Floor + live-window ceiling (leave ~160pt for the content above) —
+    /// no fixed maximum. Pre-measurement falls back to the corruption
+    /// ceiling.
+    private func clampBand(_ raw: CGFloat) -> CGFloat {
+        let floored = max(raw, PanelDockLayout.minSize)
+        let ceiling = availableHeight > 0
+            ? max(PanelDockLayout.minSize, availableHeight - 160)
+            : PanelDockLayout.maxSize
+        return min(floored, ceiling)
+    }
+
+    /// Balanced push/pop of the resize cursor (UIRESP-10 — a bare
+    /// push-on-hover-in / pop-on-hover-out pair leaks a push when AppKit
+    /// re-fires `onHover(true)`).
+    private func updateCursor(hovering: Bool) {
+        if hovering {
+            if !pushedResizeCursor {
+                NSCursor.resizeUpDown.push()
+                pushedResizeCursor = true
+            }
+        } else if pushedResizeCursor {
+            NSCursor.pop()
+            pushedResizeCursor = false
+        }
     }
 
     private var heightReader: some View {
@@ -430,13 +566,8 @@ struct DockedToolWindow: View {
     @ObservedObject var panelLayout: PanelLayoutStore
     /// Live available space on the RIGHT pane's resize axis (window width)
     /// — the upper bound for a width drag, so the pane can never be dragged
-    /// off the window. For `.bottom` panes this is the window height (used
-    /// only for the interior-body sizing fallback). Zero before measurement.
+    /// off the window. Zero before measurement.
     let availableSpace: CGFloat
-    /// For a `.bottom` pane, the band height the container resolved (shared
-    /// across all side-by-side bottom panes; the container owns the single
-    /// resize handle + live drag). Ignored for `.right`.
-    var fixedBandHeight: CGFloat = PanelDockLayout.defaultBottomHeight
 
     /// Live WIDTH during a `.right` resize drag — applied as the frame so
     /// the store (and every section's @Published chain) isn't written
@@ -464,13 +595,9 @@ struct DockedToolWindow: View {
                     paneColumn
                         .frame(width: resolvedWidth)
                 }
-            case .bottom:
-                // The container owns the band height + its single resize
-                // handle; an individual bottom pane just fills the band.
-                paneColumn
-                    .frame(maxHeight: .infinity)
-            case .left:
-                // Not reachable — left panels render in the accordion.
+            case .bottom, .left:
+                // Not reachable — bottom panels render in the tabbed
+                // `BottomDockContainer`; left panels render in the accordion.
                 paneColumn
             }
         }
@@ -501,22 +628,14 @@ struct DockedToolWindow: View {
         .background(Palette.textBackground)
     }
 
-    /// Interior height available to the section body. For a `.bottom` pane
-    /// it's the band height minus the header; for `.right` it's flexible
-    /// (the column fills the band), so we pass a generous value and let the
-    /// section's own `maxHeight` fill.
+    /// Interior height hint for the section body. Right panes fill the
+    /// band's full window height; the section's ScrollView uses
+    /// maxHeight:.infinity so this injected value is only a hint for
+    /// sections that size their body as a fixed frame. A generous
+    /// (zoom-scaled) value lets them fill rather than self-limit to the
+    /// small accordion default.
     private var interiorBodyHeight: CGFloat {
-        switch edge {
-        case .bottom:
-            return max(60, fixedBandHeight - model.uiSize(Self.headerHeight))
-        case .right, .left:
-            // Right panes fill the band's full window height; the section's
-            // ScrollView uses maxHeight:.infinity so this injected value is
-            // only a hint for sections that size their body as a fixed
-            // frame. A generous (zoom-scaled) value lets them fill rather
-            // than self-limit to the small accordion default.
-            return model.uiSize(560)
-        }
+        model.uiSize(560)
     }
 
     private static let headerHeight: CGFloat = 26

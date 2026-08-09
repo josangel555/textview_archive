@@ -253,6 +253,93 @@ final class DockLayoutStoreTests: HeadlessUITestCase {
         )
     }
 
+    // MARK: - tabbed bottom dock: selection + shared band height (2026-08-09)
+
+    func test_bottomSelection_defaultsNil_andPersists() {
+        let store = makeStore()
+        XCTAssertNil(store.bottomSelection, "Fresh store has no explicit tab choice")
+        store.selectBottomPanel(.lspProblems)
+        XCTAssertEqual(store.bottomSelection, .lspProblems)
+        let reloaded = PanelLayoutStore(defaults: defaults)
+        XCTAssertEqual(reloaded.bottomSelection, .lspProblems,
+                       "Bottom tab selection must persist across a relaunch")
+    }
+
+    func test_selectBottomPanel_sameValue_isNoOpRepublish() async {
+        let store = makeStore()
+        store.selectBottomPanel(.git)
+        await Task.yield()
+        var count = 0
+        let sub = store.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        store.selectBottomPanel(.git)   // re-click the active tab
+        await Task.yield()
+        XCTAssertEqual(count, 0, "Re-selecting the active tab must be a no-op")
+    }
+
+    func test_bottomBandHeight_defaults_setClampsFloor_persists() {
+        let store = makeStore()
+        XCTAssertEqual(store.bottomBandHeight, PanelDockLayout.defaultBottomHeight)
+        store.setBottomBandHeight(10)
+        XCTAssertEqual(store.bottomBandHeight, PanelDockLayout.minSize,
+                       "Below-floor band height clamps up to the minimum")
+        store.setBottomBandHeight(500)
+        XCTAssertEqual(store.bottomBandHeight, 500)
+        let reloaded = PanelLayoutStore(defaults: defaults)
+        XCTAssertEqual(reloaded.bottomBandHeight, 500,
+                       "Band height must persist across a relaunch")
+    }
+
+    func test_setBottomBandHeight_sameValue_isNoOpRepublish() async {
+        let store = makeStore()
+        store.setBottomBandHeight(400)
+        await Task.yield()
+        var count = 0
+        let sub = store.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        store.setBottomBandHeight(400)   // identical drag frame
+        await Task.yield()
+        XCTAssertEqual(count, 0, "Re-setting the same band height must be a no-op")
+    }
+
+    /// End-to-end selection behavior the container renders: hide the
+    /// selected panel → the resolved tab falls back to the first visible;
+    /// re-show it → the stored choice self-heals.
+    func test_bottomTabResolution_hiddenSelectionFallsBack_thenSelfHeals() {
+        let store = makeStore()
+        let presence = SidebarDataPresence.evaluate(.init(hasRoot: true, hasRepo: true))
+        store.move(.git, to: .bottom)
+        store.move(.lspProblems, to: .bottom)
+        store.selectBottomPanel(.lspProblems)
+
+        var visible = DockResolution.visiblePanels(on: .bottom, panelLayout: store, presence: presence)
+        XCTAssertEqual(BottomDockTabs.resolve(selection: store.bottomSelection, visible: visible),
+                       .lspProblems)
+
+        // Hide the selected panel → the dock shows the first remaining tab.
+        store.setOverride(.lspProblems, .hidden)
+        visible = DockResolution.visiblePanels(on: .bottom, panelLayout: store, presence: presence)
+        XCTAssertEqual(BottomDockTabs.resolve(selection: store.bottomSelection, visible: visible),
+                       .git, "Hiding the selected tab must fall back, not blank the band")
+
+        // Re-show it → the stored choice self-heals.
+        store.setOverride(.lspProblems, .shown)
+        visible = DockResolution.visiblePanels(on: .bottom, panelLayout: store, presence: presence)
+        XCTAssertEqual(BottomDockTabs.resolve(selection: store.bottomSelection, visible: visible),
+                       .lspProblems)
+    }
+
+    func test_bottomDockControls_doNotRepublishDocumentModel() async {
+        let model = makeModel()
+        await Task.yield()
+        let count = await countDocumentRepublishes(of: model) {
+            model.panelLayout.selectBottomPanel(.git)
+            model.panelLayout.setBottomBandHeight(320)
+        }
+        XCTAssertEqual(count, 0,
+            "Bottom-dock tab/height controls must not republish DocumentModel")
+    }
+
     // MARK: - narrow-observation invariant (no DocumentModel republish)
 
     func test_setDockSize_doesNotRepublishDocumentModel() async {

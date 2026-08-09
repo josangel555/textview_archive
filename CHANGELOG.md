@@ -3,6 +3,12 @@
 ## 2026-08-09
 
 ### Changed
+- **Bottom tool windows are tabs now.** Two panels docked to the bottom used to render
+  side by side, splitting the band into unusable slivers; the dock now shows one panel
+  at a time behind a tab strip (icon + name, active tab tinted like the file tabs), so
+  every panel gets the full width. The whole band's height drags from a visible gutter
+  bar with a grab pill — the same handle idiom as the sidebar dividers — and the last
+  selected tab is remembered.
 - **The left tool-window column was rebuilt on one rule.** Panels used to be stacked three
   different ways (some inside a hidden scroll container, the fill panel outside it, plugin
   sections as a third case) — the source of phantom scrollbars around the upper panels,
