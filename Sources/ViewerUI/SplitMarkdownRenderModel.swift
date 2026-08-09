@@ -24,6 +24,7 @@ public final class SplitMarkdownRenderModel: ObservableObject {
 
     private var pending: Task<Void, Never>?
     private var lastRenderedText: String?
+    private var lastRenderedCSS: String?
 
     /// Files at/under this render on the short debounce; larger ones wait for
     /// a typing pause. Same 1 MiB line the find scan uses.
@@ -41,10 +42,16 @@ public final class SplitMarkdownRenderModel: ObservableObject {
     }
 
     /// Schedule a render of `text`. Coalesces: a newer call cancels the
-    /// in-flight one; identical text is a no-op (a re-body with an unchanged
-    /// buffer must not re-render).
-    public func schedule(text: String, isMermaid: Bool) {
-        guard text != lastRenderedText else { return }
+    /// in-flight one; identical (text, extraCSS) is a no-op (a re-body with an
+    /// unchanged buffer must not re-render).
+    ///
+    /// `extraCSS` is the caller's themed extra stylesheet
+    /// (`DocumentModel.themedExtraStylesheet`: mermaid shim + the selected
+    /// theme's page/token CSS). Passing it in keeps this model pure; omitting
+    /// the theme part here was the split-pane black-text-on-dark bug — the
+    /// main Rendered pane got the theme override, the split preview didn't.
+    public func schedule(text: String, isMermaid: Bool, extraCSS: String) {
+        guard text != lastRenderedText || extraCSS != lastRenderedCSS else { return }
         pending?.cancel()
         let ms = Self.debounceMilliseconds(
             byteCount: text.utf8.count, isFirstRender: html == nil)
@@ -58,13 +65,13 @@ public final class SplitMarkdownRenderModel: ObservableObject {
             // old inline-body render).
             let body = isMermaid ? "```mermaid\n\(text)\n```\n" : text
             let stylesheet = MarkdownStylesheet.cached
-            let shim = MermaidBundle.shimCSS
             let rendered = await Task.detached(priority: .userInitiated) {
                 HTMLRenderer().renderPage(
-                    body, stylesheet: stylesheet, extraStylesheet: shim)
+                    body, stylesheet: stylesheet, extraStylesheet: extraCSS)
             }.value
             guard !Task.isCancelled, let self else { return }
             self.lastRenderedText = text
+            self.lastRenderedCSS = extraCSS
             self.html = rendered
         }
     }

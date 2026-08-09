@@ -35,7 +35,7 @@ final class SplitMarkdownRenderModelTests: XCTestCase {
 
     func test_renderLands_andContainsTheDocument() async {
         let model = SplitMarkdownRenderModel()
-        model.schedule(text: "# Title\n\nhello **world**\n", isMermaid: false)
+        model.schedule(text: "# Title\n\nhello **world**\n", isMermaid: false, extraCSS: "")
         await waitUntil { model.html != nil }
         let html = model.html ?? ""
         XCTAssertTrue(html.contains("Title"), "the rendered page carries the content")
@@ -44,7 +44,7 @@ final class SplitMarkdownRenderModelTests: XCTestCase {
 
     func test_mermaidTextIsFenced() async {
         let model = SplitMarkdownRenderModel()
-        model.schedule(text: "graph TD; A-->B", isMermaid: true)
+        model.schedule(text: "graph TD; A-->B", isMermaid: true, extraCSS: "")
         await waitUntil { model.html != nil }
         XCTAssertTrue((model.html ?? "").contains("mdv-mermaid"),
                       "a .mmd file renders through the mermaid host element path")
@@ -54,10 +54,10 @@ final class SplitMarkdownRenderModelTests: XCTestCase {
     /// re-bodies for plenty of non-text reasons).
     func test_identicalTextIsANoOp() async {
         let model = SplitMarkdownRenderModel()
-        model.schedule(text: "# One", isMermaid: false)
+        model.schedule(text: "# One", isMermaid: false, extraCSS: "")
         await waitUntil { model.html != nil }
         let first = model.html
-        model.schedule(text: "# One", isMermaid: false)
+        model.schedule(text: "# One", isMermaid: false, extraCSS: "")
         // Nothing to await — the schedule must not have started a task that
         // replaces html. Give it a beat and confirm identity.
         try? await Task.sleep(for: .milliseconds(250))
@@ -67,15 +67,40 @@ final class SplitMarkdownRenderModelTests: XCTestCase {
     /// Rapid keystrokes coalesce: only the LAST text lands.
     func test_burstCoalesces_lastTextWins() async {
         let model = SplitMarkdownRenderModel()
-        model.schedule(text: "# seed", isMermaid: false)      // immediate first render
+        model.schedule(text: "# seed", isMermaid: false, extraCSS: "")  // immediate first render
         await waitUntil { model.html != nil }
         for i in 0..<10 {
-            model.schedule(text: "# draft \(i)", isMermaid: false)
+            model.schedule(text: "# draft \(i)", isMermaid: false, extraCSS: "")
         }
-        model.schedule(text: "# FINAL", isMermaid: false)
+        model.schedule(text: "# FINAL", isMermaid: false, extraCSS: "")
         await waitUntil { model.html?.contains("FINAL") == true }
         XCTAssertFalse(model.html?.contains("draft 5") == true,
                        "intermediate keystrokes must be coalesced away")
+    }
+
+    /// The split black-text-in-dark-mode bug (owner 2026-08-08): the themed
+    /// extra stylesheet (theme pageCSS/tokCSS) must land in the split page —
+    /// the split preview used to render default black prose on the themed-dark
+    /// pane background because only the mermaid shim was passed.
+    func test_themedExtraCSSLandsInThePage() async {
+        let model = SplitMarkdownRenderModel()
+        let marker = "/* mdv-split-theme-marker */ body { color: #e6e6e6; }"
+        model.schedule(text: "# Themed", isMermaid: false, extraCSS: marker)
+        await waitUntil { model.html != nil }
+        XCTAssertTrue((model.html ?? "").contains("mdv-split-theme-marker"),
+                      "the caller's themed CSS must be embedded in the split page")
+    }
+
+    /// Theme switch while the split is open: SAME text + NEW css must
+    /// re-render (the dedup key includes the stylesheet).
+    func test_cssChangeWithSameTextReRenders() async {
+        let model = SplitMarkdownRenderModel()
+        model.schedule(text: "# Same", isMermaid: false, extraCSS: "/* light */")
+        await waitUntil { model.html != nil }
+        model.schedule(text: "# Same", isMermaid: false, extraCSS: "/* dark-marker */")
+        await waitUntil { model.html?.contains("dark-marker") == true }
+        XCTAssertTrue((model.html ?? "").contains("dark-marker"),
+                      "a theme change must re-render the split preview")
     }
 
     /// The split pane must actually route through the model — an inline

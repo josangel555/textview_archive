@@ -189,7 +189,8 @@ struct SplitPaneView: View {
                     text: sourceText,
                     isMermaid: cat == .mermaid,
                     baseURL: url.deletingLastPathComponent(),
-                    zoom: zoom
+                    zoom: zoom,
+                    extraCSS: model.themedExtraStylesheet
                 )
             } else if ext == "csv" || ext == "tsv" {
                 CSVTableView(text: sourceText,
@@ -235,6 +236,10 @@ private struct SplitMarkdownPane: View {
     let isMermaid: Bool
     let baseURL: URL
     let zoom: Double
+    /// The themed extra stylesheet (`DocumentModel.themedExtraStylesheet`).
+    /// Without it the split preview rendered default (black) prose on the
+    /// themed-dark pane background — the split black-text-in-dark-mode bug.
+    let extraCSS: String
 
     @StateObject private var render = SplitMarkdownRenderModel()
 
@@ -248,7 +253,13 @@ private struct SplitMarkdownPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .onAppear { render.schedule(text: text, isMermaid: isMermaid) }
-        .onChange(of: text) { _, new in render.schedule(text: new, isMermaid: isMermaid) }
+        .onAppear { render.schedule(text: text, isMermaid: isMermaid, extraCSS: extraCSS) }
+        .onChange(of: text) { _, new in
+            render.schedule(text: new, isMermaid: isMermaid, extraCSS: extraCSS)
+        }
+        .onChange(of: extraCSS) { _, new in
+            // Theme switch while the split is open: re-render with the new CSS.
+            render.schedule(text: text, isMermaid: isMermaid, extraCSS: new)
+        }
     }
 }

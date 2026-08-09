@@ -4232,12 +4232,12 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
 - **Embedded commit-ids are everywhere — a history rewrite will strand them (2026-08-08).**
   `scripts/commit-refs.sh scan` found **2,516 resolving commit refs** in tracked docs/comments
   (HANDOFF/BACKLOG/LESSONS/CHANGELOG/AUTONOMOUS_PROGRESS/docs/research/**, code comments) plus
-  the agent-memory dir + the mvd_dist README. The planned FULL-history OSS export
+  the agent-memory dir + the textview_dist README. The planned FULL-history OSS export
   (git-filter-repo, no squash) rewrites every sha → all of those go stale. `commit-refs.sh
   remap <commit-map> --apply` (filter-repo emits the map) rewrites old→new at the same
   abbreviation length across tracked text. The ~131 "STALE" hits the scan reports are
   synthetic TEST fixtures (fake shas in GitLog/Blame/Review tests) + design-doc examples +
-  foreign mvd_dist shas — correctly flagged-not-touched (remap only rewrites resolving refs).
+  foreign textview_dist shas — correctly flagged-not-touched (remap only rewrites resolving refs).
 
 - **VM marketing screenshots: native surfaces capture, WebView lenses come back BLANK
   (2026-08-08).** `vm-uitest.sh run <scene>` → `/tmp/mdv-vm-ui/<scene>.png`. Rendered-markdown
@@ -4301,3 +4301,29 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   height·18/28, zoom-agnostic because paddings scale with height); a pinned equality test
   (`close.width == tab.width`) trips if SwiftUI ever fixes child frames so drivers can switch
   to true geometry.
+
+- **An EMPTY ViewModifier reading global theme state is invisible to SwiftUI's diff
+  (2026-08-08, the stale git-band).** `SidebarSectionContainer` had no stored properties and
+  read `Palette.sidebarPanelBackground` (→ global `ChromeTheme.current`) inside `body` — a
+  runtime theme switch republished the model and re-bodied the observing sections, but the
+  modifier VALUE was unchanged so SwiftUI skipped its body and section cards kept the LAUNCH
+  theme's background. Store the resolved dependency ON the modifier struct
+  (`SidebarSectionContainer(background:)`) so a theme change hands the diff a new value. The
+  class: any no-field wrapper whose body output depends on global state. (Masked for weeks
+  because the VM's system-dark ≈ xcode-dark chrome — it only showed when launch-theme ≠
+  scene-theme.)
+
+- **Capture scenes LEAK theme selection across VM runs (2026-08-08).** Scene applies persist
+  `selectedThemeID` into the shared VM user's UserDefaults, so the NEXT run launches with the
+  PREVIOUS run's chrome (first-paint) and a scene-time theme flip can't fully repaint (see the
+  diff-skip lesson above) → mixed light/dark captures. Pins: `MDV_FORCE_THEME_ID=<id|none>` +
+  `MDV_FORCE_APPEARANCE=light|dark` env (read at launch, before the window builds;
+  aqua-runner exports per scene). Also: `NSApp` is an IUO global that is NIL in headless test
+  hosts — `NSApp?.appearance`, never `NSApp.appearance`, in scene-applier code (the registry
+  sweep applies every scene without an NSApplication and crashed the whole gate process).
+
+- **TSK-1247 "WebView panes capture blank" is NOT universal (2026-08-08).** The aqua-runner
+  scene lane captured BOTH the CM6 editor pane and the rendered-markdown WKWebView with full
+  content (`mktg-split`, window-id screencapture, ~3s after launch). Whatever blanked the
+  earlier marketing captures is scene/timing/lane-specific — do not write off WebView
+  surfaces in capture scenes; try the shot before falling back to native-only compositions.

@@ -559,10 +559,14 @@ public enum UISceneApplier {
         // TSK-1247).
         if scene == "theme-light" {
             // NSApp is an IUO global — nil in headless test hosts (the registry
-            // sweep applies every scene without an NSApplication).
+            // sweep applies every scene without an NSApplication). The runner
+            // additionally launches with MDV_FORCE_APPEARANCE=light so every
+            // AppKit surface RESOLVES aqua from first paint — this late flip
+            // alone left pre-built chrome (git panel, terminal strip) dark.
             NSApp?.appearance = NSAppearance(named: .aqua)
             model.selectedThemeID = "xcode-light"
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)   // no dead-prompt pane in the light shot
             model.openFirstRunSample(dir: tabsBaseDir)
             model.setCurrentViewMode(.source)
             return "ui-scene: applied 'theme-light' theme=\(model.selectedThemeID ?? "nil") mode=\(model.currentViewMode.rawValue)"
@@ -586,6 +590,21 @@ public enum UISceneApplier {
                 pane?.terminal?.sendString("top -o cpu\n")
             }
             return "ui-scene: applied 'mktg-docs' mode=\(model.currentViewMode.rawValue) terminalOpen=\(pane.isOpen)"
+        }
+
+        // Marketing split scene (owner 2026-08-08): welcome sample with the
+        // SPLIT open — editor left, rendered preview right — under the dark
+        // catalog theme. Doubles as the on-screen proof of the split
+        // themed-CSS fix (the preview used to render black prose on the dark
+        // pane because the theme's pageCSS never reached the split renderer).
+        if scene == "mktg-split" {
+            model.selectedThemeID = "xcode-dark"
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.openFirstRunSample(dir: tabsBaseDir)
+            model.setCurrentViewMode(.editor)
+            model.terminalPane.setOpen(false)
+            model.toggleSplit()
+            return "ui-scene: applied 'mktg-split' mode=\(model.currentViewMode.rawValue) split=\(model.isSplitOpen)"
         }
 
         // File-info checksum scene (TSK-748 render validation): the MetadataPanel

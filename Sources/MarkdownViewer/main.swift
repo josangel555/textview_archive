@@ -132,6 +132,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // the launch sequence twice.
         if Self.launchSequenceRan { return }
         Self.launchSequenceRan = true
+        // Capture-lane hook (MDV_FORCE_APPEARANCE=light|dark): pin the app
+        // appearance BEFORE any window builds. A scene-time NSApp.appearance
+        // flip leaves already-built AppKit surfaces (git panel, terminal
+        // chrome) painted in the old appearance — the mixed light/dark
+        // theme-light capture. Env-gated → zero production impact.
+        if let forced = ProcessInfo.processInfo.environment["MDV_FORCE_APPEARANCE"],
+           forced == "light" || forced == "dark" {
+            NSApp.appearance = NSAppearance(
+                named: forced == "light" ? .aqua : .darkAqua)
+        }
         // TSK-1129 (owner-resolved: prompt-first-then-block): the one-time
         // confirm for untrusted workspace-local LSP server binaries — the
         // RCE-on-browse guard. Without this handler the guard FAILS CLOSED

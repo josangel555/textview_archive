@@ -28,8 +28,20 @@ public final class ThemeStore: @unchecked Sendable {
     }
 
     /// The persisted selection id (nil = follow system appearance).
+    ///
+    /// Capture-lane override (MDV_FORCE_THEME_ID): scene runs share one VM
+    /// user, so the LAST run's persisted selection leaks into the next
+    /// launch's chrome first-paint (the mixed light/dark capture class,
+    /// 2026-08-08). An id pins the launch selection; "none" pins
+    /// system-following. Absent/empty env → the persisted value.
     public var selectedID: String? {
-        get { defaults.string(forKey: Self.selectionKey) }
+        get {
+            if let forced = ProcessInfo.processInfo.environment["MDV_FORCE_THEME_ID"],
+               !forced.isEmpty {
+                return forced == "none" ? nil : forced
+            }
+            return defaults.string(forKey: Self.selectionKey)
+        }
         set {
             if let newValue {
                 defaults.set(newValue, forKey: Self.selectionKey)

@@ -48,11 +48,11 @@ paths/names, exported into a NEW public repo (this one stays private as-is); ver
   dep-approval to install (python, single file; brew or pip).
   - **TOOL READY: `scripts/commit-refs.sh` (built 2026-08-08).** `scan` finds every commit-id
     embedded in tracked docs/comments (2,516 resolving refs today) + `--extra <dir>` for the
-    memory dir / mvd_dist; `remap <commit-map> [--apply]` rewrites old→new (filter-repo emits
+    memory dir / textview_dist; `remap <commit-map> [--apply]` rewrites old→new (filter-repo emits
     the map as `old new` lines) at the SAME abbreviation length across tracked text — so the
     ~2.5k in-file refs don't strand when history is rewritten. Run `remap` right AFTER
     filter-repo, using its `.git/filter-repo/commit-map`. NOTE: `remap` only touches resolving
-    refs — the ~131 "STALE" scan hits (test-fixture fake shas, doc examples, foreign mvd_dist
+    refs — the ~131 "STALE" scan hits (test-fixture fake shas, doc examples, foreign textview_dist
     shas) are deliberately left alone.
 - **O-6 — Data-safety tail (verified by subagent 2026-08-08, evidence in the report):**
   - `[PARTIAL→FIX, M]` **CM6 flush-before-read**: flush exists ONLY for in-editor ⌘S/vim-write;
@@ -107,6 +107,17 @@ I-## → TSK-### when the tasked board reconnects.
   under VM HID. Instrument in a DIAG session (is the List/scroll under the strip eating the
   down? does a visible-fill strip engage?). PARTIAL tracking (the oscillator signature)
   still fails RED, so the tooth has interim value.
+
+- **Stale-chrome-on-theme-switch CLASS AUDIT (S, 2026-08-08):** the git-band bug's mechanism
+  — a no-stored-field wrapper (ViewModifier/ButtonStyle/shape style) reading
+  `Palette`/`ChromeTheme` inside `body` is invisible to SwiftUI's diff, so a runtime theme
+  switch never re-runs it (LESSONS 2026-08-08; fixed for `SidebarSectionContainer` by storing
+  the swatch). Sweep the other global-read wrappers (`grep -rn "Palette\." Sources/ViewerUI
+  --include='*.swift'` inside modifier/style body implementations) and hoist each read into a
+  stored property. Candidates to eyeball first: hover/row button styles, strip backgrounds,
+  any `.background(Palette.…)` inside reusable ViewModifiers. Validate with a
+  theme-dark→theme-light double-apply capture (the scene pair now pins launch theme, so a
+  RUNTIME-switch scene would be the tooth).
 
 **P1 — user-facing queue (one leads each round; big swings welcome):**
 - **I-05 — Git-status file-open experience** (the flagship): ~~(a) status-file clicks open
@@ -281,7 +292,7 @@ State: main @ f711c2b8 (17 commits landed 07-31..08-01: owner-queue drain + rele
 AX tier + 5 paired rounds). The struck-through items in this section are the audit trail; the
 LIVE open set is: VM tail triage (TSK-1247 = the big one; EBADF stragglers; gitPanelScene
 quirk), Local History smarter retention (re-diff on eviction first), merge-sheet interactive
-flows (AX-unblocked now), owner-side: ~~mvd_dist refresh~~ (SHIPPED 2026-08-05 @ 495d2f0e) + tasked-board
+flows (AX-unblocked now), owner-side: ~~textview_dist refresh~~ (SHIPPED 2026-08-05 @ 495d2f0e) + tasked-board
 reconciliation on reconnect + math-typography eyeball. Exec size sits at 68 of 70 MB — the
 TSK-1214/1098 reclaim is nearly due.
 

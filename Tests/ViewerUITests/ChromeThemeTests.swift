@@ -58,6 +58,35 @@ final class ChromeThemeTests: HeadlessUITestCase {
         XCTAssertNotEqual(Palette.windowBackground, themed.windowBackground)
     }
 
+    /// The stale-git-band bug (2026-08-08): an EMPTY modifier struct reading
+    /// `Palette` (→ global ChromeTheme) inside `body` is invisible to
+    /// SwiftUI's diff, so a runtime theme switch never re-ran it and section
+    /// cards kept the launch theme's background. The swatch must be a STORED
+    /// property resolved at the call site.
+    @MainActor
+    func test_sidebarSectionContainer_carriesTheThemedSwatchAsAStoredValue() {
+        let themed = ChromeColors(from: definition(sidebar: "#112233", bar: "#445566"))
+        ChromeTheme.current = themed
+        XCTAssertEqual(SidebarSectionContainer(background: Palette.sidebarPanelBackground).background,
+                       themed.sidebarPanelBackground)
+        ChromeTheme.current = nil
+        XCTAssertNotEqual(SidebarSectionContainer(background: Palette.sidebarPanelBackground).background,
+                          themed.sidebarPanelBackground,
+                          "the stored swatch must track the live theme at construction")
+        // Structural guard: the modifier keeps NO body-time Palette read —
+        // the stored property is the ONLY color source (a revert to the
+        // empty-struct shape re-introduces the diff-skip).
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let src = try? String(
+            contentsOf: root.appendingPathComponent("Sources/ViewerUI/SidebarConstants.swift"),
+            encoding: .utf8)
+        XCTAssertEqual(src?.components(separatedBy: "Palette.sidebarPanelBackground")
+            .count, 3,
+            "exactly one comment mention + one call-site read; none inside the modifier body")
+    }
+
     func test_model_selectionDrivesChromeTheme_bothDirections() {
         let model = DocumentModel()
         model.selectedThemeID = "xcode-dark"

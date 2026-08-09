@@ -79,6 +79,19 @@ esac
 # pool state (the model treats an empty value as "no override").
 LSP_FAKE="$(tr -d '[:space:]' < "$JOB_DIR/lsp-fake" 2>/dev/null || true)"
 
+# Pin appearance + theme BEFORE the window builds. A scene-time flip leaves
+# pre-built AppKit chrome (git panel band) painted in the LAUNCH theme — and
+# the launch theme is whatever the PREVIOUS scene run persisted into this VM
+# user's defaults (the mixed light/dark capture class, 2026-08-08).
+# "none" pins system-following (ignores the persisted leak).
+FORCE_APPEARANCE=""
+FORCE_THEME=""
+case "$scene" in
+  theme-light) FORCE_APPEARANCE="light"; FORCE_THEME="xcode-light" ;;
+  mktg-split)  FORCE_THEME="xcode-dark" ;;
+  mktg-docs)   FORCE_THEME="none" ;;
+esac
+
 if [ -n "$MON_ROOT" ]; then
   MDV_TEST_INSTANCE=1 MDV_MONITOR_ROOT="$MON_ROOT" \
     "$APP" --claude-monitor >"$JOB_DIR/$scene.applog" 2>&1 &
@@ -87,6 +100,7 @@ else
   # (test-only geometry diagnostic — TSK-1576 footer-capture root-cause aid).
   MDV_TEST_INSTANCE=1 MDV_SKIP_WORKSPACE_RESTORE=1 MDV_UI_SCENE="$scene" \
     MDV_LSP_STATUS_FAKE="$LSP_FAKE" MDV_WINDOW_DIAG=1 \
+    MDV_FORCE_APPEARANCE="$FORCE_APPEARANCE" MDV_FORCE_THEME_ID="$FORCE_THEME" \
     "$APP" "$FILE" >"$JOB_DIR/$scene.applog" 2>&1 &
 fi
 PID=$!

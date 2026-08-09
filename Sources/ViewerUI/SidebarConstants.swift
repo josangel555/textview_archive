@@ -46,13 +46,21 @@ public extension EnvironmentValues {
 // in the section's body) — no per-section bg/padding boilerplate.
 
 struct SidebarSectionContainer: ViewModifier {
+    /// The swatch is a STORED property, resolved at the call site — an
+    /// empty modifier struct reading `Palette` (→ global `ChromeTheme`)
+    /// inside `body` is invisible to SwiftUI's diff, so a runtime theme
+    /// switch left section cards painted in the launch theme (the stale
+    /// git-band bug, 2026-08-08). Stored here, the section's re-body on
+    /// the theme republish hands the modifier a new value and it repaints.
+    let background: Color
+
     func body(content: Content) -> some View {
         content
             // Single sidebar-panel background swatch. See
             // `Palette.sidebarPanelBackground` for the dark/light
             // values. Centralising the token here means a future
             // theme tweak is one edit, not N section files.
-            .background(Palette.sidebarPanelBackground)
+            .background(background)
             // Outer breathing room between adjacent sections. The
             // `ResizableSectionDivider` lives in this gap.
             .padding(.vertical, 2)
@@ -63,8 +71,9 @@ extension View {
     /// Apply the standard sidebar-section chrome: subtle background
     /// tint + outer vertical padding so sections read as cards and the
     /// resize handle between them has visible breathing room.
+    @MainActor
     func sidebarSectionContainer() -> some View {
-        modifier(SidebarSectionContainer())
+        modifier(SidebarSectionContainer(background: Palette.sidebarPanelBackground))
     }
 }
 

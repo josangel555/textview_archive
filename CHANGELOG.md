@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-08-08
+
+### Fixed
+- **Split view's markdown preview is readable in dark themes now.** With a dark theme
+  selected, the split preview rendered default black prose on the dark pane (the selected
+  theme's page/token CSS never reached the split renderer — only the full Rendered view got
+  it). The themed stylesheet now rides into the split render, and switching themes while a
+  split is open re-renders it live.
+- **Switching themes repaints the sidebar section cards.** The Git/Bookmarks/Search/Outline
+  card backgrounds kept the theme you LAUNCHED with after a theme switch (a SwiftUI
+  diff-skip on the shared card modifier); they follow the live theme now.
+
+### System work
+- Capture lane: `mktg-split` scene (split showcase), launch-time appearance/theme pins
+  (`MDV_FORCE_APPEARANCE` / `MDV_FORCE_THEME_ID`) killing the cross-run theme leak in VM
+  captures; `theme-light` scene hardened (no dead terminal). Gate fix-forward: `NSApp`
+  optional-chained in the scene applier (nil in headless hosts crashed the sweep).
+- Launch site: gallery refreshed from the new captures (terminal running `top`, split
+  showcase, true light shot); download page logo swapped to the real app icon; all
+  distribution links renamed `mvd_dist` → `textview_dist` (owner's repo rename), local dist
+  clone + docs + memory updated.
+
 ## 2026-08-05
 
 ### Fixed
@@ -202,7 +224,7 @@
   an AX-located frame driving a SwiftUI action end-to-end. Five measured rounds settled the
   mechanism (AXPress accepted-but-not-dispatched; postToPid not hit-tested; global HID-tap
   works) — recorded in LESSONS; `AXClickExecutor` is the acting substrate.
-- **Release build shipped to the `mvd_dist` repo** (`TextView-2026-07-31.zip` + sha256): full
+- **Release build shipped to the `textview_dist` repo** (`TextView-2026-07-31.zip` + sha256): full
   pipeline — host headless gate, rust-core gate, targeted VM webview/pixel lanes, packaging
   self-check, bundle-size gate — with the exec cap bumped 65→70 MB (owner-approved; growth
   attributed to pulldown-latex tables + 5 weeks of features, lazy grammar dylibs verified
@@ -1018,7 +1040,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **The app now launches on other Macs** — a copy of the app sent to another Mac used to crash instantly on launch; it was secretly loading its editor/highlighting resources from the folder it was *built* in, which doesn't exist anywhere else. The app is now fully self-contained and runs anywhere (Apple Silicon, macOS 15+; clear the download quarantine or right-click → Open the first time, since it isn't notarized yet).
 
 ### System work
-- **Build/packaging (TSK-1257)** — root-caused the clean-machine launch crash to the SwiftPM `Bundle.module` accessor resolving resource bundles from a hardcoded dev `.build` path. Added a `Bundle.resolveResourceBundle` resolver (prefers the app's own `Contents/Resources`); stamped a real `Info.plist` into each shipped resource bundle; new host-safe `--verify-resources` packaging self-check wired into `build-app.sh` (post-sign) + `verify-app.sh` (fails the build if any resource resolves from `.build`); `verify-app.sh` strict-codesign now runs on a de-xattr'd copy to dodge the iCloud `FinderInfo` false-failure. Fixed build vended to the private `mvd_dist` repo.
+- **Build/packaging (TSK-1257)** — root-caused the clean-machine launch crash to the SwiftPM `Bundle.module` accessor resolving resource bundles from a hardcoded dev `.build` path. Added a `Bundle.resolveResourceBundle` resolver (prefers the app's own `Contents/Resources`); stamped a real `Info.plist` into each shipped resource bundle; new host-safe `--verify-resources` packaging self-check wired into `build-app.sh` (post-sign) + `verify-app.sh` (fails the build if any resource resolves from `.build`); `verify-app.sh` strict-codesign now runs on a de-xattr'd copy to dodge the iCloud `FinderInfo` false-failure. Fixed build vended to the private `textview_dist` repo.
 - **Test-infra (TSK-1258)** — restored the headless gate to green: the `ScriptVerbCatalog` drift test now recognizes `ScriptRunner.swift` as the second dispatch surface (the runner-only `wait-editor-line`/`wait-rendered-scroll` verbs were false-flagging since the TSK-1047 scroll work).
 - **Test-infra (TSK-1174)** — extracted `GitTestRepo` into a shared `TestSupport` library target (test-only, never shipped) so both ViewerCoreTests and ViewerUITests can share one git-repo fixture builder; re-pointed the 6 existing ViewerCoreTests users (the 13 ViewerUITests git classes' migration off their duplicated setup follows).
 - **Agent-automation tooling (TSK-1254/1193/1154/1052)** — out-of-process AX driver host foundation + the curated agent-drivable AX-id catalog expanded to 33 surfaces (drift-guarded — added the rendered-Markdown/HTML view, the diff content surface, the LSP outline, and the code-review composer); two new agent-callable MCP tools — `list_runnable_tasks` (discover npm/Cargo/Make/test tasks) and `process_memory` (reports phys_footprint incl. compressed, not VSZ/RSS); image-editor dirty-rect paint-compositing model; 11 menu-only edit transforms made palette- + script-verb-invokable (TSK-1186 — heading promote/demote, line sort/reverse/dedup, line-ending LF/CRLF/CR + indentation tabs/spaces converters), growing the agent-drivable action surface.

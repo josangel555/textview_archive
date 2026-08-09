@@ -186,6 +186,12 @@ public enum UISceneRegistry {
             closesExistingTabs: true,
             summary: "Marketing: welcome sample in Source lens + bottom terminal running top (native-drawn surfaces only — WebView lenses capture blank, TSK-1247)"),
         SceneSpec(
+            id: "mktg-split",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            themeID: "xcode-dark",
+            summary: "Marketing: welcome sample split — editor + rendered preview, dark theme (also the on-screen proof for the split themed-CSS fix)"),
+        SceneSpec(
             id: "lsp-rename",
             fixture: .throwawaySource(name: "rename-target.swift"),
             overlay: .lspRenamePrompt,
