@@ -1385,10 +1385,11 @@ final class DocumentModelTests: XCTestCase {
                      "non-editor modes should not poke the CM6 channel")
     }
 
-    /// Markdown defaults to `.rendered`. Jumping to a line should
-    /// coerce the mode to `.source` (rendered HTML has no line N) and
-    /// fire the scroll request.
-    func test_openPathAtLine_markdown_coercesRenderedToSource() throws {
+    /// Markdown defaults to `.rendered`. Jumping to a line coerces the
+    /// mode to `.editor` (2026-08-09, was `.source`: rendered HTML has no
+    /// line N, and the CM6 editor can additionally SELECT the matched
+    /// span of a search-result jump) and fires both channels.
+    func test_openPathAtLine_markdown_coercesRenderedToEditor() throws {
         let model = makeModel()
         let url = try writeFile("readme.md", "# h1\n\npara\n\n## h2\n")
         model.open(url: url)
@@ -1396,10 +1397,27 @@ final class DocumentModelTests: XCTestCase {
                        "markdown default is .rendered")
         let baselineNonce = model.sourceScrollLineNonce
         model.openPath(url, atLine: 5)
-        XCTAssertEqual(model.currentViewMode, .source,
-                       "rendered must be coerced to .source for line jump")
+        XCTAssertEqual(model.currentViewMode, .editor,
+                       "rendered must be coerced to .editor for line jump")
+        XCTAssertEqual(model.editorGotoLine?.line, 5,
+                       "the CM6 goto channel carries the jump")
         XCTAssertEqual(model.sourceScrollLineTarget, 5)
         XCTAssertGreaterThan(model.sourceScrollLineNonce, baselineNonce)
+    }
+
+    /// A search-result jump carries the matched span: the goto request
+    /// selects exactly [column, column+length) instead of the whole line.
+    func test_openPathAtLine_matchSpan_ridesTheGotoRequest() throws {
+        let model = makeModel()
+        let url = try writeFile("code2.swift", "let alpha = 1\nlet beta = 2\n")
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        model.openPath(url, atLine: 2, matchColumn: 4, matchLength: 4)
+        XCTAssertEqual(model.editorGotoLine?.line, 2)
+        XCTAssertEqual(model.editorGotoLine?.column, 4)
+        XCTAssertEqual(model.editorGotoLine?.selectLength, 4)
+        XCTAssertEqual(model.editorGotoLine?.select, false,
+                       "a span selection replaces the whole-line select")
     }
 
     /// When the active tab is already in `.editor` mode, the jump

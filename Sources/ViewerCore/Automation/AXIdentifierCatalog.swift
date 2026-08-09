@@ -60,7 +60,8 @@ public enum AXIdentifierCatalog {
         Entry("mdv.statusBar", .chrome, "The bottom status bar (app state surface)."),
         Entry("mdv.statusBar.git", .chrome, "Status bar: git repo/branch chip."),
         Entry("mdv.statusBar.vimMode", .chrome, "Status bar: vim mode indicator (NORMAL/INSERT/VISUAL…)."),
-        Entry("mdv.statusBar.modified", .chrome, "Status bar: unsaved-changes indicator."),
+        Entry("mdv.statusBar.dates", .chrome,
+              "Status bar: Created/Modified dates — click toggles absolute ↔ relative."),
         Entry("mdv.statusBar.macroRecording", .chrome, "Status bar: macro recording indicator (TSK-1162)."),
         Entry("mdv.statusBar.memory", .chrome, "Status bar: process memory-usage readout."),
         // content
