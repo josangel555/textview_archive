@@ -558,7 +558,9 @@ public enum UISceneApplier {
         // native surfaces paint in captures; WebView lenses come back blank,
         // TSK-1247).
         if scene == "theme-light" {
-            NSApp.appearance = NSAppearance(named: .aqua)
+            // NSApp is an IUO global — nil in headless test hosts (the registry
+            // sweep applies every scene without an NSApplication).
+            NSApp?.appearance = NSAppearance(named: .aqua)
             model.selectedThemeID = "xcode-light"
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.openFirstRunSample(dir: tabsBaseDir)
