@@ -4386,3 +4386,22 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   (2026-08-09).** The hex editor's caret was tracked and synced to a zero-length selection —
   invisible by construction. A caret in a read-mostly text surface must be PAINTED (cell
   background) rather than delegated to the system insertion point.
+
+- **The left shoulder stacked panels THREE different ways — that was the bug class
+  (2026-08-09 structural rework).** Fixed panels lived inside a bounded ScrollView, the
+  flex panel outside it, plugin sections as a third special case: hence phantom outer
+  scrollbars "around the first two panels", a missing divider + dead gap before plugins,
+  resizes that pushed instead of took, and a blanket 50%-of-band drag ceiling. The rework:
+  ONE ordered stack (plugins included), every panel `[compressedMin … stored]` flexible by
+  LAYOUT with the flex panel absorbing the remainder, dividers sum-preserving between
+  pairs (floors only) and floor-bounded at the flex boundary
+  (`SidebarStackLayout.boundaryMax`); the outer scroll engages ONLY when every panel is at
+  its compressed constant minimum (`stackTargetHeight = max(band, constants)`), so it can
+  never phantom-engage from stored-height drift. `ToolPanelBoundingTests` remains the
+  chrome-push teeth; `SidebarStackLayoutTests` pins the resolution.
+
+- **A full parallel `swift test` sweep on a LOADED host throws "Bad file descriptor"
+  floods (2026-08-09).** 7 sweep failures (SQLite fixtures, tmux, view-mode smoke) +
+  3 git-fixture scene failures all passed serially and in the CI worktree — fd/spawn
+  pressure, the EMFILE cousin. Before triaging a sweep list, re-run the failures
+  TARGETED; only what still fails is real.

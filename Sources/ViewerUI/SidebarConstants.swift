@@ -92,11 +92,24 @@ extension View {
 struct SidebarSectionBodyFrame: ViewModifier {
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
+    /// Floor a COMPRESSED panel can shrink to under band pressure (a
+    /// couple of rows — the panel's own ScrollView takes over below its
+    /// content height). Small enough that even every-panel-shown fits a
+    /// ~280pt band without any frame overflowing into the chrome
+    /// (`ToolPanelBoundingTests` is the teeth).
+    static let compressedMinHeight: CGFloat = 26
+
     func body(content: Content) -> some View {
         if bodyHeight == .infinity {
-            content.frame(maxHeight: .infinity)
+            content.frame(minHeight: Self.compressedMinHeight, maxHeight: .infinity)
         } else {
-            content.frame(height: bodyHeight)
+            // Flexible [min … stored]: the stored height is the IDEAL, but
+            // a shallow band compresses panels by LAYOUT instead of letting
+            // a rigid frame run past the shoulder (the chrome-push class).
+            content.frame(
+                minHeight: min(bodyHeight, Self.compressedMinHeight),
+                idealHeight: bodyHeight,
+                maxHeight: bodyHeight)
         }
     }
 }
@@ -133,6 +146,14 @@ public enum SidebarSectionHeaderMetrics {
     public static let horizontalPadding: CGFloat = 10
     /// Vertical inset for the header row content.
     public static let verticalPadding: CGFloat = 4
+
+    /// Approximate rendered height of one section header row at the given
+    /// UI scale — label line-height + the vertical padding envelope. Used
+    /// by the stack resolver; a few points of error land in the FLEX
+    /// panel's height (absorbed), never as a scrollbar.
+    public static func headerRowHeight(uiSize: (CGFloat) -> CGFloat) -> CGFloat {
+        uiSize(labelFontSize) * 1.5 + uiSize(verticalPadding) * 2 + 4
+    }
 }
 
 /// Standard chevron + uppercase label sub-unit for a sidebar section

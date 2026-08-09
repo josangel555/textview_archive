@@ -164,101 +164,74 @@ struct SidebarView: View {
             // FILES sits at the top now and keeps its flex-fill
             // (`maxHeight: .infinity`) behaviour, so it absorbs
             // any leftover vertical space.
-            if filesPanelVisible { filesPanel }
-            // TSK-440 bug (B): the FILES↔accordion boundary gets a
-            // resizable divider whenever FILES is expanded and at least
-            // one tool window is visible below it — previously FILES +
-            // one tool produced ZERO draggable boundaries. FILES owns no
-            // height key (it's the flex-fill), so the divider drives the
-            // FIRST tool window inversely: drag down grows FILES by
-            // shrinking the tool below.
-            if filesPanelVisible, let fullPlan = filesBoundaryPlan, fullPlan.drawFilesDivider,
-               let first = fullPlan.entries.first {
-                ResizableSectionDivider(
-                    heightAbove: nil,
-                    heightBelow: heightBinding(for: first.panel),
-                    maxHeight: accordionCeiling
-                )
-            }
-            // P1 — TOOL-WINDOW BOUNDING. The accordion run + plugin
-            // sections live inside a BOUNDED, scrollable region so their
-            // summed height can NEVER exceed the sidebar band and push the
-            // window chrome (TabBar/ModeBar/StatusBar) out. FILES stays
-            // OUTSIDE as the flex-fill (it shrinks first); the accordion
-            // region is what was overflowing.
-            //
-            // Two layers of containment, both belt-and-suspenders:
-            //   1. Each panel's body is clamped to a fraction of the
-            //      measured `sidebarContentHeight` (see `panelView`), so
-            //      panels shrink toward the floor as the window shrinks.
-            //   2. `BoundedAccordionScroll` hugs its content up to a
-            //      window-derived ceiling and SCROLLS past it — the hard
-            //      guarantee that N panels at their floor can't overflow.
-            BoundedAccordionScroll(
-                availableHeight: sidebarContentHeight,
-                panelCount: accordionPanelCount
-            ) {
-                // Divider placement is now driven by `SidebarSectionPlanner`
-                // (ViewerCore) — a hidden panel (no git repo, no Claude
-                // transcripts, non-LSP file) drops both itself AND the
-                // divider that would have sat below it. Previously the
-                // dividers were rendered unconditionally and stacked up
-                // (the "3-4 lines bunched below GIT" bug).
-                accordionStack
-                // Plugin-contributed sidebar sections. Self-managing
-                // collapse state; appears above FILES regardless of
-                // whether a folder is open (a plugin may not need one).
-                //
-                // bug5: gate on the resolved visibility so the rail's
-                // `.pluginSections` toggle actually works. This panel was
-                // mounted unconditionally, bypassing `panelLayout.isVisible`
-                // entirely — so its rail button's `.hidden` override was
-                // computed but never read, leaving the "ROW COUNTS" window
-                // permanently visible with a dead toggle. `dataPresent` is
-                // always `true` for `.pluginSections` (a plugin section shows
-                // regardless of folder), so only an explicit `.hidden` override
-                // hides it — which is exactly the path the rail button drives.
-                if pluginSectionsVisibleOnLeft {
-                    PluginSidebarSections(model: model)
-                        .environment(\.sidebarSectionBodyHeight,
-                                     SidebarPanelHeights.clamp(CGFloat(pluginHeight),
-                                                               availableHeight: sidebarContentHeight))
+            // === ONE-RULE PANEL STACK (owner 2026-08-09 structural rework) ===
+            // The old accordion stacked panels THREE different ways (fixed
+            // panels inside a bounded scroll, the flex panel outside it,
+            // plugin sections as a third case) — the source of the phantom
+            // outer scrollbar around "the first two tool windows", the dead
+            // gap and missing divider before plugins, pushes, and the 50%
+            // dual-split wall. Now: ONE ordered stack, every panel identical
+            // (plugins included). Fixed panels render at heights resolved by
+            // `SidebarStackLayout` (pure, host-tested; overflow shrinks fixed
+            // panels toward their floors — nothing scrolls, nothing pushes);
+            // the flex panel (FILES when visible, else the LAST panel)
+            // absorbs the remainder including any estimate slack. Dividers:
+            // sum-preserving between fixed pairs (floors only — growing one
+            // takes from its NEIGHBOR, never pushes the rest), floor-bounded
+            // at the flex boundary.
+            let stack = resolvedStack
+            // The stack lives in a ScrollView that engages ONLY when every
+            // panel is at its compressed MINIMUM (constants — header + min
+            // body + gutter per panel — so unlike the old bounded accordion
+            // it can never phantom-engage in a roomy layout). Normally the
+            // VStack is pinned to exactly the measured band: fixed panels
+            // compress [min…stored] by layout and the flex panel absorbs
+            // the remainder — no scrollbar, no push, no dead space.
+            ScrollView(.vertical) {
+                VStack(spacing: 0) {
+                    if filesPanelVisible {
+                        filesPanel
+                        if let first = stack.fixed.first {
+                            ResizableSectionDivider(
+                                heightAbove: nil,
+                                heightBelow: heightBinding(for: first.kind))
+                        }
+                    }
+                    ForEach(Array(stack.fixed.enumerated()), id: \.element.kind) { idx, entry in
+                        stackedPanel(entry.kind, bodyHeight: entry.height)
+                        if idx + 1 < stack.fixed.count {
+                            ResizableSectionDivider(
+                                heightAbove: heightBinding(for: entry.kind),
+                                heightBelow: heightBinding(for: stack.fixed[idx + 1].kind))
+                        }
+                    }
+                    if let flex = stack.flex {
+                        if let lastFixed = stack.fixed.last {
+                            ResizableSectionDivider(
+                                heightAbove: heightBinding(for: lastFixed.kind),
+                                maxHeight: SidebarStackLayout.boundaryMax(
+                                    aboveRendered: lastFixed.height,
+                                    flexRendered: stack.flexRendered,
+                                    flexFloor: SidebarPanelHeights.minExpandedHeight))
+                        }
+                        stackedPanel(flex, bodyHeight: .infinity)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                    }
                 }
+                .frame(height: stackTargetHeight, alignment: .top)
             }
-            // The flex-fill panel (owner 2026-08-09): when FILES is hidden the
-            // LAST visible accordion panel takes its place — rendered OUTSIDE
-            // the bounded scroll, `.infinity` = the flex sentinel, so it
-            // absorbs the leftover band by LAYOUT (no computed heights, no
-            // double scrollbars, no dead space).
-            if let fill = accordionFillTarget {
-                // Resizable boundary between the fixed run and the flex panel
-                // — FILES-boundary parity: the drag drives the fixed panel
-                // ABOVE; the flex panel absorbs the slack by layout. (In the
-                // arithmetic-fill cut this divider wrote a stored height the
-                // fill IGNORED — the drag visibly did nothing.)
-                if let lastFixed = SidebarSectionPlanner.plan(panelVisibility)
-                    .map(\.panel).filter({ $0 != fill }).last {
-                    ResizableSectionDivider(
-                        heightAbove: heightBinding(for: lastFixed),
-                        maxHeight: accordionCeiling)
-                }
-                SidebarPanelBody.make(
-                    for: fill,
-                    model: model,
-                    sidebar: sidebar,
-                    trackedRepos: trackedRepos,
-                    panelLayout: panelLayout,
-                    bodyHeight: .infinity
-                )
-                .frame(maxHeight: .infinity, alignment: .top)
-            }
+            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(minWidth: 180, idealWidth: 240)
         // Top-align: without this, a short content stack centers
         // vertically in the available window height, leaving sections
         // floating in the middle. maxHeight:.infinity claims all the
-        // height; alignment:.top pins content to the top.
-        .frame(maxHeight: .infinity, alignment: .top)
+        // height; alignment:.top pins content to the top. The explicit
+        // idealHeight keeps the sidebar's FITTING height compressible —
+        // panels are min-flexible, so the ideal must not report the rigid
+        // stored-height sum (the chrome-push invariant,
+        // ToolPanelBoundingTests).
+        .frame(idealHeight: 480, maxHeight: .infinity, alignment: .top)
         // P1 — hard envelope: even a transient mis-fit can never PAINT
         // outside the sidebar's allotted band into the chrome. The
         // bounded accordion above already keeps layout in-bounds; this is
@@ -276,25 +249,12 @@ struct SidebarView: View {
                         sidebarContentWidth = geo.size.width
                     }
                     .onChange(of: geo.size.height) { _, h in
-                        // TSK-592 — RESIZE-JANK SUPPRESSION (PERF). This height
-                        // feeds the per-panel `clamp(_:availableHeight:)` ceiling,
-                        // then re-bodies the WHOLE sidebar. A live window/pane
-                        // resize changes `h` by points every frame; committing
-                        // each one re-runs the clamp for every accordion panel
-                        // even when the resolved heights are byte-identical (the
-                        // common "roomy" regime, where the ceiling sits above
-                        // every stored height). `shouldCommitAvailableHeight`
-                        // commits ONLY when some panel's resolved body height
-                        // would actually change — dropping the no-op resize frames
-                        // before they touch `@State`. (The old sub-point epsilon
-                        // guard only caught jitter, not the pt-scale resize churn.)
-                        if SidebarPanelHeights.shouldCommitAvailableHeight(
-                            current: sidebarContentHeight,
-                            measured: h,
-                            storedHeights: accordionStoredHeights,
-                            fraction: SidebarPanelHeights.ceilingFraction(
-                                visiblePanelCount: accordionPanelCount)
-                        ) {
+                        // The one-rule stack (2026-08-09) resolves the FLEX
+                        // panel from `available` DIRECTLY, so every real
+                        // height change is observable — the old TSK-592
+                        // "would any clamp change" suppression no longer
+                        // applies. The epsilon still drops float jitter.
+                        if abs(h - sidebarContentHeight) > Self.measureEpsilon {
                             sidebarContentHeight = h
                         }
                     }
@@ -501,15 +461,78 @@ struct SidebarView: View {
         SidebarSectionPlanner.plan(panelVisibility).count
     }
 
-    /// The render ceiling a divider drag may write up to (the same
-    /// window-fraction clamp `resolvedBodyHeight` renders with) — keeps the
-    /// stored height equal to the rendered height so drags track the mouse
-    /// 1:1 with no dead zone. nil before the first height measurement.
-    private var accordionCeiling: CGFloat? {
+    /// The one-rule panel stack (owner 2026-08-09): ordered visible panels
+    /// with resolved render heights. FILES (when visible) is the flex;
+    /// otherwise the LAST visible panel is.
+    struct PanelStack {
+        let fixed: [(kind: SidebarPanelKind, height: CGFloat)]
+        let flex: SidebarPanelKind?
+        /// The flex panel's RESOLVED height (used for the boundary-drag
+        /// bound; the flex renders via layout, not this number).
+        let flexRendered: CGFloat
+    }
+
+    /// The stack's pinned height: exactly the measured band normally
+    /// (panels compress by layout, flex fills — no scroll), or the
+    /// constants-only minimum total when even compressed panels can't fit
+    /// (the ONLY case the outer scroll engages). nil pre-measurement.
+    private var stackTargetHeight: CGFloat? {
         guard sidebarContentHeight.isFinite, sidebarContentHeight > 0 else { return nil }
-        return max(SidebarPanelHeights.minExpandedHeight,
-                   sidebarContentHeight * SidebarPanelHeights.ceilingFraction(
-                       visiblePanelCount: accordionPanelCount))
+        let panelCount = orderedVisiblePanels.count + (filesPanelVisible ? 1 : 0)
+        let headerH = SidebarSectionHeaderMetrics.headerRowHeight(uiSize: model.uiSize)
+        let minTotal = CGFloat(panelCount)
+            * (headerH + SidebarSectionBodyFrame.compressedMinHeight)
+            + CGFloat(max(0, panelCount - 1)) * 12
+        return max(sidebarContentHeight - 4, minTotal)
+    }
+
+    /// Ordered visible panels: accordion order + plugin sections last.
+    private var orderedVisiblePanels: [SidebarPanelKind] {
+        var out = SidebarSectionPlanner.plan(panelVisibility).map(\.panel)
+        if pluginSectionsVisibleOnLeft { out.append(.pluginSections) }
+        return out
+    }
+
+    private var resolvedStack: PanelStack {
+        let visible = orderedVisiblePanels
+        let flexKind: SidebarPanelKind? = filesPanelVisible ? nil : visible.last
+        let fixedKinds = flexKind == nil ? visible : Array(visible.dropLast())
+        // Band available to panel BODIES: measured height minus one header
+        // row per panel (FILES included) and the gutters between them.
+        // Estimate error is absorbed by the flex panel — it can never
+        // become a scrollbar or push chrome.
+        let headerCount = visible.count + (filesPanelVisible ? 1 : 0)
+        let gutterCount = max(0, headerCount - 1)
+        let headerH = SidebarSectionHeaderMetrics.headerRowHeight(uiSize: model.uiSize)
+        let available = sidebarContentHeight
+            - CGFloat(headerCount) * headerH
+            - CGFloat(gutterCount) * 12
+            - (filesPanelVisible ? 200 : 0)   // keep the tree usable as flex
+        let resolution = SidebarStackLayout.resolve(
+            storedFixed: fixedKinds.map { CGFloat(accordionHeight(for: $0)) },
+            floor: SidebarPanelHeights.minExpandedHeight,
+            flexFloor: SidebarPanelHeights.minExpandedHeight,
+            available: available)
+        return PanelStack(
+            fixed: Array(zip(fixedKinds, resolution.fixed)),
+            flex: flexKind,
+            flexRendered: resolution.flex)
+    }
+
+    /// One panel of the stack — identical treatment for every kind, with a
+    /// clip so panel content can never bleed past its slot (the "Nothing
+    /// staged over the footer" bug).
+    @ViewBuilder
+    private func stackedPanel(_ kind: SidebarPanelKind, bodyHeight: CGFloat) -> some View {
+        SidebarPanelBody.make(
+            for: kind,
+            model: model,
+            sidebar: sidebar,
+            trackedRepos: trackedRepos,
+            panelLayout: panelLayout,
+            bodyHeight: bodyHeight
+        )
+        .clipped()
     }
 
     /// Plugin sections' left-accordion visibility, extracted so the render
@@ -519,85 +542,6 @@ struct SidebarView: View {
             && panelLayout.isVisible(
                 .pluginSections,
                 dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs))
-    }
-
-    /// The accordion panel that plays FILES' flex-fill role when FILES is
-    /// hidden (owner 2026-08-09: panels capped at their persisted height
-    /// stranded the rest of the shoulder). Selection logic is pure
-    /// (`SidebarSectionPlanner.fillTarget`, host-tested); the panel renders
-    /// OUTSIDE the bounded scroll with the `.infinity` body sentinel — the
-    /// literal FILES treatment, generalized. (The first cut computed a fill
-    /// HEIGHT arithmetically inside the scroll — chrome estimates drifted
-    /// and produced double scrollbars + a dead band; layout does it right.)
-    private var accordionFillTarget: SidebarPanelKind? {
-        SidebarSectionPlanner.fillTarget(
-            filesVisible: filesPanelVisible,
-            pluginsVisible: pluginSectionsVisibleOnLeft,
-            accordion: panelVisibility)
-    }
-
-    @ViewBuilder
-    private var accordionStack: some View {
-        // The fill target renders OUTSIDE the bounded scroll (flex-fill, the
-        // FILES treatment) — exclude it here so it isn't laid out twice.
-        let plan = SidebarSectionPlanner.plan(panelVisibility)
-            .filter { $0.panel != accordionFillTarget }
-        ForEach(Array(plan.enumerated()), id: \.element.panel) { idx, entry in
-            panelView(for: entry.panel)
-            // TSK-440: a divider between two fixed-height panels drives
-            // BOTH of them (sum-preserving redistribution) — dragging it
-            // moves height between the adjacent pair instead of the old
-            // above-only mutation that let FILES absorb the slack.
-            if entry.drawTrailingDivider, idx + 1 < plan.count {
-                ResizableSectionDivider(
-                    heightAbove: heightBinding(for: entry.panel),
-                    heightBelow: heightBinding(for: plan[idx + 1].panel),
-                    maxHeight: accordionCeiling
-                )
-            }
-        }
-        // Claude-transcript presence now lives on `SidebarModel`
-        // (refreshed in `setRoot`) so the rail + accordion read one
-        // source of truth. The old `@State` + `.onAppear` /
-        // `.onChange(of: rootURL)` refresh plumbing that lived here was
-        // removed — `sidebar.claudeHasTranscripts` is observed directly.
-    }
-
-    @ViewBuilder
-    private func panelView(for kind: SidebarPanelKind) -> some View {
-        // UX-E: the per-kind body construction now lives in the shared
-        // `SidebarPanelBody` factory so the accordion + the docked tool
-        // windows render identical content (one source of truth for e.g.
-        // the Git `forcedShown` flag + the LSP jump callbacks). The
-        // accordion injects the resizable-section clamp as the body height;
-        // `.files`/`.pluginSections` resolve to `EmptyView` here (FILES is
-        // inline above; pluginSections is rendered below the accordion).
-        switch kind {
-        case .files, .pluginSections:
-            EmptyView()
-        default:
-            SidebarPanelBody.make(
-                for: kind,
-                model: model,
-                sidebar: sidebar,
-                trackedRepos: trackedRepos,
-                panelLayout: panelLayout,
-                bodyHeight: resolvedBodyHeight(for: kind)
-            )
-        }
-    }
-
-    /// The height a panel's body renders at inside the bounded scroll: the
-    /// stored-height clamp (TSK-1590 ceiling). The fill target never routes
-    /// through here — it renders outside the scroll with the `.infinity`
-    /// flex sentinel.
-    private func resolvedBodyHeight(for kind: SidebarPanelKind) -> CGFloat {
-        SidebarPanelHeights.clamp(
-            CGFloat(accordionHeight(for: kind)),
-            availableHeight: sidebarContentHeight,
-            fraction: SidebarPanelHeights.ceilingFraction(
-                visiblePanelCount: accordionPanelCount)
-        )
     }
 
     /// TSK-592: the per-panel stored body heights (pre-clamp `@AppStorage`
@@ -626,7 +570,8 @@ struct SidebarView: View {
         case .lspNavigation:  return lspNavHeight
         case .lspProblems:    return lspProblemsHeight
         case .recentlyOpened: return recentsHeight
-        case .files, .pluginSections:
+        case .pluginSections: return pluginHeight
+        case .files:
             return Double(SidebarPanelKind.recentlyOpened.defaultHeight)
         }
     }
@@ -646,7 +591,8 @@ struct SidebarView: View {
         case .lspNavigation:  return heightBinding($lspNavHeight)
         case .lspProblems:    return heightBinding($lspProblemsHeight)
         case .recentlyOpened: return heightBinding($recentsHeight)
-        case .files, .pluginSections:
+        case .pluginSections: return heightBinding($pluginHeight)
+        case .files:
             return nil
         }
     }
@@ -1603,7 +1549,11 @@ private struct FileRowView: View, Equatable {
                         // render italic to match their italic tab title;
                         // the CURRENT row gets white-on-accent (owner
                         // 2026-08-09 — the active file must pop).
-                        .font(.system(size: model.uiSize(12), weight: state.isCurrent ? .semibold : .regular))
+                        // Preview-slot files: italic only, NOT bold — matching
+                        // their italic tab title (owner 2026-08-09).
+                        .font(.system(size: model.uiSize(12),
+                                      weight: (state.isCurrent && !state.isPreviewTab)
+                                          ? .semibold : .regular))
                         .italic(state.isPreviewTab)
                         .foregroundStyle(state.isCurrent ? Palette.selectedRowText : Color.primary)
                         .lineLimit(1)
@@ -1941,98 +1891,3 @@ final class WorkspaceSymbolDispatch {
 //   * Before the sidebar height is measured (`available <= 0`, the first
 //     body pass) it falls back to hugging content with no ceiling — the
 //     measurement settles one pass later and the ceiling engages.
-private struct BoundedAccordionScroll<Content: View>: View {
-    let availableHeight: CGFloat
-    /// Number of visible accordion panels (TSK-1590). A single tool window
-    /// gets a taller band so it can fill the sidebar instead of being pinned
-    /// under the multi-panel share.
-    var panelCount: Int = 0
-    @ViewBuilder var content: Content
-
-    /// Fraction of the sidebar's content height the accordion run may
-    /// occupy before it scrolls. The remainder is FILES' floor. With MANY
-    /// panels 0.62 leaves FILES ~38%; with a SINGLE tool window (no siblings
-    /// to balance) the band grows to 0.85 so a lone Git/Outline panel fills
-    /// the sidebar rather than stranding the lower half empty — FILES keeps a
-    /// ~15% floor (owner report 2026-07-21).
-    private var accordionFraction: CGFloat { panelCount <= 1 ? 0.85 : 0.62 }
-
-    /// Minimum height delta (points) that commits a `contentHeight` write.
-    /// Suppresses sub-point measure jitter from re-bodying the view every
-    /// frame (the measure→frame→measure feedback loop). 0.5pt is well below
-    /// any real panel-size change and above float-rounding noise.
-    private static var measureEpsilon: CGFloat { 0.5 }
-
-    /// Measured natural height of the accordion content, so the scroll
-    /// region can hug it when it fits under the ceiling.
-    @State private var contentHeight: CGFloat = 0
-    /// TSK-440: whether a real measurement has landed — distinguishes
-    /// "not measured yet" from "measured empty" in the resolver.
-    @State private var hasMeasured = false
-
-    private var ceiling: CGFloat? {
-        guard availableHeight.isFinite, availableHeight > 0 else { return nil }
-        return availableHeight * accordionFraction
-    }
-
-    var body: some View {
-        let cap = ceiling
-        // Hug content up to the ceiling; scroll past it. When unmeasured
-        // (cap == nil) or content fits, the frame is just the content
-        // height (no behavioral change). When content exceeds the cap,
-        // the frame is the cap and the inner ScrollView scrolls.
-        // TSK-440 bug (A): resolution now lives in the pure
-        // `AccordionHeightResolver` (ViewerCore) — the load-bearing fix is
-        // distinguishing "not measured yet" (→ cap, the first-pass
-        // behavior) from "measured EMPTY" (→ 0). The old `contentHeight >
-        // 0` guard conflated them, so a lone FILES panel sat above an
-        // empty scroll region frozen at ~62% of the sidebar.
-        let resolved = AccordionHeightResolver.resolve(
-            contentHeight: contentHeight,
-            hasMeasured: hasMeasured,
-            cap: cap
-        )
-
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(spacing: 0) {
-                content
-            }
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear {
-                            contentHeight = geo.size.height
-                            hasMeasured = true
-                        }
-                        .onChange(of: geo.size.height) { _, h in
-                            // EPSILON-GUARD (PERF — accordion measure feedback):
-                            // the measured natural height feeds `resolved` →
-                            // `.frame(height:)`, which re-bodies this view, which
-                            // re-measures. Sub-point layout jitter (≈10⁻²pt) would
-                            // otherwise re-body every frame in the live run loop
-                            // (multiplying passes-per-frame). Only commit a write
-                            // when it moves the height by a visible amount; the
-                            // clamp resolution is unaffected (real changes are pt-
-                            // scale, far above the threshold). ToolPanelBounding
-                            // still settles within its 3 passes.
-                            if abs(h - contentHeight) > Self.measureEpsilon {
-                                contentHeight = h
-                            }
-                        }
-                }
-            )
-        }
-        // `frame(height:)` makes the ScrollView hug exactly `resolved`
-        // rather than greedily expand to fill the sidebar. `maxHeight`
-        // alone would let it grow; an explicit height pins it to the
-        // measured content (capped). When `resolved` is nil (very first
-        // pass) the ScrollView falls back to its default flexible sizing.
-        .frame(height: resolved)
-        // Identity for the headless bounding test (`ToolPanelBoundingTests`):
-        // the test walks the realized tree for THIS scroll viewport and
-        // asserts it stays within the sidebar band. Pre-fix this container
-        // did not exist (the panels rendered as a bare VStack run), so the
-        // test's "found AND in-bounds" assertion fails before the fix.
-        .accessibilityIdentifier("mdv.sidebar.accordionScroll")
-    }
-}
