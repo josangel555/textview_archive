@@ -620,3 +620,18 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
   from the calc() scale). A `themeCSS` letter-spacing tuck is INERT in our strict config;
   label nbsp-padding gets trimmed — neither is a workaround. Repro: any `graph LR` +
   ⌘-minus once. Surface: `mermaid-shim.js` + markdown.css scale interplay.
+
+- **★ BOTTOM DOCK REWORK — owner Phase 2, queued NEXT (M–L, 2026-08-09):** the bottom
+  tool-window area renders docked panels SIDE BY SIDE and its height isn't resizable
+  (owner screenshot 03:44). Rework: (a) bottom-docked panels arrange as TABS — one visible
+  at a time; (b) the bottom dock gets a resizable height (gutter-band divider, same
+  pattern as the sidebar); (c) **TERMINAL becomes a regular tool window** — remove ALL
+  special handling (left-rail TerminalToggleButton, Settings "Pane placement"/"Tab strip
+  position" rows, TerminalPaneEdge plumbing, terminalDropZone) so it docks/moves like any
+  panel. Surfaces: BottomDockContainer, DockedToolWindow, ShoulderRailView, SettingsView
+  terminal section, the terminal pane model, scenes calling setPaneEdge/setTabPosition.
+  Mirror the left-shoulder one-rule stack (SidebarStackLayout, 2026-08-09).
+
+- **Owner-eyeball verification tail (S, 2026-08-09):** model-fixed but not pixel-captured
+  — hex caret/tandem on a real binary, session-switch HUD, empty-shoulder drag
+  placeholder, settings one-column alignment. Ten-second checks on the installed app.

@@ -1,168 +1,99 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — launch site + commit-ref tool + marketing scenes (2026-08-08, "then proceed")
+# Handoff — owner UX marathon: left shoulder reworked; NEXT = bottom dock (2026-08-09 04:45)
 
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @
-`7795df3b` + **UNCOMMITTED work in flight** (see below). /Applications/TextView.app = RELEASE
-at the 08-05 batch head (titlebar sessions, image-save fix, footer reorg).
-
-## ⚠ IN FLIGHT — finish this FIRST on resume ("then proceed" after the handoff)
-Uncommitted in the app repo (all host-built + host-tested green; NOT yet committed):
-- `scripts/commit-refs.sh` (NEW) — the commit-id audit/remap tool (see §Tracker/BACKLOG O-5).
-  Verify the remap path once more (map a REAL referenced sha → dummy, dry-run shows
-  WOULD-REWRITE), then commit. Owner interrupted mid-verification — the tool is complete.
-- `Sources/ViewerCore/UISceneRegistry.swift` + `Sources/ViewerUI/UISceneApplier.swift` — two
-  NEW marketing capture scenes: `mktg-docs` (welcome sample in SOURCE lens + bottom terminal
-  running `top`) and `theme-light` (light theme + aqua NSApp appearance + welcome sample).
-  Added because the owner rejected 2 shipped shots: DESIGN.md hero was BLANK, "light" shot
-  was actually dark, terminal shot was a dead prompt. `import AppKit` added to the applier.
-- `LESSONS.md`, `BACKLOG.md` — this handoff's entries.
-- ⚠ **THE VM WENT DOWN mid-capture** (ssh <vm-ip> timed out; the rsync in the capture
-  run died with code 255). The `mktg-docs` + `theme-light` PNGs were NEVER produced. The VM
-  dist WAS rebuilt at this head just before, so once the VM is back (owner boots it; if ssh
-  still fails see memory `vm-ssh-key-restore`), the retake is just:
-  `for s in mktg-docs theme-light; do MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh run $s; done`
-  → PNGs land at `/tmp/mdv-vm-ui/` on the HOST. Then: review both, place into
-  `<CloudDocs>/workspaces/web/josangel.com/textview/shots/` (terminal shot → top running;
-  4th slot → the light shot) and update `textview/index.html`'s `<figure>` captions to match.
-  (Site is non-git CloudDocs — just save.)
-- `commit-refs.sh` **remap mode is UNVERIFIED** (scan mode proven — 2,516 refs; the remap
-  dry-run smoke test was interrupted twice by the owner's pause). On resume: pick any OK ref
-  from `tmp/commit-refs-report.tsv`, map its full sha → a dummy in a temp map file, run
-  `bash scripts/commit-refs.sh remap <map>` (dry-run) and expect WOULD-REWRITE lines; debug
-  the pipeline in the `remap)` case if zero.
-- A local site test server may still be RUNNING: `python3 -m http.server 8931` (background
-  task) → http://localhost:8931/ + /textview/ + /blog/. Kill or reuse.
-
-RESUME STEPS: (1) VM back → retake the 2 scenes → place shots + captions; (2) verify remap
-dry-run; (3) everything else is already committed (see below) — the CI loop gates it.
-Owner-paused here 2026-08-08; do NOT restart change work without their go.
-
-## Already committed/shipped this session
-- **7795df3b** handoff · **e36db17c** LICENSE(MIT) + BACKLOG §OSS-PREP.
-
-**Launch content shipped OUTSIDE the app repo (CloudDocs, NON-git, Cloudflare deploy):**
-- **Blog post** (Zola): `<CloudDocs>/workspaces/claude/blog/content/textview-native-macos-editor-built-by-an-agent.md`,
-  built into `.../web/josangel.com/blog/…`. Voice matches the `tasked` post. Homepage blog
-  list + projects list both updated to include it. Rebuild: `zola --root <blog> build
-  --output-dir <web>/josangel.com/blog --force` (do this again after any post edit).
-- **Download page**: `.../web/josangel.com/textview/index.html` (inline-SVG logo, features
-  grid, screenshot gallery, download → github.com/josangel555/textview_dist, "open source coming
-  soon (MIT)"). Recipe + screenshot facts in memory `blog-and-download-site`.
-- **A local test server may be RUNNING**: `python3 -m http.server 8931` in the site dir
-  (backgrounded task) → http://localhost:8931/ (homepage), /textview/, /blog/. Kill it when done.
-
-**OSS-PREP (owner decisions 2026-08-08 — the next real work, BACKLOG §OSS-PREP O-1..O-6):**
-MIT ✓ · publish with **FULL history (do NOT squash — owner corrected)** ⇒ history-rewrite to
-scrub VM creds (git-filter-repo, needs dep-approval) · notarization NOT needed for source ·
-**O-1 MCP socket default-off + token auth** (+ run_verb fence + task-runner env scrub) ·
-**O-2 Canvas WebView fence** · **O-3 buildability + bootstrap + README/CONTRIBUTING/SECURITY** ·
-**O-4 CI portability** · **O-5 scrubbed full-history export** · **O-6 data-safety tail**
-(subagent-verified: CM6 flush-before-read PARTIAL, session-drain FIXED, HotExitSpill silent-fail).
-
-**Standing app queue (BACKLOG § "★ OWNER INTAKE 2026-08-01", I-## ids, board still down):**
-remaining big items = I-14 AutoSave (opt-in), I-09 web-migrate wave, I-16b/c/d strip/footer
-slices, I-15 LSP occurrences, I-07 pointer batch 2. Paired-rounds mode (1 user-facing + 1
-quality). CI CADENCE: NO inline full gate — targeted `--filter` per commit; the standing loop
-`scripts/ci-loop.sh` (persistent Monitor, CI worktree ../markdown_viewer-ci) gates each HEAD —
-RE-ARM it after compaction if no Monitor is live. Report round DONE at commit (never wait on
-CI); INSTALL release only after that commit's CI = rc=0; red → fix-forward. Refresh the
-icloud-backup mirror after every committed round (LESSONS 2026-08-01).
+`11967e90` (this handoff's doc edits uncommitted at write time — commit them with this
+file). /Applications/TextView.app = RELEASE @ `11967e90` (installed 04:30; owner may still
+need ⌘Q+relaunch). CI loop: GREEN through `11967e90`; the handoff commit gates in
+background (fix-forward on red). tasked board UNREACHABLE all session — BACKLOG + commit
+messages are the state of record; ticket debt keeps accruing for reconnect.
 
 ## Mission
-Owner-driven drain. Standing owner mode (2026-08-01, in memory): **every round = one
-user-facing improvement + one quality improvement**, both named, both committed+validated per
-round. Full test pyramid incl. pixels/AX for every render/interaction change; commit-as-you-go.
+Owner-driven interactive drain (owner active, sending batches). Two arcs this session:
+(1) launch-site/marketing polish (done); (2) a large owner UX batch culminating in the
+LEFT-SHOULDER STRUCTURAL REWORK (done). **Explicitly queued next arc: BOTTOM DOCK
+REWORK** — BACKLOG "★ BOTTOM DOCK REWORK" (tabs, resizable height, terminal demoted to a
+regular tool window).
 
 ## Current state
-**17 commits landed 07-31..08-01** (all gate-green, VM-validated where render/interaction was
-touched, installed):
-- Owner queue (07-31): tab-drag-onto-session-pill `5c45c04a` · markdown gap-closures
-  (footnotes/alerts/def-lists/sup-sub/heading-ids) `95ec7a48` · saved sessions (named save
-  points) `a908439e` · AX tier bootstrap `1bad80f4` + drag rung `0667f75e`.
-- Release pipeline (07-31): exec cap 65→70 (owner-approved) `21416a1b` · EMFILE/kern-ceiling fix
-  `05337de7` · **TextView-2026-07-31.zip pushed to github.com/josangel555/textview_dist** (now 7
-  features behind — refresh is a standing offer; recipe in memory `mvd-dist-publishing`).
-- Paired rounds (08-01): R1 View-Diff button + ModeBar deletion `1fb56221` · R2
-  Recently-Closed persistence + detector false-red `233e926b` · R3 conflict pre-confirm
-  unification + palette/strip AX `f806c48c` · R4 wikilinks + relative links + AX derived-click
-  `ebba3a8b` · R5 hex hot-exit + AX catalog `f711c2b8`.
-
-**In flight:** nothing half-written.
-
-**Next action (the proposed round 6, not yet started):** user-facing = Local History
-re-diff-on-eviction (BACKLOG "smarter retention" (a)); quality = merge-sheet interactive
-pick→Apply AX rung (unblocked by the tier). Alternatives in BACKLOG §OPEN FOLLOW-UPS header.
+- **Done + VM-pixel-verified:** one-rule sidebar stack (`SidebarStackLayout` + rewritten
+  `SidebarView.sidebarBody`): uniform panels incl. plugins, layout-flexible
+  [26pt…stored] heights, flex fill (FILES or last panel), sum-preserving pair dividers
+  (floors only — the 50% dual-split wall is GONE), floor-bounded flex-boundary divider,
+  outer scroll engages ONLY at constant compressed minimums; visible 12px gutter bands
+  with grabber pills (no white→line→white seam); distinct tinted headers; per-panel
+  `.clipped()` (the "Nothing staged over the footer" bleed); no white gap above file nav;
+  full-accent active rows (file nav / current bookmark / selected log commit,
+  `Palette.selectedRowText`); accent bar atop the active tab; dark diff washes quieter;
+  git log search padding.
+- **Done + host-tested (owner eyeball still pending):** hex edit caret now PAINTED
+  (was invisible — zero-length selection in a non-editable NSTextView draws no beam) +
+  hex↔ascii tandem selection (`HexCaretTandemTests`, 4 tests); session-switch HUD
+  (`activateWithHUD` gesture variants — the coordinator stays synchronous);
+  empty-shoulder drag placeholder (`PanelDragMonitor` — TSK-1316's reveal was never
+  wired); settings one-column alignment (pickers centered in maxWidth frames); preview
+  files italic-not-bold in file nav; tooltip placement (converts through `.tooltipRoot`
+  — bubbles drew a titlebar-height too high, covering the hovered control).
+- **In flight:** nothing half-written. Tree = LESSONS/BACKLOG/HANDOFF edits only.
+- **Next action:** commit the handoff docs; then start the BOTTOM DOCK REWORK
+  (BACKLOG "★ BOTTOM DOCK REWORK" carries the full spec + surface list).
 
 ## Key decisions & rationale
-- **AX tier works and is the interaction rung** (owner mandate): find via `AXDriverCore` +
-  `AXUIElementNode`, ACT via `AXClickExecutor` (global HID tap — AXPress is accepted-but-not-
-  dispatched by SwiftUI; postToPid isn't hit-tested; all probed). Drags = interpolated HID
-  moves. Small controls under `.contain` parents report the PARENT's frame — derive positions
-  (tab × = maxX − height·18/28); a pinned tripwire flips if SwiftUI fixes child frames.
-- **Wikilink resolution is host-side** (core is sans-IO): `WikiLinkResolver` ladder =
-  beside-file → `.md` → bare-name at workspace root → toast. The same interception revived
-  ordinary relative file links (decide() cancels file: clicks for the browser path).
-- **Hex hot-exit rides the text rails**: `TabSnapshot.unsavedHexBase64` (additive-optional),
-  captured at the SAME coordinator boundaries as text, restored at materialize, hex view seeds
-  from the stash (seen==saved). 512 KB inline cap, refused captures TOLD, live stash never
-  dropped.
-- **Conflict family has ONE rule everywhere**: destructive branches gate on
-  `confirmDiscardIsPreserved` (pre-confirm on refused capture); the shared apply-funnel keeps a
-  belt-and-braces reporter because its callers pre-confirm upstream.
-- **Saved sessions**: `saved/` shelf in SessionStore — a SUBDIR so `liveSnapshotIDs`/recovery
-  can never adopt save points (pinned).
+- **Layout over arithmetic** for panel sizing: two arithmetic attempts (fillHeight with
+  chrome estimates; resolve()-driven rigid frames) produced double scrollbars / dead
+  bands / chrome push. Final: panels flexible `[compressedMin…stored]` by SwiftUI layout;
+  the only remaining arithmetic uses constants (`stackTargetHeight`) so drift is
+  impossible.
+- **HUD deferral lives at the gesture site** (`activateWithHUD`), never in
+  `SessionsAppCoordinator.activate` — the synchronous contract is load-bearing for
+  tests, scenes, and the CLI verb (deferral-in-core broke the session suite instantly).
+- **Semantic colors only in chrome** — HardCodedColorRatchet enforces;
+  `Palette.selectedRowText` (alternateSelectedControlTextColor) = white-on-accent.
+- **Marketing scenes pin their world**: `MDV_FORCE_APPEARANCE`/`MDV_FORCE_THEME_ID`,
+  zoom 1.0, parked pointer, explicit full sidebar set, session dance + delayed re-assert
+  (session activation RESTORES that session's panel layout).
 
-## Gotchas (full text LESSONS.md 2026-07-30..08-01)
-- `ulimit -n` silently caps at `kern.maxfilesperproc` (10240) — the sweep's ~90-fail EMFILE
-  flood; test-in-vm.sh now sysctl-raises when sudo available. Grep "Too many open files"
-  BEFORE triaging any sweep failure list.
-- SwiftUI AX: `.ignore` drops children; a BARE container id implicitly combines loose
-  pure-SwiftUI descendants (AppKit boundaries escape) — `.contain` fixes; the AX tier is how
-  you PROVE an id materialized.
-- VM clock ~21h behind → after ANY binary rsync: `ssh macOS15 'cd markdown_viewer && touch
-  rust-core/link/*.a'`.
-- Bench failures (FoldBench etc.) under host load are flaky — re-run quiet before chasing.
-- The shell CWD persists across tool calls — a stray `cd` broke a gate run (127) and nearly
-  a commit; prefer `git -C` and absolute paths.
-- pulldown sup/sub (`^x^`/`~x~`) can't open INTRA-word (mc^2^ stays literal — pinned).
+## Gotchas (full text in LESSONS.md, all 2026-08-09)
+- Full parallel `swift test` sweep on a loaded host → "Bad file descriptor" floods
+  (7-10 fails); re-run failures TARGETED before believing any.
+- `ToolPanelBoundingTests` = the chrome-push teeth; keep it green through any sidebar
+  layout change (it caught two of my cuts).
+- Ratchet tests grep raw source — comments containing banned tokens trip them.
+- The VM repo has full git history now (packs synced once 2026-08-08; re-sync after a
+  host `git gc`).
 
-## Files that matter (this handoff's surfaces)
-- `Tests/ViewerUITests/AX/` + `Harness/TierBaseCases.swift` (`AXInteractionTestCase` owns the
-  spawn rig) + `Sources/ViewerUI/Automation/AXClickExecutor.swift` — the AX tier. Run:
-  `ssh macOS15 'cd markdown_viewer && MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash
-  scripts/test-in-vm.sh pixel --filter ViewerUITests.AXChromeInteractionTests'`.
-- `Sources/ViewerCore/WikiLinkResolver.swift` + `MarkdownRenderedView.swift` (decidePolicyFor
-  interception) — in-document links.
-- `Sources/ViewerUI/DocumentModel+EditableHex.swift` (capture/restore) + `HexView.swift`
-  (dirtySeed) — hex hot-exit.
-- `Sources/ViewerCore/RecentlyClosedStore.swift` (persisted), `SessionStore.swift` (saved/),
-  `Coordinators/EditorCoordinator.swift` (confirmDiscardIsPreserved).
-- `tmp/textview_dist/` — the dist-repo clone (push recipe: memory `mvd-dist-publishing`).
+## Files that matter
+- `Sources/ViewerCore/SidebarStackLayout.swift` — resolve()/boundaryMax pure logic.
+- `Sources/ViewerUI/SidebarView.swift` — sidebarBody one-rule stack (~lines 150-215),
+  `stackTargetHeight`, `resolvedStack`, `stackedPanel`.
+- `Sources/ViewerUI/SidebarConstants.swift` — `SidebarSectionBodyFrame` (`.infinity`
+  sentinel + `compressedMinHeight` 26), header tint, `headerRowHeight`.
+- `Sources/ViewerUI/ResizableSectionDivider.swift` — gutter band + `bounded()` writes.
+- `Sources/ViewerUI/HexView.swift` — caret paint + tandem mirror (~lines 1090-1210).
+- `Sources/ViewerUI/Sessions/SessionsAppCoordinator.swift` — `activateWithHUD` family.
+- `Sources/ViewerUI/DockedToolWindow.swift` — `PanelDragMonitor` + drop zones;
+  `BottomDockContainer` + SettingsView terminal section = the Phase-2 targets.
+- `scripts/vm-uitest/aqua-runner.sh` — per-scene env pins + `host-screen` mode
+  (captures the LIVE VM screen for owner-window inspections).
 
 ## Open questions / blockers
-- **tasked board MCP disconnected all session** (ToolSearch: no tools). 17 commits owe tickets
-  + the TSK-1594..1609 placeholder reconciliation. Needs owner-side reconnect.
-- textview_dist: CURRENT — TextView-2026-08-05.zip @ 495d2f0e pushed (19efeed).
-- Math typography eyeball on the owner's machine (one open of a math file); TSK-1247 blocks
-  the capture lane from showing WebView content.
-- Exec 68 of 70 MB — TSK-1214/1098 grammar-table reclaim nearly due (owner call on target).
-- `~/Documents/config/` (GitHub ssh key) exists only in CloudDocs; owner may want it restored
-  locally + `gh` (dep approval) for proper Releases.
-
-## Tracker
-Board unreachable (see above). The 17 commit messages + BACKLOG §OPEN FOLLOW-UPS (2026-08-01
-header = the live open set) are the state of record.
+- tasked board offline (all of 08-08 + 08-09) — many commits owe tickets on reconnect.
+- Owner-eyeball tail (BACKLOG item): hex caret, session HUD, drag placeholder, settings
+  grid — ten-second checks on the installed app.
+- OSS-prep queue (BACKLOG O-1..O-6) untouched today; `git-filter-repo` still needs owner
+  dep-approval when that resumes.
 
 ## How to resume
-1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -17` (head
-   f711c2b8) · `git status --short` (only the 4 protected files).
-2. Read `BACKLOG.md` § "⚠ OPEN FOLLOW-UPS (updated at the 2026-08-01 handoff)" — the header
-   paragraph IS the live open set.
-3. Owner mode: paired rounds (one user-facing + one quality per round, named). Loop per item:
-   host tests → gate (`bash scripts/test-headless-gate.sh`) → VM rung for any render/
-   interaction change (webview: `MDV_WEBVIEW_FILTER=<suite> … webview`; T5/AX:
-   `pixel --filter <suite>`; ALWAYS rsync + touch the staticlib first) → commit (group ok,
-   `Claude-Session:` trailer) → `bash scripts/build-app.sh release --install` (RELEASE — the
-   owner runs the release build now).
-4. If the board reconnects: create tickets for the 17 commits, reconcile TSK-1594..1609, then
-   drive from the board.
+1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -14`
+   (head ≈ `11967e90` + the handoff commit) · `git status --short` (only the 4 protected
+   untracked files).
+2. Confirm the CI-loop Monitor is alive (events `CI <sha> GATE rc=<n>`); if the session
+   lost it, re-arm per memory `ci-background-loop`. Red → fix forward, then install.
+3. Start the bottom-dock rework from BACKLOG "★ BOTTOM DOCK REWORK": read
+   `BottomDockContainer`/`DockedToolWindow` + the terminal special-casing list; mirror
+   the SidebarStackLayout pattern; tests + VM captures per change; commit per round;
+   mirror-refresh (fetch + `merge --ff-only FETCH_HEAD` from the CloudDocs side) each
+   round; release-install only after that commit's CI is green.
+4. VM lane: rsync (excludes .build/dist) → `ssh macOS15 'cd markdown_viewer && touch
+   rust-core/link/*.a && bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password> bash
+   scripts/vm-uitest.sh run <scene>` → Read the PNG. Fill-check scenes = sidebar teeth.

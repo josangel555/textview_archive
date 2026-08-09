@@ -4405,3 +4405,8 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   3 git-fixture scene failures all passed serially and in the CI worktree — fd/spawn
   pressure, the EMFILE cousin. Before triaging a sweep list, re-run the failures
   TARGETED; only what still fails is real.
+
+- **Ratchet tests grep RAW SOURCE — your comments count (2026-08-09).** A doc comment that
+  mentioned the literal pattern name tripped the hard-coded-color ratchet on the very file
+  that introduced the semantic replacement. When writing near a text-pattern ratchet
+  (colors, killall, banned APIs), phrase comments so they don't contain the banned token.
