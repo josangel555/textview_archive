@@ -355,6 +355,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        // Vertically CENTER the traffic lights in the taller session band
+        // (owner 2026-08-09): an empty unified-style toolbar makes AppKit
+        // use the tall-titlebar button metrics — the standard trick; the
+        // transparent titlebar keeps it invisible, the strip band still
+        // draws its own background.
+        let titlebarSpacer = NSToolbar(identifier: "MDVTitlebarSpacer")
+        titlebarSpacer.showsBaselineSeparator = false
+        window.toolbar = titlebarSpacer
+        window.toolbarStyle = .unified
         // Hard minimum content size enforced by AppKit. SwiftUI's
         // `.frame(minWidth:minHeight:)` is a layout request to the parent,
         // not an OS-level floor.

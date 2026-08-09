@@ -95,7 +95,22 @@ struct SessionTabBar: View {
             .padding(.horizontal, model.uiSize(4))
         }
         .frame(height: rowHeight)
-        .background(Palette.windowBackground)
+        // Subtle vertical gradient on the title band (owner 2026-08-09:
+        // "add some depth… a subtle gradient for the top header") — a
+        // faint highlight at the top edge fading into the window tone,
+        // plus the band's own bottom hairline below. Semantic colors only
+        // (the ratchet): the highlight is a primary-inverse wash so it
+        // tracks light AND dark chrome.
+        .background(
+            LinearGradient(
+                stops: [
+                    .init(color: Palette.windowBackground.opacity(0.0), location: 0.0),
+                    .init(color: Palette.windowBackground, location: 1.0),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            .background(Palette.underPageBackground)
+        )
         // Explicit CONTAINER, not a bare id: a bare `.accessibilityIdentifier`
         // on the row implicitly combined its loose pure-SwiftUI descendants —
         // the three pinned action buttons never materialized in the AX tree
@@ -392,7 +407,10 @@ struct SessionTabBarItem: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        // Instant click-registered feedback (owner 2026-08-09): the pill
+        // dims + shrinks on mouseDOWN — synchronous, BEFORE the (possibly
+        // heavy) switch action fires on mouseUp.
+        .buttonStyle(PressFeedbackButtonStyle())
         .onHover { isHovering = $0 }
         .helpInfo(title: snapshot.displayName, description: sessionTooltipDescription)
         .accessibilityElement(children: .contain)
@@ -453,7 +471,10 @@ struct SessionTabBarItem: View {
             return Color(nsColor: .controlAccentColor).opacity(0.22)
         }
         if isHovering {
-            return Palette.controlBackground.opacity(0.75)
+            // A clearly visible hover step (owner 2026-08-09: "add hover bg
+            // highlight… similar to shoulder buttons") — the old 0.75-vs-0.5
+            // same-grey step was imperceptible.
+            return Palette.controlBackground
         }
         // Inactive sessions are GREY chips (owner 2026-08-05) — clear read
         // of active vs inactive at a glance.

@@ -182,6 +182,14 @@ struct SidebarView: View {
             // takes from its NEIGHBOR, never pushes the rest), floor-bounded
             // at the flex boundary.
             let stack = resolvedStack
+            // How much a grow-drag may take from the FLEX panel once the
+            // pair neighbor floors (the cascade; owner 2026-08-09 "the
+            // third one doesn't even move"). FILES-visible: the residual
+            // above the tree's usable reserve; else the flex panel's
+            // rendered height above its floor.
+            let flexSlack = filesPanelVisible
+                ? stack.flexRendered
+                : max(0, stack.flexRendered - SidebarPanelHeights.minExpandedHeight)
             // The stack lives in a ScrollView that engages ONLY when every
             // panel is at its compressed MINIMUM (constants — header + min
             // body + gutter per panel — so unlike the old bounded accordion
@@ -189,6 +197,11 @@ struct SidebarView: View {
             // VStack is pinned to exactly the measured band: fixed panels
             // compress [min…stored] by layout and the flex panel absorbs
             // the remainder — no scrollbar, no push, no dead space.
+            //
+            // Every divider gets the RENDERED heights of its neighbors so
+            // the drag can snap stored→rendered at origin (kills the
+            // stored↔rendered decorrelation class: racing, dead zones,
+            // and persisted runaway heights self-heal on first touch).
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
                     if filesPanelVisible {
@@ -196,7 +209,9 @@ struct SidebarView: View {
                         if let first = stack.fixed.first {
                             ResizableSectionDivider(
                                 heightAbove: nil,
-                                heightBelow: heightBinding(for: first.kind))
+                                heightBelow: heightBinding(for: first.kind),
+                                renderedBelow: first.height,
+                                flexSlack: flexSlack)
                         }
                     }
                     ForEach(Array(stack.fixed.enumerated()), id: \.element.kind) { idx, entry in
@@ -204,7 +219,10 @@ struct SidebarView: View {
                         if idx + 1 < stack.fixed.count {
                             ResizableSectionDivider(
                                 heightAbove: heightBinding(for: entry.kind),
-                                heightBelow: heightBinding(for: stack.fixed[idx + 1].kind))
+                                heightBelow: heightBinding(for: stack.fixed[idx + 1].kind),
+                                renderedAbove: entry.height,
+                                renderedBelow: stack.fixed[idx + 1].height,
+                                flexSlack: flexSlack)
                         }
                     }
                     if let flex = stack.flex {
@@ -214,7 +232,8 @@ struct SidebarView: View {
                                 maxHeight: SidebarStackLayout.boundaryMax(
                                     aboveRendered: lastFixed.height,
                                     flexRendered: stack.flexRendered,
-                                    flexFloor: SidebarPanelHeights.minExpandedHeight))
+                                    flexFloor: SidebarPanelHeights.minExpandedHeight),
+                                renderedAbove: lastFixed.height)
                         }
                         stackedPanel(flex, bodyHeight: .infinity)
                             .frame(maxHeight: .infinity, alignment: .top)

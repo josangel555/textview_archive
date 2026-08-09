@@ -1621,9 +1621,14 @@
     const line = view.state.doc.line(lineNum);
     const col = Math.max(0, Math.min(line.length, Number(msg.column) || 0));
     const pos = line.from + col;
-    const sel = msg.select
-      ? EditorSelection.range(line.from, line.to)
-      : EditorSelection.cursor(pos);
+    // selectLength (2026-08-09, search-result jump): with a column, select
+    // exactly the matched span on the line instead of the whole line.
+    const len = Math.max(0, Number(msg.selectLength) || 0);
+    const sel = len > 0
+      ? EditorSelection.range(pos, Math.min(line.to, pos + len))
+      : msg.select
+        ? EditorSelection.range(line.from, line.to)
+        : EditorSelection.cursor(pos);
     view.dispatch({
       selection: sel,
       effects: EditorView.scrollIntoView(pos, { y: "center" }),

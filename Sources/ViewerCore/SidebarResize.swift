@@ -32,6 +32,31 @@ public enum SidebarResize {
         let newAbove = min(max(above + delta, floor), sum - floor)
         return (newAbove, sum - newAbove)
     }
+
+    /// Owner 2026-08-09 ("opening 3 tool windows, the third one doesn't even
+    /// move"): pure sum-preserving redistribution STOPS the moment the
+    /// giving neighbor hits its floor — even when the FLEX panel has plenty
+    /// of slack to give. This variant cascades: a GROW drag (positive
+    /// delta) takes from the pair neighbor first, then lets the pair's
+    /// total grow by up to `flexSlack` (the flex panel absorbs the growth
+    /// by layout — "each window can grow, but not push"). The shrink
+    /// direction stays pair-only (the divider stops at the above panel's
+    /// floor, the conventional splitter behavior).
+    public static func redistributeCascading(
+        above: CGFloat,
+        below: CGFloat,
+        delta: CGFloat,
+        floor: CGFloat = SidebarPanelHeights.minExpandedHeight,
+        flexSlack: CGFloat
+    ) -> (above: CGFloat, below: CGFloat) {
+        let pair = redistribute(above: above, below: below, delta: delta, floor: floor)
+        guard delta > 0 else { return pair }
+        // What the neighbor already gave; the remainder comes from flex.
+        let absorbed = pair.above - above
+        let remainder = delta - absorbed
+        guard remainder > 0, flexSlack > 0 else { return pair }
+        return (pair.above + min(remainder, flexSlack), pair.below)
+    }
 }
 
 /// TSK-440 bug (A) — the lone-FILES gap. `BoundedAccordionScroll` hugs

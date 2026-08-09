@@ -269,15 +269,23 @@ public final class PanelLayoutStore: ObservableObject {
     }
 
     /// Install a session's persisted layout. Mutates the `@Published`
-    /// edges/overrides (fires `objectWillChange` for the directly-
-    /// observing rails + sidebar) WITHOUT writing to `UserDefaults` —
-    /// per-session layout must not clobber the global default. Idempotent
-    /// and equality-guarded: applying the layout it already holds is a
-    /// no-op (no spurious republish).
+    /// overrides (fires `objectWillChange` for the directly-observing
+    /// rails + sidebar) WITHOUT writing to `UserDefaults` — per-session
+    /// state must not clobber the global default. Idempotent and
+    /// equality-guarded: applying the layout it already holds is a no-op
+    /// (no spurious republish).
+    ///
+    /// DOCK PLACEMENT IS APP-GLOBAL (owner 2026-08-09: "I thought I moved
+    /// outline to the right shoulder, but it's back on the left" — session
+    /// activation replayed a stale per-session edge map over the user's
+    /// move). Sessions apply ONLY the visibility overrides (which panels
+    /// are open — the per-session working set); WHERE a panel docks is a
+    /// global preference that survives session switches and relaunches.
+    /// `snapshot()` still CAPTURES the edges for downgrade compatibility;
+    /// they are simply not applied. (Every `SessionKind.defaultPanelLayout`
+    /// ships empty edges, so kind seeds are unaffected.)
     public func apply(_ snapshot: PanelLayoutSnapshot) {
-        let newEdges = PanelEdgeAssignment.decoded(snapshot.edges)
         let newOverrides = PanelVisibilityOverrides.decoded(snapshot.overrides)
-        if newEdges != edges { edges = newEdges }
         if newOverrides != overrides { overrides = newOverrides }
     }
 }

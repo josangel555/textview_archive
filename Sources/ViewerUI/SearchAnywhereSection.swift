@@ -230,6 +230,16 @@ struct SearchAnywhereSection: View {
 
     private var resultList: some View {
         ScrollView {
+            // One LAZY item per FILE GROUP (owner 2026-08-09: giant blank
+            // gaps + rows opening the WRONG file). The old shape emitted
+            // header + N rows as loose SIBLINGS via a `ForEach(0..<shown,
+            // id: \.self)` inside the LazyVStack — integer row identity
+            // across CHANGING results desynced the lazy bookkeeping:
+            // reserved-height blanks where rows stopped rendering, and
+            // stale captured click actions (a "rust" row opening an .md).
+            // Each group is now ONE plain VStack keyed by the file's
+            // stable id (its path), so rows can never detach from their
+            // header or outlive their data.
             LazyVStack(alignment: .leading, spacing: 0) {
                 if results.isEmpty && !isRunning {
                     SidebarEmptyPlaceholder(
@@ -248,67 +258,99 @@ struct SearchAnywhereSection: View {
         .sidebarSectionBodyFrame()
     }
 
-    @ViewBuilder
     private func fileGroup(_ file: CrossFileSearch.FileMatches) -> some View {
-        Text(highlighted(
-            file.url.lastPathComponent,
-            baseColor: .primary
-        ))
-            .font(.system(size: model.uiSize(11), weight: .semibold))
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .padding(.horizontal, 10)
-            .padding(.top, 4)
-            .help(file.url.path)
         // TSK-888: cap eagerly-rendered match rows per file (each builds a
         // highlighted AttributedString) so a file with hundreds of matches
         // doesn't make its group — and scrolling past it — janky.
         let shown = SearchResultCap.visible(total: file.matches.count)
-        ForEach(0..<shown, id: \.self) { idx in
-            let m = file.matches[idx]
-            // MARK: - Search result jump (jump-wiring agent)
-            // Click a match row: open the file AND scroll/select the
-            // matched 1-based line. Routes through `openPath(_:atLine:)`
-            // which handles the rendered→source mode coercion plus the
-            // editor-vs-source dispatch.
-            Button(action: { open(file.url, line: m.lineNumber) }) {
-                HStack(alignment: .top, spacing: 6) {
-                    Text("\(m.lineNumber)")
-                        .font(.system(size: model.uiSize(10), design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: model.uiSize(32), alignment: .trailing)
-                    Text(highlighted(
-                        m.line.trimmingCharacters(in: .whitespaces),
-                        baseColor: .secondary
-                    ))
-                        .font(.system(size: model.uiSize(11), design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            // UIRESP-11: search-result rows read as clickable (open the
-            // file at the matched line) with hover + pointing-hand cursor.
-            .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
-            .accessibilityLabel("\(file.url.lastPathComponent) line \(m.lineNumber): \(m.line)")
-        }
         let hidden = SearchResultCap.overflow(total: file.matches.count)
-        if hidden > 0 {
-            Button(action: { open(file.url) }) {
-                Text("+\(hidden) more in this file — open")
-                    .font(.system(size: model.uiSize(10)))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text(highlighted(
+                    file.url.lastPathComponent,
+                    baseColor: .primary
+                ))
+                    .font(.system(size: model.uiSize(11), weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+                // Grey containing-folder hint (the RecentRow idiom) —
+                // three different Cargo.tomls used to render three
+                // identical headers ("hard to understand how things are
+                // grouped").
+                if let hint = folderHint(file.url) {
+                    Text(hint)
+                        .font(.system(size: model.uiSize(10)))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+                Text("\(file.matches.count)")
+                    .font(.system(size: model.uiSize(9), weight: .medium))
                     .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
-            .accessibilityLabel("\(hidden) more matches in \(file.url.lastPathComponent) — open file")
+            .padding(.horizontal, 10)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+            .help(file.url.path)
+            ForEach(Array(file.matches.prefix(shown).enumerated()), id: \.offset) { _, m in
+                matchRow(file: file, match: m)
+            }
+            if hidden > 0 {
+                Button(action: { open(file.url) }) {
+                    Text("+\(hidden) more in this file — open")
+                        .font(.system(size: model.uiSize(10)))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+                .accessibilityLabel("\(hidden) more matches in \(file.url.lastPathComponent) — open file")
+            }
         }
+    }
+
+    /// One clickable match row: open the file at the matched line AND
+    /// select the matched span (owner: "open to the right line number and
+    /// also highlight that matching word").
+    private func matchRow(file: CrossFileSearch.FileMatches, match m: CrossFileSearch.Match) -> some View {
+        Button(action: { open(file.url, match: m) }) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(m.lineNumber)")
+                    .font(.system(size: model.uiSize(9.5), design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: model.uiSize(30), alignment: .trailing)
+                Text(highlighted(
+                    m.line.trimmingCharacters(in: .whitespaces),
+                    baseColor: .secondary
+                ))
+                    .font(.system(size: model.uiSize(10.5), design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 2.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        // UIRESP-11: search-result rows read as clickable (open the
+        // file at the matched line) with hover + pointing-hand cursor.
+        .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+        .accessibilityLabel("\(file.url.lastPathComponent) line \(m.lineNumber): \(m.line)")
+    }
+
+    /// The group header's grey folder hint: the file's directory relative
+    /// to the search root (nil when the file sits AT the root — no noise
+    /// on the common flat case).
+    private func folderHint(_ url: URL) -> String? {
+        let dir = url.deletingLastPathComponent()
+        guard let root = resolvedScopeURL else { return dir.lastPathComponent }
+        if dir.path == root.path { return nil }
+        guard dir.path.hasPrefix(root.path + "/") else { return dir.lastPathComponent }
+        return String(dir.path.dropFirst(root.path.count + 1))
     }
 
     private var totalMatchCount: Int {
@@ -319,10 +361,20 @@ struct SearchAnywhereSection: View {
         model.openPath(url)
     }
 
-    /// Open the file and jump to a specific 1-based line. Used by the
-    /// per-match rows so the editor lands directly on the matched line.
-    private func open(_ url: URL, line: Int) {
-        model.openPath(url, atLine: line)
+    /// Open the file, jump to the matched line, and SELECT the matched
+    /// span (UTF-16 columns — the CM6 position unit). Used by the
+    /// per-match rows so the editor lands on the match with the word
+    /// highlighted, not just at the top of the file.
+    private func open(_ url: URL, match m: CrossFileSearch.Match) {
+        var column: Int?
+        var length: Int?
+        if let r = m.matchRange,
+           let lo = r.lowerBound.samePosition(in: m.line.utf16),
+           let hi = r.upperBound.samePosition(in: m.line.utf16) {
+            column = m.line.utf16.distance(from: m.line.utf16.startIndex, to: lo)
+            length = m.line.utf16.distance(from: lo, to: hi)
+        }
+        model.openPath(url, atLine: m.lineNumber, matchColumn: column, matchLength: length)
     }
 
     /// Wraps `HighlightedText.ranges` and applies the same accent

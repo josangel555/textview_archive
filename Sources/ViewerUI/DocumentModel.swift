@@ -1011,7 +1011,15 @@ public final class DocumentModel: ObservableObject {
     ///     search-result click.
     ///
     /// Directories have no "line"; delegates to `openPath`.
-    public func openPath(_ url: URL, atLine line: Int) {
+    ///
+    /// `matchColumn`/`matchLength` (2026-08-09, search-result jump): the
+    /// matched span on the line, in UTF-16 code units. When present the
+    /// editor selects exactly the matched WORD (owner: "also highlight
+    /// that matching word") instead of the whole line.
+    public func openPath(
+        _ url: URL, atLine line: Int,
+        matchColumn: Int? = nil, matchLength: Int? = nil
+    ) {
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
            isDir.boolValue {
@@ -1020,16 +1028,21 @@ public final class DocumentModel: ObservableObject {
         }
         open(url: url)
         guard line > 0 else { return }
-        // If the opener landed us in rendered markdown, switch to
-        // source so the line is actually visible. Other modes
-        // (.table / .diff / .hex / .formatted) keep their default —
-        // the source-text channel still gets the request, so a later
-        // "switch to source" picks the caret up.
+        // If the opener landed us in rendered markdown, switch to the
+        // EDITOR so the line is actually visible AND the matched span can
+        // be selected (was `.source`; the CM6 editor is the line-jump
+        // home now that text opens editable). Other modes (.table /
+        // .diff / .hex / .formatted) keep their default — the source-text
+        // channel still gets the request, so a later "switch to source"
+        // picks the caret up.
         if currentViewMode == .rendered {
-            setCurrentViewMode(.source)
+            setCurrentViewMode(.editor)
         }
         if currentViewMode == .editor {
-            editorGotoLine = CMGotoLineRequest(line: line, select: true)
+            editorGotoLine = CMGotoLineRequest(
+                line: line, column: matchColumn,
+                select: matchColumn == nil,
+                selectLength: matchLength)
         }
         scrollSource(toLine: line)
     }

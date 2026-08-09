@@ -633,7 +633,9 @@ struct TabBarItem: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // Instant click-registered feedback (owner 2026-08-09) — the tab
+        // dims on mouseDOWN; the self-drawn fills stay untouched.
+        .buttonStyle(PressFeedbackButtonStyle())
         .pointingCursor()   // I-16a/I-07: tabs are clickable — say so
         .onHover { isHovering = $0 }
         .helpInfo(title: tab.title, description: tabHelpText)
@@ -662,7 +664,10 @@ struct TabBarItem: View {
             return Self.activeAccentTint
         }
         if isHovering {
-            return Palette.controlBackground.opacity(0.78)
+            // A clearly visible hover step (owner 2026-08-09: "add hover bg
+            // highlight… similar to shoulder buttons") — the old
+            // 0.78-vs-0.55 same-grey step was imperceptible.
+            return Palette.controlBackground
         }
         // Slightly stronger grey (owner 2026-08-05): inactive must READ
         // inactive next to the accent-tinted active tab.

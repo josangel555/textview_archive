@@ -340,6 +340,24 @@ final class DockLayoutStoreTests: HeadlessUITestCase {
             "Bottom-dock tab/height controls must not republish DocumentModel")
     }
 
+    // MARK: - dock placement is APP-GLOBAL (owner 2026-08-09)
+
+    func test_sessionApply_installsOverridesOnly_edgesStayGlobal() {
+        let store = makeStore()
+        store.move(.lspOutline, to: .right)   // the user's global move
+        // A stale per-session snapshot still carrying an old edge map
+        // (the exact "outline is back on the left after restart" repro).
+        var ov = PanelVisibilityOverrides()
+        ov.set(.git, .shown)
+        let snapshot = PanelLayoutSnapshot(
+            edges: "lspOutline:bottom", overrides: ov.encoded())
+        store.apply(snapshot)
+        XCTAssertEqual(store.edge(of: .lspOutline), .right,
+            "session activation must NOT move panels — placement is app-global")
+        XCTAssertEqual(store.override(for: .git), .shown,
+            "visibility overrides DO apply per-session")
+    }
+
     // MARK: - narrow-observation invariant (no DocumentModel republish)
 
     func test_setDockSize_doesNotRepublishDocumentModel() async {

@@ -131,4 +131,48 @@ final class SidebarResizeTests: XCTestCase {
         XCTAssertNil(
             AccordionHeightResolver.resolve(contentHeight: 0, hasMeasured: false, cap: nil))
     }
+
+    // MARK: - Cascading redistribution (owner 2026-08-09: "the third one
+    // doesn't even move" — grow takes from the neighbor first, then from
+    // the flex panel's slack; shrink stays pair-only)
+
+    func test_cascade_neighborFirst_thenFlex() {
+        // Neighbor can give 80 (200→120); the remaining 70 comes from flex.
+        let r = SidebarResize.redistributeCascading(
+            above: 300, below: 200, delta: 150, flexSlack: 500)
+        XCTAssertEqual(r.above, 450)
+        XCTAssertEqual(r.below, 120, "the neighbor gives down to its floor")
+    }
+
+    func test_cascade_flexSlackCapsTheOverflow() {
+        // Neighbor gives 80; flex can only give 30 → total growth 110.
+        let r = SidebarResize.redistributeCascading(
+            above: 300, below: 200, delta: 150, flexSlack: 30)
+        XCTAssertEqual(r.above, 410)
+        XCTAssertEqual(r.below, 120)
+    }
+
+    func test_cascade_flooredNeighbor_growsEntirelyFromFlex() {
+        // The exact owner repro: the neighbor is ALREADY at its floor, so
+        // the old pair-only math moved nothing; the cascade grows from flex.
+        let r = SidebarResize.redistributeCascading(
+            above: 250, below: 120, delta: 100, flexSlack: 400)
+        XCTAssertEqual(r.above, 350)
+        XCTAssertEqual(r.below, 120)
+    }
+
+    func test_cascade_shrinkDirection_staysPairOnly() {
+        let r = SidebarResize.redistributeCascading(
+            above: 300, below: 200, delta: -50, flexSlack: 400)
+        XCTAssertEqual(r.above, 250)
+        XCTAssertEqual(r.below, 250, "shrink is sum-preserving, flex untouched")
+    }
+
+    func test_cascade_zeroSlack_matchesPairMath() {
+        let a = SidebarResize.redistribute(above: 300, below: 200, delta: 150)
+        let b = SidebarResize.redistributeCascading(
+            above: 300, below: 200, delta: 150, flexSlack: 0)
+        XCTAssertEqual(a.above, b.above)
+        XCTAssertEqual(a.below, b.below)
+    }
 }

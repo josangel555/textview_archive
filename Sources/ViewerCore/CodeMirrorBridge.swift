@@ -210,7 +210,10 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// default; driven by the View → Vim Mode preference.
     case setVimMode(Bool)
     case setIndentation(useTabs: Bool, size: Int)
-    case gotoLine(line: Int, column: Int?, select: Bool)
+    /// `selectLength` (2026-08-09, search-result jump): with a `column`,
+    /// select exactly [column, column+selectLength) on the line — the
+    /// matched WORD — instead of the whole line.
+    case gotoLine(line: Int, column: Int?, select: Bool, selectLength: Int?)
     /// Insert `text` at the current selection (replacing it if non-empty),
     /// via CM6 `state.replaceSelection` — undoable, cursor lands after the
     /// inserted text. Drives the "Insert Date & Time" command (TSK-299).
@@ -601,11 +604,12 @@ public enum CMBridgeCodec {
             dict["type"] = "setIndentation"
             dict["useTabs"] = useTabs
             dict["size"] = size
-        case .gotoLine(let line, let column, let select):
+        case .gotoLine(let line, let column, let select, let selectLength):
             dict["type"] = "gotoLine"
             dict["line"] = line
             if let column = column { dict["column"] = column }
             dict["select"] = select
+            if let selectLength = selectLength { dict["selectLength"] = selectLength }
         case .insertAtCursor(let text):
             dict["type"] = "insertAtCursor"
             dict["text"] = text

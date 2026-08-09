@@ -211,6 +211,30 @@ extension View {
     func pointingCursor() -> some View { pointerStyle(.link) }
 }
 
+// MARK: - Press feedback for self-drawn chips (owner 2026-08-09)
+//
+// Tabs and session pills draw their OWN hover/selection fills, so they keep
+// `.plain` — which also means a click gives ZERO synchronous feedback. When
+// the action is heavy (a session switch), the owner's report was "currently
+// even [a pressing animation] is not visible". This style adds ONLY the
+// press affordance — instant dim + tiny scale rendered on mouseDOWN, before
+// the action even fires — leaving the label's own fills untouched.
+
+struct PressFeedbackButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(
+                MotionGate.animation(.easeOut(duration: 0.08),
+                                     reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
+    }
+}
+
 // MARK: - Reduce Motion helper (A11Y-06 support)
 //
 // Pure decision function so the "should this animation run?" rule is

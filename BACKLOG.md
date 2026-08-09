@@ -649,3 +649,29 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
 - **Owner-eyeball verification tail (S, 2026-08-09):** model-fixed but not pixel-captured
   — hex caret/tandem on a real binary, session-switch HUD, empty-shoulder drag
   placeholder, settings one-column alignment. Ten-second checks on the installed app.
+
+- **★ OWNER ROUND-2 BATCH (2026-08-09 ~4 AM) — fixed this round vs parked:**
+  - FIXED: divider stored↔rendered decorrelation (snap-at-drag-start + flex-slack cascade
+    — racing/stuck/third-panel-dead all one root; runaway persisted heights SELF-HEAL on
+    first drag); dock placement now APP-GLOBAL (sessions apply visibility only); search
+    result rows detached from groups + stale click actions (LazyVStack integer-identity —
+    per-file group containers now) + folder hints on duplicate names + match-count badge;
+    search click selects the matched WORD (goto selectLength end-to-end) and markdown
+    coerces rendered→EDITOR; concise value-only footer chips + relative-date click toggle
+    (persisted, tooltip shows both); instant press feedback on session pills + file tabs
+    (PressFeedbackButtonStyle) + visible hover step; HUD defer now paints BEFORE the
+    switch (asyncAfter 80ms); traffic lights centered via unified-toolbar spacer; subtle
+    title-band gradient.
+  - VERIFY ON RE-TEST (owner): the git-panel inner/outer OVERLAPPING SCROLLBARS
+    (screenshot 4.11.02) — expected fixed by the stored-height self-heal (a runaway
+    stored git height made the fixed-height body overflow its slot); if it persists,
+    diagnose live with a fill-check scene seeded with pathological stored heights. **S**
+  - PARKED — **depth/visual design pass (M)**: "UI is very flat" — elevation/shadow
+    language across panels, docks, palette; needs a coherent design round, not spot
+    tweaks (title-band gradient landed as the first step).
+  - PARKED — **uniform control heights audit (S–M)**: [Editor|Hex] group, git tool-window
+    tab items, FileNav header controls, Bookmarks header controls — measure + normalize
+    to one height token.
+  - PARKED — **search result font harmonization round 2 (XS)**: sizes tightened this
+    round (mono 10.5 snippets, 9.5 line numbers); owner may want non-mono or different
+    weights after seeing it.

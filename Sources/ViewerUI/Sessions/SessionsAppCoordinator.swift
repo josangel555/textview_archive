@@ -251,12 +251,20 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// enough to read as a hang, with no feedback until the new tabs land).
     @Published public private(set) var isSwitchingSession = false
 
-    /// Run a session switch with the HUD flag up: flag first, defer ONE
-    /// runloop turn so the overlay actually PAINTS (the switch itself is
-    /// synchronous main-thread work), then switch and drop the flag.
+    /// Run a session switch with the HUD flag up: flag first, then defer
+    /// the synchronous switch long enough for a real FRAME to render.
+    ///
+    /// A bare one-turn `DispatchQueue.main.async` was NOT enough (owner
+    /// 2026-08-09: "loading state can only be seen momentarily AFTER the
+    /// bulk of the stuck period") — the queued block runs before the next
+    /// CATransaction commit, so the flag's overlay never painted before
+    /// the heavy work blocked the thread. `asyncAfter(80ms)` guarantees at
+    /// least one display refresh paints the HUD + the pill's pressed state
+    /// first; the extra latency is invisible inside a switch that already
+    /// takes an order of magnitude longer.
     private func performSwitch(_ body: @escaping () -> Void) {
         isSwitchingSession = true
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             body()
             self?.isSwitchingSession = false
         }

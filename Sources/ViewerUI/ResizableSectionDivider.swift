@@ -64,6 +64,25 @@ struct ResizableSectionDivider: View {
     /// dead zone (owner 2026-08-09 "proportions off"). nil = floor-only
     /// (pre-measurement pass).
     var maxHeight: CGFloat? = nil
+    /// The RENDERED (resolved) heights of the adjacent panels — what the
+    /// user actually SEES. Owner 2026-08-09 round 2 ("racing past the
+    /// mouse, then stuck"): the drag mutates the STORED height, but
+    /// `SidebarStackLayout.resolve` can render LESS than stored (crowded
+    /// band) — any stored↔rendered gap is a dead zone or a catch-up leap,
+    /// and the runaway stored value persists, poisoning every later
+    /// session. Fix: at drag START the stored value SNAPS to the rendered
+    /// one (no visual change by construction — rendered is what's on
+    /// screen), so every subsequent write renders 1:1 AND old runaway
+    /// values self-heal on first touch. nil = fall back to the stored
+    /// value (pre-measurement pass).
+    var renderedAbove: CGFloat? = nil
+    var renderedBelow: CGFloat? = nil
+    /// How much the PAIR may grow in total before the flex panel hits its
+    /// floor (the flex absorbs pair growth by layout). Cascade: a grow
+    /// drag takes from the pair neighbor first, then from this slack —
+    /// "the third panel won't move" is gone without any panel PUSHING
+    /// chrome. 0 = pair-only (the old behavior).
+    var flexSlack: CGFloat = 0
 
     /// Drag origins (the heights the adjacent sections had when the
     /// user first pressed). Nil between drags.
@@ -148,9 +167,23 @@ struct ResizableSectionDivider: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 guard !isAboveCollapsed else { return }
-                if dragStartAbove == nil {
-                    dragStartAbove = heightAbove?.wrappedValue
-                    dragStartBelow = heightBelow?.wrappedValue
+                if dragStartAbove == nil && dragStartBelow == nil {
+                    // Origin capture + the stored→rendered SNAP (see the
+                    // renderedAbove/Below doc): bases are what the user
+                    // SEES; the snap writes them through so stored ==
+                    // rendered from the first delta on.
+                    withTransaction(noAnimationTransaction()) {
+                        if let above = heightAbove {
+                            let base = renderedAbove ?? above.wrappedValue
+                            dragStartAbove = base
+                            above.wrappedValue = bounded(base)
+                        }
+                        if let below = heightBelow {
+                            let base = renderedBelow ?? below.wrappedValue
+                            dragStartBelow = base
+                            below.wrappedValue = bounded(base)
+                        }
+                    }
                 }
                 let delta = value.translation.height
                 // No-animation transaction: the dominant cause of
@@ -191,17 +224,25 @@ struct ResizableSectionDivider: View {
     func apply(delta: CGFloat) {
         switch (heightAbove, heightBelow) {
         case let (above?, below?):
-            let baseA = dragStartAbove ?? above.wrappedValue
-            let baseB = dragStartBelow ?? below.wrappedValue
-            let next = SidebarResize.redistribute(above: baseA, below: baseB, delta: delta)
+            let baseA = dragStartAbove ?? renderedAbove ?? above.wrappedValue
+            let baseB = dragStartBelow ?? renderedBelow ?? below.wrappedValue
+            // Cascade (owner 2026-08-09): neighbor first, then the flex
+            // panel's slack — so a grow drag never dead-ends while there
+            // is visible space to take.
+            let next = SidebarResize.redistributeCascading(
+                above: baseA, below: baseB, delta: delta, flexSlack: flexSlack)
             above.wrappedValue = bounded(next.above)
             below.wrappedValue = bounded(next.below)
         case let (above?, nil):
-            let base = dragStartAbove ?? above.wrappedValue
+            let base = dragStartAbove ?? renderedAbove ?? above.wrappedValue
             above.wrappedValue = bounded(base + delta)
         case let (nil, below?):
-            let base = dragStartBelow ?? below.wrappedValue
-            below.wrappedValue = bounded(base - delta)
+            // The flex boundary (drag up grows the panel BELOW, taking
+            // from the flex panel above): growth is bounded by the flex
+            // slack so the stored value can't run past what renders.
+            let base = dragStartBelow ?? renderedBelow ?? below.wrappedValue
+            let target = base - delta
+            below.wrappedValue = bounded(min(target, base + max(0, flexSlack)))
         case (nil, nil):
             break
         }

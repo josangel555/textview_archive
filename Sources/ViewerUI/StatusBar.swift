@@ -333,33 +333,34 @@ struct StatusBar: View {
                     // publishes a `line == 0` sentinel (it skips the
                     // O(N) newline-index build that would otherwise
                     // resolve precise line:col).
-                    metric("Ln",
-                        "\(sourceView.sourceSelection.line)" +
+                    metric("Line and column",
+                        "Ln \(sourceView.sourceSelection.line)" +
                         ", Col \(sourceView.sourceSelection.column)")
                     // UX-C (#225) edit stats: when there's a non-empty
                     // selection, surface its length (UTF-16 units, matching
                     // `SourceSelection.length`). Caret-only (length 0) hides
                     // the chip so it doesn't read as "Sel 0".
                     if sourceView.sourceSelection.length > 0 {
-                        metric("Sel",
-                            "\(formatNumber(sourceView.sourceSelection.length)) ch")
+                        metric("Selection length",
+                            "Sel \(formatNumber(sourceView.sourceSelection.length))")
                     }
                 }
                 // Lines/Chars only apply to a text-backed document. For
                 // media/binary previews (image/audio/video/PDF/sqlite)
                 // they're a meaningless 0 — hide them rather than render
-                // "Lines 0 / Chars 0", which reads as an empty 0-line doc
-                // (PV-08). Size + category encoding still show.
+                // a 0-line chip that reads as an empty doc (PV-08).
+                // Concise (owner 2026-08-09): ONE "418 ln" chip; the char
+                // count rides its tooltip.
                 if metrics.hasTextMetrics {
-                    metric("Lines", "\(metrics.lineCount)")
-                    metric("Chars", formatNumber(metrics.charCount))
+                    metric("Lines", "\(metrics.lineCount) ln",
+                           help: "\(metrics.lineCount) lines · \(formatNumber(metrics.charCount)) characters")
                 }
-                metric("Size",  formatBytes(metrics.byteCount))
+                metric("File size", formatBytes(metrics.byteCount))
                 if !metrics.indent.isEmpty {
-                    metric("Indent", metrics.indent)
+                    metric("Indentation", metrics.indent)
                 }
-                metric("EOL",   metrics.lineEndings)
-                metric("Enc",   metrics.encodingShort)
+                metric("Line endings", metrics.lineEndings)
+                metric("Encoding", metrics.encodingShort)
                 zoomReadout
             }
             // A11Y-16: collapse the per-metric label/value pairs into
@@ -378,18 +379,81 @@ struct StatusBar: View {
     /// the body hot path doesn't stat on every re-eval. LOW priority —
     /// the `ViewThatFits` in `body` drops this whole block when the row
     /// is too narrow rather than truncating the live metrics.
+    /// Absolute ↔ relative display toggle for the date chips (owner
+    /// 2026-08-09): click either date to flip, the choice persists, and
+    /// the tooltip always shows BOTH forms.
+    ///
+    /// Plain `@State` + explicit write-through, NOT `@AppStorage`: an
+    /// AppStorage wrapper makes the view value compare UNEQUAL on every
+    /// parent re-body, killing StatusBar's diff-skip (the
+    /// `ChromeBodyEvalCountTests` re-body budget caught it).
+    static let relativeDatesKey = "MarkdownViewer.statusBar.relativeDates"
+    @State private var relativeDates =
+        UserDefaults.standard.bool(forKey: StatusBar.relativeDatesKey)
+
     @ViewBuilder
     private var dateChips: some View {
         if let dates = currentFileDates {
-            HStack(spacing: 12) {
-                if let created = dates.created {
-                    metric("Created", Self.formatDate(created))
+            Button {
+                relativeDates.toggle()
+                UserDefaults.standard.set(relativeDates, forKey: Self.relativeDatesKey)
+            } label: {
+                HStack(spacing: 12) {
+                    if let created = dates.created {
+                        labeledDate("Created", created, valueColor: .primary,
+                                    labelColor: .secondary)
+                    }
+                    if let modified = dates.modified {
+                        let stale = isActiveTabStale
+                        labeledDate("Modified", modified,
+                                    valueColor: stale ? .red : .primary,
+                                    labelColor: stale ? .red : .secondary,
+                                    staleNote: stale)
+                    }
                 }
-                if let modified = dates.modified {
-                    modifiedMetric(Self.formatDate(modified), stale: isActiveTabStale)
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .pointingCursor()
+            .accessibilityIdentifier("mdv.statusBar.dates")
         }
+    }
+
+    /// One date chip: label + value in the chosen mode. The tooltip
+    /// carries both the absolute and relative forms plus the toggle hint.
+    private func labeledDate(
+        _ label: String, _ date: Date,
+        valueColor: Color, labelColor: Color, staleNote: Bool = false
+    ) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.system(size: model.uiSize(10), weight: .medium))
+                .foregroundStyle(labelColor)
+            Text(relativeDates ? Self.relativeDate(date) : Self.formatDate(date))
+                .font(.system(size: model.uiSize(10), design: .monospaced))
+                .foregroundStyle(valueColor)
+        }
+        .fixedSize()
+        .helpInfo(
+            title: "\(label) \(Self.formatDate(date)) (\(Self.relativeDate(date)))",
+            description: (staleNote ? "The file changed on disk since it was loaded. " : "")
+                + "Click to switch between absolute and relative dates")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            staleNote
+                ? "\(label) \(Self.formatDate(date)), changed on disk"
+                : "\(label): \(Self.formatDate(date))")
+    }
+
+    /// Relative form ("2 hr. ago") for the date-chip toggle.
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
+    static func relativeDate(_ date: Date, now: Date = Date()) -> String {
+        relativeFormatter.localizedString(for: date, relativeTo: now)
     }
 
     /// True when the active tab's loaded copy is stale vs disk (or deleted).
@@ -400,27 +464,9 @@ struct StatusBar: View {
         }
     }
 
-    /// "Modified" chip that renders red on staleness. Mirrors `metric(_:_:)`
-    /// but with a conditional value color + a "(on disk changed)" a11y hint.
-    @ViewBuilder
-    private func modifiedMetric(_ value: String, stale: Bool) -> some View {
-        HStack(spacing: 3) {
-            Text("Modified")
-                .font(.system(size: model.uiSize(10), weight: .medium))
-                .foregroundStyle(stale ? Color.red : Color.secondary)
-            Text(value)
-                .font(.system(size: model.uiSize(10), design: .monospaced))
-                .foregroundStyle(stale ? Color.red : Color.primary)
-        }
-        // Render whole or not at all — never a half-truncated "Mod… 6:12…".
-        // The whole date block is dropped by `ViewThatFits` when too narrow.
-        .fixedSize()
-        .helpInfo(title: "Modified \(value)",
-                  description: stale ? "The file changed on disk since it was loaded" : "")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(stale ? "Modified \(value), changed on disk" : "Modified: \(value)")
-        .accessibilityIdentifier("mdv.statusBar.modified")
-    }
+    // (The old standalone `modifiedMetric` — id mdv.statusBar.modified —
+    // folded into `labeledDate` with the 2026-08-09 relative-date toggle;
+    // staleness still renders red, the block id is mdv.statusBar.dates.)
 
     /// UX-C (#225) dual-zoom readout.
     ///
@@ -464,21 +510,21 @@ struct StatusBar: View {
     }
 
     @ViewBuilder
-    private func metric(_ label: String, _ value: String) -> some View {
-        HStack(spacing: 3) {
-            Text(label)
-                .font(.system(size: model.uiSize(10), weight: .medium))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: model.uiSize(10), design: .monospaced))
-                .foregroundStyle(.primary)
-        }
+    /// One concise footer chip (owner 2026-08-09: "concise footer…
+    /// tooltip etc can explain, show label"): the VALUE alone renders —
+    /// "418 ln", "28.1 KB", "LF" — and the LABEL moves to the tooltip +
+    /// accessibility. `help` overrides the default tooltip when a chip
+    /// folds extra data in (e.g. the line chip carrying the char count).
+    private func metric(_ label: String, _ value: String, help: String? = nil) -> some View {
+        Text(value)
+            .font(.system(size: model.uiSize(10), design: .monospaced))
+            .foregroundStyle(.primary)
         // A status-bar chip must render whole — `.fixedSize()` stops
         // SwiftUI from compressing "Col 1" → "Col…" or "50.0k" → "50.…"
         // under width pressure. The path (lowest layout priority) absorbs
         // the shrink; the trailing date chips drop via `ViewThatFits`.
         .fixedSize()
-        .help("\(label): \(value)")
+        .help(help ?? "\(label): \(value)")
         // One combined element per metric so the parent's
         // `.accessibilityElement(children: .combine)` (A11Y-16) reads
         // "Lines: 42" as a unit rather than two separate fragments.

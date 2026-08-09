@@ -752,7 +752,8 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                    target: req.target, paneTabID: paneTabID, isActivePane: isActivePane),
                CMOneShotLedger.shared.consume(req.id) {
                 dispatch(
-                    .gotoLine(line: req.line, column: req.column, select: req.select),
+                    .gotoLine(line: req.line, column: req.column, select: req.select,
+                              selectLength: req.selectLength),
                     webView: webView
                 )
             }
@@ -1272,20 +1273,26 @@ public struct CMGotoLineRequest: Equatable, Sendable {
     public let line: Int
     public let column: Int?
     public let select: Bool
+    /// With a `column`, select exactly [column, column+selectLength) — the
+    /// matched WORD of a search-result jump (2026-08-09) — instead of the
+    /// whole line.
+    public let selectLength: Int?
     /// TSK-1483: the tab this request targets. Stamped at the model layer
     /// (`DocumentModel.editorGotoLine` setter); only the pane hosting this tab
     /// may apply the request (`CMOneShotRouting`). nil = legacy/untargeted —
     /// active pane only.
     public let target: UUID?
     public init(id: UUID = UUID(), line: Int, column: Int? = nil, select: Bool = false,
-                target: UUID? = nil) {
+                selectLength: Int? = nil, target: UUID? = nil) {
         self.id = id; self.line = line; self.column = column; self.select = select
+        self.selectLength = selectLength
         self.target = target
     }
 
     /// Copy with a target stamp (same nonce `id` — stamping is not a re-fire).
     public func stamped(target: UUID?) -> CMGotoLineRequest {
-        CMGotoLineRequest(id: id, line: line, column: column, select: select, target: target)
+        CMGotoLineRequest(id: id, line: line, column: column, select: select,
+                          selectLength: selectLength, target: target)
     }
 }
 

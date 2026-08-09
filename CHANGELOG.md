@@ -2,6 +2,37 @@
 
 ## 2026-08-09
 
+### Fixed (round 2 — owner 4 AM batch)
+- **Sidebar panel resizing tracks the mouse again — and stays fixed.** Dragging a
+  divider used to race ahead, dead-end at "50%", or do nothing at all for a third panel:
+  drags were writing STORED heights while panels render RESOLVED ones, and the runaway
+  stored values persisted, poisoning every later launch. A drag now snaps to what's on
+  screen at the first pixel (old bad values self-heal the first time you touch a
+  divider), and growing a panel takes from its neighbor first, then from the flexible
+  panel's spare space — so a drag never dead-ends while there's visible room.
+- **Tool-window shoulder positions survive restarts and session switches.** Moving a
+  panel to another shoulder was silently undone by session activation replaying an old
+  per-session layout. WHERE a panel docks is app-global now; sessions still remember
+  WHICH panels are open.
+- **Search results are grouped honestly.** Result rows could detach from their file
+  group — giant blank gaps, and clicking a row under one file opening a DIFFERENT file
+  (a SwiftUI list-identity bug). Every group is one unit now; same-named files (three
+  Cargo.tomls) carry a grey folder hint, and each group shows its match count.
+- **Clicking a search result lands on the match.** The file opens at the matched line
+  with the matched word SELECTED (markdown opens in the editor for the jump).
+- **Clicking a session tab responds instantly.** Pills (and file tabs) dim on
+  mouse-down, and the switching overlay now actually paints BEFORE the heavy work
+  instead of flashing at the end.
+
+### Changed (round 2)
+- **Concise footer.** Value-only chips — "418 ln · 28.1 KB · Spaces (2) · LF · UTF-8 ·
+  110%" — with the labels in the tooltips (the line chip's tooltip carries the char
+  count). Click the Created/Modified dates to flip absolute ↔ relative (remembered;
+  the tooltip always shows both).
+- **Title bar polish**: traffic lights vertically centered in the session band; the band
+  carries a subtle depth gradient. Tabs and session pills got a clearly visible hover
+  tint.
+
 ### Changed
 - **The terminal is a regular tool window now.** All of its special machinery is gone:
   the dedicated toggle at the bottom of the left rail, the Settings "Pane placement" /

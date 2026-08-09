@@ -146,17 +146,26 @@ final class CMOutboundEncodingTests: XCTestCase {
     // MARK: - Navigation
 
     func testEncodeGotoLineWithoutColumn() {
-        let d = encodeAndParse(.gotoLine(line: 42, column: nil, select: false))
+        let d = encodeAndParse(.gotoLine(line: 42, column: nil, select: false, selectLength: nil))
         XCTAssertEqual(d["type"] as? String, "gotoLine")
         XCTAssertEqual(d["line"] as? Int, 42)
         XCTAssertNil(d["column"], "column omitted when nil to keep payload tight")
         XCTAssertEqual(d["select"] as? Bool, false)
+        XCTAssertNil(d["selectLength"], "selectLength omitted when nil")
     }
 
     func testEncodeGotoLineWithColumnAndSelect() {
-        let d = encodeAndParse(.gotoLine(line: 12, column: 4, select: true))
+        let d = encodeAndParse(.gotoLine(line: 12, column: 4, select: true, selectLength: nil))
         XCTAssertEqual(d["column"] as? Int, 4)
         XCTAssertEqual(d["select"] as? Bool, true)
+    }
+
+    func testEncodeGotoLineWithMatchSpan() {
+        // 2026-08-09 search-result jump: column + selectLength select the
+        // matched WORD on the line.
+        let d = encodeAndParse(.gotoLine(line: 7, column: 10, select: false, selectLength: 8))
+        XCTAssertEqual(d["column"] as? Int, 10)
+        XCTAssertEqual(d["selectLength"] as? Int, 8)
     }
 
     func testEncodeSetSelection() {
@@ -382,7 +391,7 @@ final class CMOutboundEncodingTests: XCTestCase {
         let samples: [CMOutboundMessage] = [
             .setText(text: "x", resetHistory: false, preserveSelection: true),
             .setLanguage("javascript"),
-            .gotoLine(line: 1, column: nil, select: false),
+            .gotoLine(line: 1, column: nil, select: false, selectLength: nil),
             .setIndentation(useTabs: true, size: 4),
             .openSearch(query: nil, replace: false),
             .hoverResponse(replyId: "h-1", contents: "doc", from: 0, to: 3),
