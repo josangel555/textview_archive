@@ -25,16 +25,20 @@ final class PanelEdgeTests: XCTestCase {
     func test_emptyAssignment_everyPanelOnLeft() {
         let a = PanelEdgeAssignment()
         for kind in SidebarPanelKind.allCases {
-            XCTAssertEqual(a.edge(kind), .left,
-                           "\(kind) should default to .left")
+            // 2026-08-09: the terminal is the one panel with a per-panel
+            // preferred default (.bottom); every other panel defaults .left.
+            let expected: PanelEdge = kind == .terminal ? .bottom : .left
+            XCTAssertEqual(a.edge(kind), expected,
+                           "\(kind) should default to .\(expected.rawValue)")
         }
     }
 
     func test_emptyAssignment_panelsOnLeft_isFullDefaultOrder() {
         let a = PanelEdgeAssignment()
-        XCTAssertEqual(a.panels(on: .left), SidebarPanelRegistry.defaultOrder)
+        XCTAssertEqual(a.panels(on: .left),
+                       SidebarPanelRegistry.defaultOrder.filter { $0 != .terminal })
         XCTAssertEqual(a.panels(on: .right), [])
-        XCTAssertEqual(a.panels(on: .bottom), [])
+        XCTAssertEqual(a.panels(on: .bottom), [.terminal])
     }
 
     // MARK: - set/get edge assignment
@@ -75,10 +79,10 @@ final class PanelEdgeTests: XCTestCase {
         a.setEdge(.files, .right)
         a.setEdge(.lspProblems, .right)
         XCTAssertEqual(a.panels(on: .right), [.files, .lspProblems])
-        // .left now excludes the two moved panels but keeps the rest in
-        // order.
+        // .left now excludes the two moved panels (and the terminal, whose
+        // per-panel default is .bottom) but keeps the rest in order.
         let expectedLeft = SidebarPanelRegistry.defaultOrder.filter {
-            $0 != .files && $0 != .lspProblems
+            $0 != .files && $0 != .lspProblems && $0 != .terminal
         }
         XCTAssertEqual(a.panels(on: .left), expectedLeft)
     }
@@ -115,7 +119,8 @@ final class PanelEdgeTests: XCTestCase {
     func test_decoded_emptyString_isAllLeft() {
         let a = PanelEdgeAssignment.decoded("")
         XCTAssertEqual(a, PanelEdgeAssignment())
-        XCTAssertEqual(a.panels(on: .left), SidebarPanelRegistry.defaultOrder)
+        XCTAssertEqual(a.panels(on: .left),
+                       SidebarPanelRegistry.defaultOrder.filter { $0 != .terminal })
     }
 
     // MARK: - unknown-token drop
@@ -166,7 +171,8 @@ final class PanelEdgeTests: XCTestCase {
 
         let loaded = PanelEdgeAssignment.load(from: defaults)
         XCTAssertEqual(loaded, PanelEdgeAssignment())
-        XCTAssertEqual(loaded.panels(on: .left), SidebarPanelRegistry.defaultOrder)
+        XCTAssertEqual(loaded.panels(on: .left),
+                       SidebarPanelRegistry.defaultOrder.filter { $0 != .terminal })
     }
 
     func test_save_survivesRelaunch() {

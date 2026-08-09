@@ -34,6 +34,9 @@ struct TerminalPanelSection: View {
             }
         }
         .sidebarSectionContainer()
+        // .contain — a bare container id would implicitly combine the pane's
+        // descendants (swallowing mdv.terminal.pane from the AX tree).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.terminalSection")
     }
 

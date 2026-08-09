@@ -621,16 +621,30 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
   label nbsp-padding gets trimmed — neither is a workaround. Repro: any `graph LR` +
   ⌘-minus once. Surface: `mermaid-shim.js` + markdown.css scale interplay.
 
-- **★ BOTTOM DOCK REWORK — owner Phase 2, queued NEXT (M–L, 2026-08-09):** the bottom
-  tool-window area renders docked panels SIDE BY SIDE and its height isn't resizable
-  (owner screenshot 03:44). Rework: (a) bottom-docked panels arrange as TABS — one visible
-  at a time; (b) the bottom dock gets a resizable height (gutter-band divider, same
-  pattern as the sidebar); (c) **TERMINAL becomes a regular tool window** — remove ALL
-  special handling (left-rail TerminalToggleButton, Settings "Pane placement"/"Tab strip
-  position" rows, TerminalPaneEdge plumbing, terminalDropZone) so it docks/moves like any
-  panel. Surfaces: BottomDockContainer, DockedToolWindow, ShoulderRailView, SettingsView
-  terminal section, the terminal pane model, scenes calling setPaneEdge/setTabPosition.
-  Mirror the left-shoulder one-rule stack (SidebarStackLayout, 2026-08-09).
+- ~~**★ BOTTOM DOCK REWORK**~~ **LANDED 2026-08-09** (two commits: tabbed dock + terminal
+  demotion): (a) bottom dock = TAB BAND (one panel visible, `BottomDockTabs.resolve`
+  selection, persisted); (b) shared resizable band height via a 12px gutter+pill (sidebar
+  divider idiom, `PanelLayoutStore.bottomBandHeight`); (c) terminal =
+  `SidebarPanelKind.terminal` (per-panel default edge `.bottom`, presence=false =
+  user-summoned) — deleted TerminalToggleButton / TerminalPaneEdge+bridge / Settings
+  placement rows / TerminalDragPayload+UTI / side columns + both terminal resize handles /
+  in-pane dock+close controls; ⌃` toggles the panel; one-shot `TerminalPanelMigration`
+  keeps a previously-open pane open. VM-pixel-verified both edges (terminal scene =
+  tabbed bottom band + live shell; terminal-dock-right = right tool window + content
+  both compositing). RESIDUE (S): owner eyeball on the installed app (tab band feel,
+  terminal-in-dock, migration); sessions saved pre-rework open with the terminal hidden
+  (visibility rides per-session panel layout now — by design, note if the owner trips on
+  it); bottom-dock tab strip has no AX interaction test yet (ids `mdv.dock.bottom.tab.*`
+  / `.resize` / `.close` are in place for the AX tier).
+  - **RIGHT-of-content AX void (S–M, TSK-1577 family, found 2026-08-09):** NOTHING right
+    of the center column (right rail `mdv.rail.right`, any `mdv.dock.right.*`, a
+    right-docked `mdv.terminal.pane`) has EVER materialized in the out-of-process AX
+    tree — across every historical lane dump — while the left rail/sidebar ids surface
+    fine. Adding `.accessibilityElement(children: .contain)` through the whole chain
+    does NOT fix it (applied 2026-08-09, kept as correct hygiene). So it's not the
+    implicit-combine class — likely the reader/bridge drops trailing HStack siblings.
+    Until diagnosed, right-dock scenes use the dense-chip PIXEL eval
+    (`terminal-dock-right`'s scene_expect entry documents this).
 
 - **Owner-eyeball verification tail (S, 2026-08-09):** model-fixed but not pixel-captured
   — hex caret/tandem on a real binary, session-switch HUD, empty-shoulder drag

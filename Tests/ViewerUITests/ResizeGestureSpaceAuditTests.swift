@@ -14,10 +14,14 @@ import XCTest
 final class ResizeGestureSpaceAuditTests: XCTestCase {
 
     /// file → expected count of resize DragGestures (ALL must be .global).
+    /// (Terminal/TerminalView.swift left the audit 2026-08-09 — both terminal
+    /// resize handles were deleted with the terminal-as-a-panel rework; the
+    /// terminal now resizes via the audited dock/divider handles.
+    /// DockedToolWindow.swift stays at 2: the right pane's edge handle + the
+    /// tabbed bottom dock's gutter.)
     private static let resizeFiles: [(String, Int)] = [
         ("DraggableSidebar.swift", 1),
         ("DockedToolWindow.swift", 2),
-        ("Terminal/TerminalView.swift", 2),
         ("ResizableSectionDivider.swift", 1),
         ("CSVTableView.swift", 1),
         ("SQLiteBrowserView.swift", 1),

@@ -143,6 +143,10 @@ struct TerminalPaneView: View {
             }
         }
         .background(Palette.textBackground)
+        // .contain — keep the pane id + its strip children readable
+        // out-of-process now that the pane nests inside dock/section
+        // containers (2026-08-09 rework; the 2026-08-01 combine rule).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.terminal.pane")
     }
 

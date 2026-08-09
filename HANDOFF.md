@@ -1,103 +1,108 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — owner UX marathon: left shoulder reworked; NEXT = bottom dock (2026-08-09 04:45)
+# Handoff — bottom-dock rework LANDED (tabs + terminal demotion) (2026-08-09 05:40)
 
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @
-`11967e90` (this handoff's doc edits uncommitted at write time — commit them with this
-file). /Applications/TextView.app = RELEASE @ `11967e90` (installed 04:30; owner may still
-need ⌘Q+relaunch). CI loop: GREEN through the `71769ff9` checkpoint (fix-forward on red).
-tasked board UNREACHABLE all session — BACKLOG + commit messages are the state of record;
-ticket debt keeps accruing for reconnect. A local SITE test server may still be running:
-`python3 -m http.server 8931` in the CloudDocs josangel.com dir → http://localhost:8931/
-(homepage + /textview/ + /blog/) — kill or reuse. Owner-mode memory:
-`feedback_interactive_drive_mode` (mid-turn batches, install-on-ask, the ⌘Q-relaunch
-trap, full-accent styling).
+`d0782617` + the fix-forward commit carrying this handoff (CI: `0c417c26` GREEN,
+`d0782617` RED → fixed forward in that commit — two missed suites, see below).
+/Applications/TextView.app = RELEASE @ `11967e90` (PRE-rework — install a fresh release
+only after the fix-forward commit's CI line is rc=0). tasked board UNREACHABLE (3rd day)
+— BACKLOG + commit messages are the state of record.
 
 ## Mission
-Owner-driven interactive drain (owner active, sending batches). Two arcs this session:
-(1) launch-site/marketing polish (done); (2) a large owner UX batch culminating in the
-LEFT-SHOULDER STRUCTURAL REWORK (done). **Explicitly queued next arc: BOTTOM DOCK
-REWORK** — BACKLOG "★ BOTTOM DOCK REWORK" (tabs, resizable height, terminal demoted to a
-regular tool window).
+Owner-driven interactive drain. This session (post-compaction) executed the owner's
+explicitly queued Phase 2: **the BOTTOM DOCK REWORK — done end-to-end** (spec was
+BACKLOG "★ BOTTOM DOCK REWORK", now marked LANDED with residue).
 
 ## Current state
-- **Done + VM-pixel-verified:** one-rule sidebar stack (`SidebarStackLayout` + rewritten
-  `SidebarView.sidebarBody`): uniform panels incl. plugins, layout-flexible
-  [26pt…stored] heights, flex fill (FILES or last panel), sum-preserving pair dividers
-  (floors only — the 50% dual-split wall is GONE), floor-bounded flex-boundary divider,
-  outer scroll engages ONLY at constant compressed minimums; visible 12px gutter bands
-  with grabber pills (no white→line→white seam); distinct tinted headers; per-panel
-  `.clipped()` (the "Nothing staged over the footer" bleed); no white gap above file nav;
-  full-accent active rows (file nav / current bookmark / selected log commit,
-  `Palette.selectedRowText`); accent bar atop the active tab; dark diff washes quieter;
-  git log search padding.
-- **Done + host-tested (owner eyeball still pending):** hex edit caret now PAINTED
-  (was invisible — zero-length selection in a non-editable NSTextView draws no beam) +
-  hex↔ascii tandem selection (`HexCaretTandemTests`, 4 tests); session-switch HUD
-  (`activateWithHUD` gesture variants — the coordinator stays synchronous);
-  empty-shoulder drag placeholder (`PanelDragMonitor` — TSK-1316's reveal was never
-  wired); settings one-column alignment (pickers centered in maxWidth frames); preview
-  files italic-not-bold in file nav; tooltip placement (converts through `.tooltipRoot`
-  — bubbles drew a titlebar-height too high, covering the hovered control).
-- **In flight:** nothing half-written. Tree = LESSONS/BACKLOG/HANDOFF edits only.
-- **Next action:** commit the handoff docs; then start the BOTTOM DOCK REWORK
-  (BACKLOG "★ BOTTOM DOCK REWORK" carries the full spec + surface list).
+- **Commit 1 (`0c417c26`, CI GREEN): bottom dock = TABS.** One panel visible behind a
+  tab strip (`BottomDockTabs.resolve`, selection persisted, hidden-choice → first);
+  ONE shared band height (`PanelLayoutStore.bottomBandHeight`) dragged from a 12px
+  gutter+pill (sidebar divider idiom); chips = drag sources + move menu; strip carries
+  move/hide for the selected panel. `DockedToolWindow` lost its bottom-band plumbing
+  (right dock unchanged).
+- **Commit 2 (`d0782617`, CI RED → fixed forward): terminal = REGULAR tool window.**
+  `SidebarPanelKind.terminal` + `preferredDefaultEdge` (.bottom; a NEW per-panel
+  default layered under the global default — every PanelEdgeAssignment normalization
+  site resolves per-panel now); presence hard-false = user-summoned (`.auto` → hidden,
+  toggle forces `.shown`); body = `TerminalPanelSection` via `SidebarPanelBody` (works
+  in bottom tabs / right dock / left accordion); one-shot `TerminalPanelMigration`
+  (legacy isOpen/paneEdge keys read literally + marker) keeps a previously-open pane
+  open in the same dock. DELETED: TerminalToggleButton, TerminalPaneEdge + bridge +
+  Settings placement rows, TerminalDragPayload/DropZone + its Info.plist UTI,
+  sideTerminalColumn + both terminal resize handles, in-pane dock/close controls.
+  ⌃` toggles the panel; last-shell-tab close hides the window (`onLastTabClosed`
+  wired in DocumentModel). Scenes drive placement through PanelLayoutStore.
+- **CI red on commit 2 — cause + fix (in the fix-forward commit):** two suites my
+  targeted filter missed: `PanelEdgeTests` (5 "all panels on left" list pins — now
+  exclude terminal / expect it on bottom) and `ResizeGestureSpaceAuditTests` (its
+  manifest expected 2 DragGestures in TerminalView.swift — both handles deleted;
+  entry removed, DockedToolWindow stays at 2 = right edge handle + dock gutter).
+- **VM render rung DONE (partial T6, eyeballed):** `terminal` scene = tabbed band
+  (gutter+pill, accent Terminal tab, move/hide, section header + "+", LIVE shell) —
+  PASS + eyeballed; `terminal-dock-right` = right tool window + content BOTH
+  compositing (TSK-960 recipe now on RightDockContainer) — eyeballed twice (first run
+  had a blank content WebView = the known first-run capture flake, TSK-1247 class;
+  re-run clean).
+- **In flight:** nothing half-written.
+- **Next action:** watch CI on the fix-forward commit → rc=0 → `bash
+  scripts/build-app.sh release --install` + tell the owner ⌘Q+relaunch. Then the
+  owner-eyeball tail (BACKLOG). Then OSS-prep O-1..O-6 or the next owner batch.
 
 ## Key decisions & rationale
-- **Layout over arithmetic** for panel sizing: two arithmetic attempts (fillHeight with
-  chrome estimates; resolve()-driven rigid frames) produced double scrollbars / dead
-  bands / chrome push. Final: panels flexible `[compressedMin…stored]` by SwiftUI layout;
-  the only remaining arithmetic uses constants (`stackTargetHeight`) so drift is
-  impossible.
-- **HUD deferral lives at the gesture site** (`activateWithHUD`), never in
-  `SessionsAppCoordinator.activate` — the synchronous contract is load-bearing for
-  tests, scenes, and the CLI verb (deferral-in-core broke the session suite instantly).
-- **Semantic colors only in chrome** — HardCodedColorRatchet enforces;
-  `Palette.selectedRowText` (alternateSelectedControlTextColor) = white-on-accent.
-- **Marketing scenes pin their world**: `MDV_FORCE_APPEARANCE`/`MDV_FORCE_THEME_ID`,
-  zoom 1.0, parked pointer, explicit full sidebar set, session dance + delayed re-assert
-  (session activation RESTORES that session's panel layout).
+- **Terminal presence ≡ false** ("user-summoned"): `.auto` must never auto-open a
+  shell pane; the rail/menu toggle forces `.shown`/`.hidden`. The idiom for any future
+  non-data panel.
+- **Per-panel `preferredDefaultEdge`** rather than migrating an explicit edge entry:
+  fresh installs get terminal-on-bottom with an EMPTY stored map (canonical encode);
+  `edge()`, `setEdge()`, `setDefaultEdge()`, `init` all normalize per-panel.
+- **Terminal visibility rides per-session panel layout now** — sessions saved
+  pre-rework open with the terminal hidden (by design; surface to owner if it bites).
+- **Right-of-content AX void is PRE-EXISTING** (never one id in any historical dump;
+  `.contain` through the whole chain doesn't fix it) — filed in BACKLOG under the
+  TSK-1577 family; right-dock scenes assert via the dense-chip PIXEL eval instead.
 
-## Gotchas (full text in LESSONS.md, all 2026-08-09)
-- Full parallel `swift test` sweep on a loaded host → "Bad file descriptor" floods
-  (7-10 fails); re-run failures TARGETED before believing any.
-- `ToolPanelBoundingTests` = the chrome-push teeth; keep it green through any sidebar
-  layout change (it caught two of my cuts).
-- Ratchet tests grep raw source — comments containing banned tokens trip them.
-- The VM repo has full git history now (packs synced once 2026-08-08; re-sync after a
-  host `git gc`).
+## Gotchas (full text in LESSONS.md, 2026-08-09)
+- A per-item default layered on a global default must be resolved at EVERY
+  normalization site (init/setEdge/setDefaultEdge) — a missed `!= defaultEdge` strips
+  or keeps the wrong overrides.
+- Deleted persisted fields still have live VALUES in old defaults — migrate by literal
+  key + one-shot marker (absence-of-new-state ≠ migrated; it's also fresh-install).
+- Source-audit tests (`ResizeGestureSpaceAuditTests` manifest, ratchets) bite on
+  DELETIONS too — deleting a file's audited sites needs the manifest updated.
+- First capture-lane run after a VM app rebuild can show a BLANK content WKWebView
+  (TSK-1247 class) — re-run before diagnosing a compositing regression.
 
 ## Files that matter
-- `Sources/ViewerCore/SidebarStackLayout.swift` — resolve()/boundaryMax pure logic.
-- `Sources/ViewerUI/SidebarView.swift` — sidebarBody one-rule stack (~lines 150-215),
-  `stackTargetHeight`, `resolvedStack`, `stackedPanel`.
-- `Sources/ViewerUI/SidebarConstants.swift` — `SidebarSectionBodyFrame` (`.infinity`
-  sentinel + `compressedMinHeight` 26), header tint, `headerRowHeight`.
-- `Sources/ViewerUI/ResizableSectionDivider.swift` — gutter band + `bounded()` writes.
-- `Sources/ViewerUI/HexView.swift` — caret paint + tandem mirror (~lines 1090-1210).
-- `Sources/ViewerUI/Sessions/SessionsAppCoordinator.swift` — `activateWithHUD` family.
-- `Sources/ViewerUI/DockedToolWindow.swift` — `PanelDragMonitor` + drop zones;
-  `BottomDockContainer` + SettingsView terminal section = the Phase-2 targets.
-- `scripts/vm-uitest/aqua-runner.sh` — per-scene env pins + `host-screen` mode
-  (captures the LIVE VM screen for owner-window inspections).
+- `Sources/ViewerCore/BottomDockTabs.swift` — tab selection resolve + keys.
+- `Sources/ViewerUI/DockedToolWindow.swift` — tabbed `BottomDockContainer` (strip /
+  gutter / chips), right-dock pane, PanelDragMonitor.
+- `Sources/ViewerCore/SidebarPanelKind.swift` — `.terminal` + `preferredDefaultEdge`.
+- `Sources/ViewerCore/PanelEdge.swift` — per-panel default resolution + normalize.
+- `Sources/ViewerCore/TerminalPanelMigration.swift` — one-shot legacy migration.
+- `Sources/ViewerUI/Terminal/TerminalPanelSection.swift` — the panel body (shell
+  lifecycle on appear/disappear).
+- `Sources/ViewerUI/PanelLayoutStore.swift` — bottomSelection/bottomBandHeight +
+  migration hook in init.
+- Tests: `TerminalPanelTests` (model+migration+hide-bridge), `BottomDockTabsTests`,
+  `DockLayoutStoreTests` (bottom section), reworked `SideDockCompositingTests`.
+- `scripts/vm-uitest.sh` — terminal-dock-right = pixel eval (AX-void note).
 
 ## Open questions / blockers
-- tasked board offline (all of 08-08 + 08-09) — many commits owe tickets on reconnect.
-- Owner-eyeball tail (BACKLOG item): hex caret, session HUD, drag placeholder, settings
-  grid — ten-second checks on the installed app.
-- OSS-prep queue (BACKLOG O-1..O-6) untouched today; `git-filter-repo` still needs owner
-  dep-approval when that resumes.
+- tasked board offline — ticket debt for the whole rework on reconnect.
+- Owner-eyeball tail (BACKLOG): tab band feel, terminal-in-dock, migration on the
+  owner's real defaults, hex caret/tandem + session HUD + settings grid from the
+  previous session.
+- OSS-prep O-1..O-6 untouched; `git-filter-repo` still needs owner dep-approval.
 
 ## How to resume
-1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -14`
-   (head ≈ `11967e90` + the handoff commit) · `git status --short` (only the 4 protected
-   untracked files).
-2. Confirm the CI-loop Monitor is alive (events `CI <sha> GATE rc=<n>`); if the session
-   lost it, re-arm per memory `ci-background-loop`. Red → fix forward, then install.
-3. Start the bottom-dock rework from BACKLOG "★ BOTTOM DOCK REWORK": read
-   `BottomDockContainer`/`DockedToolWindow` + the terminal special-casing list; mirror
-   the SidebarStackLayout pattern; tests + VM captures per change; commit per round;
-   mirror-refresh (fetch + `merge --ff-only FETCH_HEAD` from the CloudDocs side) each
-   round; release-install only after that commit's CI is green.
+1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -8` ·
+   `git status --short` (only the 4 protected untracked files).
+2. Check the CI Monitor line for the LAST commit; red → fix forward. Green → build
+   release + install to /Applications (owner: ⌘Q+relaunch).
+3. Mirror refresh after each committed round (from the CloudDocs side:
+   `git -C '<iCloud-Drive>/Documents/workspaces/claude/markdown_viewer' fetch /Users/me/Documents/workspaces/claude/markdown_viewer main`
+   then `merge --ff-only FETCH_HEAD`).
 4. VM lane: rsync (excludes .build/dist) → `ssh macOS15 'cd markdown_viewer && touch
-   rust-core/link/*.a && bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password> bash
-   scripts/vm-uitest.sh run <scene>` → Read the PNG. Fill-check scenes = sidebar teeth.
+   rust-core/link/*.a && bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password>
+   bash scripts/vm-uitest.sh run <scene>` → Read the PNG. Scenes: `terminal`,
+   `terminal-dock-right`, `fill-check-*`.

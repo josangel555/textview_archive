@@ -168,6 +168,11 @@ struct ShoulderRailView: View {
                     .frame(height: 1.5)
             }
         }
+        // .contain (2026-08-09): a BARE container id implicitly combines
+        // pure-SwiftUI descendants and may not surface to an out-of-process
+        // AX reader at all (the right rail's id never materialized in any
+        // lane dump). Same rule as DraggableSidebar / the git Status tab.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.rail.\(edge.rawValue)")
     }
 

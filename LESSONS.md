@@ -4410,3 +4410,25 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   mentioned the literal pattern name tripped the hard-coded-color ratchet on the very file
   that introduced the semantic replacement. When writing near a text-pattern ratchet
   (colors, killall, banned APIs), phrase comments so they don't contain the banned token.
+
+- **A per-item default layered on a global default must be resolved at EVERY
+  normalization site (2026-08-09, terminal-as-a-panel).** `PanelEdgeAssignment` stores
+  sparse overrides and drops any entry equal to "the default" — adding
+  `preferredDefaultEdge` (terminal → `.bottom`) meant init, `setEdge`, AND
+  `setDefaultEdge` all had to normalize against the PER-PANEL resolved default, not the
+  global one. A missed site either strips a real override (terminal pinned `.bottom`
+  forever) or stores a redundant one (encodes non-canonically, breaks Equatable-based
+  no-op guards). Grep every `!= defaultEdge` when introducing a per-key default.
+
+- **"User-summoned" panels = data-presence FALSE (2026-08-09).** The panel visibility
+  truth table (`.auto` → dataPresent) auto-shows a panel the moment its heuristic flips
+  true — right for Git/Recents, WRONG for a shell pane. The idiom for a panel that must
+  never self-open: presence hard-false + the rail/menu toggle forcing `.shown`/`.hidden`.
+  Pinned by `TerminalPanelTests.test_terminal_presenceIsAlwaysFalse_userSummoned`.
+
+- **Deleting persisted fields ≠ deleting their VALUES — migrate by literal key
+  (2026-08-09).** `TerminalPaneLayout` dropped `paneEdge`/`sideWidth`, but old installs
+  still carry the keys; `TerminalPanelMigration` reads them as literal strings (the enum
+  that decoded them is gone) + a one-shot marker so a later user choice is never
+  clobbered by a re-migration. The marker-key pattern beats "detect absence of new
+  state" — absence is also the fresh-install state.

@@ -593,6 +593,9 @@ struct DockedToolWindow: View {
             // Drag preview: a compact chip naming the panel.
             PanelDragChip(kind: kind)
         }
+        // .contain — surface the header id to the out-of-process AX reader
+        // (a bare container id may never materialize; 2026-08-01 rule).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.dock.\(edge.rawValue).\(kind.rawValue).header")
     }
 
