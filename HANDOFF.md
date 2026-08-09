@@ -1,23 +1,37 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — 08-01 intake + round 6 (false-conflict fix, git-status UX) (2026-08-01 18:00)
+# Handoff — launch blog + download page + OSS-prep decisions (2026-08-08)
 
-**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @ the
-R6-tail commit (git log -4: R6-tail .contain+findings · R6 chunk · intake bookkeeping ·
-adcebf7d handoff). Clean tree; only the 4 protected untracked files: OwnerWishlist.md/.bak,
-Untitled.txt, archive/Untitled.txt — NEVER touch them. /Applications/TextView.app = RELEASE
-@ head. **NEW (owner intake 2026-08-01): the active queue is BACKLOG § "★ OWNER INTAKE
-2026-08-01" (I-## ids, board still down); answers doc = docs/INTAKE_ANSWERS_2026-08-01.md.
-R6 done: I-01+I-03 false-conflict root-cause+fix (3 layers, pinned) · I-05a/b git-status
-Diff|Source toggle + ephemeral opens (pixel-verified tmp/git-panel-r6.png) · I-06 gapless
-hover+pointer · I-17 recents ×2. Proposed R7: user-facing = I-05c diff line backgrounds;
-quality = I-02 large-commit diff (commitDiff = UNBOUNDED sync git-show on main thread —
-GitLogDiffActions.showCommit → GitClient.swift:1163). Refresh the icloud-backup mirror
-after every round (LESSONS 2026-08-01). CI CADENCE (owner 2026-08-01): NO inline full
-gate — targeted --filter suites per commit; the standing loop `scripts/ci-loop.sh`
-(persistent Monitor, CI worktree ../markdown_viewer-ci) gates each committed HEAD —
-re-arm it after compaction/session restart if no Monitor is live. Report each round
-DONE at commit (never wait on CI); INSTALL release only after that commit's CI line
-is rc=0; red → fix-forward.**
+**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @
+`e36db17c`. Clean tree; only the 4 protected untracked files (OwnerWishlist.md/.bak,
+Untitled.txt, archive/Untitled.txt — NEVER touch). /Applications/TextView.app = RELEASE at
+the 08-05 batch head (titlebar sessions, image-save fix, footer reorg — see below).
+
+**THIS SESSION (2026-08-08) shipped OUTSIDE the app repo:**
+- **Launch blog post** (Zola): `<CloudDocs>/workspaces/claude/blog/content/textview-native-macos-editor-built-by-an-agent.md`,
+  built into `<CloudDocs>/workspaces/web/josangel.com/blog/…`. Voice matches the `tasked` post.
+- **Download page**: `<CloudDocs>/workspaces/web/josangel.com/textview/index.html` (inline-SVG
+  logo, features grid, 4 real VM screenshots in `textview/shots/`, download →
+  github.com/josangel555/mvd_dist, "open source coming soon (MIT)"). Homepage now lists it.
+  Both sites are CloudDocs-synced, NON-git (Cloudflare deploy) — nothing to commit there.
+  Recipe + screenshot method in memory `blog-and-download-site`.
+- **IN the app repo (committed e36db17c):** `LICENSE` = MIT + BACKLOG § "★ OSS-PREP QUEUE".
+
+**OSS-PREP (owner decisions 2026-08-08 — the next real work, BACKLOG §OSS-PREP O-1..O-6):**
+MIT ✓ · publish with **FULL history (do NOT squash — owner corrected)** ⇒ history-rewrite to
+scrub VM creds (git-filter-repo, needs dep-approval) · notarization NOT needed for source ·
+**O-1 MCP socket default-off + token auth** (+ run_verb fence + task-runner env scrub) ·
+**O-2 Canvas WebView fence** · **O-3 buildability + bootstrap + README/CONTRIBUTING/SECURITY** ·
+**O-4 CI portability** · **O-5 scrubbed full-history export** · **O-6 data-safety tail**
+(subagent-verified: CM6 flush-before-read PARTIAL, session-drain FIXED, HotExitSpill silent-fail).
+
+**Standing app queue (BACKLOG § "★ OWNER INTAKE 2026-08-01", I-## ids, board still down):**
+remaining big items = I-14 AutoSave (opt-in), I-09 web-migrate wave, I-16b/c/d strip/footer
+slices, I-15 LSP occurrences, I-07 pointer batch 2. Paired-rounds mode (1 user-facing + 1
+quality). CI CADENCE: NO inline full gate — targeted `--filter` per commit; the standing loop
+`scripts/ci-loop.sh` (persistent Monitor, CI worktree ../markdown_viewer-ci) gates each HEAD —
+RE-ARM it after compaction if no Monitor is live. Report round DONE at commit (never wait on
+CI); INSTALL release only after that commit's CI = rc=0; red → fix-forward. Refresh the
+icloud-backup mirror after every committed round (LESSONS 2026-08-01).
 
 ## Mission
 Owner-driven drain. Standing owner mode (2026-08-01, in memory): **every round = one
