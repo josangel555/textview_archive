@@ -37,6 +37,19 @@ enum Palette {
     /// the color ratchet).
     static let selectedRowText = Color(nsColor: .alternateSelectedControlTextColor)
 
+    /// Sidebar section HEADER row tint (owner 2026-08-09: "make the tool
+    /// window headers distinct") — one visible step darker than the panel
+    /// body so headers read as headers, in both appearances.
+    static let sectionHeaderBackground = Color(nsColor: NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [
+            .darkAqua, .vibrantDark,
+            .accessibilityHighContrastDarkAqua, .accessibilityHighContrastVibrantDark,
+        ]) != nil
+        return isDark
+            ? NSColor(white: 0.20, alpha: 1.0)
+            : NSColor(white: 0.90, alpha: 1.0)
+    })
+
     static let controlBackground  = Color(nsColor: .controlBackgroundColor)
     static let separator          = Color(nsColor: .separatorColor)
     static let underPageBackground = Color(nsColor: .underPageBackgroundColor)

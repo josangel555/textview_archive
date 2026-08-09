@@ -60,10 +60,11 @@ struct SidebarSectionContainer: ViewModifier {
             // `Palette.sidebarPanelBackground` for the dark/light
             // values. Centralising the token here means a future
             // theme tweak is one edit, not N section files.
+            // (The old 2px vertical padding is GONE — it let the sidebar
+            // background peek through as white bars around the divider,
+            // the "white → line → white" seam; owner 2026-08-09. The
+            // divider is now a visible gutter band and needs no gap.)
             .background(background)
-            // Outer breathing room between adjacent sections. The
-            // `ResizableSectionDivider` lives in this gap.
-            .padding(.vertical, 2)
     }
 }
 
@@ -189,6 +190,10 @@ private struct SidebarHeaderRowModifier: ViewModifier {
     /// UX-F (#228): zoom-scale helper. Defaults to identity so the legacy
     /// parameterless `.sidebarHeaderRow()` renders at the base padding.
     var uiSize: (CGFloat) -> CGFloat = { $0 }
+    /// Header tint (owner 2026-08-09): stored on the modifier (not read
+    /// inside body) so a theme republish re-evaluates it — the
+    /// SidebarSectionContainer diff-skip lesson.
+    private let headerBackground = Palette.sectionHeaderBackground
     func body(content: Content) -> some View {
         content
             .padding(
@@ -199,6 +204,7 @@ private struct SidebarHeaderRowModifier: ViewModifier {
                 .vertical,
                 uiSize(SidebarSectionHeaderMetrics.verticalPadding)
             )
+            .background(headerBackground)
     }
 }
 

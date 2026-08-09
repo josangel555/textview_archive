@@ -93,17 +93,19 @@ struct ResizableSectionDivider: View {
         let _ = BodyProbe.tick("ResizableSectionDivider.\(role)")
         #endif
         ZStack {
-            // The hairline. Matches a stock `Divider()` in colour
-            // and weight; rendered as the literal Divider so the
-            // appearance tracks the system style automatically (dark
-            // mode / increased-contrast).
-            Divider()
+            // VISIBLE gutter band (owner 2026-08-09): the hit zone used to
+            // be transparent with a 1px hairline centred inside — flanked
+            // by the old section-container padding it read as an accidental
+            // "white → line → white" seam, and the actual grab area had no
+            // visual footprint. The band now paints edge-to-edge with a
+            // centred grabber pill, so what you see IS the click target.
+            Rectangle()
+                .fill(Palette.underPageBackground)
+            Capsule()
+                .fill(Color.secondary.opacity(0.45))
+                .frame(width: 26, height: 3)
         }
-        // 10-px hit zone (owner 2026-08-09: 4px was "tiny and very hard
-        // to find") — the 1-px hairline stays centred inside, so the
-        // visual weight is unchanged while the grab target more than
-        // doubles.
-        .frame(height: 10)
+        .frame(height: 12)
         .contentShape(Rectangle())
         .onHover { hovering in
             // UIRESP-10: use the balanced push()/pop() cursor stack
