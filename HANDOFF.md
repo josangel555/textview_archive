@@ -1,5 +1,19 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — bottom-dock rework LANDED (tabs + terminal demotion) (2026-08-09 05:40)
+# Handoff — bottom dock LANDED + owner round-2 batch FIXED (2026-08-09 06:30)
+
+**ROUND 2 (owner 4 AM batch, fixed in `50e6b45c`):** sidebar divider
+stored↔rendered decorrelation (snap-at-origin + flex cascade — racing/stuck/
+dead-third-panel one root, bad persisted heights SELF-HEAL on first drag);
+dock placement now APP-GLOBAL (sessions apply visibility only); search-result
+LazyVStack identity bug (gaps + wrong-file clicks) + folder hints + click
+selects the matched WORD (gotoLine selectLength end-to-end); instant press
+feedback on pills/tabs + HUD paints BEFORE the switch (asyncAfter 80ms);
+concise value-only footer + relative-date click toggle (plain @State — an
+@AppStorage killed StatusBar's diff-skip, re-body budget caught it); traffic
+lights centered (unified-toolbar spacer) + title-band gradient. VM-verified:
+fill-check-combo clean (pill gutters, no double scroll, concise footer,
+centered lights). Owner re-test list + parked design items: BACKLOG "★ OWNER
+ROUND-2 BATCH". Older context below.
 
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @
 `d0782617` + the fix-forward commit carrying this handoff (CI: `0c417c26` GREEN,

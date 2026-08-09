@@ -4432,3 +4432,35 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   that decoded them is gone) + a one-shot marker so a later user choice is never
   clobbered by a re-migration. The marker-key pattern beats "detect absence of new
   state" — absence is also the fresh-install state.
+
+- **`@AppStorage` on a diff-skipped chrome view silently kills the diff-skip
+  (2026-08-09).** Adding one `@AppStorage` to `StatusBar` made its view value compare
+  UNEQUAL on every parent re-body — the bar re-bodied on find keystrokes / sidebar ticks /
+  panel toggles, caught ONLY by the `ChromeBodyEvalCountTests` re-body budget. For
+  persisted UI toggles on hot chrome: plain `@State` seeded from UserDefaults + explicit
+  write-through on change. (Same family as the empty-ViewModifier diff-skip lesson —
+  anything that changes a view VALUE's equality changes its re-body behavior.)
+
+- **`ForEach(0..<n, id: \.self)` over CHANGING data inside a LazyVStack is a
+  detachment class (2026-08-09, the search-results bug).** Nested integer-identity rows
+  under a lazy container desync its item bookkeeping as results stream in: reserved-height
+  BLANK regions where rows stop rendering, and rows firing STALE captured click actions
+  (a "rust" row opening an .md). Fix shape: wrap each logical group in ONE plain container
+  view keyed by a stable id (LazyVStack manages one item per group); integer identity is
+  then safely scoped inside.
+
+- **Every drag affordance must operate in RENDERED space — snap stored→rendered at drag
+  origin (2026-08-09, generalizes the TSK-592 lesson).** The sidebar dividers dragged
+  STORED heights while `SidebarStackLayout.resolve` rendered compressed ones: dead zones,
+  racing, "stuck at 50%", and — worse — the runaway stored values PERSISTED, poisoning
+  every later session. Snapping the stored value to the rendered one at drag start is
+  visually a no-op but makes stored==rendered from the first delta AND self-heals old bad
+  state on first touch. Rule: a drag's base is what the user SEES, never what a store
+  remembers.
+
+- **`DispatchQueue.main.async` does NOT get a frame painted before the queued block runs
+  (2026-08-09, the late session HUD).** Setting a @Published flag then `main.async { heavy }`
+  runs `heavy` before the next CATransaction commit — the HUD appeared only AFTER the
+  freeze. To let SwiftUI paint feedback before synchronous heavy work: `asyncAfter` of at
+  least one frame (~80ms), or better, feedback that renders on mouseDOWN (a ButtonStyle's
+  `isPressed`) which needs no deferral at all.
