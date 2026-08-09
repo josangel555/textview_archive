@@ -31,7 +31,8 @@
     "gotoLine": [
       "column",
       "line",
-      "select"
+      "select",
+      "selectLength"
     ],
     "hoverResponse": [
       "contents",
