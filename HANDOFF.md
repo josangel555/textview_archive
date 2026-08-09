@@ -46,7 +46,7 @@ Owner-paused here 2026-08-08; do NOT restart change work without their go.
   list + projects list both updated to include it. Rebuild: `zola --root <blog> build
   --output-dir <web>/josangel.com/blog --force` (do this again after any post edit).
 - **Download page**: `.../web/josangel.com/textview/index.html` (inline-SVG logo, features
-  grid, screenshot gallery, download → github.com/josangel555/mvd_dist, "open source coming
+  grid, screenshot gallery, download → github.com/josangel555/textview_dist, "open source coming
   soon (MIT)"). Recipe + screenshot facts in memory `blog-and-download-site`.
 - **A local test server may be RUNNING**: `python3 -m http.server 8931` in the site dir
   (backgrounded task) → http://localhost:8931/ (homepage), /textview/, /blog/. Kill it when done.
@@ -80,7 +80,7 @@ touched, installed):
   (footnotes/alerts/def-lists/sup-sub/heading-ids) `95ec7a48` · saved sessions (named save
   points) `a908439e` · AX tier bootstrap `1bad80f4` + drag rung `0667f75e`.
 - Release pipeline (07-31): exec cap 65→70 (owner-approved) `21416a1b` · EMFILE/kern-ceiling fix
-  `05337de7` · **TextView-2026-07-31.zip pushed to github.com/josangel555/mvd_dist** (now 7
+  `05337de7` · **TextView-2026-07-31.zip pushed to github.com/josangel555/textview_dist** (now 7
   features behind — refresh is a standing offer; recipe in memory `mvd-dist-publishing`).
 - Paired rounds (08-01): R1 View-Diff button + ModeBar deletion `1fb56221` · R2
   Recently-Closed persistence + detector false-red `233e926b` · R3 conflict pre-confirm
@@ -137,12 +137,12 @@ pick→Apply AX rung (unblocked by the tier). Alternatives in BACKLOG §OPEN FOL
   (dirtySeed) — hex hot-exit.
 - `Sources/ViewerCore/RecentlyClosedStore.swift` (persisted), `SessionStore.swift` (saved/),
   `Coordinators/EditorCoordinator.swift` (confirmDiscardIsPreserved).
-- `tmp/mvd_dist/` — the dist-repo clone (push recipe: memory `mvd-dist-publishing`).
+- `tmp/textview_dist/` — the dist-repo clone (push recipe: memory `mvd-dist-publishing`).
 
 ## Open questions / blockers
 - **tasked board MCP disconnected all session** (ToolSearch: no tools). 17 commits owe tickets
   + the TSK-1594..1609 placeholder reconciliation. Needs owner-side reconnect.
-- mvd_dist: CURRENT — TextView-2026-08-05.zip @ 495d2f0e pushed (19efeed).
+- textview_dist: CURRENT — TextView-2026-08-05.zip @ 495d2f0e pushed (19efeed).
 - Math typography eyeball on the owner's machine (one open of a math file); TSK-1247 blocks
   the capture lane from showing WebView content.
 - Exec 68 of 70 MB — TSK-1214/1098 grammar-table reclaim nearly due (owner call on target).

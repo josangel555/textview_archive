@@ -4,7 +4,7 @@
 #
 # WHY (owner ask 2026-08-08): the repo's own docs are full of commit ids
 # (HANDOFF/BACKLOG/LESSONS/CHANGELOG/docs/**, code comments, the agent memory
-# dir, the mvd_dist README). The planned open-source publish keeps FULL history
+# dir, the textview_dist README). The planned open-source publish keeps FULL history
 # but scrubs credentials via git-filter-repo — which rewrites EVERY sha. Any
 # file-embedded reference then points at a commit that no longer exists.
 # git-filter-repo remaps shas inside commit MESSAGES automatically; file
@@ -17,7 +17,7 @@
 #                                (validation kills hex-noise false positives),
 #                                plus any that LOOK like sha refs but resolve
 #                                to nothing (stale/typo — the thing we hunt).
-#                                --extra adds untracked dirs (memory, mvd_dist).
+#                                --extra adds untracked dirs (memory, textview_dist).
 #   remap <commit-map> [--apply] Given filter-repo's commit-map ("old new" per
 #                                line), rewrite old→new (any abbreviation ≥7
 #                                chars) across tracked text files. Dry-run by
@@ -25,7 +25,7 @@
 #
 # Scan output: TSV  status<TAB>file:line<TAB>sha   status ∈ OK|STALE
 # ("STALE" = matches the sha SHAPE in a ref-like context but isn't a commit
-# here — includes refs to OTHER repos, e.g. mvd_dist shas, so eyeball those.)
+# here — includes refs to OTHER repos, e.g. textview_dist shas, so eyeball those.)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

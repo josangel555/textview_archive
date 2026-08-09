@@ -159,7 +159,7 @@ SOP, and the *process* is as engineered as the product:
 | Ship bundle | 77 MB (68 MB exec, 70 MB budget) · arm64 · macOS 15+ |
 | Dependencies | 8 SwiftPM packages, every Rust dep pinned + feature-minimized |
 | Docs | 90 files under `docs/` · 27 dated CHANGELOG entries |
-| Distribution | github.com/josangel555/mvd_dist (dated zips + sha256) |
+| Distribution | github.com/josangel555/textview_dist (dated zips + sha256) |
 
 ### Goals
 

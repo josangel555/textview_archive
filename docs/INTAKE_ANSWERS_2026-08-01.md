@@ -32,7 +32,7 @@ attribution P1.
 pre-confirm 15:54, `1bad80f4`/`0667f75e` AX tier 07-31, `a908439e` saved sessions,
 `5c45c04a` tab→session drag). Where the confusion likely came from: the **`icloud-backup`
 mirror was a month stale** (last push `84c4a2bd`, 07-05) — if you looked there (or at
-`mvd_dist`, which only gets release zips), you'd see nothing recent. **Realigned:** backup
+`textview_dist`, which only gets release zips), you'd see nothing recent. **Realigned:** backup
 mirror pushed to `adcebf7d` now, and the SOP discipline line now includes pushing
 `icloud-backup` after each committed round so the mirror never lags again.
 
