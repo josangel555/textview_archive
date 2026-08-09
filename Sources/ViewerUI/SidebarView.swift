@@ -142,9 +142,9 @@ struct SidebarView: View {
     private var sidebarBody: some View {
         VStack(spacing: 0) {
             // (The root-name header row that used to sit here duplicated the
-            // tree's own root node — removed, owner 2026-08-09. A hair of top
-            // padding keeps the first section off the tab strip's hairline.)
-            Spacer().frame(height: 4)
+            // tree's own root node — removed 2026-08-09; the 4px spacer that
+            // replaced it read as a white gap above the file nav and is gone
+            // too. The first section starts flush at the top.)
             // MARK: - Panel order
             //
             // FILES leads (matches VSCode / Xcode / IntelliJ
@@ -483,7 +483,7 @@ struct SidebarView: View {
         let minTotal = CGFloat(panelCount)
             * (headerH + SidebarSectionBodyFrame.compressedMinHeight)
             + CGFloat(max(0, panelCount - 1)) * 12
-        return max(sidebarContentHeight - 4, minTotal)
+        return max(sidebarContentHeight, minTotal)
     }
 
     /// Ordered visible panels: accordion order + plugin sections last.
