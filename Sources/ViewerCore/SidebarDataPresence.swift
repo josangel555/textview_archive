@@ -71,6 +71,10 @@ public enum SidebarDataPresence {
             // session independence later.
             .recentlyOpened:  i.hasRecents,
             .pluginSections:  true,
+            // The terminal is USER-SUMMONED, never data-driven: presence
+            // stays false so `.auto` resolves hidden (no shell pane on a
+            // fresh install) and the rail toggle forces `.shown`/`.hidden`.
+            .terminal:        false,
         ]
     }
 

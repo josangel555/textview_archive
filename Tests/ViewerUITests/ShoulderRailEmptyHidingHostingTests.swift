@@ -47,7 +47,7 @@ final class ShoulderRailEmptyHidingHostingTests: WebViewTestCase {
     private func railViewCount(_ model: DocumentModel, edge: PanelEdge, dragging: Bool) -> Int {
         let host = NSHostingView(rootView: ShoulderRailView(
             edge: edge, panelLayout: model.panelLayout, sidebar: model.sidebar,
-            model: model, terminalPane: model.terminalPane, isDraggingPanel: dragging))
+            model: model, isDraggingPanel: dragging))
         host.frame = NSRect(x: 0, y: 0, width: 200, height: 600)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled],
                               backing: .buffered, defer: false)

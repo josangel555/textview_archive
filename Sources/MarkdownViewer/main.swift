@@ -1037,7 +1037,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func toggleTerminal(_ sender: Any?) {
-        model.terminalPane.toggle()
+        // The terminal is a regular tool window (owner rework 2026-08-09):
+        // the menu toggle flips its PANEL visibility (presence is always
+        // false — user-summoned), same as clicking its rail button.
+        model.panelLayout.toggle(.terminal, dataPresent: false)
     }
 
     @objc func showPalette(_ sender: Any?) {

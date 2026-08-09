@@ -44,9 +44,14 @@ final class UISceneApplierTests: XCTestCase {
     func test_terminalPaneRight_entersExactState() {
         let model = makeModel()
         let status = apply("terminal-paneright", model)
-        XCTAssertTrue(model.terminalPane.isOpen, "the terminal pane must be open")
-        XCTAssertEqual(model.terminalPane.paneEdge, .right, "paneright docks the pane on the right edge")
-        XCTAssertEqual(model.terminalPane.height, 320, "deterministic height")
+        XCTAssertTrue(model.terminalPane.isOpen, "the terminal shells must be live")
+        // 2026-08-09: the terminal is a regular panel — the scene docks +
+        // shows it through the unified layout store.
+        XCTAssertEqual(model.panelLayout.edge(of: .terminal), .right,
+                       "paneright docks the terminal panel on the right shoulder")
+        XCTAssertTrue(model.panelLayout.isVisible(.terminal, dataPresent: false))
+        XCTAssertEqual(model.panelLayout.dockSize(.terminal, on: .right), 360,
+                       "deterministic right-dock width")
         XCTAssertGreaterThanOrEqual(model.terminalPane.tabs.count, 2, "default terminal tab count is 2")
         XCTAssertTrue(status.contains("edge=right"), "status reflects the applied edge: \(status)")
     }
@@ -56,7 +61,9 @@ final class UISceneApplierTests: XCTestCase {
         // leak the T5 tests caught), not inherit a persisted edge.
         let model = makeModel()
         apply("terminal", model)
-        XCTAssertEqual(model.terminalPane.paneEdge, .bottom)
+        XCTAssertEqual(model.panelLayout.edge(of: .terminal), .bottom)
+        XCTAssertTrue(model.panelLayout.isVisible(.terminal, dataPresent: false))
+        XCTAssertEqual(model.panelLayout.bottomBandHeight, 320, "deterministic band height")
         XCTAssertTrue(model.terminalPane.isOpen)
     }
 
@@ -324,14 +331,16 @@ final class UISceneApplierTests: XCTestCase {
     }
 
     func test_terminalDockRightScene_docksTheTerminalRight() {
-        // TSK-1123: the scene docks the terminal to the RIGHT edge via setPaneEdge
-        // (the path the new Dock control uses). Pins the scene→model contract; the
-        // on-screen terminal-at-right + the Dock control are the VM pixel assertion.
-        // setPaneEdge round-trip/persistence is host-tested (TerminalPaneStoreTests).
+        // TSK-1123 (reworked 2026-08-09): the scene docks the terminal PANEL
+        // to the right shoulder via the unified layout store — the same path
+        // every tool window's move menu / drag uses. Pins the scene→model
+        // contract; the on-screen terminal-at-right is the VM pixel assertion.
         let model = makeModel()
         let status = apply("terminal-dock-right", model)
-        XCTAssertEqual(model.terminalPane.paneEdge, .right, "the terminal is docked right")
-        XCTAssertTrue(model.terminalPane.isOpen, "the pane is open")
+        XCTAssertEqual(model.panelLayout.edge(of: .terminal), .right,
+                       "the terminal panel is docked right")
+        XCTAssertTrue(model.panelLayout.isVisible(.terminal, dataPresent: false))
+        XCTAssertTrue(model.terminalPane.isOpen, "the shells are live")
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 

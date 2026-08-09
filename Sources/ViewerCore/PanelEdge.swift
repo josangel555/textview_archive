@@ -79,19 +79,30 @@ public struct PanelEdgeAssignment: Sendable, Equatable {
         defaultEdge: PanelEdge = .default
     ) {
         self.defaultEdge = defaultEdge
-        // Normalize: an entry equal to the default must not be stored.
-        self.overrides = overrides.filter { $0.value != defaultEdge }
+        // Normalize: an entry equal to the panel's resolved default must
+        // not be stored (per-panel `preferredDefaultEdge` — the terminal's
+        // `.bottom` — wins over the global default; see `edge(_:)`).
+        self.overrides = overrides.filter {
+            $0.value != ($0.key.preferredDefaultEdge ?? defaultEdge)
+        }
     }
 
-    /// Resolved edge for `kind` — the global setting + per-panel
-    /// override resolution: an explicit override wins, else the global
-    /// `defaultEdge`. This is also where a TOGGLE BUTTON looks up which
-    /// shoulder rail it belongs on (the button follows the panel).
+    /// The default a panel resolves to WITHOUT an explicit override: its
+    /// own `preferredDefaultEdge` (the terminal's `.bottom`) when set,
+    /// else the global `defaultEdge`.
+    private func resolvedDefault(_ k: SidebarPanelKind) -> PanelEdge {
+        k.preferredDefaultEdge ?? defaultEdge
+    }
+
+    /// Resolved edge for `kind` — an explicit override wins, else the
+    /// panel's resolved default (per-panel preferred, else global). This
+    /// is also where a TOGGLE BUTTON looks up which shoulder rail it
+    /// belongs on (the button follows the panel).
     public func edge(_ k: SidebarPanelKind) -> PanelEdge {
-        overrides[k] ?? defaultEdge
+        overrides[k] ?? resolvedDefault(k)
     }
 
-    /// Assign `kind` to `edge`. Setting it to the current `defaultEdge`
+    /// Assign `kind` to `edge`. Setting it to the panel's resolved default
     /// removes the override so the encoded form stays minimal.
     ///
     /// NOTE: this is the LOW-LEVEL setter with no legality check — it
@@ -99,7 +110,7 @@ public struct PanelEdgeAssignment: Sendable, Equatable {
     /// that take untrusted input (drag-drop, a redock menu) must route
     /// through `PanelPlacement.move(_:to:in:)`, which validates first.
     public mutating func setEdge(_ k: SidebarPanelKind, _ e: PanelEdge) {
-        if e == defaultEdge {
+        if e == resolvedDefault(k) {
             overrides.removeValue(forKey: k)
         } else {
             overrides[k] = e
@@ -107,14 +118,17 @@ public struct PanelEdgeAssignment: Sendable, Equatable {
     }
 
     /// Change the global default edge, re-normalizing the override map so
-    /// no stored entry equals the new default. Panels that were only on
-    /// the OLD default by absence move to the NEW default automatically;
-    /// panels with an explicit override are unaffected (their override
-    /// still wins). Pure — used by a future "default dock side" setting.
+    /// no stored entry equals its panel's new resolved default. Panels
+    /// that were only on the OLD default by absence move to the NEW
+    /// default automatically; panels with an explicit override are
+    /// unaffected (their override still wins). Pure — used by a future
+    /// "default dock side" setting.
     public mutating func setDefaultEdge(_ e: PanelEdge) {
         guard e != defaultEdge else { return }
         defaultEdge = e
-        overrides = overrides.filter { $0.value != e }
+        overrides = overrides.filter {
+            $0.value != ($0.key.preferredDefaultEdge ?? e)
+        }
     }
 
     /// Panels assigned to `edge`, in `order` (default render order),

@@ -31,6 +31,13 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
     /// Recently-opened files (global, newest-first) — reads `model.recents`.
     case recentlyOpened
     case pluginSections
+    /// The integrated terminal (owner rework 2026-08-09): a REGULAR tool
+    /// window like any other — dockable to any shoulder, toggled by its
+    /// rail button, rendered by the same containers. Replaces the old
+    /// special-cased pane (`TerminalPaneEdge`, the left-rail toggle, the
+    /// Settings placement rows). Defaults to the BOTTOM dock
+    /// (`preferredDefaultEdge`).
+    case terminal
 
     public var id: String { rawValue }
 
@@ -55,6 +62,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         // names are forbidden here — pick the key once and never change it.
         case .recentlyOpened: return "MarkdownViewer.sidebar.recentlyOpened.height"
         case .pluginSections: return "MarkdownViewer.sidebar.pluginSections.height"
+        case .terminal:       return "MarkdownViewer.sidebar.terminal.height"
         }
     }
 
@@ -96,6 +104,18 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         }
     }
 
+    /// Per-panel DEFAULT dock edge, applied when the panel has no explicit
+    /// per-panel override in `PanelEdgeAssignment`. nil ⇒ the assignment's
+    /// GLOBAL default (`.left` as shipped). The terminal defaults to the
+    /// BOTTOM dock — its classic home — without the user (or an old
+    /// settings store that predates the case) ever assigning it.
+    public var preferredDefaultEdge: PanelEdge? {
+        switch self {
+        case .terminal: return .bottom
+        default:        return nil
+        }
+    }
+
     /// Default uncollapsed height for the panel's scrollable body.
     /// Matches the previous fixed `SidebarConstants.sectionBodyHeight`
     /// (220) for parity with the pre-resize layout.
@@ -120,6 +140,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .lspProblems:    return "Problems"
         case .recentlyOpened: return "Recent"
         case .pluginSections: return "Plugins"
+        case .terminal:       return "Terminal"
         }
     }
 
@@ -139,6 +160,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .lspProblems:    return "exclamationmark.triangle"
         case .recentlyOpened: return "clock.arrow.circlepath"
         case .pluginSections: return "puzzlepiece.extension"
+        case .terminal:       return "apple.terminal"
         }
     }
 }

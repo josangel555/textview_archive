@@ -400,7 +400,7 @@ public enum UISceneApplier {
             // area + a very wide sidebar, hiding the hosted graph tab — the
             // scene must fully specify its layout so the canvas is on screen for
             // the VM capture. Close the terminal; narrow the sidebar.
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.setSidebarWidth(240)
             model.openFolder(tabsBaseDir)
             model.showDependencyGraph()
@@ -440,7 +440,7 @@ public enum UISceneApplier {
             try? "untracked new\n".write(to: repo.appendingPathComponent("untracked.txt"),
                                         atomically: true, encoding: .utf8)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.setSidebarWidth(320)
             model.openFolder(repo)
             model.sidebar.isVisible = true
@@ -492,7 +492,7 @@ public enum UISceneApplier {
             """
             try? md.write(to: f, atomically: true, encoding: .utf8)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.sidebar.isVisible = true
             // The always-on Bookmarks panel (persisted entries) otherwise fills
             // the accordion and pushes the outline below the fold — force the
@@ -544,7 +544,7 @@ public enum UISceneApplier {
             """
             try? body.write(to: f, atomically: true, encoding: .utf8)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.open(url: f)
             return "ui-scene: applied 'secrets' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
@@ -554,7 +554,7 @@ public enum UISceneApplier {
         // omnibox field + New… buttons. The aqua-runner launches with a file
         // open, so reach the empty state explicitly.
         if scene == "omni" {
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             return "ui-scene: applied 'omni' tabs=\(model.tabs.tabs.count) hasContext=\(model.hasOpenContext)"
         }
@@ -570,7 +570,7 @@ public enum UISceneApplier {
             try? "func greet(name: String) { print(name) }\nstruct Point { let x: Int }\n"
                 .write(to: f, atomically: true, encoding: .utf8)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.open(url: f)
             model.openStructuralSearch()
             return "ui-scene: applied 'structural-search' show=\(model.showStructuralSearch) lang=\(model.structuralSearchVM?.language.rawValue ?? "nil")"
@@ -592,7 +592,7 @@ public enum UISceneApplier {
                 path: file.standardizedFileURL.path, content: content, at: Date())
             try? FileManager.default.removeItem(at: file)   // delete it
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.openFolder(tabsBaseDir)                   // sets the workspace root
             model.recents = [HistoryEntry(url: file, kind: .file, lastOpenedAt: Date())]
             model.showRecoverDeletedFile = true
@@ -606,7 +606,7 @@ public enum UISceneApplier {
         // directly — the auto-open latch is host-tested + skipped in scene mode.
         if scene == "first-run" {
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.openFirstRunSample(dir: tabsBaseDir)
             return "ui-scene: applied 'first-run' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil")"
         }
@@ -623,39 +623,43 @@ public enum UISceneApplier {
             try? "import Foundation\nfunc greet(_ name: String) { print(\"hi \\(name)\") }\n"
                 .write(to: f, atomically: true, encoding: .utf8)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.open(url: f)
             let forced = ProcessInfo.processInfo.environment["MDV_LSP_STATUS_FAKE"] ?? "(none)"
             return "ui-scene: applied 'lsp-status' file=\(f.lastPathComponent) fake=\(forced)"
         }
 
-        // Terminal dock-right scene (TSK-1123): dock the terminal to the RIGHT
-        // edge (the owner's "can't get the terminal to the right" pain) via the
-        // same setPaneEdge path the new Dock control uses, so the VM capture
-        // shows the terminal composited at the right + the Dock control present.
+        // Terminal dock-right scene (TSK-1123, reworked 2026-08-09): dock the
+        // terminal PANEL to the right shoulder through the unified layout
+        // store — the same path every tool window's move menu / drag uses —
+        // so the VM capture shows the terminal composited as a right tool
+        // window.
         if scene == "terminal-dock-right" {
             let pane = model.terminalPane
             pane.setTabPosition(.right)
-            pane.setPaneEdge(.right)
-            pane.setWidth(360)
+            model.panelLayout.move(.terminal, to: .right)
+            model.panelLayout.setOverride(.terminal, .shown)
+            model.panelLayout.setDockSize(360, for: .terminal, on: .right)
             pane.setOpen(true)
             while pane.tabs.count < 1 { pane.addTab() }
-            return "ui-scene: applied 'terminal-dock-right' edge=\(pane.paneEdge.rawValue) open=\(pane.isOpen) tabs=\(pane.tabs.count)"
+            return "ui-scene: applied 'terminal-dock-right' edge=\(model.panelLayout.edge(of: .terminal).rawValue) tabs=\(pane.tabs.count)"
         }
 
-        // Terminal header scene (TSK-1249 render tail): open the terminal pane
-        // (top strip) with a tab so the header row — "Terminal — <name> [<cwd>,
-        // pid <n>]" — renders above the surface. The shell spawns on the view's
-        // appearance (pid) and reports its cwd via OSC-7, so by capture time the
-        // header carries both fields.
+        // Terminal header scene (TSK-1249 render tail): show the terminal
+        // panel in its default bottom dock (top strip) with a tab so the
+        // header row — "Terminal — <name> [<cwd>, pid <n>]" — renders above
+        // the surface. The shell spawns on the view's appearance (pid) and
+        // reports its cwd via OSC-7, so by capture time the header carries
+        // both fields.
         if scene == "terminal-header" {
             let pane = model.terminalPane
             pane.setTabPosition(.top)
-            pane.setPaneEdge(.bottom)
-            pane.setHeight(320)
+            model.panelLayout.move(.terminal, to: .bottom)
+            model.panelLayout.setOverride(.terminal, .shown)
+            model.panelLayout.setBottomBandHeight(320)
             pane.setOpen(true)
             while pane.tabs.count < 1 { pane.addTab() }
-            return "ui-scene: applied 'terminal-header' open=\(pane.isOpen) tabs=\(pane.tabs.count) hasTerminal=\(pane.terminal != nil)"
+            return "ui-scene: applied 'terminal-header' tabs=\(pane.tabs.count) hasTerminal=\(pane.terminal != nil)"
         }
 
         // Chrome theming scene (TSK-641 stage-4 render validation): apply the
@@ -689,7 +693,7 @@ public enum UISceneApplier {
             Self.applyMarketingSidebar(model, shown: [.files])
             Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)   // no dead-prompt pane in the light shot
+            model.panelLayout.setOverride(.terminal, .hidden)   // no dead-prompt pane in the light shot
             model.openFolder(root)
             // RENDERED markdown tour (owner 2026-08-08): the light shot
             // showcases the full feature set — table, tasks, mermaid, LaTeX
@@ -748,8 +752,9 @@ public enum UISceneApplier {
             model.setCurrentViewMode(.source)
             let pane = model.terminalPane
             pane.setTabPosition(.top)
-            pane.setPaneEdge(.bottom)
-            pane.setHeight(340)
+            model.panelLayout.move(.terminal, to: .bottom)
+            model.panelLayout.setOverride(.terminal, .shown)
+            model.panelLayout.setBottomBandHeight(340)
             pane.setOpen(true)
             while pane.tabs.count < 1 { pane.addTab() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak pane] in
@@ -776,7 +781,7 @@ public enum UISceneApplier {
             model.openFolder(root)
             model.openFirstRunSample(dir: tabsBaseDir)
             model.setCurrentViewMode(.editor)
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.toggleSplit()
             return "ui-scene: applied 'mktg-split' mode=\(model.currentViewMode.rawValue) split=\(model.isSplitOpen) root=\(model.sidebar.rootURL != nil)"
         }
@@ -797,7 +802,7 @@ public enum UISceneApplier {
                 model.bookmarksStore.remove(url: e.url, line: e.line)
             }
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.openFolder(root)
             let candidates = [
                 "Sources/ViewerUI/SplitPaneView.swift",
@@ -858,7 +863,7 @@ public enum UISceneApplier {
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files, .git])
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
-            model.terminalPane.setOpen(false)
+            model.panelLayout.setOverride(.terminal, .hidden)
             model.setSidebarWidth(340)
             model.openFolder(root)
             var diffFile: URL?
@@ -1054,20 +1059,26 @@ public enum UISceneApplier {
             return "ui-scene: unknown scene '\(scene)'"
         }
         let pane = model.terminalPane
-        pane.setOpen(true)                      // open FIRST so height applies to the live pane
+        pane.setOpen(true)                      // spawn the shells for the live pane
         if parts.contains("top") { pane.setTabPosition(.top) }
         else if parts.contains("right") { pane.setTabPosition(.right) }
         else { pane.setTabPosition(.left) }
-        // Pane DOCK edge (TSK-491) — distinct tokens from the tab-strip position.
-        // ALWAYS set it (default .bottom) so a scene is DETERMINISTIC and doesn't
-        // inherit a persisted edge from a prior launch.
-        if parts.contains("paneright") { pane.setPaneEdge(.right) }
-        else if parts.contains("paneleft") { pane.setPaneEdge(.left) }
-        else { pane.setPaneEdge(.bottom) }
-        pane.setHeight(320)
-        pane.setWidth(360)
+        // Panel DOCK edge (2026-08-09: the terminal is a regular tool
+        // window — the scene docks + shows the PANEL through the unified
+        // layout store). ALWAYS set it (default .bottom) so a scene is
+        // DETERMINISTIC and doesn't inherit a persisted edge from a prior
+        // launch.
+        let edge: PanelEdge =
+            parts.contains("paneright") ? .right
+            : parts.contains("paneleft") ? .left
+            : .bottom
+        model.panelLayout.move(.terminal, to: edge)
+        model.panelLayout.setOverride(.terminal, .shown)
+        // Deterministic sizes for the containers that render it.
+        model.panelLayout.setBottomBandHeight(320)
+        model.panelLayout.setDockSize(360, for: .terminal, on: .right)
         let count = max(1, parts.compactMap { Int($0) }.first ?? 2)
         while pane.tabs.count < count { pane.addTab() }
-        return "ui-scene: applied '\(scene)' tabs=\(pane.tabs.count) height=\(pane.height) edge=\(pane.paneEdge.rawValue) width=\(pane.sideWidth)"
+        return "ui-scene: applied '\(scene)' tabs=\(pane.tabs.count) height=\(model.panelLayout.bottomBandHeight) edge=\(edge.rawValue)"
     }
 }

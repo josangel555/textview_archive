@@ -120,6 +120,8 @@ struct SidebarView: View {
     private var recentsHeight: Double = Double(SidebarPanelKind.recentlyOpened.defaultHeight)
     @AppStorage(SidebarPanelKind.pluginSections.appStorageKey)
     private var pluginHeight: Double = Double(SidebarPanelKind.pluginSections.defaultHeight)
+    @AppStorage(SidebarPanelKind.terminal.appStorageKey)
+    private var terminalHeight: Double = Double(SidebarPanelKind.terminal.defaultHeight)
 
     /// `CGFloat` binding adapter — `@AppStorage` only natively stores
     /// `Double`; the divider expects `Binding<CGFloat>` so we project
@@ -441,6 +443,10 @@ struct SidebarView: View {
         let accordionOrder: [SidebarPanelKind] = [
             .bookmarks, .searchAnywhere, .git, .claudeTimeline,
             .lspOutline, .markdownOutline, .lspNavigation, .lspProblems, .recentlyOpened,
+            // The terminal is a regular panel (2026-08-09) — it renders in
+            // the accordion when the user docks it .left (default: .bottom,
+            // so this entry resolves not-left-docked → hidden here).
+            .terminal,
         ]
         return accordionOrder.map { kind in
             // UX-E: a panel moved off the LEFT rail (docked to the right /
@@ -571,6 +577,7 @@ struct SidebarView: View {
         case .lspProblems:    return lspProblemsHeight
         case .recentlyOpened: return recentsHeight
         case .pluginSections: return pluginHeight
+        case .terminal:       return terminalHeight
         case .files:
             return Double(SidebarPanelKind.recentlyOpened.defaultHeight)
         }
@@ -592,6 +599,7 @@ struct SidebarView: View {
         case .lspProblems:    return heightBinding($lspProblemsHeight)
         case .recentlyOpened: return heightBinding($recentsHeight)
         case .pluginSections: return heightBinding($pluginHeight)
+        case .terminal:       return heightBinding($terminalHeight)
         case .files:
             return nil
         }

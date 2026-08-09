@@ -20,8 +20,10 @@ import ViewerCore
 ///      column's layer must sit strictly ABOVE the content column. `ContentView`
 ///      drives both `.zIndex(...)` modifiers from these constants, so flipping
 ///      the order or collapsing them onto the same z fails here.
-///   2. the MODEL wiring `sideTerminalColumn` is gated on — that a right-docked,
-///      open pane is the state the column renders for, sized by `sideWidth`.
+///   2. the MODEL wiring the right dock is gated on — that a right-docked
+///      terminal panel is the state `RightDockContainer` renders for, sized by
+///      its `PanelDockLayout` width (2026-08-09: the terminal is a regular
+///      tool window; the old `sideTerminalColumn` special case is gone).
 /// Together these make the logic regression-detectable on the host even though
 /// the pixel proof is VM-only (CLAUDE.md change→tests mandate, rule 6).
 final class SideDockCompositingTests: XCTestCase {
@@ -59,58 +61,35 @@ final class SideDockCompositingTests: XCTestCase {
             "the center content column is the base compositing layer")
     }
 
-    // MARK: - model wiring the column is gated on (paneEdge == .right)
+    // MARK: - model wiring the right dock is gated on (2026-08-09 rework)
 
     @MainActor
-    func test_rightDockedOpenPane_isTheStateTheColumnRendersFor() {
+    func test_rightDockedTerminalPanel_isTheStateTheDockRendersFor() {
+        // The terminal is a regular tool window now: a right-docked terminal
+        // renders inside `RightDockContainer` (which carries the TSK-960
+        // compositing recipe at its ContentView call site), gated on the
+        // unified panel model. Pin that gate so a model regression that drops
+        // the right-dock state is caught on the host.
         let suite = "SideDockCompositing-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let store = TerminalPaneStore(defaults: defaults)
-        defer { store.shutdown() }
+        let store = PanelLayoutStore(defaults: defaults)
+        store.move(.terminal, to: .right)
 
-        store.setOpen(true)
-        store.setPaneEdge(.right)
+        XCTAssertEqual(store.edge(of: .terminal), .right)
+        XCTAssertTrue(store.isVisible(.terminal, dataPresent: false),
+            "a drag onto the right dock must surface the terminal panel")
+        XCTAssertEqual(
+            DockResolution.visiblePanels(
+                on: .right, panelLayout: store,
+                presence: SidebarDataPresence.evaluate(.init())),
+            [.terminal])
 
-        // `ContentView` renders `sideTerminalColumn` only when
-        // `terminalPane.isOpen && terminalPane.paneEdge == .right` (the
-        // line-214 call site). Pin that gate so a model regression that drops
-        // the right-dock state is caught on the host.
-        XCTAssertTrue(store.isOpen)
-        XCTAssertEqual(store.paneEdge, .right)
-
-        // The column is FIXED-WIDTH via `sideWidth` (`.frame(width:)`), so it
+        // The pane is FIXED-WIDTH via the dock size (`.frame(width:)`), so it
         // never claims the flex axis from the content column. A clamped,
         // positive width is the invariant the layout depends on.
-        XCTAssertGreaterThan(store.sideWidth, 0,
-            "the side column must have a positive fixed width to reserve its " +
-            "column (TSK-491)")
-        XCTAssertEqual(store.sideWidth, TerminalPaneLayout.clampWidth(store.sideWidth),
-            "sideWidth must already be clamped into [minWidth, maxWidth]")
-    }
-
-    @MainActor
-    func test_paneEdge_leftAndRight_bothDriveTheSideColumn() {
-        // The fix applies in BOTH side-dock branches (the single
-        // `sideTerminalColumn` helper is used for left AND right). Pin that both
-        // edges are reachable model states distinct from the bottom dock.
-        let suite = "SideDockCompositing-edges-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        let store = TerminalPaneStore(defaults: defaults)
-        defer { store.shutdown() }
-        store.setOpen(true)
-
-        store.setPaneEdge(.left)
-        XCTAssertEqual(store.paneEdge, .left)
-
-        store.setPaneEdge(.right)
-        XCTAssertEqual(store.paneEdge, .right)
-
-        store.setPaneEdge(.bottom)
-        XCTAssertEqual(store.paneEdge, .bottom,
-            "bottom dock is the non-side branch (no side column)")
+        XCTAssertGreaterThan(store.dockSize(.terminal, on: .right), 0,
+            "a right-docked terminal must have a positive fixed width")
     }
 }

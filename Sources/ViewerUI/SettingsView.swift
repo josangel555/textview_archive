@@ -334,37 +334,10 @@ public struct SettingsView: View {
                 .frame(width: 220, alignment: .leading)
                 .accessibilityIdentifier("mdv.settings.terminal.colorScheme")
             }
-            // Pane DOCK edge (TSK-491): which shoulder the whole terminal pane
-            // lives in. The discoverable control for "move the terminal to the
-            // right" — distinct from the tab-strip position INSIDE the pane.
-            row("Pane placement") {
-                Picker("", selection: Binding(
-                    get: { model.terminalPane.paneEdge },
-                    set: { model.terminalPane.setPaneEdge($0) }
-                )) {
-                    Text("Bottom").tag(TerminalPaneEdge.bottom)
-                    Text("Left").tag(TerminalPaneEdge.left)
-                    Text("Right").tag(TerminalPaneEdge.right)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 220, alignment: .leading)
-                .accessibilityIdentifier("mdv.settings.terminal.paneEdge")
-            }
-            row("Tab strip position") {
-                Picker("", selection: Binding(
-                    get: { model.terminalPane.tabPosition },
-                    set: { model.terminalPane.setTabPosition($0) }
-                )) {
-                    Text("Left").tag(TerminalTabPosition.left)
-                    Text("Top").tag(TerminalTabPosition.top)
-                    Text("Right").tag(TerminalTabPosition.right)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 220, alignment: .leading)
-                .accessibilityIdentifier("mdv.settings.terminal.tabPosition")
-            }
+            // (The "Pane placement" / "Tab strip position" rows are GONE —
+            // owner rework 2026-08-09: the terminal is a regular tool
+            // window; move it like any panel — drag its rail icon / tab, or
+            // the move menu on its dock chrome.)
         }
     }
 

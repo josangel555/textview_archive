@@ -24,13 +24,10 @@ public struct ContentView: View {
     /// second observation the predicate would go stale (the latent
     /// derived-state trap; pinned by `PanelLayoutResolutionTests`).
     @ObservedObject var panelLayout: PanelLayoutStore
-    /// Bottom terminal pane (#226). Observed DIRECTLY (narrow pattern,
-    /// same as `panelLayout`) so the center column re-evaluates when the
-    /// pane opens/closes or is drag-resized — without republishing the
-    /// whole content tree. The live per-frame terminal output rides a
-    /// SEPARATE `ObservableObject` (`terminalPane.terminal`) observed only
-    /// inside the terminal view.
-    @ObservedObject var terminalPane: TerminalPaneStore
+    // (The direct `terminalPane` observation is GONE — owner rework
+    // 2026-08-09: the terminal renders through the ordinary dock
+    // containers; only `TerminalPanelSection`/`TerminalPaneView` observe
+    // the store now.)
     /// Tab + split state lives on `tabCoordinator` (see PERF #1 note in
     /// `DocumentModel.init`: its `objectWillChange` is deliberately NOT
     /// forwarded into `DocumentModel.objectWillChange`, to avoid a
@@ -69,7 +66,6 @@ public struct ContentView: View {
         self.sidebar = model.sidebar
         self.find = model.find
         self.panelLayout = model.panelLayout
-        self.terminalPane = model.terminalPane
         self.tabCoordinator = model.tabCoordinator
         self.sessionsApp = sessionsApp
         self.sessionsUIEnabled = sessionsUIEnabled
@@ -166,27 +162,18 @@ public struct ContentView: View {
                             edge: .left,
                             panelLayout: panelLayout,
                             sidebar: sidebar,
-                            model: model,
-                            terminalPane: terminalPane
+                            model: model
                         )
                         // SNAP ZONE (UX-E): dropping a dragged tool window on
                         // the left rail redocks it back to the accordion.
                         .panelDropZone(.left, panelLayout: panelLayout)
-                        // TSK-1317: dropping the dragged TERMINAL icon here docks
-                        // the terminal pane to the left.
-                        .terminalDropZone(.left, terminalPane: terminalPane)
                         Divider()
                     }
-                    // LEFT-docked terminal column (TSK-491): a fixed-WIDTH
-                    // sibling of the whole center column, beside the left rail —
-                    // mirrors RightDockContainer's placement so the content
-                    // WebView is NOT nested deeper (nesting it collapsed the
-                    // render — caught via real-pixel capture).
-                    if terminalPane.isOpen && terminalPane.paneEdge == .left {
-                        sideTerminalColumn
-                    }
-                    // Center column: body row over the optional terminal
-                    // pane over the bottom dock + bottom rail.
+                    // Center column: body row over the bottom dock + bottom
+                    // rail. (The terminal's special mounts — the side columns
+                    // and the fixed bottom band — are GONE, owner rework
+                    // 2026-08-09: the terminal is a regular panel rendered by
+                    // the ordinary dock containers.)
                     VStack(spacing: 0) {
                         // The content/body MUST win the vertical flex: pin it
                         // greedy + high layout priority so a runtime terminal
@@ -198,28 +185,11 @@ public struct ContentView: View {
                         bodyRow
                             .frame(maxHeight: .infinity, alignment: .top)
                             .layoutPriority(1)
-                        // BOTTOM terminal pane (#226), only when docked `.bottom`
-                        // (TSK-491). Fixed-height shell pane below the content.
-                        // `.clipped()` is load-bearing: the terminal surface is
-                        // an opaque, layer-backed NSView; if SwiftUI ever
-                        // proposes it more than `height` mid-relayout it must NOT
-                        // paint past its band onto the document / its own header
-                        // (the "no header / covers the file" half of the bug).
-                        if terminalPane.isOpen && terminalPane.paneEdge == .bottom {
-                            TerminalResizeHandle(store: terminalPane)
-                            TerminalPaneView(
-                                store: terminalPane,
-                                fontSize: model.uiSize(12)
-                            )
-                            .frame(height: terminalPane.height)
-                            .clipped()
-                            .layoutPriority(0)
-                        }
-                        // BOTTOM dock (UX-E / #227): free-standing,
-                        // fixed-height tool windows for panels the user has
-                        // dragged onto the bottom rail. Renders nothing (no
-                        // border) when no panel is bottom-docked, so the
-                        // default layout is unchanged. Its own resize handle
+                        // BOTTOM dock (UX-E / #227, tabbed 2026-08-09): the
+                        // tab band for panels docked to the bottom rail —
+                        // including the terminal, its default home. Renders
+                        // nothing when no panel is bottom-docked + visible,
+                        // so the default layout is unchanged. Its gutter
                         // pins the band height; the body row above keeps
                         // maxHeight:.infinity so IT absorbs the squeeze.
                         BottomDockContainer(
@@ -235,15 +205,11 @@ public struct ContentView: View {
                             edge: .bottom,
                             panelLayout: panelLayout,
                             sidebar: sidebar,
-                            model: model,
-                            terminalPane: terminalPane
+                            model: model
                         )
                         // SNAP ZONE (UX-E): drop a dragged tool window here
                         // to redock it to the bottom.
                         .panelDropZone(.bottom, panelLayout: panelLayout)
-                        // TSK-1317: drop the dragged TERMINAL icon here to dock
-                        // the terminal pane to the bottom (its default band).
-                        .terminalDropZone(.bottom, terminalPane: terminalPane)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     // COMPOSITOR (TSK-960): the center column hosts the opaque
@@ -255,23 +221,26 @@ public struct ContentView: View {
                     // since the center column is unconditional. Z-order from the
                     // named `SideDockCompositing` contract (host-testable).
                     .zIndex(SideDockCompositing.contentColumnZIndex)
-                    // RIGHT-docked terminal column (TSK-491): a fixed-WIDTH
-                    // sibling between the center column and the right dock —
-                    // same level as RightDockContainer (NOT nested in the center
-                    // column), so the content WebView keeps its full size.
-                    if terminalPane.isOpen && terminalPane.paneEdge == .right {
-                        sideTerminalColumn
-                    }
                     // RIGHT dock (UX-E / #227): free-standing, fixed-WIDTH
                     // tool windows for panels dragged onto the right rail.
                     // Sits between the center column and the right shoulder
                     // rail. Renders nothing when no panel is right-docked, so
                     // the default layout is byte-for-byte unchanged.
+                    //
+                    // COMPOSITOR (TSK-960 rule): the terminal panel can dock
+                    // here now, putting its opaque, layer-backed NSView
+                    // beside the center column's opaque WKWebView. Force the
+                    // dock into its OWN compositing layer ordered ABOVE the
+                    // content surface (the exact recipe the old side terminal
+                    // column carried) so neither representable occludes the
+                    // other regardless of paint order.
                     RightDockContainer(
                         model: model, sidebar: sidebar,
                         trackedRepos: model.trackedRepos,
                         panelLayout: panelLayout
                     )
+                    .compositingGroup()
+                    .zIndex(SideDockCompositing.terminalColumnZIndex)
                     Divider()
                     // RIGHT rail: independent of the master switch. Thin
                     // icon strip; the right-docked panel BODIES render in
@@ -280,15 +249,11 @@ public struct ContentView: View {
                         edge: .right,
                         panelLayout: panelLayout,
                         sidebar: sidebar,
-                        model: model,
-                        terminalPane: terminalPane
+                        model: model
                     )
                     // SNAP ZONE (UX-E): drop a dragged tool window here to
                     // redock it to the right.
                     .panelDropZone(.right, panelLayout: panelLayout)
-                    // TSK-1317: drop the dragged TERMINAL icon here to dock the
-                    // terminal pane to the right.
-                    .terminalDropZone(.right, terminalPane: terminalPane)
                 }
                 // The center band is the one that yields under shrink:
                 // explicit layoutPriority(0) (the default, stated for intent)
@@ -562,47 +527,10 @@ public struct ContentView: View {
     // wrapping VStack/HStack can't let the NSScrollView/WKWebView
     // intrinsic size collapse the content pane. The `content` /
     // `loadedView` subtree is byte-for-byte unchanged.
-    @ViewBuilder
-    /// The terminal as a fixed-WIDTH side column (TSK-491), with its resize
-    /// handle on the content-facing edge. Used only when `paneEdge` is
-    /// `.left`/`.right`. `.clipped()` matches the bottom-band discipline so the
-    /// opaque terminal surface can't paint past its column. The pane keeps its
-    /// own internal tab strip (TSK-488) via `TerminalPaneView`.
-    ///
-    /// COMPOSITOR (TSK-960, regression of TSK-491; rule in CLAUDE.md/LESSONS
-    /// TSK-488): this column hosts an opaque, layer-backed `NSViewRepresentable`
-    /// terminal surface, and it sits as a plain `HStack` sibling of the center
-    /// content column — which itself hosts an opaque WKWebView surface. Two
-    /// opaque representable siblings in one container composite by PAINT ORDER:
-    /// without explicit z-ordering the later-painted surface occludes the
-    /// earlier one, so depending on the dock edge either the terminal column
-    /// fails to composite (right dock) or it overdraws the content. Force the
-    /// terminal column into its OWN compositing layer ordered ABOVE the content
-    /// surface — `.compositingGroup().zIndex(1)` here vs `.zIndex(0)` on the
-    /// center column — applied in BOTH the left- and right-dock layout
-    /// branches (this single helper is used for both at ContentView call
-    /// sites). Mirrors the in-pane fix at `TerminalView.swift` (strip vs
-    /// surface).
-    private var sideTerminalColumn: some View {
-        let column = TerminalPaneView(store: terminalPane, fontSize: model.uiSize(12))
-            .frame(width: terminalPane.sideWidth)
-            .clipped()
-            .layoutPriority(0)
-        return HStack(spacing: 0) {
-            // Right dock → handle on the LEFT (content-facing) edge.
-            if terminalPane.paneEdge == .right { TerminalSideResizeHandle(store: terminalPane) }
-            column
-            // Left dock → handle on the RIGHT (content-facing) edge.
-            if terminalPane.paneEdge == .left { TerminalSideResizeHandle(store: terminalPane) }
-        }
-        // Own compositing layer ordered ABOVE the center content surface so the
-        // opaque terminal NSView neither occludes nor is occluded by the
-        // opaque WKWebView sibling, regardless of paint order (TSK-960). The
-        // z-order is driven from the named `SideDockCompositing` contract so the
-        // ordering is a host-testable invariant, not a scattered literal.
-        .compositingGroup()
-        .zIndex(SideDockCompositing.terminalColumnZIndex)
-    }
+    // (`sideTerminalColumn` — the TSK-491 fixed-width side terminal — is
+    // GONE, owner rework 2026-08-09: a right-docked terminal renders as an
+    // ordinary tool window inside `RightDockContainer`, which carries the
+    // TSK-960 compositing recipe at its call site.)
 
     private var bodyRow: some View {
         HStack(spacing: 0) {

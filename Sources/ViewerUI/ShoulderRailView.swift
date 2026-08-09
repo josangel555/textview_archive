@@ -28,17 +28,12 @@ struct ShoulderRailView: View {
     @ObservedObject var sidebar: SidebarModel
     /// `uiSize` (zoom) + `currentURL` (LSP-language predicate).
     @ObservedObject var model: DocumentModel
-    /// Terminal pane open/closed state (#226). Observed directly so the
-    /// left-rail bottom-aligned terminal toggle reflects + drives it
-    /// without republishing the content tree.
-    @ObservedObject var terminalPane: TerminalPaneStore
 
     /// TSK-1316: whether a panel icon is currently being dragged. An EMPTY
-    /// shoulder (no docked panels; the left rail always carries the terminal
-    /// toggle, so only the right/bottom rails can be empty) is HIDDEN unless
-    /// this is true — revealing as a drop target only during a drag instead
-    /// of permanently showing a bare strip. Defaults false (the future
-    /// drag-redock wiring sets it); today empty shoulders simply stay hidden.
+    /// shoulder (no docked panels) is HIDDEN unless this is true —
+    /// revealing as a drop target only during a drag instead of permanently
+    /// showing a bare strip. Defaults false (the future drag-redock wiring
+    /// sets it); today empty shoulders simply stay hidden.
     var isDraggingPanel: Bool = false
 
     /// Cross-axis thickness of the rail (width for left/right, height
@@ -75,10 +70,11 @@ struct ShoulderRailView: View {
         let _ = BodyProbe.tick("ShoulderRailView")   // TSK-615 re-eval width probe
         #endif
         let panels = panelLayout.railPanels(on: edge)
-        // TSK-1316: an empty shoulder (no docked panels; the left rail always carries
-        // the terminal toggle so it is never empty) is HIDDEN unless a panel icon is
-        // being dragged — no permanent bare strip. The `if` with no else renders
-        // nothing (and collapses to zero size in its container) when hidden.
+        // TSK-1316: an empty shoulder is HIDDEN unless a panel icon is being
+        // dragged — no permanent bare strip. The left rail stays up as the
+        // sidebar's companion (its master-switch unit) even when every panel
+        // has been moved off it. The `if` with no else renders nothing (and
+        // collapses to zero size in its container) when hidden.
         let hasContent = !panels.isEmpty || edge == .left
         if hasContent || isDraggingPanel || dragMonitor.isDragging {
             railContent(panels: panels)
@@ -116,19 +112,10 @@ struct ShoulderRailView: View {
                         button(for: kind, present: pres[kind] ?? false)
                     }
                     Spacer(minLength: 0)
-                    // BOTTOM-ALIGNED terminal toggle (#226 / UX-D). Lives
-                    // on the LEFT shoulder, pushed to the bottom by the
-                    // Spacer above — a dedicated control separate from the
-                    // panel-accordion buttons (it toggles the bottom shell
-                    // pane, not a sidebar panel). Only the left rail carries
-                    // it; the right rail leaves the slot empty.
-                    if edge == .left {
-                        TerminalToggleButton(
-                            isOn: terminalPane.isOpen,
-                            uiSize: model.uiSize,
-                            action: { terminalPane.toggle() }
-                        )
-                    }
+                    // (The dedicated bottom-aligned TerminalToggleButton is
+                    // GONE — owner rework 2026-08-09: the terminal is a
+                    // regular panel; its rail button renders wherever
+                    // `panelLayout` docks it, bottom rail by default.)
                 }
                 .padding(.vertical, 6)
                 .frame(width: thickness)
@@ -299,42 +286,6 @@ struct PanelRailButton: View {
     }
 }
 
-/// The bottom-aligned terminal toggle on the left shoulder (#226). Same
-/// visual language as `PanelRailButton` (SF Symbol, accent fill when on,
-/// hover affordance) but it drives `TerminalPaneStore.toggle()` rather
-/// than a sidebar panel's visibility.
-struct TerminalToggleButton: View {
-    let isOn: Bool
-    let uiSize: (CGFloat) -> CGFloat
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "apple.terminal")
-                .font(.system(size: uiSize(13), weight: .medium))
-                .foregroundStyle(isOn ? Color.accentColor : Palette.labelColor)
-                .frame(width: uiSize(26), height: uiSize(26))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(IconHoverButtonStyle(isSelected: isOn))
-        // TSK-1317: the terminal icon is a drag SOURCE too (like the panel rail
-        // icons, TSK-327) — drag it onto a shoulder to dock the terminal pane to
-        // that edge (TerminalDropZone → setPaneEdge). Click still toggles.
-        .draggable(TerminalDragPayload()) {
-            HStack(spacing: 4) {
-                Image(systemName: "apple.terminal")
-                Text("Terminal")
-            }
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Palette.windowBackground)
-        }
-        .helpInfo(title: "Terminal",
-                  description: isOn
-                    ? "Hide the bottom terminal pane"
-                    : "Show an integrated terminal at the bottom")
-        .accessibilityLabel("Terminal")
-        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
-        .accessibilityIdentifier("mdv.rail.terminalToggle")
-    }
-}
+// (`TerminalToggleButton` is GONE — owner rework 2026-08-09: the terminal
+// is `SidebarPanelKind.terminal`, toggled by its ordinary `PanelRailButton`
+// on whichever rail the panel model docks it — bottom by default.)

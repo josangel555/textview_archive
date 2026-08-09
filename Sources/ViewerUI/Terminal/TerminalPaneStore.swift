@@ -50,13 +50,12 @@ public final class TerminalPaneStore: ObservableObject {
     /// Default `.left`; persisted in `TerminalPaneLayout`.
     @Published public private(set) var tabPosition: TerminalTabPosition
 
-    /// Which window edge the pane docks to (TSK-491). Default `.bottom`;
-    /// persisted in `TerminalPaneLayout`. Distinct from `tabPosition`.
-    @Published public private(set) var paneEdge: TerminalPaneEdge
-
-    /// Side-column width when `paneEdge` is `.left`/`.right` (TSK-491).
-    /// Clamped + persisted. (`height` still drives the bottom band.)
-    @Published public private(set) var sideWidth: CGFloat
+    /// Fired when the LAST tab is closed (owner rework 2026-08-09): the
+    /// terminal is a regular tool window now, so "no tabs left" should
+    /// HIDE the panel — but this store deliberately knows nothing about
+    /// `PanelLayoutStore`. `DocumentModel` wires this to
+    /// `panelLayout.setOverride(.terminal, .hidden)`.
+    public var onLastTabClosed: (() -> Void)?
 
     /// The pure tab-collection model (ordering/selection/naming). Published so
     /// the strip re-renders on any tab mutation. The store keeps the live
@@ -105,8 +104,6 @@ public final class TerminalPaneStore: ObservableObject {
         self.layout = loaded
         self.height = loaded.height
         self.tabPosition = loaded.tabPosition
-        self.paneEdge = loaded.paneEdge
-        self.sideWidth = loaded.sideWidth
         // Restore the persisted tab set (names/cwds/active id) — but NOT the
         // shells: a relaunch re-spawns fresh shells lazily when the view
         // mounts. An empty restored set is fine; `ensureTerminal()` seeds one.
@@ -170,30 +167,6 @@ public final class TerminalPaneStore: ObservableObject {
         guard pos != tabPosition else { return }
         tabPosition = pos
         layout.tabPosition = pos
-        persist()
-    }
-
-    // MARK: - Pane dock edge (TSK-491)
-
-    /// Dock the pane to a window edge (bottom/left/right). Persisted;
-    /// equality-guarded so re-selecting the current edge doesn't republish.
-    public func setPaneEdge(_ edge: TerminalPaneEdge) {
-        guard edge != paneEdge else { return }
-        paneEdge = edge
-        layout.paneEdge = edge
-        persist()
-    }
-
-    public var minWidth: CGFloat { TerminalPaneLayout.minWidth }
-    public var maxWidth: CGFloat { TerminalPaneLayout.maxWidth }
-
-    /// Set the side-column width (drag-resize when docked left/right).
-    /// Clamped + persisted; equality-guarded against no-op drag frames.
-    public func setWidth(_ w: CGFloat) {
-        let clamped = TerminalPaneLayout.clampWidth(w)
-        guard clamped != sideWidth else { return }
-        sideWidth = clamped
-        layout.setWidth(clamped)
         persist()
     }
 
@@ -279,7 +252,8 @@ public final class TerminalPaneStore: ObservableObject {
     }
 
     /// Close a tab, reaping its shell. Closing the last tab closes the
-    /// whole pane; closing the selected tab selects a neighbor.
+    /// whole pane (and, via `onLastTabClosed`, hides the terminal tool
+    /// window); closing the selected tab selects a neighbor.
     public func closeTab(_ id: UUID) {
         guard tabSet.tab(id) != nil else { return }
         let model = models[id]
@@ -288,6 +262,7 @@ public final class TerminalPaneStore: ObservableObject {
         models[id] = nil
         if tabSet.isEmpty {
             setOpen(false)            // last tab closed → close the pane
+            onLastTabClosed?()        // → hide the terminal tool window
             return
         }
         syncForeground()

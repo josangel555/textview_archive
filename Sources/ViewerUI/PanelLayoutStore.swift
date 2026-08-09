@@ -62,8 +62,19 @@ public final class PanelLayoutStore: ObservableObject {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.edges = PanelEdgeAssignment.load(from: defaults)
-        self.overrides = PanelVisibilityOverrides.load(from: defaults)
+        var edges = PanelEdgeAssignment.load(from: defaults)
+        var overrides = PanelVisibilityOverrides.load(from: defaults)
+        // One-shot legacy-terminal migration (2026-08-09): a user who had
+        // the old special-cased pane open keeps it open in the same dock.
+        if let m = TerminalPanelMigration.pendingMigration(in: defaults) {
+            edges.setEdge(.terminal, m.edge)
+            if m.shown { overrides.set(.terminal, .shown) }
+            edges.save(to: defaults)
+            overrides.save(to: defaults)
+            TerminalPanelMigration.markMigrated(in: defaults)
+        }
+        self.edges = edges
+        self.overrides = overrides
         self.dockSizes = PanelDockLayout.load(from: defaults)
         self.bottomSelection = defaults.string(forKey: BottomDockTabs.selectionKey)
             .flatMap(SidebarPanelKind.init(rawValue:))

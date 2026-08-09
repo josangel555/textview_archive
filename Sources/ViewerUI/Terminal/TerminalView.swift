@@ -230,8 +230,6 @@ struct TerminalPaneView: View {
             newTabButton
             Spacer(minLength: 0)
             restartButtonIfExited
-            dockMenu
-            closePaneButton
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -248,8 +246,6 @@ struct TerminalPaneView: View {
             newTabButton
             Spacer(minLength: 0)
             restartButtonIfExited
-            dockMenu
-            closePaneButton
         }
         .frame(width: max(46, fontSize * 3.6))
         .padding(.vertical, 8)
@@ -257,37 +253,10 @@ struct TerminalPaneView: View {
         .background(Palette.windowBackground)
     }
 
-    /// TSK-1123 — the terminal's "dock to a window edge" control, the missing
-    /// user-facing way to move the terminal (the owner's "can't get the terminal
-    /// to the right" pain — setPaneEdge existed but nothing called it). The
-    /// current edge is check-marked. The unified Settings-matrix placement (all
-    /// tool windows) is the remaining ticket slice.
-    private var dockMenu: some View {
-        Menu {
-            dockButton("Dock Bottom", .bottom)
-            dockButton("Dock Left", .left)
-            dockButton("Dock Right", .right)
-        } label: {
-            Image(systemName: "square.righthalf.filled")
-                .font(.system(size: fontSize * 0.8, weight: .medium))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Move the terminal to a window edge")
-        .accessibilityIdentifier("mdv.terminal.dock")
-    }
-
-    @ViewBuilder
-    private func dockButton(_ title: String, _ edge: TerminalPaneEdge) -> some View {
-        Button { store.setPaneEdge(edge) } label: {
-            if store.paneEdge == edge {
-                Label(title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
-        }
-    }
+    // (The in-pane dockMenu / closePaneButton are GONE — owner rework
+    // 2026-08-09: moving + hiding the terminal is the PANEL chrome's job
+    // now — its rail button, the dock tab's move menu / hide button, the
+    // drag-to-shoulder path — identical to every other tool window.)
 
     private var newTabButton: some View {
         Button { store.addTab() } label: {
@@ -305,13 +274,6 @@ struct TerminalPaneView: View {
                 .buttonStyle(.plain)
                 .help("Restart shell")
         }
-    }
-
-    private var closePaneButton: some View {
-        Button { store.setOpen(false) } label: { Image(systemName: "xmark") }
-            .buttonStyle(.plain)
-            .help("Close terminal")
-            .accessibilityIdentifier("mdv.terminal.close")
     }
 
     /// A single terminal tab, rendered as an explicit chip so it reads as a
@@ -428,75 +390,7 @@ private struct TerminalHeaderRow: View {
     }
 }
 
-/// A thin draggable divider above the terminal pane. Dragging UP grows
-/// the pane, DOWN shrinks it; `TerminalPaneStore.setHeight` clamps +
-/// persists. Cursor flips to the vertical-resize arrow on hover.
-struct TerminalResizeHandle: View {
-    @ObservedObject var store: TerminalPaneStore
-    /// Height captured at the start of a drag so deltas are absolute, not
-    /// cumulative-per-frame.
-    @State private var dragStartHeight: CGFloat?
-
-    var body: some View {
-        Rectangle()
-            .fill(Palette.separator)
-            .frame(height: 5)
-            .overlay(
-                Rectangle().fill(Palette.windowBackground).frame(height: 3)
-            )
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                // .global — the handle moves with the pane; local-space
-                // translation oscillates + half-tracks (see DraggableSidebar).
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = dragStartHeight ?? store.height
-                        if dragStartHeight == nil { dragStartHeight = start }
-                        // Drag up (negative translation height) → taller.
-                        store.setHeight(start - value.translation.height)
-                    }
-                    .onEnded { _ in dragStartHeight = nil }
-            )
-            .accessibilityIdentifier("mdv.terminal.resize")
-    }
-}
-
-/// A thin draggable divider on the content-facing edge of a SIDE-docked
-/// terminal column (TSK-491). Drag toward the content shrinks the column;
-/// drag away grows it. `TerminalPaneStore.setWidth` clamps + persists. The
-/// drag sign flips with the dock edge: for `.left` the handle is on the right
-/// (drag right grows), for `.right` it's on the left (drag left grows).
-struct TerminalSideResizeHandle: View {
-    @ObservedObject var store: TerminalPaneStore
-    @State private var dragStartWidth: CGFloat?
-
-    var body: some View {
-        Rectangle()
-            .fill(Palette.separator)
-            .frame(width: 5)
-            .overlay(Rectangle().fill(Palette.windowBackground).frame(width: 3))
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                // .global — see DraggableSidebar's oscillator note.
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = dragStartWidth ?? store.sideWidth
-                        if dragStartWidth == nil { dragStartWidth = start }
-                        // Left dock: handle on the right → drag right (+x) grows.
-                        // Right dock: handle on the left → drag left (−x) grows.
-                        let delta = store.paneEdge == .left
-                            ? value.translation.width
-                            : -value.translation.width
-                        store.setWidth(start + delta)
-                    }
-                    .onEnded { _ in dragStartWidth = nil }
-            )
-            .accessibilityIdentifier("mdv.terminal.resize.side")
-    }
-}
+// (`TerminalResizeHandle` / `TerminalSideResizeHandle` are GONE — owner
+// rework 2026-08-09: the terminal is a regular tool window; its size rides
+// the ordinary dock/accordion handles — the tabbed bottom dock's gutter,
+// the right pane's edge handle, the sidebar section dividers.)

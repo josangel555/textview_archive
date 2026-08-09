@@ -128,6 +128,7 @@ final class SidebarPanelKindTests: XCTestCase {
                 .lspProblems,
                 .recentlyOpened,
                 .pluginSections,
+                .terminal,
             ]
         )
     }

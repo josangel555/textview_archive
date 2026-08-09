@@ -98,6 +98,9 @@ enum SidebarPanelBody {
         case .pluginSections:
             PluginSidebarSections(model: model)
                 .environment(\.sidebarSectionBodyHeight, bodyHeight)
+        case .terminal:
+            TerminalPanelSection(model: model)
+                .environment(\.sidebarSectionBodyHeight, bodyHeight)
         case .files:
             // FILES is the flex-fill accordion root, rendered inline by
             // SidebarView. It is intentionally not dockable.

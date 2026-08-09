@@ -29,6 +29,7 @@ public enum SidebarPanelRegistry {
         .lspProblems,
         .recentlyOpened,
         .pluginSections,
+        .terminal,
     ]
 
     /// Sanity check: every enum case appears in `defaultOrder`. Pinned

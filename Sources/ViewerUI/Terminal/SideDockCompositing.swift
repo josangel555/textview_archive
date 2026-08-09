@@ -1,13 +1,15 @@
 import CoreGraphics
 
-/// The compositing z-order contract for the side-docked terminal column vs the
-/// center content surface (TSK-960, regression of TSK-491).
+/// The compositing z-order contract for the right dock (which can host the
+/// terminal's opaque surface) vs the center content surface (TSK-960,
+/// regression of TSK-491; call site updated 2026-08-09 — the terminal is a
+/// regular tool window now, so the contract rides `RightDockContainer`).
 ///
 /// WHY THIS EXISTS AS A NAMED, HOST-TESTABLE TYPE
 /// ----------------------------------------------
-/// `ContentView` lays the side-docked terminal column (`sideTerminalColumn`)
-/// and the center content column as plain `HStack` siblings. BOTH host an
-/// opaque, layer-backed `NSViewRepresentable` surface — the terminal
+/// `ContentView` lays `RightDockContainer` and the center content column as
+/// plain `HStack` siblings. BOTH can host an opaque, layer-backed
+/// `NSViewRepresentable` surface — a right-docked terminal
 /// (`TerminalNSView`) and the content WebView respectively. Per the compositor
 /// rule codified in CLAUDE.md / LESSONS (TSK-488), two opaque representables in
 /// one container composite by PAINT ORDER: without an explicit z-order, the

@@ -83,9 +83,12 @@ final class PanelLayoutResolutionTests: XCTestCase {
 
     func test_default_allPanelsOnLeftRail() {
         let store = makeStore()
-        XCTAssertEqual(store.railPanels(on: .left), SidebarPanelRegistry.defaultOrder)
+        // 2026-08-09: the terminal is the one panel with a per-panel default
+        // edge (.bottom) — everything else ships on the left rail.
+        XCTAssertEqual(store.railPanels(on: .left),
+                       SidebarPanelRegistry.defaultOrder.filter { $0 != .terminal })
         XCTAssertEqual(store.railPanels(on: .right), [])
-        XCTAssertEqual(store.railPanels(on: .bottom), [])
+        XCTAssertEqual(store.railPanels(on: .bottom), [.terminal])
     }
 
     // MARK: - leftContainer "≥1 visible" half
@@ -238,10 +241,11 @@ final class PanelLayoutResolutionTests: XCTestCase {
         store.setEdge(.git, .right)
         XCTAssertFalse(store.railPanels(on: .left).contains(.git))
         XCTAssertTrue(store.railPanels(on: .right).contains(.git))
-        // Order on the left is preserved minus the moved panel.
+        // Order on the left is preserved minus the moved panel (and minus
+        // the terminal, which defaults to the bottom rail — 2026-08-09).
         XCTAssertEqual(
             store.railPanels(on: .left),
-            SidebarPanelRegistry.defaultOrder.filter { $0 != .git }
+            SidebarPanelRegistry.defaultOrder.filter { $0 != .git && $0 != .terminal }
         )
     }
 }

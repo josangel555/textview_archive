@@ -3,6 +3,15 @@
 ## 2026-08-09
 
 ### Changed
+- **The terminal is a regular tool window now.** All of its special machinery is gone:
+  the dedicated toggle at the bottom of the left rail, the Settings "Pane placement" /
+  "Tab strip position" rows, its private drag payload and resize handles. The terminal
+  gets an ordinary rail button on the bottom shoulder (its default dock), moves anywhere
+  any panel can — drag its icon or tab to a shoulder, or use the move menu — sizes with
+  the same handles as every panel, and ⌃` still toggles it. A terminal you had open
+  before updating stays open in the same dock; closing its last shell tab hides the
+  window. (Note: terminal visibility now rides the per-session panel layout, like every
+  panel — sessions saved before this change open with the terminal hidden.)
 - **Bottom tool windows are tabs now.** Two panels docked to the bottom used to render
   side by side, splitting the band into unusable slivers; the dock now shows one panel
   at a time behind a tab strip (icon + name, active tab tinted like the file tabs), so

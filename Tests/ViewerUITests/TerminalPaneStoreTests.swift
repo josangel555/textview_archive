@@ -88,29 +88,9 @@ final class TerminalPaneStoreTests: XCTestCase {
         XCTAssertEqual(store.height, 300)
     }
 
-    // MARK: - Pane dock edge + side width (TSK-491)
-
-    func test_paneEdge_defaultsBottom_thenSetsAndPersists() {
-        let store = TerminalPaneStore(defaults: defaults)
-        XCTAssertEqual(store.paneEdge, .bottom)
-        store.setPaneEdge(.right)
-        XCTAssertEqual(store.paneEdge, .right)
-        // "Relaunch" restores the new edge.
-        let reloaded = TerminalPaneStore(defaults: defaults)
-        XCTAssertEqual(reloaded.paneEdge, .right)
-    }
-
-    func test_setWidth_clampsAndPersists() {
-        let store = TerminalPaneStore(defaults: defaults)
-        store.setWidth(5)
-        XCTAssertEqual(store.sideWidth, store.minWidth)
-        store.setWidth(200_000)
-        XCTAssertEqual(store.sideWidth, store.maxWidth)
-        store.setWidth(420)
-        XCTAssertEqual(store.sideWidth, 420)
-        let reloaded = TerminalPaneStore(defaults: defaults)
-        XCTAssertEqual(reloaded.sideWidth, 420)
-    }
+    // (The TSK-491 pane-edge + side-width store tests are gone with the
+    // 2026-08-09 terminal-as-a-panel rework — placement/width ride
+    // `PanelLayoutStore`, pinned in `TerminalPanelTests` / `DockLayoutStoreTests`.)
 
     // MARK: - Persistence
 

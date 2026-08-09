@@ -713,6 +713,13 @@ public final class DocumentModel: ObservableObject {
         // observed-by-nobody would reintroduce the `setCurrentViewMode`
         // dead-toggle (the rail/sidebar would never re-body on a
         // toggle). Pinned by `PanelLayoutRepublishInvariantTests`.
+
+        // Terminal-as-a-panel (owner rework 2026-08-09): closing the LAST
+        // shell tab hides the terminal tool window — the store knows
+        // nothing about panel layout, so the bridge lives here.
+        terminalPane.onLastTabClosed = { [weak self] in
+            self?.panelLayout.setOverride(.terminal, .hidden)
+        }
     }
 
     private var cancellables: Set<AnyCancellable> = []

@@ -137,7 +137,12 @@ final class PanelPlacementTests: XCTestCase {
 
     func test_panelsOn_withRightDefault_putsUntouchedPanelsRight() {
         let a = PanelEdgeAssignment(defaultEdge: .right)
-        XCTAssertEqual(a.panels(on: .right), SidebarPanelRegistry.defaultOrder)
+        // The terminal's PER-PANEL preferred default (.bottom) beats the
+        // global default (2026-08-09) — every other untouched panel follows
+        // the global .right.
+        XCTAssertEqual(a.panels(on: .right),
+                       SidebarPanelRegistry.defaultOrder.filter { $0 != .terminal })
+        XCTAssertEqual(a.panels(on: .bottom), [.terminal])
         XCTAssertEqual(a.panels(on: .left), [])
     }
 

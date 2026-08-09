@@ -70,20 +70,24 @@ public enum UISceneRegistry {
 
     /// The terminal-pane portion of a scene's target state. `nil` (via the
     /// optional on `SceneSpec`) means the terminal stays CLOSED.
+    ///
+    /// The terminal is a regular tool window now (owner rework 2026-08-09),
+    /// so `edge` is the unified `PanelEdge` — the applier docks the
+    /// `.terminal` panel there via `PanelLayoutStore` like any panel.
     public struct TerminalState: Equatable, Sendable {
-        /// Which window edge the pane docks to.
-        public let edge: TerminalPaneEdge
+        /// Which shoulder the terminal PANEL docks to.
+        public let edge: PanelEdge
         /// Where the tab strip sits inside the pane.
         public let tabPosition: TerminalTabPosition
         /// How many terminal tabs to seed (≥ 1).
         public let tabCount: Int
-        /// Deterministic pane height (bottom band).
+        /// Deterministic band height (bottom dock).
         public let height: CGFloat
-        /// Deterministic pane width (side column).
+        /// Deterministic pane width (right dock).
         public let width: CGFloat
 
         public init(
-            edge: TerminalPaneEdge,
+            edge: PanelEdge,
             tabPosition: TerminalTabPosition,
             tabCount: Int,
             height: CGFloat,
@@ -387,7 +391,7 @@ public enum UISceneRegistry {
                 parts.contains("top") ? .top
                 : parts.contains("right") ? .right
                 : .left
-            let edge: TerminalPaneEdge =
+            let edge: PanelEdge =
                 parts.contains("paneright") ? .right
                 : parts.contains("paneleft") ? .left
                 : .bottom
