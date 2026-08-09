@@ -4327,3 +4327,17 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   content (`mktg-split`, window-id screencapture, ~3s after launch). Whatever blanked the
   earlier marketing captures is scene/timing/lane-specific — do not write off WebView
   surfaces in capture scenes; try the shot before falling back to native-only compositions.
+
+- **Scene state PERSISTS across VM app runs — a capture scene must state its FULL sidebar
+  (2026-08-08).** Same class as the theme leak above: `panelLayout` overrides + section
+  expanded flags live in UserDefaults, so scene N inherits scene N-1's sidebar (the
+  empty-file-tree capture — a previous scene had hidden `.files`). `UISceneApplier.
+  applyMarketingSidebar` sets an override for EVERY `SidebarPanelKind` + force-expands the
+  shown ones. Related: `gitPanelFocusRequest` rides `.onChange` in `GitPanelSection`, so a
+  request fired before the section MOUNTS is never seen — re-fire on a short delay.
+
+- **The VM mirror's rsync excludes `.git/objects/pack/` — the IN-APP git log shows "No
+  commits" while shallow `git log` over ssh works on loose objects (2026-08-08).** A deep
+  walk hits a missing packed object and the panel reads as empty. One-off fix applied:
+  `rsync -az <repo>/.git/objects/pack/ macOS15:markdown_viewer/.git/objects/pack/` (20 MB)
+  — full 3,788-commit history now resolves VM-side. Re-run that after a host `git gc`.

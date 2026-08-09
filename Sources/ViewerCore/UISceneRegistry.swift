@@ -190,7 +190,19 @@ public enum UISceneRegistry {
             fixture: .defaultDocument,
             closesExistingTabs: true,
             themeID: "xcode-dark",
-            summary: "Marketing: welcome sample split — editor + rendered preview, dark theme (also the on-screen proof for the split themed-CSS fix)"),
+            summary: "Marketing: welcome sample split — editor + rendered preview, FILE NAV sidebar, dark theme (also the on-screen proof for the split themed-CSS fix)"),
+        SceneSpec(
+            id: "mktg-code",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            themeID: "xcode-dark",
+            summary: "Marketing: file nav on a git root + bookmarks, 3 tabs, Swift source highlighting, command palette overlay"),
+        SceneSpec(
+            id: "mktg-git",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            themeID: "xcode-dark",
+            summary: "Marketing: git panel on the LOG tab (real repo graph) + file nav, repo file in Source"),
         SceneSpec(
             id: "lsp-rename",
             fixture: .throwawaySource(name: "rename-target.swift"),

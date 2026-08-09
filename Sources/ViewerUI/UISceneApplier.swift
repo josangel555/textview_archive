@@ -22,6 +22,25 @@ import ViewerCore
 @MainActor
 public enum UISceneApplier {
 
+    /// Marketing-scene sidebar: panel-visibility overrides + expanded flags
+    /// PERSIST in UserDefaults across app runs, so a scene inherits the
+    /// PREVIOUS run's sidebar unless it states the FULL panel set (the
+    /// empty-file-tree capture, 2026-08-08). Shown panels are also
+    /// force-expanded. Owner default: FILE NAV in every shot; extras only
+    /// where a scene showcases them.
+    @MainActor
+    static func applyMarketingSidebar(
+        _ model: DocumentModel, shown: [SidebarPanelKind]
+    ) {
+        for k in SidebarPanelKind.allCases {
+            model.panelLayout.setOverride(k, shown.contains(k) ? .shown : .hidden)
+            if shown.contains(k) {
+                UserDefaults.standard.set(true, forKey: k.expandedStateKey)
+            }
+        }
+        model.sidebar.isVisible = true
+    }
+
     /// Apply `scene` (already lowercased) to `model`. Returns the status line
     /// describing what was applied (or the error/unknown message).
     ///
@@ -151,15 +170,71 @@ public enum UISceneApplier {
         if scene == "conflict-merge" {
             try? FileManager.default.createDirectory(
                 at: tabsBaseDir, withIntermediateDirectories: true)
-            let f = tabsBaseDir.appendingPathComponent("conflict-sample.md")
-            try? "line one\nline two\nline three\n".write(to: f, atomically: true, encoding: .utf8)
+            // A REALISTIC divergence (owner 2026-08-08: "the merge tool needs a
+            // stronger example"): both sides edited a deploy runbook — YOUR
+            // buffer added a pre-flight step + a rollout step; the DISK copy
+            // (a teammate's save) tuned canary traffic/timing + the rollback
+            // line. Distinct hunks per pane, one overlapping region.
+            let base = """
+            # Deploy Runbook
+
+            ## Pre-flight
+            - Check the dashboard for open alerts
+            - Confirm staging is green
+
+            ## Rollout
+            1. Tag the release
+            2. Push to the canary fleet
+            3. Watch error rates for 15 minutes
+
+            ## Rollback
+            Run `deploy revert --last` and page the on-call.
+            """
+            let mine = """
+            # Deploy Runbook
+
+            ## Pre-flight
+            - Check the dashboard for open alerts
+            - Confirm staging is green
+            - Announce the deploy in #ops
+
+            ## Rollout
+            1. Tag the release
+            2. Push to the canary fleet
+            3. Watch error rates for 15 minutes
+            4. Promote to the full fleet
+
+            ## Rollback
+            Run `deploy revert --last` and page the on-call.
+            """
+            let theirs = """
+            # Deploy Runbook
+
+            ## Pre-flight
+            - Check the dashboard for open alerts
+            - Confirm staging is green
+
+            ## Rollout
+            1. Tag the release
+            2. Push to the canary fleet (10% traffic)
+            3. Watch error rates for 30 minutes
+
+            ## Rollback
+            Run `deploy revert --last`, page the on-call, and file an incident.
+            """
+            let f = tabsBaseDir.appendingPathComponent("deploy-runbook.md")
+            try? (base + "\n").write(to: f, atomically: true, encoding: .utf8)
+            // FILE NAV sidebar (owner 2026-08-08 diversity pass) — the repo
+            // tree behind the merge sheet, not leftover bookmarks/git.
+            let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
+            Self.applyMarketingSidebar(model, shown: [.files])
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.openFolder(root)
             model.open(url: f)
             if let id = model.tabs.selected?.id {
                 _ = model.editor.editorBuffer(forTabID: id)
-                model.updateEditorText("MINE edited\nline two\nline three\n", forTabID: id)
-                try? "THEIRS external\nline two\nline three\n"
-                    .write(to: f, atomically: true, encoding: .utf8)
+                model.updateEditorText(mine + "\n", forTabID: id)
+                try? (theirs + "\n").write(to: f, atomically: true, encoding: .utf8)
                 model.activeDiskConflict = DiskConflictBannerInfo(
                     tabID: id, index: 0, url: f)
                 model.resolveDiskConflict(.merge)
@@ -565,8 +640,11 @@ public enum UISceneApplier {
             // alone left pre-built chrome (git panel, terminal strip) dark.
             NSApp?.appearance = NSAppearance(named: .aqua)
             model.selectedThemeID = "xcode-light"
+            let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
+            Self.applyMarketingSidebar(model, shown: [.files])
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.terminalPane.setOpen(false)   // no dead-prompt pane in the light shot
+            model.openFolder(root)
             model.openFirstRunSample(dir: tabsBaseDir)
             model.setCurrentViewMode(.source)
             return "ui-scene: applied 'theme-light' theme=\(model.selectedThemeID ?? "nil") mode=\(model.currentViewMode.rawValue)"
@@ -577,7 +655,12 @@ public enum UISceneApplier {
         // shot read dead. The shell spawns on view-appearance, so the keystroke
         // feed is delayed past the spawn; the capture lands ~3s later.
         if scene == "mktg-docs" {
+            // FILE NAV default (owner 2026-08-08: too many git-status
+            // sidebars) — the repo tree, not the git panel.
+            let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
+            Self.applyMarketingSidebar(model, shown: [.files])
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.openFolder(root)
             model.openFirstRunSample(dir: tabsBaseDir)
             model.setCurrentViewMode(.source)
             let pane = model.terminalPane
@@ -599,12 +682,112 @@ public enum UISceneApplier {
         // pane because the theme's pageCSS never reached the split renderer).
         if scene == "mktg-split" {
             model.selectedThemeID = "xcode-dark"
+            // Sidebar shows the FILE NAV, not the git panel (owner 2026-08-08):
+            // open the launch file's repo as the folder root (the rsynced
+            // markdown_viewer checkout on the VM — a real git root); FILES is
+            // the only shown section so the tree dominates the shoulder.
+            let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
+            Self.applyMarketingSidebar(model, shown: [.files])
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.openFolder(root)
             model.openFirstRunSample(dir: tabsBaseDir)
             model.setCurrentViewMode(.editor)
             model.terminalPane.setOpen(false)
             model.toggleSplit()
-            return "ui-scene: applied 'mktg-split' mode=\(model.currentViewMode.rawValue) split=\(model.isSplitOpen)"
+            return "ui-scene: applied 'mktg-split' mode=\(model.currentViewMode.rawValue) split=\(model.isSplitOpen) root=\(model.sidebar.rootURL != nil)"
+        }
+
+        // Marketing power-user scene (owner 2026-08-08): file nav on a real git
+        // root + bookmarks, THREE tabs (Swift selected in Source — syntax
+        // highlighting), sessions in the title bar, and the command palette
+        // overlay on top. Repo files when the launch dir is the rsynced
+        // checkout (VM); fixture fallback keeps the scene headless-appliable.
+        if scene == "mktg-code" {
+            model.selectedThemeID = "xcode-dark"
+            let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
+            Self.applyMarketingSidebar(model, shown: [.files, .bookmarks])
+            // Stale bookmarks from earlier UAT runs pollute the section —
+            // clear the store so only this scene's two entries render.
+            for e in model.bookmarksStore.all() {
+                model.bookmarksStore.remove(url: e.url, line: e.line)
+            }
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.openFolder(root)
+            let candidates = [
+                "Sources/ViewerUI/SplitPaneView.swift",
+                "Sources/ViewerCore/WikiLinkResolver.swift",
+                "DESIGN.md",
+            ]
+            var opened: [URL] = []
+            for rel in candidates {
+                let u = root.appendingPathComponent(rel)
+                if FileManager.default.fileExists(atPath: u.path) {
+                    model.open(url: u)
+                    opened.append(u)
+                }
+            }
+            if opened.isEmpty {
+                try? FileManager.default.createDirectory(
+                    at: tabsBaseDir, withIntermediateDirectories: true)
+                let f = tabsBaseDir.appendingPathComponent("sample.swift")
+                try? """
+                import Foundation
+
+                /// A tiny sample so the host sweep has something to open.
+                struct Deploy {
+                    let tag: String
+                    func run() { print("deploying \\(tag)") }
+                }
+                """.write(to: f, atomically: true, encoding: .utf8)
+                model.open(url: f)
+                opened.append(f)
+            }
+            // Bookmark the first two opened files so the BOOKMARKS section
+            // renders with content.
+            for u in opened.prefix(2) {
+                if !model.bookmarksStore.contains(u) {
+                    _ = model.bookmarksStore.toggle(
+                        url: u, displayName: u.lastPathComponent)
+                }
+            }
+            model.refreshBookmarks()
+            model.selectTab(at: 0)   // the Swift file — highlighted Source
+            model.setCurrentViewMode(.source)
+            model.showPalette()
+            return "ui-scene: applied 'mktg-code' tabs=\(model.tabs.tabs.count) "
+                + "bookmarks=\(model.bookmarks.count) palette=\(model.isPalettePresented) "
+                + "root=\(model.sidebar.rootURL != nil)"
+        }
+
+        // Marketing git scene (owner 2026-08-08 diversity pass): the git
+        // panel on the LOG tab — the real markdown_viewer history graph on
+        // the VM (git log works on the rsync mirror) — with the FILES tree
+        // above it and a repo file open in Source.
+        if scene == "mktg-git" {
+            model.selectedThemeID = "xcode-dark"
+            let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
+            Self.applyMarketingSidebar(model, shown: [.files, .git])
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.terminalPane.setOpen(false)
+            model.setSidebarWidth(340)
+            model.openFolder(root)
+            let design = root.appendingPathComponent("DESIGN.md")
+            if FileManager.default.fileExists(atPath: design.path) {
+                model.open(url: design)
+            } else {
+                model.openFirstRunSample(dir: tabsBaseDir)
+            }
+            model.setCurrentViewMode(.source)
+            // GitPanelSection observes gitPanelFocusRequest via .onChange —
+            // a request fired BEFORE the section mounts is never seen (the
+            // first capture stayed on STATUS). Fire once now and again after
+            // the sidebar settles; capture lands ~3s post-apply.
+            model.showGitPanel(tab: .log)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak model] in
+                model?.showGitPanel(tab: .log)
+            }
+            return "ui-scene: applied 'mktg-git' tabs=\(model.tabs.tabs.count) root=\(model.sidebar.rootURL != nil)"
         }
 
         // File-info checksum scene (TSK-748 render validation): the MetadataPanel

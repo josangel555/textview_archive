@@ -87,9 +87,9 @@ LSP_FAKE="$(tr -d '[:space:]' < "$JOB_DIR/lsp-fake" 2>/dev/null || true)"
 FORCE_APPEARANCE=""
 FORCE_THEME=""
 case "$scene" in
-  theme-light) FORCE_APPEARANCE="light"; FORCE_THEME="xcode-light" ;;
-  mktg-split)  FORCE_THEME="xcode-dark" ;;
-  mktg-docs)   FORCE_THEME="none" ;;
+  theme-light)                   FORCE_APPEARANCE="light"; FORCE_THEME="xcode-light" ;;
+  mktg-split|mktg-code|mktg-git) FORCE_THEME="xcode-dark" ;;
+  mktg-docs|conflict-merge|git-panel) FORCE_THEME="none" ;;
 esac
 
 if [ -n "$MON_ROOT" ]; then

@@ -607,11 +607,17 @@ struct TabBarItem: View {
             // tabs keep the line.
             .overlay(alignment: .bottom) {
                 if isSelected {
-                    Rectangle()
-                        .fill(Palette.textBackground)
-                        .frame(height: 3 * scale)
-                        .offset(y: 2 * scale)
-                        .allowsHitTesting(false)
+                    // Opaque base + the same accent tint the tab wears, so the
+                    // band composites to the tab's exact color while still
+                    // covering the strip's bottom hairline (a bare translucent
+                    // tint would let the hairline show through).
+                    ZStack {
+                        Rectangle().fill(Palette.windowBackground)
+                        Rectangle().fill(Self.activeAccentTint)
+                    }
+                    .frame(height: 3 * scale)
+                    .offset(y: 2 * scale)
+                    .allowsHitTesting(false)
                 }
             }
             .contentShape(Rectangle())
@@ -633,19 +639,22 @@ struct TabBarItem: View {
         .accessibilityIdentifier("mdv.tab.item.\(tab.id.uuidString)")
     }
 
+    /// Accent tint for the ACTIVE tab (owner 2026-08-08: the content-colored
+    /// active tab was hard to pick out — bold alone wasn't enough; light
+    /// blue reads immediately). Translucent so it tints over the strip in
+    /// both appearances; the hairline-interrupt band layers it over an
+    /// opaque base so the two composite identically.
+    static let activeAccentTint = Color.accentColor.opacity(0.25)
+
     private var background: Color {
-        // I-16a (owner 2026-08-01): the ACTIVE tab wears the CONTENT
-        // background (white in light mode) so it reads connected to the
-        // document — replacing the accent tint; inactive tabs are grey
-        // chips, hover brightens one toward active.
         if isSelected {
-            return Palette.textBackground
+            return Self.activeAccentTint
         }
         if isHovering {
             return Palette.controlBackground.opacity(0.78)
         }
         // Slightly stronger grey (owner 2026-08-05): inactive must READ
-        // inactive next to the content-colored active tab.
+        // inactive next to the accent-tinted active tab.
         return Palette.controlBackground.opacity(0.55)
     }
 

@@ -2,6 +2,10 @@
 
 ## 2026-08-08
 
+### Changed
+- **The active tab is unmistakable now** — it wears a light accent-blue tint instead of the
+  content color (bold alone made it hard to pick out of the strip); inactive tabs stay grey.
+
 ### Fixed
 - **Split view's markdown preview is readable in dark themes now.** With a dark theme
   selected, the split preview rendered default black prose on the dark pane (the selected
@@ -17,10 +21,15 @@
   (`MDV_FORCE_APPEARANCE` / `MDV_FORCE_THEME_ID`) killing the cross-run theme leak in VM
   captures; `theme-light` scene hardened (no dead terminal). Gate fix-forward: `NSApp`
   optional-chained in the scene applier (nil in headless hosts crashed the sweep).
-- Launch site: gallery refreshed from the new captures (terminal running `top`, split
-  showcase, true light shot); download page logo swapped to the real app icon; all
-  distribution links renamed `mvd_dist` → `textview_dist` (owner's repo rename), local dist
-  clone + docs + memory updated.
+- Launch site: gallery rebuilt to six diversified captures (split hero with file nav,
+  real-history git LOG graph, terminal running `top`, stronger 3-pane merge example,
+  code-workbench shot with bookmarks + command palette, true light shot); download page
+  logo swapped to the real app icon; all distribution links renamed `mvd_dist` →
+  `textview_dist` (owner's repo rename), local dist clone + docs + memory updated;
+  site favicon (JA→JG monogram) + homepage full-name SEO + music section + blog feed links.
+- Capture scenes: `mktg-split`/`mktg-code`/`mktg-git` added, `conflict-merge` fixture made
+  realistic, sidebar state now set EXPLICITLY per scene (overrides persist across runs);
+  VM repo got a one-off git-pack sync so the in-app log shows real history.
 
 ## 2026-08-05
 
