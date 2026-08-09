@@ -215,11 +215,7 @@ struct SidebarView: View {
                 // always `true` for `.pluginSections` (a plugin section shows
                 // regardless of folder), so only an explicit `.hidden` override
                 // hides it — which is exactly the path the rail button drives.
-                if panelLayout.edge(of: .pluginSections) == .left,
-                   panelLayout.isVisible(
-                    .pluginSections,
-                    dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs)
-                ) {
+                if pluginSectionsVisibleOnLeft {
                     PluginSidebarSections(model: model)
                         .environment(\.sidebarSectionBodyHeight,
                                      SidebarPanelHeights.clamp(CGFloat(pluginHeight),
@@ -262,13 +258,18 @@ struct SidebarView: View {
                         // would actually change — dropping the no-op resize frames
                         // before they touch `@State`. (The old sub-point epsilon
                         // guard only caught jitter, not the pt-scale resize churn.)
-                        if SidebarPanelHeights.shouldCommitAvailableHeight(
-                            current: sidebarContentHeight,
-                            measured: h,
-                            storedHeights: accordionStoredHeights,
-                            fraction: SidebarPanelHeights.ceilingFraction(
-                                visiblePanelCount: accordionPanelCount)
-                        ) {
+                        // Fill mode (owner 2026-08-09): the fill target's body
+                        // tracks `available` DIRECTLY, so every height change
+                        // is observable — the no-op suppression must not drop
+                        // those frames.
+                        if accordionFillTarget != nil
+                            || SidebarPanelHeights.shouldCommitAvailableHeight(
+                                current: sidebarContentHeight,
+                                measured: h,
+                                storedHeights: accordionStoredHeights,
+                                fraction: SidebarPanelHeights.ceilingFraction(
+                                    visiblePanelCount: accordionPanelCount)
+                            ) {
                             sidebarContentHeight = h
                         }
                     }
@@ -475,6 +476,31 @@ struct SidebarView: View {
         SidebarSectionPlanner.plan(panelVisibility).count
     }
 
+    /// Plugin sections' left-accordion visibility, extracted so the render
+    /// gate and the fill-target logic read one expression.
+    private var pluginSectionsVisibleOnLeft: Bool {
+        panelLayout.edge(of: .pluginSections) == .left
+            && panelLayout.isVisible(
+                .pluginSections,
+                dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs))
+    }
+
+    /// The accordion panel that plays FILES' flex-fill role when FILES is
+    /// hidden (owner 2026-08-09: panels capped at their persisted height
+    /// stranded the rest of the shoulder): the LAST visible panel — nothing
+    /// renders below it, so it may absorb the leftover band. nil when FILES
+    /// is visible (it is the designed fill) or plugin sections render below
+    /// the accordion.
+    private var accordionFillTarget: SidebarPanelKind? {
+        guard !filesPanelVisible, !pluginSectionsVisibleOnLeft else { return nil }
+        return SidebarSectionPlanner.plan(panelVisibility).last?.panel
+    }
+
+    /// Per-panel non-body chrome (header row + divider + card padding) used
+    /// by the fill computation. Slight overshoot beats undershoot: a few
+    /// spare points leave a hairline gap, undershoot makes the band scroll.
+    private static let accordionChromePerPanel: CGFloat = 34
+
     @ViewBuilder
     private var accordionStack: some View {
         let plan = SidebarSectionPlanner.plan(panelVisibility)
@@ -517,14 +543,38 @@ struct SidebarView: View {
                 sidebar: sidebar,
                 trackedRepos: trackedRepos,
                 panelLayout: panelLayout,
-                bodyHeight: SidebarPanelHeights.clamp(
-                    CGFloat(accordionHeight(for: kind)),
-                    availableHeight: sidebarContentHeight,
-                    fraction: SidebarPanelHeights.ceilingFraction(
-                        visiblePanelCount: accordionPanelCount)
-                )
+                bodyHeight: resolvedBodyHeight(for: kind)
             )
         }
+    }
+
+    /// The height a panel's body actually renders at. Normal panels get the
+    /// stored-height clamp (TSK-1590 ceiling); the fill target (last visible
+    /// panel while FILES is hidden) is RAISED to the leftover band so the
+    /// shoulder never strands dead space below a short panel (owner
+    /// 2026-08-09).
+    private func resolvedBodyHeight(for kind: SidebarPanelKind) -> CGFloat {
+        let clamped = SidebarPanelHeights.clamp(
+            CGFloat(accordionHeight(for: kind)),
+            availableHeight: sidebarContentHeight,
+            fraction: SidebarPanelHeights.ceilingFraction(
+                visiblePanelCount: accordionPanelCount)
+        )
+        guard kind == accordionFillTarget else { return clamped }
+        let plan = SidebarSectionPlanner.plan(panelVisibility)
+        let siblings = plan.map(\.panel).filter { $0 != kind }.map {
+            SidebarPanelHeights.clamp(
+                CGFloat(accordionHeight(for: $0)),
+                availableHeight: sidebarContentHeight,
+                fraction: SidebarPanelHeights.ceilingFraction(
+                    visiblePanelCount: plan.count))
+        }
+        return SidebarPanelHeights.fillHeight(
+            stored: CGFloat(accordionHeight(for: kind)),
+            availableHeight: sidebarContentHeight,
+            siblingResolvedHeights: siblings,
+            chromePerPanel: Self.accordionChromePerPanel,
+            panelCount: plan.count)
     }
 
     /// TSK-592: the per-panel stored body heights (pre-clamp `@AppStorage`

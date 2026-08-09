@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-09
+
+### Fixed
+- **Left tool windows fill the sidebar now.** With the file tree hidden, panels (Git,
+  Bookmarks, Outline, …) stopped at their remembered drag-height and stranded the rest of
+  the shoulder as dead space — and since every panel remembers its own height, the cap
+  looked random per panel. The last visible panel now absorbs the remaining band, exactly
+  like the file tree does when it's present; a hand-dragged larger size still wins.
+
+### System work
+- Capture lane: the git marketing shot now shows STATUS + a real HEAD commit-diff tab (the
+  log tab's in-scene fetch raced the repo-follow); command palette can open pre-seeded
+  (`showPalette(seed:)` — the code shot opens in `>` command mode); `host-screen` runner
+  mode captures the live VM screen for owner-window inspections; `git-fill-check` scene =
+  the sidebar-fill visual tooth. Scene gotcha codified: session activation restores that
+  session's panel layout, so scenes re-assert overrides after the session dance.
+
 ## 2026-08-08
 
 ### Changed

@@ -4341,3 +4341,19 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   walk hits a missing packed object and the panel reads as empty. One-off fix applied:
   `rsync -az <repo>/.git/objects/pack/ macOS15:markdown_viewer/.git/objects/pack/` (20 MB)
   — full 3,788-commit history now resolves VM-side. Re-run that after a host `git gc`.
+
+- **Sidebar panels never GREW — only shrank (2026-08-09, the dead-shoulder bug).** The
+  accordion's height pipeline was all ceilings: stored drag-height → floor clamp →
+  window-fraction ceiling (TSK-1590 raised a lone panel's ceiling to 100%but a ceiling
+  only lets a LARGE stored height through). Nothing ever RAISED a short stored height, so
+  with FILES hidden the last panel stopped at ~220pt and stranded the band — "capped at a
+  random height" because every panel persists its own. Fix: `SidebarPanelHeights.fillHeight`
+  raises the LAST visible panel to the leftover (available − sibling bodies − chrome);
+  the TSK-592 resize-commit suppression must be BYPASSED in fill mode (the fill tracks
+  `available` directly, so no frame is a no-op). Visual tooth: `git-fill-check` scene.
+
+- **Session activation RESTORES that session's panel layout (2026-08-09, scene gotcha).**
+  A capture scene that sets `panelLayout` overrides and then creates/activates sessions
+  loses the overrides when the activation lands (async — it raced BOTH call orderings).
+  Scenes re-assert sidebar state on a delay AFTER the session dance; the coordinator's
+  create/activate round-trip must never sit between "set up the UI" and "capture".

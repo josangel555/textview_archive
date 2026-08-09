@@ -170,6 +170,13 @@ struct CommandPaletteView: View {
             fieldFocused = true
             selectedIndex = 0
             bookmarkURLSet = Set(model.bookmarks.map { $0.url })
+            // One-shot seed (showPalette(seed:)): open pre-routed — e.g. ">"
+            // lands directly in command mode. Consumed so a later plain open
+            // starts empty as before.
+            if let seed = model.paletteSeedQuery {
+                query = seed
+                model.paletteSeedQuery = nil
+            }
             recomputeFiltered()
         }
         .onChange(of: model.recents) { _, _ in recomputeFiltered() }

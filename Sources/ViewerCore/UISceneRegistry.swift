@@ -198,6 +198,10 @@ public enum UISceneRegistry {
             themeID: "xcode-dark",
             summary: "Marketing: file nav on a git root + bookmarks, 3 tabs, Swift source highlighting, command palette overlay"),
         SceneSpec(
+            id: "git-fill-check",
+            fixture: .defaultDocument,
+            summary: "Sidebar-fill validation: GIT as the only left panel must fill the shoulder (owner 2026-08-09)"),
+        SceneSpec(
             id: "mktg-git",
             fixture: .defaultDocument,
             closesExistingTabs: true,

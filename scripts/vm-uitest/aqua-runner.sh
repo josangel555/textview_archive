@@ -39,6 +39,18 @@ log "scene=$scene"
 PNG="$JOB_DIR/$scene.png"
 rm -f "$WID_FILE" "$PNG"
 
+# host-screen: capture the WHOLE VM screen (whatever the owner has open) and
+# exit — no app spawn, no AX walk. For live-window inspection requests.
+if [ "$scene" = "host-screen" ]; then
+  screencapture -x "$PNG"
+  if [ -s "$PNG" ]; then
+    log "CAPTURED: host-screen -> $PNG"
+  else
+    log "FAIL: screencapture produced no PNG"
+  fi
+  mv "$RESULT" "$JOB_DIR/$scene.result"; : > "$JOB_DIR/done"; exit 0
+fi
+
 if [ ! -x "$APP" ]; then
   log "FAIL: app not built at $APP"
   mv "$RESULT" "$JOB_DIR/$scene.result"; : > "$JOB_DIR/done"; exit 2

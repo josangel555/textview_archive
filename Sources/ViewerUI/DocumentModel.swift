@@ -349,6 +349,10 @@ public final class DocumentModel: ObservableObject {
         set { sourceView.sourceSelection = newValue }
     }
     @Published public var isPalettePresented: Bool = false
+    /// One-shot initial query for the next palette open (`showPalette(seed:)`)
+    /// — e.g. ">" opens directly in command mode. Consumed by the palette's
+    /// onAppear; nil = open empty (the default).
+    @Published public var paletteSeedQuery: String? = nil
     /// "Go to file / folder" (Finder-style ⇧⌘G) prompt visibility.
     /// Owned here (not at ContentView level) so the menu item + script
     /// runner can toggle it without prop-drilling. See `GoToPathPrompt`.
@@ -1082,7 +1086,10 @@ public final class DocumentModel: ObservableObject {
     /// first responder (the overlay tear-down left focus nowhere). Consumed by
     /// `CodeMirrorEditorView(editorFocusRequest:)`.
     @Published public var editorFocusRequest: Int = 0
-    public func showPalette() { isPalettePresented = true }
+    public func showPalette(seed: String? = nil) {
+        paletteSeedQuery = seed
+        isPalettePresented = true
+    }
     public func dismissPalette() {
         isPalettePresented = false
         editorFocusRequest &+= 1

@@ -50,6 +50,25 @@ public enum UISceneApplier {
         CGWarpMouseCursorPosition(CGPoint(x: bounds.maxX - 4, y: bounds.maxY - 4))
     }
 
+    /// One-shot git plumbing read for scene fixtures (e.g. HEAD's sha for
+    /// the marketing diff tab). nil on any failure — scenes degrade, never
+    /// crash the sweep.
+    static func gitOutput(_ args: [String], in dir: URL) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.currentDirectoryURL = dir
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        return String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Marketing scenes: with the launch's single unnamed session the title
     /// bar reads EMPTY (owner 2026-08-08) — create a real second session
     /// ("notes") so session pills render, then return to the primary. Same
@@ -819,41 +838,73 @@ public enum UISceneApplier {
             model.refreshBookmarks()
             model.selectTab(at: 0)   // the Swift file — highlighted Source
             model.setCurrentViewMode(.source)
-            model.showPalette()
+            // ">" = command mode (owner 2026-08-09: the caption says "command
+            // palette", so show COMMANDS, not the recents list).
+            model.showPalette(seed: ">")
             return "ui-scene: applied 'mktg-code' tabs=\(model.tabs.tabs.count) "
                 + "bookmarks=\(model.bookmarks.count) palette=\(model.isPalettePresented) "
                 + "root=\(model.sidebar.rootURL != nil)"
         }
 
-        // Marketing git scene (owner 2026-08-08 diversity pass): the git
-        // panel on the LOG tab — the real markdown_viewer history graph on
-        // the VM (git log works on the rsync mirror) — with the FILES tree
-        // above it and a repo file open in Source.
+        // Marketing git scene (owner 2026-08-08/09): FILES + the git panel
+        // on STATUS, with HEAD's commit DIFF open in the content pane (the
+        // "diff thingy" — the same `<sha>.diff` artifact a log click opens,
+        // built inline because the section-private GitPanelModel isn't
+        // reachable from here). STATUS populates reliably; the LOG tab's
+        // in-scene fetch raced the repo-follow and cached empty.
         if scene == "mktg-git" {
             model.selectedThemeID = "xcode-dark"
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: [.files, .git])
-            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
             model.terminalPane.setOpen(false)
             model.setSidebarWidth(340)
             model.openFolder(root)
-            let design = root.appendingPathComponent("DESIGN.md")
-            if FileManager.default.fileExists(atPath: design.path) {
-                model.open(url: design)
-            } else {
-                model.openFirstRunSample(dir: tabsBaseDir)
+            var diffFile: URL?
+            if let head = Self.gitOutput(["rev-parse", "HEAD"], in: root),
+               !head.isEmpty {
+                let raw = GitClient(repoRoot: root).commitDiff(sha: head)
+                if !raw.isEmpty {
+                    try? FileManager.default.createDirectory(
+                        at: tabsBaseDir, withIntermediateDirectories: true)
+                    let f = tabsBaseDir.appendingPathComponent(
+                        "\(String(head.prefix(8))).diff")
+                    try? raw.write(to: f, atomically: true, encoding: .utf8)
+                    diffFile = f
+                }
             }
-            model.setCurrentViewMode(.source)
-            // GitPanelSection observes gitPanelFocusRequest via .onChange —
-            // a request fired BEFORE the section mounts is never seen (the
-            // first capture stayed on STATUS). Fire once now and again after
-            // the sidebar settles; capture lands ~3s post-apply.
-            model.showGitPanel(tab: .log)
+            if let diffFile { model.open(url: diffFile) }
+            else { model.openFirstRunSample(dir: tabsBaseDir) }
+            // Session pills: the coordinator's create/activate round-trip is
+            // ASYNC and raced BOTH orderings (mid-setup: the repo-follow
+            // broke; at the end: "notes" stayed active). Run the dance, then
+            // RE-ASSERT the full state after it settles. Capture ~3s in.
+            Self.applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak model] in
-                model?.showGitPanel(tab: .log)
+                guard let model else { return }
+                // Session activation restores that session's own panel
+                // layout, wiping the scene's overrides — re-assert them.
+                Self.applyMarketingSidebar(model, shown: [.files, .git])
+                model.setSidebarWidth(340)
+                model.openFolder(root)
+                if let diffFile { model.open(url: diffFile) }
+                model.showGitPanel(tab: .status)
             }
-            return "ui-scene: applied 'mktg-git' tabs=\(model.tabs.tabs.count) root=\(model.sidebar.rootURL != nil)"
+            model.showGitPanel(tab: .status)
+            return "ui-scene: applied 'mktg-git' tabs=\(model.tabs.tabs.count) "
+                + "diff=\(diffFile != nil) root=\(model.sidebar.rootURL != nil)"
+        }
+
+        // Sidebar-fill check (owner 2026-08-09): the GIT panel as the ONLY
+        // visible left tool window must FILL the shoulder — panels used to
+        // cap at their persisted height and strand the band below.
+        if scene == "git-fill-check" {
+            let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
+            Self.applyMarketingSidebar(model, shown: [.git])
+            model.setSidebarWidth(340)
+            model.openFolder(root)
+            model.showGitPanel(tab: .status)
+            return "ui-scene: applied 'git-fill-check' root=\(model.sidebar.rootURL != nil)"
         }
 
         // File-info checksum scene (TSK-748 render validation): the MetadataPanel

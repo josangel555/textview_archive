@@ -90,6 +90,35 @@ public enum SidebarPanelHeights {
         count <= 1 ? 1.0 : 0.5
     }
 
+    /// 2026-08-09 (owner: "left tool windows cap at a random height instead
+    /// of filling the shoulder"). The ceiling work above lets a lone panel's
+    /// stored height THROUGH but never RAISES it — a panel stored at 220
+    /// strands the rest of a 1200pt band, and because every panel persists
+    /// its own height the cap lands somewhere different per panel ("erratic").
+    ///
+    /// When FILES (the designed flex-fill) is hidden, the LAST visible
+    /// accordion panel plays its role: its body is raised to the leftover
+    /// band after its siblings' resolved bodies and per-panel chrome
+    /// (header rows + dividers). Never returns less than the normally
+    /// clamped stored height, so a user-dragged size still wins when it is
+    /// LARGER than the leftover; the pre-measurement pass (no usable
+    /// available height) falls back to the stored height.
+    public static func fillHeight(
+        stored: CGFloat,
+        availableHeight: CGFloat,
+        siblingResolvedHeights: [CGFloat],
+        chromePerPanel: CGFloat,
+        panelCount: Int
+    ) -> CGFloat {
+        let base = clamp(stored)
+        guard availableHeight.isFinite, availableHeight > 0 else { return base }
+        let chrome = chromePerPanel * CGFloat(max(panelCount, 1))
+        let leftover = availableHeight
+            - siblingResolvedHeights.reduce(0, +)
+            - chrome
+        return max(base, leftover)
+    }
+
     /// TSK-592 — RESIZE-JANK SUPPRESSION.
     ///
     /// The sidebar measures its allotted content height via a background
