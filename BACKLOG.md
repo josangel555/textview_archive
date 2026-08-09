@@ -7,6 +7,56 @@
 > Repo (canonical): `/Users/me/Documents/workspaces/claude/markdown_viewer`.
 > ⚠️ If Desktop&Documents iCloud sync is EVER re-enabled, relocate the repo out of ~/Documents FIRST.
 
+## ★ OSS-PREP QUEUE (owner decisions 2026-08-08 — work top-down after the site/blog ship)
+
+Owner decisions recorded: **LICENSE = MIT (DONE — file at repo root)** · open-sourcing with
+**FULL history (owner correction 2026-08-08: do NOT squash)** — which mandates a history
+REWRITE before publish: `git-filter-repo --replace-text` over all ~3.8k commits to scrub
+the VM credentials (host/user/password in CLAUDE.md + 7 scripts) and any personal
+paths/names, exported into a NEW public repo (this one stays private as-is); verification =
+`scripts/check-no-secrets.sh` + targeted greps across EVERY rev (`git log -S`) · 
+**notarization deferred** (distribution-only concern — irrelevant to source publication) ·
+**MCP socket: default-OFF + token auth → BUILD** · **Canvas WebView fence → BUILD** ·
+**contributor buildability → FIX** · **CI → make reusable**.
+
+- **O-1 — MCP socket hardening (M):** default the socket OFF (opt-in via Settings or
+  `--mcp` flag); when on, require a token: generate per-enable into
+  `~/Library/Application Support/MarkdownViewer/mcp-token` (0600), clients pass it in an
+  `initialize` param / header; reject unauthenticated connects. Also close the two
+  confirmed P1 siblings while in there: `run_verb` open/save-copy must go through
+  `validatedExistingURL` (the home-jail fence), and the Task Runner spawns get a SCRUBBED
+  env (drop `*_TOKEN`/`*_SECRET`/`AWS_*` etc. via an allowlist).
+- **O-2 — Canvas WebView fence (S):** give `canvas.html`/`CanvasWebViewHost` the same
+  treatment as the other pages: strict CSP (no remote loads), nav-policy cancel,
+  `<img src>` restricted to data:/local.
+- **O-3 — Contributor buildability (M):** a fresh clone must build: document + script
+  `cargo build` for `libmdvcore_ffi.a` (a `scripts/bootstrap.sh` that builds rust-core,
+  stages link/, then `swift build`); public README (screenshots, install, build matrix);
+  CONTRIBUTING.md; SECURITY.md. NOTE the VM build model for reference: the VM has NO rust
+  toolchain — the host builds the staticlib and rsync ships `rust-core/link/`; VM builds
+  are `ssh macOS15 'cd markdown_viewer && bash scripts/build-app.sh debug'` (Swift 6.1.2
+  compiles app code; the TEST target needs the 6.3 toolchain via test-in-vm.sh).
+- **O-4 — CI portability (S–M):** `pr.yml` runnable on stock GitHub macOS runners (bootstrap
+  script from O-3 + rust toolchain step); `nightly-vm.yml` marked self-hosted/optional so
+  public CI isn't born red.
+- **O-5 — Full-history scrubbed export (M, was squash — owner corrected):** clone →
+  `git-filter-repo --replace-text` rules for the VM host/user/password + owner-personal
+  strings → push to the new public repo. ALSO parameterize the LIVE files (creds →
+  `MDV_VM_HOST`/`MDV_VM_USER`/`MDV_VM_PASS` env) so future commits stay clean. Verify:
+  check-no-secrets.sh + `git log -S'<cred>'` across all revs = zero hits; spot-read early
+  commits for personal content. `git-filter-repo` is an external tool — needs owner
+  dep-approval to install (python, single file; brew or pip).
+- **O-6 — Data-safety tail (verified by subagent 2026-08-08, evidence in the report):**
+  - `[PARTIAL→FIX, M]` **CM6 flush-before-read**: flush exists ONLY for in-editor ⌘S/vim-write;
+    ⌘W close, ⌘Q quit, session-switch hot-exit, blur-save, and menu-Save all read a ≤200ms-stale
+    mirror. Worst repro: type→⌘W within 200ms on a clean buffer → no dirty prompt → keystrokes
+    silently lost. Fix shape: a synchronous flush request/ack (or read-through-JS) before
+    close-confirm, quit-capture, session drain, and menu-save; plus flush on `editorBlurred`.
+  - `[FIXED ✓]` session-drain spill deletion (guard @ DocumentModel.swift:3446 + HotExitTests teeth).
+  - `[PARTIAL→FIX, S]` **HotExitSpill.write fails silently** (raw Data.write, no
+    onWriteFailure hook, no fsync): disk-full at quit with a >1MiB dirty buffer loses it with
+    zero signal. Route through JSONFileStore's durable write + failure reporter, or mirror it.
+
 ## ★ OWNER INTAKE 2026-08-01 — THE ACTIVE QUEUE (work top-down; board down → placeholder ids I-##)
 
 Answers to the intake's six questions: `docs/INTAKE_ANSWERS_2026-08-01.md`. Governance: every
