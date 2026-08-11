@@ -1071,6 +1071,10 @@ public enum UISceneApplier {
                 model.open(url: f)
             }
             model.tabCoordinator.splitFocusedPane(movingSelected: true)
+            // S4d: unequal shares so the capture PROVES the weighted render
+            // (left pane 2× the right) and shows the divider gutter — the
+            // drag itself is host-tested math + the gutter tooth (AX lane).
+            model.tabCoordinator.setPaneWeights([2, 1])
             return "ui-scene: applied 'panes-split' panes=\(model.tabCoordinator.paneAssignment.panes.count)"
         }
 

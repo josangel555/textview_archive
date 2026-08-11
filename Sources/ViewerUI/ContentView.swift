@@ -561,7 +561,11 @@ public struct ContentView: View {
                 // shoulder rails). Breadcrumb on the left, view-mode control on
                 // the right. Shown only when a file is open. Pinned height +
                 // layoutPriority so the content pane (priority 0) absorbs shrink.
-                if model.currentURL != nil {
+                // While SPLIT the window-level bar stands down — the lens
+                // control is PER-TAB state (owner 2026-08-11), so each pane
+                // hosts its own toolbar under its strip (`paneColumn`).
+                if model.currentURL != nil,
+                   !tabCoordinator.paneAssignment.isSplit {
                     ContentToolbar(model: model)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -781,17 +785,36 @@ public struct ContentView: View {
     }
 
     private func paneColumn(_ pane: PaneAssignment.Pane, focused: Bool) -> some View {
-        VStack(spacing: 0) {
+        let paneTab = pane.selectedTabID.flatMap { id in
+            tabCoordinator.tabs.tabs.first { $0.id == id }
+        }
+        return VStack(spacing: 0) {
             PaneTabStrip(model: model, tabCoordinator: tabCoordinator,
                          dropChannel: tabCoordinator.paneDropChannel,
                          pane: pane, isFocusedPane: focused)
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
             Divider()
-            paneContentRegion(pane, focused: focused)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // S4c: this region's rect is the click-focus hit target.
-                .paneContentFocusFrame(id: pane.id, into: tabCoordinator.paneDropChannel)
+            VStack(spacing: 0) {
+                // The lens control is PER-TAB state (owner 2026-08-11): each
+                // pane renders ITS selected tab's toolbar — breadcrumb,
+                // visualization possibilities, chosen lens. Commands act on
+                // the selected tab; the click monitor's mouse-down focus
+                // (this whole region is the focus hit target) makes that
+                // correct for unfocused panes too.
+                if let paneTab, paneTab.url != nil {
+                    ContentToolbar(model: model, tab: paneTab)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                    Divider()
+                }
+                paneContentRegion(pane, focused: focused)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // S4c: this region (toolbar + content) is the click-focus target.
+            .paneContentFocusFrame(id: pane.id, into: tabCoordinator.paneDropChannel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Focused-pane ring: the one visual answer to "which pane do my

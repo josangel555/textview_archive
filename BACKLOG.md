@@ -106,13 +106,18 @@ I-## → TSK-### when the tasked board reconnects.
   (guides/Tab/indent commands); detection once per buffer seed, cleared on discard;
   6 host tests incl. end-to-end through the rust detector + a ContentView wiring pin.
 
-- **resize-tooth DIAG (S–M):** the AX 1:1-tracking drag tooth for the resize-lag fix skips
-  on ZERO movement — a VM-HID mystery: the grab verifiably lands inside
-  `mdv.sidebar.widthHandle`'s own AX frame, the SAME executor's tab drags engage, and the
-  real host mouse works (owner recording) — yet the clear-strip DragGesture never fires
-  under VM HID. Instrument in a DIAG session (is the List/scroll under the strip eating the
-  down? does a visible-fill strip engage?). PARTIAL tracking (the oscillator signature)
-  still fails RED, so the tooth has interim value.
+- **resize-tooth DIAG (S–M) — NEW PRIME SUSPECT (2026-08-11):** the AX 1:1-tracking drag
+  tooth for the resize-lag fix skips on ZERO movement — the grab verifiably lands inside
+  `mdv.sidebar.widthHandle`'s own AX frame yet the DragGesture never fires under VM HID.
+  The pane click-focus hunt (2026-08-11) added a mandatory FIRST step: screen-sweep for
+  covering windows (`killall UserNotificationCenter`, `CGWindowListCopyWindowInfo` over
+  the grab point — a stuck crash dialog was eating HID clicks; the AXPaneInteractionTests
+  failure path shows the recipe), and a second catch worth re-checking here: the pane
+  gutter's "drag mystery" turned out to be a not-materialized AX element (bare shape
+  stack needed `.accessibilityElement()`) — the tooth was skipping at its guard, not
+  failing to engage. Verify `mdv.sidebar.widthHandle` materializes AND the screen is
+  clean before instrumenting the gesture itself. PARTIAL tracking (the oscillator
+  signature) still fails RED, so the tooth has interim value either way.
 
 - **Stale-chrome-on-theme-switch CLASS AUDIT (S, 2026-08-08):** the git-band bug's mechanism
   — a no-stored-field wrapper (ViewModifier/ButtonStyle/shape style) reading
@@ -186,9 +191,27 @@ I-## → TSK-### when the tasked board reconnects.
     `PaneLayoutState.weights` (pre-S4d snapshots restore equal shares). Teeth:
     `PaneResizeTests` + weight pins + persistence round-trip; AX divider tooth
     with the sidebar zero-movement skip guard; scene expectations now require
-    `mdv.pane.resize`. REMAINING: per-pane ContentToolbar decision (owner
-    call), tab context-menu "Open in New Pane" (nice-to-have; the drag covers
-    the need).
+    `mdv.pane.resize`. ~~Per-pane ContentToolbar~~ **DONE 2026-08-11 (owner
+    call mid-session: "the lens control should be scoped within the tab —
+    each tab identifies its content and decides its own visualization")**:
+    while split the window bar stands down and every pane hosts its own
+    `ContentToolbar(tab:)` — per-TAB display (breadcrumb, segment set, lens
+    selection via new `*(for tab:)` model variants), commands stay
+    selected-tab-routed (the click monitor's mouse-down focus makes them hit
+    the right tab; the toolbar sits inside the pane's focus rect). App-wide
+    selected tab (footer/file-nav/title) unchanged = the focused pane's tab
+    (owner-confirmed). `PaneToolbarPerTabTests` + the 384-test family sweep
+    green; panes scenes assert `mdv.contentToolbar`/`mdv.viewModeControl`.
+    REMAINING: tab context-menu "Open in New Pane" (nice-to-have; the drag
+    covers the need); **gutter AX materialization (S)** — the shapes-only
+    `PaneDividerGutter` never materializes an out-of-process AX element (bare
+    id / `.accessibilityElement()` / `.contain` / label+trait ALL pruned, three
+    VM rounds 2026-08-11), so the AX divider-drag tooth self-skips and the
+    scene gate doesn't expect `mdv.pane.resize`. Coverage stands on
+    `PaneResizeTests` + the weighted-render pixel check. If the rung is wanted:
+    try an invisible real `Button` overlay carrying the id (buttons reliably
+    materialize) or an NSViewRepresentable handle; whatever works, also apply
+    to `mdv.dock.bottom.resize` (same construction, likely same hole).
     Relation: the window `splitURL` preview pane is eventually SUPERSEDED by a
     real second pane; per-tab split-editing (I-19) lives inside whichever pane
     hosts the tab — orthogonal ✓. Mixed-axis GRIDS = future split-tree.

@@ -35,7 +35,13 @@ extension DocumentModel {
     /// row is narrow; the full segment list is always available here so the
     /// overflow menu / tests see every component.
     public var pathBreadcrumb: [BreadcrumbSegment] {
-        guard let fileURL = currentURL else { return [] }
+        pathBreadcrumb(for: currentURL)
+    }
+
+    /// Per-URL variant (I-21 pane toolbars): each pane's breadcrumb renders
+    /// ITS tab's path, not the app-wide current file's.
+    public func pathBreadcrumb(for url: URL?) -> [BreadcrumbSegment] {
+        guard let fileURL = url else { return [] }
         let std = fileURL.standardizedFileURL
         let home = FileManager.default.homeDirectoryForCurrentUser
             .standardizedFileURL

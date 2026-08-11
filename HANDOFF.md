@@ -45,8 +45,12 @@ I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain 
   only, 120pt floor); weights persist in `PaneLayoutState.weights` (additive;
   legacy = equal shares). `PaneResizeTests` + weight/persistence pins + AX
   divider tooth (zero-movement skip guard).
-- **EPIC REMAINING**: per-pane ContentToolbar decision (owner call), context-menu
-  "Open in New Pane" (nice-to-have). Mixed-axis GRIDS = future split-tree.
+- **Per-pane ContentToolbar** ✓ (owner call mid-session): window bar stands down
+  while split; each pane hosts `ContentToolbar(tab:)` — per-TAB display via new
+  `*(for tab:)` model variants, commands selected-tab-routed (mouse-down focus
+  makes them correct). App-wide selected tab = focused pane's tab (confirmed).
+- **EPIC REMAINING**: context-menu "Open in New Pane" (nice-to-have).
+  Mixed-axis GRIDS = future split-tree.
 
 ## Also landed this session (earlier arcs, all CI-green + installed)
 - O-6 flush-before-read: nonce'd flushChanges→flushAck + CMEditorTextSync bounded wait

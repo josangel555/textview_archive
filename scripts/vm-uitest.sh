@@ -71,8 +71,15 @@ scene_expect() {
     # I-21 S3 (editor panes): per-pane strips + the focused-pane marker
     # (the marker rides the strip id — pane-column container ids don't
     # materialize out-of-process).
-    panes-split) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.pane.resize" ;;
-    panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.pane.resize" ;;
+    # Per-pane strips + focused marker + the PER-PANE ContentToolbar (the
+    # window bar stands down while split — owner 2026-08-11). NOTE
+    # mdv.pane.resize is deliberately NOT expected: the shapes-only gutter
+    # never materializes an out-of-process AX element (bare id /
+    # .accessibilityElement / .contain / label+trait all pruned — BACKLOG
+    # "gutter AX materialization"); the divider is covered by PaneResizeTests
+    # + the weighted-render pixel check instead.
+    panes-split) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.contentToolbar mdv.viewModeControl" ;;
+    panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.contentToolbar mdv.viewModeControl" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;

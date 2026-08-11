@@ -186,4 +186,54 @@ extension DocumentModel {
         primaries.append(.hex)
         return primaries
     }
+
+    // MARK: - Per-TAB display variants (I-21 pane toolbars, owner 2026-08-11)
+    //
+    // "Each tab gets to identify the content and render its own visualization
+    // possibilities and decide its own visualization" — while the window is
+    // SPLIT, every pane hosts its own `ContentToolbar` rendering the display
+    // state of THAT pane's selected tab (which is generally NOT the app-wide
+    // selected tab). These mirror the selected-tab derivations above verbatim,
+    // reading the given tab's url / categoryOverride / state / viewMode
+    // instead of the `currentURL`/`currentViewMode` conveniences; the
+    // COMMANDS deliberately stay selected-tab-routed — a click in an
+    // unfocused pane first focuses it (`PaneFocusClickMonitor` on mouse-down),
+    // so by the time a control's action runs, its tab IS the selected tab.
+
+    /// Per-tab `availableViewModes`.
+    public func availableViewModes(for tab: ViewerCore.Tab) -> [ViewMode] {
+        ViewModeOptions.availableModes(
+            for: tab.url, forcedCategory: tab.categoryOverride,
+            isRenderableText: Self.renderableTextHint(tab.state))
+    }
+
+    /// Per-tab `viewModePresentation` (the tab's own lens + hex-armed flag).
+    public func viewModePresentation(for tab: ViewerCore.Tab) -> ViewModeControl.Presentation {
+        let base = ViewModeControl.present(tab.viewMode)
+        guard base.primary == .hex else { return base }
+        return ViewModeControl.Presentation(
+            primary: .hex,
+            viewOnly: !isHexEditArmed(forTabID: tab.id),
+            isFormatted: false)
+    }
+
+    /// Per-tab `showsFormatButton`.
+    public func showsFormatButton(for tab: ViewerCore.Tab) -> Bool {
+        ViewModeControl.showsFormat(available: availableViewModes(for: tab))
+    }
+
+    /// Per-tab `showsEditorPrimary` (drives the View Only toggle's presence).
+    public func showsEditorPrimary(for tab: ViewerCore.Tab) -> Bool {
+        ViewModeControl.showsEditor(available: availableViewModes(for: tab))
+    }
+
+    /// Per-tab `visibleViewPrimaries`.
+    public func visibleViewPrimaries(for tab: ViewerCore.Tab) -> [ViewModeControl.Primary] {
+        let available = availableViewModes(for: tab)
+        var primaries: [ViewModeControl.Primary] = []
+        if ViewModeControl.showsRender(available: available) { primaries.append(.render) }
+        if ViewModeControl.showsEditor(available: available) { primaries.append(.editor) }
+        primaries.append(.hex)
+        return primaries
+    }
 }

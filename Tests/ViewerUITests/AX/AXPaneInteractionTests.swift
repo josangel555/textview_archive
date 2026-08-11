@@ -110,20 +110,58 @@ final class AXPaneInteractionTests: AXInteractionTestCase {
         guard let (focusedBefore, otherStrip) = strips(in: root) else {
             return XCTFail("both pane strips must report frames")
         }
+        // PRIME the window: the first HID click into a not-yet-key window
+        // is an ACTIVATION click the app's event stream may never see
+        // (first-spawn flake, 2026-08-11 — the assert-click below then
+        // lands nowhere). Clicking the FOCUSED pane's content is a
+        // designed no-op (the classifier excludes the focused pane), so
+        // it activates without disturbing the scene.
+        AXClickExecutor.click(at: CGPoint(x: focusedBefore.midX,
+                                          y: focusedBefore.maxY + 120))
+
         // A point safely inside the unfocused pane's CONTENT region:
-        // under its strip, clear of the strip itself.
+        // under its strip, clear of the strip itself. Re-click a couple
+        // of times before failing — the tooth pins "a click focuses the
+        // pane", not first-click-during-startup timing.
         let target = CGPoint(x: otherStrip.midX, y: otherStrip.maxY + 120)
-
-        AXClickExecutor.click(at: target)
-
-        let focusMoved = waitUntil(8) {
-            guard let f = AXDriverCore.find("mdv.paneStrip.focused", in: root)?.axFrame
-            else { return false }
-            return abs(f.midX - otherStrip.midX) < 2
+        var focusMoved = false
+        for _ in 0..<3 where !focusMoved {
+            AXClickExecutor.click(at: target)
+            focusMoved = waitUntil(4) {
+                guard let f = AXDriverCore.find("mdv.paneStrip.focused", in: root)?.axFrame
+                else { return false }
+                return abs(f.midX - otherStrip.midX) < 2
+            }
+        }
+        // On failure, name every on-screen window covering the click point.
+        // This diagnostic found the 2026-08-11 click-thief: a stuck
+        // "TextView quit unexpectedly" crash dialog (UserNotificationCenter,
+        // layer 8) from a stale resurrected binary was eating the HID
+        // clicks — the app never saw the events at all. If this test fails
+        // with a non-TextView owner listed here, clear that window on the
+        // VM before diagnosing the app.
+        var cover = ""
+        if !focusMoved {
+            let info = (CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
+            cover = info.compactMap { w -> String? in
+                guard let b = w[kCGWindowBounds as String] as? [String: Any],
+                      let x = b["X"] as? CGFloat, let y = b["Y"] as? CGFloat,
+                      let wd = b["Width"] as? CGFloat, let ht = b["Height"] as? CGFloat,
+                      CGRect(x: x, y: y, width: wd, height: ht).contains(target)
+                else { return nil }
+                let owner = w[kCGWindowOwnerName as String] as? String ?? "?"
+                let name = w[kCGWindowName as String] as? String ?? ""
+                let layer = w[kCGWindowLayer as String] as? Int ?? 0
+                let alpha = w[kCGWindowAlpha as String] as? Double ?? 1
+                return "[\(owner)/\(name) layer=\(layer) alpha=\(alpha) "
+                    + "rect=(\(Int(x)),\(Int(y)),\(Int(wd))x\(Int(ht)))]"
+            }.joined(separator: " ")
         }
         XCTAssertTrue(focusMoved,
             "clicking into a pane's content must focus it: focused strip was at "
             + "midX \(focusedBefore.midX), expected ≈\(otherStrip.midX), now "
-            + "\(AXDriverCore.find("mdv.paneStrip.focused", in: root)?.axFrame?.midX ?? -1)")
+            + "\(AXDriverCore.find("mdv.paneStrip.focused", in: root)?.axFrame?.midX ?? -1)"
+            + " — windows covering \(target): \(cover)")
     }
 }

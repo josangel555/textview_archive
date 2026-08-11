@@ -44,6 +44,17 @@ struct PaneDividerGutter: View {
                 }
                 .onEnded { _ in onEnd() }
         )
+        // A shapes-only view NEVER materializes an out-of-process AX element:
+        // bare id, `.accessibilityElement()`, `children: .contain`, AND
+        // label+trait were each proven absent by the AX tooth + scene gate
+        // (three VM rounds, 2026-08-11). The declarations stay for IN-process
+        // assistive tech; the out-of-process rung is covered by
+        // `PaneResizeTests` + the weighted-render pixel check, and the AX
+        // drag tooth self-skips on its not-materialized guard (BACKLOG
+        // "gutter AX materialization" has the candidate fixes).
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Pane resize handle")
+        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("mdv.pane.resize")
     }
 

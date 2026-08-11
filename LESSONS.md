@@ -4496,4 +4496,32 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   panes-split scene captured a stale default window because the registry rejected the
   unknown id upstream of `UISceneApplier.apply`; nothing logs loudly in the capture
   flow. Symptom: the PNG shows leftover VM state and the scene's fixtures are absent.
+
+- **A stuck macOS crash dialog on the VM EATS HID clicks in its rect — an
+  environmental thief that perfectly mimics a code regression (2026-08-11, the
+  pane click-focus hunt).** The AX click test failed 4 consecutive runs ("the
+  monitor never fires") while the same code had passed an hour earlier; NSLog
+  stage probes proved the events never entered the app's `sendEvent` at all, and
+  a `CGWindowListCopyWindowInfo` dump of windows covering the click point named
+  the thief: a "TextView quit unexpectedly" UserNotificationCenter dialog
+  (layer 8) floating over the app window (layer 0). Two durable rules:
+  (1) when a HID event verifiably lands inside a target's AX frame but the
+  gesture/monitor never fires, ENUMERATE THE WINDOWS ABOVE at that point before
+  touching app code — the `AXPaneInteractionTests` failure path now does this
+  automatically; (2) the dialog's SOURCE was itself lane debris: macOS
+  window-restoration kept resurrecting a 3-month-old stray bundle
+  (`~/dist/MarkdownViewer.app`, May 16) whose broken resources assert-crashed
+  (`NSBundle.module`) on every spawn, re-feeding the dialog — stray app COPIES
+  on the VM are live hazards even when nothing runs them deliberately (Launch
+  Services + resurrection will), so shelve/delete them. Companion catch from the
+  same session: a SHAPES-ONLY view (Rectangle+Capsule ZStack) NEVER
+  materializes an out-of-process AX element — bare id,
+  `.accessibilityElement()`, `children: .contain`, and label+trait were EACH
+  proven absent (the pane gutter, three VM rounds; the scene a11y gate is what
+  caught it — the AX tooth had been silently skipping on its not-materialized
+  guard, which read like a drag mystery). `.contain` only works when the
+  subtree holds REAL content (buttons/text — `mdv.sidebar.widthHandle`).
+  Known-good fallback for a plain drag surface: an invisible real Button
+  overlay carrying the id (BACKLOG "gutter AX materialization"). READ THE SKIP
+  MESSAGE before theorizing about why an AX test didn't run its body.
   Register the SceneSpec + the runner's scene_expect entry together.

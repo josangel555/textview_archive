@@ -1,4 +1,5 @@
 import Foundation
+import ViewerCore
 import ViewerKit
 
 /// The mode bar's "Split" segment (owner ask 2026-07-29: markdown's picker
@@ -91,6 +92,55 @@ extension DocumentModel {
             guard !isSplitEditingActive else { return false }
             // Byte-for-byte the toolbar's original per-case rule (TSK-898):
             // render/editor deselect under the Format lens; hex does not.
+            switch p {
+            case .render, .editor:
+                return presentation.primary == p && !presentation.isFormatted
+            case .hex:
+                return presentation.primary == .hex
+            }
+        }
+    }
+
+    // MARK: per-TAB variants (I-21 pane toolbars — see the
+    // DocumentModel+ViewModeControl per-tab section for the rationale)
+
+    /// Per-tab `splitEditingIsOffered`.
+    public func splitEditingIsOffered(for tab: ViewerCore.Tab) -> Bool {
+        let available = availableViewModes(for: tab)
+        return ViewModeControl.showsRender(available: available)
+            && ViewModeControl.showsEditor(available: available)
+            && (tab.url.map { ViewModeOptions.availableModes(for: $0).contains(.rendered) }
+                ?? false)
+    }
+
+    /// Per-tab `toolbarModeSegments`.
+    public func toolbarModeSegments(for tab: ViewerCore.Tab) -> [ToolbarModeSegment] {
+        var out = visibleViewPrimaries(for: tab).map(ToolbarModeSegment.primary)
+        if splitEditingIsOffered(for: tab),
+           let i = out.firstIndex(of: .primary(.render)) {
+            out.insert(.split, at: i + 1)
+        }
+        return out
+    }
+
+    /// Per-tab split-editing state (the tab's OWN lens + flag, not the
+    /// selected tab's).
+    public func isSplitEditingActive(for tab: ViewerCore.Tab) -> Bool {
+        tab.viewMode == .editor && tab.isSplitEditing
+    }
+
+    /// Per-tab `isToolbarSegmentSelected`.
+    public func isToolbarSegmentSelected(
+        _ segment: ToolbarModeSegment,
+        presentation: ViewModeControl.Presentation,
+        tab: ViewerCore.Tab
+    ) -> Bool {
+        let splitActive = isSplitEditingActive(for: tab)
+        switch segment {
+        case .split:
+            return splitActive
+        case .primary(let p):
+            guard !splitActive else { return false }
             switch p {
             case .render, .editor:
                 return presentation.primary == p && !presentation.isFormatted

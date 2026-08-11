@@ -43,6 +43,13 @@
   space (down to a sane minimum; other panes keep their size). Splitting a pane
   halves ITS space instead of squeezing everything, closing a pane hands its
   space to the absorber, and your pane sizes persist with the session layout.
+- **Each pane owns its toolbar.** The breadcrumb + Render|Split|Editor|HEX
+  control is per-tab state, so while split it now lives INSIDE each pane, under
+  that pane's tabs, showing that tab's path and its own visualization options —
+  no more one global bar ambiguously pointing at whichever pane was focused.
+  Clicking a control in the other pane focuses that pane first, so the action
+  always applies to the tab you're looking at. (Un-split, nothing changes; the
+  footer and file navigator still follow the focused tab.)
 - **Markdown links are first-class everywhere.** Web links and mailto open in your
   browser/mail (as before); relative links and `[[wikilinks]]` open in-app; and now:
   **absolute file paths** (`/Users/…` or `file://…`) open in a tab, **absolute folder

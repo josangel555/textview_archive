@@ -28,20 +28,60 @@ import ViewerCore
 /// change.
 struct ContentToolbar: View {
     @ObservedObject var model: DocumentModel
+    /// I-21 pane toolbars (owner 2026-08-11: "each tab identifies its
+    /// content and decides its own visualization"): when set, the toolbar
+    /// renders THIS tab's display state — its lens, its segment set, its
+    /// path — instead of the app-wide selected tab's. COMMANDS stay
+    /// selected-tab-routed: a click in an unfocused pane focuses it on the
+    /// same mouse-down (`PaneFocusClickMonitor`), so by action time the
+    /// pane's tab IS the selected tab. Nil = the classic un-split toolbar.
+    var tab: ViewerCore.Tab? = nil
 
     var body: some View {
         #if DEBUG
         let _ = BodyProbe.tick("ContentToolbar")   // TSK-615 re-eval width probe
         #endif
-        HStack(spacing: model.uiSize(10)) {
-            PathBreadcrumbView(model: model)
-                .layoutPriority(-1)   // breadcrumb yields width first
-            Spacer(minLength: 8)
-            ViewModeControlView(model: model)
-            CommandPaletteButton(model: model)   // TSK-756: far top-right
+        Group {
+            if tab != nil {
+                // A pane can be dragged NARROW; unbounded compression turns
+                // the breadcrumb into chevron litter and the mode segments
+                // into slivers (VM capture, 2026-08-11). Degrade in steps
+                // instead: full path → file name only → controls only. The
+                // mode control never compresses (`.fixedSize` in the row).
+                ViewThatFits(in: .horizontal) {
+                    toolbarRow(path: .full)
+                    toolbarRow(path: .fileOnly)
+                    toolbarRow(path: .hidden)
+                }
+            } else {
+                toolbarRow(path: .full)   // the classic un-split bar, unchanged
+            }
         }
         .frame(height: model.uiSize(22))
         .accessibilityIdentifier("mdv.contentToolbar")
+    }
+
+    private enum PathStyle { case full, fileOnly, hidden }
+
+    @ViewBuilder
+    private func toolbarRow(path: PathStyle) -> some View {
+        HStack(spacing: model.uiSize(10)) {
+            switch path {
+            case .full:
+                PathBreadcrumbView(model: model, tab: tab)
+                    .layoutPriority(-1)   // breadcrumb yields width first
+            case .fileOnly:
+                PathBreadcrumbView(model: model, tab: tab, fileOnly: true)
+            case .hidden:
+                EmptyView()
+            }
+            Spacer(minLength: 8)
+            ViewModeControlView(model: model, tab: tab)
+                // Pane mode: the mode control is the toolbar's core — it
+                // keeps its ideal width and the PATH degrades instead.
+                .fixedSize(horizontal: tab != nil, vertical: false)
+            CommandPaletteButton(model: model)   // TSK-756: far top-right
+        }
     }
 }
 
@@ -53,6 +93,9 @@ struct ContentToolbar: View {
 /// leading "…" overflow menu that still lists every dropped segment.
 private struct PathBreadcrumbView: View {
     @ObservedObject var model: DocumentModel
+    var tab: ViewerCore.Tab? = nil
+    /// Narrow-pane degradation step (ViewThatFits): just the file segment.
+    var fileOnly = false
 
     /// Show at most this many trailing segments inline; the rest fold into
     /// the "…" overflow menu. Keeps the bar from pushing the mode control
@@ -60,11 +103,16 @@ private struct PathBreadcrumbView: View {
     private let maxInlineSegments = 4
 
     var body: some View {
-        let segments = model.pathBreadcrumb
+        let segments = tab.map { model.pathBreadcrumb(for: $0.url) }
+            ?? model.pathBreadcrumb
         if segments.isEmpty {
             // No file — nothing to show (the toolbar Spacer keeps the mode
             // control right-aligned).
             EmptyView()
+        } else if fileOnly {
+            if let file = segments.last {
+                segmentButton(file)   // keeps its mdv.breadcrumb.segment id
+            }
         } else {
             HStack(spacing: model.uiSize(3)) {
                 let overflow = segments.count > maxInlineSegments
@@ -167,9 +215,30 @@ private struct CommandPaletteButton: View {
 /// `ViewModeControl`.
 private struct ViewModeControlView: View {
     @ObservedObject var model: DocumentModel
+    var tab: ViewerCore.Tab? = nil
+
+    // Per-pane display reads (nil tab = the classic selected-tab reads).
+    private var presentation: ViewModeControl.Presentation {
+        tab.map { model.viewModePresentation(for: $0) } ?? model.viewModePresentation
+    }
+    private var segments: [ToolbarModeSegment] {
+        tab.map { model.toolbarModeSegments(for: $0) } ?? model.toolbarModeSegments
+    }
+    private var editorPrimaryShown: Bool {
+        tab.map { model.showsEditorPrimary(for: $0) } ?? model.showsEditorPrimary
+    }
+    private var formatButtonShown: Bool {
+        tab.map { model.showsFormatButton(for: $0) } ?? model.showsFormatButton
+    }
+    private func segmentSelected(
+        _ seg: ToolbarModeSegment, _ p: ViewModeControl.Presentation
+    ) -> Bool {
+        tab.map { model.isToolbarSegmentSelected(seg, presentation: p, tab: $0) }
+            ?? model.isToolbarSegmentSelected(seg, presentation: p)
+    }
 
     var body: some View {
-        let p = model.viewModePresentation
+        let p = presentation
         HStack(spacing: model.uiSize(8)) {
             // TSK-898 — the primary lenses as a single unified SEGMENTED
             // group (continuous rounded container, hairline dividers between
@@ -194,7 +263,7 @@ private struct ViewModeControlView: View {
             // (read-only ↔ byte-edit). A binary file opens straight into HEX
             // with no Editor lens, so gating on `showsEditorPrimary` alone hid
             // the toggle there and made HEX byte-edit unreachable (TSK-467).
-            if model.showsEditorPrimary || p.primary == .hex {
+            if editorPrimaryShown || p.primary == .hex {
                 Toggle("View Only", isOn: Binding(
                     get: { p.viewOnly },
                     set: { model.setViewOnly($0) }
@@ -213,7 +282,7 @@ private struct ViewModeControlView: View {
             }
 
             // Conditional Format button — only for pretty-printable types.
-            if model.showsFormatButton {
+            if formatButtonShown {
                 formatButton(active: p.isFormatted)
             }
         }
@@ -241,7 +310,7 @@ private struct ViewModeControlView: View {
         // `toolbarModeSegments` = visibleViewPrimaries (the single source of
         // truth, unchanged) + the synthesized Split segment after Render for
         // markdown/mermaid — Render | Split | Editor | HEX (owner 2026-07-29).
-        let segments = model.toolbarModeSegments
+        let segments = self.segments
         let radius = model.uiSize(5)
         HStack(spacing: 0) {
             ForEach(Array(segments.enumerated()), id: \.element) { idx, seg in
@@ -250,12 +319,12 @@ private struct ViewModeControlView: View {
                     // filled segment so the selection's edge reads cleanly.
                     Rectangle()
                         .fill(Color.primary.opacity(
-                            model.isToolbarSegmentSelected(seg, presentation: p)
-                            || model.isToolbarSegmentSelected(segments[idx - 1], presentation: p)
+                            segmentSelected(seg, p)
+                            || segmentSelected(segments[idx - 1], p)
                             ? 0.0 : 0.12))
                         .frame(width: 1, height: model.uiSize(13))
                 }
-                segment(seg, selected: model.isToolbarSegmentSelected(seg, presentation: p))
+                segment(seg, selected: segmentSelected(seg, p))
             }
         }
         .background(
