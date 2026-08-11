@@ -80,6 +80,8 @@ scene_expect() {
     # + the weighted-render pixel check instead.
     panes-split) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.contentToolbar mdv.viewModeControl" ;;
     panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.contentToolbar mdv.viewModeControl" ;;
+    # The owner-bug repro: the SESSION strip must coexist with the split.
+    panes-sessions) echo "mdv.sessionTabBar mdv.paneStrip mdv.paneStrip.focused" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;

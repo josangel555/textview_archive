@@ -255,6 +255,23 @@ public final class TabCoordinator: ObservableObject {
         focusPane(id: a.panes[(idx + 1) % a.panes.count].id)
     }
 
+    /// Tear `tabID` into a new pane before/after ITS pane (the tab
+    /// context-menu splits). The new pane takes focus; the store selects
+    /// the torn tab.
+    public func splitPane(
+        movingTab tabID: UUID,
+        placement: PaneAssignment.SplitPlacement,
+        direction: PaneAssignment.SplitOrientation = .horizontal
+    ) {
+        var next = paneAssignment
+        next.splitPane(moving: tabID, placement: placement, direction: direction)
+        guard next != paneAssignment else { return }
+        paneAssignment = next
+        if let idx = tabs.tabs.firstIndex(where: { $0.id == tabID }) {
+            select(at: idx)
+        }
+    }
+
     /// Move a tab into `paneID` (drag between strips / "Open in New
     /// Pane"). The destination pane takes focus and shows the moved tab.
     public func movePaneTab(id tabID: UUID, toPane paneID: UUID, at index: Int? = nil) {

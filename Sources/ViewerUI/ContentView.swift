@@ -114,6 +114,16 @@ public struct ContentView: View {
                 // rip sessions out, just gate the chrome.
                 if sessionsUIEnabled, let sessionsApp {
                     SessionTabBar(sessionsApp: sessionsApp)
+                        // LESSONS compositor rule (TSK-488): the SPLIT layout
+                        // branch mounts pane WKWebViews AFTER this strip in
+                        // the same stack — without its own layer ordered
+                        // above them, the strip's scroll content (the pills)
+                        // is occluded even though geometrically adjacent
+                        // (owner bug 2026-08-11: "session tabs disappear
+                        // entirely" while split). The rule: EVERY layout
+                        // branch gives chrome an explicit layer + z-order.
+                        .compositingGroup()
+                        .zIndex(2)
                     Divider()
                 }
                 // I-21 S3: while SPLIT, each pane carries its own strip
@@ -777,7 +787,10 @@ public struct ContentView: View {
                     channel: tabCoordinator.paneDropChannel,
                     paneIDs: assignment.panes.map(\.id),
                     focusedPaneID: assignment.focusedPaneID,
-                    onFocus: { tabCoordinator.focusPane(id: $0) }))
+                    // MODEL-level verb (not the coordinator's) so the full
+                    // select pipeline runs — file-nav follow, republish,
+                    // watcher (the stale-FileNav bug, 2026-08-11).
+                    onFocus: { model.focusPane(id: $0) }))
             }
         } else {
             content

@@ -202,8 +202,17 @@ I-## → TSK-### when the tasked board reconnects.
     selected tab (footer/file-nav/title) unchanged = the focused pane's tab
     (owner-confirmed). `PaneToolbarPerTabTests` + the 384-test family sweep
     green; panes scenes assert `mdv.contentToolbar`/`mdv.viewModeControl`.
-    REMAINING: tab context-menu "Open in New Pane" (nice-to-have; the drag
-    covers the need); **gutter AX materialization (S)** — the shapes-only
+    **Owner batch (2026-08-11 tail) DONE**: session tabs vanishing while split
+    (TSK-488 compositor class — the split branch needed `.compositingGroup()
+    .zIndex(2)` on the strip; repro scene `panes-sessions` pins it); stale
+    FileNav/watcher on pane interactions (coordinator-level selects skip the
+    `model.selectTab` pipeline — model-level verbs in `DocumentModel+Panes`
+    now route everything; LESSONS class entry); tab context menu "Split Pane
+    Right / Left" on BOTH strips (tears any tab into a new pane beside its
+    pane — `PaneAssignment.splitPane(moving:placement:)`; covers the old
+    "Open in New Pane" nice-to-have together with the drag); session band
+    de-gradiented + traffic-light gap (96pt inset).
+    REMAINING: **gutter AX materialization (S)** — the shapes-only
     `PaneDividerGutter` never materializes an out-of-process AX element (bare
     id / `.accessibilityElement()` / `.contain` / label+trait ALL pruned, three
     VM rounds 2026-08-11), so the AX divider-drag tooth self-skips and the

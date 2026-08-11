@@ -212,6 +212,11 @@ public enum UISceneRegistry {
             closesExistingTabs: true,
             summary: "Editor panes (I-21 S4a): split DOWN — stacked rows, per-pane strips"),
         SceneSpec(
+            id: "panes-sessions",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            summary: "Owner bug repro (2026-08-11): split + TWO sessions — the split must render BELOW the session tab strip"),
+        SceneSpec(
             id: "fill-check-git",
             fixture: .defaultDocument,
             summary: "Sidebar-fill validation: GIT solo must fill the shoulder (owner 2026-08-09)"),

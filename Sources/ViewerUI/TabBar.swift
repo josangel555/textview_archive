@@ -362,7 +362,7 @@ private struct TabStripContent: View {
     }
 }
 
-private struct TabContextMenu: View {
+struct TabContextMenu: View {
     @ObservedObject var model: DocumentModel
     let tabIndex: Int
     let tab: ViewerCore.Tab
@@ -373,6 +373,12 @@ private struct TabContextMenu: View {
             .disabled(model.tabs.tabs.count <= 1)
         Button("Close Tabs to the Right") { model.closeTabsToRight(of: tabIndex) }
             .disabled(tabIndex >= model.tabs.tabs.count - 1)
+        Divider()
+        // I-21 (owner ask 2026-08-11): tear THIS tab into a new pane
+        // beside its current one — split, not send (the cross-strip DRAG
+        // is how a tab moves into an EXISTING pane).
+        Button("Split Pane Right") { model.splitPaneRight(tabID: tab.id) }
+        Button("Split Pane Left") { model.splitPaneLeft(tabID: tab.id) }
         Divider()
         if let url = tab.url {
             // bug6: force-reload this tab from disk regardless of detected

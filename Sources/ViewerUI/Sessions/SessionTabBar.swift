@@ -58,8 +58,9 @@ struct SessionTabBar: View {
                                     openNewSession: openNewSession)
             }
             // TITLEBAR BAND (owner 2026-08-05): the strip renders inside the
-            // transparent title bar — inset past the traffic lights.
-            .padding(.leading, 78)
+            // transparent title bar — inset past the traffic lights, with a
+            // clear gap before the first pill (owner 2026-08-11).
+            .padding(.leading, 96)
             // TSK-313: double-click the EMPTY strip area = new session at ~
             // (browser idiom). Buttons/tab cells sit above this in the hit
             // chain, so clicks on tabs / + / close are unaffected.
@@ -95,22 +96,9 @@ struct SessionTabBar: View {
             .padding(.horizontal, model.uiSize(4))
         }
         .frame(height: rowHeight)
-        // Subtle vertical gradient on the title band (owner 2026-08-09:
-        // "add some depth… a subtle gradient for the top header") — a
-        // faint highlight at the top edge fading into the window tone,
-        // plus the band's own bottom hairline below. Semantic colors only
-        // (the ratchet): the highlight is a primary-inverse wash so it
-        // tracks light AND dark chrome.
-        .background(
-            LinearGradient(
-                stops: [
-                    .init(color: Palette.windowBackground.opacity(0.0), location: 0.0),
-                    .init(color: Palette.windowBackground, location: 1.0),
-                ],
-                startPoint: .top, endPoint: .bottom
-            )
-            .background(Palette.underPageBackground)
-        )
+        // Flat band tone (owner 2026-08-11: the 08-09 depth gradient
+        // "isn't looking right" — removed).
+        .background(Palette.underPageBackground)
         // Explicit CONTAINER, not a bare id: a bare `.accessibilityIdentifier`
         // on the row implicitly combined its loose pure-SwiftUI descendants —
         // the three pinned action buttons never materialized in the AX tree

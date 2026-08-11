@@ -50,6 +50,22 @@
   Clicking a control in the other pane focuses that pane first, so the action
   always applies to the tab you're looking at. (Un-split, nothing changes; the
   footer and file navigator still follow the focused tab.)
+- **Right-click a tab → Split Pane Right / Split Pane Left.** Tears that tab
+  (any tab, not just the current one) into a new pane beside its current pane —
+  the menu is on the window tab strip AND the per-pane strips. Moving a tab
+  into an EXISTING pane stays the drag: drop it on the other pane's strip.
+
+### Fixed (panes follow-ups — owner batch)
+- **The session tabs no longer vanish while split.** Splitting made the session
+  pills disappear (the band and its right-side icons stayed) — the panes' web
+  content was compositing OVER the pill row. The splits now render properly
+  below the session strip.
+- **The file navigator follows pane clicks.** Focusing a pane by clicking its
+  content (or cycling panes, moving tabs between panes, closing a pane) left
+  the FileNav highlight — and the file watcher and stale-file re-check — on the
+  previous tab. Every pane interaction now runs the full tab-switch pipeline.
+- **Title band polish**: the depth gradient is gone (flat band tone), and the
+  first session pill sits clear of the traffic lights.
 - **Markdown links are first-class everywhere.** Web links and mailto open in your
   browser/mail (as before); relative links and `[[wikilinks]]` open in-app; and now:
   **absolute file paths** (`/Users/…` or `file://…`) open in a tab, **absolute folder

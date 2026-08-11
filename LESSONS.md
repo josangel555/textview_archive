@@ -4524,4 +4524,31 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   Known-good fallback for a plain drag surface: an invisible real Button
   overlay carrying the id (BACKLOG "gutter AX materialization"). READ THE SKIP
   MESSAGE before theorizing about why an AX test didn't run its body.
+
+- **The TSK-488 compositor rule bit AGAIN on the panes branch — "in EVERY
+  layout branch" means EVERY NEW BRANCH YOU ADD (2026-08-11, the vanishing
+  session tabs).** The split layout mounted pane WKWebViews after the session
+  strip in the shared stack; the strip's scroll content (the pills) stopped
+  COMPOSITING while split — band background and trailing icons still painted,
+  AX still listed every element (layer order is invisible to AX), so it read
+  as a layout collapse. It wasn't: `.compositingGroup().zIndex(2)` on the
+  strip restored it. Diagnostic that cracked it: an UN-SPLIT control capture
+  of the same lane (pills fine) + noticing the band's SLOT and icons were
+  present in the split capture — pixels missing, structure intact ⇒
+  compositor, not layout.
+
+- **A coordinator-level `select` is NOT a selection — every pane/tab verb
+  that changes the current tab MUST route through `DocumentModel.selectTab`
+  (2026-08-11, the stale FileNav).** `selectTab(at:)` is a six-step pipeline:
+  scroll capture → coordinator select → materialize → `updateDerived()` (the
+  model republish the sidebar/footer re-body on) → watcher switch + stale-
+  vs-disk re-check → follow-active-tab reveal → scroll restore. The S4c pane
+  verbs drove selection via `TabCoordinator.select` directly, so pane clicks
+  updated the strips (coordinator observers) while the FileNav highlight,
+  footer, watcher, and stale re-check silently stayed on the previous tab.
+  Fix shape: model-level pane verbs (`DocumentModel+Panes`) that run the
+  coordinator overlay op then re-drive `selectTab(at:)` (idempotent). The
+  class: any NEW verb that changes the current tab — search hits, palette,
+  future pane ops — must end in `model.selectTab`, not the coordinator
+  primitive.
   Register the SceneSpec + the runner's scene_expect entry together.

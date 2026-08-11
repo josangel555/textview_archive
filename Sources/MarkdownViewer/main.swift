@@ -4004,11 +4004,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func closeFocusedPane(_ sender: Any?) {
-        model.tabCoordinator.closePane(id: model.tabCoordinator.paneAssignment.focusedPaneID)
+        // MODEL-level pane verbs (not the coordinator's): the full select
+        // pipeline must run — file-nav follow, republish, watcher (the
+        // stale-FileNav bug, 2026-08-11).
+        model.closePane(id: model.tabCoordinator.paneAssignment.focusedPaneID)
     }
 
     @objc func focusNextPane(_ sender: Any?) {
-        model.tabCoordinator.focusNextPane()
+        model.focusNextPane()
     }
 
     @objc func toggleSplit(_ sender: Any?) {

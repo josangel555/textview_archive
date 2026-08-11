@@ -189,6 +189,40 @@ import ViewerCore
         #expect(back == p, "the session snapshot can persist the layout verbatim")
     }
 
+    // MARK: context-menu splits (owner 2026-08-11)
+
+    @Test func splitPane_placesBeforeOrAfterTheSourcePane_andFocuses() {
+        var p = single()                       // [a, b, c] selected b
+        p.splitPane(moving: b, placement: .after)
+        #expect(p.panes[0].tabIDs == [a, c])
+        #expect(p.panes[1].tabIDs == [b], "Split Pane Right → new pane after")
+        #expect(p.focusedPane.id == p.panes[1].id)
+
+        p.splitPane(moving: a, placement: .before)
+        #expect(p.panes[0].tabIDs == [a], "Split Pane Left → new pane before")
+        #expect(p.panes[1].tabIDs == [c])
+        #expect(p.focusedSelectedTabID == a)
+        #expect(p.isConsistent(against: [a, b, c]))
+    }
+
+    @Test func splitPane_worksOnAnUnfocusedPanesTab_andHalvesItsWeight() {
+        var p = single()
+        p.splitFocusedPane(moving: b)          // pane0 [a, c] (w 0.5) · pane1 [b] (w 0.5, focused)
+        p.splitPane(moving: c, placement: .after)   // c lives in UNFOCUSED pane0
+        #expect(p.panes.map(\.tabIDs) == [[a], [c], [b]])
+        #expect(p.panes[0].weight == 0.25)
+        #expect(p.panes[1].weight == 0.25, "the SOURCE pane's span halves")
+        #expect(p.panes[2].weight == 0.5, "unrelated panes keep their span")
+        #expect(p.isConsistent(against: [a, b, c]))
+    }
+
+    @Test func splitPane_unknownTab_isANoOp() {
+        var p = single()
+        let before = p
+        p.splitPane(moving: d, placement: .after)
+        #expect(p == before)
+    }
+
     // MARK: S4d — pane weights (divider resize)
 
     @Test func split_halvesTheSplitPanesWeight_closeHandsItBack() {

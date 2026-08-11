@@ -1078,6 +1078,24 @@ public enum UISceneApplier {
             return "ui-scene: applied 'panes-split' panes=\(model.tabCoordinator.paneAssignment.panes.count)"
         }
 
+        // Owner bug repro (2026-08-11): the split must render BELOW the
+        // session tab strip — two real sessions (pills visible) + a split.
+        if scene == "panes-sessions" {
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.panelLayout.setOverride(.terminal, .hidden)
+            applyMarketingSessions(model, tabsBaseDir: tabsBaseDir)
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            for i in 1...2 {
+                let f = tabsBaseDir.appendingPathComponent("pane-\(i).md")
+                try? "# Pane \(i)\n\nThis file lives in pane \(i).\n"
+                    .write(to: f, atomically: true, encoding: .utf8)
+                model.open(url: f)
+            }
+            model.tabCoordinator.splitFocusedPane(movingSelected: true)
+            return "ui-scene: applied 'panes-sessions' panes=\(model.tabCoordinator.paneAssignment.panes.count)"
+        }
+
         // I-21 S4a: the vertical run — split DOWN (stacked rows).
         if scene == "panes-down" {
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }

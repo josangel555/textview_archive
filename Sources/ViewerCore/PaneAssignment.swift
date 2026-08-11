@@ -145,6 +145,36 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         focusedPaneID = newPane.id
     }
 
+    /// Which side of the source pane a torn-out tab's new pane lands on
+    /// (the tab context menu's "Split Pane Right / Left").
+    public enum SplitPlacement: Sendable { case before, after }
+
+    /// Tear `tabID` out of ITS pane into a new pane placed before/after
+    /// that pane (context-menu splits — works on ANY tab, not just the
+    /// focused pane's). First split picks the axis, same as
+    /// `splitFocusedPane`; the new pane takes half the source pane's
+    /// span and the focus.
+    public mutating func splitPane(
+        moving tabID: UUID,
+        placement: SplitPlacement,
+        direction: SplitOrientation = .horizontal
+    ) {
+        guard let from = panes.firstIndex(where: { $0.tabIDs.contains(tabID) })
+        else { return }
+        if panes.count == 1 { orientation = direction }
+        var newPane = Pane()
+        newPane.weight = panes[from].weight / 2
+        panes[from].weight /= 2
+        panes[from].tabIDs.removeAll { $0 == tabID }
+        if panes[from].selectedTabID == tabID {
+            panes[from].selectedTabID = panes[from].tabIDs.first
+        }
+        newPane.tabIDs = [tabID]
+        newPane.selectedTabID = tabID
+        panes.insert(newPane, at: placement == .after ? from + 1 : from)
+        focusedPaneID = newPane.id
+    }
+
     /// Close a pane: its tabs APPEND to the left neighbor (or the right
     /// one for the leftmost pane) — closing a pane never closes tabs. The
     /// last pane can't close. Focus moves to the absorbing pane.

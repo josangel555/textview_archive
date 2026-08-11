@@ -51,6 +51,42 @@ final class PaneToolbarPerTabTests: XCTestCase {
             "Split claims the selection exclusively (TSK-898 rule, per tab)")
     }
 
+    // MARK: model-level pane verbs (the stale-FileNav fix, 2026-08-11)
+
+    func test_modelPaneVerbs_driveTheFullSelectPipeline_currentURLFollows() {
+        let model = DocumentModel()
+        let a = makeTab("a.md"), b = makeTab("b.md")
+        model.tabCoordinator.append(a)
+        model.tabCoordinator.append(b)
+        model.tabCoordinator.splitFocusedPane(movingSelected: true)   // b focused
+        let left = model.tabCoordinator.paneAssignment.panes[0].id
+
+        model.focusPane(id: left)
+        XCTAssertEqual(model.currentURL, a.url,
+                       "focusing a pane routes through model.selectTab — "
+                       + "currentURL (file-nav/footer source) follows")
+
+        model.focusNextPane()
+        XCTAssertEqual(model.currentURL, b.url)
+    }
+
+    func test_splitPaneRightLeft_tearTheGivenTab_selectionFollows() {
+        let model = DocumentModel()
+        let a = makeTab("a.md"), b = makeTab("b.md")
+        model.tabCoordinator.append(a)
+        model.tabCoordinator.append(b)          // b selected
+
+        model.splitPaneRight(tabID: a.id)       // tear the UNSELECTED tab
+        let panes = model.tabCoordinator.paneAssignment.panes
+        XCTAssertEqual(panes.map(\.tabIDs), [[b.id], [a.id]])
+        XCTAssertEqual(model.currentURL, a.url, "the torn tab becomes current")
+
+        model.splitPaneLeft(tabID: b.id)
+        XCTAssertEqual(model.tabCoordinator.paneAssignment.panes.first?.tabIDs, [b.id],
+                       "Split Pane Left inserts before the source pane")
+        XCTAssertEqual(model.currentURL, b.url)
+    }
+
     func test_pathBreadcrumb_forURL_walksThatPath_andNilIsEmpty() {
         let model = DocumentModel()
         let crumbs = model.pathBreadcrumb(for: URL(fileURLWithPath: "/tmp/panetb/doc.md"))

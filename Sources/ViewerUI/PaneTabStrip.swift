@@ -57,6 +57,15 @@ struct PaneTabStrip: View {
                                 if let i = storeIndex(of: tab.id) { model.closeTab(at: i) }
                             }
                         )
+                        // Same context menu as the window strip (incl. the
+                        // Split Pane Right/Left tear-outs). The index is
+                        // resolved when the menu OPENS, so it can't go
+                        // stale between renders.
+                        .contextMenu {
+                            if let i = storeIndex(of: tab.id) {
+                                TabContextMenu(model: model, tabIndex: i, tab: tab)
+                            }
+                        }
                         .stripReorderable(
                             id: tab.id,
                             index: index,
@@ -90,7 +99,7 @@ struct PaneTabStrip: View {
             // The pane's close affordance: absorb my tabs into the neighbor
             // and un-split (never closes tabs — `PaneAssignment.closePane`).
             Button {
-                tabCoordinator.closePane(id: pane.id)
+                model.closePane(id: pane.id)
             } label: {
                 Image(systemName: "rectangle.split.2x1.slash")
                     .font(.system(size: model.uiSize(11), weight: .medium))
@@ -135,6 +144,7 @@ struct PaneTabStrip: View {
         let box = frameBox
         let coordinator = tabCoordinator
         let sourcePane = pane.id
+        let model = self.model
         return StripExternalTarget(
             toGlobal: { box.globalPoint(fromStrip: $0) },
             hitTest: { point in
@@ -144,8 +154,10 @@ struct PaneTabStrip: View {
                     excluding: sourcePane)
             },
             setHovered: { channel.setHovered($0) },
+            // MODEL-level verb: the full select pipeline must follow the
+            // move (file-nav follow/republish — the stale-FileNav bug).
             commit: { tabID, paneID in
-                coordinator.movePaneTab(id: tabID, toPane: paneID)
+                model.movePaneTab(id: tabID, toPane: paneID)
             })
     }
 
