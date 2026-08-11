@@ -50,16 +50,19 @@ public enum CMEditorTextSync {
 
     /// The bounded wait, isolated from WebKit so the host suite can pin its
     /// semantics (ack-first-pump returns true fast; never-acked returns
-    /// false at ~timeout; already-acked returns without pumping).
+    /// false at ~timeout; already-acked returns without pumping). `now` is
+    /// injectable so the timeout path is testable with a FAKE clock — no
+    /// real sleeping in the suite (the sleep ratchet).
     static func waitForAck(
         nonce: Int,
         timeout: TimeInterval,
         isAcked: (Int) -> Bool,
-        pump: () -> Void
+        pump: () -> Void,
+        now: () -> Date = { Date() }
     ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = now().addingTimeInterval(timeout)
         while !isAcked(nonce) {
-            if Date() >= deadline { return false }
+            if now() >= deadline { return false }
             pump()
         }
         return true

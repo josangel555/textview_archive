@@ -29,14 +29,18 @@ final class CMEditorTextSyncTests: XCTestCase {
     }
 
     func test_waitForAck_neverAcked_timesOutBounded() {
-        let started = Date()
+        // FAKE clock (the sleep ratchet: no real waiting in the suite) —
+        // each pump advances time 10ms; the 50ms budget must cut the loop
+        // off after ~5 pumps, never hang.
+        var fakeNow = Date(timeIntervalSinceReferenceDate: 0)
+        var pumps = 0
         let ok = CMEditorTextSync.waitForAck(
             nonce: 7, timeout: 0.05,
             isAcked: { _ in false },
-            pump: { Thread.sleep(forTimeInterval: 0.005) })
+            pump: { pumps += 1; fakeNow.addTimeInterval(0.010) },
+            now: { fakeNow })
         XCTAssertFalse(ok, "a dead page must not hang the caller")
-        let elapsed = Date().timeIntervalSince(started)
-        XCTAssertLessThan(elapsed, 1.0, "the wait is BOUNDED (~timeout, never a hang)")
+        XCTAssertLessThanOrEqual(pumps, 6, "the wait is BOUNDED by the deadline")
     }
 
     func test_ackBus_roundTrip_andPruneOnMint() {
