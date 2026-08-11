@@ -92,6 +92,12 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     /// at the capture side so the snapshot stays far under its read cap.
     public let unsavedHexBase64: String?
 
+    /// I-19 (2026-08-11): the tab was in the per-tab SPLIT-EDITING layout
+    /// (editor + same-file rendered preview inside the tab). Additive-
+    /// optional; written as `true` only (key omitted otherwise) so fresh
+    /// snapshots stay byte-compatible with older files.
+    public let splitEditing: Bool?
+
     public init(path: String, viewMode: String,
                 categoryOverride: String? = nil,
                 scrollTopLine: Int? = nil,
@@ -100,7 +106,8 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
                 unsavedBaseMTime: Date? = nil,
                 unsavedBaseSize: Int? = nil,
                 imageEditState: ImageEditState? = nil,
-                unsavedHexBase64: String? = nil) {
+                unsavedHexBase64: String? = nil,
+                splitEditing: Bool? = nil) {
         self.path = path
         self.viewMode = viewMode
         self.categoryOverride = categoryOverride
@@ -111,6 +118,7 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
         self.unsavedBaseSize = unsavedBaseSize
         self.imageEditState = imageEditState
         self.unsavedHexBase64 = unsavedHexBase64
+        self.splitEditing = splitEditing
     }
 }
 

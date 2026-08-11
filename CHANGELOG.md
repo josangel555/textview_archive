@@ -11,10 +11,22 @@
   flushes the editor first and provably waits for the text to land (bounded, imperceptible);
   the editor also flushes itself whenever it loses focus or the window hides.
 
+### Changed
+- **Split preview lives inside the tab now.** The markdown Split arrangement (editor
+  left, live preview right) used to ride a window-wide pane — switch tabs and the
+  preview stayed stuck on the previous file. It's per-tab state now: each tab keeps its
+  own arrangement across switches and relaunches (sessions persist it), and the pane
+  mechanism is reserved for genuinely viewing two different files side by side (which
+  plain-text files' same-file split still uses).
+
 ### System work
 - CM6 bridge: nonce'd `flushChanges` → `flushAck` handshake (schema + encode/parse
   pins); `CMEditorTextSync` bounded-wait seam (host-tested); new `EditorFlushWebViewTests`
   ordering teeth registered in both VM webview lanes.
+- The right-of-content AX void CLOSED (the `.contain` chain on rails/dock/terminal ids —
+  a stale build had masked the fix): `mktg-split` + `terminal-dock-right` scenes now
+  assert real `mdv.*` ids instead of the pixel heuristic; rail buttons expose per-panel
+  ids (`mdv.rail.right.terminal` etc.) for the AX tier.
 
 ## 2026-08-09
 

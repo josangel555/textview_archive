@@ -61,7 +61,14 @@ extension DocumentModel {
         refreshSplitDiffMarks()
     }
     public func toggleSplit() {
+        // I-19 (2026-08-11): same-file markdown split is the PER-TAB
+        // split-editing layout now — the menu toggle drives it when the
+        // file offers edit-and-preview. The window pane (`splitURL`)
+        // remains the two-file side-by-side mechanism (and the same-file
+        // fallback for files with no rendered preview).
         if tabCoordinator.splitURL != nil { closeSplit() }
+        else if isSplitEditingActive { exitSplitEditing() }
+        else if splitEditingIsOffered { enterSplitEditing() }
         else if let url = currentURL { openInSplit(url) }
     }
 

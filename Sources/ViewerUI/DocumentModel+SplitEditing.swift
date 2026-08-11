@@ -101,25 +101,28 @@ extension DocumentModel {
     }
 
     /// Toolbar tap → model change. Split enters split-editing; a primary tap
-    /// out of split-editing closes the same-file split first (the user asked
-    /// for ONE pane of that lens).
+    /// out of split-editing exits the layout first (the user asked for ONE
+    /// pane of that lens).
     public func selectToolbarSegment(_ segment: ToolbarModeSegment) {
         switch segment {
         case .split:
             enterSplitEditing()
         case .primary(let p):
-            if isSplitEditingActive { closeSplit() }
+            if isSplitEditingActive { exitSplitEditing() }
             selectViewPrimary(p, viewOnly: viewModePresentation.viewOnly)
         }
     }
 
-    /// True when the current tab is in the split-editing layout: editor lens
-    /// with the split pane previewing the SAME file. A split showing a
-    /// DIFFERENT file is the ordinary side-by-side feature, not this.
+    /// True when the SELECTED TAB is in the split-editing layout: editor
+    /// lens with the same-file rendered preview inside the tab's content
+    /// area. PER-TAB (I-19, owner 2026-08-11) — the old model rode the
+    /// window-scoped `splitURL` pane, so switching tabs stranded the
+    /// preview on the previous file; each tab now keeps its own
+    /// arrangement. A split pane showing a DIFFERENT file (`splitURL`) is
+    /// the ordinary side-by-side feature, not this.
     public var isSplitEditingActive: Bool {
         currentViewMode == .editor
-            && tabCoordinator.splitURL != nil
-            && tabCoordinator.splitURL == currentURL
+            && tabCoordinator.tabs.selected?.isSplitEditing == true
     }
 
     /// What the mode-bar picker should show selected right now.
@@ -128,24 +131,39 @@ extension DocumentModel {
     }
 
     /// Apply a picker choice. Selecting a plain mode out of split-editing
-    /// closes the same-file split (the user asked for ONE pane of that
-    /// lens); a different-file split is left alone — it isn't ours.
+    /// exits the layout (the user asked for ONE pane of that lens); a
+    /// different-file split pane is left alone — it isn't ours.
     public func setModeBarSelection(_ entry: ModeBarEntry) {
         switch entry {
         case .splitEdit:
             enterSplitEditing()
         case .mode(let m):
-            if isSplitEditingActive { closeSplit() }
+            if isSplitEditingActive { exitSplitEditing() }
             setCurrentViewMode(m)
         }
     }
 
-    /// Enter markdown edit-and-preview: editor lens + rendered split of the
-    /// same file. The preview tracks the live buffer (unsaved edits) via
-    /// `splitPaneText`, debounced off-main by `SplitMarkdownRenderModel`.
+    /// Enter markdown edit-and-preview for the SELECTED TAB: editor lens +
+    /// the per-tab split flag (the preview renders inside the tab's
+    /// content area, tracking the live buffer via `splitPaneText`,
+    /// debounced off-main by `SplitMarkdownRenderModel`).
     public func enterSplitEditing() {
-        guard let url = currentURL else { return }
+        guard currentURL != nil else { return }
         setCurrentViewMode(.editor)
-        openInSplit(url)
+        setSplitEditingOnSelectedTab(true)
+    }
+
+    /// Leave the split-editing layout for the selected tab (the editor
+    /// lens keeps the main pane).
+    public func exitSplitEditing() {
+        setSplitEditingOnSelectedTab(false)
+    }
+
+    private func setSplitEditingOnSelectedTab(_ on: Bool) {
+        guard let idx = tabCoordinator.tabs.selectedIndex else { return }
+        var tab = tabCoordinator.tabs.tabs[idx]
+        guard tab.isSplitEditing != on else { return }
+        tab.isSplitEditing = on
+        tabCoordinator.replace(at: idx, with: tab)
     }
 }

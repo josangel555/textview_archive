@@ -67,19 +67,25 @@ final class SplitEditingModeTests: XCTestCase {
 
     // MARK: transitions
 
-    func test_selectingSplit_entersEditorWithSameFileSplit() throws {
+    func test_selectingSplit_entersEditorWithPerTabSplit() throws {
         let model = makeModel()
-        let url = try open(model, "doc.md")
+        _ = try open(model, "doc.md")
 
         model.setModeBarSelection(.splitEdit)
 
         XCTAssertEqual(model.currentViewMode, .editor, "main pane edits")
-        XCTAssertEqual(model.tabCoordinator.splitURL, url, "split previews the same file")
+        // I-19 (2026-08-11): split-editing is PER-TAB layout state now — the
+        // window-scoped pane stays untouched (it belongs to the two-file
+        // side-by-side feature).
+        XCTAssertNil(model.tabCoordinator.splitURL,
+                     "same-file split must NOT claim the window pane")
+        XCTAssertEqual(model.tabs.selected?.isSplitEditing, true,
+                       "the layout rides the selected TAB")
         XCTAssertTrue(model.isSplitEditingActive)
         XCTAssertEqual(model.modeBarSelection, .splitEdit, "the picker reflects it")
     }
 
-    func test_selectingAnotherMode_closesTheSameFileSplit() throws {
+    func test_selectingAnotherMode_exitsTheTabsSplitLayout() throws {
         let model = makeModel()
         _ = try open(model, "doc.md")
         model.setModeBarSelection(.splitEdit)
@@ -87,8 +93,9 @@ final class SplitEditingModeTests: XCTestCase {
         model.setModeBarSelection(.mode(.rendered))
 
         XCTAssertEqual(model.currentViewMode, .rendered)
-        XCTAssertNil(model.tabCoordinator.splitURL,
-                     "leaving Split must not strand the same-file split pane")
+        XCTAssertEqual(model.tabs.selected?.isSplitEditing, false,
+                       "leaving Split clears the tab's layout flag")
+        XCTAssertFalse(model.isSplitEditingActive)
         XCTAssertEqual(model.modeBarSelection, .mode(.rendered))
     }
 
@@ -117,9 +124,15 @@ final class SplitEditingModeTests: XCTestCase {
         XCTAssertNotEqual(model.currentURL, md)
         XCTAssertFalse(model.isSplitEditingActive,
                        "the other tab is not in split-editing")
+        // The OWNER'S I-19 repro: under the old window-pane model the txt
+        // tab still SHOWED the markdown preview pane. Per-tab now — no
+        // stranded pane on the other tab.
+        XCTAssertNil(model.tabCoordinator.splitURL,
+                     "no stranded preview pane on the other tab")
         XCTAssertEqual(model.modeBarSelection, .mode(model.currentViewMode))
 
-        // Back on the markdown tab the segment lights up again.
+        // Back on the markdown tab the segment lights up again — the tab
+        // KEPT its own arrangement.
         if let i = model.tabs.tabs.firstIndex(where: { $0.url == md }) {
             model.selectTab(at: i)
         }
@@ -130,6 +143,51 @@ final class SplitEditingModeTests: XCTestCase {
     func test_splitEdit_withNoOpenFile_isANoOp() {
         let model = makeModel()
         model.setModeBarSelection(.splitEdit)
+        XCTAssertNil(model.tabCoordinator.splitURL)
+        XCTAssertFalse(model.isSplitEditingActive)
+    }
+
+    // MARK: per-tab persistence (I-19)
+
+    func test_splitEditing_restoresThroughLazyTab_andSnapshotRoundTrips() throws {
+        let model = makeModel()
+        let url = tmpDir.appendingPathComponent("restored.md")
+        try Data("# r\n".utf8).write(to: url)
+        model.appendLazyTab(url: url, viewMode: .editor, isSplitEditing: true)
+        XCTAssertEqual(
+            model.tabs.tabs.first { $0.url?.lastPathComponent == "restored.md" }?
+                .isSplitEditing, true,
+            "session restore carries the per-tab split layout")
+
+        // The TabSnapshot field is additive-optional Codable: present when
+        // true, decodable when absent (older files).
+        let snap = TabSnapshot(path: url.path, viewMode: "editor", splitEditing: true)
+        let data = try JSONEncoder().encode(snap)
+        let decoded = try JSONDecoder().decode(TabSnapshot.self, from: data)
+        XCTAssertEqual(decoded.splitEditing, true)
+        let legacy = try JSONDecoder().decode(
+            TabSnapshot.self,
+            from: Data(#"{"path":"/tmp/x.md","viewMode":"editor"}"#.utf8))
+        XCTAssertNil(legacy.splitEditing, "older snapshots decode with the flag absent")
+    }
+
+    func test_menuToggleSplit_drivesThePerTabLayout_forMarkdown() throws {
+        let model = makeModel()
+        _ = try open(model, "doc.md")
+        model.toggleSplit()
+        XCTAssertTrue(model.isSplitEditingActive, "markdown ⇒ per-tab split-editing")
+        XCTAssertNil(model.tabCoordinator.splitURL)
+        model.toggleSplit()
+        XCTAssertFalse(model.isSplitEditingActive, "toggle exits the layout")
+    }
+
+    func test_menuToggleSplit_nonMarkdown_keepsThePaneBehavior() throws {
+        let model = makeModel()
+        let url = try open(model, "plain.txt", "text\n")
+        model.toggleSplit()
+        XCTAssertEqual(model.tabCoordinator.splitURL, url,
+                       "no rendered preview ⇒ the classic same-file pane")
+        model.toggleSplit()
         XCTAssertNil(model.tabCoordinator.splitURL)
     }
 
@@ -167,7 +225,7 @@ final class SplitEditingModeTests: XCTestCase {
                        "two lit segments would read as a broken control")
     }
 
-    func test_toolbar_tapPrimary_leavesSplitAndClosesTheSameFilePane() throws {
+    func test_toolbar_tapPrimary_leavesTheSplitLayout() throws {
         let model = makeModel()
         _ = try open(model, "doc.md")
         model.selectToolbarSegment(.split)
@@ -175,7 +233,7 @@ final class SplitEditingModeTests: XCTestCase {
         model.selectToolbarSegment(.primary(.render))
 
         XCTAssertFalse(model.isSplitEditingActive)
-        XCTAssertNil(model.tabCoordinator.splitURL)
+        XCTAssertEqual(model.tabs.selected?.isSplitEditing, false)
         let p = model.viewModePresentation
         XCTAssertTrue(model.isToolbarSegmentSelected(.primary(.render), presentation: p))
     }

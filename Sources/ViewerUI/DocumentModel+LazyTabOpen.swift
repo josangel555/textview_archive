@@ -22,7 +22,8 @@ extension DocumentModel {
                               unsavedBaseMTime: Date? = nil,
                               unsavedBaseSize: Int? = nil,
                               imageEditState: ImageEditState? = nil,
-                              unsavedHexBase64: String? = nil) {
+                              unsavedHexBase64: String? = nil,
+                              isSplitEditing: Bool = false) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Dedup invariant (matches `TabsState.openOrReveal`): never create a
         // SECOND tab for a file that's already open. `appendLazyTab` was the
@@ -78,6 +79,8 @@ extension DocumentModel {
         // Hex hot-exit (2026-08-01): carried the same way; consumed by
         // `restoreUnsavedHexIfNeeded` at materialization.
         lazyTab.unsavedHexBase64 = unsavedHexBase64
+        // I-19: restore the per-tab split-editing layout.
+        lazyTab.isSplitEditing = isSplitEditing
         tabCoordinator.append(lazyTab)
     }
 

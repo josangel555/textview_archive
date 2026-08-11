@@ -126,17 +126,16 @@ I-## → TSK-### when the tasked board reconnects.
   RUNTIME-switch scene would be the tooth).
 
 **P1 — user-facing queue (one leads each round; big swings welcome):**
-- **I-19 — Split preview lives INSIDE the tab (owner 2026-08-11):** the Split lens
-  currently splits into a separate PANE (the window-level pane-split mechanism); the
-  owner wants the markdown preview CONTAINED WITHIN the tab — a per-tab layout (editor
-  left, preview right, inside that tab's content area), so switching tabs keeps each
-  tab's own split state and the pane system stays untouched. WIRING CONFIRMED
-  2026-08-11: the toolbar Split segment drives `model.toggleSplit()` →
-  `tabCoordinator.splitURL` (the WINDOW-level pane split, `openInSplit(currentURL)`) —
-  so the state is window-scoped, not tab-scoped (switch tabs and the pane keeps the old
-  file's preview). Fix shape: a per-TAB split flag rendered inside the tab's content
-  region (SplitPaneView already renders the preview half); `openInSplit(differentFile)`
-  keeps the pane mechanism for two-file side-by-side. **M**
+- ~~**I-19 — Split preview lives INSIDE the tab**~~ **DONE 2026-08-11**: per-tab
+  `Tab.isSplitEditing` (Equatable-visible, persisted via additive-optional
+  `TabSnapshot.splitEditing`, session restore threads it through `appendLazyTab`);
+  `isSplitEditingActive`/enter/exit ride the SELECTED tab; ContentView renders the
+  same-file preview inside the tab when flagged (window `splitURL` pane wins when open
+  and remains the two-file mechanism + the same-file fallback for files with no
+  rendered preview — `toggleSplit` routes accordingly). Suites reworked
+  (SplitEditingModeTests + SplitObservationTests both-paths republish pins);
+  `mktg-split` scene asserts `mdv.split` via AX (real guard). Eyeballed on VM pixels.
+  RESIDUE: none known; owner feel-check on the installed app.
 - **I-20 — Markdown rendering GAPS audit + full link support (owner 2026-08-11):**
   sweep what our renderer does NOT yet support (vs GFM/common extensions) and close the
   high-value gaps. FIRST-CLASS LINKS especially: web hyperlinks, relative file links
@@ -661,15 +660,13 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
   (visibility rides per-session panel layout now — by design, note if the owner trips on
   it); bottom-dock tab strip has no AX interaction test yet (ids `mdv.dock.bottom.tab.*`
   / `.resize` / `.close` are in place for the AX tier).
-  - **RIGHT-of-content AX void (S–M, TSK-1577 family, found 2026-08-09):** NOTHING right
-    of the center column (right rail `mdv.rail.right`, any `mdv.dock.right.*`, a
-    right-docked `mdv.terminal.pane`) has EVER materialized in the out-of-process AX
-    tree — across every historical lane dump — while the left rail/sidebar ids surface
-    fine. Adding `.accessibilityElement(children: .contain)` through the whole chain
-    does NOT fix it (applied 2026-08-09, kept as correct hygiene). So it's not the
-    implicit-combine class — likely the reader/bridge drops trailing HStack siblings.
-    Until diagnosed, right-dock scenes use the dense-chip PIXEL eval
-    (`terminal-dock-right`'s scene_expect entry documents this).
+  - ~~RIGHT-of-content AX void~~ **RESOLVED 2026-08-11**: the `.contain` chain DID fix
+    it — the 2026-08-09 "doesn't fix it" verdict was evaluated against a STALE VM build
+    (the .contain commit hadn't been rebuilt into the app the reader walked). A fresh
+    dump surfaces 235 ids including `mdv.rail.right`, `mdv.rail.right.terminal`,
+    `mdv.dock.right.terminal.header`, `mdv.terminal.pane`; `terminal-dock-right` and
+    `mktg-split` now assert real AX ids (PASS a11y) instead of the pixel heuristic.
+    Bonus: rail buttons expose per-panel ids for the AX tier.
 
 - **Owner-eyeball verification tail (S, 2026-08-09):** model-fixed but not pixel-captured
   — hex caret/tandem on a real binary, session-switch HUD, empty-shoulder drag

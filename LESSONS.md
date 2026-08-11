@@ -4473,3 +4473,11 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   `WKScriptMessageHandler` callback — pumping there can deliver further script messages
   re-entrantly into the same handler. Concretely: the MENU ⌘S flushes; the JS-bridge save
   path (already flushed page-side before posting `save`) deliberately does not.
+
+- **"The fix didn't work" on a VM lane is meaningless until you've PROVEN the fix was in
+  the binary the lane exercised (2026-08-11, the right-side AX void).** The `.contain`
+  AX fix was declared ineffective and a "reader/bridge drops trailing siblings" theory
+  filed — but the verdict run had walked a STALE VM app build. A later run with the fix
+  actually built surfaced 235 ids (vs 27) including every "impossible" right-side id.
+  Same family as the stale-dist trap: before concluding a fix failed on the VM, verify
+  the built product's freshness (binary mtime vs the commit, or a marker the fix adds).

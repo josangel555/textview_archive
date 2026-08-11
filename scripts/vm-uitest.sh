@@ -60,12 +60,14 @@ scene_expect() {
     omni) echo "mdv.emptyState.omni" ;;
     structural-search) echo "mdv.structuralSearch.examplesButton" ;;
     terminal-header) echo "mdv.terminal.header" ;;
-    # terminal-dock-right: NO AX expectation — the whole right-of-content
-    # region (right rail, right dock) has NEVER materialized in the
-    # out-of-process AX tree (pre-existing, the TSK-1577 reader-gap family;
-    # .contain on every id in the chain doesn't fix it — see BACKLOG).
-    # The scene falls back to the dense-chip pixel eval, which targets the
-    # terminal tab strip and works for any dock edge.
+    # 2026-08-11: the right-of-content AX void CLOSED once the .contain
+    # chain (rails + dock headers + terminal pane) shipped in the built
+    # app — a later mktg-split dump surfaced 235 ids incl. mdv.rail.right.*
+    # (the first FAIL was evaluated against a stale build). Real AX
+    # expectations restored:
+    terminal-dock-right) echo "mdv.dock.right.terminal.header mdv.terminal.pane" ;;
+    # I-19 (per-tab split preview): the split pane inside the tab.
+    mktg-split) echo "mdv.split" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;

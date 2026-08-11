@@ -599,6 +599,24 @@ public struct ContentView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("mdv.split")
+            } else if model.isSplitEditingActive, let url = model.currentURL {
+                // I-19 (owner 2026-08-11): the PER-TAB split-editing preview —
+                // same file, contained within the tab (switch tabs and each
+                // keeps its own arrangement). Reads `tabs.selected` +
+                // `currentViewMode`, both observed here, so tab switches and
+                // lens changes re-evaluate the branch. The window-scoped
+                // `splitURL` pane above (two DIFFERENT files) wins when open.
+                Divider()
+                SplitPaneView(
+                    url: url,
+                    zoom: model.zoom,
+                    theme: model.activeTheme,
+                    onClose: { model.exitSplitEditing() },
+                    model: model,
+                    tabs: tabCoordinator
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("mdv.split")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

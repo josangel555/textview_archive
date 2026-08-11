@@ -255,7 +255,9 @@ public final class SessionState: ObservableObject {
                 imageEditState: t.imageEditState,
                 // Hex hot-exit (2026-08-01): stamped by
                 // `captureUnsavedHexForAllTabs` at the same boundary.
-                unsavedHexBase64: t.unsavedHexBase64))
+                unsavedHexBase64: t.unsavedHexBase64,
+                // I-19: per-tab split-editing layout survives the switch.
+                splitEditing: t.isSplitEditing ? true : nil))
         }
         let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
         return (out, remapped)
@@ -440,6 +442,14 @@ public final class SessionState: ObservableObject {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // I-19: path → the per-tab split-editing layout flag.
+        let splitEditingByPath: [String: Bool] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, Bool)? in
+                guard snap.splitEditing == true else { return nil }
+                return (snap.path, true)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -456,7 +466,8 @@ public final class SessionState: ObservableObject {
                                 unsavedBaseMTime: unsavedBaseMTimeByPath[t.path],
                                 unsavedBaseSize: unsavedBaseSizeByPath[t.path],
                                 imageEditState: imageEditStateByPath[t.path],
-                                unsavedHexBase64: unsavedHexByPath[t.path])
+                                unsavedHexBase64: unsavedHexByPath[t.path],
+                                isSplitEditing: splitEditingByPath[t.path] ?? false)
         }
         // Restore the per-session sidebar expansion AFTER `setRoot`
         // (which wipes `expanded` down to just the root). We expand the

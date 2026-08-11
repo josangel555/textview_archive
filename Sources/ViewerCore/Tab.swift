@@ -151,6 +151,16 @@ public struct Tab: Sendable, Identifiable {
     /// promote.
     public var isPreview: Bool
 
+    /// I-19 (owner 2026-08-11): this tab is in the SPLIT-EDITING layout —
+    /// the editor lens with a live rendered preview of the SAME file
+    /// beside it, INSIDE the tab's content area. PER-TAB state (each tab
+    /// keeps its own arrangement across switches; the old model rode the
+    /// window-scoped `splitURL` pane, so switching tabs stranded the
+    /// preview on the previous file). Persisted via
+    /// `TabSnapshot.splitEditing`. INCLUDED in Equatable — it drives the
+    /// content layout, so the view diff must see it flip.
+    public var isSplitEditing: Bool
+
     public init(
         id: UUID = UUID(),
         url: URL? = nil,
@@ -165,7 +175,8 @@ public struct Tab: Sendable, Identifiable {
         unsavedBaseMTime: Date? = nil,
         unsavedBaseSize: Int? = nil,
         imageEditState: ImageEditState? = nil,
-        isPreview: Bool = false
+        isPreview: Bool = false,
+        isSplitEditing: Bool = false
     ) {
         self.id = id
         self.url = url
@@ -181,6 +192,7 @@ public struct Tab: Sendable, Identifiable {
         self.unsavedBaseSize = unsavedBaseSize
         self.imageEditState = imageEditState
         self.isPreview = isPreview
+        self.isSplitEditing = isSplitEditing
     }
 
     /// Pure staleness classification, reusing the same mtime-OR-size
@@ -236,6 +248,7 @@ extension Tab: Equatable {
         guard lhs.diskState == rhs.diskState else { return false }
         guard lhs.categoryOverride == rhs.categoryOverride else { return false }
         guard lhs.isPreview == rhs.isPreview else { return false }
+        guard lhs.isSplitEditing == rhs.isSplitEditing else { return false }
         // `scrollTopLine` is intentionally NOT compared (UX-K, #231): it's
         // persistence-only scroll metadata captured at focus-loss/close
         // boundaries. Comparing it would make a scroll capture re-trigger

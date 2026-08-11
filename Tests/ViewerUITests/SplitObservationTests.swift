@@ -146,8 +146,11 @@ final class SplitObservationTests: XCTestCase {
         XCTAssertNil(model.splitURL, "closeSplit clears the split file")
     }
 
-    /// `toggleSplit` (⌘⇧\) — both directions go through the same forwarders, so
-    /// both must fire the coordinator signal.
+    /// `toggleSplit` (⌘⇧\) — both directions must fire the coordinator
+    /// signal so ContentView re-bodies. I-19 (2026-08-11): for MARKDOWN the
+    /// toggle drives the PER-TAB split-editing layout (a `tabs` mutation —
+    /// same coordinator signal); files without a rendered preview keep the
+    /// classic same-file pane (`splitURL`), covered below.
     func test_toggleSplit_firesTabCoordinatorObjectWillChange_bothDirections() async throws {
         let model = makeModel()
         let url = try writeFile("a.md", "# a\n")
@@ -155,18 +158,40 @@ final class SplitObservationTests: XCTestCase {
         await Task.yield()
 
         let openCount = await countCoordinatorRepublishes(of: model) {
-            model.toggleSplit()        // closed ⇒ open
+            model.toggleSplit()        // off ⇒ per-tab split-editing
         }
-        XCTAssertNotNil(model.splitURL, "toggle opens when closed")
+        XCTAssertTrue(model.isSplitEditingActive, "toggle enters the per-tab layout")
+        XCTAssertNil(model.splitURL, "markdown same-file split does not claim the pane")
         XCTAssertGreaterThan(openCount, 0,
-            "toggleSplit (open) fires the coordinator signal")
+            "toggleSplit (enter) fires the coordinator signal")
+
+        let closeCount = await countCoordinatorRepublishes(of: model) {
+            model.toggleSplit()        // on ⇒ off
+        }
+        XCTAssertFalse(model.isSplitEditingActive, "toggle exits the layout")
+        XCTAssertGreaterThan(closeCount, 0,
+            "toggleSplit (exit) fires the coordinator signal")
+    }
+
+    /// The classic pane path (no rendered preview): both directions still
+    /// fire the coordinator signal via `splitURL`.
+    func test_toggleSplit_paneFallback_firesTheSignal_bothDirections() async throws {
+        let model = makeModel()
+        let url = try writeFile("a.txt", "text\n")
+        model.open(url: url)
+        await Task.yield()
+
+        let openCount = await countCoordinatorRepublishes(of: model) {
+            model.toggleSplit()        // closed ⇒ open pane
+        }
+        XCTAssertNotNil(model.splitURL, "no preview ⇒ the classic same-file pane")
+        XCTAssertGreaterThan(openCount, 0)
 
         let closeCount = await countCoordinatorRepublishes(of: model) {
             model.toggleSplit()        // open ⇒ close
         }
-        XCTAssertNil(model.splitURL, "toggle closes when open")
-        XCTAssertGreaterThan(closeCount, 0,
-            "toggleSplit (close) fires the coordinator signal")
+        XCTAssertNil(model.splitURL)
+        XCTAssertGreaterThan(closeCount, 0)
     }
 
     // MARK: - PERF invariant preserved (the fix did NOT re-bridge the storm)
