@@ -126,6 +126,34 @@ I-## → TSK-### when the tasked board reconnects.
   RUNTIME-switch scene would be the tooth).
 
 **P1 — user-facing queue (one leads each round; big swings welcome):**
+- **★ I-21 — EDITOR PANES epic (owner 2026-08-11: "panes which then contain tabs —
+  split the window into panes, different set of tabs in each").** DESIGN (spiked
+  2026-08-11): panes are an ORDER+SELECTION OVERLAY on the single flat tab store —
+  `TabsState`/buffers/hot-exit/persistence stay where they are (everything keys by tab
+  id); `PaneAssignment` (ViewerCore, pure, Codable) holds panes[{id, tabIDs,
+  selectedTabID}] + focusedPaneID with ops (splitFocusedPane(moving:), closePane =
+  absorb-into-neighbor never-closes-tabs, moveTab, selectTab-focuses-its-pane,
+  didOpen/didCloseTab) and `normalized(against:)` — the reconciliation safety net that
+  lets every existing tab mutation path keep working untouched. App-wide "current tab"
+  = focused pane's selection. Slices:
+  - ~~**S1 — the pure model**~~ **DONE 2026-08-11** (`PaneAssignment` + 13-test suite
+    incl. invariant checker + Codable round-trip for session persistence).
+  - **S2 — coordinator wiring (M):** `TabCoordinator` grows `@Published paneAssignment`,
+    normalize-after-mutation hooks on append/remove/select, focused-pane-aware
+    `selected` resolution (the risky seam: today `TabsState.selectedIndex` IS the
+    selection; map per-pane selection ↔ it on focus change). Host tests per hook.
+  - **S3 — render (L, the big lift):** ContentView renders an HSplit of panes — per-pane
+    TabBar + content region; the content tree is built around `model.currentX`
+    singletons, so the per-pane content view must parameterize by (pane, its selected
+    tab). `MountedPanesLRU` already mounts multiple editor panes (warm cache) — reuse.
+    Focused-pane ring; click-to-focus; drag tab between strips (`StripExternalTarget`
+    pattern exists from tab→session-pill drops). VM captures per step.
+  - **S4 — commands + persistence (M):** ⌘W/⌘T/etc. route to the focused pane;
+    "Split Editor Right" command + tab context-menu "Open in New Pane"; session
+    snapshot gains additive `paneAssignment` (Codable already); restore normalizes
+    against restored tab ids. Relation: the window `splitURL` preview pane is
+    eventually SUPERSEDED by a real second pane (park until S3 lands); per-tab
+    split-editing (I-19) lives inside whichever pane hosts the tab — orthogonal ✓.
 - ~~**I-19 — Split preview lives INSIDE the tab**~~ **DONE 2026-08-11**: per-tab
   `Tab.isSplitEditing` (Equatable-visible, persisted via additive-optional
   `TabSnapshot.splitEditing`, session restore threads it through `appendLazyTab`);
