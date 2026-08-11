@@ -55,11 +55,15 @@ paths/names, exported into a NEW public repo (this one stays private as-is); ver
     refs — the ~131 "STALE" scan hits (test-fixture fake shas, doc examples, foreign textview_dist
     shas) are deliberately left alone.
 - **O-6 — Data-safety tail (verified by subagent 2026-08-08, evidence in the report):**
-  - `[PARTIAL→FIX, M]` **CM6 flush-before-read**: flush exists ONLY for in-editor ⌘S/vim-write;
-    ⌘W close, ⌘Q quit, session-switch hot-exit, blur-save, and menu-Save all read a ≤200ms-stale
-    mirror. Worst repro: type→⌘W within 200ms on a clean buffer → no dirty prompt → keystrokes
-    silently lost. Fix shape: a synchronous flush request/ack (or read-through-JS) before
-    close-confirm, quit-capture, session drain, and menu-save; plus flush on `editorBlurred`.
+  - `[PARTIAL→FIX, M]` **CM6 flush-before-read** — **RE-CONFIRMED STILL OPEN 2026-08-11**
+    (owner asked; verified against head `b710fc80`: `emitChangeImmediate()` runs only before
+    the in-editor ⌘S at codemirror.html:896 + vim-write :772; ZERO `.flushChanges` dispatches
+    from any Swift close/quit/session/menu-save path). Flush exists ONLY for in-editor
+    ⌘S/vim-write; ⌘W close, ⌘Q quit, session-switch hot-exit, blur-save, and menu-Save all
+    read a ≤200ms-stale mirror. Worst repro: type→⌘W within 200ms on a clean buffer → no
+    dirty prompt → keystrokes silently lost. Fix shape: a synchronous flush request/ack (or
+    read-through-JS) before close-confirm, quit-capture, session drain, and menu-save; plus
+    flush on `editorBlurred`.
   - `[FIXED ✓]` session-drain spill deletion (guard @ DocumentModel.swift:3446 + HotExitTests teeth).
   - `[PARTIAL→FIX, S]` **HotExitSpill.write fails silently** (raw Data.write, no
     onWriteFailure hook, no fsync): disk-full at quit with a >1MiB dirty buffer loses it with
@@ -120,6 +124,25 @@ I-## → TSK-### when the tasked board reconnects.
   RUNTIME-switch scene would be the tooth).
 
 **P1 — user-facing queue (one leads each round; big swings welcome):**
+- **I-19 — Split preview lives INSIDE the tab (owner 2026-08-11):** the Split lens
+  currently splits into a separate PANE (the window-level pane-split mechanism); the
+  owner wants the markdown preview CONTAINED WITHIN the tab — a per-tab layout (editor
+  left, preview right, inside that tab's content area), so switching tabs keeps each
+  tab's own split state and the pane system stays untouched. WIRING CONFIRMED
+  2026-08-11: the toolbar Split segment drives `model.toggleSplit()` →
+  `tabCoordinator.splitURL` (the WINDOW-level pane split, `openInSplit(currentURL)`) —
+  so the state is window-scoped, not tab-scoped (switch tabs and the pane keeps the old
+  file's preview). Fix shape: a per-TAB split flag rendered inside the tab's content
+  region (SplitPaneView already renders the preview half); `openInSplit(differentFile)`
+  keeps the pane mechanism for two-file side-by-side. **M**
+- **I-20 — Markdown rendering GAPS audit + full link support (owner 2026-08-11):**
+  sweep what our renderer does NOT yet support (vs GFM/common extensions) and close the
+  high-value gaps. FIRST-CLASS LINKS especially: web hyperlinks, relative file links
+  (un-deadened 2026-08-01 with wikilinks — verify breadth), **absolute file paths**
+  (`/Users/...` and `file://` → open in a tab), **absolute FOLDER paths** (→ open as
+  folder/sidebar root or new session), mailto, anchors/heading fragments
+  (`#section-links` within a doc), and cross-doc anchors (`other.md#heading`). Audit
+  deliverable = a gap matrix in docs/, then fix rounds. **M–L**
 - **I-05 — Git-status file-open experience** (the flagship): ~~(a) status-file clicks open
   as EPHEMERAL temp tabs~~ + ~~(b) Diff|Source toggle header~~ **DONE (R6, 2026-08-01)** —
   row clicks route through `GitStatusOpenMode.clickAction` (diff default, untracked→source,
