@@ -137,13 +137,17 @@ I-## → TSK-### when the tasked board reconnects.
   `mktg-split` scene asserts `mdv.split` via AX (real guard). Eyeballed on VM pixels.
   RESIDUE: none known; owner feel-check on the installed app.
 - **I-20 — Markdown rendering GAPS audit + full link support (owner 2026-08-11):**
-  sweep what our renderer does NOT yet support (vs GFM/common extensions) and close the
-  high-value gaps. FIRST-CLASS LINKS especially: web hyperlinks, relative file links
-  (un-deadened 2026-08-01 with wikilinks — verify breadth), **absolute file paths**
-  (`/Users/...` and `file://` → open in a tab), **absolute FOLDER paths** (→ open as
-  folder/sidebar root or new session), mailto, anchors/heading fragments
-  (`#section-links` within a doc), and cross-doc anchors (`other.md#heading`). Audit
-  deliverable = a gap matrix in docs/, then fix rounds. **M–L**
+  **LINKS SLICE DONE 2026-08-11** — verified + pinned: web/mailto external ✓, relative +
+  wikilinks in-app ✓, absolute FILE paths ✓ (resolver step 1, new pins), absolute
+  FOLDER paths ✓ (fileExists is true for dirs; openPath routes to openFolder — pinned),
+  in-doc `#anchors` ✓ (same-doc allow); NEW: cross-doc anchors (`other.md#heading`) —
+  fragment rides `onOpenLocalFile` → `openLocalLink` → the `renderedAnchorTarget/Nonce`
+  channel; the rendered view scrolls on didFinish (getElementById → name → TOC-href
+  ladder, JSON-escaped). Anchor scroll applies to the RENDERED lens (an editor-lens
+  target opens at the file; heading-line mapping there = follow-up if wanted).
+  **REMAINING: the GAP MATRIX audit** — sweep the renderer vs GFM/common extensions
+  (task-list checkbox interactivity, ==highlight==, emoji shortcodes, TOC generation,
+  smart punctuation, …), deliverable docs/ matrix, then fix rounds. **M**
 - **I-05 — Git-status file-open experience** (the flagship): ~~(a) status-file clicks open
   as EPHEMERAL temp tabs~~ + ~~(b) Diff|Source toggle header~~ **DONE (R6, 2026-08-01)** —
   row clicks route through `GitStatusOpenMode.clickAction` (diff default, untracked→source,

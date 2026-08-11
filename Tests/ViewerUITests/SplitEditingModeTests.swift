@@ -191,6 +191,32 @@ final class SplitEditingModeTests: XCTestCase {
         XCTAssertNil(model.tabCoordinator.splitURL)
     }
 
+    // MARK: - I-20 cross-doc anchors (piggybacking this suite's model fixture)
+
+    func test_openLocalLink_withFragment_opensAndArmsTheAnchorChannel() throws {
+        let model = makeModel()
+        let url = tmpDir.appendingPathComponent("target.md")
+        try Data("# Deep Heading\n".utf8).write(to: url)
+        let nonce0 = model.renderedAnchorNonce
+
+        model.openLocalLink(url, fragment: "deep-heading")
+
+        XCTAssertEqual(model.currentURL, url, "the file opens")
+        XCTAssertEqual(model.renderedAnchorTarget, "deep-heading")
+        XCTAssertGreaterThan(model.renderedAnchorNonce, nonce0,
+                             "the rendered view is asked to scroll to the heading")
+    }
+
+    func test_openLocalLink_withoutFragment_leavesTheChannelAlone() throws {
+        let model = makeModel()
+        let url = tmpDir.appendingPathComponent("plainlink.md")
+        try Data("# p\n".utf8).write(to: url)
+        let nonce0 = model.renderedAnchorNonce
+        model.openLocalLink(url, fragment: nil)
+        XCTAssertEqual(model.currentURL, url)
+        XCTAssertEqual(model.renderedAnchorNonce, nonce0, "no fragment ⇒ no scroll ask")
+    }
+
     // MARK: the REAL surface — ContentToolbar's segment row (TSK-898)
     //
     // The first version of this feature edited the legacy ModeBar view, which

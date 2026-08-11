@@ -1229,10 +1229,14 @@ public struct ContentView: View {
             },
             // [[wikilinks]] + relative file links (2026-08-01): resolve
             // against the file's dir → workspace root and open IN-APP.
+            // I-20 (2026-08-11): the fragment rides along so
+            // `other.md#heading` lands ON the heading.
             workspaceRoot: model.sidebar.rootURL,
-            onOpenLocalFile: { url in
-                Task { @MainActor in model.openPath(url) }
-            }
+            onOpenLocalFile: { url, fragment in
+                Task { @MainActor in model.openLocalLink(url, fragment: fragment) }
+            },
+            anchorTarget: model.renderedAnchorTarget,
+            anchorNonce: model.renderedAnchorNonce
         )
     }
 }

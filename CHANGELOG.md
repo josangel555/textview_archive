@@ -19,6 +19,13 @@
   mechanism is reserved for genuinely viewing two different files side by side (which
   plain-text files' same-file split still uses).
 
+### Added
+- **Markdown links are first-class everywhere.** Web links and mailto open in your
+  browser/mail (as before); relative links and `[[wikilinks]]` open in-app; and now:
+  **absolute file paths** (`/Users/…` or `file://…`) open in a tab, **absolute folder
+  paths** open the folder, and **cross-document anchors** (`other.md#section`) open the
+  file AND scroll its preview to that heading. In-page `#section` links already worked.
+
 ### System work
 - CM6 bridge: nonce'd `flushChanges` → `flushAck` handshake (schema + encode/parse
   pins); `CMEditorTextSync` bounded-wait seam (host-tested); new `EditorFlushWebViewTests`

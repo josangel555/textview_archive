@@ -2191,6 +2191,24 @@ public final class DocumentModel: ObservableObject {
     /// Last export outcome (status line + tests).
     @Published public var renderedPDFExportResult: PDFExportResult?
 
+    /// I-20 cross-doc anchors (2026-08-11): a clicked `other.md#heading`
+    /// opens the file, then this channel asks its rendered view to scroll
+    /// to the heading (the find-nonce pattern; the view applies it once
+    /// the document is parsed).
+    @Published public private(set) var renderedAnchorTarget: String?
+    @Published public private(set) var renderedAnchorNonce: Int = 0
+
+    /// Open a clicked in-document local link: the file (or folder — the
+    /// `openPath` router handles both), plus an optional `#fragment` to
+    /// land on in the rendered view.
+    public func openLocalLink(_ url: URL, fragment: String?) {
+        openPath(url)
+        if let fragment, !fragment.isEmpty {
+            renderedAnchorTarget = fragment
+            renderedAnchorNonce += 1
+        }
+    }
+
     public struct PDFExportRequest: Equatable, Sendable {
         public let nonce: Int
         public let url: URL

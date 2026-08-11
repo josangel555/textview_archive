@@ -55,7 +55,15 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     /// then workspace root) and opened IN-APP through this callback. Nil
     /// (tests, split pane) keeps the old cancel-only behavior.
     public let workspaceRoot: URL?
-    public let onOpenLocalFile: ((URL) -> Void)?
+    /// The clicked local target + an optional `#fragment` (I-20 cross-doc
+    /// anchors, 2026-08-11: `other.md#heading` opens the file AND scrolls
+    /// its rendered view to the heading). Nil fragment = plain open.
+    public let onOpenLocalFile: ((URL, String?) -> Void)?
+    /// Cross-doc anchor consumption (I-20): on a nonce change the pane
+    /// scrolls to the element with id `anchorTarget` — once the document
+    /// is parsed (`didFinish` applies a pending one, like restoreScrollY).
+    public let anchorTarget: String?
+    public let anchorNonce: Int
     /// Rendered-markdown content scale (TSK-358): `markdown.css` multiplies its
     /// intrinsic px by `var(--mdv-content-scale)`; 1.0 = neutral. Applied live
     /// via JS (no reload), mirroring `pageZoom`, so the render cache is untouched.
@@ -94,7 +102,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         restoreScrollY: Double? = nil,
         onScrollCapture: ((URL, Double) -> Void)? = nil,
         workspaceRoot: URL? = nil,
-        onOpenLocalFile: ((URL) -> Void)? = nil
+        onOpenLocalFile: ((URL, String?) -> Void)? = nil,
+        anchorTarget: String? = nil,
+        anchorNonce: Int = 0
     ) {
         self.html = html
         self.baseURL = baseURL
@@ -118,6 +128,8 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.onScrollCapture = onScrollCapture
         self.workspaceRoot = workspaceRoot
         self.onOpenLocalFile = onOpenLocalFile
+        self.anchorTarget = anchorTarget
+        self.anchorNonce = anchorNonce
     }
 
     /// Perf P1 (TSK-1042): the warm-WebView cache key for this pane, or nil to
@@ -526,6 +538,14 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             c.lastScrollNonce = findScrollNonce
             webView.evaluateJavaScript(Self.scrollJS(findScrollCommand), completionHandler: nil)
         }
+        // I-20 cross-doc anchors: a new request stashes the fragment; apply
+        // now when the document is already parsed, else `didFinish` will
+        // (the just-opened file's page is usually still loading here).
+        if c.lastAnchorNonce != anchorNonce {
+            c.lastAnchorNonce = anchorNonce
+            c.pendingAnchor = anchorTarget
+            if c.documentReady { c.applyPendingAnchor(in: webView) }
+        }
         // Print / Export-as-PDF (TSK-638).
         if c.lastPrintNonce != printNonce {
             c.lastPrintNonce = printNonce
@@ -766,7 +786,12 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// open-in-app callback, kept current by make/updateNSView.
         var pageBaseURL: URL? = nil
         var workspaceRoot: URL? = nil
-        var onOpenLocalFile: ((URL) -> Void)? = nil
+        var onOpenLocalFile: ((URL, String?) -> Void)? = nil
+        /// I-20 cross-doc anchors: the fragment to scroll to once the
+        /// document is parsed (didFinish applies + clears it), and the
+        /// consumed request nonce.
+        var pendingAnchor: String? = nil
+        var lastAnchorNonce: Int = 0
         /// Match count + current index + pre-formatted "n/N" summary,
         /// emitted after each find run. (total, currentIndexOrNil, summary).
         var onFindCountChange: ((Int, Int?, String) -> Void)? = nil
@@ -934,10 +959,37 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                     "window.scrollTo({top: \(y), behavior: 'instant'});",
                     completionHandler: nil)
             }
+            // I-20 cross-doc anchors: the DOM is parsed now — land on the
+            // heading (wins over the restored offset above by running after).
+            applyPendingAnchor(in: webView)
             // Re-run any pending find that was queued before load.
             if !lastQuery.isEmpty {
                 runFind(in: webView, backwards: false)
             }
+        }
+
+        /// Scroll to the pending `#fragment`'s element and clear it. The
+        /// fragment is author text — shipped as a JSON string literal so
+        /// quotes/backslashes can't break out of the script. Falls back
+        /// from `getElementById` to the first `name=` match (older anchor
+        /// idiom); a missing target is a silent no-op (the file still
+        /// opened — that's the useful part).
+        func applyPendingAnchor(in webView: WKWebView) {
+            guard let frag = pendingAnchor, !frag.isEmpty else { return }
+            pendingAnchor = nil
+            guard let data = try? JSONSerialization.data(withJSONObject: [frag]),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            webView.evaluateJavaScript(
+                """
+                (function(){
+                  var f = decodeURIComponent(\(json)[0]);
+                  var e = document.getElementById(f)
+                       || document.getElementsByName(f)[0]
+                       || document.querySelector('a[href="#' + CSS.escape(f) + '"]');
+                  if (e) e.scrollIntoView({behavior: 'instant', block: 'start'});
+                })();
+                """,
+                completionHandler: nil)
         }
 
         /// JS that defines `window.__mdvFindRun(query, caseSensitive, direction)`
@@ -1077,7 +1129,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                 if let hit = WikiLinkResolver.resolve(
                     clicked: clicked, baseDir: pageBaseURL,
                     workspaceRoot: workspaceRoot) {
-                    open(hit)
+                    // I-20: carry the `#fragment` so `other.md#heading`
+                    // lands ON the heading, not at the top.
+                    open(hit, clicked.fragment)
                 } else {
                     ToastCenter.shared.post(.error,
                         "No file named \u{201C}\(clicked.lastPathComponent)\u{201D} "

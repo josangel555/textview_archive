@@ -60,4 +60,29 @@ import Foundation
     func unresolvableIsNil() {
         #expect(resolve("Ghost", existing: []) == nil)
     }
+
+    // MARK: - I-20 (owner 2026-08-11): absolute paths are first-class
+
+    @Test("an absolute FILE path resolves directly — anywhere on disk")
+    func absoluteFilePathResolvesDirect() {
+        // `[link](/Users/x/notes/todo.md)` — WebKit hands the absolute file
+        // URL through; step 1 must return it verbatim, no workspace ties.
+        let clicked = URL(fileURLWithPath: "/Users/x/notes/todo.md")
+        let hit = WikiLinkResolver.resolve(
+            clicked: clicked, baseDir: base, workspaceRoot: root,
+            fileExists: { $0 == "/Users/x/notes/todo.md" })
+        #expect(hit?.path == "/Users/x/notes/todo.md")
+    }
+
+    @Test("an absolute FOLDER path resolves too (the open router folders it)")
+    func absoluteFolderPathResolves() {
+        // `fileExists(atPath:)` is true for directories; the resolver
+        // returns the dir URL and `DocumentModel.openPath` routes it to
+        // `openFolder` — absolute folder links open the folder in-app.
+        let clicked = URL(fileURLWithPath: "/Users/x/projects/site")
+        let hit = WikiLinkResolver.resolve(
+            clicked: clicked, baseDir: base, workspaceRoot: root,
+            fileExists: { $0 == "/Users/x/projects/site" })
+        #expect(hit?.path == "/Users/x/projects/site")
+    }
 }
