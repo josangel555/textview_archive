@@ -2543,6 +2543,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyShortcut("view.closePane", to: closePaneItem)
         viewMenu.addItem(closePaneItem)
 
+        // S4c: cycle keyboard focus through the panes (wraps; no-op
+        // un-split). ⌥⌘` — the pane-cycling sibling of the system's ⌘`
+        // window cycling; ⌃` stays the terminal toggle.
+        let focusNextPaneItem = NSMenuItem(
+            title: "Focus Next Pane",
+            action: #selector(focusNextPane(_:)),
+            keyEquivalent: "`"
+        )
+        focusNextPaneItem.keyEquivalentModifierMask = [.command, .option]
+        focusNextPaneItem.target = self
+        applyShortcut("view.focusNextPane", to: focusNextPaneItem)
+        viewMenu.addItem(focusNextPaneItem)
+
         let swapItem = NSMenuItem(
             title: "Swap Split Panes",
             action: #selector(swapSplit(_:)),
@@ -3992,6 +4005,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func closeFocusedPane(_ sender: Any?) {
         model.tabCoordinator.closePane(id: model.tabCoordinator.paneAssignment.focusedPaneID)
+    }
+
+    @objc func focusNextPane(_ sender: Any?) {
+        model.tabCoordinator.focusNextPane()
     }
 
     @objc func toggleSplit(_ sender: Any?) {

@@ -32,6 +32,12 @@
   layouts persist**: split, quit, reopen — your panes, their tabs, and which one
   was focused all come back (per session, matched by file path; files deleted in
   the meantime just drop out).
+- **Panes interact like they should now.** Drag a tab within its pane's strip to
+  reorder it (insertion caret), or drag it onto the OTHER pane's strip to move it
+  there — the target strip lights up accent while you hover, and the moved tab
+  lands focused and selected. Clicking anywhere in a pane's content focuses that
+  pane (the ring follows), not just its tab strip. And View ▸ Focus Next Pane
+  (⌥⌘`) cycles the focus from the keyboard.
 - **Markdown links are first-class everywhere.** Web links and mailto open in your
   browser/mail (as before); relative links and `[[wikilinks]]` open in-app; and now:
   **absolute file paths** (`/Users/…` or `file://…`) open in a tab, **absolute folder

@@ -712,6 +712,16 @@ public struct ContentView: View {
                     paneColumn(pane, focused: pane.id == assignment.focusedPaneID)
                 }
             }
+            // S4c: clicking INTO a pane's content focuses it (strip clicks
+            // already do; WKWebView content clicks never reach a SwiftUI
+            // gesture — hence the observe-only NSEvent monitor). Mounted
+            // only on this split branch, so it never exists un-split.
+            .background(PaneFocusClickMonitor(
+                isActive: true,
+                channel: tabCoordinator.paneDropChannel,
+                paneIDs: assignment.panes.map(\.id),
+                focusedPaneID: assignment.focusedPaneID,
+                onFocus: { tabCoordinator.focusPane(id: $0) }))
         } else {
             content
         }
@@ -720,12 +730,15 @@ public struct ContentView: View {
     private func paneColumn(_ pane: PaneAssignment.Pane, focused: Bool) -> some View {
         VStack(spacing: 0) {
             PaneTabStrip(model: model, tabCoordinator: tabCoordinator,
+                         dropChannel: tabCoordinator.paneDropChannel,
                          pane: pane, isFocusedPane: focused)
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
             Divider()
             paneContentRegion(pane, focused: focused)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // S4c: this region's rect is the click-focus hit target.
+                .paneContentFocusFrame(id: pane.id, into: tabCoordinator.paneDropChannel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Focused-pane ring: the one visual answer to "which pane do my

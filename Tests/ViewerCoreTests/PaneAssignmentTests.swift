@@ -147,6 +147,40 @@ import ViewerCore
         #expect(p.isConsistent(against: [a, b, c]))
     }
 
+    // MARK: S4c — within-pane reorder (the strip drag)
+
+    @Test func reorderTab_movesRightAndLeft_inTabsStateGapCoords() {
+        var p = single()                   // one pane [a, b, c]
+        p.reorderTab(id: a, to: 3)         // gap past the end → a to the back
+        #expect(p.panes[0].tabIDs == [b, c, a])
+        p.reorderTab(id: a, to: 0)         // and back to the front
+        #expect(p.panes[0].tabIDs == [a, b, c])
+        #expect(p.isConsistent(against: [a, b, c]))
+    }
+
+    @Test func reorderTab_neverTouchesSelectionOrOtherPanes() {
+        var p = single()                   // selection b
+        p.splitFocusedPane(moving: b)      // pane0 [a, c] sel a · pane1 [b]
+        p.reorderTab(id: c, to: 0)         // reorder pane0 only
+        #expect(p.panes[0].tabIDs == [c, a])
+        #expect(p.panes[0].selectedTabID == a,
+                "selection tracks the id, not the position")
+        #expect(p.panes[1].tabIDs == [b], "the other pane is untouched")
+        #expect(p.focusedSelectedTabID == b, "focus/selection unchanged")
+        #expect(p.isConsistent(against: [a, b, c]))
+    }
+
+    @Test func reorderTab_unknownIDOrOutOfRangeGap_isANoOp() {
+        var p = single()
+        let before = p
+        p.reorderTab(id: d, to: 1)         // d isn't open anywhere
+        #expect(p == before)
+        p.reorderTab(id: a, to: 4)         // gap > count
+        #expect(p == before)
+        p.reorderTab(id: a, to: -1)
+        #expect(p == before)
+    }
+
     @Test func codableRoundTrip() throws {
         var p = single()
         p.splitFocusedPane(moving: b)

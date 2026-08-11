@@ -164,6 +164,11 @@ public final class TabCoordinator: ObservableObject {
     /// store byte-for-byte — the pre-panes world is unchanged.
     @Published public private(set) var paneAssignment = PaneAssignment()
 
+    /// S4c — the cross-pane geometry channel (strip drop targets +
+    /// content click-focus rects). Coordinator-owned so every pane strip
+    /// and the click monitor share one instance per window.
+    public let paneDropChannel = PaneDropChannel()
+
     /// Reconcile the overlay with the store: adopt `opened` (a just-added
     /// tab joins the focused pane), drop closed ids, re-validate
     /// selections, mirror the store's selection onto the focused pane,
@@ -219,6 +224,27 @@ public final class TabCoordinator: ObservableObject {
            let idx = tabs.tabs.firstIndex(where: { $0.id == sel }) {
             select(at: idx)
         }
+    }
+
+    /// Reorder a tab WITHIN its pane (the strip drag). `gap` is in
+    /// `TabsState.move` coordinates against the PANE's order. The flat
+    /// store's order is deliberately untouched while split — each pane
+    /// owns its strip order; the un-split world mirrors the store.
+    public func reorderPaneTab(id tabID: UUID, to gap: Int) {
+        var next = paneAssignment
+        next.reorderTab(id: tabID, to: gap)
+        if next != paneAssignment { paneAssignment = next }
+    }
+
+    /// Cycle focus to the next pane in the run (wraps). No-op un-split.
+    /// The app-wide selection follows the pane's remembered tab, same as
+    /// clicking into it.
+    public func focusNextPane() {
+        let a = paneAssignment
+        guard a.isSplit,
+              let idx = a.panes.firstIndex(where: { $0.id == a.focusedPaneID })
+        else { return }
+        focusPane(id: a.panes[(idx + 1) % a.panes.count].id)
     }
 
     /// Move a tab into `paneID` (drag between strips / "Open in New

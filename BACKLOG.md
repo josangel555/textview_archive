@@ -165,12 +165,24 @@ I-## → TSK-### when the tasked board reconnects.
     ~~session persistence~~ (S4b DONE: `SessionSnapshot.PaneLayoutState` by PATH
     (ids re-mint on restore), captured in makeSnapshot (nil un-split), applied LAST
     in hydrate; missing files drop, since-opened tabs adopt; round-trip + legacy-
-    decode pinned). REMAINING (S4c): ⌘W/⌘T/etc. route to the focused pane;
-    "Split Editor Right" command + tab context-menu "Open in New Pane"; session
-    snapshot gains additive `paneAssignment` (Codable already); restore normalizes
-    against restored tab ids. Relation: the window `splitURL` preview pane is
-    eventually SUPERSEDED by a real second pane (park until S3 lands); per-tab
-    split-editing (I-19) lives inside whichever pane hosts the tab — orthogonal ✓.
+    decode pinned). ~~S4c interaction slice~~ **DONE 2026-08-11**: within-pane strip
+    REORDER + cross-strip tab DRAG (`stripReorderable` external target over
+    `PaneDropChannel` strip rects — the tab→session-pill pattern; target strip
+    highlights accent while hovered; `movePaneTab` commits, destination takes
+    focus); content-CLICK focuses the pane (`PaneFocusClickMonitor` — observe-only
+    NSEvent mouse-down monitor hit-testing the channel's content rects; WKWebView
+    clicks never reach SwiftUI gestures); View ▸ Focus Next Pane (⌥⌘`, wraps).
+    ⌘W/⌘T already route to the focused pane by construction (app selection IS the
+    focused pane's selection; didOpenTab joins the focused pane). Host teeth:
+    reorder model pins + coordinator reorder/focus-cycle pins + `PaneDropChannelTests`
+    (hit-test/prune/dedup/flip-math); VM rung `AXPaneInteractionTests` (HID
+    cross-strip drag + content-click focus). REMAINING (S4d): pane divider
+    drag-resize (panes share space equally today; persist weights additively in
+    `PaneLayoutState`), per-pane ContentToolbar decision (owner call), tab
+    context-menu "Open in New Pane" (nice-to-have; the drag covers the need).
+    Relation: the window `splitURL` preview pane is eventually SUPERSEDED by a
+    real second pane; per-tab split-editing (I-19) lives inside whichever pane
+    hosts the tab — orthogonal ✓. Mixed-axis GRIDS = future split-tree.
 - ~~**I-19 — Split preview lives INSIDE the tab**~~ **DONE 2026-08-11**: per-tab
   `Tab.isSplitEditing` (Equatable-visible, persisted via additive-optional
   `TabSnapshot.splitEditing`, session restore threads it through `appendLazyTab`);

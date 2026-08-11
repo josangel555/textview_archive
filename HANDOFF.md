@@ -1,5 +1,5 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — EDITOR PANES epic S1–S4b LANDED; S4c drag remains (2026-08-11 ~04:15)
+# Handoff — EDITOR PANES epic S1–S4c LANDED; S4d resize remains (2026-08-11 ~04:45)
 
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ the S4a+S4b
 commit ("Split Editor Down + pane layouts persist") — `git log --oneline -12` shows the
@@ -33,11 +33,15 @@ I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain 
   `with()` + `hasSamePersistedContent`. "Split, quit, reopen ⇒ splits back."
 - **VM-verified**: `panes-split` + `panes-down` scenes PASS on real AX ids
   (mdv.paneStrip[.focused], mdv.pane.close) and were eyeballed (side-by-side + stacked).
-- **S4c REMAINING**: cross-strip tab DRAG (model op `movePaneTab` exists; wire the
-  strip drag — the `StripExternalTarget` tab→session-pill pattern is the substrate),
-  content-click focuses the pane (strip clicks focus today; WKWebView clicks don't),
-  pane divider drag-resize (panes share space equally now), per-pane ContentToolbar
-  decision, keyboard focus-next-pane command. Mixed-axis GRIDS = future split-tree.
+- **S4c interactions** ✓ (2026-08-11 tail): within-pane strip REORDER + cross-strip
+  tab DRAG (`PaneDropChannel` strip rects + `StripExternalTarget`; hovered target
+  strip highlights accent; `movePaneTab` commits); content-CLICK focuses the pane
+  (`PaneFocusClickMonitor`, observe-only NSEvent monitor over the channel's content
+  rects); View ▸ Focus Next Pane (⌥⌘`). Host teeth: reorder/focus pins +
+  `PaneDropChannelTests`; VM rung: `AXPaneInteractionTests` (HID drag + click).
+- **S4d REMAINING**: pane divider drag-resize (equal shares today; persist weights
+  additively in `PaneLayoutState`), per-pane ContentToolbar decision (owner call).
+  Mixed-axis GRIDS = future split-tree.
 
 ## Also landed this session (earlier arcs, all CI-green + installed)
 - O-6 flush-before-read: nonce'd flushChanges→flushAck + CMEditorTextSync bounded wait
@@ -66,13 +70,11 @@ I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain 
 
 ## How to resume
 1. `git log --oneline -12` · `git status --short` (only the 4 protected untracked).
-2. PENDING CI at handoff time: `4d9e2264` (S4a+S4b code) and `15b4c420` (docs-only) —
-   the loop steps per commit, so expect two lines. Green on 4d9e2264 ⇒
-   `bash scripts/build-app.sh release --install` (owner: ⌘Q+relaunch). Red ⇒ fix
-   forward (stale pin suites are the usual — SessionSnapshot/TabsState families were
-   run green locally; a miss would be an untargeted pin like the toggleSplit ones).
-3. Next work: **S4c cross-strip drag** (see I-21 in BACKLOG) or the owner's next batch.
-   Then: I-20 gap-matrix audit, mermaid zoom clip, AutoSave (unblocked).
+2. CI: `4d9e2264` + `cfbe1b57` both came back rc=0; release INSTALLED to
+   /Applications (owner: ⌘Q+relaunch). The S4c commit is pending its CI line —
+   green ⇒ reinstall; red ⇒ fix forward (stale pin suites are the usual).
+3. Next work: **S4d pane divider drag-resize** (see I-21 in BACKLOG) or the owner's
+   next batch. Then: I-20 gap-matrix audit, mermaid zoom clip, AutoSave (unblocked).
 4. VM lane: rsync → `ssh macOS15 'cd markdown_viewer && touch rust-core/link/*.a &&
    bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh
    run <scene>`; scenes: panes-split, panes-down, mktg-split, terminal-dock-right.

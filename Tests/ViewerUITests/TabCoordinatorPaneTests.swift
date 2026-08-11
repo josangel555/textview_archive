@@ -137,6 +137,49 @@ final class TabCoordinatorPaneTests: XCTestCase {
         XCTAssertTrue(c.paneAssignment.isConsistent(against: openIDs(c)))
     }
 
+    // MARK: S4c — strip-drag reorder + focus cycling
+
+    func test_reorderPaneTab_reordersTheOverlayOnly_storeOrderUntouched() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)
+        c.splitFocusedPane(movingSelected: true)   // pane0 [a, b] · pane1 [c]
+        let storeOrder = openIDs(c)
+
+        c.reorderPaneTab(id: b.id, to: 0)          // pane0 → [b, a]
+
+        XCTAssertEqual(c.paneAssignment.panes[0].tabIDs, [b.id, a.id])
+        XCTAssertEqual(openIDs(c), storeOrder,
+                       "while split, each pane owns its order — the flat store keeps its own")
+        XCTAssertEqual(c.selected?.id, x.id, "selection unaffected by a strip reorder")
+        XCTAssertTrue(c.paneAssignment.isConsistent(against: openIDs(c)))
+    }
+
+    func test_focusNextPane_cyclesAndWraps_drivingTheAppSelection() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b")
+        c.append(a); c.append(b)
+        c.splitFocusedPane(movingSelected: true)   // focus pane1 (b)
+        let p0 = c.paneAssignment.panes[0].id
+        let p1 = c.paneAssignment.panes[1].id
+
+        c.focusNextPane()
+        XCTAssertEqual(c.paneAssignment.focusedPaneID, p0, "wraps past the end")
+        XCTAssertEqual(c.selected?.id, a.id, "the pane's remembered tab becomes current")
+
+        c.focusNextPane()
+        XCTAssertEqual(c.paneAssignment.focusedPaneID, p1)
+        XCTAssertEqual(c.selected?.id, b.id)
+    }
+
+    func test_focusNextPane_isANoOpWhileUnsplit() {
+        let c = TabCoordinator()
+        c.append(makeTab("solo.md"))
+        let before = c.paneAssignment
+        c.focusNextPane()
+        XCTAssertEqual(c.paneAssignment, before)
+    }
+
     // MARK: S4b — persistence round-trip (split, close, reopen ⇒ splits back)
 
     func test_paneLayout_capturesByPath_andRestoresOntoFreshTabIDs() {

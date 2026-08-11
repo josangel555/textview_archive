@@ -177,6 +177,21 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         panes[to].selectedTabID = tabID
     }
 
+    /// Reorder `tabID` WITHIN its own pane (the strip drag). `gap` is in
+    /// `TabsState.move(from:to:)` coordinates against the pane's ORIGINAL
+    /// order — an insertion point `0...count`. Selections are untouched
+    /// (they track ids, not positions). Cross-pane moves are
+    /// `moveTab(id:toPane:at:)`.
+    public mutating func reorderTab(id tabID: UUID, to gap: Int) {
+        guard let p = panes.firstIndex(where: { $0.tabIDs.contains(tabID) }),
+              let from = panes[p].tabIDs.firstIndex(of: tabID),
+              gap >= 0, gap <= panes[p].tabIDs.count else { return }
+        let moved = panes[p].tabIDs.remove(at: from)
+        let insertAt = (from < gap) ? (gap - 1) : gap
+        panes[p].tabIDs.insert(
+            moved, at: min(max(insertAt, 0), panes[p].tabIDs.count))
+    }
+
     /// A tab OPENED in the flat store: joins `paneID` (default: the
     /// focused pane) and becomes its selection — matching today's
     /// open-selects behavior, per pane.
