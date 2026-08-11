@@ -66,8 +66,11 @@ I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain 
 
 ## How to resume
 1. `git log --oneline -12` · `git status --short` (only the 4 protected untracked).
-2. Watch the CI line for the S4a+S4b head → green ⇒ `bash scripts/build-app.sh release
-   --install` (owner: ⌘Q+relaunch). Red ⇒ fix forward (pin suites are the usual).
+2. PENDING CI at handoff time: `4d9e2264` (S4a+S4b code) and `15b4c420` (docs-only) —
+   the loop steps per commit, so expect two lines. Green on 4d9e2264 ⇒
+   `bash scripts/build-app.sh release --install` (owner: ⌘Q+relaunch). Red ⇒ fix
+   forward (stale pin suites are the usual — SessionSnapshot/TabsState families were
+   run green locally; a miss would be an untargeted pin like the toggleSplit ones).
 3. Next work: **S4c cross-strip drag** (see I-21 in BACKLOG) or the owner's next batch.
    Then: I-20 gap-matrix audit, mermaid zoom clip, AutoSave (unblocked).
 4. VM lane: rsync → `ssh macOS15 'cd markdown_viewer && touch rust-core/link/*.a &&
