@@ -47,21 +47,34 @@ final class DocumentModelSplitTests: HeadlessUITestCase {
         XCTAssertNil(model.splitURL, "closeSplit clears splitURL")
     }
 
-    /// `toggleSplit` opens with the current file when closed and closes
-    /// when open — the menu/keyboard "Toggle Split" contract.
-    func test_toggleSplit_opensWithCurrentFile_thenCloses() throws {
+    /// The menu/keyboard "Toggle Split" contract — I-19 (2026-08-11):
+    /// markdown routes to the PER-TAB split-editing layout; files without
+    /// a rendered preview keep the classic same-file pane.
+    func test_toggleSplit_markdown_drivesPerTabLayout_thenExits() throws {
         let url = try harness.writeFile("t.md", "# T\n")
         let model = harness.model
         model.open(url: url)
         XCTAssertFalse(model.isSplitOpen, "precondition: no split open")
 
         model.toggleSplit()
-        XCTAssertTrue(model.isSplitOpen, "first toggle opens a split")
-        XCTAssertEqual(model.splitURL, model.currentURL,
-                       "toggle opens the split on the current file")
+        XCTAssertTrue(model.isSplitEditingActive, "first toggle enters the per-tab layout")
+        XCTAssertNil(model.splitURL, "markdown same-file split does not claim the pane")
 
         model.toggleSplit()
-        XCTAssertFalse(model.isSplitOpen, "second toggle closes the split")
+        XCTAssertFalse(model.isSplitEditingActive, "second toggle exits the layout")
+    }
+
+    func test_toggleSplit_nonMarkdown_opensThePane_thenCloses() throws {
+        let url = try harness.writeFile("t.txt", "text\n")
+        let model = harness.model
+        model.open(url: url)
+
+        model.toggleSplit()
+        XCTAssertTrue(model.isSplitOpen, "no rendered preview ⇒ the classic pane")
+        XCTAssertEqual(model.splitURL, model.currentURL)
+
+        model.toggleSplit()
+        XCTAssertFalse(model.isSplitOpen, "second toggle closes the pane")
     }
 
     /// `toggleSplit` is a no-op when there's nothing to show (no current

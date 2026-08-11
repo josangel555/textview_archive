@@ -957,8 +957,11 @@ final class DocumentModelTests: XCTestCase {
     }
 
     func test_toggleSplit_opensWithCurrentFile_thenCloses() throws {
+        // I-19 (2026-08-11): the PANE contract now belongs to files without
+        // a rendered preview (markdown routes to the per-tab layout —
+        // pinned in SplitEditingModeTests/DocumentModelSplitTests).
         let model = makeModel()
-        let a = try writeFile("a.md", "# a\n")
+        let a = try writeFile("a.txt", "text\n")
         model.open(url: a)
         XCTAssertFalse(model.isSplitOpen)
         model.toggleSplit()
