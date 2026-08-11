@@ -4481,3 +4481,19 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   actually built surfaced 235 ids (vs 27) including every "impossible" right-side id.
   Same family as the stale-dist trap: before concluding a fix failed on the VM, verify
   the built product's freshness (binary mtime vs the commit, or a marker the fix adds).
+
+- **Every rebuild-constructor path must carry EVERY field — new struct fields silently
+  die in them (2026-08-11, the pane-orientation reset).** `PaneAssignment.normalized()`
+  rebuilt through the internal init and dropped the just-added `orientation` — every
+  store mutation reset splits to horizontal. Same family as `SessionSnapshot.with()`
+  (whose doc records the identical footgun for persisted fields — and which ALSO needed
+  the new `paneLayout` carried). When adding a field to a value type, grep for every
+  place the type is RECONSTRUCTED (inits, `with`, normalize/rebuild helpers, equality/
+  content-comparison functions) — the compiler only catches the memberwise sites.
+
+- **A new `MDV_UI_SCENE` id MUST be registered in `UISceneRegistry.staticScenes` —
+  the applier's if-chain never runs for an unregistered id (2026-08-11).** The
+  panes-split scene captured a stale default window because the registry rejected the
+  unknown id upstream of `UISceneApplier.apply`; nothing logs loudly in the capture
+  flow. Symptom: the PNG shows leftover VM state and the scene's fixtures are absent.
+  Register the SceneSpec + the runner's scene_expect entry together.

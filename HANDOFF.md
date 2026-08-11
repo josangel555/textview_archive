@@ -1,122 +1,77 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — bottom dock LANDED + owner round-2 batch FIXED (2026-08-09 06:30)
+# Handoff — EDITOR PANES epic S1–S4b LANDED; S4c drag remains (2026-08-11 ~04:15)
 
-**ROUND 2 (owner 4 AM batch, fixed in `50e6b45c`):** sidebar divider
-stored↔rendered decorrelation (snap-at-origin + flex cascade — racing/stuck/
-dead-third-panel one root, bad persisted heights SELF-HEAL on first drag);
-dock placement now APP-GLOBAL (sessions apply visibility only); search-result
-LazyVStack identity bug (gaps + wrong-file clicks) + folder hints + click
-selects the matched WORD (gotoLine selectLength end-to-end); instant press
-feedback on pills/tabs + HUD paints BEFORE the switch (asyncAfter 80ms);
-concise value-only footer + relative-date click toggle (plain @State — an
-@AppStorage killed StatusBar's diff-skip, re-body budget caught it); traffic
-lights centered (unified-toolbar spacer) + title-band gradient. VM-verified:
-fill-check-combo clean (pill gutters, no double scroll, concise footer,
-centered lights). Owner re-test list + parked design items: BACKLOG "★ OWNER
-ROUND-2 BATCH". Older context below.
-
-**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · **branch/SHA:** main @
-`d0782617` + the fix-forward commit carrying this handoff (CI: `0c417c26` GREEN,
-`d0782617` RED → fixed forward in that commit — two missed suites, see below).
-/Applications/TextView.app = RELEASE @ `11967e90` (PRE-rework — install a fresh release
-only after the fix-forward commit's CI line is rc=0). tasked board UNREACHABLE (3rd day)
-— BACKLOG + commit messages are the state of record.
+**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ the S4a+S4b
+commit ("Split Editor Down + pane layouts persist") — `git log --oneline -12` shows the
+whole arc. CI loop gates each head in the background (NEVER wait on it / no inline full
+gates — owner re-directive 2026-08-11, memory `ci-background-loop`); installs ride its
+green notifications. /Applications = the S3 head (panes usable; the S4a/S4b head installs
+on its green line). tasked board OFFLINE all week — BACKLOG + commits are the record.
 
 ## Mission
-Owner-driven interactive drain. This session (post-compaction) executed the owner's
-explicitly queued Phase 2: **the BOTTOM DOCK REWORK — done end-to-end** (spec was
-BACKLOG "★ BOTTOM DOCK REWORK", now marked LANDED with residue).
+Owner-driven interactive feature push. This session: dist publish (TextView-2026-08-11
+on textview_dist), O-6 flush-before-read data-loss fix, I-19 per-tab split preview,
+I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain tabs".
 
-## Current state
-- **Commit 1 (`0c417c26`, CI GREEN): bottom dock = TABS.** One panel visible behind a
-  tab strip (`BottomDockTabs.resolve`, selection persisted, hidden-choice → first);
-  ONE shared band height (`PanelLayoutStore.bottomBandHeight`) dragged from a 12px
-  gutter+pill (sidebar divider idiom); chips = drag sources + move menu; strip carries
-  move/hide for the selected panel. `DockedToolWindow` lost its bottom-band plumbing
-  (right dock unchanged).
-- **Commit 2 (`d0782617`, CI RED → fixed forward): terminal = REGULAR tool window.**
-  `SidebarPanelKind.terminal` + `preferredDefaultEdge` (.bottom; a NEW per-panel
-  default layered under the global default — every PanelEdgeAssignment normalization
-  site resolves per-panel now); presence hard-false = user-summoned (`.auto` → hidden,
-  toggle forces `.shown`); body = `TerminalPanelSection` via `SidebarPanelBody` (works
-  in bottom tabs / right dock / left accordion); one-shot `TerminalPanelMigration`
-  (legacy isOpen/paneEdge keys read literally + marker) keeps a previously-open pane
-  open in the same dock. DELETED: TerminalToggleButton, TerminalPaneEdge + bridge +
-  Settings placement rows, TerminalDragPayload/DropZone + its Info.plist UTI,
-  sideTerminalColumn + both terminal resize handles, in-pane dock/close controls.
-  ⌃` toggles the panel; last-shell-tab close hides the window (`onLastTabClosed`
-  wired in DocumentModel). Scenes drive placement through PanelLayoutStore.
-- **CI red on commit 2 — cause + fix (in the fix-forward commit):** two suites my
-  targeted filter missed: `PanelEdgeTests` (5 "all panels on left" list pins — now
-  exclude terminal / expect it on bottom) and `ResizeGestureSpaceAuditTests` (its
-  manifest expected 2 DragGestures in TerminalView.swift — both handles deleted;
-  entry removed, DockedToolWindow stays at 2 = right edge handle + dock gutter).
-- **VM render rung DONE (partial T6, eyeballed):** `terminal` scene = tabbed band
-  (gutter+pill, accent Terminal tab, move/hide, section header + "+", LIVE shell) —
-  PASS + eyeballed; `terminal-dock-right` = right tool window + content BOTH
-  compositing (TSK-960 recipe now on RightDockContainer) — eyeballed twice (first run
-  had a blank content WebView = the known first-run capture flake, TSK-1247 class;
-  re-run clean).
-- **In flight:** nothing half-written.
-- **Next action:** watch CI on the fix-forward commit → rc=0 → `bash
-  scripts/build-app.sh release --install` + tell the owner ⌘Q+relaunch. Then the
-  owner-eyeball tail (BACKLOG). Then OSS-prep O-1..O-6 or the next owner batch.
+## Current state — the panes epic (BACKLOG I-21 has full detail)
+- **S1 model** ✓ `PaneAssignment` (ViewerCore, pure): panes[{id,tabIDs,selectedTabID}]
+  + focusedPaneID + orientation; ops split/close-absorbs/move/select-focuses/didOpen/
+  didClose; `normalized(against:)` = the reconciliation safety net. 15-test suite.
+- **S2 coordinator** ✓ TabCoordinator publishes the assignment; `syncPaneAssignment()`
+  reconciles after EVERY mutation primitive; single-pane mirrors the store byte-for-byte
+  (`mirrorSinglePane`); verbs splitFocusedPane(movingSelected:direction:)/focusPane
+  (drives app selection)/closePane/movePaneTab. `TabCoordinatorPaneTests`.
+- **S3 render** ✓ split ⇒ AnyLayout H/V run of pane columns: `PaneTabStrip` (TabBarItem
+  chips; actions resolve STORE indices at click time; Close Pane button) + the mounted
+  ZStack filtered per pane, visibility on the PANE's selection, find/active gating on
+  the FOCUSED pane; focused ring; window TabBar stands down while split. Menu: View ▸
+  Split Editor Right / Split Editor Down / Close Pane.
+- **S4a orientation** ✓ first split picks the axis; `normalized()` carries it (dropping
+  it was a latent reset — LESSONS).
+- **S4b persistence** ✓ `SessionSnapshot.PaneLayoutState` by FILE PATH (ids re-mint on
+  restore); captured in makeSnapshot (nil un-split), applied LAST in hydrate; carried in
+  `with()` + `hasSamePersistedContent`. "Split, quit, reopen ⇒ splits back."
+- **VM-verified**: `panes-split` + `panes-down` scenes PASS on real AX ids
+  (mdv.paneStrip[.focused], mdv.pane.close) and were eyeballed (side-by-side + stacked).
+- **S4c REMAINING**: cross-strip tab DRAG (model op `movePaneTab` exists; wire the
+  strip drag — the `StripExternalTarget` tab→session-pill pattern is the substrate),
+  content-click focuses the pane (strip clicks focus today; WKWebView clicks don't),
+  pane divider drag-resize (panes share space equally now), per-pane ContentToolbar
+  decision, keyboard focus-next-pane command. Mixed-axis GRIDS = future split-tree.
 
-## Key decisions & rationale
-- **Terminal presence ≡ false** ("user-summoned"): `.auto` must never auto-open a
-  shell pane; the rail/menu toggle forces `.shown`/`.hidden`. The idiom for any future
-  non-data panel.
-- **Per-panel `preferredDefaultEdge`** rather than migrating an explicit edge entry:
-  fresh installs get terminal-on-bottom with an EMPTY stored map (canonical encode);
-  `edge()`, `setEdge()`, `setDefaultEdge()`, `init` all normalize per-panel.
-- **Terminal visibility rides per-session panel layout now** — sessions saved
-  pre-rework open with the terminal hidden (by design; surface to owner if it bites).
-- **Right-of-content AX void is PRE-EXISTING** (never one id in any historical dump;
-  `.contain` through the whole chain doesn't fix it) — filed in BACKLOG under the
-  TSK-1577 family; right-dock scenes assert via the dense-chip PIXEL eval instead.
+## Also landed this session (earlier arcs, all CI-green + installed)
+- O-6 flush-before-read: nonce'd flushChanges→flushAck + CMEditorTextSync bounded wait
+  at ⌘W/⌘Q/switch/menu-save + page blur/hide self-flush. Webview ordering teeth.
+- I-19: Split preview is PER-TAB state (Tab.isSplitEditing; window pane = two-file only).
+- I-20 links slice: absolute file/folder paths pinned; `other.md#heading` scrolls to the
+  heading (gotoLine selectLength end-to-end; markdown coerces rendered→editor).
+- Dist publish: TextView-2026-08-11.zip on github.com/josangel555/textview_dist.
+- Round-2 owner batch (sidebar divider snap+cascade, global dock placement, search
+  grouping/jump, press feedback, concise footer, centered traffic lights).
 
-## Gotchas (full text in LESSONS.md, 2026-08-09)
-- A per-item default layered on a global default must be resolved at EVERY
-  normalization site (init/setEdge/setDefaultEdge) — a missed `!= defaultEdge` strips
-  or keeps the wrong overrides.
-- Deleted persisted fields still have live VALUES in old defaults — migrate by literal
-  key + one-shot marker (absence-of-new-state ≠ migrated; it's also fresh-install).
-- Source-audit tests (`ResizeGestureSpaceAuditTests` manifest, ratchets) bite on
-  DELETIONS too — deleting a file's audited sites needs the manifest updated.
-- First capture-lane run after a VM app rebuild can show a BLANK content WKWebView
-  (TSK-1247 class) — re-run before diagnosing a compositing regression.
+## Key decisions
+- Panes are an ORDER+SELECTION OVERLAY on the single flat tab store — no ownership
+  migration; `normalized()` absorbs every store mutation. App "current tab" = focused
+  pane's selection. Single-axis v1 (orientation), not a split tree.
+- Pane persistence by PATH, never tab id (ids re-mint on restore).
+- CI: background loop only; report at commit; install on green lines; NEVER block work.
 
-## Files that matter
-- `Sources/ViewerCore/BottomDockTabs.swift` — tab selection resolve + keys.
-- `Sources/ViewerUI/DockedToolWindow.swift` — tabbed `BottomDockContainer` (strip /
-  gutter / chips), right-dock pane, PanelDragMonitor.
-- `Sources/ViewerCore/SidebarPanelKind.swift` — `.terminal` + `preferredDefaultEdge`.
-- `Sources/ViewerCore/PanelEdge.swift` — per-panel default resolution + normalize.
-- `Sources/ViewerCore/TerminalPanelMigration.swift` — one-shot legacy migration.
-- `Sources/ViewerUI/Terminal/TerminalPanelSection.swift` — the panel body (shell
-  lifecycle on appear/disappear).
-- `Sources/ViewerUI/PanelLayoutStore.swift` — bottomSelection/bottomBandHeight +
-  migration hook in init.
-- Tests: `TerminalPanelTests` (model+migration+hide-bridge), `BottomDockTabsTests`,
-  `DockLayoutStoreTests` (bottom section), reworked `SideDockCompositingTests`.
-- `scripts/vm-uitest.sh` — terminal-dock-right = pixel eval (AX-void note).
-
-## Open questions / blockers
-- tasked board offline — ticket debt for the whole rework on reconnect.
-- Owner-eyeball tail (BACKLOG): tab band feel, terminal-in-dock, migration on the
-  owner's real defaults, hex caret/tandem + session HUD + settings grid from the
-  previous session.
-- OSS-prep O-1..O-6 untouched; `git-filter-repo` still needs owner dep-approval.
+## Gotchas (LESSONS.md 2026-08-11 tail)
+- Rebuild-constructor paths drop new struct fields (orientation reset; with() family).
+- New MDV_UI_SCENE ids MUST be in UISceneRegistry.staticScenes or the applier never
+  runs (capture silently shows leftover state).
+- A "fix didn't work on the VM" verdict is void until the fix is PROVEN in the walked
+  binary (the right-side AX void was "unfixable" against a stale build).
+- Don't pump the runloop inside a WKScriptMessageHandler callback (flush design).
 
 ## How to resume
-1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -8` ·
-   `git status --short` (only the 4 protected untracked files).
-2. Check the CI Monitor line for the LAST commit; red → fix forward. Green → build
-   release + install to /Applications (owner: ⌘Q+relaunch).
-3. Mirror refresh after each committed round (from the CloudDocs side:
-   `git -C '<iCloud-Drive>/Documents/workspaces/claude/markdown_viewer' fetch /Users/me/Documents/workspaces/claude/markdown_viewer main`
-   then `merge --ff-only FETCH_HEAD`).
-4. VM lane: rsync (excludes .build/dist) → `ssh macOS15 'cd markdown_viewer && touch
-   rust-core/link/*.a && bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password>
-   bash scripts/vm-uitest.sh run <scene>` → Read the PNG. Scenes: `terminal`,
-   `terminal-dock-right`, `fill-check-*`.
+1. `git log --oneline -12` · `git status --short` (only the 4 protected untracked).
+2. Watch the CI line for the S4a+S4b head → green ⇒ `bash scripts/build-app.sh release
+   --install` (owner: ⌘Q+relaunch). Red ⇒ fix forward (pin suites are the usual).
+3. Next work: **S4c cross-strip drag** (see I-21 in BACKLOG) or the owner's next batch.
+   Then: I-20 gap-matrix audit, mermaid zoom clip, AutoSave (unblocked).
+4. VM lane: rsync → `ssh macOS15 'cd markdown_viewer && touch rust-core/link/*.a &&
+   bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh
+   run <scene>`; scenes: panes-split, panes-down, mktg-split, terminal-dock-right.
+5. Mirror after each round: from the CloudDocs clone, `fetch <repo> main` +
+   `merge --ff-only FETCH_HEAD`. Board still offline — keep BACKLOG authoritative.
