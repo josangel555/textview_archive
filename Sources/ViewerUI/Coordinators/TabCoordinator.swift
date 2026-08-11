@@ -153,6 +153,80 @@ public final class TabCoordinator: ObservableObject {
     /// because it shares the "what's on screen" lifecycle.
     @Published public var splitURL: URL? = nil
 
+    // MARK: - Editor panes (I-21 S2, owner 2026-08-11)
+
+    /// The pane overlay: which tab ids render in which pane's strip, each
+    /// pane's own selection, and the focused pane. The flat `tabs` store
+    /// stays the OWNER of tabs (and, until S3 renders per-pane, of the
+    /// app-wide selection); `syncPaneAssignment()` reconciles the overlay
+    /// after every store mutation, so every existing tab path keeps
+    /// working untouched. Single-pane (un-split) the overlay mirrors the
+    /// store byte-for-byte — the pre-panes world is unchanged.
+    @Published public private(set) var paneAssignment = PaneAssignment()
+
+    /// Reconcile the overlay with the store: adopt `opened` (a just-added
+    /// tab joins the focused pane), drop closed ids, re-validate
+    /// selections, mirror the store's selection onto the focused pane,
+    /// and keep single-pane order in lockstep. Equality-guarded.
+    private func syncPaneAssignment(opened newTabID: UUID? = nil) {
+        var next = paneAssignment
+        if let id = newTabID, next.pane(containing: id) == nil {
+            next.didOpenTab(id: id)
+        }
+        next = next.normalized(against: tabs.tabs.map(\.id))
+        if let sel = tabs.selected?.id, next.pane(containing: sel) != nil {
+            next.selectTab(id: sel)
+        }
+        next.mirrorSinglePane(order: tabs.tabs.map(\.id),
+                              selected: tabs.selected?.id)
+        if next != paneAssignment { paneAssignment = next }
+    }
+
+    /// Split: a new focused pane right of the current one. `movingSelected`
+    /// tears the store-selected tab into it (the selection is unchanged —
+    /// the same tab stays current, now in the new pane).
+    public func splitFocusedPane(movingSelected: Bool) {
+        var next = paneAssignment
+        next.splitFocusedPane(moving: movingSelected ? tabs.selected?.id : nil)
+        paneAssignment = next
+    }
+
+    /// Focus `paneID` and make ITS remembered selection the app-wide
+    /// current tab (click-into-a-pane / next-pane command semantics).
+    public func focusPane(id paneID: UUID) {
+        var next = paneAssignment
+        next.focusPane(id: paneID)
+        paneAssignment = next
+        if let sel = next.focusedPane.selectedTabID,
+           let idx = tabs.tabs.firstIndex(where: { $0.id == sel }) {
+            select(at: idx)   // runs the sync — keeps both sides agreed
+        }
+    }
+
+    /// Close a pane; its tabs are absorbed by the neighbor (never closed).
+    /// The app-wide selection follows the absorbing pane's selection.
+    public func closePane(id paneID: UUID) {
+        var next = paneAssignment
+        next.closePane(id: paneID)
+        paneAssignment = next
+        if let sel = next.focusedPane.selectedTabID,
+           let idx = tabs.tabs.firstIndex(where: { $0.id == sel }) {
+            select(at: idx)
+        }
+    }
+
+    /// Move a tab into `paneID` (drag between strips / "Open in New
+    /// Pane"). The destination pane takes focus and shows the moved tab.
+    public func movePaneTab(id tabID: UUID, toPane paneID: UUID, at index: Int? = nil) {
+        var next = paneAssignment
+        next.moveTab(id: tabID, toPane: paneID, at: index)
+        next.focusPane(id: paneID)
+        paneAssignment = next
+        if let idx = tabs.tabs.firstIndex(where: { $0.id == tabID }) {
+            select(at: idx)
+        }
+    }
+
     public init() {}
 
     // MARK: - Value types
@@ -187,12 +261,14 @@ public final class TabCoordinator: ObservableObject {
     public func append(_ tab: ViewerCore.Tab) {
         tabs.append(tab)
         refreshOpenTabURLs()
+        syncPaneAssignment(opened: tab.id)
     }
 
     public func select(at index: Int) {
         tabs.select(at: index)
         // `selectedIndex` change doesn't shift the URL set; skip the
         // recompute to keep hot-path tab clicks cheap.
+        syncPaneAssignment()
     }
 
     public func replace(at index: Int, with tab: ViewerCore.Tab) {
@@ -200,25 +276,30 @@ public final class TabCoordinator: ObservableObject {
         // A replace can swap URL (lazy materialize finish, viewMode
         // flip with URL retained, etc.); recompute conservatively.
         refreshOpenTabURLs()
+        syncPaneAssignment(opened: tab.id)
     }
 
     public func move(from src: Int, to dst: Int) {
         tabs.move(from: src, to: dst)
         // Move never changes the URL set; skip the recompute.
+        syncPaneAssignment()
     }
 
     public func swapWithPrevious(at index: Int) {
         tabs.swapWithPrevious(at: index)
+        syncPaneAssignment()
     }
 
     public func swapWithNext(at index: Int) {
         tabs.swapWithNext(at: index)
+        syncPaneAssignment()
     }
 
     @discardableResult
     public func openOrReveal(url: URL, state: DocumentState, viewMode: ViewMode) -> Int {
         let i = tabs.openOrReveal(url: url, state: state, viewMode: viewMode)
         refreshOpenTabURLs()
+        syncPaneAssignment(opened: tabs.tabs.indices.contains(i) ? tabs.tabs[i].id : nil)
         return i
     }
 
@@ -228,6 +309,7 @@ public final class TabCoordinator: ObservableObject {
     public func openPreview(url: URL, state: DocumentState, viewMode: ViewMode) -> Int {
         let i = tabs.openPreview(url: url, state: state, viewMode: viewMode)
         refreshOpenTabURLs()
+        syncPaneAssignment(opened: tabs.tabs.indices.contains(i) ? tabs.tabs[i].id : nil)
         return i
     }
 
@@ -256,6 +338,7 @@ public final class TabCoordinator: ObservableObject {
         tabs.close(at: index)
         cleanupAfterClose(id: closed.id)
         refreshOpenTabURLs()
+        syncPaneAssignment()
         return closed.id
     }
 
@@ -277,6 +360,7 @@ public final class TabCoordinator: ObservableObject {
         let openIDs = Set(tabs.tabs.map { $0.id })
         formattedTabIDs.formIntersection(openIDs)
         refreshOpenTabURLs()
+        syncPaneAssignment()
         return closedIDs
     }
 
@@ -293,6 +377,7 @@ public final class TabCoordinator: ObservableObject {
         let openIDs = Set(tabs.tabs.map { $0.id })
         formattedTabIDs.formIntersection(openIDs)
         refreshOpenTabURLs()
+        syncPaneAssignment()
         return closedIDs
     }
 

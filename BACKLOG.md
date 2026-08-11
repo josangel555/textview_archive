@@ -138,10 +138,13 @@ I-## → TSK-### when the tasked board reconnects.
   = focused pane's selection. Slices:
   - ~~**S1 — the pure model**~~ **DONE 2026-08-11** (`PaneAssignment` + 13-test suite
     incl. invariant checker + Codable round-trip for session persistence).
-  - **S2 — coordinator wiring (M):** `TabCoordinator` grows `@Published paneAssignment`,
-    normalize-after-mutation hooks on append/remove/select, focused-pane-aware
-    `selected` resolution (the risky seam: today `TabsState.selectedIndex` IS the
-    selection; map per-pane selection ↔ it on focus change). Host tests per hook.
+  - ~~**S2 — coordinator wiring**~~ **DONE 2026-08-11**: `@Published paneAssignment` +
+    `syncPaneAssignment()` reconciler on EVERY mutation primitive (append/select/
+    replace/move/swaps/openOrReveal/openPreview/close×3) — single-pane mirrors the
+    store byte-for-byte (`mirrorSinglePane`); pane verbs (`splitFocusedPane(
+    movingSelected:)`, `focusPane` drives the app-wide selection to the pane's
+    memory, `closePane` absorbs+reselects, `movePaneTab` focuses the destination).
+    `TabCoordinatorPaneTests` (10) + republish invariants stay green.
   - **S3 — render (L, the big lift):** ContentView renders an HSplit of panes — per-pane
     TabBar + content region; the content tree is built around `model.currentX`
     singletons, so the per-pane content view must parameterize by (pane, its selected

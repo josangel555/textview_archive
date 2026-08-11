@@ -204,6 +204,18 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         return out
     }
 
+    /// Single-pane lockstep (S2): while the window is UN-split, the one
+    /// pane's strip must be byte-identical to the flat store's strip —
+    /// same order, same selection — so the pre-panes world renders and
+    /// behaves exactly as before. A no-op when split (each pane owns its
+    /// own order/selection then). Preserves the pane's identity.
+    public mutating func mirrorSinglePane(order: [UUID], selected: UUID?) {
+        guard panes.count == 1 else { return }
+        panes[0].tabIDs = order
+        panes[0].selectedTabID = order.contains(where: { $0 == selected })
+            ? selected : order.first
+    }
+
     /// Invariant check (tests + debug asserts): every open id in exactly
     /// one pane, focused pane exists, selections valid.
     public func isConsistent(against openTabIDs: [UUID]) -> Bool {
