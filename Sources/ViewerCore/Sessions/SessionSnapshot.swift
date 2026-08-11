@@ -194,6 +194,31 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
     public let wordWrap: Bool?
     public let themeOverride: String?
 
+    /// I-21 S4b (owner 2026-08-11: "split, close, reopen, still see
+    /// splits"): the editor-pane layout, persisted by FILE PATH — tab
+    /// UUIDs are re-minted on restore, so ids can't be stored. Additive-
+    /// optional; written only while SPLIT (nil un-split keeps fresh
+    /// snapshots byte-compatible with older files).
+    public struct PaneLayoutState: Codable, Equatable, Sendable {
+        /// Per pane: the tab file paths in strip order.
+        public let panes: [[String]]
+        /// Per pane: the selected file path (nil for an empty pane).
+        public let selected: [String?]
+        /// Index of the focused pane in `panes`.
+        public let focusedIndex: Int
+        /// `PaneAssignment.SplitOrientation` raw value.
+        public let orientation: String
+
+        public init(panes: [[String]], selected: [String?],
+                    focusedIndex: Int, orientation: String) {
+            self.panes = panes
+            self.selected = selected
+            self.focusedIndex = focusedIndex
+            self.orientation = orientation
+        }
+    }
+    public let paneLayout: PaneLayoutState?
+
     public init(
         schemaVersion: Int = SessionSnapshot.currentSchema,
         savedAt: Date = Date(),
@@ -212,7 +237,8 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         displayNameIsUserSet: Bool? = nil,
         zoom: Double? = nil,
         wordWrap: Bool? = nil,
-        themeOverride: String? = nil
+        themeOverride: String? = nil,
+        paneLayout: PaneLayoutState? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.savedAt = savedAt
@@ -232,6 +258,7 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         self.zoom = zoom
         self.wordWrap = wordWrap
         self.themeOverride = themeOverride
+        self.paneLayout = paneLayout
     }
 
     /// Copy-with-overrides. Returns a new snapshot identical to `self`
@@ -273,7 +300,8 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
             displayNameIsUserSet: displayNameIsUserSet ?? self.displayNameIsUserSet,
             zoom: zoom,
             wordWrap: wordWrap,
-            themeOverride: themeOverride
+            themeOverride: themeOverride,
+            paneLayout: paneLayout
         )
     }
 
@@ -307,6 +335,7 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
             && zoom == other.zoom
             && wordWrap == other.wordWrap
             && themeOverride == other.themeOverride
+            && paneLayout == other.paneLayout
     }
 }
 

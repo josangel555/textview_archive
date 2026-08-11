@@ -137,6 +137,80 @@ final class TabCoordinatorPaneTests: XCTestCase {
         XCTAssertTrue(c.paneAssignment.isConsistent(against: openIDs(c)))
     }
 
+    // MARK: S4b — persistence round-trip (split, close, reopen ⇒ splits back)
+
+    func test_paneLayout_capturesByPath_andRestoresOntoFreshTabIDs() {
+        // CAPTURE: a split coordinator with real paths.
+        let c1 = TabCoordinator()
+        let a1 = makeTab("keep.md"), b1 = makeTab("torn.md")
+        c1.append(a1); c1.append(b1)
+        c1.splitFocusedPane(movingSelected: true, direction: .vertical)
+        guard let state = c1.paneLayoutSnapshot() else {
+            return XCTFail("a split layout must capture")
+        }
+        XCTAssertEqual(state.panes, [["/tmp/panes/keep.md"], ["/tmp/panes/torn.md"]])
+        XCTAssertEqual(state.focusedIndex, 1)
+        XCTAssertEqual(state.orientation, "vertical")
+
+        // RESTORE: a FRESH coordinator (session reopen) — new tab UUIDs,
+        // same paths, the layout comes back.
+        let c2 = TabCoordinator()
+        let a2 = makeTab("keep.md"), b2 = makeTab("torn.md")
+        c2.append(a2); c2.append(b2)
+        c2.applyPaneLayout(state)
+
+        XCTAssertTrue(c2.paneAssignment.isSplit, "reopen ⇒ still split")
+        XCTAssertEqual(c2.paneAssignment.orientation, .vertical)
+        XCTAssertEqual(c2.paneAssignment.panes[0].tabIDs, [a2.id])
+        XCTAssertEqual(c2.paneAssignment.panes[1].tabIDs, [b2.id])
+        XCTAssertEqual(c2.paneAssignment.focusedPane.id, c2.paneAssignment.panes[1].id)
+        XCTAssertEqual(c2.selected?.id, b2.id,
+                       "the focused pane's remembered tab is current again")
+        XCTAssertTrue(c2.paneAssignment.isConsistent(against: openIDs(c2)))
+    }
+
+    func test_applyPaneLayout_missingFilesDrop_extraTabsAdopt() {
+        let c = TabCoordinator()
+        let a = makeTab("keep.md"), extra = makeTab("new-since-capture.md")
+        c.append(a); c.append(extra)
+        // Persisted: keep.md in pane 0, a since-deleted file in pane 1.
+        let state = SessionSnapshot.PaneLayoutState(
+            panes: [["/tmp/panes/keep.md"], ["/tmp/panes/deleted.md"]],
+            selected: ["/tmp/panes/keep.md", "/tmp/panes/deleted.md"],
+            focusedIndex: 0, orientation: "horizontal")
+        c.applyPaneLayout(state)
+        XCTAssertTrue(c.paneAssignment.isConsistent(against: openIDs(c)),
+                      "missing files drop; the unassigned tab adopts into the focused pane")
+        XCTAssertEqual(c.paneAssignment.pane(containing: extra.id)?.id,
+                       c.paneAssignment.focusedPaneID)
+    }
+
+    func test_paneLayoutSnapshot_isNilWhileUnsplit() {
+        let c = TabCoordinator()
+        c.append(makeTab("solo.md"))
+        XCTAssertNil(c.paneLayoutSnapshot(),
+                     "un-split persists nothing (byte-compatible snapshots)")
+    }
+
+    func test_paneLayoutState_codable_andLegacyDecode() throws {
+        let state = SessionSnapshot.PaneLayoutState(
+            panes: [["/a.md"], ["/b.md"]], selected: ["/a.md", "/b.md"],
+            focusedIndex: 1, orientation: "vertical")
+        let snap = SessionSnapshot(
+            id: UUID(), displayName: "s", createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: nil, paneLayout: state)
+        let data = try JSONEncoder().encode(snap)
+        let back = try JSONDecoder().decode(SessionSnapshot.self, from: data)
+        XCTAssertEqual(back.paneLayout, state)
+        // A pre-panes snapshot (no key) decodes with nil — downgrade-safe.
+        let legacy = try JSONDecoder().decode(SessionSnapshot.self, from: Data("""
+            {"schemaVersion": 2, "savedAt": 0, "id": "\(UUID().uuidString)",
+             "displayName": "old", "createdAt": 0, "lastActiveAt": 0,
+             "openTabs": []}
+            """.utf8))
+        XCTAssertNil(legacy.paneLayout)
+    }
+
     // MARK: bulk paths (session drain shape)
 
     func test_closeOthersThenAppends_staysConsistent() {

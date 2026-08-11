@@ -701,7 +701,12 @@ public struct ContentView: View {
     private var paneAwareContent: some View {
         let assignment = tabCoordinator.paneAssignment
         if assignment.isSplit {
-            HStack(spacing: 0) {
+            // The run's axis: side-by-side columns (split right) or stacked
+            // rows (split down) — single-axis v1.
+            let layout = assignment.orientation == .vertical
+                ? AnyLayout(VStackLayout(spacing: 0))
+                : AnyLayout(HStackLayout(spacing: 0))
+            layout {
                 ForEach(Array(assignment.panes.enumerated()), id: \.element.id) { idx, pane in
                     if idx > 0 { Divider() }
                     paneColumn(pane, focused: pane.id == assignment.focusedPaneID)

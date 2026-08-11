@@ -2525,6 +2525,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyShortcut("view.splitEditorRight", to: splitPaneItem)
         viewMenu.addItem(splitPaneItem)
 
+        let splitPaneDownItem = NSMenuItem(
+            title: "Split Editor Down",
+            action: #selector(splitEditorDown(_:)),
+            keyEquivalent: ""
+        )
+        splitPaneDownItem.target = self
+        applyShortcut("view.splitEditorDown", to: splitPaneDownItem)
+        viewMenu.addItem(splitPaneDownItem)
+
         let closePaneItem = NSMenuItem(
             title: "Close Pane",
             action: #selector(closeFocusedPane(_:)),
@@ -3974,7 +3983,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func splitEditorRight(_ sender: Any?) {
-        model.tabCoordinator.splitFocusedPane(movingSelected: true)
+        model.tabCoordinator.splitFocusedPane(movingSelected: true, direction: .horizontal)
+    }
+
+    @objc func splitEditorDown(_ sender: Any?) {
+        model.tabCoordinator.splitFocusedPane(movingSelected: true, direction: .vertical)
     }
 
     @objc func closeFocusedPane(_ sender: Any?) {

@@ -207,6 +207,11 @@ public enum UISceneRegistry {
             closesExistingTabs: true,
             summary: "Editor panes (I-21 S3): two tabs, split right — per-pane strips + focused ring"),
         SceneSpec(
+            id: "panes-down",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            summary: "Editor panes (I-21 S4a): split DOWN — stacked rows, per-pane strips"),
+        SceneSpec(
             id: "fill-check-git",
             fixture: .defaultDocument,
             summary: "Sidebar-fill validation: GIT solo must fill the shoulder (owner 2026-08-09)"),

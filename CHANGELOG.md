@@ -27,6 +27,11 @@
   clicking any tab focuses its pane. Close Pane (menu or the strip's button) merges
   a pane's tabs back into its neighbor — it never closes files. Un-split, nothing
   changes.
+- **Split Editor Down too** — the split can stack vertically instead (the first
+  split picks the direction; more splits join the same row/column). And **pane
+  layouts persist**: split, quit, reopen — your panes, their tabs, and which one
+  was focused all come back (per session, matched by file path; files deleted in
+  the meantime just drop out).
 - **Markdown links are first-class everywhere.** Web links and mailto open in your
   browser/mail (as before); relative links and `[[wikilinks]]` open in-app; and now:
   **absolute file paths** (`/Users/…` or `file://…`) open in a tab, **absolute folder

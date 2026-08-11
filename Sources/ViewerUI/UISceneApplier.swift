@@ -1074,6 +1074,22 @@ public enum UISceneApplier {
             return "ui-scene: applied 'panes-split' panes=\(model.tabCoordinator.paneAssignment.panes.count)"
         }
 
+        // I-21 S4a: the vertical run — split DOWN (stacked rows).
+        if scene == "panes-down" {
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.panelLayout.setOverride(.terminal, .hidden)
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            for i in 1...2 {
+                let f = tabsBaseDir.appendingPathComponent("row-\(i).md")
+                try? "# Row \(i)\n\nThis file lives in row \(i).\n"
+                    .write(to: f, atomically: true, encoding: .utf8)
+                model.open(url: f)
+            }
+            model.tabCoordinator.splitFocusedPane(movingSelected: true, direction: .vertical)
+            return "ui-scene: applied 'panes-down' orientation=\(model.tabCoordinator.paneAssignment.orientation.rawValue)"
+        }
+
         guard parts.first == "terminal" else {
             return "ui-scene: unknown scene '\(scene)'"
         }

@@ -182,12 +182,18 @@ public final class TabCoordinator: ObservableObject {
         if next != paneAssignment { paneAssignment = next }
     }
 
-    /// Split: a new focused pane right of the current one. `movingSelected`
-    /// tears the store-selected tab into it (the selection is unchanged —
-    /// the same tab stays current, now in the new pane).
-    public func splitFocusedPane(movingSelected: Bool) {
+    /// Split: a new focused pane after the current one (right in a
+    /// horizontal run, below in a vertical one — `direction` picks the
+    /// axis on the first split). `movingSelected` tears the store-selected
+    /// tab into it (the selection is unchanged — the same tab stays
+    /// current, now in the new pane).
+    public func splitFocusedPane(
+        movingSelected: Bool,
+        direction: PaneAssignment.SplitOrientation = .horizontal
+    ) {
         var next = paneAssignment
-        next.splitFocusedPane(moving: movingSelected ? tabs.selected?.id : nil)
+        next.splitFocusedPane(moving: movingSelected ? tabs.selected?.id : nil,
+                              direction: direction)
         paneAssignment = next
     }
 
@@ -223,6 +229,51 @@ public final class TabCoordinator: ObservableObject {
         next.focusPane(id: paneID)
         paneAssignment = next
         if let idx = tabs.tabs.firstIndex(where: { $0.id == tabID }) {
+            select(at: idx)
+        }
+    }
+
+    /// I-21 S4b — capture the pane layout for the session snapshot, by
+    /// FILE PATH (tab ids are re-minted on restore). nil while un-split so
+    /// fresh snapshots stay byte-compatible with older files.
+    public func paneLayoutSnapshot() -> SessionSnapshot.PaneLayoutState? {
+        let a = paneAssignment
+        guard a.isSplit else { return nil }
+        let pathByID: [UUID: String] = Dictionary(
+            tabs.tabs.compactMap { t in t.url.map { (t.id, $0.path) } },
+            uniquingKeysWith: { first, _ in first })
+        return SessionSnapshot.PaneLayoutState(
+            panes: a.panes.map { $0.tabIDs.compactMap { pathByID[$0] } },
+            selected: a.panes.map { $0.selectedTabID.flatMap { pathByID[$0] } },
+            focusedIndex: a.panes.firstIndex { $0.id == a.focusedPaneID } ?? 0,
+            orientation: a.orientation.rawValue)
+    }
+
+    /// I-21 S4b — restore a persisted pane layout AFTER the session's tabs
+    /// have been appended: persisted paths resolve to the re-minted tab
+    /// ids, the result normalizes against the store (missing files drop;
+    /// unassigned tabs join the focused pane), and the app-wide selection
+    /// follows the focused pane's memory.
+    public func applyPaneLayout(_ state: SessionSnapshot.PaneLayoutState) {
+        guard state.panes.count > 1 else { return }
+        let idByPath: [String: UUID] = Dictionary(
+            tabs.tabs.compactMap { t in t.url.map { ($0.path, t.id) } },
+            uniquingKeysWith: { first, _ in first })
+        let panes = state.panes.enumerated().map { i, paths -> PaneAssignment.Pane in
+            let ids = paths.compactMap { idByPath[$0] }
+            let sel = state.selected.indices.contains(i)
+                ? state.selected[i].flatMap { idByPath[$0] } : nil
+            return PaneAssignment.Pane(tabIDs: ids, selectedTabID: sel)
+        }
+        let orientation = PaneAssignment.SplitOrientation(rawValue: state.orientation)
+            ?? .horizontal
+        var next = PaneAssignment(
+            restoring: panes, focusedIndex: state.focusedIndex,
+            orientation: orientation)
+        next = next.normalized(against: tabs.tabs.map(\.id))
+        paneAssignment = next
+        if let sel = next.focusedPane.selectedTabID,
+           let idx = tabs.tabs.firstIndex(where: { $0.id == sel }) {
             select(at: idx)
         }
     }

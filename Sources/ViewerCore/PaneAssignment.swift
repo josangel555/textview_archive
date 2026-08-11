@@ -34,10 +34,22 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         }
     }
 
-    /// Panes, left → right. Never empty.
+    /// Which way the pane run stacks (owner 2026-08-11: "split bottom"):
+    /// `.horizontal` = side-by-side columns (split right), `.vertical` =
+    /// stacked rows (split down). SINGLE-AXIS v1 — the first split picks
+    /// the axis, later splits join the same run; mixed grids are the
+    /// future split-tree work. Resets to horizontal when the run closes
+    /// back to one pane.
+    public enum SplitOrientation: String, Equatable, Sendable, Codable {
+        case horizontal, vertical
+    }
+
+    /// Panes, leading → trailing along `orientation`. Never empty.
     public private(set) var panes: [Pane]
     /// The pane keyboard/commands act on. Always a live pane id.
     public private(set) var focusedPaneID: UUID
+    /// The run's axis (meaningful only when split).
+    public private(set) var orientation: SplitOrientation = .horizontal
 
     // MARK: - Construction
 
@@ -54,6 +66,20 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         self.panes = panes
         self.focusedPaneID = panes.contains(where: { $0.id == focusedPaneID })
             ? focusedPaneID : panes[0].id
+    }
+
+    /// I-21 S4b — rebuild a PERSISTED layout (session restore). The caller
+    /// resolves persisted paths → live tab ids and then normalizes against
+    /// the store; an empty input degrades to the single-pane world.
+    public init(
+        restoring panes: [Pane], focusedIndex: Int,
+        orientation: SplitOrientation
+    ) {
+        let safe = panes.isEmpty ? [Pane()] : panes
+        self.panes = safe
+        self.focusedPaneID = safe.indices.contains(focusedIndex)
+            ? safe[focusedIndex].id : safe[0].id
+        self.orientation = orientation
     }
 
     // MARK: - Reads
@@ -73,12 +99,18 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
 
     // MARK: - Pane operations
 
-    /// Split: a new pane to the RIGHT of the focused one, focused. When
-    /// `moving` names a tab in the focused pane, it MOVES there (the
-    /// "tear this tab into a new pane" gesture); nil = an empty pane (the
-    /// empty-state surface renders until a tab opens there).
-    public mutating func splitFocusedPane(moving tabID: UUID? = nil) {
+    /// Split: a new pane AFTER the focused one (right in a horizontal run,
+    /// below in a vertical one), focused. `direction` picks the run's axis
+    /// on the FIRST split (an already-split run keeps its axis — single-
+    /// axis v1). When `moving` names a tab in the focused pane, it MOVES
+    /// there (the "tear this tab into a new pane" gesture); nil = an empty
+    /// pane (the empty-state surface renders until a tab opens there).
+    public mutating func splitFocusedPane(
+        moving tabID: UUID? = nil,
+        direction: SplitOrientation = .horizontal
+    ) {
         guard let idx = panes.firstIndex(where: { $0.id == focusedPaneID }) else { return }
+        if panes.count == 1 { orientation = direction }
         var newPane = Pane()
         if let tabID, let from = panes.firstIndex(where: { $0.tabIDs.contains(tabID) }) {
             panes[from].tabIDs.removeAll { $0 == tabID }
@@ -107,6 +139,8 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         let absorbID = panes[absorbIdx].id
         panes.remove(at: idx)
         if focusedPaneID == id { focusedPaneID = absorbID }
+        // Back to a single pane: the next split picks its axis fresh.
+        if panes.count == 1 { orientation = .horizontal }
     }
 
     public mutating func focusPane(id: UUID) {
@@ -195,6 +229,10 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         var out = PaneAssignment(
             panes: next,
             focusedPaneID: focusedPaneID)
+        // The rebuild goes through the internal init — carry the run's
+        // axis (dropping it silently reset every split to horizontal on
+        // the first post-split store mutation).
+        out.orientation = orientation
         let assigned = Set(next.flatMap(\.tabIDs))
         // Preserve the STORE's order for never-seen ids so a bulk restore
         // lands in reading order.

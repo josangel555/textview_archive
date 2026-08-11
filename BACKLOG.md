@@ -158,7 +158,14 @@ I-## → TSK-### when the tasked board reconnects.
     tab DRAG, session persistence of the assignment, click-CONTENT-to-focus (strip
     interactions focus today; WebView content clicks don't), pane divider
     drag-resize, per-pane ContentToolbar decision.
-  - **S4 — commands + persistence (M):** ⌘W/⌘T/etc. route to the focused pane;
+  - **S4 — PARTIAL 2026-08-11:** ~~orientation~~ (S4a DONE: single-axis split DOWN —
+    `SplitOrientation` on the assignment, first split picks the axis, AnyLayout
+    V/HStack render, View ▸ Split Editor Down, `panes-down` scene AX-green +
+    eyeballed; normalized() carries the axis — dropping it was a latent reset bug);
+    ~~session persistence~~ (S4b DONE: `SessionSnapshot.PaneLayoutState` by PATH
+    (ids re-mint on restore), captured in makeSnapshot (nil un-split), applied LAST
+    in hydrate; missing files drop, since-opened tabs adopt; round-trip + legacy-
+    decode pinned). REMAINING (S4c): ⌘W/⌘T/etc. route to the focused pane;
     "Split Editor Right" command + tab context-menu "Open in New Pane"; session
     snapshot gains additive `paneAssignment` (Codable already); restore normalizes
     against restored tab ids. Relation: the window `splitURL` preview pane is

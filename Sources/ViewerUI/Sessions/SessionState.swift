@@ -197,7 +197,9 @@ public final class SessionState: ObservableObject {
             // GLOBAL (LOCKED): never persisted per-session — see doc above.
             zoom: nil,
             wordWrap: nil,
-            themeOverride: nil
+            themeOverride: nil,
+            // I-21 S4b: the editor-pane layout, by path (nil un-split).
+            paneLayout: model.tabCoordinator.paneLayoutSnapshot()
         )
     }
 
@@ -511,6 +513,13 @@ public final class SessionState: ObservableObject {
         // never the stale persisted index) is `selectFocusedTabOnSessionSwitch`.
         if let targetPath {
             selectFocusedTabOnSessionSwitch(targetPath: targetPath)
+        }
+        // I-21 S4b: restore the editor-pane layout LAST — persisted paths
+        // resolve to the freshly-minted tab ids, and the focused pane's
+        // remembered tab wins the final selection ("split, close, reopen,
+        // still see splits").
+        if let paneLayout = snapshot.paneLayout {
+            model.tabCoordinator.applyPaneLayout(paneLayout)
         }
     }
 

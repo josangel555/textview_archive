@@ -127,6 +127,26 @@ import ViewerCore
         #expect(fixed.isConsistent(against: []))
     }
 
+    @Test func orientation_firstSplitPicksAxis_laterSplitsKeepIt_resetOnUnsplit() {
+        var p = single()
+        p.splitFocusedPane(moving: b, direction: .vertical)
+        #expect(p.orientation == .vertical, "the first split picks the axis")
+        p.splitFocusedPane(direction: .horizontal)
+        #expect(p.orientation == .vertical,
+                "an already-split run keeps its axis (single-axis v1)")
+        // Close back down to one pane: the axis resets for a fresh choice.
+        while p.panes.count > 1 { p.closePane(id: p.panes[1].id) }
+        #expect(p.orientation == .horizontal)
+        #expect(p.isConsistent(against: [a, b, c]))
+    }
+
+    @Test func manySplits_haveNoModelCap() {
+        var p = single()
+        for _ in 0..<7 { p.splitFocusedPane() }
+        #expect(p.panes.count == 8, "splits are unbounded in the model")
+        #expect(p.isConsistent(against: [a, b, c]))
+    }
+
     @Test func codableRoundTrip() throws {
         var p = single()
         p.splitFocusedPane(moving: b)

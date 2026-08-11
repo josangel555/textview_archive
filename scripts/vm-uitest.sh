@@ -72,6 +72,7 @@ scene_expect() {
     # (the marker rides the strip id — pane-column container ids don't
     # materialize out-of-process).
     panes-split) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close" ;;
+    panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;
