@@ -68,6 +68,10 @@ scene_expect() {
     terminal-dock-right) echo "mdv.dock.right.terminal.header mdv.terminal.pane" ;;
     # I-19 (per-tab split preview): the split pane inside the tab.
     mktg-split) echo "mdv.split" ;;
+    # I-21 S3 (editor panes): per-pane strips + the focused-pane marker
+    # (the marker rides the strip id — pane-column container ids don't
+    # materialize out-of-process).
+    panes-split) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;

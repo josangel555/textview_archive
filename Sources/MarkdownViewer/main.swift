@@ -2512,6 +2512,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyShortcut("view.toggleSplit", to: splitItem)
         viewMenu.addItem(splitItem)
 
+        // I-21 S3 (owner 2026-08-11): EDITOR PANES — split the window into
+        // panes, each with its own tab strip. Tears the current tab into a
+        // new focused pane on the right; "Close Pane" merges the focused
+        // pane's tabs back into its neighbor.
+        let splitPaneItem = NSMenuItem(
+            title: "Split Editor Right",
+            action: #selector(splitEditorRight(_:)),
+            keyEquivalent: ""
+        )
+        splitPaneItem.target = self
+        applyShortcut("view.splitEditorRight", to: splitPaneItem)
+        viewMenu.addItem(splitPaneItem)
+
+        let closePaneItem = NSMenuItem(
+            title: "Close Pane",
+            action: #selector(closeFocusedPane(_:)),
+            keyEquivalent: ""
+        )
+        closePaneItem.target = self
+        applyShortcut("view.closePane", to: closePaneItem)
+        viewMenu.addItem(closePaneItem)
+
         let swapItem = NSMenuItem(
             title: "Swap Split Panes",
             action: #selector(swapSplit(_:)),
@@ -3949,6 +3971,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleLineBookmark(_ sender: Any?) {
         model.toggleCurrentLineBookmark()
+    }
+
+    @objc func splitEditorRight(_ sender: Any?) {
+        model.tabCoordinator.splitFocusedPane(movingSelected: true)
+    }
+
+    @objc func closeFocusedPane(_ sender: Any?) {
+        model.tabCoordinator.closePane(id: model.tabCoordinator.paneAssignment.focusedPaneID)
     }
 
     @objc func toggleSplit(_ sender: Any?) {

@@ -145,12 +145,19 @@ I-## → TSK-### when the tasked board reconnects.
     movingSelected:)`, `focusPane` drives the app-wide selection to the pane's
     memory, `closePane` absorbs+reselects, `movePaneTab` focuses the destination).
     `TabCoordinatorPaneTests` (10) + republish invariants stay green.
-  - **S3 — render (L, the big lift):** ContentView renders an HSplit of panes — per-pane
-    TabBar + content region; the content tree is built around `model.currentX`
-    singletons, so the per-pane content view must parameterize by (pane, its selected
-    tab). `MountedPanesLRU` already mounts multiple editor panes (warm cache) — reuse.
-    Focused-pane ring; click-to-focus; drag tab between strips (`StripExternalTarget`
-    pattern exists from tab→session-pill drops). VM captures per step.
+  - ~~**S3 — render**~~ **DONE 2026-08-11** (the spike was right — the mounted-ZStack
+    was already per-tab): split ⇒ HStack of pane columns, each `PaneTabStrip`
+    (TabBarItem chips, actions resolve store indices at click time, per-pane
+    selection tint, Close Pane button) + the mounted ZStack filtered to the pane's
+    tabs with visibility on the PANE's selection (find/active gating = focused pane
+    only; unmounted-visible fallback renders + materializes). Focused ring;
+    window-level TabBar stands down while split; un-split = byte-identical classic
+    path. Menu: View ▸ Split Editor Right / Close Pane. `panes-split` scene PASSES
+    on real AX ids (mdv.paneStrip[.focused], mdv.pane.close) + pixels eyeballed
+    (two strips, two contents, ring on the focused pane). RESIDUE → S4: cross-strip
+    tab DRAG, session persistence of the assignment, click-CONTENT-to-focus (strip
+    interactions focus today; WebView content clicks don't), pane divider
+    drag-resize, per-pane ContentToolbar decision.
   - **S4 — commands + persistence (M):** ⌘W/⌘T/etc. route to the focused pane;
     "Split Editor Right" command + tab context-menu "Open in New Pane"; session
     snapshot gains additive `paneAssignment` (Codable already); restore normalizes

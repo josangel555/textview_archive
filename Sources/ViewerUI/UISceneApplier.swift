@@ -1055,6 +1055,25 @@ public enum UISceneApplier {
             return "ui-scene: applied '\(scene)' tabs=\(model.tabs.tabs.count)"
         }
 
+        // I-21 S3: editor panes — two tabs, then split tearing the current
+        // tab right → two strips + two content regions on screen.
+        if scene == "panes-split" {
+            // Deterministic canvas: leftover VM state (persisted terminal
+            // panel, prior tabs) must not pollute the capture.
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.panelLayout.setOverride(.terminal, .hidden)
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            for i in 1...2 {
+                let f = tabsBaseDir.appendingPathComponent("pane-\(i).md")
+                try? "# Pane \(i)\n\nThis file lives in pane \(i).\n"
+                    .write(to: f, atomically: true, encoding: .utf8)
+                model.open(url: f)
+            }
+            model.tabCoordinator.splitFocusedPane(movingSelected: true)
+            return "ui-scene: applied 'panes-split' panes=\(model.tabCoordinator.paneAssignment.panes.count)"
+        }
+
         guard parts.first == "terminal" else {
             return "ui-scene: unknown scene '\(scene)'"
         }

@@ -110,6 +110,10 @@ public struct ContentView: View {
                     SessionTabBar(sessionsApp: sessionsApp)
                     Divider()
                 }
+                // I-21 S3: while SPLIT, each pane carries its own strip
+                // (`PaneTabStrip` inside `paneColumn`); the window-level
+                // strip stands down. Un-split = the untouched classic bar.
+                if !tabCoordinator.paneAssignment.isSplit {
                 TabBar(model: model)
                     .accessibilityIdentifier("mdv.tabbar")
                     // CHROME PIN (2026-06-01): the chrome bars carry their own
@@ -132,6 +136,7 @@ public struct ContentView: View {
                     // `BottomAttributesBar` (above the StatusBar).
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
+                }
                 // I-16a (owner 2026-08-01, corrected same day): the full-width
                 // Divider that lived HERE moved into TabBar's background as a
                 // bottom hairline — still under the inactive tabs and empty
@@ -558,7 +563,7 @@ public struct ContentView: View {
                         .layoutPriority(1)
                     Divider()
                 }
-                content
+                paneAwareContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("mdv.content")
                     .overlay(
@@ -685,6 +690,88 @@ public struct ContentView: View {
             model.openMultiple(resolved)
         }
         return true
+    }
+
+    /// I-21 S3 (owner 2026-08-11): when the window is SPLIT, render the
+    /// panes side by side — each with its own tab strip (`PaneTabStrip`)
+    /// and its own content region showing the PANE's selected tab. The
+    /// un-split world routes to the untouched `content` builder, so the
+    /// pre-panes render path is byte-identical.
+    @ViewBuilder
+    private var paneAwareContent: some View {
+        let assignment = tabCoordinator.paneAssignment
+        if assignment.isSplit {
+            HStack(spacing: 0) {
+                ForEach(Array(assignment.panes.enumerated()), id: \.element.id) { idx, pane in
+                    if idx > 0 { Divider() }
+                    paneColumn(pane, focused: pane.id == assignment.focusedPaneID)
+                }
+            }
+        } else {
+            content
+        }
+    }
+
+    private func paneColumn(_ pane: PaneAssignment.Pane, focused: Bool) -> some View {
+        VStack(spacing: 0) {
+            PaneTabStrip(model: model, tabCoordinator: tabCoordinator,
+                         pane: pane, isFocusedPane: focused)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+            Divider()
+            paneContentRegion(pane, focused: focused)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Focused-pane ring: the one visual answer to "which pane do my
+        // keys act on". Inset stroke, hit-tests off.
+        .overlay {
+            if focused {
+                Rectangle()
+                    .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(focused ? "mdv.pane.focused" : "mdv.pane")
+    }
+
+    /// One pane's content: the mounted-tab ZStack (Perf Fix#1) FILTERED to
+    /// this pane's tabs, visibility keyed on the PANE's own selection; the
+    /// find bar / active affordances live only on the FOCUSED pane's
+    /// visible tab. A pane-visible tab that fell out of the mounted MRU
+    /// (e.g. a restored layout) renders directly and kicks materialization.
+    @ViewBuilder
+    private func paneContentRegion(_ pane: PaneAssignment.Pane, focused: Bool) -> some View {
+        let mounted = model.mountedTabs.filter { pane.tabIDs.contains($0.id) }
+        let mountedIDs = Set(mounted.map(\.id))
+        if pane.tabIDs.isEmpty {
+            EmptyStateView(model: model)
+        } else {
+            ZStack {
+                ForEach(mounted) { tab in
+                    let isVisible = tab.id == pane.selectedTabID
+                    let render = PaneCompositingPolicy.render(isActive: isVisible)
+                    tabContent(for: tab, isActive: isVisible && focused)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .compositingGroup()
+                        .opacity(render.opacity)
+                        .allowsHitTesting(render.hitTesting)
+                        .accessibilityHidden(render.accessibilityHidden)
+                        .zIndex(render.zIndex)
+                }
+                if let vid = pane.selectedTabID, !mountedIDs.contains(vid),
+                   let tab = tabCoordinator.tabs.tabs.first(where: { $0.id == vid }) {
+                    tabContent(for: tab, isActive: focused)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .onAppear {
+                            if let idx = tabCoordinator.tabs.tabs.firstIndex(where: { $0.id == vid }) {
+                                model.materializeIfNeeded(at: idx)
+                            }
+                        }
+                }
+            }
+        }
     }
 
     @ViewBuilder

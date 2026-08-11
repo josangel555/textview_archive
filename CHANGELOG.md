@@ -20,6 +20,13 @@
   plain-text files' same-file split still uses).
 
 ### Added
+- **Editor panes: split the window, each pane with its own tabs.** View ▸ Split
+  Editor Right tears the current tab into a new pane — two tab strips, two content
+  regions, side by side. Each pane keeps its own tab set, order, and selection;
+  the focused pane (accent ring) is what your keys and the toolbar act on, and
+  clicking any tab focuses its pane. Close Pane (menu or the strip's button) merges
+  a pane's tabs back into its neighbor — it never closes files. Un-split, nothing
+  changes.
 - **Markdown links are first-class everywhere.** Web links and mailto open in your
   browser/mail (as before); relative links and `[[wikilinks]]` open in-app; and now:
   **absolute file paths** (`/Users/…` or `file://…`) open in a tab, **absolute folder

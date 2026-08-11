@@ -202,6 +202,11 @@ public enum UISceneRegistry {
             themeID: "xcode-dark",
             summary: "Marketing: file nav on a git root + bookmarks, 3 tabs, Swift source highlighting, command palette overlay"),
         SceneSpec(
+            id: "panes-split",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            summary: "Editor panes (I-21 S3): two tabs, split right — per-pane strips + focused ring"),
+        SceneSpec(
             id: "fill-check-git",
             fixture: .defaultDocument,
             summary: "Sidebar-fill validation: GIT solo must fill the shoulder (owner 2026-08-09)"),
