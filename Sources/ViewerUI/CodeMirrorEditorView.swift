@@ -943,13 +943,17 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                     // `change` envelope with the canonical text.
                     Self.log.debug("CM incrementalChange drift; requesting full text")
                     if let webView = webView {
-                        dispatch(.flushChanges, webView: webView)
+                        dispatch(.flushChanges(nonce: nil), webView: webView)
                     }
                 }
             case .save:
                 // S3/S4: full-compare + core baseline reset on the save path.
                 docShadow.verifyOnSave(hostText: lastSentText ?? "")
                 onSaveRequested?()
+            case .flushAck(let nonce):
+                // O-6 handshake: by message order the pending change (if any)
+                // was delivered above this ack — the mirror is current NOW.
+                CMFlushAckBus.shared.received(nonce)
             case .cursorPositionChanged(let line, let column, let head, let ranges):
                 onCursorChange?(CMCursorPosition(
                     line: line, column: column, head: head, rangeCount: ranges

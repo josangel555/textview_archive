@@ -265,6 +265,11 @@ public final class SessionsAppCoordinator: ObservableObject {
     private func performSwitch(_ body: @escaping () -> Void) {
         isSwitchingSession = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            // O-6 flush-before-read: the switch drains the outgoing
+            // session's tabs (unsaved buffers included) — pull any pending
+            // debounced CM6 edits into the mirror first so a switch right
+            // after typing can't capture stale text.
+            CMEditorTextSync.flushPendingEdits()
             body()
             self?.isSwitchingSession = false
         }
@@ -272,14 +277,20 @@ public final class SessionsAppCoordinator: ObservableObject {
 
     /// Synchronous switch — the coordinator's canonical contract (tests +
     /// programmatic callers rely on the switch being complete on return).
+    /// Flushes pending CM6 edits first (O-6) — a no-op headless, so the
+    /// synchronous contract is untouched for tests/automation.
     public func activate(id: UUID) {
+        CMEditorTextSync.flushPendingEdits()
         firstPaintGate.recordActivate(id: id)
         core.activate(id: id)
     }
     /// Alias kept for call sites that want to be explicit about needing the
     /// synchronous semantics (capture scenes, the CLI verb).
     public func activateNow(id: UUID) { activate(id: id) }
-    public func activate(index n: Int) { core.activate(index: n) }
+    public func activate(index n: Int) {
+        CMEditorTextSync.flushPendingEdits()
+        core.activate(index: n)
+    }
 
     /// USER-GESTURE variants (session pill click, menu items): flag the HUD,
     /// defer ONE runloop turn so it paints, then run the synchronous switch.

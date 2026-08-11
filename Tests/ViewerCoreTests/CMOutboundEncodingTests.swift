@@ -160,6 +160,16 @@ final class CMOutboundEncodingTests: XCTestCase {
         XCTAssertEqual(d["select"] as? Bool, true)
     }
 
+    func testEncodeFlushChanges_nonceOmittedWhenNil_presentWhenSet() {
+        // O-6 handshake: a bare drift-recovery flush has no nonce; the
+        // synchronous flush stamps one so the page can ack it.
+        let bare = encodeAndParse(.flushChanges(nonce: nil))
+        XCTAssertEqual(bare["type"] as? String, "flushChanges")
+        XCTAssertNil(bare["nonce"])
+        let acked = encodeAndParse(.flushChanges(nonce: 42))
+        XCTAssertEqual(acked["nonce"] as? Int, 42)
+    }
+
     func testEncodeGotoLineWithMatchSpan() {
         // 2026-08-09 search-result jump: column + selectLength select the
         // matched WORD on the line.
@@ -203,7 +213,7 @@ final class CMOutboundEncodingTests: XCTestCase {
             (.undo,         "undo"),
             (.redo,         "redo"),
             (.focus,        "focus"),
-            (.flushChanges, "flushChanges"),
+            (.flushChanges(nonce: nil), "flushChanges"),
         ] {
             let d = encodeAndParse(msg)
             XCTAssertEqual(d["type"] as? String, expected,

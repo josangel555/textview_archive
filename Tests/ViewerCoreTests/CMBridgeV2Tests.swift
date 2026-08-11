@@ -48,6 +48,15 @@ final class CMBridgeV2Tests: XCTestCase {
         XCTAssertEqual(CMBridgeCodec.decodeInbound(dict), .unsupportedVersion(99))
     }
 
+    func testDecoder_flushAck_roundTrips_andRejectsMissingNonce() {
+        // O-6 handshake: the ack carries the nonce back; a nonce-less ack
+        // is meaningless (no waiter could match it) and must not parse.
+        let ok: [String: Any] = ["v": 2, "type": "flushAck", "nonce": 17]
+        XCTAssertEqual(CMBridgeCodec.decodeInbound(ok), .flushAck(nonce: 17))
+        let missing: [String: Any] = ["v": 2, "type": "flushAck"]
+        XCTAssertNil(CMBridgeCodec.decodeInbound(missing))
+    }
+
     func testEncoderStampsCurrentVersion() {
         let raw = CMBridgeCodec.encodeOutboundJSON(
             .setIndentGuides(true))
@@ -299,7 +308,7 @@ final class CMBridgeV2Tests: XCTestCase {
             CMOutboundMessage.setText(text: "x", resetHistory: false, preserveSelection: true)
                 .minimumVersion, 1)
         XCTAssertEqual(CMOutboundMessage.undo.minimumVersion, 1)
-        XCTAssertEqual(CMOutboundMessage.flushChanges.minimumVersion, 1)
+        XCTAssertEqual(CMOutboundMessage.flushChanges(nonce: nil).minimumVersion, 1)
     }
 
     func testEncodeDowngradesEnvelopeToPeerVersion() {

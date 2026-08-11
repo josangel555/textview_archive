@@ -16,7 +16,9 @@
     ],
     "findNext": [],
     "findPrev": [],
-    "flushChanges": [],
+    "flushChanges": [
+      "nonce"
+    ],
     "focus": [],
     "foldAll": [],
     "getDocument": [

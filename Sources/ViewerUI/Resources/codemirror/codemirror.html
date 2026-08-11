@@ -964,7 +964,18 @@
   // triggering it. Attach a raw listener once the editor is mounted.
   function attachScrollListener() {
     view.scrollDOM.addEventListener("scroll", scheduleScrollEmit, { passive: true });
-    view.contentDOM.addEventListener("blur", () => post("editorBlurred", {}));
+    // O-6 flush-before-read (2026-08-11): FLUSH the pending debounced text
+    // BEFORE announcing the blur, so any Swift logic the blur triggers
+    // (blur-save, focus-change reads) sees a current mirror. Same for the
+    // page being hidden/switched away — the tab/session switch class.
+    view.contentDOM.addEventListener("blur", () => {
+      emitChangeImmediate();
+      post("editorBlurred", {});
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) emitChangeImmediate();
+    });
+    window.addEventListener("pagehide", () => emitChangeImmediate());
     // Right-click → native NSMenu. JS preventDefault so WKWebView's
     // default browser menu never appears; Swift pops a real NSMenu at
     // the screen-coord we forward. See `CodeMirrorEditorView` ctxMenu
@@ -1369,7 +1380,15 @@
         case "undo":               undo(view); break;
         case "redo":               redo(view); break;
         case "focus":              view.focus(); break;
-        case "flushChanges":       flushChangesForced(); break;
+        case "flushChanges":
+          flushChangesForced();
+          // O-6 flush-before-read handshake (2026-08-11): the ack posts
+          // AFTER the forced emit, so message order guarantees any pending
+          // text change reached Swift before the ack's nonce does.
+          if (msg.nonce !== undefined && msg.nonce !== null) {
+            post("flushAck", { nonce: msg.nonce });
+          }
+          break;
         case "getDocument":
           post("requestReply", { replyId: msg.replyId, value: {
             text: view.state.doc.toString(), version: docVersion,

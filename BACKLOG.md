@@ -55,15 +55,17 @@ paths/names, exported into a NEW public repo (this one stays private as-is); ver
     refs — the ~131 "STALE" scan hits (test-fixture fake shas, doc examples, foreign textview_dist
     shas) are deliberately left alone.
 - **O-6 — Data-safety tail (verified by subagent 2026-08-08, evidence in the report):**
-  - `[PARTIAL→FIX, M]` **CM6 flush-before-read** — **RE-CONFIRMED STILL OPEN 2026-08-11**
-    (owner asked; verified against head `b710fc80`: `emitChangeImmediate()` runs only before
-    the in-editor ⌘S at codemirror.html:896 + vim-write :772; ZERO `.flushChanges` dispatches
-    from any Swift close/quit/session/menu-save path). Flush exists ONLY for in-editor
-    ⌘S/vim-write; ⌘W close, ⌘Q quit, session-switch hot-exit, blur-save, and menu-Save all
-    read a ≤200ms-stale mirror. Worst repro: type→⌘W within 200ms on a clean buffer → no
-    dirty prompt → keystrokes silently lost. Fix shape: a synchronous flush request/ack (or
-    read-through-JS) before close-confirm, quit-capture, session drain, and menu-save; plus
-    flush on `editorBlurred`.
+  - ~~**CM6 flush-before-read**~~ **FIXED 2026-08-11** (was re-confirmed open same day):
+    nonce'd `flushChanges`→`flushAck` handshake (message ORDER proves the pending text
+    landed before the ack) + `CMEditorTextSync.flushPendingEdits()` bounded main-runloop
+    wait (250ms cap; headless = immediate no-op). Wired at: `confirmCloseIfDirty` (⌘W +
+    every close variant), `applicationWillTerminate` (⌘Q hot-exit capture), all session
+    activate paths (sync + HUD), and the MENU ⌘S handler (the in-editor ⌘S already
+    flushed page-side — and pumping inside a script-message callback would risk
+    re-entrancy, so the JS-bridge save path deliberately does NOT re-flush). Belt: the
+    page now self-flushes on editor blur / visibilitychange-hidden / pagehide.
+    Teeth: `CMEditorTextSyncTests` (wait/bus/headless-no-op) + bridge encode/parse/schema
+    pins + `EditorFlushWebViewTests` (live-page ordering, both VM webview lanes).
   - `[FIXED ✓]` session-drain spill deletion (guard @ DocumentModel.swift:3446 + HotExitTests teeth).
   - `[PARTIAL→FIX, S]` **HotExitSpill.write fails silently** (raw Data.write, no
     onWriteFailure hook, no fsync): disk-full at quit with a >1MiB dirty buffer loses it with

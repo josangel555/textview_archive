@@ -4464,3 +4464,12 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   freeze. To let SwiftUI paint feedback before synchronous heavy work: `asyncAfter` of at
   least one frame (~80ms), or better, feedback that renders on mouseDOWN (a ButtonStyle's
   `isPressed`) which needs no deferral at all.
+
+- **Pumping the main runloop for a WKWebView ack: safe from ACTION handlers, not from
+  message callbacks (2026-08-11, the O-6 flush).** The synchronous flush handshake
+  (dispatch `flushChanges{nonce}` → spin `RunLoop.main` until `flushAck{nonce}`) relies on
+  message ORDER (the page emits the pending change BEFORE the ack) and is safe from menu/
+  keystroke handlers and `applicationWillTerminate`. It must NOT run inside a
+  `WKScriptMessageHandler` callback — pumping there can deliver further script messages
+  re-entrantly into the same handler. Concretely: the MENU ⌘S flushes; the JS-bridge save
+  path (already flushed page-side before posting `save`) deliberately does not.

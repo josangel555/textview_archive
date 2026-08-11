@@ -780,6 +780,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // O-6 flush-before-read: pull any pending (debounced) CM6 edits
+        // into the Swift mirror BEFORE the session snapshot below captures
+        // unsaved buffers — a ⌘Q within ~200ms of typing used to hot-exit
+        // a stale mirror and silently drop the last keystrokes.
+        CMEditorTextSync.flushPendingEdits()
+
         // TSK-1544: close the MCP socket + unlink its node first — after
         // this point the model is tearing down, so no new automation
         // session may attach mid-flush.
@@ -1069,6 +1075,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// The model surfaces any I/O failure via its own NSAlert; we just
     /// relay the call. HEX takes precedence when its buffer is dirty.
     @objc func saveActiveEditor(_ sender: Any?) {
+        // O-6 flush-before-read: the CM6 mirror debounces ~200ms — a
+        // menu/⌘S save issued right after typing could write STALE text.
+        // (The in-editor ⌘S path flushes page-side before posting save; the
+        // menu accelerator reaches Swift directly, so flush here.)
+        CMEditorTextSync.flushPendingEdits()
         if let i = model.tabs.selectedIndex, model.isHexDirtyTab(at: i) {
             _ = model.saveHexEdits(forTabID: model.tabs.tabs[i].id)
             return

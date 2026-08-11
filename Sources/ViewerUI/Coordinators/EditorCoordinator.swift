@@ -1340,6 +1340,13 @@ public final class EditorCoordinator: ObservableObject {
     /// In tests, set `dirtyClosePromptOverride` to drive the response
     /// without bringing up NSApplication.
     public func confirmCloseIfDirty(at index: Int) -> DirtyClosePrompt? {
+        // O-6 flush-before-read (the WORST repro of the class): type → ⌘W
+        // within the CM6 debounce window used to find a CLEAN buffer here —
+        // no prompt, keystrokes silently lost. Flush the focused editor's
+        // pending text BEFORE the dirty check so `isDirty` sees the truth.
+        // Headless/no-editor ⇒ immediate no-op; callers are user actions
+        // (⌘W, close-others), never layout passes.
+        CMEditorTextSync.flushPendingEdits()
         let tabs = tabsSnapshot()
         guard tabs.indices.contains(index) else { return nil }
         let tab = tabs[index]

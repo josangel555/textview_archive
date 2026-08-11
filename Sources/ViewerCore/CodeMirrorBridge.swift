@@ -112,6 +112,11 @@ public enum CMInboundMessage: Equatable, Sendable {
     /// applied buffer's length ≠ `contentLength` (drift detected).
     case incrementalChange(edits: [CMEdit], version: Int, contentLength: Int)
     case save
+    /// Ack for `.flushChanges(nonce:)` (O-6 flush-before-read, 2026-08-11):
+    /// posted by the page AFTER `emitChangeImmediate()` ran, so by message
+    /// ORDER any pending text change has already been delivered when this
+    /// arrives — the Swift mirror is provably current for the matching nonce.
+    case flushAck(nonce: Int)
     case cursorPositionChanged(line: Int, column: Int, head: Int, ranges: Int)
     case selectionChanged(selectionJSON: String, hasSelection: Bool)
     case scrollChanged(top: Int, left: Int, viewportFromLine: Int, viewportToLine: Int)
@@ -237,7 +242,10 @@ public enum CMOutboundMessage: Equatable, Sendable {
     case undo
     case redo
     case focus
-    case flushChanges
+    /// Force the page to emit any pending (debounced) text change NOW.
+    /// With a `nonce`, the page follows the emit with a `flushAck` carrying
+    /// it back — the synchronous-flush handshake (O-6 flush-before-read).
+    case flushChanges(nonce: Int?)
     /// Replace the inline-diagnostic decoration set. Empty array clears.
     /// CM6's `@codemirror/lint` linter source pulls from a StateField
     /// fed by this effect; squiggles + lint gutter both react.
@@ -401,6 +409,9 @@ public enum CMBridgeCodec {
                 edits: out, version: version, contentLength: contentLength)
         case "save":
             return .save
+        case "flushAck":
+            guard let nonce = dict["nonce"] as? Int else { return nil }
+            return .flushAck(nonce: nonce)
         case "cursorPositionChanged":
             return .cursorPositionChanged(
                 line: dict["line"] as? Int ?? 1,
@@ -638,7 +649,9 @@ public enum CMBridgeCodec {
         case .undo:           dict["type"] = "undo"
         case .redo:           dict["type"] = "redo"
         case .focus:          dict["type"] = "focus"
-        case .flushChanges:   dict["type"] = "flushChanges"
+        case .flushChanges(let nonce):
+            dict["type"] = "flushChanges"
+            if let nonce = nonce { dict["nonce"] = nonce }
         case .setDiagnostics(let diags):
             dict["type"] = "setDiagnostics"
             dict["diagnostics"] = diags.map { d -> [String: Any] in

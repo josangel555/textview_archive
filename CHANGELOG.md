@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-11
+
+### Fixed
+- **Fast close/quit/switch can no longer lose your last keystrokes.** The editor
+  batches typing for ~200ms before handing it to the app, and only the in-editor ⌘S
+  forced that hand-off — so typing and immediately closing the tab (⌘W), quitting (⌘Q),
+  switching sessions, or saving from the menu could read the pre-typing text: no
+  "unsaved changes" prompt, keystrokes silently gone. Every one of those paths now
+  flushes the editor first and provably waits for the text to land (bounded, imperceptible);
+  the editor also flushes itself whenever it loses focus or the window hides.
+
+### System work
+- CM6 bridge: nonce'd `flushChanges` → `flushAck` handshake (schema + encode/parse
+  pins); `CMEditorTextSync` bounded-wait seam (host-tested); new `EditorFlushWebViewTests`
+  ordering teeth registered in both VM webview lanes.
+
 ## 2026-08-09
 
 ### Fixed (round 2 — owner 4 AM batch)
