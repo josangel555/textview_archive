@@ -25,12 +25,29 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         public var tabIDs: [UUID]
         /// This pane's own selection (each pane remembers what it shows).
         public var selectedTabID: UUID?
+        /// S4d — relative share of the run's span (1 = an equal share).
+        /// Splitting halves the split pane's weight into the new pane;
+        /// closing a pane hands its weight to the absorber; the divider
+        /// drag rebalances neighbors (`PaneResize`).
+        public var weight: CGFloat
 
-        public init(id: UUID = UUID(), tabIDs: [UUID] = [], selectedTabID: UUID? = nil) {
+        public init(id: UUID = UUID(), tabIDs: [UUID] = [],
+                    selectedTabID: UUID? = nil, weight: CGFloat = 1) {
             self.id = id
             self.tabIDs = tabIDs
             self.selectedTabID = tabIDs.contains(where: { $0 == selectedTabID })
                 ? selectedTabID : tabIDs.first
+            self.weight = weight
+        }
+
+        // Decode-default for `weight` so any pane persisted before S4d
+        // (and hand-written test fixtures) decodes at an equal share.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(UUID.self, forKey: .id)
+            tabIDs = try c.decode([UUID].self, forKey: .tabIDs)
+            selectedTabID = try c.decodeIfPresent(UUID.self, forKey: .selectedTabID)
+            weight = try c.decodeIfPresent(CGFloat.self, forKey: .weight) ?? 1
         }
     }
 
@@ -112,6 +129,10 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         guard let idx = panes.firstIndex(where: { $0.id == focusedPaneID }) else { return }
         if panes.count == 1 { orientation = direction }
         var newPane = Pane()
+        // The new pane takes HALF the split pane's span — the other panes
+        // keep their sizes (VS Code split semantics).
+        newPane.weight = panes[idx].weight / 2
+        panes[idx].weight /= 2
         if let tabID, let from = panes.firstIndex(where: { $0.tabIDs.contains(tabID) }) {
             panes[from].tabIDs.removeAll { $0 == tabID }
             if panes[from].selectedTabID == tabID {
@@ -136,6 +157,8 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
         if panes[absorbIdx].selectedTabID == nil {
             panes[absorbIdx].selectedTabID = closing.selectedTabID
         }
+        // The absorber grows into the freed span.
+        panes[absorbIdx].weight += closing.weight
         let absorbID = panes[absorbIdx].id
         panes.remove(at: idx)
         if focusedPaneID == id { focusedPaneID = absorbID }
@@ -146,6 +169,15 @@ public struct PaneAssignment: Equatable, Sendable, Codable {
     public mutating func focusPane(id: UUID) {
         guard panes.contains(where: { $0.id == id }) else { return }
         focusedPaneID = id
+    }
+
+    /// S4d — replace every pane's weight (the divider-drag commit).
+    /// Count-mismatched or non-positive input is refused whole: a drag
+    /// racing a pane close must not scramble shares pane-by-pane.
+    public mutating func applyWeights(_ weights: [CGFloat]) {
+        guard weights.count == panes.count,
+              weights.allSatisfy({ $0 > 0 }) else { return }
+        for i in panes.indices { panes[i].weight = weights[i] }
     }
 
     // MARK: - Tab operations

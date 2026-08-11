@@ -236,6 +236,14 @@ public final class TabCoordinator: ObservableObject {
         if next != paneAssignment { paneAssignment = next }
     }
 
+    /// S4d — commit a divider drag's rebalanced weights (equality-guarded;
+    /// the model refuses count mismatches from a drag racing a pane close).
+    public func setPaneWeights(_ weights: [CGFloat]) {
+        var next = paneAssignment
+        next.applyWeights(weights)
+        if next != paneAssignment { paneAssignment = next }
+    }
+
     /// Cycle focus to the next pane in the run (wraps). No-op un-split.
     /// The app-wide selection follows the pane's remembered tab, same as
     /// clicking into it.
@@ -272,7 +280,8 @@ public final class TabCoordinator: ObservableObject {
             panes: a.panes.map { $0.tabIDs.compactMap { pathByID[$0] } },
             selected: a.panes.map { $0.selectedTabID.flatMap { pathByID[$0] } },
             focusedIndex: a.panes.firstIndex { $0.id == a.focusedPaneID } ?? 0,
-            orientation: a.orientation.rawValue)
+            orientation: a.orientation.rawValue,
+            weights: a.panes.map { Double($0.weight) })
     }
 
     /// I-21 S4b — restore a persisted pane layout AFTER the session's tabs
@@ -289,7 +298,12 @@ public final class TabCoordinator: ObservableObject {
             let ids = paths.compactMap { idByPath[$0] }
             let sel = state.selected.indices.contains(i)
                 ? state.selected[i].flatMap { idByPath[$0] } : nil
-            return PaneAssignment.Pane(tabIDs: ids, selectedTabID: sel)
+            // Pre-S4d snapshots carry no weights → equal shares.
+            let w = state.weights.flatMap {
+                $0.indices.contains(i) ? CGFloat($0[i]) : nil
+            } ?? 1
+            return PaneAssignment.Pane(tabIDs: ids, selectedTabID: sel,
+                                       weight: w > 0 ? w : 1)
         }
         let orientation = PaneAssignment.SplitOrientation(rawValue: state.orientation)
             ?? .horizontal

@@ -176,10 +176,19 @@ I-## → TSK-### when the tasked board reconnects.
     focused pane's selection; didOpenTab joins the focused pane). Host teeth:
     reorder model pins + coordinator reorder/focus-cycle pins + `PaneDropChannelTests`
     (hit-test/prune/dedup/flip-math); VM rung `AXPaneInteractionTests` (HID
-    cross-strip drag + content-click focus). REMAINING (S4d): pane divider
-    drag-resize (panes share space equally today; persist weights additively in
-    `PaneLayoutState`), per-pane ContentToolbar decision (owner call), tab
-    context-menu "Open in New Pane" (nice-to-have; the drag covers the need).
+    cross-strip drag + content-click focus — both VM-GREEN 2026-08-11).
+    ~~S4d divider resize~~ **DONE 2026-08-11**: `Pane.weight` (split halves the
+    split pane's share, close hands it to the absorber, `normalized()` carries
+    it); visible 8px gutter+pill between panes (`PaneDividerGutter`, resize
+    cursor, `mdv.pane.resize`) driving the pure `PaneResize.dragDivider`
+    rebalance (neighbors only, 120pt floor, weight-sum preserved; drag-origin
+    snapshot per the rendered-space rule); weights persist additively in
+    `PaneLayoutState.weights` (pre-S4d snapshots restore equal shares). Teeth:
+    `PaneResizeTests` + weight pins + persistence round-trip; AX divider tooth
+    with the sidebar zero-movement skip guard; scene expectations now require
+    `mdv.pane.resize`. REMAINING: per-pane ContentToolbar decision (owner
+    call), tab context-menu "Open in New Pane" (nice-to-have; the drag covers
+    the need).
     Relation: the window `splitURL` preview pane is eventually SUPERSEDED by a
     real second pane; per-tab split-editing (I-19) lives inside whichever pane
     hosts the tab — orthogonal ✓. Mixed-axis GRIDS = future split-tree.

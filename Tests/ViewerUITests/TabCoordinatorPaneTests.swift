@@ -228,6 +228,33 @@ final class TabCoordinatorPaneTests: XCTestCase {
                        c.paneAssignment.focusedPaneID)
     }
 
+    func test_paneLayout_persistsWeights_andLegacyStateRestoresEqualShares() {
+        // CAPTURE: a resized split (left pane dragged wider).
+        let c1 = TabCoordinator()
+        c1.append(makeTab("a.md")); c1.append(makeTab("b.md"))
+        c1.splitFocusedPane(movingSelected: true)
+        c1.setPaneWeights([3, 1])
+        guard let state = c1.paneLayoutSnapshot() else {
+            return XCTFail("a split layout must capture")
+        }
+        XCTAssertEqual(state.weights, [3, 1])
+
+        // RESTORE onto fresh ids: the sizes come back.
+        let c2 = TabCoordinator()
+        c2.append(makeTab("a.md")); c2.append(makeTab("b.md"))
+        c2.applyPaneLayout(state)
+        XCTAssertEqual(c2.paneAssignment.panes.map(\.weight), [3, 1])
+
+        // A pre-S4d snapshot (weights nil) restores equal shares.
+        let legacy = SessionSnapshot.PaneLayoutState(
+            panes: state.panes, selected: state.selected,
+            focusedIndex: state.focusedIndex, orientation: state.orientation)
+        let c3 = TabCoordinator()
+        c3.append(makeTab("a.md")); c3.append(makeTab("b.md"))
+        c3.applyPaneLayout(legacy)
+        XCTAssertEqual(c3.paneAssignment.panes.map(\.weight), [1, 1])
+    }
+
     func test_paneLayoutSnapshot_isNilWhileUnsplit() {
         let c = TabCoordinator()
         c.append(makeTab("solo.md"))

@@ -1,5 +1,5 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — EDITOR PANES epic S1–S4c LANDED; S4d resize remains (2026-08-11 ~04:45)
+# Handoff — EDITOR PANES epic S1–S4d LANDED (2026-08-11 ~05:10)
 
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ the S4a+S4b
 commit ("Split Editor Down + pane layouts persist") — `git log --oneline -12` shows the
@@ -39,9 +39,14 @@ I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain 
   (`PaneFocusClickMonitor`, observe-only NSEvent monitor over the channel's content
   rects); View ▸ Focus Next Pane (⌥⌘`). Host teeth: reorder/focus pins +
   `PaneDropChannelTests`; VM rung: `AXPaneInteractionTests` (HID drag + click).
-- **S4d REMAINING**: pane divider drag-resize (equal shares today; persist weights
-  additively in `PaneLayoutState`), per-pane ContentToolbar decision (owner call).
-  Mixed-axis GRIDS = future split-tree.
+- **S4d divider resize** ✓: `Pane.weight` (split halves the split pane's share,
+  close hands it back, normalized() carries it), `PaneDividerGutter` (visible
+  8px gutter+pill, `mdv.pane.resize`) → pure `PaneResize.dragDivider` (neighbors
+  only, 120pt floor); weights persist in `PaneLayoutState.weights` (additive;
+  legacy = equal shares). `PaneResizeTests` + weight/persistence pins + AX
+  divider tooth (zero-movement skip guard).
+- **EPIC REMAINING**: per-pane ContentToolbar decision (owner call), context-menu
+  "Open in New Pane" (nice-to-have). Mixed-axis GRIDS = future split-tree.
 
 ## Also landed this session (earlier arcs, all CI-green + installed)
 - O-6 flush-before-read: nonce'd flushChanges→flushAck + CMEditorTextSync bounded wait
@@ -70,11 +75,11 @@ I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain 
 
 ## How to resume
 1. `git log --oneline -12` · `git status --short` (only the 4 protected untracked).
-2. CI: `4d9e2264` + `cfbe1b57` both came back rc=0; release INSTALLED to
-   /Applications (owner: ⌘Q+relaunch). The S4c commit is pending its CI line —
-   green ⇒ reinstall; red ⇒ fix forward (stale pin suites are the usual).
-3. Next work: **S4d pane divider drag-resize** (see I-21 in BACKLOG) or the owner's
-   next batch. Then: I-20 gap-matrix audit, mermaid zoom clip, AutoSave (unblocked).
+2. CI: `4d9e2264`/`cfbe1b57`/`95f79d73` (S4c) all rc=0; release @ S4b INSTALLED.
+   The S4d commit is pending its CI line — green ⇒ `build-app.sh release
+   --install` (owner: ⌘Q+relaunch); red ⇒ fix forward (stale pins usual).
+3. Next work: the owner's next batch, or **I-20 gap-matrix audit**, mermaid zoom
+   clip, AutoSave (unblocked). Panes epic residue = owner decisions only.
 4. VM lane: rsync → `ssh macOS15 'cd markdown_viewer && touch rust-core/link/*.a &&
    bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh
    run <scene>`; scenes: panes-split, panes-down, mktg-split, terminal-dock-right.

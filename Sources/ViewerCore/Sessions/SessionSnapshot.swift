@@ -208,13 +208,18 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         public let focusedIndex: Int
         /// `PaneAssignment.SplitOrientation` raw value.
         public let orientation: String
+        /// S4d — per-pane relative span shares (divider-drag sizes).
+        /// Additive-optional: pre-S4d snapshots restore equal shares.
+        public let weights: [Double]?
 
         public init(panes: [[String]], selected: [String?],
-                    focusedIndex: Int, orientation: String) {
+                    focusedIndex: Int, orientation: String,
+                    weights: [Double]? = nil) {
             self.panes = panes
             self.selected = selected
             self.focusedIndex = focusedIndex
             self.orientation = orientation
+            self.weights = weights
         }
     }
     public let paneLayout: PaneLayoutState?

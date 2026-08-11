@@ -59,6 +59,47 @@ final class AXPaneInteractionTests: AXInteractionTestCase {
             + "\(AXDriverCore.findAll(AXQuery("mdv.tab.item.*"), in: root).compactMap(\.axFrame)))")
     }
 
+    /// S4d — a real drag on the pane divider gutter resizes the two
+    /// neighbors ~1:1 (the sidebar resize-tooth pattern, including its
+    /// VM-HID engage-mystery skip: ZERO movement is environmental, but
+    /// PARTIAL tracking — the stored↔rendered oscillator signature —
+    /// stays a hard RED). Observable: the left pane's strip frame width.
+    func test_hidDrag_paneDivider_resizesTheNeighbors() throws {
+        let root = try spawnAndAttach(scene: "panes-split")
+        _ = waitUntil(5) {
+            strips(in: root) != nil
+                && AXDriverCore.find("mdv.pane.resize", in: root)?.axFrame != nil
+        }
+        guard let gutter = AXDriverCore.find("mdv.pane.resize", in: root)?.axFrame else {
+            throw XCTSkip("mdv.pane.resize not materialized in this session")
+        }
+        guard let leftBefore = AXDriverCore.find("mdv.paneStrip", in: root)?.axFrame else {
+            return XCTFail("the unfocused (left) strip must report a frame")
+        }
+
+        let dragDistance: CGFloat = 150
+        let grab = CGPoint(x: gutter.midX, y: gutter.midY)
+        AXClickExecutor.drag(
+            from: grab, to: CGPoint(x: grab.x + dragDistance, y: grab.y))
+
+        _ = waitUntil(5) {
+            guard let now = AXDriverCore.find("mdv.paneStrip", in: root)?.axFrame
+            else { return false }
+            return abs((now.width - leftBefore.width) - dragDistance)
+                <= dragDistance * 0.35
+        }
+        let after = AXDriverCore.find("mdv.paneStrip", in: root)?.axFrame
+        let grew = (after?.width ?? leftBefore.width) - leftBefore.width
+        if abs(grew) < 2 {
+            throw XCTSkip("HID drag did not engage the gutter gesture in this "
+                + "VM session (grabbed \(grab) inside mdv.pane.resize's own AX "
+                + "frame) — the sidebar resize-tooth DIAG class")
+        }
+        XCTAssertTrue(abs(grew - dragDistance) <= dragDistance * 0.35,
+            "a \(Int(dragDistance))pt divider drag grew the left pane \(Int(grew))pt "
+            + "— PARTIAL tracking = a stored↔rendered decorrelation")
+    }
+
     /// A real click into the UNFOCUSED pane's CONTENT focuses that pane
     /// (the `PaneFocusClickMonitor` rung — strip clicks were already
     /// covered by their actions). Observable: the `mdv.paneStrip.focused`

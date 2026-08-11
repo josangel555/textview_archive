@@ -56,6 +56,12 @@ public struct ContentView: View {
     /// strip is shown only when BOTH this is `true` AND `sessionsApp != nil`.
     let sessionsUIEnabled: Bool
     @State private var isDropTargeted = false
+    /// S4d — one in-flight pane-divider drag: the live weights the split
+    /// renders from, and the drag-origin snapshot they rebalance against
+    /// (nil outside a drag; the commit lands on the coordinator at end).
+    @State private var livePaneWeights: [CGFloat]?
+    @State private var paneDragStartWeights: [CGFloat]?
+    @State private var paneDragStartUsable: CGFloat?
     private let renderer = HTMLRenderer()
     private let stylesheet: String
 
@@ -697,31 +703,78 @@ public struct ContentView: View {
     /// and its own content region showing the PANE's selected tab. The
     /// un-split world routes to the untouched `content` builder, so the
     /// pre-panes render path is byte-identical.
+    ///
+    /// S4d: panes render at their WEIGHTED spans (`Pane.weight`, persisted)
+    /// with a drag gutter between neighbors. The drag rebalances the two
+    /// neighbors only (`PaneResize`); the last pane flexes to absorb
+    /// rounding. Live drag state renders from `livePaneWeights`; the
+    /// commit lands on the coordinator at drag end.
     @ViewBuilder
     private var paneAwareContent: some View {
         let assignment = tabCoordinator.paneAssignment
         if assignment.isSplit {
             // The run's axis: side-by-side columns (split right) or stacked
             // rows (split down) — single-axis v1.
-            let layout = assignment.orientation == .vertical
+            let verticalRun = assignment.orientation == .vertical
+            let layout = verticalRun
                 ? AnyLayout(VStackLayout(spacing: 0))
                 : AnyLayout(HStackLayout(spacing: 0))
-            layout {
-                ForEach(Array(assignment.panes.enumerated()), id: \.element.id) { idx, pane in
-                    if idx > 0 { Divider() }
-                    paneColumn(pane, focused: pane.id == assignment.focusedPaneID)
+            GeometryReader { geo in
+                let total = verticalRun ? geo.size.height : geo.size.width
+                let usable = max(total - CGFloat(assignment.panes.count - 1)
+                                    * PaneDividerGutter.thickness, 0)
+                // A live drag renders its in-flight weights; a count skew
+                // (a pane closed mid-drag) falls back to the model's.
+                let modelWeights = assignment.panes.map(\.weight)
+                let weights = (livePaneWeights?.count == modelWeights.count)
+                    ? livePaneWeights! : modelWeights
+                let sum = max(weights.reduce(0, +), 0.0001)
+                layout {
+                    ForEach(Array(assignment.panes.enumerated()), id: \.element.id) { idx, pane in
+                        if idx > 0 {
+                            PaneDividerGutter(
+                                verticalRun: verticalRun,
+                                onDrag: { delta in
+                                    // Snap the base at drag ORIGIN (rendered-
+                                    // space rule) so every sample rebalances
+                                    // from one consistent snapshot.
+                                    if paneDragStartWeights == nil {
+                                        paneDragStartWeights = modelWeights
+                                        paneDragStartUsable = usable
+                                    }
+                                    guard let base = paneDragStartWeights else { return }
+                                    livePaneWeights = PaneResize.dragDivider(
+                                        weights: base, divider: idx - 1,
+                                        deltaPx: delta,
+                                        totalPx: paneDragStartUsable ?? usable)
+                                },
+                                onEnd: {
+                                    if let w = livePaneWeights {
+                                        tabCoordinator.setPaneWeights(w)
+                                    }
+                                    livePaneWeights = nil
+                                    paneDragStartWeights = nil
+                                    paneDragStartUsable = nil
+                                })
+                        }
+                        let isLast = idx == assignment.panes.count - 1
+                        let span = usable * weights[idx] / sum
+                        paneColumn(pane, focused: pane.id == assignment.focusedPaneID)
+                            .frame(width: verticalRun || isLast ? nil : span,
+                                   height: !verticalRun || isLast ? nil : span)
+                    }
                 }
+                // S4c: clicking INTO a pane's content focuses it (strip clicks
+                // already do; WKWebView content clicks never reach a SwiftUI
+                // gesture — hence the observe-only NSEvent monitor). Mounted
+                // only on this split branch, so it never exists un-split.
+                .background(PaneFocusClickMonitor(
+                    isActive: true,
+                    channel: tabCoordinator.paneDropChannel,
+                    paneIDs: assignment.panes.map(\.id),
+                    focusedPaneID: assignment.focusedPaneID,
+                    onFocus: { tabCoordinator.focusPane(id: $0) }))
             }
-            // S4c: clicking INTO a pane's content focuses it (strip clicks
-            // already do; WKWebView content clicks never reach a SwiftUI
-            // gesture — hence the observe-only NSEvent monitor). Mounted
-            // only on this split branch, so it never exists un-split.
-            .background(PaneFocusClickMonitor(
-                isActive: true,
-                channel: tabCoordinator.paneDropChannel,
-                paneIDs: assignment.panes.map(\.id),
-                focusedPaneID: assignment.focusedPaneID,
-                onFocus: { tabCoordinator.focusPane(id: $0) }))
         } else {
             content
         }

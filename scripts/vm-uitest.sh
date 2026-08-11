@@ -71,8 +71,8 @@ scene_expect() {
     # I-21 S3 (editor panes): per-pane strips + the focused-pane marker
     # (the marker rides the strip id — pane-column container ids don't
     # materialize out-of-process).
-    panes-split) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close" ;;
-    panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close" ;;
+    panes-split) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.pane.resize" ;;
+    panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.pane.resize" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;

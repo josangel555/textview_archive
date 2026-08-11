@@ -188,4 +188,49 @@ import ViewerCore
         let back = try JSONDecoder().decode(PaneAssignment.self, from: data)
         #expect(back == p, "the session snapshot can persist the layout verbatim")
     }
+
+    // MARK: S4d — pane weights (divider resize)
+
+    @Test func split_halvesTheSplitPanesWeight_closeHandsItBack() {
+        var p = single()                       // one pane, weight 1
+        p.splitFocusedPane(moving: b)
+        #expect(p.panes[0].weight == 0.5)
+        #expect(p.panes[1].weight == 0.5, "the new pane takes half the split pane's span")
+        p.splitFocusedPane()                   // split the (focused) new pane again
+        #expect(p.panes[1].weight == 0.25)
+        #expect(p.panes[2].weight == 0.25)
+        #expect(p.panes[0].weight == 0.5, "unrelated panes keep their span")
+        p.closePane(id: p.panes[2].id)
+        #expect(p.panes[1].weight == 0.5, "the absorber grows into the freed span")
+    }
+
+    @Test func applyWeights_rejectsCountMismatchAndNonPositive_whole() {
+        var p = single()
+        p.splitFocusedPane(moving: b)
+        let before = p
+        p.applyWeights([1])                    // count mismatch
+        #expect(p == before)
+        p.applyWeights([1, 0])                 // non-positive entry
+        #expect(p == before)
+        p.applyWeights([3, 1])
+        #expect(p.panes.map(\.weight) == [3, 1])
+    }
+
+    @Test func normalized_carriesWeights() {
+        var p = single()
+        p.splitFocusedPane(moving: b)
+        p.applyWeights([3, 1])
+        let fixed = p.normalized(against: [a, b, c, d])   // d adopts
+        #expect(fixed.panes.map(\.weight) == [3, 1],
+                "the reconciliation rebuild must not reset pane sizes")
+    }
+
+    @Test func paneDecode_withoutAWeightKey_defaultsToAnEqualShare() throws {
+        let json = """
+            {"id": "\(UUID().uuidString)", "tabIDs": []}
+            """
+        let pane = try JSONDecoder().decode(
+            PaneAssignment.Pane.self, from: Data(json.utf8))
+        #expect(pane.weight == 1)
+    }
 }

@@ -38,6 +38,11 @@
   lands focused and selected. Clicking anywhere in a pane's content focuses that
   pane (the ring follows), not just its tab strip. And View ▸ Focus Next Pane
   (⌥⌘`) cycles the focus from the keyboard.
+- **Panes are resizable.** A visible gutter (with the same grab pill as the
+  sidebar dividers) sits between panes — drag it and the two neighbors trade
+  space (down to a sane minimum; other panes keep their size). Splitting a pane
+  halves ITS space instead of squeezing everything, closing a pane hands its
+  space to the absorber, and your pane sizes persist with the session layout.
 - **Markdown links are first-class everywhere.** Web links and mailto open in your
   browser/mail (as before); relative links and `[[wikilinks]]` open in-app; and now:
   **absolute file paths** (`/Users/…` or `file://…`) open in a tab, **absolute folder
