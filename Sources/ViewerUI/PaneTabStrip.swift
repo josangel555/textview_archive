@@ -32,6 +32,11 @@ struct PaneTabStrip: View {
     /// on a leaf view, and its mutations never publish).
     @State private var frameBox = StripFrameBox()
     @State private var reorder: StripReorderState?
+    /// Measured strip width → width-fitting chips (owner 2026-08-12: the
+    /// generalized strip shipped FIXED-width chips, so a crowded strip
+    /// silently overflowed into an unindicated horizontal scroll; the
+    /// window strip's shrink-to-fit + overflow menu are ported here).
+    @State private var availableWidth: CGFloat = 0
 
     /// Per-pane coordinate space so two strips' frames never mix.
     private var stripSpace: String { "mdv.paneStrip.\(pane.id.uuidString)" }
@@ -45,6 +50,13 @@ struct PaneTabStrip: View {
         }
         let isSplit = tabCoordinator.paneAssignment.isSplit
         let isDropTarget = dropChannel.hoveredPaneID == pane.id
+        // Shrink-to-fit chips (TabBar's width math, TSK-304): reserve the
+        // Close Pane button's width when split on top of the "+" reserve
+        // the function already carries.
+        let tabWidth = TabBar.computedTabWidth(
+            available: availableWidth - (isSplit ? model.uiSize(28) : 0),
+            count: tabs.count,
+            scale: CGFloat(model.zoom))
         HStack(spacing: 2) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -56,7 +68,7 @@ struct PaneTabStrip: View {
                                 isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
                                 isInSplit: tabCoordinator.splitTabID == tab.id,
                                 scale: CGFloat(model.zoom),
-                                width: model.uiSize(160),
+                                width: tabWidth,
                                 onSelect: {
                                     // Swallow the click that terminates a drag
                                     // (StripFrameBox.armSelectSuppression).
@@ -127,6 +139,34 @@ struct PaneTabStrip: View {
                 }
             }
             Spacer(minLength: 0)
+            // TSK-304 parity: when the strip is crowded (chips pinned at the
+            // shrink floor), a pinned dropdown lists this PANE's tabs so any
+            // one is reachable without scrolling — the visible indication
+            // the fixed-width strip lacked (owner 2026-08-12).
+            if TabBar.tabsAreCrowded(
+                available: availableWidth - (isSplit ? model.uiSize(28) : 0),
+                count: tabs.count,
+                scale: CGFloat(model.zoom)) {
+                Menu {
+                    ForEach(tabs) { tab in
+                        Button {
+                            if let i = storeIndex(of: tab.id) { model.selectTab(at: i) }
+                        } label: {
+                            Text((tab.id == pane.selectedTabID ? "✓ " : "")
+                                 + (tab.isDirty ? "• " : "") + tab.title)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: model.uiSize(11), weight: .medium))
+                        .frame(width: model.uiSize(24), height: model.uiSize(24))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("All tabs in this pane (\(tabs.count)) — jump to any")
+                .accessibilityIdentifier("mdv.tab.overflowMenu")
+            }
             // The pane's close affordance: absorb my tabs into the neighbor
             // and un-split (never closes tabs — `PaneAssignment.closePane`).
             // Meaningless for the last pane, so it only renders while split.
@@ -148,9 +188,26 @@ struct PaneTabStrip: View {
             }
         }
         .frame(height: model.uiSize(30))
-        .background(isDropTarget
-            ? AnyShapeStyle(Color.accentColor.opacity(0.18))
-            : AnyShapeStyle(Palette.windowBackground))
+        // Background measures the strip width (non-invalidating reader) and
+        // carries the TabBar bottom-hairline idiom: the line runs under the
+        // inactive chips + empty strip; the ACTIVE chip's fill paints over
+        // its segment. The drop-target accent tint layers on top.
+        .background(
+            GeometryReader { geo in
+                ZStack(alignment: .bottom) {
+                    Palette.windowBackground
+                    Rectangle().fill(Palette.separator).frame(height: 1)
+                    if isDropTarget { Color.accentColor.opacity(0.18) }
+                }
+                .onAppear { availableWidth = geo.size.width }
+                .onChange(of: geo.size.width) { _, w in availableWidth = w }
+            })
+        // Owner 2026-08-12: a hairline ABOVE the strip too, so the strip
+        // reads as a bounded band against whatever sits above it.
+        .overlay(alignment: .top) {
+            Rectangle().fill(Palette.separator).frame(height: 1)
+                .allowsHitTesting(false)
+        }
         // Drop-target highlight: a visible accent frame while a tab drag
         // from another pane hovers this strip (drop = move it here).
         .overlay {

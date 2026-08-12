@@ -255,11 +255,21 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
     func test_sidebarRecencyTick_doesNotReBodyContentChrome() throws {
         let model = makeModel()
         makeHost(model)
-        let file = folderRoot.appendingPathComponent("file_0.txt")
-        let counts = evals(after: { model.sidebar.fileDidChange(file) })
+        // Retry variant (TSK-1328): this pin flaked TWICE under the parallel
+        // gate (StatusBar=1, then ContentToolbar=1 — a different straggler
+        // each time, never reproducible quiet) — the transient-coincidental
+        // class evalsExpectingZero exists for. The mutation varies per
+        // attempt (a different file's recency tick) so each attempt is a
+        // real re-measurement; a GENUINE forwarding regression re-bodies on
+        // every attempt and still fails.
+        let zeroViews = ["TabBar", "StatusBar", "ContentToolbar",
+                         "BottomAttributesBar"]
+        let counts = evalsExpectingZero(zeroViews: zeroViews) { i in
+            model.sidebar.fileDidChange(
+                folderRoot.appendingPathComponent("file_\(i % 6).txt"))
+        }
         dump("sidebarRecencyTick", counts)
-        for view in ["TabBar", "StatusBar", "ContentToolbar",
-                     "BottomAttributesBar"] {
+        for view in zeroViews {
             XCTAssertEqual(counts[view] ?? 0, 0,
                 "\(view) must NOT re-body on a sidebar-only republish "
                 + "(forwarding was removed); counts: \(describeCounts(counts))")

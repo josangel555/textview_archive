@@ -336,6 +336,14 @@ struct SessionTabBarItem: View {
                 // ambiguity now that this row is the title bar.
                 RoundedRectangle(cornerRadius: uiSize(8), style: .continuous)
                     .fill(background)
+                    // Owner 2026-08-12: pills carry a border — hairline
+                    // light grey on inactive chips, a darker accent edge on
+                    // the active one — so every session reads as a bounded
+                    // chip against the flat header band.
+                    .overlay(
+                        RoundedRectangle(cornerRadius: uiSize(8), style: .continuous)
+                            .strokeBorder(borderColor, lineWidth: isSelected ? 1.5 : 1)
+                    )
                 HStack(spacing: uiSize(6)) {
                     Image(systemName: "folder")
                         .font(.system(size: uiSize(11), weight: .medium))
@@ -450,6 +458,18 @@ struct SessionTabBarItem: View {
             .accessibilityIdentifier("mdv.sessionTab.rename.\(snapshot.id.uuidString)")
     }
 
+    /// Owner 2026-08-12: every pill carries a border — hairline light
+    /// grey on inactive chips, a darker accent edge on the active one
+    /// (hover strengthens the inactive hairline a step).
+    private var borderColor: Color {
+        if isSelected {
+            return Color(nsColor: .controlAccentColor).opacity(0.9)
+        }
+        return isHovering
+            ? Color.secondary.opacity(0.55)
+            : Palette.separator
+    }
+
     private var background: Color {
         // Drop-target tint outranks selection: while a drag is over this
         // pill, "the tab lands here" is the message that matters.
@@ -460,10 +480,10 @@ struct SessionTabBarItem: View {
             return Color(nsColor: .controlAccentColor).opacity(0.22)
         }
         if isHovering {
-            // A clearly visible hover step (owner 2026-08-09: "add hover bg
-            // highlight… similar to shoulder buttons") — the old 0.75-vs-0.5
-            // same-grey step was imperceptible.
-            return Palette.controlBackground
+            // A clearly visible hover step (owner 2026-08-12 re-ask: the
+            // grey-on-grey step vanished against the flattened header) —
+            // an accent-tinged wash reads unmistakably as "hovering".
+            return Color(nsColor: .controlAccentColor).opacity(0.10)
         }
         // Inactive sessions are GREY chips (owner 2026-08-05) — clear read
         // of active vs inactive at a glance.
