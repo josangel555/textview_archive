@@ -102,110 +102,66 @@ final class SidebarResizeTests: XCTestCase {
     // 2026-08-12 special-case sweep; the one-rule stack has no bounded
     // accordion.)
 
-    // MARK: - Cascading redistribution (owner 2026-08-09: "the third one
-    // doesn't even move" — grow takes from the neighbor first, then from
-    // the flex panel's slack; shrink stays pair-only)
+    // MARK: - DividerDragSession (owner 2026-08-12 FINAL SPEC: a divider
+    // drag moves THAT boundary only — no cascade, no other boundary)
 
-    func test_cascade_neighborFirst_thenFlex() {
-        // Neighbor can give 80 (200→120); the remaining 70 comes from flex.
-        let r = SidebarResize.redistributeCascading(
-            above: 300, below: 200, delta: 150, flexSlack: 500)
-        XCTAssertEqual(r.above, 450)
-        XCTAssertEqual(r.below, 120, "the neighbor gives down to its floor")
+    /// Owner repro 1: "shrinking the bottom-most panel past its minimum
+    /// GREW the one above." A pair drag must STOP at the shrinking side's
+    /// floor — the growing side never takes from anywhere else.
+    func test_session_pairDrag_stopsAtTheFloor_neverBorrowsElsewhere() {
+        let session = DividerDragSession(baseAbove: 300, baseBelow: 200, slack: 999)
+        // Within the pair's give: 1:1, sum-preserving.
+        var t = session.pairTargets(delta: 50)!
+        XCTAssertEqual(t.above, 350)
+        XCTAssertEqual(t.below, 150)
+        // The neighbor floors after giving 80 — the divider STOPS. The
+        // slack (deliberately huge here) must be IGNORED for pairs.
+        t = session.pairTargets(delta: 500)!
+        XCTAssertEqual(t.above, 380, "above stops at base + the pair's give — nothing more")
+        XCTAssertEqual(t.below, SidebarPanelHeights.minExpandedHeight)
+        XCTAssertEqual(t.above + t.below, 500, "sum-preserving always")
     }
 
-    func test_cascade_flexSlackCapsTheOverflow() {
-        // Neighbor gives 80; flex can only give 30 → total growth 110.
-        let r = SidebarResize.redistributeCascading(
-            above: 300, below: 200, delta: 150, flexSlack: 30)
-        XCTAssertEqual(r.above, 410)
-        XCTAssertEqual(r.below, 120)
-    }
-
-    func test_cascade_flooredNeighbor_growsEntirelyFromFlex() {
-        // The exact owner repro: the neighbor is ALREADY at its floor, so
-        // the old pair-only math moved nothing; the cascade grows from flex.
-        let r = SidebarResize.redistributeCascading(
-            above: 250, below: 120, delta: 100, flexSlack: 400)
-        XCTAssertEqual(r.above, 350)
-        XCTAssertEqual(r.below, 120)
-    }
-
-    func test_cascade_shrinkDirection_staysPairOnly() {
-        let r = SidebarResize.redistributeCascading(
-            above: 300, below: 200, delta: -50, flexSlack: 400)
-        XCTAssertEqual(r.above, 250)
-        XCTAssertEqual(r.below, 250, "shrink is sum-preserving, flex untouched")
-    }
-
-    func test_cascade_zeroSlack_matchesPairMath() {
-        let a = SidebarResize.redistribute(above: 300, below: 200, delta: 150)
-        let b = SidebarResize.redistributeCascading(
-            above: 300, below: 200, delta: 150, flexSlack: 0)
-        XCTAssertEqual(a.above, b.above)
-        XCTAssertEqual(a.below, b.below)
-    }
-
-    // MARK: - DividerDragSession (owner 2026-08-12: the halving loop)
-
-    /// The regression that motivated the frozen session: with the flex
-    /// budget read LIVE per delta (shrinking by what the drag already
-    /// consumed), a monotone grow drag converges at HALF the original
-    /// slack. The session freezes the budget at origin — a monotone drag
-    /// must track 1:1 for the FULL slack.
-    func test_session_monotoneGrowDrag_tracksOneToOne_forTheFullSlack() {
-        // Neighbor already floored: growth comes entirely from the flex
-        // budget (300pt available at origin).
-        let session = DividerDragSession(baseAbove: 250, baseBelow: 120, slack: 300)
-        var previous: CGFloat = 250
-        for delta in stride(from: CGFloat(20), through: 300, by: 20) {
+    /// The pair math touches exactly TWO values — a third panel moving is
+    /// structurally impossible; this pins the sum for a delta sweep.
+    func test_session_pairDrag_sumInvariant_acrossDeltas() {
+        let session = DividerDragSession(baseAbove: 260, baseBelow: 240, slack: 0)
+        for delta in stride(from: CGFloat(-400), through: 400, by: 40) {
             let t = session.pairTargets(delta: delta)!
-            XCTAssertEqual(t.above, 250 + delta, accuracy: 0.01,
-                "delta \(delta): the handle must track the pointer 1:1 "
-                + "(the live-budget loop stalled at slack/2 = +150)")
-            XCTAssertEqual(t.below, 120)
-            XCTAssertGreaterThanOrEqual(t.above, previous)
-            previous = t.above
+            XCTAssertEqual(t.above + t.below, 500, accuracy: 0.001)
+            XCTAssertGreaterThanOrEqual(t.above, SidebarPanelHeights.minExpandedHeight)
+            XCTAssertGreaterThanOrEqual(t.below, SidebarPanelHeights.minExpandedHeight)
         }
-        // Past the budget: clamps at base + slack, never beyond.
-        let over = session.pairTargets(delta: 500)!
-        XCTAssertEqual(over.above, 250 + 300)
     }
 
-    /// The OLD bug, executable: simulate the live-budget wiring (slack
-    /// re-read after each write = origin slack minus what's consumed) and
-    /// show it stalls at half. This documents WHY the session exists — if
-    /// someone reverts to a live budget, the 1:1 test above goes red.
-    func test_liveBudgetSimulation_demonstratesTheHalvingStall() {
-        let base: CGFloat = 250, slack0: CGFloat = 300
-        var above = base
-        for delta in stride(from: CGFloat(20), through: 600, by: 20) {
-            let liveSlack = slack0 - (above - base)   // what a re-body would see
-            let t = SidebarResize.redistributeCascading(
-                above: base, below: 120, delta: delta, flexSlack: liveSlack)
-            above = t.above
-        }
-        // Converges to an oscillation around slack₀/2 (±one mouse step) —
-        // nowhere near the full 300pt the user could SEE. The owner's
-        // "can't resize above 50%".
-        XCTAssertLessThanOrEqual(above, base + slack0 * 0.6,
-            "the live-budget feedback loop stalls near HALF the slack")
-        XCTAssertGreaterThanOrEqual(above, base + slack0 * 0.4)
-    }
-
-    func test_session_belowBoundary_growsAgainstOriginSlack_andClamps() {
+    /// Flex-adjacent boundary (flex ABOVE, stored panel below — the
+    /// FILES-on-top arrangement): drag up grows the stored panel into the
+    /// flex's ORIGIN give, 1:1 to the full slack (the live-budget loop
+    /// stalled at half); drag down shrinks it to its floor. Only this
+    /// boundary moves — the flex absorbs by layout.
+    func test_session_flexAboveBoundary_tracksFullSlack_andFloors() {
         let session = DividerDragSession(baseAbove: nil, baseBelow: 200, slack: 150)
-        // Drag UP (negative delta) grows the below panel from the flex.
-        XCTAssertEqual(session.belowTarget(delta: -100)!, 300)
+        for delta in stride(from: CGFloat(-10), through: -150, by: -10) {
+            XCTAssertEqual(session.belowTarget(delta: delta)!, 200 - delta,
+                           "1:1 through the FULL origin slack")
+        }
         XCTAssertEqual(session.belowTarget(delta: -400)!, 350,
             "growth clamps at base + origin slack")
-        // Drag down shrinks it (the floor clamp is the view's `bounded`).
         XCTAssertEqual(session.belowTarget(delta: 50)!, 150)
+        XCTAssertEqual(session.belowTarget(delta: 500)!,
+                       SidebarPanelHeights.minExpandedHeight,
+                       "shrink stops at the floor")
     }
 
-    func test_session_aboveOnly_isBasePlusDelta() {
-        let session = DividerDragSession(baseAbove: 240, baseBelow: nil, slack: 0)
+    /// Flex-adjacent boundary (stored panel above, flex BELOW): drag down
+    /// grows the stored panel into the origin give; drag up floors it.
+    func test_session_flexBelowBoundary_growsIntoSlack_andFloors() {
+        let session = DividerDragSession(baseAbove: 240, baseBelow: nil, slack: 160)
         XCTAssertEqual(session.aboveTarget(delta: 60)!, 300)
+        XCTAssertEqual(session.aboveTarget(delta: 500)!, 400,
+            "growth clamps at base + origin slack")
+        XCTAssertEqual(session.aboveTarget(delta: -500)!,
+                       SidebarPanelHeights.minExpandedHeight)
         XCTAssertNil(session.pairTargets(delta: 10), "no pair without both bases")
     }
 }

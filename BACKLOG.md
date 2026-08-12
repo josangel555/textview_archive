@@ -219,6 +219,15 @@ I-## → TSK-### when the tasked board reconnects.
     green today because the struct still exists); pane strips use FIXED chip
     width (uiSize 160) vs TabBar's width-fitting math — port `computedTabWidth`
     if crowded strips feel wrong.
+    **Resize FINAL SPEC (owner 2026-08-12, three rounds)**: strict pair-only
+    dividers (a drag moves THAT boundary; stops at the floor; cascade DELETED),
+    flex-adjacent dividers trade against the origin-frozen slack only,
+    open/close refits proportionally (`fill-check-crowded` scene + the
+    fits-whenever-floors-fit host invariant). RESIDUE (S): the crowded scene
+    mounts 5 of the 6 requested panels — `.recentlyOpened`'s `.shown` override
+    doesn't mount its section (its a11y id matched from another element, so
+    the gate passed) — chase the presence gate; also consider frames in
+    ax-reader so a11y gates can assert IN-VIEW geometry, not just presence.
     REMAINING: **gutter AX materialization (S)** — the shapes-only
     `PaneDividerGutter` never materializes an out-of-process AX element (bare
     id / `.accessibilityElement()` / `.contain` / label+trait ALL pruned, three

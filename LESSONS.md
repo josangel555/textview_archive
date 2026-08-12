@@ -4537,6 +4537,22 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   present in the split capture — pixels missing, structure intact ⇒
   compositor, not layout.
 
+- **Tests written alongside a behavior change encode the CHANGE, not the
+  USER'S invariant — pin the spec-level invariant separately (2026-08-12,
+  the sidebar-scrolls regression).** The no-auto-shrink change shipped with
+  green tests that pinned exactly what it did ("stored heights stand,
+  overflow scrolls") — so the suite proved the regression WORKED. Nothing
+  anywhere encoded the user-level invariant "opening 4-5 panels leaves every
+  tool reachable without scrolling", and the visual checks ran only the
+  SOLO-panel scenes (the roomy branch) while the change was to the CROWDED
+  branch. Two durable rules: (1) for layout/policy changes, write the
+  USER-STATED invariant as a property test over the state space (counts ×
+  sizes × bands) BEFORE writing behavior pins — it would have failed this
+  design at commit time; (2) partial-T6 must eyeball the branch you CHANGED
+  — a composition state (N panels, crowded) needs its own scene
+  (`fill-check-crowded`), not an incidental solo capture. Presence-only AX
+  gates can't see "in view" — frames in ax-reader is the enabler (BACKLOG).
+
 - **A drag's BUDGET must be frozen at origin, not just its bases — a live
   budget feeds back into itself and stalls at HALF (2026-08-12, the "can't
   resize above 50%" wall + mouse desync).** The 08-09 fix snapshotted the

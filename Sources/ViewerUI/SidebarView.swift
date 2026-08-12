@@ -205,6 +205,8 @@ struct SidebarView: View {
                     if filesPanelVisible {
                         filesPanel
                         if let first = stack.fixed.first {
+                            // FLEX-adjacent boundary (FILES above): the one
+                            // divider that trades against the flex's give.
                             ResizableSectionDivider(
                                 heightAbove: nil,
                                 heightBelow: heightBinding(for: first.kind),
@@ -215,23 +217,24 @@ struct SidebarView: View {
                     ForEach(Array(stack.fixed.enumerated()), id: \.element.kind) { idx, entry in
                         stackedPanel(entry.kind, bodyHeight: entry.height)
                         if idx + 1 < stack.fixed.count {
+                            // PAIR divider: trades between its two adjacent
+                            // panels ONLY, stops at the floor — no slack, no
+                            // cascade, no other boundary moves (owner
+                            // 2026-08-12 final spec).
                             ResizableSectionDivider(
                                 heightAbove: heightBinding(for: entry.kind),
                                 heightBelow: heightBinding(for: stack.fixed[idx + 1].kind),
                                 renderedAbove: entry.height,
-                                renderedBelow: stack.fixed[idx + 1].height,
-                                flexSlack: flexSlack)
+                                renderedBelow: stack.fixed[idx + 1].height)
                         }
                     }
                     if let flex = stack.flex {
                         if let lastFixed = stack.fixed.last {
+                            // FLEX-adjacent boundary (flex below).
                             ResizableSectionDivider(
                                 heightAbove: heightBinding(for: lastFixed.kind),
-                                maxHeight: SidebarStackLayout.boundaryMax(
-                                    aboveRendered: lastFixed.height,
-                                    flexRendered: stack.flexRendered,
-                                    flexFloor: SidebarPanelHeights.minExpandedHeight),
-                                renderedAbove: lastFixed.height)
+                                renderedAbove: lastFixed.height,
+                                flexSlack: flexSlack)
                         }
                         stackedPanel(flex, bodyHeight: .infinity)
                             .frame(maxHeight: .infinity, alignment: .top)

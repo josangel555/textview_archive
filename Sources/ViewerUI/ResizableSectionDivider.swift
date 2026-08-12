@@ -57,13 +57,6 @@ struct ResizableSectionDivider: View {
     /// but interaction is disabled — there's nothing meaningful to
     /// resize when only a header is showing.
     var isAboveCollapsed: Bool = false
-    /// The RENDER ceiling for the adjacent panels (the window-fraction
-    /// clamp SidebarView applies). Drag writes are bounded to it: the
-    /// stored height used to run PAST the ceiling while the panel
-    /// stopped moving, so the mouse decorrelated and reversing had a
-    /// dead zone (owner 2026-08-09 "proportions off"). nil = floor-only
-    /// (pre-measurement pass).
-    var maxHeight: CGFloat? = nil
     /// The RENDERED (resolved) heights of the adjacent panels — what the
     /// user actually SEES. Owner 2026-08-09 round 2 ("racing past the
     /// mouse, then stuck"): the drag mutates the STORED height, but
@@ -77,11 +70,12 @@ struct ResizableSectionDivider: View {
     /// value (pre-measurement pass).
     var renderedAbove: CGFloat? = nil
     var renderedBelow: CGFloat? = nil
-    /// How much the PAIR may grow in total before the flex panel hits its
-    /// floor (the flex absorbs pair growth by layout). Cascade: a grow
-    /// drag takes from the pair neighbor first, then from this slack —
-    /// "the third panel won't move" is gone without any panel PUSHING
-    /// chrome. 0 = pair-only (the old behavior).
+    /// The FLEX panel's give — passed ONLY to the dividers ADJACENT to
+    /// the flex panel (their stored neighbor grows into it; the flex
+    /// absorbs by layout). Pair dividers between two stored panels get 0:
+    /// a pair drag trades space between its two neighbors and STOPS at
+    /// the floor — no cascade, no other boundary ever moves (owner
+    /// 2026-08-12 final spec).
     var flexSlack: CGFloat = 0
 
     /// The FROZEN drag session (owner 2026-08-12): every input the drag
@@ -214,12 +208,15 @@ struct ResizableSectionDivider: View {
             }
     }
 
-    /// TSK-440 — route the drag by which neighbors own a height:
-    ///   * pair       → sum-preserving redistribution between the two,
-    ///                  cascading into the ORIGIN flex budget
-    ///   * above only → legacy clamp (above grows as you drag down)
-    ///   * below only → FILES boundary: drag down grows the flex FILES
-    ///                  panel above by SHRINKING the fixed panel below
+    /// TSK-440 → owner 2026-08-12 final spec — route the drag by which
+    /// neighbors own a height. In every case exactly ONE boundary (this
+    /// divider) moves:
+    ///   * pair       → sum-preserving exchange between the two adjacent
+    ///                  panels; stops at the shrinking side's floor
+    ///   * above only → the stored panel above grows into / shrinks back
+    ///                  from the FLEX below (origin slack)
+    ///   * below only → the stored panel below vs the FLEX above (the
+    ///                  FILES-on-top boundary)
     /// Internal (not private) as the exact-closure test seam: the drag
     /// gesture's `onChanged` is exactly `apply(delta:)` after origin
     /// capture, so `SidebarDividerWiringTests` exercises the IDENTICAL
@@ -233,9 +230,6 @@ struct ResizableSectionDivider: View {
             slack: flexSlack)
         switch (heightAbove, heightBelow) {
         case let (above?, below?):
-            // Cascade (owner 2026-08-09): neighbor first, then the flex
-            // budget — FROZEN at origin (owner 2026-08-12: a live budget
-            // halves itself and desyncs the mouse).
             guard let next = live.pairTargets(delta: delta) else { return }
             above.wrappedValue = bounded(next.above)
             below.wrappedValue = bounded(next.below)
@@ -243,9 +237,6 @@ struct ResizableSectionDivider: View {
             guard let target = live.aboveTarget(delta: delta) else { return }
             above.wrappedValue = bounded(target)
         case let (nil, below?):
-            // The flex boundary (drag up grows the panel BELOW, taking
-            // from the flex panel above): growth is bounded by the ORIGIN
-            // slack so the stored value can't run past what renders.
             guard let target = live.belowTarget(delta: delta) else { return }
             below.wrappedValue = bounded(target)
         case (nil, nil):
@@ -253,13 +244,10 @@ struct ResizableSectionDivider: View {
         }
     }
 
-    /// Floor + (when known) render-ceiling clamp — the stored height a drag
-    /// writes always equals the height that RENDERS, so movement is 1:1 and
-    /// reversing direction responds immediately (no dead zone).
+    /// Defensive floor clamp on every write (the session targets are
+    /// already floored; this guards the onEnded re-commit too).
     func bounded(_ height: CGFloat) -> CGFloat {
-        let floored = SidebarPanelHeights.clamp(height)
-        guard let maxHeight else { return floored }
-        return min(floored, max(maxHeight, SidebarPanelHeights.minExpandedHeight))
+        SidebarPanelHeights.clamp(height)
     }
 }
 

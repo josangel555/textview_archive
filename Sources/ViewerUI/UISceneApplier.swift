@@ -912,11 +912,25 @@ public enum UISceneApplier {
             case "bookmarks": kinds = [.bookmarks]
             case "recents":   kinds = [.recentlyOpened]
             case "combo":     kinds = [.bookmarks, .git, .recentlyOpened]
+            // Owner 2026-08-12 ("this is simply about opening 4-5 side
+            // panels and seeing what happens"): the crowded shoulder —
+            // FIVE tool windows + FILES. Invariant: every panel IN VIEW
+            // (the proportional fit), no scroll while the floors fit.
+            // The composition state the solo scenes never covered.
+            case "crowded":
+                kinds = [.bookmarks, .searchAnywhere, .git,
+                         .recentlyOpened, .lspOutline, .files]
             default:
                 return "ui-scene: unknown scene '\(scene)'"
             }
             let root = model.currentURL?.deletingLastPathComponent() ?? tabsBaseDir
             Self.applyMarketingSidebar(model, shown: kinds)
+            // Dock placement is app-global persisted state — a prior
+            // scene/run may have parked a panel on another shoulder
+            // (the scene-state-leak class). Force the LEFT edge.
+            for k in kinds where k != .files {
+                model.panelLayout.setEdge(k, .left)
+            }
             model.setSidebarWidth(340)
             model.openFolder(root)
             if kinds.contains(.bookmarks) {

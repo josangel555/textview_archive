@@ -86,6 +86,9 @@ scene_expect() {
     # proof; the a11y gate pins the right panel actually mounted. Without
     # these they fell through to the TERMINAL dense-chip pixel eval, which
     # is meaningless here (false-passed on stray accent chips, 2026-08-12).
+    # The crowded shoulder: every one of the 5 forced panels must mount
+    # (the PNG is the every-panel-IN-VIEW proof — eyeball it).
+    fill-check-crowded) echo "mdv.bookmarks mdv.searchAnywhere mdv.gitPanel mdv.recentlyOpened mdv.lspOutline mdv.sidebar" ;;
     fill-check-git) echo "mdv.gitPanel" ;;
     fill-check-bookmarks) echo "mdv.bookmarks" ;;
     fill-check-recents) echo "mdv.recentlyOpened" ;;

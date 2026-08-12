@@ -3,13 +3,15 @@
 ## 2026-08-12
 
 ### Fixed
-- **Panels never resize themselves anymore.** The layout used to auto-shrink
-  tool windows toward their minimums when the band got crowded — panels moving
-  opposite to your drag, or shrinking when you never touched them. Gone: a
-  panel changes size ONLY when you drag its divider; if the stored sizes don't
-  fit the shoulder, it scrolls instead. And the last special case died with
-  it — the file tree no longer has a private 200pt reserve (which secretly
-  stacked into 320pt); every panel, FILES included, obeys the same one floor.
+- **Panel resizing follows one simple rule now: a divider drag moves THAT
+  boundary, and nothing else.** The adjacent pair trades space; when the
+  shrinking side hits its minimum, the divider stops — no more panels growing
+  from the end you weren't dragging, no more "shrink one panel and another
+  grows". The old cascade (which borrowed space from the flexible panel
+  wherever it sat) is deleted outright. Opening or closing a panel refits
+  everything proportionally so 4–5 open tool windows are ALL in view — no
+  sidebar scrollbar unless even the minimums can't fit. The file tree's
+  private 200pt reserve is gone too; every panel obeys the same one floor.
 - **Panel resizing tracks the mouse 1:1 and can use ALL the visible space.**
   Growing a tool window stalled at half of what the flexible panel could give
   (the "can't resize above 50%" wall) while the handle drifted behind the

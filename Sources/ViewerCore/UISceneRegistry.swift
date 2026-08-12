@@ -217,6 +217,11 @@ public enum UISceneRegistry {
             closesExistingTabs: true,
             summary: "Owner bug repro (2026-08-11): split + TWO sessions — the split must render BELOW the session tab strip"),
         SceneSpec(
+            id: "fill-check-crowded",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            summary: "Crowded shoulder (owner 2026-08-12): FIVE tool windows + FILES — every panel in view, no scroll"),
+        SceneSpec(
             id: "fill-check-git",
             fixture: .defaultDocument,
             summary: "Sidebar-fill validation: GIT solo must fill the shoulder (owner 2026-08-09)"),

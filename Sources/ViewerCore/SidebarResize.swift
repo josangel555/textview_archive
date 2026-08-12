@@ -33,50 +33,37 @@ public enum SidebarResize {
         return (newAbove, sum - newAbove)
     }
 
-    /// Owner 2026-08-09 ("opening 3 tool windows, the third one doesn't even
-    /// move"): pure sum-preserving redistribution STOPS the moment the
-    /// giving neighbor hits its floor — even when the FLEX panel has plenty
-    /// of slack to give. This variant cascades: a GROW drag (positive
-    /// delta) takes from the pair neighbor first, then lets the pair's
-    /// total grow by up to `flexSlack` (the flex panel absorbs the growth
-    /// by layout — "each window can grow, but not push"). The shrink
-    /// direction stays pair-only (the divider stops at the above panel's
-    /// floor, the conventional splitter behavior).
-    public static func redistributeCascading(
-        above: CGFloat,
-        below: CGFloat,
-        delta: CGFloat,
-        floor: CGFloat = SidebarPanelHeights.minExpandedHeight,
-        flexSlack: CGFloat
-    ) -> (above: CGFloat, below: CGFloat) {
-        let pair = redistribute(above: above, below: below, delta: delta, floor: floor)
-        guard delta > 0 else { return pair }
-        // What the neighbor already gave; the remainder comes from flex.
-        let absorbed = pair.above - above
-        let remainder = delta - absorbed
-        guard remainder > 0, flexSlack > 0 else { return pair }
-        return (pair.above + min(remainder, flexSlack), pair.below)
-    }
+    // (`redistributeCascading` — the 2026-08-09 flex-borrowing cascade —
+    // was DELETED 2026-08-12 on the owner's final spec: "a divider drag
+    // moves THAT boundary only; do not affect any other boundary above or
+    // below." The cascade borrowed from the flex panel wherever it was,
+    // which moved the pair's FAR boundary — panels visibly growing from
+    // the end the user wasn't dragging.)
 }
 
-/// Owner 2026-08-12 ("still can't resize above 50%; the handle isn't synced
-/// with the mouse") — the FROZEN drag session.
+/// The FROZEN drag session (owner 2026-08-12, two rounds):
 ///
-/// The 2026-08-09 fix snapshotted the height BASES at drag origin, but the
-/// cascade's flex BUDGET (`flexSlack`) stayed a live per-body-eval value:
-/// as a drag consumed slack, the flex panel shrank, the next body eval
-/// recomputed a smaller slack, and the next delta was capped by it — a
-/// feedback loop that converges at HALF the original slack (G = slack₀ − G)
-/// and partially applies every delta on the way (the mouse desync). The
-/// rule, generalized: EVERY input to base-relative drag math is an ORIGIN
-/// snapshot — bases AND budgets. This value type IS that snapshot: created
-/// at drag start, immutable for the drag's lifetime, discarded at end.
+/// Round 1 ("can't resize above 50%; the handle isn't synced"): every
+/// input to base-relative drag math must be an ORIGIN snapshot — a live
+/// budget feeds back into the drag's own writes and stalls at half.
+///
+/// Round 2 (the final spec): "a divider drag moves THAT boundary only —
+/// shrink towards where you drag, grow away from it, and do NOT affect
+/// any other boundary above or below." So: a PAIR drag trades space
+/// between the two adjacent panels and STOPS when the shrinking side
+/// floors — no cascade, no borrowing from the flex panel (which moved
+/// the pair's far boundary: panels visibly growing from the end the
+/// user wasn't dragging). A divider ADJACENT to the flex panel moves
+/// its one stored neighbor against the flex's origin give — still just
+/// that one boundary (the flex absorbs by layout; its far edge is the
+/// band edge).
 public struct DividerDragSession: Equatable, Sendable {
     /// Height bases at drag origin (the RENDERED heights — what the user
-    /// saw when they grabbed). nil = that side has no height key.
+    /// saw when they grabbed). nil = that side is the flex panel.
     public let baseAbove: CGFloat?
     public let baseBelow: CGFloat?
-    /// The flex panel's give at drag origin. Frozen — the whole point.
+    /// The FLEX side's give at drag origin — meaningful only for the
+    /// dividers adjacent to the flex panel. Frozen for the drag.
     public let slack: CGFloat
 
     public init(baseAbove: CGFloat?, baseBelow: CGFloat?, slack: CGFloat) {
@@ -85,29 +72,36 @@ public struct DividerDragSession: Equatable, Sendable {
         self.slack = max(0, slack)
     }
 
-    /// Absolute pair targets for the CUMULATIVE drag delta — cascade
-    /// bounded by the ORIGIN slack, so a monotone drag tracks 1:1 all the
-    /// way to `baseAbove + pairGive + slack`, never half of it.
+    /// PAIR divider: sum-preserving exchange between the two adjacent
+    /// panels, both floored — the divider stops when the shrinking side
+    /// hits its floor. Nothing else moves, by construction.
     public func pairTargets(
         delta: CGFloat,
         floor: CGFloat = SidebarPanelHeights.minExpandedHeight
     ) -> (above: CGFloat, below: CGFloat)? {
         guard let a = baseAbove, let b = baseBelow else { return nil }
-        return SidebarResize.redistributeCascading(
-            above: a, below: b, delta: delta, floor: floor, flexSlack: slack)
+        return SidebarResize.redistribute(above: a, below: b, delta: delta, floor: floor)
     }
 
-    /// Above-only divider (the flex boundary from above): base + delta.
-    public func aboveTarget(delta: CGFloat) -> CGFloat? {
-        baseAbove.map { $0 + delta }
+    /// Stored panel ABOVE the flex: drag down grows it into the flex's
+    /// origin give; drag up shrinks it to its floor.
+    public func aboveTarget(
+        delta: CGFloat,
+        floor: CGFloat = SidebarPanelHeights.minExpandedHeight
+    ) -> CGFloat? {
+        guard let a = baseAbove else { return nil }
+        return min(max(a + delta, floor), a + slack)
     }
 
-    /// Below-only divider (the FILES boundary): drag up grows the panel
-    /// below by taking from the flex panel above, bounded by the ORIGIN
-    /// slack.
-    public func belowTarget(delta: CGFloat) -> CGFloat? {
+    /// Stored panel BELOW the flex (the FILES-on-top boundary): drag up
+    /// grows it into the flex's origin give; drag down shrinks it to its
+    /// floor.
+    public func belowTarget(
+        delta: CGFloat,
+        floor: CGFloat = SidebarPanelHeights.minExpandedHeight
+    ) -> CGFloat? {
         guard let b = baseBelow else { return nil }
-        return min(b - delta, b + slack)
+        return min(max(b - delta, floor), b + slack)
     }
 }
 

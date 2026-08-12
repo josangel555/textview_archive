@@ -34,12 +34,18 @@ public enum SidebarStackLayout {
 
     /// Resolve rendered body heights.
     ///
-    /// Owner 2026-08-12: the crowd-shrink is GONE. Panels render at their
-    /// stored (floored) heights ALWAYS — a panel only ever changes size
-    /// when the user drags ITS divider ("it should only grow in the
-    /// direction you drag"); nothing auto-shrinks panels the user never
-    /// touched. When the stored heights don't fit the band, the stack
-    /// overflows and the outer scroll engages instead.
+    /// Owner 2026-08-12, refined the same day: opening 4–5 panels must
+    /// leave EVERY panel in view — so when the stored heights over-fill
+    /// the band, all fixed panels scale down PROPORTIONALLY (each keeps
+    /// its share of the above-floor space) until they fit. Proportional
+    /// and order-independent — never the old from-the-flex-end collapse.
+    /// The "only grow in the direction you drag" rule is preserved by the
+    /// DRAG layer, not here: drags are sum-preserving in rendered space
+    /// (the frozen session), so a drag never changes the total and never
+    /// triggers a refit — third panels stay put under the pointer. A
+    /// refit happens exactly when the panel SET or the band changes.
+    /// Scroll engages only in the pathological case: floors alone don't
+    /// fit.
     ///
     /// - Parameters:
     ///   - storedFixed: stored (persisted) body heights of the fixed
@@ -62,23 +68,25 @@ public enum SidebarStackLayout {
             return Resolution(fixed: fixed, flex: flexFloor)
         }
         let fixedTotal = fixed.reduce(0, +)
-        // Roomy: flex absorbs the remainder. Over: flex sits at its floor
-        // and the stack overflows into the scroll — the fixed panels are
-        // NEVER auto-shrunk.
-        return Resolution(fixed: fixed, flex: max(available - fixedTotal, flexFloor))
+        if fixedTotal + flexFloor <= available {
+            // Roomy: flex absorbs the remainder (and any slack).
+            return Resolution(fixed: fixed, flex: available - fixedTotal)
+        }
+        // Over-full: scale every panel's ABOVE-FLOOR portion by one shared
+        // factor so the stack fits exactly (each keeps its proportional
+        // share; floors are hard). Below-all-floors ⇒ factor 0 ⇒ everyone
+        // at floor and the outer scroll engages.
+        let floorTotal = floor * CGFloat(fixed.count)
+        let target = available - flexFloor
+        let stretch = fixedTotal - floorTotal
+        let factor = stretch > 0
+            ? min(1, max(0, (target - floorTotal) / stretch))
+            : 0
+        let scaled = fixed.map { floor + ($0 - floor) * factor }
+        return Resolution(fixed: scaled, flex: flexFloor)
     }
 
-    /// The most a drag may grow the fixed panel ABOVE the flex boundary:
-    /// its current height plus everything the flex panel can give up
-    /// before hitting its floor. Pair dividers between two fixed panels
-    /// need NO ceiling (their redistribution is sum-preserving and floored
-    /// on both sides) — the blanket 50% band ceiling that walled dual-split
-    /// shrinking is gone.
-    public static func boundaryMax(
-        aboveRendered: CGFloat,
-        flexRendered: CGFloat,
-        flexFloor: CGFloat
-    ) -> CGFloat {
-        aboveRendered + max(0, flexRendered - flexFloor)
-    }
+    // (`boundaryMax` was deleted 2026-08-12: the flex-adjacent divider's
+    // growth bound now lives in `DividerDragSession` — the origin-frozen
+    // slack — so the view no longer computes a live ceiling.)
 }
