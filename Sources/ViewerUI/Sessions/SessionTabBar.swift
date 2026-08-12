@@ -96,9 +96,10 @@ struct SessionTabBar: View {
             .padding(.horizontal, model.uiSize(4))
         }
         .frame(height: rowHeight)
-        // Flat band tone (owner 2026-08-11: the 08-09 depth gradient
-        // "isn't looking right" — removed).
-        .background(Palette.underPageBackground)
+        // Window chrome tone (owner 2026-08-11: gradient removed, then the
+        // flat GREY band removed too — the header blends with the chrome;
+        // the pills carry their own fills).
+        .background(Palette.windowBackground)
         // Explicit CONTAINER, not a bare id: a bare `.accessibilityIdentifier`
         // on the row implicitly combined its loose pure-SwiftUI descendants —
         // the three pinned action buttons never materialized in the AX tree
