@@ -106,18 +106,14 @@ I-## → TSK-### when the tasked board reconnects.
   (guides/Tab/indent commands); detection once per buffer seed, cleared on discard;
   6 host tests incl. end-to-end through the rust detector + a ContentView wiring pin.
 
-- **resize-tooth DIAG (S–M) — NEW PRIME SUSPECT (2026-08-11):** the AX 1:1-tracking drag
-  tooth for the resize-lag fix skips on ZERO movement — the grab verifiably lands inside
-  `mdv.sidebar.widthHandle`'s own AX frame yet the DragGesture never fires under VM HID.
-  The pane click-focus hunt (2026-08-11) added a mandatory FIRST step: screen-sweep for
-  covering windows (`killall UserNotificationCenter`, `CGWindowListCopyWindowInfo` over
-  the grab point — a stuck crash dialog was eating HID clicks; the AXPaneInteractionTests
-  failure path shows the recipe), and a second catch worth re-checking here: the pane
-  gutter's "drag mystery" turned out to be a not-materialized AX element (bare shape
-  stack needed `.accessibilityElement()`) — the tooth was skipping at its guard, not
-  failing to engage. Verify `mdv.sidebar.widthHandle` materializes AND the screen is
-  clean before instrumenting the gesture itself. PARTIAL tracking (the oscillator
-  signature) still fails RED, so the tooth has interim value either way.
+- ~~**resize-tooth DIAG**~~ **RESOLVED 2026-08-11 — it was the covering-window class.**
+  After the screen sweep (the stuck "TextView quit unexpectedly" crash dialog that was
+  eating VM HID events was dismissed + its stale-bundle resurrection source shelved),
+  `test_hidDrag_sidebarResize_tracksThePointerOneToOne` PASSED with real 1:1 tracking —
+  the "VM-HID engage mystery" was a dialog sitting over the grab point all along.
+  Standing rule (LESSONS): before diagnosing any zero-movement AX drag, sweep the screen
+  (`killall UserNotificationCenter`, CGWindowList over the grab point) and READ the skip
+  message (the pane gutter's twin mystery was a not-materialized AX element instead).
 
 - **Stale-chrome-on-theme-switch CLASS AUDIT (S, 2026-08-08):** the git-band bug's mechanism
   — a no-stored-field wrapper (ViewModifier/ButtonStyle/shape style) reading
@@ -212,6 +208,17 @@ I-## → TSK-### when the tasked board reconnects.
     pane — `PaneAssignment.splitPane(moving:placement:)`; covers the old
     "Open in New Pane" nice-to-have together with the drag); session band
     de-gradiented + traffic-light gap (96pt inset).
+    **GENERALIZATION (owner call, late 2026-08-11)**: the window-level TabBar
+    + window ContentToolbar are UNMOUNTED — un-split = one pane; `PaneTabStrip`
+    is THE strip (+ button, tab→session-pill drop composed with the cross-pane
+    target, scroll-to-selected; Close Pane + focus ring split-only). The
+    classic `content` ZStack deleted (`paneContentRegion` is the single
+    mounted-tab path). RESIDUE: the `TabBar` struct itself is now unmounted
+    dead code — delete it + its helpers once the dust settles (a few suites
+    still exercise it directly: TabBarIntrinsicSizeTests, TabBarPage, etc. —
+    green today because the struct still exists); pane strips use FIXED chip
+    width (uiSize 160) vs TabBar's width-fitting math — port `computedTabWidth`
+    if crowded strips feel wrong.
     REMAINING: **gutter AX materialization (S)** — the shapes-only
     `PaneDividerGutter` never materializes an out-of-process AX element (bare
     id / `.accessibilityElement()` / `.contain` / label+trait ALL pruned, three

@@ -45,10 +45,21 @@ I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain 
   only, 120pt floor); weights persist in `PaneLayoutState.weights` (additive;
   legacy = equal shares). `PaneResizeTests` + weight/persistence pins + AX
   divider tooth (zero-movement skip guard).
-- **Per-pane ContentToolbar** ✓ (owner call mid-session): window bar stands down
-  while split; each pane hosts `ContentToolbar(tab:)` — per-TAB display via new
-  `*(for tab:)` model variants, commands selected-tab-routed (mouse-down focus
-  makes them correct). App-wide selected tab = focused pane's tab (confirmed).
+- **Per-pane ContentToolbar** ✓ (owner call mid-session): each pane hosts
+  `ContentToolbar(tab:)` — per-TAB display via new `*(for tab:)` model variants,
+  commands selected-tab-routed (mouse-down focus makes them correct). App-wide
+  selected tab = focused pane's tab (confirmed).
+- **GENERALIZED (owner call, late 2026-08-11): the window-level TabBar +
+  window ContentToolbar are UNMOUNTED** — the un-split world is ONE pane;
+  `PaneTabStrip` is THE strip (gained the `+` button, tab→session-pill drop
+  via a composed external target, scroll-to-selected, context menu; Close
+  Pane renders only while split; ring only while split). The classic
+  `content` builder was deleted (`paneContentRegion` is the one mounted-tab
+  ZStack). `ChromeBodyEvalCountTests` zoom pin now watches `PaneTabStrip`.
+  Owner-batch fixes the same evening: session strip composited over by the
+  split (TSK-488 — .compositingGroup().zIndex(2)), stale FileNav (pane verbs
+  now route `model.selectTab` — `DocumentModel+Panes`), Split Pane Right/Left
+  context menu, flat header (windowBackground), pill inset 96pt.
 - **EPIC REMAINING**: context-menu "Open in New Pane" (nice-to-have).
   Mixed-axis GRIDS = future split-tree.
 

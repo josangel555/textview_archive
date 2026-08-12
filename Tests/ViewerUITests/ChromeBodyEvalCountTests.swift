@@ -192,7 +192,9 @@ final class ChromeBodyEvalCountTests: HeadlessUITestCase {
         makeHost(model)
         let counts = evals(after: { model.zoomIn() })
         dump("zoomIn", counts)
-        for view in ["ContentView", "TabBar", "StatusBar",
+        // I-21 generalization (2026-08-11): the window-level TabBar is
+        // unmounted — the pane strip (PaneTabStrip) is THE strip now.
+        for view in ["ContentView", "PaneTabStrip", "StatusBar",
                      "ContentToolbar", "BottomAttributesBar", "SidebarView"] {
             XCTAssertGreaterThanOrEqual(counts[view] ?? 0, 1,
                 "\(view) must re-body on zoom (uiSize layout); "

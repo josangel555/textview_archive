@@ -126,33 +126,12 @@ public struct ContentView: View {
                         .zIndex(2)
                     Divider()
                 }
-                // I-21 S3: while SPLIT, each pane carries its own strip
-                // (`PaneTabStrip` inside `paneColumn`); the window-level
-                // strip stands down. Un-split = the untouched classic bar.
-                if !tabCoordinator.paneAssignment.isSplit {
-                TabBar(model: model)
-                    .accessibilityIdentifier("mdv.tabbar")
-                    // CHROME PIN (2026-06-01): the chrome bars carry their own
-                    // fixed heights (TabBar 30, content-toolbar 22, StatusBar
-                    // 22), but a VStack distributes an under-shrink squeeze
-                    // across ALL children — so when the window goes below
-                    // chrome+min-content, the bars got compressed/clipped
-                    // instead of the center band. layoutPriority(1) makes
-                    // SwiftUI satisfy the bars' heights FIRST; the center HStack
-                    // (priority 0, maxHeight:.infinity) then absorbs 100% of any
-                    // shrink. fixedSize(vertical:) pins each bar's reported
-                    // height as a hard floor so it can't be compressed below
-                    // content (and still grows with dynamic-type / zoom).
-                    //
-                    // UX-A (#224): the old ModeBar (wrap / special-char /
-                    // Source·Raw·Hex picker) that lived here was removed. The
-                    // view-mode control + breadcrumb moved into `ContentToolbar`
-                    // (directly above the content pane, inside `bodyRow`), and
-                    // the text-attribute controls moved into
-                    // `BottomAttributesBar` (above the StatusBar).
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-                }
+                // I-21 generalization (owner 2026-08-11: "tab strips should
+                // be contained within the pane"): the window-level `TabBar`
+                // is UNMOUNTED — the un-split world is one pane, and every
+                // pane carries its own strip (`PaneTabStrip` in
+                // `paneColumn`), so tabs start at the pane's edge instead of
+                // spanning over the sidebar/tool windows.
                 // I-16a (owner 2026-08-01, corrected same day): the full-width
                 // Divider that lived HERE moved into TabBar's background as a
                 // bottom hairline — still under the inactive tabs and empty
@@ -566,23 +545,9 @@ public struct ContentView: View {
                 Divider()
             }
             VStack(spacing: 0) {
-                // UX-A (#224): content-toolbar sits DIRECTLY ABOVE the content
-                // pane (inside the center column, NOT spanning the sidebar /
-                // shoulder rails). Breadcrumb on the left, view-mode control on
-                // the right. Shown only when a file is open. Pinned height +
-                // layoutPriority so the content pane (priority 0) absorbs shrink.
-                // While SPLIT the window-level bar stands down — the lens
-                // control is PER-TAB state (owner 2026-08-11), so each pane
-                // hosts its own toolbar under its strip (`paneColumn`).
-                if model.currentURL != nil,
-                   !tabCoordinator.paneAssignment.isSplit {
-                    ContentToolbar(model: model)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .layoutPriority(1)
-                    Divider()
-                }
+                // UX-A (#224) → I-21 generalization: the content toolbar is
+                // PER-TAB state, so it lives inside each pane's column
+                // (`paneColumn`), un-split included — no window-level bar.
                 paneAwareContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("mdv.content")
@@ -712,21 +677,18 @@ public struct ContentView: View {
         return true
     }
 
-    /// I-21 S3 (owner 2026-08-11): when the window is SPLIT, render the
-    /// panes side by side — each with its own tab strip (`PaneTabStrip`)
-    /// and its own content region showing the PANE's selected tab. The
-    /// un-split world routes to the untouched `content` builder, so the
-    /// pre-panes render path is byte-identical.
-    ///
-    /// S4d: panes render at their WEIGHTED spans (`Pane.weight`, persisted)
-    /// with a drag gutter between neighbors. The drag rebalances the two
-    /// neighbors only (`PaneResize`); the last pane flexes to absorb
-    /// rounding. Live drag state renders from `livePaneWeights`; the
+    /// I-21 — the pane run IS the content area (owner generalization
+    /// 2026-08-11: the un-split world is ONE pane; there is no separate
+    /// classic path). Each pane renders its own strip + per-tab toolbar +
+    /// content; panes render at their WEIGHTED spans (`Pane.weight`,
+    /// persisted) with a drag gutter between neighbors (`PaneResize`
+    /// rebalances the two neighbors only; the last pane flexes to absorb
+    /// rounding). Live drag state renders from `livePaneWeights`; the
     /// commit lands on the coordinator at drag end.
     @ViewBuilder
     private var paneAwareContent: some View {
         let assignment = tabCoordinator.paneAssignment
-        if assignment.isSplit {
+        Group {
             // The run's axis: side-by-side columns (split right) or stacked
             // rows (split down) — single-axis v1.
             let verticalRun = assignment.orientation == .vertical
@@ -780,8 +742,8 @@ public struct ContentView: View {
                 }
                 // S4c: clicking INTO a pane's content focuses it (strip clicks
                 // already do; WKWebView content clicks never reach a SwiftUI
-                // gesture — hence the observe-only NSEvent monitor). Mounted
-                // only on this split branch, so it never exists un-split.
+                // gesture — hence the observe-only NSEvent monitor). With one
+                // pane the classifier excludes the focused pane, so it no-ops.
                 .background(PaneFocusClickMonitor(
                     isActive: true,
                     channel: tabCoordinator.paneDropChannel,
@@ -792,8 +754,6 @@ public struct ContentView: View {
                     // watcher (the stale-FileNav bug, 2026-08-11).
                     onFocus: { model.focusPane(id: $0) }))
             }
-        } else {
-            content
         }
     }
 
@@ -831,9 +791,10 @@ public struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Focused-pane ring: the one visual answer to "which pane do my
-        // keys act on". Inset stroke, hit-tests off.
+        // keys act on". Inset stroke, hit-tests off. Only meaningful while
+        // SPLIT — the generalized single-pane world draws no ring.
         .overlay {
-            if focused {
+            if focused, tabCoordinator.paneAssignment.isSplit {
                 Rectangle()
                     .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 2)
                     .allowsHitTesting(false)
@@ -881,52 +842,11 @@ public struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        // Perf Fix#1 (TSK-108): render a ZStack of every MOUNTED tab pane
-        // (the MRU-bounded `MountedPanesLRU`), not just the active one.
-        // Inactive panes stay MOUNTED (gated opacity 0 / hit-testing off) so
-        // switching back is a pure visibility flip — no WKWebView teardown +
-        // reload (the ~1s tab-switch freeze). `dismantleNSView` fires only on
-        // LRU tail eviction. `ForEach` keyed on the stable `Tab.id` preserves
-        // each pane's SwiftUI identity — the load-bearing invariant.
-        // Design: docs/research/perf-fix1-view-retention.md (Approach A).
-        let mounted = model.mountedTabs
-        if mounted.isEmpty {
-            // No open/retained tab yet (cold launch, all tabs closed): render
-            // the active state directly so the pane is never blank.
-            tabContent(for: model.tabs.selected ?? ViewerCore.Tab(), isActive: true)
-        } else {
-            ZStack {
-                ForEach(mounted) { tab in
-                    let isActive = (tab.id == model.tabs.selected?.id)
-                    // Per-pane render attributes are driven from the named,
-                    // host-testable `PaneCompositingPolicy` contract (TSK-839)
-                    // rather than inline ternaries — so the per-nav CA-commit
-                    // decisions (visibility, hit-testing, z-order, and the
-                    // per-pane compositing isolation) are pinned by a host test
-                    // even though the commit-cost win itself is VM-only.
-                    let render = PaneCompositingPolicy.render(isActive: isActive)
-                    tabContent(for: tab, isActive: isActive)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        // Each retained pane gets its OWN compositing layer so a
-                        // sibling pane's (or surrounding chrome's) re-layout does
-                        // not pull every pane's opaque-representable subtree into
-                        // one CA commit reconciliation per nav action (TSK-839 /
-                        // LESSONS compositor rule, TSK-488).
-                        .compositingGroup()
-                        // opacity:0 (NOT `.hidden()`): keeps the inactive
-                        // WKWebView "visible" to WebKit so it never fires
-                        // `visibilitychange` → no page self-reload (cmux #1228).
-                        // Background-throttled only.
-                        .opacity(render.opacity)
-                        .allowsHitTesting(render.hitTesting)
-                        .accessibilityHidden(render.accessibilityHidden)
-                        .zIndex(render.zIndex)
-                }
-            }
-        }
-    }
+    // The classic window-level `content` ZStack builder (Perf Fix#1's
+    // mounted-tab retention, TSK-108) was deleted with the I-21
+    // generalization: `paneContentRegion` renders the SAME mounted-tab
+    // ZStack per pane (same MRU, same PaneCompositingPolicy attributes,
+    // same identity invariant) — the un-split world is one pane.
 
     /// Render ONE tab's content for its OWN `state` / `viewMode` / id — NOT
     /// the globally-active tab's. This is what lets inactive retained panes

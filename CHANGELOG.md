@@ -55,6 +55,14 @@
   the menu is on the window tab strip AND the per-pane strips. Moving a tab
   into an EXISTING pane stays the drag: drop it on the other pane's strip.
 
+### Changed (panes generalization — owner call)
+- **The tab strip lives inside the pane — always.** The window-level tab bar
+  (which spanned over the sidebar/tool windows) is gone: the un-split window is
+  simply one pane, so tabs, the `+` button, and the per-tab toolbar all start at
+  the pane's edge, exactly like they do when split. Dragging a tab onto a session
+  pill still moves it to that session (now from any pane's strip), tabs scroll to
+  the selected chip, and the header row above stays purely sessions.
+
 ### Fixed (panes follow-ups — owner batch)
 - **The session tabs no longer vanish while split.** Splitting made the session
   pills disappear (the band and its right-side icons stayed) — the panes' web

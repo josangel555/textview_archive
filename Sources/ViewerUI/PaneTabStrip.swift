@@ -1,19 +1,24 @@
 import SwiftUI
 import ViewerCore
 
-/// I-21 S3 — one editor PANE's tab strip (rendered only while the window
-/// is split; the classic window-level `TabBar` keeps the un-split world).
+/// I-21 — THE tab strip. One per editor pane, and since the owner's
+/// 2026-08-11 generalization ("tab strips should be contained within the
+/// pane") it is the ONLY tab strip: the un-split world is simply one pane,
+/// so the strip always starts at the pane's edge and never spans over the
+/// tool windows (the old window-level `TabBar` is unmounted).
+///
 /// Reuses `TabBarItem` chips; the strip shows the PANE's tab order and the
 /// PANE's own selection, and every action resolves the tab's STORE index
 /// at click time (the flat store stays the mutation surface — selection
 /// routes through `DocumentModel.selectTab`, which focuses this pane via
 /// the coordinator's reconciler).
 ///
-/// S4c adds the drag layer (`stripReorderable`, the TabBar substrate):
-/// dragging a chip reorders it WITHIN this pane (insertion caret), and
-/// dragging it onto ANOTHER pane's strip moves it there — the strip rects
-/// ride `PaneDropChannel` (the tab→session-pill pattern); the hovered
-/// target strip highlights accent while a drag is over it.
+/// Drag layer (`stripReorderable`, shared substrate): dragging a chip
+/// reorders it WITHIN this pane (insertion caret); dragging it onto
+/// ANOTHER pane's strip moves it there (`PaneDropChannel` rects, the
+/// hovered strip highlights accent); dragging it onto a SESSION pill moves
+/// the file into that session (the `TabSessionDropChannel` path the window
+/// strip owned before the generalization).
 struct PaneTabStrip: View {
     @ObservedObject var model: DocumentModel
     @ObservedObject var tabCoordinator: TabCoordinator
@@ -32,86 +37,115 @@ struct PaneTabStrip: View {
     private var stripSpace: String { "mdv.paneStrip.\(pane.id.uuidString)" }
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("PaneTabStrip")   // TSK-615 re-eval width probe
+        #endif
         let tabs = pane.tabIDs.compactMap { id in
             tabCoordinator.tabs.tabs.first { $0.id == id }
         }
+        let isSplit = tabCoordinator.paneAssignment.isSplit
         let isDropTarget = dropChannel.hoveredPaneID == pane.id
         HStack(spacing: 2) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
-                        TabBarItem(
-                            tab: tab,
-                            isSelected: tab.id == pane.selectedTabID,
-                            isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
-                            isInSplit: false,
-                            scale: CGFloat(model.zoom),
-                            width: model.uiSize(160),
-                            onSelect: {
-                                // Swallow the click that terminates a drag
-                                // (StripFrameBox.armSelectSuppression).
-                                guard !frameBox.shouldSuppressSelect() else { return }
-                                if let i = storeIndex(of: tab.id) { model.selectTab(at: i) }
-                            },
-                            onClose: {
-                                if let i = storeIndex(of: tab.id) { model.closeTab(at: i) }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                            TabBarItem(
+                                tab: tab,
+                                isSelected: tab.id == pane.selectedTabID,
+                                isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
+                                isInSplit: tabCoordinator.splitTabID == tab.id,
+                                scale: CGFloat(model.zoom),
+                                width: model.uiSize(160),
+                                onSelect: {
+                                    // Swallow the click that terminates a drag
+                                    // (StripFrameBox.armSelectSuppression).
+                                    guard !frameBox.shouldSuppressSelect() else { return }
+                                    if let i = storeIndex(of: tab.id) { model.selectTab(at: i) }
+                                },
+                                onClose: {
+                                    if let i = storeIndex(of: tab.id) { model.closeTab(at: i) }
+                                }
+                            )
+                            // Scroll anchor so the pane's selected tab can be
+                            // brought into view (TabBar parity).
+                            .id(tab.id)
+                            // Same context menu as ever (incl. the Split Pane
+                            // Right/Left tear-outs). The index is resolved when
+                            // the menu OPENS, so it can't go stale.
+                            .contextMenu {
+                                if let i = storeIndex(of: tab.id) {
+                                    TabContextMenu(model: model, tabIndex: i, tab: tab)
+                                }
                             }
-                        )
-                        // Same context menu as the window strip (incl. the
-                        // Split Pane Right/Left tear-outs). The index is
-                        // resolved when the menu OPENS, so it can't go
-                        // stale between renders.
-                        .contextMenu {
-                            if let i = storeIndex(of: tab.id) {
-                                TabContextMenu(model: model, tabIndex: i, tab: tab)
-                            }
+                            .stripReorderable(
+                                id: tab.id,
+                                index: index,
+                                ids: pane.tabIDs,
+                                space: stripSpace,
+                                frames: frameBox,
+                                state: $reorder,
+                                external: externalTarget(for: tab),
+                                commit: { draggedID, gap in
+                                    // Re-resolve against the LIVE pane order —
+                                    // the strip can change under a drag
+                                    // (StripReorder.resolveMove rationale).
+                                    let live = tabCoordinator.paneAssignment
+                                        .pane(containing: draggedID)?.tabIDs ?? []
+                                    guard let move = StripReorder.resolveMove(
+                                        itemID: draggedID, ids: live, gap: gap) else { return }
+                                    tabCoordinator.reorderPaneTab(id: draggedID, to: move.destination)
+                                }
+                            )
                         }
-                        .stripReorderable(
-                            id: tab.id,
-                            index: index,
-                            ids: pane.tabIDs,
-                            space: stripSpace,
-                            frames: frameBox,
-                            state: $reorder,
-                            external: crossPaneTarget(),
-                            commit: { draggedID, gap in
-                                // Re-resolve against the LIVE pane order —
-                                // the strip can change under a drag
-                                // (StripReorder.resolveMove rationale).
-                                let live = tabCoordinator.paneAssignment
-                                    .pane(containing: draggedID)?.tabIDs ?? []
-                                guard let move = StripReorder.resolveMove(
-                                    itemID: draggedID, ids: live, gap: gap) else { return }
-                                tabCoordinator.reorderPaneTab(id: draggedID, to: move.destination)
-                            }
-                        )
+                        // The "+" sits BESIDE the last tab (TSK-261 parity —
+                        // the window strip's new-tab affordance moved here
+                        // with the generalization). Opens in THIS pane.
+                        Button {
+                            if !isFocusedPane { model.focusPane(id: pane.id) }
+                            model.newTab()
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: model.uiSize(11), weight: .medium))
+                                .frame(width: model.uiSize(24), height: model.uiSize(24))
+                        }
+                        .buttonStyle(IconHoverButtonStyle())
+                        .helpInfo(title: "New Tab (⌘T)",
+                                  description: "Open a new empty tab in this pane")
+                        .padding(.horizontal, model.uiSize(4))
+                    }
+                    .coordinateSpace(name: stripSpace)
+                    .stripContentGlobalOrigin(into: frameBox)
+                    .overlay(alignment: .leading) {
+                        if let x = reorder?.caretX {
+                            StripInsertionCaret(x: x, height: model.uiSize(26))
+                        }
                     }
                 }
-                .coordinateSpace(name: stripSpace)
-                .stripContentGlobalOrigin(into: frameBox)
-                .overlay(alignment: .leading) {
-                    if let x = reorder?.caretX {
-                        StripInsertionCaret(x: x, height: model.uiSize(26))
-                    }
+                .onChange(of: pane.selectedTabID) { _, sel in
+                    if let sel { withAnimation { proxy.scrollTo(sel) } }
                 }
             }
             Spacer(minLength: 0)
             // The pane's close affordance: absorb my tabs into the neighbor
             // and un-split (never closes tabs — `PaneAssignment.closePane`).
-            Button {
-                model.closePane(id: pane.id)
-            } label: {
-                Image(systemName: "rectangle.split.2x1.slash")
-                    .font(.system(size: model.uiSize(11), weight: .medium))
-                    .foregroundStyle(Palette.secondaryLabel)
-                    .frame(width: model.uiSize(24), height: model.uiSize(24))
-                    .contentShape(Rectangle())
+            // Meaningless for the last pane, so it only renders while split.
+            if isSplit {
+                Button {
+                    model.closePane(id: pane.id)
+                } label: {
+                    Image(systemName: "rectangle.split.2x1.slash")
+                        .font(.system(size: model.uiSize(11), weight: .medium))
+                        .foregroundStyle(Palette.secondaryLabel)
+                        .frame(width: model.uiSize(24), height: model.uiSize(24))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(IconHoverButtonStyle())
+                .helpInfo(title: "Close Pane",
+                          description: "Merge this pane's tabs into the neighboring pane")
+                .accessibilityIdentifier("mdv.pane.close")
+                .padding(.trailing, 4)
             }
-            .buttonStyle(IconHoverButtonStyle())
-            .helpInfo(title: "Close Pane",
-                      description: "Merge this pane's tabs into the neighboring pane")
-            .accessibilityIdentifier("mdv.pane.close")
-            .padding(.trailing, 4)
         }
         .frame(height: model.uiSize(30))
         .background(isDropTarget
@@ -135,29 +169,52 @@ struct PaneTabStrip: View {
         .accessibilityIdentifier(isFocusedPane ? "mdv.paneStrip.focused" : "mdv.paneStrip")
     }
 
-    /// Cross-strip capability for one chip's drag: dropping it on another
-    /// pane's strip moves the tab there (`movePaneTab` — the destination
-    /// pane takes focus and shows it, appended at the end v1). The SOURCE
-    /// pane is excluded — a drop on your own strip is a reorder.
-    private func crossPaneTarget() -> StripExternalTarget? {
+    /// Cross-strip capability for one chip's drag: a drop on another pane's
+    /// strip moves the tab there (`movePaneTab`); a drop on a SESSION pill
+    /// moves the file into that session (the window strip's TSK-274 path,
+    /// generalized here). Pane strips are hit-tested first; the SOURCE pane
+    /// and the ACTIVE session are excluded (both would be no-ops). Session
+    /// drops need a file-backed tab + an attached sessions coordinator.
+    private func externalTarget(for tab: ViewerCore.Tab) -> StripExternalTarget? {
         let channel = dropChannel
         let box = frameBox
         let coordinator = tabCoordinator
         let sourcePane = pane.id
         let model = self.model
+        let sessionsApp = tab.url != nil ? model.sessionsCoordinator : nil
+        let sessionChannel = sessionsApp?.tabDragChannel
         return StripExternalTarget(
             toGlobal: { box.globalPoint(fromStrip: $0) },
             hitTest: { point in
-                channel.paneID(
+                if let paneHit = channel.paneID(
                     at: point,
                     live: Set(coordinator.paneAssignment.panes.map(\.id)),
-                    excluding: sourcePane)
+                    excluding: sourcePane) {
+                    return paneHit
+                }
+                guard let sessionsApp, let sessionChannel else { return nil }
+                return sessionChannel.sessionID(
+                    at: point,
+                    live: Set(sessionsApp.core.sessions.map(\.id)),
+                    excluding: sessionsApp.core.activeID)
             },
-            setHovered: { channel.setHovered($0) },
-            // MODEL-level verb: the full select pipeline must follow the
+            setHovered: { id in
+                // Route the highlight to whichever strip owns the target;
+                // always clear the other (both channels dedup).
+                let isPane = id.map { pid in
+                    coordinator.paneAssignment.panes.contains { $0.id == pid }
+                } ?? false
+                channel.setHovered(isPane ? id : nil)
+                sessionChannel?.setHovered(isPane ? nil : id)
+            },
+            // MODEL-level verbs: the full select pipeline must follow the
             // move (file-nav follow/republish — the stale-FileNav bug).
-            commit: { tabID, paneID in
-                model.movePaneTab(id: tabID, toPane: paneID)
+            commit: { tabID, targetID in
+                if coordinator.paneAssignment.panes.contains(where: { $0.id == targetID }) {
+                    model.movePaneTab(id: tabID, toPane: targetID)
+                } else if let sessionsApp {
+                    sessionsApp.moveTab(withID: tabID, toSessionID: targetID)
+                }
             })
     }
 
