@@ -111,36 +111,6 @@ public struct DividerDragSession: Equatable, Sendable {
     }
 }
 
-/// TSK-440 bug (A) — the lone-FILES gap. `BoundedAccordionScroll` hugs
-/// its measured content up to a window-derived cap, but it treated a
-/// measured height of 0 as "not measured yet" and fell back to the CAP —
-/// so an EMPTY accordion (lone FILES panel) still reserved ~62% of the
-/// sidebar as a blank region. The resolver distinguishes the two states:
-///
-///   * not measured yet  → cap (first-pass behavior, unchanged)
-///   * measured ≈ empty  → 0   (the region collapses; FILES flex-fills)
-///   * measured, fits    → content height (hug)
-///   * measured, over    → cap (scroll)
-///
-/// `nil` = unconstrained (no cap and nothing measured — let SwiftUI hug).
-public enum AccordionHeightResolver {
-
-    /// Content below this measures as "empty" — sub-point layout noise,
-    /// not a real panel.
-    public static let emptyEpsilon: CGFloat = 1
-
-    public static func resolve(
-        contentHeight: CGFloat,
-        hasMeasured: Bool,
-        cap: CGFloat?
-    ) -> CGFloat? {
-        if hasMeasured, contentHeight <= emptyEpsilon {
-            return 0
-        }
-        guard let cap else {
-            return contentHeight > 0 ? contentHeight : nil
-        }
-        guard contentHeight > 0 else { return cap }
-        return min(contentHeight, cap)
-    }
-}
+// (`AccordionHeightResolver` — the BoundedAccordionScroll relic — was
+// deleted 2026-08-12 with the special-case sweep: the one-rule stack has
+// no bounded accordion, and the resolver had no callers left.)

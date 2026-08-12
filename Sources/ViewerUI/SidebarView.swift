@@ -184,12 +184,10 @@ struct SidebarView: View {
             let stack = resolvedStack
             // How much a grow-drag may take from the FLEX panel once the
             // pair neighbor floors (the cascade; owner 2026-08-09 "the
-            // third one doesn't even move"). FILES-visible: the residual
-            // above the tree's usable reserve; else the flex panel's
-            // rendered height above its floor.
-            let flexSlack = filesPanelVisible
-                ? stack.flexRendered
-                : max(0, stack.flexRendered - SidebarPanelHeights.minExpandedHeight)
+            // third one doesn't even move"): the flex panel's rendered
+            // height above the shared floor — ONE rule, whoever the flex
+            // panel is (owner 2026-08-12: no FILES special case).
+            let flexSlack = max(0, stack.flexRendered - SidebarPanelHeights.minExpandedHeight)
             // The stack lives in a ScrollView that engages ONLY when every
             // panel is at its compressed MINIMUM (constants — header + min
             // body + gutter per panel — so unlike the old bounded accordion
@@ -497,18 +495,22 @@ struct SidebarView: View {
         let flexRendered: CGFloat
     }
 
-    /// The stack's pinned height: exactly the measured band normally
-    /// (panels compress by layout, flex fills — no scroll), or the
-    /// constants-only minimum total when even compressed panels can't fit
-    /// (the ONLY case the outer scroll engages). nil pre-measurement.
+    /// The stack's pinned height: exactly the measured band when everything
+    /// fits (flex absorbs the remainder — no scroll), or the stack's REAL
+    /// height when the stored panels overflow the band — the outer scroll
+    /// engages then (owner 2026-08-12: panels are NEVER auto-shrunk; a too-
+    /// small band scrolls instead). nil pre-measurement.
     private var stackTargetHeight: CGFloat? {
         guard sidebarContentHeight.isFinite, sidebarContentHeight > 0 else { return nil }
-        let panelCount = orderedVisiblePanels.count + (filesPanelVisible ? 1 : 0)
+        let stack = resolvedStack
+        let headerCount = stack.fixed.count + (stack.flex != nil ? 1 : 0)
+            + (filesPanelVisible ? 1 : 0)
         let headerH = SidebarSectionHeaderMetrics.headerRowHeight(uiSize: model.uiSize)
-        let minTotal = CGFloat(panelCount)
-            * (headerH + SidebarSectionBodyFrame.compressedMinHeight)
-            + CGFloat(max(0, panelCount - 1)) * 12
-        return max(sidebarContentHeight, minTotal)
+        let realTotal = CGFloat(headerCount) * headerH
+            + CGFloat(max(0, headerCount - 1)) * 12
+            + stack.fixed.reduce(0) { $0 + $1.height }
+            + stack.flexRendered
+        return max(sidebarContentHeight, realTotal)
     }
 
     /// Ordered visible panels: accordion order + plugin sections last.
@@ -529,10 +531,13 @@ struct SidebarView: View {
         let headerCount = visible.count + (filesPanelVisible ? 1 : 0)
         let gutterCount = max(0, headerCount - 1)
         let headerH = SidebarSectionHeaderMetrics.headerRowHeight(uiSize: model.uiSize)
+        // No per-panel special cases (owner 2026-08-12): the old
+        // `- 200` FILES reserve is gone — FILES shares the same flex
+        // floor as any other flex panel (and the reserve secretly
+        // stacked with the flex floor into a 320pt protection).
         let available = sidebarContentHeight
             - CGFloat(headerCount) * headerH
             - CGFloat(gutterCount) * 12
-            - (filesPanelVisible ? 200 : 0)   // keep the tree usable as flex
         let resolution = SidebarStackLayout.resolve(
             storedFixed: fixedKinds.map { CGFloat(accordionHeight(for: $0)) },
             floor: SidebarPanelHeights.minExpandedHeight,
@@ -569,17 +574,10 @@ struct SidebarView: View {
                 dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs))
     }
 
-    /// TSK-592: the per-panel stored body heights (pre-clamp `@AppStorage`
-    /// values) fed to `SidebarPanelHeights.shouldCommitAvailableHeight` so
-    /// a resize frame is committed only when it would change some panel's
-    /// resolved height. Mirrors the `accordionHeight(for:)` mapping; kept in
-    /// the same order, though the predicate is order-insensitive.
-    private var accordionStoredHeights: [CGFloat] {
-        [
-            bookmarksHeight, searchHeight, gitHeight, claudeHeight,
-            lspHeight, markdownOutlineHeight, lspNavHeight, lspProblemsHeight, recentsHeight,
-        ].map { CGFloat($0) }
-    }
+    // (`accordionStoredHeights` + the TSK-592 commit predicate died with
+    // the one-rule stack — the flex panel reads `available` directly, so
+    // every real height change is observable; the epsilon in the measure
+    // onChange is the only guard needed.)
 
     /// The stored accordion body height (points) for a resizable section.
     /// Mirrors the per-section `@AppStorage` bindings; centralised so the

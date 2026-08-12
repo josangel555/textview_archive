@@ -33,11 +33,20 @@ public enum SidebarStackLayout {
     }
 
     /// Resolve rendered body heights.
+    ///
+    /// Owner 2026-08-12: the crowd-shrink is GONE. Panels render at their
+    /// stored (floored) heights ALWAYS — a panel only ever changes size
+    /// when the user drags ITS divider ("it should only grow in the
+    /// direction you drag"); nothing auto-shrinks panels the user never
+    /// touched. When the stored heights don't fit the band, the stack
+    /// overflows and the outer scroll engages instead.
+    ///
     /// - Parameters:
     ///   - storedFixed: stored (persisted) body heights of the fixed
     ///     panels, in on-screen order.
     ///   - floor: the minimum expanded body height (every panel shares it).
-    ///   - flexFloor: the flex panel's minimum body height.
+    ///   - flexFloor: the flex panel's minimum body height (same floor —
+    ///     no per-panel special cases).
     ///   - available: the band height available to BODIES (the caller has
     ///     already subtracted headers and gutters). Non-finite/≤0 (the
     ///     pre-measurement pass) renders stored heights as-is with a
@@ -48,24 +57,15 @@ public enum SidebarStackLayout {
         flexFloor: CGFloat,
         available: CGFloat
     ) -> Resolution {
-        var fixed = storedFixed.map { max($0, floor) }
+        let fixed = storedFixed.map { max($0, floor) }
         guard available.isFinite, available > 0 else {
             return Resolution(fixed: fixed, flex: flexFloor)
         }
         let fixedTotal = fixed.reduce(0, +)
-        if fixedTotal + flexFloor <= available {
-            // Roomy: flex absorbs the remainder (and any slack).
-            return Resolution(fixed: fixed, flex: available - fixedTotal)
-        }
-        // Crowded: shrink fixed panels toward the floor, starting from the
-        // one nearest the flex end, until the stack fits.
-        var over = fixedTotal + flexFloor - available
-        for i in stride(from: fixed.count - 1, through: 0, by: -1) where over > 0 {
-            let give = min(fixed[i] - floor, over)
-            fixed[i] -= give
-            over -= give
-        }
-        return Resolution(fixed: fixed, flex: flexFloor)
+        // Roomy: flex absorbs the remainder. Over: flex sits at its floor
+        // and the stack overflows into the scroll — the fixed panels are
+        // NEVER auto-shrunk.
+        return Resolution(fixed: fixed, flex: max(available - fixedTotal, flexFloor))
     }
 
     /// The most a drag may grow the fixed panel ABOVE the flex boundary:

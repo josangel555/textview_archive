@@ -82,6 +82,13 @@ scene_expect() {
     panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.contentToolbar mdv.viewModeControl" ;;
     # The owner-bug repro: the SESSION strip must coexist with the split.
     panes-sessions) echo "mdv.sessionTabBar mdv.paneStrip mdv.paneStrip.focused" ;;
+    # Sidebar-fill scenes (owner 2026-08-09): the PNG is the visual fill
+    # proof; the a11y gate pins the right panel actually mounted. Without
+    # these they fell through to the TERMINAL dense-chip pixel eval, which
+    # is meaningless here (false-passed on stray accent chips, 2026-08-12).
+    fill-check-git) echo "mdv.gitPanel" ;;
+    fill-check-bookmarks) echo "mdv.bookmarks" ;;
+    fill-check-recents) echo "mdv.recentlyOpened" ;;
     recover-deleted) echo "mdv.recover.sheet" ;;
     first-run) echo "mdv.content" ;;
     lsp-status) echo "mdv.statusBar" ;;

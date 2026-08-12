@@ -19,31 +19,24 @@ final class SidebarStackLayoutTests: XCTestCase {
         XCTAssertEqual(r.flex, 900)
     }
 
-    func test_crowdedBand_shrinksFromTheFlexEnd_first() {
-        // 400+400 stored + 120 flex floor = 920 into an 800 band → the
-        // SECOND fixed panel gives up the 120 overage first.
+    func test_crowdedBand_neverShrinksPanels_theStackOverflowsInstead() {
+        // Owner 2026-08-12 ("it should only grow in the direction you
+        // drag"): 400+400 stored + 120 flex floor = 920 into an 800 band —
+        // the panels KEEP their stored heights; the overflow scrolls.
         let r = SidebarStackLayout.resolve(
             storedFixed: [400, 400], floor: floor, flexFloor: floor, available: 800)
-        XCTAssertEqual(r.fixed, [400, 280])
+        XCTAssertEqual(r.fixed, [400, 400],
+                       "a panel only changes size when ITS divider is dragged")
         XCTAssertEqual(r.flex, floor)
-        XCTAssertEqual(r.fixed.reduce(0, +) + r.flex, 800, "the stack exactly fits")
+        XCTAssertGreaterThan(r.fixed.reduce(0, +) + r.flex, 800,
+                             "the stack overflows the band — the scroll engages")
     }
 
-    func test_crowdedBand_cascadesShrink_acrossPanels() {
-        // Overage larger than what the last panel can give — the shrink
-        // cascades to the one above it.
-        let r = SidebarStackLayout.resolve(
-            storedFixed: [500, 200], floor: floor, flexFloor: floor, available: 600)
-        XCTAssertEqual(r.fixed[1], floor, "the near-flex panel hits its floor first")
-        XCTAssertEqual(r.fixed[0], 600 - floor - floor)
-        XCTAssertEqual(r.fixed.reduce(0, +) + r.flex, 600)
-    }
-
-    func test_tinyBand_everythingFloors_containerClips() {
+    func test_tinyBand_storedHeightsStand_containerScrolls() {
         let r = SidebarStackLayout.resolve(
             storedFixed: [300, 300], floor: floor, flexFloor: floor, available: 200)
-        XCTAssertEqual(r.fixed, [floor, floor],
-                       "below everyone's floors nothing shrinks further — the container clips")
+        XCTAssertEqual(r.fixed, [300, 300],
+                       "no auto-shrink at any band size — overflow scrolls")
         XCTAssertEqual(r.flex, floor)
     }
 

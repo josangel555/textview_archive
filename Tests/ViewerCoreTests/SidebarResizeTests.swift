@@ -2,12 +2,11 @@ import XCTest
 import CoreGraphics
 @testable import ViewerCore
 
-/// TSK-440 — the three pure cores behind the sidebar tool-window
-/// resize/fill fixes. The divider's drag gesture and the on-screen
-/// layout are VM-lane; these pin the math the gesture calls into
-/// (exact-closure rule: `ResizableSectionDivider.apply` routes pair
-/// drags into `SidebarResize.redistribute`, and `BoundedAccordionScroll`
-/// frames itself with `AccordionHeightResolver.resolve`).
+/// TSK-440 — the pure cores behind the sidebar tool-window resize
+/// fixes. The divider's drag gesture and the on-screen layout are
+/// VM-lane; these pin the math the gesture calls into (exact-closure
+/// rule: `ResizableSectionDivider.apply` routes drags through
+/// `DividerDragSession` into `SidebarResize.redistribute[Cascading]`).
 final class SidebarResizeTests: XCTestCase {
 
     private let floor = SidebarPanelHeights.minExpandedHeight  // 120
@@ -99,38 +98,9 @@ final class SidebarResizeTests: XCTestCase {
         XCTAssertEqual(plan.entries.count, 2)
     }
 
-    // MARK: accordion height resolver — bug (A): the lone-FILES gap
-
-    func test_resolver_measuredEmpty_collapsesToZero() {
-        // THE bug-A case: an empty accordion used to fall back to the CAP
-        // (~62% of the sidebar) because measured-0 looked like unmeasured.
-        XCTAssertEqual(
-            AccordionHeightResolver.resolve(contentHeight: 0, hasMeasured: true, cap: 400),
-            0, "measured-empty must collapse so the lone FILES panel flex-fills")
-    }
-
-    func test_resolver_unmeasured_fallsBackToCap() {
-        XCTAssertEqual(
-            AccordionHeightResolver.resolve(contentHeight: 0, hasMeasured: false, cap: 400),
-            400, "first pre-measurement pass keeps the legacy cap fallback")
-    }
-
-    func test_resolver_measuredFits_hugsContent() {
-        XCTAssertEqual(
-            AccordionHeightResolver.resolve(contentHeight: 250, hasMeasured: true, cap: 400),
-            250)
-    }
-
-    func test_resolver_measuredOverCap_scrollsAtCap() {
-        XCTAssertEqual(
-            AccordionHeightResolver.resolve(contentHeight: 900, hasMeasured: true, cap: 400),
-            400)
-    }
-
-    func test_resolver_noCap_unmeasured_isUnconstrained() {
-        XCTAssertNil(
-            AccordionHeightResolver.resolve(contentHeight: 0, hasMeasured: false, cap: nil))
-    }
+    // (The `AccordionHeightResolver` tests died with the resolver —
+    // 2026-08-12 special-case sweep; the one-rule stack has no bounded
+    // accordion.)
 
     // MARK: - Cascading redistribution (owner 2026-08-09: "the third one
     // doesn't even move" — grow takes from the neighbor first, then from
