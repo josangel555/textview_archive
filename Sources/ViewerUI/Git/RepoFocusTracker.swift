@@ -249,8 +249,8 @@ public final class RepoFocusTracker {
 
     /// Pure resolution of which tracked root the Git panel should follow.
     /// Priority: repo enclosing the selected tab → sidebar folder's repo
-    /// → single tracked root → most-recently-touched. nil iff nothing is
-    /// tracked.
+    /// → single demanded root → most-recently-touched DEMANDED root. nil
+    /// iff nothing the current session wants is tracked.
     private func resolveFocusedRoot() -> URL? {
         let tracked = channel.trackedRoots
         if let selected = tabCoordinator?.selected?.url,
@@ -263,11 +263,20 @@ public final class RepoFocusTracker {
            tracked.contains(root) {
             return root
         }
-        if tracked.count == 1 {
-            return tracked.first
+        // FALLBACKS ONLY AMONG CURRENTLY-DEMANDED ROOTS (owner bug
+        // 2026-08-12: an editor1 session's Git panel showed
+        // markdown_viewer's status). `tracked` keeps grace-window
+        // leftovers and is app-global LRU, so after a session switch the
+        // old session's repo is still "tracked" while nothing in THIS
+        // session demands it — the panel must not follow it. Pins are
+        // part of the desired set, so a pinned repo remains a valid
+        // fallback by design.
+        let demanded = tracked.filter { previousDesired[$0] != nil }
+        if demanded.count == 1 {
+            return demanded.first
         }
         // Most-recently-touched = last in LRU order.
-        return tracked.last
+        return demanded.last
     }
 
     // MARK: - FSEvents handling

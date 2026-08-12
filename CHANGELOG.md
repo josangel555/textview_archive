@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-12
+
+### Fixed
+- **The Git panel no longer shows another project's repo.** Opening a session
+  for a folder that isn't a git repo could leave the Git Status tab showing the
+  MOST RECENTLY USED repo from a different session (its files, its changes).
+  The panel's fallback now only considers repos something in the CURRENT
+  session actually uses — nothing relevant means an empty panel, never a
+  leftover.
+- **The markdown Split preview is truly inside the tab now.** It used to
+  render beside the whole window with its own filename header and ✕ — and that
+  ✕ could leave the toolbar saying Split while no split was showing. The
+  preview now renders inside the tab's content area, under the tab's own
+  toolbar, with no separate header: the toolbar's Split segment is the one
+  way in and out.
+
 ## 2026-08-11
 
 ### Fixed

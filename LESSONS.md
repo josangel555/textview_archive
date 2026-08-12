@@ -4537,6 +4537,18 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   present in the split capture — pixels missing, structure intact ⇒
   compositor, not layout.
 
+- **An app-global "most recently used" fallback LEAKS ACROSS SESSIONS — any
+  MRU/LRU fallback feeding a session-scoped surface must filter by CURRENT
+  demand (2026-08-12, the wrong-repo Git panel).** `resolveFocusedRoot`'s
+  fallback picked `tracked.last` (app-wide LRU), and the tracked set keeps
+  grace-window leftovers after their demand (tabs/sidebar/pins) is gone — so
+  an editor1 session's Git panel showed markdown_viewer's status. The shape:
+  registry retention (grace windows, LRU caches) deliberately OUTLIVES demand
+  for cheap re-acquire; any DISPLAY decision that falls back to "whatever's
+  in the registry" therefore shows another context's data. Filter fallbacks
+  to `previousDesired` (what THIS session's demand set wants), never the raw
+  tracked/cached set.
+
 - **A coordinator-level `select` is NOT a selection — every pane/tab verb
   that changes the current tab MUST route through `DocumentModel.selectTab`
   (2026-08-11, the stale FileNav).** `selectTab(at:)` is a six-step pipeline:

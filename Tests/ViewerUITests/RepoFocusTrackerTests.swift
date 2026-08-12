@@ -186,6 +186,42 @@ final class RepoFocusTrackerTests: XCTestCase {
             + "channel.version to wake the mounted GitPanelSection")
     }
 
+    // MARK: - focus never falls back to an undemanded (grace/LRU) root
+
+    /// Owner bug (2026-08-12): a session for `editor1` (not a repo) showed
+    /// markdown_viewer's status in the Git panel. Mechanism: the focus
+    /// fallback picked `tracked.last` — the app-global LRU — and `tracked`
+    /// keeps grace-window leftovers from the PREVIOUS session's demand.
+    /// After every demand source drops a repo, focus must go nil (the
+    /// panel empties) even though the root is still tracked in grace.
+    func test_focusDropsWithDemand_neverFallsBackToGraceLeftovers() async throws {
+        let repoA = try makeRepo("A")
+        let fileA = repoA.appendingPathComponent("a.txt")
+        try "1".write(to: fileA, atomically: true, encoding: .utf8)
+        // A plain file OUTSIDE any repo (the editor1-session stand-in).
+        let plainDir = tmp.appendingPathComponent("plain")
+        try FileManager.default.createDirectory(at: plainDir, withIntermediateDirectories: true)
+        let plainFile = plainDir.appendingPathComponent("notes.txt")
+        try "n".write(to: plainFile, atomically: true, encoding: .utf8)
+
+        let model = makeModel()
+        await openAndSettle(model, fileA)
+        XCTAssertEqual(model.repoFocus.focusedRoot, TrackedReposReducer.normalize(repoA))
+
+        // "Session switch": repo A's tab closes, the sidebar re-roots to
+        // the new session's (non-repo) folder — a real switch does both.
+        // A stays TRACKED (grace window) but nothing demands it.
+        while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+        model.sidebar.setSelected(nil)
+        model.sidebar.setRoot(plainDir)
+        await openAndSettle(model, plainFile)
+
+        XCTAssertNil(model.repoFocus.focusedRoot,
+            "no demanded repo ⇒ focus nil — the panel must not follow the "
+            + "grace/LRU leftover from the previous session "
+            + "(tracked: \(model.trackedRepos.trackedRoots))")
+    }
+
     // MARK: - pin keeps a repo tracked with no open tab
 
     func test_pin_keepsRepoTrackedWithNoOpenTab() async throws {

@@ -589,25 +589,12 @@ public struct ContentView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("mdv.split")
-            } else if model.isSplitEditingActive, let url = model.currentURL {
-                // I-19 (owner 2026-08-11): the PER-TAB split-editing preview —
-                // same file, contained within the tab (switch tabs and each
-                // keeps its own arrangement). Reads `tabs.selected` +
-                // `currentViewMode`, both observed here, so tab switches and
-                // lens changes re-evaluate the branch. The window-scoped
-                // `splitURL` pane above (two DIFFERENT files) wins when open.
-                Divider()
-                SplitPaneView(
-                    url: url,
-                    zoom: model.zoom,
-                    theme: model.activeTheme,
-                    onClose: { model.exitSplitEditing() },
-                    model: model,
-                    tabs: tabCoordinator
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("mdv.split")
             }
+            // The PER-TAB split-editing preview (I-19) no longer mounts here:
+            // it renders INSIDE the tab's content region (`tabContent`), under
+            // the pane's strip + toolbar (owner 2026-08-12 — "contained within
+            // the tab", no separate header/close; the toolbar's Split segment
+            // owns the lifecycle).
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -853,8 +840,39 @@ public struct ContentView: View {
     /// keep showing their own document while invisible. `isActive` gates the
     /// find bar + find query so only the visible pane shows/drives find
     /// (otherwise N hidden find bars fight for first-responder focus).
+    ///
+    /// I-19 → owner 2026-08-12: a tab flagged `isSplitEditing` composes its
+    /// editor with the same-file rendered preview HERE — inside the tab's
+    /// content region, under the pane's strip + toolbar — headerless (the
+    /// toolbar's Split segment owns the lifecycle; a second close button
+    /// desynced segment and layout). Per-TAB by construction, so it renders
+    /// correctly inside any pane.
     @ViewBuilder
     private func tabContent(for tab: ViewerCore.Tab, isActive: Bool) -> some View {
+        if model.isSplitEditingActive(for: tab), let url = tab.url {
+            HStack(spacing: 0) {
+                tabPrimaryContent(for: tab, isActive: isActive)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                SplitPaneView(
+                    url: url,
+                    zoom: model.zoom,
+                    theme: model.activeTheme,
+                    onClose: { model.exitSplitEditing() },
+                    showsHeader: false,
+                    model: model,
+                    tabs: tabCoordinator
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("mdv.split")
+            }
+        } else {
+            tabPrimaryContent(for: tab, isActive: isActive)
+        }
+    }
+
+    @ViewBuilder
+    private func tabPrimaryContent(for tab: ViewerCore.Tab, isActive: Bool) -> some View {
         switch tab.state {
         case .empty:
             EmptyStateView(model: model)

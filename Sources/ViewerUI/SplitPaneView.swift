@@ -24,6 +24,12 @@ struct SplitPaneView: View {
     let zoom: Double
     let theme: SyntaxTheme
     let onClose: () -> Void
+    /// The two-file window pane shows its filename + close header; the
+    /// PER-TAB split-editing preview does NOT (owner 2026-08-12): it lives
+    /// under the tab's own toolbar, and its lifecycle belongs to the
+    /// toolbar's Split segment — a second close affordance desynced the
+    /// segment from the layout.
+    var showsHeader = true
     @ObservedObject var model: DocumentModel
     /// TSK-806: the split source text comes from the live editor buffer
     /// (`model.splitPaneText`), which is owned by `tabCoordinator` and is
@@ -82,8 +88,10 @@ struct SplitPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
+            if showsHeader {
+                header
+                Divider()
+            }
             content
         }
         .frame(minWidth: 200)
