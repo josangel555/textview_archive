@@ -59,6 +59,58 @@ public enum SidebarResize {
     }
 }
 
+/// Owner 2026-08-12 ("still can't resize above 50%; the handle isn't synced
+/// with the mouse") — the FROZEN drag session.
+///
+/// The 2026-08-09 fix snapshotted the height BASES at drag origin, but the
+/// cascade's flex BUDGET (`flexSlack`) stayed a live per-body-eval value:
+/// as a drag consumed slack, the flex panel shrank, the next body eval
+/// recomputed a smaller slack, and the next delta was capped by it — a
+/// feedback loop that converges at HALF the original slack (G = slack₀ − G)
+/// and partially applies every delta on the way (the mouse desync). The
+/// rule, generalized: EVERY input to base-relative drag math is an ORIGIN
+/// snapshot — bases AND budgets. This value type IS that snapshot: created
+/// at drag start, immutable for the drag's lifetime, discarded at end.
+public struct DividerDragSession: Equatable, Sendable {
+    /// Height bases at drag origin (the RENDERED heights — what the user
+    /// saw when they grabbed). nil = that side has no height key.
+    public let baseAbove: CGFloat?
+    public let baseBelow: CGFloat?
+    /// The flex panel's give at drag origin. Frozen — the whole point.
+    public let slack: CGFloat
+
+    public init(baseAbove: CGFloat?, baseBelow: CGFloat?, slack: CGFloat) {
+        self.baseAbove = baseAbove
+        self.baseBelow = baseBelow
+        self.slack = max(0, slack)
+    }
+
+    /// Absolute pair targets for the CUMULATIVE drag delta — cascade
+    /// bounded by the ORIGIN slack, so a monotone drag tracks 1:1 all the
+    /// way to `baseAbove + pairGive + slack`, never half of it.
+    public func pairTargets(
+        delta: CGFloat,
+        floor: CGFloat = SidebarPanelHeights.minExpandedHeight
+    ) -> (above: CGFloat, below: CGFloat)? {
+        guard let a = baseAbove, let b = baseBelow else { return nil }
+        return SidebarResize.redistributeCascading(
+            above: a, below: b, delta: delta, floor: floor, flexSlack: slack)
+    }
+
+    /// Above-only divider (the flex boundary from above): base + delta.
+    public func aboveTarget(delta: CGFloat) -> CGFloat? {
+        baseAbove.map { $0 + delta }
+    }
+
+    /// Below-only divider (the FILES boundary): drag up grows the panel
+    /// below by taking from the flex panel above, bounded by the ORIGIN
+    /// slack.
+    public func belowTarget(delta: CGFloat) -> CGFloat? {
+        guard let b = baseBelow else { return nil }
+        return min(b - delta, b + slack)
+    }
+}
+
 /// TSK-440 bug (A) — the lone-FILES gap. `BoundedAccordionScroll` hugs
 /// its measured content up to a window-derived cap, but it treated a
 /// measured height of 0 as "not measured yet" and fell back to the CAP —

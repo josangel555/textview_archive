@@ -3,6 +3,14 @@
 ## 2026-08-12
 
 ### Fixed
+- **Panel resizing tracks the mouse 1:1 and can use ALL the visible space.**
+  Growing a tool window stalled at half of what the flexible panel could give
+  (the "can't resize above 50%" wall) while the handle drifted behind the
+  pointer. Root cause: the drag froze its height BASES at grab time but kept
+  reading the flexible panel's spare space LIVE — a feedback loop where the
+  budget shrank by exactly what the drag consumed, converging at half. The
+  whole drag now runs from one frozen snapshot (bases AND budget), so the
+  handle glues to the pointer all the way to the real limit.
 - **The Git panel no longer shows another project's repo.** Opening a session
   for a folder that isn't a git repo could leave the Git Status tab showing the
   MOST RECENTLY USED repo from a different session (its files, its changes).

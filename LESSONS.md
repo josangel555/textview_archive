@@ -4537,6 +4537,22 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   present in the split capture — pixels missing, structure intact ⇒
   compositor, not layout.
 
+- **A drag's BUDGET must be frozen at origin, not just its bases — a live
+  budget feeds back into itself and stalls at HALF (2026-08-12, the "can't
+  resize above 50%" wall + mouse desync).** The 08-09 fix snapshotted the
+  divider drag's height bases but left `flexSlack` (how much the flex panel
+  can give) as a live per-body-eval value: each delta consumed slack →
+  layout shrank the flex panel → the next body eval computed a smaller
+  budget → the next delta was capped by it. Fixpoint: G = slack₀ − G ⇒ the
+  drag can only ever take HALF the visibly-available space, partially
+  applying every delta on the way (the desync). `DividerDragSession` now
+  freezes bases AND budget at origin; `SidebarResizeTests` pins 1:1
+  tracking for the FULL slack and keeps an executable simulation of the
+  halving loop. The full rule (generalizing 08-09): EVERY input to
+  base-relative drag math — bases, budgets, ceilings derived from live
+  layout — is an ORIGIN snapshot; if any input can change as a CONSEQUENCE
+  of the drag's own writes, it's a feedback loop.
+
 - **An app-global "most recently used" fallback LEAKS ACROSS SESSIONS — any
   MRU/LRU fallback feeding a session-scoped surface must filter by CURRENT
   demand (2026-08-12, the wrong-repo Git panel).** `resolveFocusedRoot`'s

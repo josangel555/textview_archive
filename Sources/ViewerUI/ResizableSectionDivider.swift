@@ -84,10 +84,12 @@ struct ResizableSectionDivider: View {
     /// chrome. 0 = pair-only (the old behavior).
     var flexSlack: CGFloat = 0
 
-    /// Drag origins (the heights the adjacent sections had when the
-    /// user first pressed). Nil between drags.
-    @State private var dragStartAbove: CGFloat? = nil
-    @State private var dragStartBelow: CGFloat? = nil
+    /// The FROZEN drag session (owner 2026-08-12): every input the drag
+    /// math reads — the height bases AND the flex budget — snapshotted at
+    /// origin. The budget used to be read live per body eval, which fed a
+    /// halving feedback loop (the "can't grow past 50%" wall + the mouse
+    /// desync). Nil between drags. See `DividerDragSession`.
+    @State private var session: DividerDragSession? = nil
 
     /// Tracks whether this divider has an outstanding `NSCursor.push()`
     /// on the global cursor stack, so hover-out / disappear pop exactly
@@ -167,20 +169,21 @@ struct ResizableSectionDivider: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 guard !isAboveCollapsed else { return }
-                if dragStartAbove == nil && dragStartBelow == nil {
-                    // Origin capture + the stored→rendered SNAP (see the
-                    // renderedAbove/Below doc): bases are what the user
-                    // SEES; the snap writes them through so stored ==
-                    // rendered from the first delta on.
+                if session == nil {
+                    // Origin capture: the stored→rendered SNAP (bases are
+                    // what the user SEES; the write-through makes stored ==
+                    // rendered from the first delta) AND the flex-budget
+                    // freeze (a live budget feeds back into itself — the
+                    // halving loop). One immutable session for the drag.
+                    let baseAbove = heightAbove.map { renderedAbove ?? $0.wrappedValue }
+                    let baseBelow = heightBelow.map { renderedBelow ?? $0.wrappedValue }
+                    session = DividerDragSession(
+                        baseAbove: baseAbove, baseBelow: baseBelow, slack: flexSlack)
                     withTransaction(noAnimationTransaction()) {
-                        if let above = heightAbove {
-                            let base = renderedAbove ?? above.wrappedValue
-                            dragStartAbove = base
+                        if let above = heightAbove, let base = baseAbove {
                             above.wrappedValue = bounded(base)
                         }
-                        if let below = heightBelow {
-                            let base = renderedBelow ?? below.wrappedValue
-                            dragStartBelow = base
+                        if let below = heightBelow, let base = baseBelow {
                             below.wrappedValue = bounded(base)
                         }
                     }
@@ -207,42 +210,44 @@ struct ResizableSectionDivider: View {
                         below.wrappedValue = bounded(below.wrappedValue)
                     }
                 }
-                dragStartAbove = nil
-                dragStartBelow = nil
+                session = nil
             }
     }
 
     /// TSK-440 — route the drag by which neighbors own a height:
-    ///   * pair       → sum-preserving redistribution between the two
+    ///   * pair       → sum-preserving redistribution between the two,
+    ///                  cascading into the ORIGIN flex budget
     ///   * above only → legacy clamp (above grows as you drag down)
     ///   * below only → FILES boundary: drag down grows the flex FILES
     ///                  panel above by SHRINKING the fixed panel below
     /// Internal (not private) as the exact-closure test seam: the drag
     /// gesture's `onChanged` is exactly `apply(delta:)` after origin
     /// capture, so `SidebarDividerWiringTests` exercises the IDENTICAL
-    /// routing the live drag drives.
+    /// routing the live drag drives. Without a live session (the test
+    /// seam), a one-shot session is derived from the rendered/live values
+    /// — identical inputs to what origin capture would freeze.
     func apply(delta: CGFloat) {
+        let live = session ?? DividerDragSession(
+            baseAbove: heightAbove.map { renderedAbove ?? $0.wrappedValue },
+            baseBelow: heightBelow.map { renderedBelow ?? $0.wrappedValue },
+            slack: flexSlack)
         switch (heightAbove, heightBelow) {
         case let (above?, below?):
-            let baseA = dragStartAbove ?? renderedAbove ?? above.wrappedValue
-            let baseB = dragStartBelow ?? renderedBelow ?? below.wrappedValue
             // Cascade (owner 2026-08-09): neighbor first, then the flex
-            // panel's slack — so a grow drag never dead-ends while there
-            // is visible space to take.
-            let next = SidebarResize.redistributeCascading(
-                above: baseA, below: baseB, delta: delta, flexSlack: flexSlack)
+            // budget — FROZEN at origin (owner 2026-08-12: a live budget
+            // halves itself and desyncs the mouse).
+            guard let next = live.pairTargets(delta: delta) else { return }
             above.wrappedValue = bounded(next.above)
             below.wrappedValue = bounded(next.below)
         case let (above?, nil):
-            let base = dragStartAbove ?? renderedAbove ?? above.wrappedValue
-            above.wrappedValue = bounded(base + delta)
+            guard let target = live.aboveTarget(delta: delta) else { return }
+            above.wrappedValue = bounded(target)
         case let (nil, below?):
             // The flex boundary (drag up grows the panel BELOW, taking
-            // from the flex panel above): growth is bounded by the flex
+            // from the flex panel above): growth is bounded by the ORIGIN
             // slack so the stored value can't run past what renders.
-            let base = dragStartBelow ?? renderedBelow ?? below.wrappedValue
-            let target = base - delta
-            below.wrappedValue = bounded(min(target, base + max(0, flexSlack)))
+            guard let target = live.belowTarget(delta: delta) else { return }
+            below.wrappedValue = bounded(target)
         case (nil, nil):
             break
         }
