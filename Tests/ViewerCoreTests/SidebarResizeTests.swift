@@ -9,7 +9,7 @@ import CoreGraphics
 /// `DividerDragSession` into `SidebarResize.redistribute[Cascading]`).
 final class SidebarResizeTests: XCTestCase {
 
-    private let floor = SidebarPanelHeights.minExpandedHeight  // 120
+    private let floor = SidebarPanelHeights.minExpandedHeight  // 0 — no minimums (owner 2026-08-12)
 
     // MARK: redistribute — bug (C): sum-preserving adjacent resize
 
@@ -27,24 +27,25 @@ final class SidebarResizeTests: XCTestCase {
     }
 
     func test_redistribute_clampsAtBelowFloor() {
-        // below can only give up to its floor: max delta = 300 - 120 = 180.
+        // The floor is ZERO (owner 2026-08-12): below can give everything;
+        // a panel dragged to nothing reads as minimized.
         let r = SidebarResize.redistribute(above: 200, below: 300, delta: 500)
-        XCTAssertEqual(r.below, floor, "below stops at the expanded-section floor")
-        XCTAssertEqual(r.above, 380, "above absorbs exactly what below released")
+        XCTAssertEqual(r.below, 0, "below shrinks all the way to zero — no minimum")
+        XCTAssertEqual(r.above, 500, "above absorbs exactly what below released")
     }
 
     func test_redistribute_clampsAtAboveFloor() {
         let r = SidebarResize.redistribute(above: 200, below: 300, delta: -500)
-        XCTAssertEqual(r.above, floor)
-        XCTAssertEqual(r.below, 380)
+        XCTAssertEqual(r.above, 0)
+        XCTAssertEqual(r.below, 500)
     }
 
-    func test_redistribute_degeneratePair_unchanged() {
-        // Hand-edited defaults can hold sub-floor heights; redistribution
-        // must not mint height to "fix" them mid-drag.
+    func test_redistribute_tinyPair_stillRedistributes() {
+        // With no floor, tiny heights are legitimate near-minimized panels
+        // and the exchange works on them like any other pair.
         let r = SidebarResize.redistribute(above: 50, below: 60, delta: 30)
-        XCTAssertEqual(r.above, 50)
-        XCTAssertEqual(r.below, 60)
+        XCTAssertEqual(r.above, 80)
+        XCTAssertEqual(r.below, 30)
     }
 
     func test_redistribute_zeroDelta_identity() {
@@ -114,11 +115,11 @@ final class SidebarResizeTests: XCTestCase {
         var t = session.pairTargets(delta: 50)!
         XCTAssertEqual(t.above, 350)
         XCTAssertEqual(t.below, 150)
-        // The neighbor floors after giving 80 — the divider STOPS. The
-        // slack (deliberately huge here) must be IGNORED for pairs.
+        // The neighbor empties (floor = 0) — the divider STOPS. The slack
+        // (deliberately huge here) must be IGNORED for pairs.
         t = session.pairTargets(delta: 500)!
-        XCTAssertEqual(t.above, 380, "above stops at base + the pair's give — nothing more")
-        XCTAssertEqual(t.below, SidebarPanelHeights.minExpandedHeight)
+        XCTAssertEqual(t.above, 500, "above stops at base + the pair's give — nothing more")
+        XCTAssertEqual(t.below, 0, "the neighbor shrinks to nothing — no minimum")
         XCTAssertEqual(t.above + t.below, 500, "sum-preserving always")
     }
 
@@ -148,9 +149,8 @@ final class SidebarResizeTests: XCTestCase {
         XCTAssertEqual(session.belowTarget(delta: -400)!, 350,
             "growth clamps at base + origin slack")
         XCTAssertEqual(session.belowTarget(delta: 50)!, 150)
-        XCTAssertEqual(session.belowTarget(delta: 500)!,
-                       SidebarPanelHeights.minExpandedHeight,
-                       "shrink stops at the floor")
+        XCTAssertEqual(session.belowTarget(delta: 500)!, 0,
+                       "shrink runs to zero — no minimum on any tool window")
     }
 
     /// Flex-adjacent boundary (stored panel above, flex BELOW): drag down
@@ -160,8 +160,7 @@ final class SidebarResizeTests: XCTestCase {
         XCTAssertEqual(session.aboveTarget(delta: 60)!, 300)
         XCTAssertEqual(session.aboveTarget(delta: 500)!, 400,
             "growth clamps at base + origin slack")
-        XCTAssertEqual(session.aboveTarget(delta: -500)!,
-                       SidebarPanelHeights.minExpandedHeight)
+        XCTAssertEqual(session.aboveTarget(delta: -500)!, 0)
         XCTAssertNil(session.pairTargets(delta: 10), "no pair without both bases")
     }
 }

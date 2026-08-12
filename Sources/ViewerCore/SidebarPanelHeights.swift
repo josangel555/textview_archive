@@ -30,17 +30,16 @@ import CoreGraphics
 // call sites compile unchanged.
 
 public enum SidebarPanelHeights {
-    /// Floor for an *expanded* section's body. Collapsed sections
-    /// render only the header row and bypass the floor entirely (a
-    /// header alone is well below this height by design).
-    ///
-    /// Bumped from 80 → 120 in 2026-05 alongside the fixed-envelope
-    /// change: every section now reserves its full body height
-    /// regardless of content (an empty Bookmarks panel reads as the
-    /// same card as a populated one). 120 leaves room for a section
-    /// header + a couple of rows + the "(empty)" placeholder without
-    /// looking cramped.
-    public static let minExpandedHeight: CGFloat = 120
+    /// Floor for a section's BODY: ZERO (owner 2026-08-12 — "there
+    /// shouldn't be a min height on any tool window; each panel should
+    /// shrink almost as if it's minimized, and deal with height with
+    /// scrolls"). A body dragged/fitted to 0 reads as a minimized panel —
+    /// the header row (which lives OUTSIDE the body height) remains the
+    /// identity + re-expand affordance, and every panel body scrolls its
+    /// own content internally at any height. (History: 80 → 120 in
+    /// 2026-05 for the fixed-envelope look; → 0 in the 2026-08-12
+    /// no-special-cases resize rework.)
+    public static let minExpandedHeight: CGFloat = 0
 
     /// Clamp a height to the legal range for an expanded section.
     /// Used both on read-back from `@AppStorage` (a hand-edited

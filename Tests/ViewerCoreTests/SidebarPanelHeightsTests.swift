@@ -29,23 +29,18 @@ final class SidebarPanelHeightsTests: XCTestCase {
 
     // MARK: clamp
 
-    func test_clamp_returnsFloor_whenInputBelowMinimum() {
-        XCTAssertEqual(SidebarPanelHeights.clamp(0),
-                       SidebarPanelHeights.minExpandedHeight)
-        XCTAssertEqual(SidebarPanelHeights.clamp(40),
-                       SidebarPanelHeights.minExpandedHeight)
-        XCTAssertEqual(SidebarPanelHeights.clamp(-50),
-                       SidebarPanelHeights.minExpandedHeight)
+    /// Owner 2026-08-12: NO minimum on any tool window — the floor is 0.
+    /// The clamp's only remaining job is rejecting negative garbage.
+    func test_clamp_floorIsZero_negativeGarbageClamps() {
+        XCTAssertEqual(SidebarPanelHeights.clamp(0), 0)
+        XCTAssertEqual(SidebarPanelHeights.clamp(40), 40,
+                       "any non-negative height is legal — panels shrink to nothing")
+        XCTAssertEqual(SidebarPanelHeights.clamp(-50), 0)
     }
 
-    func test_clamp_passesThrough_whenInputAboveMinimum() {
+    func test_clamp_passesThrough_anyNonNegativeHeight() {
         XCTAssertEqual(SidebarPanelHeights.clamp(120), 120)
         XCTAssertEqual(SidebarPanelHeights.clamp(400), 400)
-    }
-
-    func test_clamp_atFloor_isIdentity() {
-        let floor = SidebarPanelHeights.minExpandedHeight
-        XCTAssertEqual(SidebarPanelHeights.clamp(floor), floor)
     }
 
     // MARK: read-back
@@ -55,14 +50,13 @@ final class SidebarPanelHeightsTests: XCTestCase {
         XCTAssertEqual(value, SidebarPanel.bookmarks.defaultHeight)
     }
 
-    /// The whole point of the clamp-on-read: a hand-edited defaults
-    /// plist (or a stale value from an older build with a lower
-    /// floor) shouldn't be able to push the section below the
-    /// minimum.
-    func test_readClamped_clampsTooSmallPersistedValue_toFloor() {
+    /// The clamp-on-read now only rejects NEGATIVE garbage (no floor —
+    /// a persisted tiny height is a legitimate near-minimized panel).
+    func test_readClamped_keepsTinyValues_rejectsNegative() {
         defaults.set(20.0, forKey: SidebarPanel.bookmarks.appStorageKey)
-        let value = SidebarPanelHeights.readClamped(.bookmarks, from: defaults)
-        XCTAssertEqual(value, SidebarPanelHeights.minExpandedHeight)
+        XCTAssertEqual(SidebarPanelHeights.readClamped(.bookmarks, from: defaults), 20)
+        defaults.set(-80.0, forKey: SidebarPanel.bookmarks.appStorageKey)
+        XCTAssertEqual(SidebarPanelHeights.readClamped(.bookmarks, from: defaults), 0)
     }
 
     func test_readClamped_passesThroughLegalPersistedValue() {
@@ -93,23 +87,11 @@ final class SidebarPanelHeightsTests: XCTestCase {
                        "MarkdownViewer.sidebar.pluginSections.height")
     }
 
-    func test_minExpandedHeight_isAround120() {
-        // Sanity: should comfortably fit a section header + a couple
-        // of rows + the "(empty)" placeholder so empty panels still
-        // feel substantial. Bumped from 80 → 120 in 2026-05 alongside
-        // the fixed-envelope change. Pinned with a window rather than
-        // an exact match so future tuning has wiggle room without a
-        // separate test edit.
-        XCTAssertGreaterThanOrEqual(SidebarPanelHeights.minExpandedHeight, 100)
-        XCTAssertLessThanOrEqual(SidebarPanelHeights.minExpandedHeight, 160)
-    }
-
-    /// Verify a sub-floor persisted value clamps to the new 120 floor
-    /// (not the legacy 80). Catches accidental floor reverts.
-    func test_readClamped_usesNewFloor_notLegacyFloor() {
-        defaults.set(80.0, forKey: SidebarPanel.bookmarks.appStorageKey)
-        let value = SidebarPanelHeights.readClamped(.bookmarks, from: defaults)
-        XCTAssertEqual(value, SidebarPanelHeights.minExpandedHeight)
-        XCTAssertGreaterThanOrEqual(value, 120)
+    /// Owner 2026-08-12: the floor is ZERO — no tool window has a minimum
+    /// height; panels shrink to nothing (header-only = "minimized") and
+    /// their content scrolls internally. A revert to any positive floor
+    /// goes red here.
+    func test_noMinimumHeight_onAnyToolWindow() {
+        XCTAssertEqual(SidebarPanelHeights.minExpandedHeight, 0)
     }
 }

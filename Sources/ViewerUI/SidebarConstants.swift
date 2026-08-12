@@ -101,7 +101,10 @@ struct SidebarSectionBodyFrame: ViewModifier {
 
     func body(content: Content) -> some View {
         if bodyHeight == .infinity {
-            content.frame(minHeight: Self.compressedMinHeight, maxHeight: .infinity)
+            // minHeight 0 (owner 2026-08-12): the flex panel has no floor
+            // either — like every panel, it can be squeezed to nothing and
+            // its content scrolls internally.
+            content.frame(minHeight: 0, maxHeight: .infinity)
         } else {
             // Flexible [min … stored]: the stored height is the IDEAL, but
             // a shallow band compresses panels by LAYOUT instead of letting
