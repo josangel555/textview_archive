@@ -52,7 +52,10 @@ public enum AXIdentifierCatalog {
         Entry("mdv.contentToolbar", .chrome, "The main content toolbar host."),
         Entry("mdv.breadcrumb", .chrome, "Path breadcrumb bar above the content."),
         Entry("mdv.tab.overflowMenu", .chrome, "Tab-strip overflow menu button."),
-        Entry("mdv.tabbar", .chrome, "The document tab strip."),
+        // I-21 generalization (2026-08-11): the window-level tab strip
+        // (`mdv.tabbar`) was unmounted — every pane carries its own strip.
+        Entry("mdv.paneStrip", .chrome, "A pane's document tab strip."),
+        Entry("mdv.paneStrip.focused", .chrome, "The FOCUSED pane's tab strip."),
         Entry("mdv.sessionTabBar", .chrome, "The session tab bar."),
         Entry("mdv.split", .chrome, "The split-view container."),
         // chrome — status bar: the app's observable STATE surface (agents READ

@@ -142,12 +142,13 @@ final class MCPToolCatalogTests: XCTestCase {
         }
         XCTAssertEqual(surfaces.count, count, "count must equal the surfaces array length")
         XCTAssertGreaterThan(count, 50, "the AX-id catalog has 50+ curated surfaces")
-        // Teeth: a core surface (mdv.tabbar, promoted this run) is enumerated.
-        let hasTabbar = surfaces.contains { s in
+        // Teeth: a core surface is enumerated (mdv.paneStrip — THE tab strip
+        // since the I-21 generalization unmounted the window-level mdv.tabbar).
+        let hasStrip = surfaces.contains { s in
             guard case .object(let o) = s, case .string(let id)? = o["id"] else { return false }
-            return id == "mdv.tabbar"
+            return id == "mdv.paneStrip"
         }
-        XCTAssertTrue(hasTabbar, "list_surfaces must enumerate the AX catalog (mdv.tabbar present)")
+        XCTAssertTrue(hasStrip, "list_surfaces must enumerate the AX catalog (mdv.paneStrip present)")
     }
 
     func test_listVerbs_returnsTheCatalog() throws {
