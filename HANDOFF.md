@@ -1,102 +1,98 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — EDITOR PANES epic S1–S4d LANDED (2026-08-11 ~05:10)
+# Handoff — panes epic COMPLETE + resize FINAL SPEC landed (2026-08-15)
 
-**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ the S4a+S4b
-commit ("Split Editor Down + pane layouts persist") — `git log --oneline -12` shows the
-whole arc. CI loop gates each head in the background (NEVER wait on it / no inline full
-gates — owner re-directive 2026-08-11, memory `ci-background-loop`); installs ride its
-green notifications. /Applications = the S3 head (panes usable; the S4a/S4b head installs
-on its green line). tasked board OFFLINE all week — BACKLOG + commits are the record.
+**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ `f95a3f97`
+(ALL CI-green; tree clean but for the 4 protected untracked: OwnerWishlist.md[.bak],
+Untitled.txt, archive/Untitled.txt — NEVER touch). /Applications = f95a3f97 (02:45).
+CI loop = background Monitor, per-commit lines; NEVER wait on it; installs on green.
+tasked board OFFLINE all week — BACKLOG + commit messages are the record.
 
 ## Mission
-Owner-driven interactive feature push. This session: dist publish (TextView-2026-08-11
-on textview_dist), O-6 flush-before-read data-loss fix, I-19 per-tab split preview,
-I-20 links slice, and the ★ EDITOR PANES epic (I-21) — "panes which contain tabs".
+Owner-driven interactive push. This stretch: the EDITOR PANES epic (I-21) end-to-end,
+then an owner-driven sidebar-resize overhaul (4 rounds to the FINAL SPEC), plus chrome
+polish batches. Dist publishes: TextView-2026-08-12{,-v2}.zip on textview_dist.
 
-## Current state — the panes epic (BACKLOG I-21 has full detail)
-- **S1 model** ✓ `PaneAssignment` (ViewerCore, pure): panes[{id,tabIDs,selectedTabID}]
-  + focusedPaneID + orientation; ops split/close-absorbs/move/select-focuses/didOpen/
-  didClose; `normalized(against:)` = the reconciliation safety net. 15-test suite.
-- **S2 coordinator** ✓ TabCoordinator publishes the assignment; `syncPaneAssignment()`
-  reconciles after EVERY mutation primitive; single-pane mirrors the store byte-for-byte
-  (`mirrorSinglePane`); verbs splitFocusedPane(movingSelected:direction:)/focusPane
-  (drives app selection)/closePane/movePaneTab. `TabCoordinatorPaneTests`.
-- **S3 render** ✓ split ⇒ AnyLayout H/V run of pane columns: `PaneTabStrip` (TabBarItem
-  chips; actions resolve STORE indices at click time; Close Pane button) + the mounted
-  ZStack filtered per pane, visibility on the PANE's selection, find/active gating on
-  the FOCUSED pane; focused ring; window TabBar stands down while split. Menu: View ▸
-  Split Editor Right / Split Editor Down / Close Pane.
-- **S4a orientation** ✓ first split picks the axis; `normalized()` carries it (dropping
-  it was a latent reset — LESSONS).
-- **S4b persistence** ✓ `SessionSnapshot.PaneLayoutState` by FILE PATH (ids re-mint on
-  restore); captured in makeSnapshot (nil un-split), applied LAST in hydrate; carried in
-  `with()` + `hasSamePersistedContent`. "Split, quit, reopen ⇒ splits back."
-- **VM-verified**: `panes-split` + `panes-down` scenes PASS on real AX ids
-  (mdv.paneStrip[.focused], mdv.pane.close) and were eyeballed (side-by-side + stacked).
-- **S4c interactions** ✓ (2026-08-11 tail): within-pane strip REORDER + cross-strip
-  tab DRAG (`PaneDropChannel` strip rects + `StripExternalTarget`; hovered target
-  strip highlights accent; `movePaneTab` commits); content-CLICK focuses the pane
-  (`PaneFocusClickMonitor`, observe-only NSEvent monitor over the channel's content
-  rects); View ▸ Focus Next Pane (⌥⌘`). Host teeth: reorder/focus pins +
-  `PaneDropChannelTests`; VM rung: `AXPaneInteractionTests` (HID drag + click).
-- **S4d divider resize** ✓: `Pane.weight` (split halves the split pane's share,
-  close hands it back, normalized() carries it), `PaneDividerGutter` (visible
-  8px gutter+pill, `mdv.pane.resize`) → pure `PaneResize.dragDivider` (neighbors
-  only, 120pt floor); weights persist in `PaneLayoutState.weights` (additive;
-  legacy = equal shares). `PaneResizeTests` + weight/persistence pins + AX
-  divider tooth (zero-movement skip guard).
-- **Per-pane ContentToolbar** ✓ (owner call mid-session): each pane hosts
-  `ContentToolbar(tab:)` — per-TAB display via new `*(for tab:)` model variants,
-  commands selected-tab-routed (mouse-down focus makes them correct). App-wide
-  selected tab = focused pane's tab (confirmed).
-- **GENERALIZED (owner call, late 2026-08-11): the window-level TabBar +
-  window ContentToolbar are UNMOUNTED** — the un-split world is ONE pane;
-  `PaneTabStrip` is THE strip (gained the `+` button, tab→session-pill drop
-  via a composed external target, scroll-to-selected, context menu; Close
-  Pane renders only while split; ring only while split). The classic
-  `content` builder was deleted (`paneContentRegion` is the one mounted-tab
-  ZStack). `ChromeBodyEvalCountTests` zoom pin now watches `PaneTabStrip`.
-  Owner-batch fixes the same evening: session strip composited over by the
-  split (TSK-488 — .compositingGroup().zIndex(2)), stale FileNav (pane verbs
-  now route `model.selectTab` — `DocumentModel+Panes`), Split Pane Right/Left
-  context menu, flat header (windowBackground), pill inset 96pt.
-- **EPIC REMAINING**: context-menu "Open in New Pane" (nice-to-have).
-  Mixed-axis GRIDS = future split-tree.
+## Current state — all DONE & CI-green
+- **Panes epic (I-21)**: model→coordinator→render→orientation→persistence→
+  interactions→per-pane toolbar→GENERALIZATION (the window TabBar + window
+  ContentToolbar are UNMOUNTED; un-split = one pane; `PaneTabStrip` is THE strip).
+  Split Right/Down, cross-strip drag, click-to-focus (PaneFocusClickMonitor),
+  divider resize (weights persist), Split Pane Right/Left context menu, ⌥⌘` cycles.
+  Pane verbs route through `DocumentModel+Panes` (full selectTab pipeline — the
+  stale-FileNav class).
+- **Resize FINAL SPEC (owner, 4 rounds 2026-08-12)**: (1) `DividerDragSession`
+  freezes bases AND budgets at drag origin (the live-budget halving loop = the
+  "50% wall"); (2) NO auto-shrink → then refined to PROPORTIONAL refit on panel
+  open/close (everything stays in view; scroll only below floors); (3) cascade
+  DELETED — a pair drag moves THAT boundary only, stops at the floor;
+  flex-adjacent dividers trade against origin slack; (4) floor = ZERO
+  (`minExpandedHeight = 0`) — no minimum on ANY tool window, FILES' 200pt
+  reserve dead, tripwire test pins 0.
+- **Chrome batch**: pane strip shrink-to-fit + TSK-304 overflow menu (was silent
+  h-scroll), top+bottom hairlines, session pills: grey hairline border (inactive) /
+  accent edge (active) / accent-wash hover. Session header = flat windowBackground,
+  96pt traffic-light inset.
+- **Git panel session leak FIXED**: `resolveFocusedRoot` fallbacks filter to the
+  CURRENT demand set (`previousDesired`) — never the app-global LRU/grace leftovers.
+- **In-tab markdown split**: renders inside `tabContent` under the pane's toolbar,
+  headerless (`SplitPaneView(showsHeader: false)`); the toolbar Split segment is the
+  only lifecycle control. Window `splitURL` pane (two files) keeps its header.
+- **Flake retired**: `test_sidebarRecencyTick` migrated to `evalsExpectingZero`.
 
-## Also landed this session (earlier arcs, all CI-green + installed)
-- O-6 flush-before-read: nonce'd flushChanges→flushAck + CMEditorTextSync bounded wait
-  at ⌘W/⌘Q/switch/menu-save + page blur/hide self-flush. Webview ordering teeth.
-- I-19: Split preview is PER-TAB state (Tab.isSplitEditing; window pane = two-file only).
-- I-20 links slice: absolute file/folder paths pinned; `other.md#heading` scrolls to the
-  heading (gotoLine selectLength end-to-end; markdown coerces rendered→editor).
-- Dist publish: TextView-2026-08-11.zip on github.com/josangel555/textview_dist.
-- Round-2 owner batch (sidebar divider snap+cascade, global dock placement, search
-  grouping/jump, press feedback, concise footer, centered traffic lights).
+## Key decisions & rationale
+- Panes = order+selection OVERLAY on the flat tab store; per-tab display via
+  `*(for tab:)` model variants; commands stay selected-tab-routed (mouse-down
+  focus makes that correct). App-wide current tab = focused pane's selection.
+- EVERY input to base-relative drag math is an ORIGIN snapshot (bases, budgets,
+  ceilings) — live inputs feed back into the drag's own writes.
+- No special cases for any panel; design constants get re-derived when the
+  philosophy changes; one-symbol funnels + tripwire tests.
+- Publish gating: after same-day re-fixes, textview_dist WAITS for the owner's
+  hands-on verdict (current hold — see below).
 
-## Key decisions
-- Panes are an ORDER+SELECTION OVERLAY on the single flat tab store — no ownership
-  migration; `normalized()` absorbs every store mutation. App "current tab" = focused
-  pane's selection. Single-axis v1 (orientation), not a split tree.
-- Pane persistence by PATH, never tab id (ids re-mint on restore).
-- CI: background loop only; report at commit; install on green lines; NEVER block work.
+## Gotchas (full text in LESSONS.md 2026-08-11/12 tail)
+- Stuck VM crash dialogs EAT HID clicks (CGWindowList dump in the AX failure path);
+  stray app bundles resurrect + crash-loop — shelve them. The sidebar resize-tooth
+  "mystery" was exactly this — resolved, tooth passes 1:1.
+- Shapes-only views NEVER materialize out-of-process AX elements (4 attempts).
+- Scenes without a `scene_expect` entry fall through to the terminal pixel eval =
+  false-pass generator. Register SceneSpec + scene_expect together.
+- Tests beside a change encode the CHANGE, not the user's invariant — write the
+  spec-level property test FIRST (fits-whenever-floors-fit is the exemplar).
+- `PaneTabStrip` calls `TabBar.computedTabWidth/tabsAreCrowded` — rehome before
+  deleting the dead `TabBar` struct.
 
-## Gotchas (LESSONS.md 2026-08-11 tail)
-- Rebuild-constructor paths drop new struct fields (orientation reset; with() family).
-- New MDV_UI_SCENE ids MUST be in UISceneRegistry.staticScenes or the applier never
-  runs (capture silently shows leftover state).
-- A "fix didn't work on the VM" verdict is void until the fix is PROVEN in the walked
-  binary (the right-side AX void was "unfixable" against a stale build).
-- Don't pump the runloop inside a WKScriptMessageHandler callback (flush design).
+## Files that matter
+- `Sources/ViewerCore/PaneAssignment.swift` + `PaneResize.swift` — pane model/resize math.
+- `Sources/ViewerUI/PaneTabStrip.swift` — THE tab strip (width-fit, overflow, drags).
+- `Sources/ViewerUI/ContentView.swift` — paneAwareContent = the only content path.
+- `Sources/ViewerCore/SidebarResize.swift` (`DividerDragSession`) +
+  `SidebarStackLayout.swift` (proportional resolve) + `ResizableSectionDivider.swift`.
+- `Sources/ViewerUI/Git/RepoFocusTracker.swift:254` — demand-filtered focus fallback.
+- `scripts/vm-uitest.sh` — scene_expect table (fill-check-crowded = the 5-panel scene).
+
+## Open questions / blockers
+- **textview_dist publish ON HOLD** for the owner's hands-on verdict on the resize
+  final spec + floor-zero + chrome batch (last published: 2026-08-12-v2 @ 845d90e1;
+  head is 5 commits ahead). Owner says OK ⇒ pack `TextView-2026-08-12-v3.zip` (or
+  next date) via the ditto+sha+README recipe, push with the key-in-place GIT_SSH.
+- BACKLOG residues: crowded scene mounts 5/6 panels (`.recentlyOpened` override
+  doesn't mount its section — its a11y id matched from elsewhere); frames-in-ax-reader;
+  gutter AX materialization; dead `TabBar` deletion (rehome the two statics).
+- tasked board reconnect ⇒ file the whole week's ticket debt from BACKLOG + git log.
 
 ## How to resume
-1. `git log --oneline -12` · `git status --short` (only the 4 protected untracked).
-2. CI: `4d9e2264`/`cfbe1b57`/`95f79d73` (S4c) all rc=0; release @ S4b INSTALLED.
-   The S4d commit is pending its CI line — green ⇒ `build-app.sh release
-   --install` (owner: ⌘Q+relaunch); red ⇒ fix forward (stale pins usual).
-3. Next work: the owner's next batch, or **I-20 gap-matrix audit**, mermaid zoom
-   clip, AutoSave (unblocked). Panes epic residue = owner decisions only.
+1. `git log --oneline -15` · `git status --short` (only the 4 protected untracked).
+2. If the owner verdicts the resize feel: publish the dist refresh (recipe above);
+   if a complaint: the whole drag surface is `DividerDragSession` +
+   `ResizableSectionDivider.apply` + `SidebarStackLayout.resolve` — instrument
+   (delta, base, slack, written, rendered) per frame before theorizing.
+3. Next queue: I-20 markdown gap-matrix audit, mermaid non-100%-zoom label clip
+   (root-caused, BACKLOG), AutoSave (I-14, unblocked), BACKLOG residues above.
 4. VM lane: rsync → `ssh macOS15 'cd markdown_viewer && touch rust-core/link/*.a &&
    bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh
-   run <scene>`; scenes: panes-split, panes-down, mktg-split, terminal-dock-right.
-5. Mirror after each round: from the CloudDocs clone, `fetch <repo> main` +
-   `merge --ff-only FETCH_HEAD`. Board still offline — keep BACKLOG authoritative.
+   run <scene>`; scenes: fill-check-crowded, panes-split/down/sessions, tab-session-drop.
+5. Mirror after each round: from the CloudDocs clone `fetch <repo> main` +
+   `merge --ff-only FETCH_HEAD` (post-amend: `reset --hard FETCH_HEAD`).
+6. Install-on-ask = NOW; always say "⌘Q + relaunch". Commits carry the
+   Claude-Session trailer. No inline full gates — the CI loop reports per commit.

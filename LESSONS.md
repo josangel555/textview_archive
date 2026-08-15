@@ -4537,6 +4537,26 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   present in the split capture — pixels missing, structure intact ⇒
   compositor, not layout.
 
+- **An inherited design constant is a standing decision someone else made —
+  re-derive it when the design around it changes (2026-08-12, the 120pt
+  panel floor).** `minExpandedHeight = 120` was a deliberate 2026-05 choice
+  ("empty panels read as full cards") that silently survived THREE resize
+  reworks because each treated it as a given parameter; the owner's actual
+  model was "no minimum anywhere — shrink to zero, content scrolls". When a
+  rework changes the philosophy of a subsystem, walk its CONSTANTS and ask
+  which embody the old philosophy. Corollary: funnel such constants through
+  ONE symbol (this one was, which made the flip a one-line change) and pin
+  the new value with a tripwire test (`test_noMinimumHeight_onAnyToolWindow`).
+
+- **A scene without a `scene_expect` entry falls through to the TERMINAL
+  dense-chip pixel eval — a false-pass generator (2026-08-12).** The
+  fill-check scenes ran for weeks "PASS"ing on stray saturated pixels (an
+  accent chip anywhere in the window) because the runner's fallback eval was
+  written for terminal scenes only. Every new scene MUST ship a real
+  `scene_expect` (or `scene_color`) entry; treat a scene passing via the
+  fallback as unasserted. Registering the SceneSpec + the runner expectation
+  together is the rule (same family as the UISceneRegistry lesson).
+
 - **Tests written alongside a behavior change encode the CHANGE, not the
   USER'S invariant — pin the spec-level invariant separately (2026-08-12,
   the sidebar-scrolls regression).** The no-auto-shrink change shipped with

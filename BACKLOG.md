@@ -216,9 +216,11 @@ I-## → TSK-### when the tasked board reconnects.
     mounted-tab path). RESIDUE: the `TabBar` struct itself is now unmounted
     dead code — delete it + its helpers once the dust settles (a few suites
     still exercise it directly: TabBarIntrinsicSizeTests, TabBarPage, etc. —
-    green today because the struct still exists); pane strips use FIXED chip
-    width (uiSize 160) vs TabBar's width-fitting math — port `computedTabWidth`
-    if crowded strips feel wrong.
+    green today because the struct still exists; NOTE `PaneTabStrip` now CALLS
+    `TabBar.computedTabWidth`/`tabsAreCrowded` — a deletion must rehome those
+    two statics first). ~~fixed chip width~~ DONE 2026-08-12: the owner hit
+    the silent-overflow before the port — shrink-to-fit + TSK-304 overflow
+    menu + top/bottom hairlines now live per-pane (`f95a3f97`).
     **Resize FINAL SPEC (owner 2026-08-12, three rounds)**: strict pair-only
     dividers (a drag moves THAT boundary; stops at the floor; cascade DELETED),
     flex-adjacent dividers trade against the origin-frozen slack only,
