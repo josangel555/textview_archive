@@ -30,6 +30,22 @@ public enum StartupTrace {
     nonisolated(unsafe) private static var last = t0
     nonisolated(unsafe) private static var state: OSSignpostIntervalState?
 
+    /// The bulletproof channel: a tiny append-only trace file. The
+    /// unified log DROPPED the first version's `.info` lines (info is
+    /// memory-buffer-only unless a logging profile persists it — the
+    /// owner's launch left NOTHING readable), so the file is the record
+    /// of truth; `.notice` (persisted by default) is the convenience view.
+    /// Truncated on each launch — it holds ONE launch's timeline.
+    private static let traceFile: URL = {
+        let dir = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let d = dir.appendingPathComponent("MarkdownViewer")
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d.appendingPathComponent("startup-trace.log")
+    }()
+    nonisolated(unsafe) private static var fileHandle: FileHandle? = nil
+
     /// Record a milestone. Thread-safe; callable from any context.
     public static func mark(_ label: StaticString) {
         let now = ContinuousClock.now
@@ -38,9 +54,15 @@ public enum StartupTrace {
         last = now
         if let s = state { signposter.endInterval("startup", s) }
         state = signposter.beginInterval("startup")
+        let line = "\(Date()) \(label) +\(ms(sincePrev))ms (t=\(ms(t0.duration(to: now)))ms)\n"
+        if fileHandle == nil {
+            FileManager.default.createFile(atPath: traceFile.path, contents: nil)
+            fileHandle = try? FileHandle(forWritingTo: traceFile)
+        }
+        fileHandle?.write(Data(line.utf8))
         lock.unlock()
         let total = t0.duration(to: now)
-        log.info("\(label, privacy: .public) +\(Self.ms(sincePrev), privacy: .public)ms (t=\(Self.ms(total), privacy: .public)ms)")
+        log.notice("\(label, privacy: .public) +\(Self.ms(sincePrev), privacy: .public)ms (t=\(Self.ms(total), privacy: .public)ms)")
     }
 
     private static func ms(_ d: Duration) -> Int64 {
