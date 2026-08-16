@@ -55,6 +55,11 @@ public struct ContentView: View {
     /// Defaults to `true` so existing callers / previews are unaffected; the
     /// strip is shown only when BOTH this is `true` AND `sessionsApp != nil`.
     let sessionsUIEnabled: Bool
+    /// One-shot startup milestone (evaluated lazily on the FIRST body).
+    private static let markFirstBodyOnce: Void = {
+        StartupTrace.mark("first ContentView body")
+    }()
+
     @State private var isDropTargeted = false
     /// S4d — one in-flight pane-divider drag: the live weights the split
     /// renders from, and the drag-origin snapshot they rebalance against
@@ -106,6 +111,9 @@ public struct ContentView: View {
         #if DEBUG
         let _ = BodyProbe.tick("ContentView")   // TSK-615 re-eval width probe
         #endif
+        // Startup timeline (2026-08-16): one-shot first-body mark — the gap
+        // from "window shown" to here is SwiftUI's initial tree build.
+        let _ = Self.markFirstBodyOnce
         ZStack {
             VStack(spacing: 0) {
                 // TSK-264: the session tab strip shows only when the

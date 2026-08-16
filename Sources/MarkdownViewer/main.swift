@@ -132,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // the launch sequence twice.
         if Self.launchSequenceRan { return }
         Self.launchSequenceRan = true
+        StartupTrace.mark("didFinishLaunching enter")
         // Capture-lane hook (MDV_FORCE_APPEARANCE=light|dark): pin the app
         // appearance BEFORE any window builds. A scene-time NSApp.appearance
         // flip leaves already-built AppKit surfaces (git panel, terminal
@@ -319,11 +320,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // TSK-264: gate the session tab strip on the persisted
         // `sessionsEnabled` flag (default true). Read once at launch — the
         // providers aren't hot-swappable mid-run in this foundation slice.
+        StartupTrace.mark("pre sessions bootstrap + ContentView build")
         let rootView = ContentView(
             model: model,
             sessionsApp: sessions,
             sessionsUIEnabled: PreferencesStore().sessionsEnabled
         )
+        StartupTrace.mark("sessions + ContentView built")
         // Stash the walkthrough controller so the --walkthrough flag
         // handler below can call `start(_:)` on it without rebuilding
         // ContentView's body state. F-WCR-STRIP: read it off the MODEL,
@@ -426,7 +429,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
            let vf = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame {
             window.setFrame(WindowGeometry.sceneCaptureFrame(in: vf), display: false)
         }
+        StartupTrace.mark("window configured (hosting view laid out)")
         showWindow(window)
+        StartupTrace.mark("window shown")
+        // The first paint happens on a later runloop turn; this brackets it.
+        DispatchQueue.main.async {
+            StartupTrace.mark("first runloop turn after launch")
+        }
         self.window = window
 
         // Write the WindowServer-assigned windowNumber so test runners
@@ -4557,6 +4566,9 @@ if mcpConnectMode,
 }
 
 let app = NSApplication.shared
+// Startup timeline (owner 2026-08-16) — read after any launch via:
+//   log show --last 30m --info --predicate 'subsystem == "com.markdownviewer.MarkdownViewer" && category == "startup"'
+StartupTrace.mark("module-scope (NSApplication created)")
 
 /// `--mcp-stdio` puts the process in headless RPC mode: no Dock icon,
 /// no menu bar, no windows. We still need to call `app.run()` because
@@ -4656,7 +4668,9 @@ let policy: NSApplication.ActivationPolicy = {
     return .regular
 }()
 app.setActivationPolicy(policy)
+StartupTrace.mark("pre delegate init")
 let delegate = AppDelegate()
+StartupTrace.mark("delegate + DocumentModel init done")
 app.delegate = delegate
 // TSK-1243: under the viaOpen VM-UAT launch (sudo -u open), AppKit does NOT post
 // applicationDidFinishLaunching (the launch Apple Event isn't delivered in that

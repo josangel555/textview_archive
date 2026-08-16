@@ -754,6 +754,24 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
 `docs/research/project-meta-analysis-2026-07-04/SYNTHESIS.md` · usability →
 `docs/FEATURE_INVENTORY.md` · test pyramid → `docs/TEST_PYRAMID.md`.
 
+- **STARTUP-PERF investigation OPEN (2026-08-16, owner: "way too long to start"):**
+  pre-UI cost measured 82ms (dyld/static-init, `--verify-resources` timing) — the
+  cost is in the UI bootstrap. `StartupTrace` milestones now permanent (unified
+  log, subsystem com.markdownviewer.MarkdownViewer category startup); NEXT: read
+  the timeline off the owner's next launch, fix the biggest span. Data smells
+  found on the owner machine (not yet proven causal): a 138KB session snapshot
+  (likely inline hot-exit text), LocalHistory at 21k files/277MB, **420
+  `*.sb-*` safe-save litter files** in App Support (315 for history.json — the
+  replaceItemAt backup cleanup fails somewhere; sweep + root-cause, S).
+- **MCP `--mcp-connect` fall-through becomes a PERMANENT headless twin (S):**
+  when no GUI app listens at bridge launch, the bridge falls through to a full
+  `--mcp-stdio` headless instance and NEVER upgrades to the live app once it
+  starts (2 such twins found running, 10MB each; the 3MB pure bridges self-heal
+  via TSK-1552 reconnect). Fix: the fall-through should keep probing the socket
+  and switch to bridging (or exit on idle so the client respawns a bridge).
+  exitWhenOrphaned works as designed — the 9 long-lived bridges all had LIVING
+  Claude-session parents.
+
 - **Mermaid node labels clip at NON-100% app zoom (S–M, 2026-08-08, ROOT-CAUSED):** with
   the app zoom at 90% every flowchart label rendered a few px wider than its measured box
   ("Preview" → "Previev", any label length, both themes); at zoom 100% the same diagram is
