@@ -4537,6 +4537,25 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   present in the split capture — pixels missing, structure intact ⇒
   compositor, not layout.
 
+- **The 5-second startup stall was a "best-effort" tmpdir sweep ON MAIN —
+  and the diagnosis pipeline that found it is now permanent (2026-08-16).**
+  `cleanStaleDiagnosticArtifacts()` enumerated the ENTIRE per-user tmpdir
+  (299k entries / 638MB on the dev machine) synchronously inside
+  didFinishLaunching — 5.3s main-thread block + ~183MB of directory-metadata
+  reads per launch, invisible for months because the window was already on
+  screen (frozen). The main-thread rule (2026-07-26) applies to LAUNCH too:
+  best-effort hygiene never runs synchronously on any user path. Diagnosis
+  recipe that worked (all host-safe, no window): (1) `StartupTrace` unified-log
+  milestones bracket the stall; (2) a poll of `proc_pid_rusage` correlates
+  I/O with the phases; (3) `sample <pid>` armed to fire on the next launch
+  names the exact function (96% of samples). GOTCHAS burned en route:
+  os_log `.info` is NOT persisted (use `.notice` or a file — the first
+  trace evaporated); `sample` needs no sudo; enumeration of a big dir shows
+  as `getattrlistbulk` under `contentsOfDirectory`. Related hygiene found:
+  the per-user tmpdir accumulates hundreds of thousands of entries on a dev
+  machine — never enumerate a SHARED system dir wholesale; keep app litter
+  in an app-owned subdir so sweeps are bounded.
+
 - **An inherited design constant is a standing decision someone else made —
   re-derive it when the design around it changes (2026-08-12, the 120pt
   panel floor).** `minExpandedHeight = 120` was a deliberate 2026-05 choice

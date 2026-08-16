@@ -58,7 +58,19 @@ extension AppDelegate {
         // (crashed processes leave `mdv-diagnostic-<pid>.json` /
         // `mdv-snapshot-<pid>.png` behind). Runs even when the trap is
         // disabled so an upgrade from an old binary cleans up too (OBS-2).
-        Self.cleanStaleDiagnosticArtifacts()
+        //
+        // OFF-MAIN (owner 2026-08-16 "way too long to start up" — THE
+        // startup stall): this enumerates the per-user tmpdir, which on a
+        // dev machine held 299k entries / 638MB — synchronously on main
+        // inside didFinishLaunching it blocked the first runloop turn for
+        // 5.3s and read ~183MB of directory metadata (StartupTrace +
+        // rusage + `sample` evidence, 96% of stall samples in this call).
+        // The main-thread rule (2026-07-26): best-effort work NEVER sits
+        // on a user path — launch included. `nonisolated` static + pure
+        // FileManager work, so a detached utility task is safe.
+        Task.detached(priority: .utility) {
+            Self.cleanStaleDiagnosticArtifacts()
+        }
 
         guard Self.diagnosticsTrapEnabled else { return }
         let src = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
@@ -306,7 +318,7 @@ extension AppDelegate {
     /// / `mdv-snapshot-*.png` / `mdv-auto.{json,png}` names in the
     /// per-user tmpdir, and we never remove the file for the *current*
     /// pid. Best-effort: failures are ignored (OBS-2).
-    static func cleanStaleDiagnosticArtifacts() {
+    nonisolated static func cleanStaleDiagnosticArtifacts() {
         let fm = FileManager.default
         let tmp = fm.temporaryDirectory
         guard let entries = try? fm.contentsOfDirectory(

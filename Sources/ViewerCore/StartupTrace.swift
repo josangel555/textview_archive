@@ -37,10 +37,9 @@ public enum StartupTrace {
     /// of truth; `.notice` (persisted by default) is the convenience view.
     /// Truncated on each launch — it holds ONE launch's timeline.
     private static let traceFile: URL = {
-        let dir = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        let d = dir.appendingPathComponent("MarkdownViewer")
+        // TestStateRedirect so host tests never write the dev's real
+        // ~/Library state (the drift guard caught the bypass — CI 7e68dcfc).
+        let d = TestStateRedirect.markdownViewerDir()
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d.appendingPathComponent("startup-trace.log")
     }()

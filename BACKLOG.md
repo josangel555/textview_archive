@@ -754,15 +754,21 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
 `docs/research/project-meta-analysis-2026-07-04/SYNTHESIS.md` · usability →
 `docs/FEATURE_INVENTORY.md` · test pyramid → `docs/TEST_PYRAMID.md`.
 
-- **STARTUP-PERF investigation OPEN (2026-08-16, owner: "way too long to start"):**
-  pre-UI cost measured 82ms (dyld/static-init, `--verify-resources` timing) — the
-  cost is in the UI bootstrap. `StartupTrace` milestones now permanent (unified
-  log, subsystem com.markdownviewer.MarkdownViewer category startup); NEXT: read
-  the timeline off the owner's next launch, fix the biggest span. Data smells
-  found on the owner machine (not yet proven causal): a 138KB session snapshot
-  (likely inline hot-exit text), LocalHistory at 21k files/277MB, **420
-  `*.sb-*` safe-save litter files** in App Support (315 for history.json — the
-  replaceItemAt backup cleanup fails somewhere; sweep + root-cause, S).
+- ~~**STARTUP-PERF investigation**~~ **ROOT-CAUSED + FIXED 2026-08-16**: the 5.3s
+  launch stall was `cleanStaleDiagnosticArtifacts()` enumerating the WHOLE
+  per-user tmpdir (299k entries/638MB) on main in didFinishLaunching — now a
+  detached utility task; window interactive ~300ms (StartupTrace timeline +
+  rusage poll + `sample` = the diagnosis kit, all permanent). RESIDUES (S each):
+  (a) write `mdv-diagnostic-*`/`mdv-auto.*` artifacts into an app-owned
+  `T/mdv-diagnostics/` subdir so the sweep is bounded (consumers:
+  Diagnostics.swift, DiagnosticWindowView, DiagnosticProbes, test-in-vm.sh);
+  (b) the 420 `*.sb-*` safe-save litter files in App Support (315 for
+  history.json — replaceItemAt backup cleanup fails somewhere; sweep +
+  root-cause); (c) LocalHistory has NO global cap (277MB, 21k files; per-file
+  100MB only — Kobol_notes.txt sits AT the cap with 1,851 revs) + saves of
+  deep-history files re-read the whole rev chain (~100MB per Kobol save —
+  the owner's "app read 526MB"; dedup needs only the newest rev, prune can
+  use the index sizes); (d) a 138KB session snapshot — inspect what's inline.
 - **MCP `--mcp-connect` fall-through becomes a PERMANENT headless twin (S):**
   when no GUI app listens at bridge launch, the bridge falls through to a full
   `--mcp-stdio` headless instance and NEVER upgrades to the live app once it
