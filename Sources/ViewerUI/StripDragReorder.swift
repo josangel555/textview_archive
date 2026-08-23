@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ViewerCore
 
@@ -284,18 +285,47 @@ private struct StripReorderableItem: ViewModifier {
             // state whenever THIS item's drag can no longer complete.
             .onDisappear {
                 if state?.itemID == id {
-                    state = nil
-                    external?.setHovered(nil)
-                    frames.disarmSelectSuppression()
+                    clearStuckDrag()
                 }
             }
             .onChange(of: ids) { _, newIDs in
                 if let s = state, s.itemID == id, !newIDs.contains(id) {
-                    state = nil
-                    external?.setHovered(nil)
-                    frames.disarmSelectSuppression()
+                    clearStuckDrag()
                 }
             }
+            // WATCHDOG (owner re-report same day: the ghost recurred "simply
+            // by tab switching" — the gesture can be cancelled SILENTLY
+            // IN PLACE by a heavy re-render on selection change: identity
+            // unchanged, no disappear ⇒ both guards above miss). Positive
+            // liveness: while THIS item's drag state is live, poll the real
+            // mouse button; button UP with the state still set means the
+            // gesture died without onEnded — clear the ghost. (onEnded on a
+            // healthy drop clears state before the next poll tick, so the
+            // watchdog never races a real drag.)
+            .task(id: isDragging) {
+                guard isDragging else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    if state?.itemID == id, NSEvent.pressedMouseButtons & 0x1 == 0 {
+                        // One grace tick: a legitimate onEnded may be in the
+                        // same runloop turn as the button-up.
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+                        if state?.itemID == id, NSEvent.pressedMouseButtons & 0x1 == 0 {
+                            clearStuckDrag()
+                        }
+                        return
+                    }
+                    if state?.itemID != id { return }
+                }
+            }
+    }
+
+    /// Shared teardown for every stuck-drag path: drop the drag state,
+    /// clear any external hover highlight, and un-swallow clicks.
+    private func clearStuckDrag() {
+        state = nil
+        external?.setHovered(nil)
+        frames.disarmSelectSuppression()
     }
 
     private var drag: some Gesture {

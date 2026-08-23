@@ -405,6 +405,11 @@ struct SessionTabBarItem: View {
         // dims + shrinks on mouseDOWN — synchronous, BEFORE the (possibly
         // heavy) switch action fires on mouseUp.
         .buttonStyle(PressFeedbackButtonStyle())
+        // Owner 2026-08-22: session pills are NOT keyboard tab-stops — a
+        // Tab press was parking the focus ring on a pill ("it focuses the
+        // session tab instead").
+        .focusable(false)
+        .focusEffectDisabled()
         .onHover { isHovering = $0 }
         .helpInfo(title: snapshot.displayName, description: sessionTooltipDescription)
         .accessibilityElement(children: .contain)

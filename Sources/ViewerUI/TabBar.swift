@@ -642,6 +642,12 @@ struct TabBarItem: View {
         // Instant click-registered feedback (owner 2026-08-09) — the tab
         // dims on mouseDOWN; the self-drawn fills stay untouched.
         .buttonStyle(PressFeedbackButtonStyle())
+        // Owner 2026-08-22: chrome is NOT a keyboard tab-stop — pressing
+        // Tab must never park a focus ring on a tab chip (mouse + ⌃Tab
+        // are the chip interactions; the focus ring on chrome read as
+        // "it focused the wrong thing").
+        .focusable(false)
+        .focusEffectDisabled()
         .pointingCursor()   // I-16a/I-07: tabs are clickable — say so
         .onHover { isHovering = $0 }
         .helpInfo(title: tab.title, description: tabHelpText)

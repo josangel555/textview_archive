@@ -172,6 +172,48 @@ final class TabCoordinatorPaneTests: XCTestCase {
         XCTAssertEqual(c.selected?.id, b.id)
     }
 
+    // Owner 2026-08-22: ⌃Tab/⌘] cycling must stay INSIDE the focused pane
+    // while split (it walked the flat store order and hopped panes).
+    func test_tabCycling_staysInsideTheFocusedPane_whileSplit() {
+        let model = DocumentModel()
+        let mk = { (n: String) in Tab(url: URL(fileURLWithPath: "/tmp/cyc/\(n)"),
+                                      state: .empty, viewMode: .source) }
+        let a = mk("a"), b = mk("b"), x = mk("c"), d = mk("d")
+        model.tabCoordinator.append(a); model.tabCoordinator.append(b)
+        model.tabCoordinator.append(x); model.tabCoordinator.append(d)
+        // Tear d (selected) right → pane0 [a,b,c], pane1 [d] focused.
+        model.tabCoordinator.splitFocusedPane(movingSelected: true)
+        // Focus the LEFT pane on tab a.
+        model.focusPane(id: model.tabCoordinator.paneAssignment.panes[0].id)
+        XCTAssertEqual(model.tabs.selected?.id, a.id)
+
+        model.selectNextTab()
+        XCTAssertEqual(model.tabs.selected?.id, b.id)
+        model.selectNextTab()
+        XCTAssertEqual(model.tabs.selected?.id, x.id)
+        model.selectNextTab()
+        XCTAssertEqual(model.tabs.selected?.id, a.id,
+                       "cycling WRAPS within the pane — it never hops to d in the other pane")
+        model.selectPreviousTab()
+        XCTAssertEqual(model.tabs.selected?.id, x.id)
+        XCTAssertEqual(model.tabCoordinator.paneAssignment.focusedPane.id,
+                       model.tabCoordinator.paneAssignment.panes[0].id,
+                       "focus never leaves the pane during cycling")
+    }
+
+    func test_tabCycling_unsplit_keepsClassicStoreOrder() {
+        let model = DocumentModel()
+        let mk = { (n: String) in Tab(url: URL(fileURLWithPath: "/tmp/cyc2/\(n)"),
+                                      state: .empty, viewMode: .source) }
+        let a = mk("a"), b = mk("b")
+        model.tabCoordinator.append(a); model.tabCoordinator.append(b)
+        model.selectTab(at: 0)
+        model.selectNextTab()
+        XCTAssertEqual(model.tabs.selected?.id, b.id)
+        model.selectNextTab()
+        XCTAssertEqual(model.tabs.selected?.id, a.id, "wraps over the store order")
+    }
+
     func test_focusNextPane_isANoOpWhileUnsplit() {
         let c = TabCoordinator()
         c.append(makeTab("solo.md"))
