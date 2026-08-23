@@ -462,6 +462,11 @@ struct TabContextMenu: View {
 struct TabBarItem: View {
     let tab: ViewerCore.Tab
     let isSelected: Bool
+    /// Owner 2026-08-23: in a split, only the FOCUSED pane's selected tab
+    /// carries the accent — an unfocused pane's selected tab renders its
+    /// selection in grey (see `TabChipSelectionStyle`). Defaulted so the
+    /// single-strip call sites read unchanged.
+    var isPaneFocused: Bool = true
     let isBookmarked: Bool
     /// TSK-923: this tab's file is the one currently shown in the split
     /// (right) pane. Drives a small `sidebar.right` indicator badge so the
@@ -613,13 +618,14 @@ struct TabBarItem: View {
             // tabs keep the line.
             .overlay(alignment: .bottom) {
                 if isSelected {
-                    // Opaque base + the same accent tint the tab wears, so the
-                    // band composites to the tab's exact color while still
-                    // covering the strip's bottom hairline (a bare translucent
-                    // tint would let the hairline show through).
+                    // Opaque base + the same tint the tab wears (accent or
+                    // muted grey), so the band composites to the tab's exact
+                    // color while still covering the strip's bottom hairline
+                    // (a bare translucent tint would let the hairline show
+                    // through).
                     ZStack {
                         Rectangle().fill(Palette.windowBackground)
-                        Rectangle().fill(Self.activeAccentTint)
+                        Rectangle().fill(selectionTint)
                     }
                     .frame(height: 3 * scale)
                     .offset(y: 2 * scale)
@@ -628,11 +634,12 @@ struct TabBarItem: View {
             }
             .overlay(alignment: .top) {
                 if isSelected {
-                    // Solid accent bar along the active tab's top edge (owner
+                    // Solid bar along the selected tab's top edge (owner
                     // 2026-08-09) — a second, unmissable "you are here" cue on
-                    // top of the tinted fill.
+                    // top of the tinted fill. Accent only for THE active tab;
+                    // grey in an unfocused pane.
                     Rectangle()
-                        .fill(Color.accentColor)
+                        .fill(isPaneFocused ? Color.accentColor : Self.mutedSelectedBar)
                         .frame(height: 2 * scale)
                         .allowsHitTesting(false)
                 }
@@ -670,10 +677,22 @@ struct TabBarItem: View {
     /// both appearances; the hairline-interrupt band layers it over an
     /// opaque base so the two composite identically.
     static let activeAccentTint = Color.accentColor.opacity(0.25)
+    /// The unfocused pane's selected tab: same luminance step as the accent
+    /// tint but grey (`secondary` adapts to both appearances), so the pane's
+    /// front tab still stands out WITHIN its strip without competing with
+    /// THE active tab's accent.
+    static let mutedSelectedTint = Color.secondary.opacity(0.28)
+    static let mutedSelectedBar  = Color.secondary.opacity(0.7)
+
+    private var selectionTint: Color {
+        isPaneFocused ? Self.activeAccentTint : Self.mutedSelectedTint
+    }
 
     private var background: Color {
-        if isSelected {
-            return Self.activeAccentTint
+        switch TabChipSelectionStyle.emphasis(isSelected: isSelected, isPaneFocused: isPaneFocused) {
+        case .accent: return Self.activeAccentTint
+        case .muted:  return Self.mutedSelectedTint
+        case .plain:  break
         }
         if isHovering {
             // A clearly visible hover step (owner 2026-08-09: "add hover bg

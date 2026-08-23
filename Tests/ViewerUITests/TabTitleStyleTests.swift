@@ -24,3 +24,24 @@ final class TabTitleStyleTests: XCTestCase {
         XCTAssertFalse(TabTitleStyle.isBold(isSelected: false, isPreview: true))
     }
 }
+
+/// Owner 2026-08-23 — split-view selection emphasis: only the FOCUSED pane's
+/// selected tab carries the accent; an unfocused pane's selected tab is grey;
+/// unselected tabs are plain regardless of pane focus. (Pixel tail: the
+/// panes-split VM scene.)
+final class TabChipSelectionStyleTests: XCTestCase {
+
+    func test_selectedInFocusedPane_isTheAccentTab() {
+        XCTAssertEqual(TabChipSelectionStyle.emphasis(isSelected: true, isPaneFocused: true), .accent)
+    }
+
+    func test_selectedInUnfocusedPane_isMutedGrey() {
+        XCTAssertEqual(TabChipSelectionStyle.emphasis(isSelected: true, isPaneFocused: false), .muted,
+            "an unfocused pane's front tab must render grey so only THE active tab wears the accent")
+    }
+
+    func test_unselected_isPlain_regardlessOfPaneFocus() {
+        XCTAssertEqual(TabChipSelectionStyle.emphasis(isSelected: false, isPaneFocused: true), .plain)
+        XCTAssertEqual(TabChipSelectionStyle.emphasis(isSelected: false, isPaneFocused: false), .plain)
+    }
+}

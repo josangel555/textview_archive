@@ -2,6 +2,11 @@
 
 ## 2026-08-23
 
+### Changed
+- **In a split view, only the active pane's tab carries the blue accent.**
+  The other pane's front tab now renders grey (with a grey top bar), so
+  which tab is *actually* active is answerable at a glance.
+
 ### Fixed
 - **The editor's horizontal scrollbar no longer jumps around while you
   type.** With line wrapping off, CodeMirror re-derives the scrollable width

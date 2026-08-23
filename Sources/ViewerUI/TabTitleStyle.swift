@@ -20,3 +20,21 @@ public enum TabTitleStyle {
         isSelected && !isPreview
     }
 }
+
+/// Pure decision for which selection emphasis a tab chip wears — hoisted so
+/// the rule is host-testable. Owner 2026-08-23: in a split, ONLY the focused
+/// pane's selected tab carries the accent; an unfocused pane's selected tab
+/// goes GREY, so "which tab is actually active" is answerable at a glance.
+public enum TabChipSelectionStyle: Equatable {
+    /// Selected in the focused pane — THE active tab (accent).
+    case accent
+    /// Selected in an unfocused pane — that pane's front tab, muted grey.
+    case muted
+    /// Not selected.
+    case plain
+
+    public static func emphasis(isSelected: Bool, isPaneFocused: Bool) -> TabChipSelectionStyle {
+        guard isSelected else { return .plain }
+        return isPaneFocused ? .accent : .muted
+    }
+}

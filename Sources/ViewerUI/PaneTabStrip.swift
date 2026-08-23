@@ -65,6 +65,7 @@ struct PaneTabStrip: View {
                             TabBarItem(
                                 tab: tab,
                                 isSelected: tab.id == pane.selectedTabID,
+                                isPaneFocused: isFocusedPane,
                                 isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
                                 isInSplit: tabCoordinator.splitTabID == tab.id,
                                 scale: CGFloat(model.zoom),
