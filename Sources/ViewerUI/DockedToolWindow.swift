@@ -264,8 +264,7 @@ struct BottomDockContainer: View {
     @State private var liveBandHeight: CGFloat?
     @State private var dragStartHeight: CGFloat?
     /// Balanced-push guard for the resize cursor (the UIRESP-10 pattern —
-    /// see `ResizableSectionDivider.updateCursor`).
-    @State private var pushedResizeCursor = false
+    // (resize cursor is region-based .pointerStyle now — 2026-08-22)
     private static let measureEpsilon: CGFloat = 0.5
 
     /// Selected-tab tint — the file-tab-strip idiom (light accent wash +
@@ -419,8 +418,7 @@ struct BottomDockContainer: View {
         }
         .frame(height: 12)
         .contentShape(Rectangle())
-        .onHover { updateCursor(hovering: $0) }
-        .onDisappear { updateCursor(hovering: false) }
+        .resizePointer(vertical: true)   // 2026-08-22: off the leaky NSCursor stack
         .gesture(
             // .global — the gutter moves with the band; local-space
             // translation oscillates + half-tracks (see DraggableSidebar).
@@ -452,20 +450,6 @@ struct BottomDockContainer: View {
         return min(floored, ceiling)
     }
 
-    /// Balanced push/pop of the resize cursor (UIRESP-10 — a bare
-    /// push-on-hover-in / pop-on-hover-out pair leaks a push when AppKit
-    /// re-fires `onHover(true)`).
-    private func updateCursor(hovering: Bool) {
-        if hovering {
-            if !pushedResizeCursor {
-                NSCursor.resizeUpDown.push()
-                pushedResizeCursor = true
-            }
-        } else if pushedResizeCursor {
-            NSCursor.pop()
-            pushedResizeCursor = false
-        }
-    }
 
     private var heightReader: some View {
         GeometryReader { geo in
@@ -652,9 +636,7 @@ struct DockedToolWindow: View {
             .frame(width: 5)
             .overlay(Rectangle().fill(Palette.windowBackground).frame(width: 3))
             .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
+            .resizePointer(vertical: false)   // 2026-08-22: off the leaky NSCursor stack
             .gesture(
                 // .global + fixed drag-start base — see DraggableSidebar.
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)

@@ -64,6 +64,20 @@ final class StripFrameBox {
         selectSuppressedUntil = now.addingTimeInterval(window)
     }
 
+    /// Owner 2026-08-22 ("sometimes the tab clicks won't register"): a CLICK
+    /// with a few px of hand jitter crosses the drag's 6px minimumDistance,
+    /// arms suppression in onChanged, drops as a no-op — and the button's
+    /// select on mouse-up was then swallowed: a click that did NOTHING. A
+    /// no-op micro-drag DISARMS on end so the click lands; real drags (a
+    /// gap change or macro translation) keep the suppression that the
+    /// select-after-reorder bug needs.
+    func disarmSelectSuppression() {
+        selectSuppressedUntil = .distantPast
+    }
+
+    /// A drop within this travel is a jittery CLICK, not a drag.
+    static let microDragMaxTranslation: CGFloat = 10
+
     func shouldSuppressSelect(now: Date = Date()) -> Bool {
         now < selectSuppressedUntil
     }
@@ -260,6 +274,28 @@ private struct StripReorderableItem: ViewModifier {
             // compete with the button's press gesture; `minimumDistance`
             // keeps an ordinary click from ever starting a drag.
             .simultaneousGesture(drag)
+            // STUCK-DRAG GUARDS (owner 2026-08-22, the frozen mid-drag chip
+            // eating clicks): SwiftUI's DragGesture has NO cancellation
+            // callback — if the gesture is interrupted (context menu opens
+            // mid-press, the item's identity churns, the window resigns),
+            // `onEnded` never fires and the drag state sticks: the chip
+            // stays offset+lifted over other controls, the drop ring stays
+            // lit, and everything under the ghost is unclickable. Clear the
+            // state whenever THIS item's drag can no longer complete.
+            .onDisappear {
+                if state?.itemID == id {
+                    state = nil
+                    external?.setHovered(nil)
+                    frames.disarmSelectSuppression()
+                }
+            }
+            .onChange(of: ids) { _, newIDs in
+                if let s = state, s.itemID == id, !newIDs.contains(id) {
+                    state = nil
+                    external?.setHovered(nil)
+                    frames.disarmSelectSuppression()
+                }
+            }
     }
 
     private var drag: some Gesture {
@@ -314,7 +350,15 @@ private struct StripReorderableItem: ViewModifier {
                                                     frames: s.frames)
                 guard !StripReorder.isNoOp(source: s.sourceIndex, gap: gap) else {
                     // Snap back from wherever it was dropped — animated, so a
-                    // no-op drag doesn't teleport either.
+                    // no-op drag doesn't teleport either. A MICRO no-op (a
+                    // click with hand jitter that crossed minimumDistance)
+                    // DISARMS the suppression so the button's mouse-up select
+                    // still lands — "sometimes clicks won't register"
+                    // (owner 2026-08-22) was this exact swallow.
+                    if abs(value.translation.width) < StripFrameBox.microDragMaxTranslation,
+                       abs(value.translation.height) < StripFrameBox.microDragMaxTranslation {
+                        frames.disarmSelectSuppression()
+                    }
                     withAnimation(Self.dropAnimation) { state = nil }
                     return
                 }

@@ -1112,10 +1112,7 @@ struct CSVTableView: View {
                     .fill(Color.clear)
                     .frame(width: 6)
                     .contentShape(Rectangle())
-                    .onHover { hovering in
-                        if hovering { NSCursor.resizeLeftRight.push() }
-                        else { NSCursor.pop() }
-                    }
+                    .resizePointer(vertical: false)   // 2026-08-22: off the leaky NSCursor stack
                     .gesture(
                         // .global + drag-start base (see the columnDrag doc).
                         DragGesture(minimumDistance: 0, coordinateSpace: .global)

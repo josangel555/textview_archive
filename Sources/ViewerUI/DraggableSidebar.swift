@@ -44,13 +44,10 @@ struct DraggableSidebar: View {
                     // (derived grab-points missed it — 2026-08-01).
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("mdv.sidebar.widthHandle")
-                    .onHover { hover in
-                        if hover {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
+                    // Region-based pointer (2026-08-22): the NSCursor stack
+                    // leaked on fast transits and fought the WebView's
+                    // I-beam — see HoverCursorBalance.resizePointer.
+                    .resizePointer(vertical: false)
                     .gesture(
                         // ⛔ .global, NOT the default .local (owner recording
                         // 2026-08-01): the handle MOVES with the resize, so

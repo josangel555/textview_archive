@@ -30,6 +30,12 @@ struct SplitPaneView: View {
     /// toolbar's Split segment — a second close affordance desynced the
     /// segment from the layout.
     var showsHeader = true
+    /// Owner 2026-08-22 (stale previews): the disk read was keyed by URL
+    /// ONLY — an external change to the SAME file never re-read it. The
+    /// host passes the tab's file mtime so the `.task` re-fires on
+    /// content change; nil (the two-file window pane, no tab) keeps the
+    /// URL-only behavior.
+    var diskStamp: Date? = nil
     @ObservedObject var model: DocumentModel
     /// TSK-806: the split source text comes from the live editor buffer
     /// (`model.splitPaneText`), which is owned by `tabCoordinator` and is
@@ -100,10 +106,12 @@ struct SplitPaneView: View {
             // Free the CSV filter slot keyed on this pane's pseudo-tab.
             model.clearCsvFilterState(forTabID: splitCSVTabID)
         }
-        .task(id: url) {
-            // TSK-922: load the split file OFF-MAIN once per URL (was a per-body
-            // synchronous read). The too-large case shows a placeholder without
-            // reading any bytes (stat-only guard). Re-runs on URL change.
+        .task(id: DiskLoadKey(url: url, stamp: diskStamp)) {
+            // TSK-922: load the split file OFF-MAIN (was a per-body
+            // synchronous read). The too-large case shows a placeholder
+            // without reading any bytes (stat-only guard). Re-runs on URL
+            // change AND on the host tab's mtime (owner 2026-08-22 —
+            // URL-only keying left external changes stale forever).
             guard !isSplitFileTooLargeForSyncRead else { return }
             diskLoad = .loading
             let u = url
@@ -112,6 +120,12 @@ struct SplitPaneView: View {
                 return .failed
             }.value
         }
+    }
+
+    /// `.task(id:)` key: URL + the host tab's content stamp.
+    private struct DiskLoadKey: Equatable {
+        let url: URL
+        let stamp: Date?
     }
 
     private var header: some View {

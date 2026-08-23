@@ -99,42 +99,43 @@ private struct HoverCursorModifier: ViewModifier {
     /// Mirrors hover state out so the host view can drive a tint. Optional
     /// because some call sites only want the cursor, not a tint.
     let isHovering: Binding<Bool>?
-    /// The cursor to show on hover (defaults to the pointing hand, which is
-    /// what every clickable-row site uses).
-    let cursor: NSCursor
-
-    @State private var balance = HoverCursorBalance()
+    /// The region pointer style (macOS 15 `.pointerStyle` — see the
+    /// owner-flicker note on `resizePointer`).
+    let style: PointerStyle
 
     func body(content: Content) -> some View {
         content
+            .pointerStyle(style)
             .onHover { hovering in
                 isHovering?.wrappedValue = hovering
-                apply(balance.update(hovering: hovering))
             }
-            .onDisappear {
-                apply(balance.teardown())
-            }
-    }
-
-    private func apply(_ action: HoverCursorBalance.Action) {
-        switch action {
-        case .push: cursor.push()
-        case .pop: NSCursor.pop()
-        case .none: break
-        }
     }
 }
 
 extension View {
-    /// Attach a balanced pointing-hand cursor on hover, optionally
-    /// mirroring the hover flag into `isHovering` for a hover tint.
+    /// Attach a pointing-hand pointer on hover, optionally mirroring the
+    /// hover flag into `isHovering` for a hover tint.
     ///
-    /// Replaces open-coded unguarded `NSCursor.push()/pop()` in `onHover`
-    /// — see `HoverCursorBalance` for why the guard matters (TSK-892).
+    /// 2026-08-22 (owner: "pointer rapidly switches over CM6 text"): the
+    /// NSCursor push/pop implementation — even BALANCED (TSK-892) — leaks
+    /// by MISSED EXIT: a fast pointer transit can skip `onHover(false)`,
+    /// leaving a pushed cursor that then fights WKWebView's per-mousemove
+    /// I-beam — the rapid arrow↔I-beam flicker. `.pointerStyle` is
+    /// region-based and SwiftUI-managed: no global stack, nothing to leak.
+    /// (`HoverCursorBalance` remains for any residual NSCursor site.)
     func hoverCursor(
         isHovering: Binding<Bool>? = nil,
         cursor: NSCursor = .pointingHand
     ) -> some View {
-        modifier(HoverCursorModifier(isHovering: isHovering, cursor: cursor))
+        modifier(HoverCursorModifier(
+            isHovering: isHovering,
+            style: cursor == .pointingHand ? .link : .default))
+    }
+
+    /// Region-based resize pointer for dividers/gutters — the
+    /// `.pointerStyle` replacement for the leaky NSCursor stack (same
+    /// rationale as `hoverCursor`; the I-07 phase-2 migration).
+    func resizePointer(vertical: Bool) -> some View {
+        pointerStyle(vertical ? .rowResize : .columnResize)
     }
 }

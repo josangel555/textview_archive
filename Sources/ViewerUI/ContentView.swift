@@ -868,6 +868,12 @@ public struct ContentView: View {
                     theme: model.activeTheme,
                     onClose: { model.exitSplitEditing() },
                     showsHeader: false,
+                    // Re-read disk when the tab's file reloads (external
+                    // change) — owner 2026-08-22 stale-preview fix.
+                    diskStamp: {
+                        if case .loaded(let f) = tab.state { return f.modifiedTime }
+                        return nil
+                    }(),
                     model: model,
                     tabs: tabCoordinator
                 )

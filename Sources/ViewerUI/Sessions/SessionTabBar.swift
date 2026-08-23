@@ -238,12 +238,9 @@ private struct SessionStripContent: View {
                 // Cross-strip drop target: publish this pill's GLOBAL frame
                 // so a live TAB drag can hit-test it (tab → session move).
                 .sessionDropTargetFrame(id: snap.id, into: dropChannel)
-                // B4-adjacent: a full top-to-bottom divider reads
-                // cleaner between a taller two-line cell than the old
-                // 16pt stub did. (B4 proper is a separate item.)
-                if index < core.sessions.count - 1 {
-                    Divider().frame(height: rowHeight - model.uiSize(12))
-                }
+                // (The inter-pill hairline divider was removed — owner
+                // 2026-08-22: the pills carry their own borders now, so
+                // the separator read as clutter.)
             }
             // TSK-261: the "+" sits BESIDE the last session tab (inside
             // the scrolling content), not pinned at the far-right edge.

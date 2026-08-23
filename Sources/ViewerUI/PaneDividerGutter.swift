@@ -17,7 +17,7 @@ struct PaneDividerGutter: View {
     let onDrag: (CGFloat) -> Void
     let onEnd: () -> Void
 
-    @State private var pushedCursor = false
+    // (resize cursor is region-based .pointerStyle now — 2026-08-22)
 
     var body: some View {
         ZStack {
@@ -31,8 +31,7 @@ struct PaneDividerGutter: View {
         .frame(width: verticalRun ? nil : Self.thickness,
                height: verticalRun ? Self.thickness : nil)
         .contentShape(Rectangle())
-        .onHover { updateCursor(hovering: $0) }
-        .onDisappear { updateCursor(hovering: false) }
+        .resizePointer(vertical: verticalRun)   // 2026-08-22: off the leaky NSCursor stack
         .gesture(
             // .global — the gutter itself moves while dragging; local-
             // space translation oscillates + half-tracks (DraggableSidebar
@@ -58,16 +57,4 @@ struct PaneDividerGutter: View {
         .accessibilityIdentifier("mdv.pane.resize")
     }
 
-    /// Balanced push/pop (UIRESP-10 — AppKit can re-fire onHover(true)).
-    private func updateCursor(hovering: Bool) {
-        if hovering {
-            if !pushedCursor {
-                (verticalRun ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).push()
-                pushedCursor = true
-            }
-        } else if pushedCursor {
-            NSCursor.pop()
-            pushedCursor = false
-        }
-    }
 }

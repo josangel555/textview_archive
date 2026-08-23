@@ -24,6 +24,57 @@ extension DocumentModel {
         if let idx = tabCoordinator.tabs.selectedIndex {
             selectTab(at: idx)
         }
+        syncPaneFileWatchers()
+    }
+
+    /// Owner 2026-08-22 ("markdown previews are not updating when files
+    /// are updated"): the app watched ONE file — the selected tab's — but
+    /// since the panes epic OTHER panes show their own selected tabs
+    /// VISIBLY. A file rendered in an unfocused pane changed on disk and
+    /// nothing ever reloaded it. Watch every UNFOCUSED pane's selected
+    /// file too; the focused pane's tab keeps the full-featured selected
+    /// watcher (conflict banners, rename-follow, auto-merge). Changes to
+    /// a CLEAN tab reload silently; a dirty tab is left for the selected
+    /// pipeline's conflict flow when the user focuses it.
+    func syncPaneFileWatchers() {
+        let a = tabCoordinator.paneAssignment
+        var wanted: [URL: UUID] = [:]   // url → tabID
+        if a.isSplit {
+            for pane in a.panes where pane.id != a.focusedPaneID {
+                if let sel = pane.selectedTabID,
+                   let tab = tabCoordinator.tabs.tabs.first(where: { $0.id == sel }),
+                   let url = tab.url {
+                    wanted[url] = tab.id
+                }
+            }
+        }
+        // Drop watchers whose file is no longer an unfocused pane's front.
+        for url in paneFileWatchers.keys where wanted[url] == nil {
+            paneFileWatchers[url]?.stop()
+            paneFileWatchers[url] = nil
+        }
+        for (url, tabID) in wanted where paneFileWatchers[url] == nil {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            paneFileWatchers[url] = try? FileWatcher(
+                url: url, queue: .main,
+                onLost: { [weak self] in
+                    Task { @MainActor in self?.paneFileWatchers[url] = nil }
+                },
+                handler: { [weak self] in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        // Clean tabs only — never clobber unsaved edits from
+                        // a background watcher (the selected pipeline owns
+                        // conflicts).
+                        guard let idx = self.tabs.tabs.firstIndex(where: { $0.id == tabID }),
+                              let u = self.tabs.tabs[idx].url, u == url,
+                              !self.tabs.tabs[idx].isDirty,
+                              self.hexDirtyBytes[tabID] == nil
+                        else { return }
+                        self.reloadFileFromDisk(url)
+                    }
+                })
+        }
     }
 
     /// Focus a pane (content click / strip interactions) — the pane's

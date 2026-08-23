@@ -446,6 +446,10 @@ public final class DocumentModel: ObservableObject {
     public var preferencesStore: PreferencesStore { preferences }
     private var fileWatcher: FileWatcher?
     var watchedURL: URL?  // internal: used by SRP-slice extensions (TSK-1110)
+    /// Owner 2026-08-22: per-file watchers for the UNFOCUSED panes' selected
+    /// files (the focused pane's tab rides the full `fileWatcher` pipeline).
+    /// Managed by `syncPaneFileWatchers()` (DocumentModel+Panes).
+    var paneFileWatchers: [URL: FileWatcher] = [:]
     /// TSK-929: the watched file's inode, captured at watch-start so that if it
     /// vanishes from its path we can find where it was renamed to (same inode,
     /// new name in the same folder) and follow it instead of "file not found".
@@ -3377,6 +3381,8 @@ public final class DocumentModel: ObservableObject {
         fileWatcher?.stop()
         fileWatcher = nil
         watchedURL = nil
+        for (_, w) in paneFileWatchers { w.stop() }
+        paneFileWatchers = [:]
         // A deliberate pause is not a failure — don't leave a stale
         // "unavailable" cue showing while the session is backgrounded.
         liveReloadUnavailable = false
@@ -3389,6 +3395,7 @@ public final class DocumentModel: ObservableObject {
     /// check in `startWatchingCurrentFile()`).
     public func resumeFileWatcher() {
         startWatchingCurrentFile()
+        syncPaneFileWatchers()
     }
 
     // MARK: Tab management
@@ -3711,6 +3718,9 @@ public final class DocumentModel: ObservableObject {
         updateDerivedCalls += 1   // P2 probe: a bulk drain must fire this ONCE
         #endif
         windowTitle = tabs.selected?.title ?? "TextView"
+        // Owner 2026-08-22: keep the unfocused panes' file watchers in
+        // lockstep with the pane fronts (cheap when nothing changed).
+        syncPaneFileWatchers()
         // `openTabURLs` maintenance now lives on `TabCoordinator`
         // — every coordinator-side mutation refreshes it. We don't
         // need to fan that out from here.
