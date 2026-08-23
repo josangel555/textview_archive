@@ -769,6 +769,19 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
   deep-history files re-read the whole rev chain (~100MB per Kobol save —
   the owner's "app read 526MB"; dedup needs only the newest rev, prune can
   use the index sizes); (d) a 138KB session snapshot — inspect what's inline.
+- **Owner batch 2026-08-22 EVENING wave — LANDED, CI-green**: tab-strip DEAD
+  BAND root-caused (the empty-NSToolbar traffic-light spacer laid a 66pt
+  invisible hit container over the 46pt band → ~20px of the strip swallowed
+  clicks; toolbar removed, `TrafficLightCenterer` repositions buttons —
+  sits ~3px above perfect center due to the hit-test clamp, owner may
+  comment); split-view ⌃Tab cycling pane-scoped (was flat store order —
+  hopped panes); stuck-drag WATCHDOG (physical-button poll — kills ghosts
+  from ANY cancellation cause); chrome out of the keyboard Tab loop
+  (.focusable(false) on chips+pills); findTypeahead pin re-scoped (third
+  starved-straggler incident — family migration COMPLETE). VM RESTARTED
+  2026-08-22 ~22:20 — AX interaction suites 6/6 green on the final build
+  (divider tooth self-skips as documented). AWAITING: owner confirmation
+  the screenshot ghost + dead spots are gone on the installed build.
 - **Owner batch 2026-08-22 — all 5 LANDED (`f95651ed`, CI-green)**: stuck
   mid-drag chip guards, micro-drag click swallow, NSCursor→`.pointerStyle`
   migration (I-07 phase 2 DONE), stale-preview holes (unfocused-pane

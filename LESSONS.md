@@ -4551,6 +4551,28 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   chrome (toolbars, accessories) taller than the band your own UI draws —
   probe the container height when in doubt.
 
+- **A DragGesture can be cancelled SILENTLY IN PLACE — disappear/identity
+  guards are NOT enough; add a physical-button liveness watchdog
+  (2026-08-22 evening, the ghost recurred "simply by tab switching").** A
+  heavy selection-change re-render can kill a gesture with the item still
+  mounted and its id unchanged — `onEnded` never fires and neither
+  `.onDisappear` nor an ids-change guard trips. The complete net: while
+  drag state is live, poll `NSEvent.pressedMouseButtons` (250ms); button UP
+  with state still set (after one grace tick for a same-turn onEnded) ⇒
+  the gesture is dead ⇒ clear state + hover + suppression. Covers every
+  cancellation cause including unknown future ones. (Same PanelDragMonitor
+  polling pattern used for the tool-window drag chip.)
+
+- **Tab CYCLING was another "the current X" singleton that broke when panes
+  made visible ≠ selected (2026-08-22 evening).** ⌃Tab/⌘] walked the FLAT
+  store order — in a split it hopped into the other pane's tabs and yanked
+  focus (the owner's "void… focuses the session tab": first responder then
+  fell to a session pill, drawing a focus ring — chrome buttons are now
+  `.focusable(false)` + `.focusEffectDisabled()` so Tab never parks on
+  them). Cycling is pane-scoped while split. Adds to the audit list from
+  the same day's watcher lesson: watcher, find, diagnostics, CYCLING,
+  focus loop.
+
 - **SwiftUI `DragGesture` has NO cancellation callback — every drag-state
   machine needs interruption guards (2026-08-22, the frozen mid-drag chip).**
   An interrupted drag (context menu opens mid-press, item identity churns,
