@@ -1,5 +1,13 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — startup 10× fix + 2026-08-22 UX batch landed (2026-08-22 ~22:15)
+# Handoff — startup 10× fix + 2026-08-22 UX batch + dead-band fix (2026-08-22 ~22:30)
+
+**POST-CHECKPOINT ADDENDUM**: main @ `a3f7b51b` (CI-green, installed 22:09) —
+the tab-strip DEAD BAND root cause: the empty-NSToolbar traffic-light spacer
+laid out a 66pt invisible titlebar hit container over the 46pt session band,
+swallowing clicks ~20px into the strip ("dead spots right above the text").
+Toolbar removed; `TrafficLightCenterer` (new file) repositions the buttons
+directly (~3px above perfect center due to the clamp — owner may comment).
+Awaiting owner confirmation the dead spots are gone.
 
 **cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ `f95651ed`
 (ALL CI-green; tree clean but for the 4 protected untracked: OwnerWishlist.md[.bak],

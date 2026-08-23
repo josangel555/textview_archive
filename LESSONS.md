@@ -4537,6 +4537,20 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   present in the split capture — pixels missing, structure intact ⇒
   compositor, not layout.
 
+- **The empty-NSToolbar titlebar-spacer trick creates an OVERSIZED invisible
+  hit container — clicks die under it (2026-08-22, the tab-strip dead band).**
+  Centering traffic lights via an empty unified toolbar laid out a 66pt
+  titlebar container (probed headlessly: build the window config, walk
+  `standardWindowButton(.closeButton).superview…`, `themeFrame.hitTest`)
+  over a 46pt session band — the ~20px overhang swallowed clicks across the
+  top of the tab strip ("dead spots right above the text"; also a second
+  mechanism behind the intermittent tab-click reports). Fix:
+  `TrafficLightCenterer` repositions the standard buttons directly (no
+  toolbar ⇒ standard 28pt container). Rule: with
+  `fullSizeContentView`+transparent titlebar, NEVER add titlebar-inflating
+  chrome (toolbars, accessories) taller than the band your own UI draws —
+  probe the container height when in doubt.
+
 - **SwiftUI `DragGesture` has NO cancellation callback — every drag-state
   machine needs interruption guards (2026-08-22, the frozen mid-drag chip).**
   An interrupted drag (context menu opens mid-press, item identity churns,
