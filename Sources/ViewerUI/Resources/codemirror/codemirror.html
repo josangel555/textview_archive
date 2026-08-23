@@ -931,6 +931,48 @@
     },
   };
 
+  // ---- stable horizontal scrollbar (owner bug 2026-08-23) --------------
+  // With wrapping OFF, CM6 only renders the vertical viewport, so the
+  // content width — and therefore the horizontal scrollbar range — comes
+  // from the widest *rendered* line. CM6 keeps its own internal floor
+  // (DocView.minWidth → flexBasis on the content tile) but DROPS it when
+  // (a) an edit touches the remembered range — i.e. you type where you
+  // previously were — or (b) the height oracle refreshes because measured
+  // font metrics changed (real markdown: bold headings, mixed glyphs).
+  // When that fires while the widest line is outside the render window,
+  // the width snaps down: the thumb jumps and the scrollLeft clamp yanks
+  // the text sideways — per keystroke in the bad geometry. Ratchet: pin
+  // .cm-content's min-width at the widest width measured for this buffer;
+  // it sits OUTSIDE CM6's floor logic, so it survives every drop path and
+  // the range is monotonic while editing. Safe fixpoint: .cm-content is
+  // border-box with zero horizontal padding, so measuring rect.width and
+  // writing it back as min-width converges in one measure pass. Reset on:
+  // full setText (new/replaced buffer), font size/family change (metrics
+  // change), and wrap-on (a wrapped buffer must never keep a wide floor —
+  // that would manufacture a phantom horizontal scrollbar).
+  let currentWrapEnabled = true; // mirrors wrapCompartment (default ON)
+  let contentWidthHighWater = 0;
+  let widthMeasurePending = false;
+  function resetContentWidthRatchet() {
+    contentWidthHighWater = 0;
+    view.contentDOM.style.minWidth = "";
+    scheduleContentWidthMeasure();
+  }
+  function scheduleContentWidthMeasure() {
+    if (widthMeasurePending || currentWrapEnabled) return;
+    widthMeasurePending = true;
+    view.requestMeasure({
+      read: () => view.contentDOM.getBoundingClientRect().width,
+      write: (w) => {
+        widthMeasurePending = false;
+        if (w > contentWidthHighWater + 0.5) {
+          contentWidthHighWater = w;
+          view.contentDOM.style.minWidth = Math.ceil(w) + "px";
+        }
+      },
+    });
+  }
+
   // updateListener — every transaction. Emit change / cursor / scroll
   // signals; bump docVersion on docChanged.
   const updateListener = EditorView.updateListener.of((update) => {
@@ -956,6 +998,9 @@
     }
     if (update.viewportChanged || update.geometryChanged) {
       scheduleScrollEmit();
+    }
+    if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+      scheduleContentWidthMeasure();
     }
   });
 
@@ -1239,7 +1284,10 @@
         ...defaultKeymap,
       ]),
       updateListener,
-      wrapCompartment.of(EditorView.lineWrapping),
+      // Honor the mirrored wrap state so setText(resetHistory)'s setState
+      // re-seed doesn't silently flip a wrap-off buffer back to wrapping
+      // (the other mirrors — language/theme/font — already thread through).
+      wrapCompartment.of(currentWrapEnabled ? EditorView.lineWrapping : []),
       themeCompartment.of(initialThemeDark ? [oneDark] : []),
       langCompartment.of(languageFor(initialLang)),
       editableCompartment.of(EditorView.editable.of(true)),
@@ -1467,6 +1515,9 @@
     } finally {
       suppressEmit = false;
     }
+    // Whole-document replacement is a content boundary — the old buffer's
+    // width floor must not carry into the new content.
+    resetContentWidthRatchet();
   }
 
   function applyAppendText(msg) {
@@ -1582,6 +1633,7 @@
     const n = Math.max(6, Math.min(72, Number(msg.px) || 13));
     currentFontPx = n;
     view.dispatch({ effects: fontCompartment.reconfigure(fontTheme(n, currentFontFamily)) });
+    resetContentWidthRatchet(); // glyph metrics changed — stale floor would over/under-shoot
   }
 
   // TSK-259: the user-selected monospace family. Absent/empty family =
@@ -1590,12 +1642,18 @@
   function applySetFontFamily(msg) {
     currentFontFamily = (typeof msg.family === "string" && msg.family) ? msg.family : null;
     view.dispatch({ effects: fontCompartment.reconfigure(fontTheme(currentFontPx, currentFontFamily)) });
+    resetContentWidthRatchet(); // glyph metrics changed — stale floor would over/under-shoot
   }
 
   function applySetWordWrap(msg) {
+    currentWrapEnabled = !!msg.enabled;
     view.dispatch({
-      effects: wrapCompartment.reconfigure(msg.enabled ? EditorView.lineWrapping : []),
+      effects: wrapCompartment.reconfigure(currentWrapEnabled ? EditorView.lineWrapping : []),
     });
+    // Wrap ON: clear the floor (a wrapped buffer with a pinned min-width
+    // would grow a phantom horizontal scrollbar). Wrap OFF: start a fresh
+    // ratchet for the now-unwrapped content.
+    resetContentWidthRatchet();
   }
 
   function applySetReadOnly(msg) {

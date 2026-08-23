@@ -294,6 +294,7 @@ run_webview_tests() {
     --filter ViewerUITests.ConvertImageHostingTests \
     --filter ViewerUITests.AudioConvertHostingTests \
     --filter ViewerUITests.CM6PlainClickAfterScrollWebViewTests \
+    --filter ViewerUITests.CM6HScrollStabilityWebViewTests \
     --filter ViewerUITests.WalkthroughMermaidRenderWebViewTests \
     --filter ViewerUITests.WalkthroughDiagramOverlayMountTests \
     --filter ViewerUITests.FeedReaderViewRenderTests \

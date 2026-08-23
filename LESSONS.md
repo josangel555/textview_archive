@@ -4715,3 +4715,39 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   future pane ops — must end in `model.selectTab`, not the coordinator
   primitive.
   Register the SceneSpec + the runner's scene_expect entry together.
+
+- **CM6's h-scrollbar jump: the naive "width = rendered lines" model is
+  WRONG — CM6 keeps an internal width floor (DocView.minWidth) with
+  specific DROP paths; a negative control refuted the first fix rationale
+  (2026-08-23, "scrollbar keeps jumping as I type").** First hypothesis
+  ("wrap-off width fluctuates with viewport churn, period") produced a
+  green fix + green test — but the teeth run (fix neutered) ALSO passed:
+  the shrink didn't reproduce because CM6 itself pins `flexBasis` on the
+  content tile and remembers the range it measured. The REAL mechanism
+  (read from the bundle): that floor is dropped when (a) an edit TOUCHES
+  the remembered range — typing where you previously were — or (b) the
+  height oracle refreshes on a measured font-metric change (markdown's
+  bold headings / mixed glyphs make metrics twitchy). Drop + widest line
+  outside the render window ⇒ width snaps down, thumb jumps, scrollLeft
+  clamp yanks the text. Fix: our own min-width ratchet on `.cm-content`
+  (border-box, zero horizontal padding ⇒ measure-and-pin is a one-pass
+  fixpoint) sits OUTSIDE CM6's drop logic and survives every path; reset
+  on setText / font change / wrap-on. Repro geometry gotcha: CM6's
+  vertical render margin is ~1000px — a "scrolled out" line closer than
+  margin+viewport to the caret is still rendered and masks the shrink
+  (the first teeth repro passed neutered for this second reason; 300
+  lines with the long line ~2.8k px away finally went red: 3177→435px).
+  Meta: the negative control caught TWO false greens in one session —
+  run it before believing any render fix.
+
+- **VM/SwiftPM RESOURCE staleness: editing a `Resources/` file on the VM
+  does NOT reliably re-copy it into the built `.bundle` on the next
+  `swift test` (2026-08-23).** After `sed` on
+  `Sources/ViewerUI/Resources/codemirror/codemirror.html`, the test run
+  used the STALE copy in `.build/…/MarkdownViewer_ViewerUI.bundle/` — a
+  false green against the wrong page (likely the rsync future-mtime skew
+  confusing llbuild's copy rule). Before trusting any VM test that reads
+  a bundled resource you just changed: `rm` the copy inside the built
+  bundle (forces the re-copy) and `grep` the bundle copy for your change
+  marker. Extends the TSK-626 staleness family from compiled objects to
+  RESOURCES.

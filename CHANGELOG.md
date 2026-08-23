@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-08-23
+
+### Fixed
+- **The editor's horizontal scrollbar no longer jumps around while you
+  type.** With line wrapping off, CodeMirror re-derives the scrollable width
+  from only the lines currently rendered, and its own internal width floor
+  gets dropped by ordinary edits — so the scrollbar thumb resized (and the
+  text could snap sideways) keystroke by keystroke whenever the file's widest
+  line was scrolled out of view. The editor now pins the widest width it has
+  seen for the buffer, so the scroll range only ever grows while you edit
+  (reset on file switch, font change, or turning wrapping on).
+
+### System work
+- New VM webview suite `CM6HScrollStabilityWebViewTests` (4 tests) pinning
+  width monotonicity, the forced-floor-drop teeth case (proven red without
+  the fix), and the wrap-on / new-buffer resets.
+
+## 2026-08-22
+
+### Fixed
+- **Dead click zones above the tab text are gone.** An invisible titlebar
+  container (left over from the traffic-light spacer toolbar) overhung the
+  tab strip by ~20px and swallowed clicks; the traffic lights are now
+  positioned directly, with no toolbar.
+- **Tab switching in a split view stays inside the pane.** ⌃Tab/⌘] cycled
+  the app-wide tab order, hopping into the other pane and yanking focus onto
+  the session strip (the stray focus ring). Cycling is now scoped to the
+  focused pane, and chrome buttons no longer take keyboard focus.
+- **The "ghost tab chip" frozen over the UI can no longer get stuck.** Drags
+  cancelled mid-gesture (by heavy re-renders, context menus, item churn) left
+  a floating chip that ate clicks; a liveness watchdog now reaps any dead drag.
+- **Editor tab clicks always register.** A click with slight hand jitter was
+  being swallowed by drag click-suppression; micro-drags now disarm it.
+- **The mouse pointer no longer flickers arrow↔I-beam over the editor.**
+- **Markdown previews update when the file changes on disk** — including
+  files showing in an unfocused split pane, and the in-tab Split preview.
+- Removed the hairline separator between session tabs.
+
+## 2026-08-16
+
+### Performance
+- **The app starts ~10× faster** (5.6s → 0.5s): a launch-time diagnostic
+  sweep was enumerating the entire system temp directory (hundreds of
+  thousands of entries) on the main thread; it now runs off-main in the
+  background. Launch milestones are traced to a startup log for future
+  regressions.
+
 ## 2026-08-12
 
 ### Fixed
