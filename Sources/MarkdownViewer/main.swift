@@ -359,14 +359,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         // Vertically CENTER the traffic lights in the taller session band
-        // (owner 2026-08-09): an empty unified-style toolbar makes AppKit
-        // use the tall-titlebar button metrics — the standard trick; the
-        // transparent titlebar keeps it invisible, the strip band still
-        // draws its own background.
-        let titlebarSpacer = NSToolbar(identifier: "MDVTitlebarSpacer")
-        titlebarSpacer.showsBaselineSeparator = false
-        window.toolbar = titlebarSpacer
-        window.toolbarStyle = .unified
+        // (owner 2026-08-09) — by DIRECT button repositioning, NOT the
+        // empty-unified-toolbar spacer trick. The spacer inflated the
+        // titlebar hit container to 66pt (probed 2026-08-22) while the
+        // session band is 46pt — the invisible toolbar region overhung
+        // ~20px into the tab strip below and ate clicks there (owner:
+        // "dead spots right above the text"). No toolbar ⇒ the titlebar
+        // container is the standard 28pt, fully inside the band.
+        TrafficLightCenterer.install(on: window, bandHeight: 46)
         // Hard minimum content size enforced by AppKit. SwiftUI's
         // `.frame(minWidth:minHeight:)` is a layout request to the parent,
         // not an OS-level floor.
