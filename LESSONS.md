@@ -4537,6 +4537,50 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   present in the split capture — pixels missing, structure intact ⇒
   compositor, not layout.
 
+- **SwiftUI `DragGesture` has NO cancellation callback — every drag-state
+  machine needs interruption guards (2026-08-22, the frozen mid-drag chip).**
+  An interrupted drag (context menu opens mid-press, item identity churns,
+  window resigns) never runs `onEnded`; `@State` drag state sticks and the
+  lifted+offset chip floats over other controls eating clicks (owner
+  screenshot: a tab chip frozen over a session pill). Guard shape in
+  `stripReorderable`: clear state in `.onDisappear` AND on `.onChange(of:
+  ids)` when the dragged id vanishes; also release any external hover
+  highlight and disarm click suppression. The class: ANY gesture whose
+  effects persist past the gesture needs an explicit "can this still
+  complete?" invalidation path.
+
+- **A drag `minimumDistance` plus click-suppression = swallowed clicks
+  (2026-08-22, "tab clicks sometimes don't register").** A click with >6px
+  hand jitter crosses minimumDistance, starts the drag, arms the
+  select-suppression (needed so real reorders don't mis-select), then drops
+  as a no-op — and the button's mouse-up select is swallowed: a click that
+  did NOTHING, intermittently (jitter-dependent). Fix: a no-op MICRO-drag
+  (<10px travel) disarms the suppression on end. Rule: suppression tied to
+  drag START must be revoked when the drag turns out to be a click.
+
+- **The process-global NSCursor stack cannot coexist with a WKWebView —
+  even BALANCED push/pop leaks by MISSED EXIT (2026-08-22, the CM6 pointer
+  flicker).** A fast pointer transit can skip `onHover(false)` entirely
+  (AppKit hover-miss), stranding a pushed cursor; over the editor, WebKit
+  re-asserts the I-beam per mousemove and the two fight — rapid
+  arrow↔I-beam flicker. The TSK-892 balance guard fixes double-push storms,
+  NOT this. Durable fix: region-based `.pointerStyle` (macOS 15, we target
+  15) — no global state, nothing to leak. All 7 cursor-stack sites migrated
+  (`resizePointer(vertical:)` / `hoverCursor` in HoverCursorBalance.swift);
+  never add a new `NSCursor.push()` hover site.
+
+- **"Watch the current file" broke silently when panes made VISIBLE ≠
+  SELECTED (2026-08-22, stale markdown previews).** The single file-watcher
+  design predates panes; an unfocused pane's front file is on SCREEN but was
+  never watched — external changes left it stale indefinitely (and the
+  in-tab Split preview's disk read was keyed by URL only — same class:
+  a content-identity key missing its mtime component). When a feature
+  multiplies "what's visible", audit every "the current X" singleton it
+  rides on (watcher, find, diagnostics…). Repro/pin recipe that worked:
+  drive the exact model flow host-side FIRST (external write → reload →
+  cache-key assert) — it PROVED the selected-tab chain correct in minutes
+  and localized the real holes to the pane/split surfaces.
+
 - **The 5-second startup stall was a "best-effort" tmpdir sweep ON MAIN —
   and the diagnosis pipeline that found it is now permanent (2026-08-16).**
   `cleanStaleDiagnosticArtifacts()` enumerated the ENTIRE per-user tmpdir

@@ -769,6 +769,17 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
   deep-history files re-read the whole rev chain (~100MB per Kobol save —
   the owner's "app read 526MB"; dedup needs only the newest rev, prune can
   use the index sizes); (d) a 138KB session snapshot — inspect what's inline.
+- **Owner batch 2026-08-22 — all 5 LANDED (`f95651ed`, CI-green)**: stuck
+  mid-drag chip guards, micro-drag click swallow, NSCursor→`.pointerStyle`
+  migration (I-07 phase 2 DONE), stale-preview holes (unfocused-pane
+  watchers + split diskStamp), pill separator removed. RESIDUES: (a) if the
+  owner still catches a stale preview on the FOCUSED tab, the model chain is
+  proven correct (`RenderedPreviewStalenessTests`) — that case is
+  WebView-layer and needs a VM webview repro (VM stopped since ~08-16);
+  (b) `hoverCursor(cursor:)` keeps an NSCursor param for API compat but maps
+  only pointingHand→`.link` — callers passing other cursors get `.default`
+  (grep says none do today); (c) VM pixel pass owed for the strip/pill
+  visual changes when the VM returns.
 - **MCP `--mcp-connect` fall-through becomes a PERMANENT headless twin (S):**
   when no GUI app listens at bridge launch, the bridge falls through to a full
   `--mcp-stdio` headless instance and NEVER upgrades to the live app once it

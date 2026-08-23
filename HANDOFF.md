@@ -1,98 +1,93 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — panes epic COMPLETE + resize FINAL SPEC landed (2026-08-15)
+# Handoff — startup 10× fix + 2026-08-22 UX batch landed (2026-08-22 ~22:15)
 
-**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ `f95a3f97`
+**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ `f95651ed`
 (ALL CI-green; tree clean but for the 4 protected untracked: OwnerWishlist.md[.bak],
-Untitled.txt, archive/Untitled.txt — NEVER touch). /Applications = f95a3f97 (02:45).
-CI loop = background Monitor, per-commit lines; NEVER wait on it; installs on green.
-tasked board OFFLINE all week — BACKLOG + commit messages are the record.
+Untitled.txt, archive/Untitled.txt — NEVER touch). /Applications = f95651ed (21:51).
+CI loop = background Monitor per commit; NEVER wait; installs ride green lines.
+tasked board OFFLINE all month — BACKLOG + commit messages are the record.
+**UTM VM is STOPPED** (since ~08-16 host reboot) — no VM lanes until restarted.
 
 ## Mission
-Owner-driven interactive push. This stretch: the EDITOR PANES epic (I-21) end-to-end,
-then an owner-driven sidebar-resize overhaul (4 rounds to the FINAL SPEC), plus chrome
-polish batches. Dist publishes: TextView-2026-08-12{,-v2}.zip on textview_dist.
+Owner-driven interactive push. Since the last checkpoint: the startup-stall
+investigation (5.6s → 0.53s to interactive, ROOT-CAUSED with a permanent
+diagnosis kit) and a 5-item UX batch (drag ghosts, swallowed clicks, pointer
+flicker, stale previews, pill separator).
 
 ## Current state — all DONE & CI-green
-- **Panes epic (I-21)**: model→coordinator→render→orientation→persistence→
-  interactions→per-pane toolbar→GENERALIZATION (the window TabBar + window
-  ContentToolbar are UNMOUNTED; un-split = one pane; `PaneTabStrip` is THE strip).
-  Split Right/Down, cross-strip drag, click-to-focus (PaneFocusClickMonitor),
-  divider resize (weights persist), Split Pane Right/Left context menu, ⌥⌘` cycles.
-  Pane verbs route through `DocumentModel+Panes` (full selectTab pipeline — the
-  stale-FileNav class).
-- **Resize FINAL SPEC (owner, 4 rounds 2026-08-12)**: (1) `DividerDragSession`
-  freezes bases AND budgets at drag origin (the live-budget halving loop = the
-  "50% wall"); (2) NO auto-shrink → then refined to PROPORTIONAL refit on panel
-  open/close (everything stays in view; scroll only below floors); (3) cascade
-  DELETED — a pair drag moves THAT boundary only, stops at the floor;
-  flex-adjacent dividers trade against origin slack; (4) floor = ZERO
-  (`minExpandedHeight = 0`) — no minimum on ANY tool window, FILES' 200pt
-  reserve dead, tripwire test pins 0.
-- **Chrome batch**: pane strip shrink-to-fit + TSK-304 overflow menu (was silent
-  h-scroll), top+bottom hairlines, session pills: grey hairline border (inactive) /
-  accent edge (active) / accent-wash hover. Session header = flat windowBackground,
-  96pt traffic-light inset.
-- **Git panel session leak FIXED**: `resolveFocusedRoot` fallbacks filter to the
-  CURRENT demand set (`previousDesired`) — never the app-global LRU/grace leftovers.
-- **In-tab markdown split**: renders inside `tabContent` under the pane's toolbar,
-  headerless (`SplitPaneView(showsHeader: false)`); the toolbar Split segment is the
-  only lifecycle control. Window `splitURL` pane (two files) keeps its header.
-- **Flake retired**: `test_sidebarRecencyTick` migrated to `evalsExpectingZero`.
+- **Startup**: `cleanStaleDiagnosticArtifacts()` enumerated the WHOLE per-user
+  tmpdir (299k entries/638MB) on main in didFinishLaunching → detached utility
+  task. Verified on the owner's machine: first runloop turn 5,627→531ms.
+  Permanent kit: `StartupTrace` (unified-log `.notice` + App Support/
+  startup-trace.log + signposts) brackets every launch.
+- **2026-08-22 batch** (`f95651ed`): stuck mid-drag chip guards
+  (stripReorderable onDisappear/ids-change clears state — DragGesture has no
+  cancel callback); micro-drag (<10px) no-op drops DISARM click suppression
+  ("clicks don't register" fix); ALL 7 NSCursor push/pop sites →
+  `.pointerStyle` (`resizePointer(vertical:)` — the CM6 flicker fix, I-07
+  phase 2 done); stale previews: unfocused-pane front files now WATCHED
+  (`syncPaneFileWatchers`, DocumentModel+Panes; clean tabs auto-reload —
+  live FSEvents test) + in-tab Split preview disk read keyed url+mtime
+  (`SplitPaneView.diskStamp`); session pill separator removed.
+- `RenderedPreviewStalenessTests` PROVES the selected-tab reload→cache-bust→
+  re-render chain correct (incl. same-length mtime-only edits).
+- Earlier (08-16): trace `.info`→`.notice` (info evaporates); StartupTrace
+  routed through TestStateRedirect (drift guard caught it); chrome re-body
+  pins re-scoped honest (hard-zero = StatusBar/BottomAttributesBar only;
+  measurement-coupled ContentToolbar/PaneTabStrip ≤1).
 
 ## Key decisions & rationale
-- Panes = order+selection OVERLAY on the flat tab store; per-tab display via
-  `*(for tab:)` model variants; commands stay selected-tab-routed (mouse-down
-  focus makes that correct). App-wide current tab = focused pane's selection.
-- EVERY input to base-relative drag math is an ORIGIN snapshot (bases, budgets,
-  ceilings) — live inputs feed back into the drag's own writes.
-- No special cases for any panel; design constants get re-derived when the
-  philosophy changes; one-symbol funnels + tripwire tests.
-- Publish gating: after same-day re-fixes, textview_dist WAITS for the owner's
-  hands-on verdict (current hold — see below).
+- Diagnosis pipeline for perf reports: StartupTrace milestones → rusage poll
+  → `sample` armed on next launch. All host-safe, no windows. MEASURE first.
+- Never `NSCursor.push()` in hover sites — `.pointerStyle` only (leak-by-
+  missed-exit fights WKWebView). `hoverCursor` keeps an NSCursor param shim.
+- Publish gating: textview_dist waits for the owner's hands-on verdict
+  (HOLD stands — last published 2026-08-12-v2; head is ~12 commits ahead).
 
-## Gotchas (full text in LESSONS.md 2026-08-11/12 tail)
-- Stuck VM crash dialogs EAT HID clicks (CGWindowList dump in the AX failure path);
-  stray app bundles resurrect + crash-loop — shelve them. The sidebar resize-tooth
-  "mystery" was exactly this — resolved, tooth passes 1:1.
-- Shapes-only views NEVER materialize out-of-process AX elements (4 attempts).
-- Scenes without a `scene_expect` entry fall through to the terminal pixel eval =
-  false-pass generator. Register SceneSpec + scene_expect together.
-- Tests beside a change encode the CHANGE, not the user's invariant — write the
-  spec-level property test FIRST (fits-whenever-floors-fit is the exemplar).
-- `PaneTabStrip` calls `TabBar.computedTabWidth/tabsAreCrowded` — rehome before
-  deleting the dead `TabBar` struct.
+## Gotchas (full text in LESSONS.md 2026-08-16/22 tail)
+- os_log `.info` is NOT persisted — `.notice` or a file.
+- DragGesture: no cancellation callback — guard every sticky drag state.
+- Suppression armed at drag-start must be revoked for micro-drag clicks.
+- "The current X" singletons (watcher/find/diagnostics) break silently when
+  panes make visible ≠ selected — audit on any visibility-multiplying feature.
+- Never enumerate a shared system dir wholesale; app litter in app-owned subdirs.
+- 9 `--mcp-connect` processes with LIVING parents = legitimate live Claude
+  sessions, not orphans; 2 are permanent headless twins (fall-through bug,
+  BACKLOG).
 
 ## Files that matter
-- `Sources/ViewerCore/PaneAssignment.swift` + `PaneResize.swift` — pane model/resize math.
-- `Sources/ViewerUI/PaneTabStrip.swift` — THE tab strip (width-fit, overflow, drags).
-- `Sources/ViewerUI/ContentView.swift` — paneAwareContent = the only content path.
-- `Sources/ViewerCore/SidebarResize.swift` (`DividerDragSession`) +
-  `SidebarStackLayout.swift` (proportional resolve) + `ResizableSectionDivider.swift`.
-- `Sources/ViewerUI/Git/RepoFocusTracker.swift:254` — demand-filtered focus fallback.
-- `scripts/vm-uitest.sh` — scene_expect table (fill-check-crowded = the 5-panel scene).
+- `Sources/ViewerCore/StartupTrace.swift` — the launch-timeline kit.
+- `Sources/MarkdownViewer/Diagnostics.swift:56` — the off-main sweep.
+- `Sources/ViewerUI/StripDragReorder.swift` — drag guards + suppression disarm.
+- `Sources/ViewerUI/HoverCursorBalance.swift` — `.pointerStyle` bridge
+  (`hoverCursor`/`resizePointer`).
+- `Sources/ViewerUI/DocumentModel+Panes.swift` — `syncPaneFileWatchers()`
+  (called from updateDerived + pane verbs + resumeFileWatcher).
+- `Sources/ViewerUI/SplitPaneView.swift` — `diskStamp` cache-bust key.
+- `Tests/ViewerUITests/RenderedPreviewStalenessTests.swift` — the staleness pins.
 
 ## Open questions / blockers
-- **textview_dist publish ON HOLD** for the owner's hands-on verdict on the resize
-  final spec + floor-zero + chrome batch (last published: 2026-08-12-v2 @ 845d90e1;
-  head is 5 commits ahead). Owner says OK ⇒ pack `TextView-2026-08-12-v3.zip` (or
-  next date) via the ditto+sha+README recipe, push with the key-in-place GIT_SSH.
-- BACKLOG residues: crowded scene mounts 5/6 panels (`.recentlyOpened` override
-  doesn't mount its section — its a11y id matched from elsewhere); frames-in-ax-reader;
-  gutter AX materialization; dead `TabBar` deletion (rehome the two statics).
-- tasked board reconnect ⇒ file the whole week's ticket debt from BACKLOG + git log.
+- **textview_dist publish HOLD** — owner verdict on the batch, then pack
+  `TextView-2026-08-22.zip` (ditto+sha+README recipe, key-in-place GIT_SSH).
+- **VM stopped** — owed when back: pixel pass on strip/pill changes; the
+  focused-tab WebView staleness repro IF the owner still sees it; the
+  fill/panes scene sweeps. Start via UTM app or `utmctl start "macOS 15"`.
+- BACKLOG queue: bounded diagnostic-artifact subdir, safe-save `.sb-*` litter
+  (315×history.json), LocalHistory global cap + save-path re-reads (~100MB
+  per Kobol save — the owner's "526MB read"), 138KB session snapshot,
+  MCP fall-through headless twin, gutter AX materialization, dead `TabBar`
+  deletion (rehome computedTabWidth/tabsAreCrowded first).
 
 ## How to resume
-1. `git log --oneline -15` · `git status --short` (only the 4 protected untracked).
-2. If the owner verdicts the resize feel: publish the dist refresh (recipe above);
-   if a complaint: the whole drag surface is `DividerDragSession` +
-   `ResizableSectionDivider.apply` + `SidebarStackLayout.resolve` — instrument
-   (delta, base, slack, written, rendered) per frame before theorizing.
-3. Next queue: I-20 markdown gap-matrix audit, mermaid non-100%-zoom label clip
-   (root-caused, BACKLOG), AutoSave (I-14, unblocked), BACKLOG residues above.
-4. VM lane: rsync → `ssh macOS15 'cd markdown_viewer && touch rust-core/link/*.a &&
-   bash scripts/build-app.sh debug'` → `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh
-   run <scene>`; scenes: fill-check-crowded, panes-split/down/sessions, tab-session-drop.
-5. Mirror after each round: from the CloudDocs clone `fetch <repo> main` +
-   `merge --ff-only FETCH_HEAD` (post-amend: `reset --hard FETCH_HEAD`).
-6. Install-on-ask = NOW; always say "⌘Q + relaunch". Commits carry the
-   Claude-Session trailer. No inline full gates — the CI loop reports per commit.
+1. `git log --oneline -10` · `git status --short` (only the 4 protected).
+2. Owner reports stale previews on the FOCUSED tab? Model chain is proven —
+   go straight to a VM webview repro (start the VM first). Otherwise next
+   queue: I-20 gap-matrix audit, mermaid zoom clip, AutoSave, BACKLOG above.
+3. Startup feels slow again? `cat ~/Library/Application Support/
+   MarkdownViewer/startup-trace.log` — the timeline names the span.
+4. VM lane (once started): rsync → `ssh macOS15 'cd markdown_viewer && touch
+   rust-core/link/*.a && bash scripts/build-app.sh debug'` →
+   `MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/vm-uitest.sh run <scene>`.
+5. Mirror per round: CloudDocs clone `fetch <repo> main` + `merge --ff-only
+   FETCH_HEAD` (post-amend: `reset --hard FETCH_HEAD`). Install-on-ask = NOW;
+   say "⌘Q + relaunch". Commits carry the Claude-Session trailer.
