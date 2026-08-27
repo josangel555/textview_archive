@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-27
+
+### Fixed
+- **Opening files in one split pane no longer blanks the other pane.** The
+  keep-webviews-warm retention set only protected the *selected* tab, so
+  opening a few docs in the right pane could push the left pane's on-screen
+  tab out — tearing down its webview mid-display and leaving it white until
+  you clicked it. Every pane's visible tab is now pinned in the retention
+  set; only genuinely hidden tabs can be evicted.
+
 ## 2026-08-26
 
 ### Added

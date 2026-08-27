@@ -3777,6 +3777,20 @@ public final class DocumentModel: ObservableObject {
         let openIDs = Set(tabs.tabs.map(\.id))
         var next = mountedPanes
         next.retainOnly(openIDs)
+        // Panes made visible ≠ selected (owner bug 2026-08-27, the white
+        // pane): EVERY pane's front tab is ON SCREEN and must stay mounted —
+        // the old selected-only activate let opens in one pane push the
+        // OTHER pane's visible tab off the LRU tail, dismantling its webview
+        // mid-display (and freeing its rendered-HTML entry, which is
+        // mounted-gated). Activate all pane selections, unfocused panes
+        // first, so the focused selection lands at the MRU front and
+        // eviction can only ever hit hidden tabs (pane count ≤ capacity).
+        let assignment = tabCoordinator.paneAssignment
+        for pane in assignment.panes where pane.id != assignment.focusedPaneID {
+            if let visible = pane.selectedTabID, openIDs.contains(visible) {
+                next.activate(visible)
+            }
+        }
         if let id = tabs.selected?.id { next.activate(id) }
         if next != mountedPanes { mountedPanes = next }
     }

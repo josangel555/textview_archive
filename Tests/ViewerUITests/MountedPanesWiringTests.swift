@@ -98,6 +98,38 @@ final class MountedPanesWiringTests: XCTestCase {
         XCTAssertEqual(model.mountedTabs.count, 2)
     }
 
+    /// Owner bug 2026-08-27 (the WHITE pane): with a split, opening new docs
+    /// in the focused pane must NEVER evict the OTHER pane's visible tab —
+    /// it is on screen; eviction dismantles its webview mid-display and
+    /// frees its mounted-gated rendered-HTML entry (white until a click
+    /// re-selects it). Every pane's selectedTabID is retention-pinned.
+    func test_split_opensInOnePane_neverEvictTheOtherPanesVisibleTab() async throws {
+        let model = makeModel()
+        model.open(url: try writeFile("left.md", "# left"))
+        model.open(url: try writeFile("right.md", "# right"))
+        await drain()
+        let left = model.tabs.tabs[0].id
+
+        // Split tearing the selected (right.md) into a new focused pane;
+        // left.md stays visible in the original (unfocused) pane.
+        model.tabCoordinator.splitFocusedPane(movingSelected: true)
+        XCTAssertEqual(
+            model.tabCoordinator.paneAssignment.panes.first?.selectedTabID, left,
+            "precondition: left.md is the unfocused pane's visible tab")
+
+        // Open enough new docs in the focused pane to overflow the LRU
+        // (capacity 4) several times over.
+        for i in 0..<6 {
+            model.open(url: try writeFile("new-\(i).md", "# \(i)"))
+        }
+        await drain()
+
+        XCTAssertTrue(model.mountedPanes.contains(left),
+            "the unfocused pane's ON-SCREEN tab was evicted by opens in the other pane — its webview dismantles mid-display (the white pane)")
+        // The focused pane's visible tab (the last open) is MRU-front.
+        XCTAssertEqual(model.mountedPanes.ids.first, model.tabs.selected?.id)
+    }
+
     /// Closing a tab removes its pane from the mounted set (the one place a
     /// pane is allowed to unmount, besides LRU eviction).
     func test_close_removesPaneFromMountedSet() async throws {
