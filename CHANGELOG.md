@@ -2,6 +2,16 @@
 
 ## 2026-08-27
 
+### Changed
+- **Closing a tab returns to the previously selected tab** (most recently
+  used), like browsers — instead of an arbitrary neighbor. Fallback when
+  there's no history: the next tab in the same strip. Closing a tab you're
+  not looking at never moves the selection, and tab order is never touched.
+- **Closing works per pane in a split.** Closing the selected tab in one
+  pane stays inside that pane (it used to be able to jump focus to the
+  other pane and overwrite its tab), and closing a whole pane hands its
+  tabs over without stealing the surviving pane's selection.
+
 ### Fixed
 - **"Close Other Tabs" / "Close Tabs to the Right" are pane-scoped.** In a
   split they closed tabs across BOTH panes ("to the right" even followed an

@@ -39,6 +39,93 @@ final class TabCoordinatorPaneTests: XCTestCase {
         XCTAssertTrue(c.paneAssignment.isConsistent(against: openIDs(c)))
     }
 
+    // MARK: close-selection defaults (owner 2026-08-27)
+
+    /// Closing the selected tab returns to the PREVIOUSLY selected tab
+    /// (MRU), not the index-neighbor.
+    func test_closeSelected_returnsToPreviouslySelectedTab() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)
+        c.select(at: 0)   // a
+        c.select(at: 2)   // c  (history: c, a, b)
+
+        _ = c.closeTab(at: 2)  // close the selected c
+        XCTAssertEqual(c.tabs.selected?.id, a.id,
+            "closing the selected tab must return to the PREVIOUSLY selected (a), not a neighbor")
+        XCTAssertEqual(c.tabs.tabs.map(\.id), [a.id, b.id], "tab order untouched")
+    }
+
+    /// No history (fresh session): fall back to the pane-strip neighbor —
+    /// the tab AFTER the closed one, else the one before.
+    func test_closeSelected_noHistory_fallsBackToPaneNeighbor() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)   // history: only c (selection follows appends)
+        c.select(at: 1)   // b — history: b, c
+        _ = c.closeTab(at: 1)  // close b: MRU says c
+        XCTAssertEqual(c.tabs.selected?.id, x.id, "MRU previous is c")
+        _ = c.closeTab(at: 1)  // close c: history has only a left → neighbor rule
+        XCTAssertEqual(c.tabs.selected?.id, a.id)
+    }
+
+    /// Split: closing the focused pane's selected tab stays INSIDE that
+    /// pane — the flat store's index-neighbor (which can live in the other
+    /// pane) must not yank focus across and overwrite the other pane's
+    /// front.
+    func test_closeSelected_inSplit_replacementStaysInThePane() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)
+        c.splitFocusedPane(movingSelected: true)   // pane1=[a,b] sel a; pane2=[c] focused
+        // Move a into pane 2 so the split is pane1=[b], pane2=[c,a] with
+        // `a` selected — a's FLAT-store neighbor (index clamp at store
+        // position 0) is b, which lives in the OTHER pane.
+        let pane1 = c.paneAssignment.panes[0].id
+        let pane2 = c.paneAssignment.panes[1].id
+        c.movePaneTab(id: a.id, toPane: pane2)
+        XCTAssertEqual(c.paneAssignment.panes[1].tabIDs, [x.id, a.id])
+        XCTAssertEqual(c.tabs.selected?.id, a.id)
+
+        // Close a (pane2's selection): replacement must be c (same pane),
+        // NOT b (the flat-store clamp neighbor in pane1).
+        let aIdx = c.tabs.tabs.firstIndex { $0.id == a.id }!
+        _ = c.closeTab(at: aIdx)
+        XCTAssertEqual(c.tabs.selected?.id, x.id,
+            "the replacement stays in the closed tab's pane — not the flat-store neighbor in the other pane")
+        XCTAssertEqual(c.paneAssignment.focusedPaneID, pane2,
+            "focus must not jump to the other pane")
+        XCTAssertEqual(c.paneAssignment.panes.first { $0.id == pane1 }?.selectedTabID, b.id,
+            "the other pane's front is untouched")
+    }
+
+    /// Closing a pane (✕) hands its tabs to the neighbor WITHOUT stealing
+    /// the survivor's selection.
+    func test_closePane_survivingPaneKeepsItsOwnSelection() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)
+        c.splitFocusedPane(movingSelected: true)   // pane1=[a,b] sel a; pane2=[c] focused, c selected
+        XCTAssertEqual(c.paneAssignment.panes[0].selectedTabID, a.id)
+
+        c.closePane(id: c.paneAssignment.panes[1].id)  // close the right pane
+        XCTAssertFalse(c.paneAssignment.isSplit)
+        XCTAssertEqual(c.tabs.selected?.id, a.id,
+            "the surviving pane keeps ITS OWN selection — the absorbed tab must not steal it")
+    }
+
+    /// Closing a non-selected tab never moves the selection at all.
+    func test_closeUnselectedTab_leavesSelectionAlone() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)
+        c.select(at: 1)   // b
+        _ = c.closeTab(at: 2)  // close unselected c
+        XCTAssertEqual(c.tabs.selected?.id, b.id)
+        _ = c.closeTab(at: 0)  // close unselected a
+        XCTAssertEqual(c.tabs.selected?.id, b.id)
+    }
+
     // MARK: pane reorder (owner audit 2026-08-27)
 
     /// UN-split, the store owns the order — a pane-side reorder must drive

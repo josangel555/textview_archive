@@ -185,6 +185,16 @@ public final class TabCoordinator: ObservableObject {
         next.mirrorSinglePane(order: tabs.tabs.map(\.id),
                               selected: tabs.selected?.id)
         if next != paneAssignment { paneAssignment = next }
+        // MRU history (owner 2026-08-27): every mutation path funnels
+        // through here, so the front of the history is always the current
+        // selection and the entry behind it is "the previously selected".
+        if let sel = tabs.selected?.id, selectionHistory.first != sel {
+            selectionHistory.removeAll { $0 == sel }
+            selectionHistory.insert(sel, at: 0)
+            if selectionHistory.count > Self.selectionHistoryCap {
+                selectionHistory.removeLast()
+            }
+        }
     }
 
     /// Split: a new focused pane after the current one (right in a
@@ -462,15 +472,63 @@ public final class TabCoordinator: ObservableObject {
     /// Returns the closed tab's id (or nil for an out-of-bounds
     /// index) so the caller can run additional post-close cleanup
     /// (e.g. DocumentModel's `purgeCaches(forURL:tabID:)`).
+    ///
+    /// SELECTION (owner 2026-08-27): closing the SELECTED tab selects the
+    /// most recently selected still-open sibling of the SAME pane (the MRU
+    /// history) — not the flat store's index-neighbor, which in a split
+    /// could live in the OTHER pane (yanking focus there and overwriting
+    /// that pane's front). Fallbacks: pane-strip neighbor (after, else
+    /// before); a pane whose last tab died hands selection to the focused
+    /// survivor's own front. Tab ORDER is never touched.
     @discardableResult
     public func closeTab(at index: Int) -> UUID? {
         guard tabs.tabs.indices.contains(index) else { return nil }
         let closed = tabs.tabs[index]
+        let replacement = tabs.selected?.id == closed.id
+            ? closeReplacement(for: closed.id) : nil
         tabs.close(at: index)
         cleanupAfterClose(id: closed.id)
+        if let rep = replacement,
+           let idx = tabs.tabs.firstIndex(where: { $0.id == rep }) {
+            tabs.select(at: idx)
+        }
         refreshOpenTabURLs()
         syncPaneAssignment()
         return closed.id
+    }
+
+    /// MRU selection history, most-recent first (front = current
+    /// selection). Maintained by `syncPaneAssignment`; pruned on close.
+    /// Ephemeral by design — a restored session starts fresh and falls
+    /// back to the pane-neighbor rule.
+    private(set) var selectionHistory: [UUID] = []
+    private static let selectionHistoryCap = 64
+
+    /// The tab to select after closing the SELECTED tab `closedID`.
+    private func closeReplacement(for closedID: UUID) -> UUID? {
+        let a = paneAssignment
+        guard let pane = a.pane(containing: closedID) else { return nil }
+        let siblings = pane.tabIDs.filter { $0 != closedID }
+        if !siblings.isEmpty {
+            // MRU first (skips the closed tab naturally — it's no sibling).
+            if let mru = selectionHistory.first(where: { siblings.contains($0) }) {
+                return mru
+            }
+            // Pane-strip neighbor: the tab after, else the one before.
+            if let pos = pane.tabIDs.firstIndex(of: closedID) {
+                return pos + 1 < pane.tabIDs.count
+                    ? pane.tabIDs[pos + 1] : pane.tabIDs[pos - 1]
+            }
+            return siblings.last
+        }
+        // The pane's last tab died: selection goes to a surviving pane's
+        // OWN front (prefer the focused pane), never disturbing it.
+        if a.focusedPaneID != pane.id,
+           let f = a.panes.first(where: { $0.id == a.focusedPaneID })?.selectedTabID {
+            return f
+        }
+        return a.panes.first(where: { $0.id != pane.id && $0.selectedTabID != nil })?
+            .selectedTabID
     }
 
     /// Close an arbitrary id set (the pane-scoped close variants). Returns
@@ -538,6 +596,7 @@ public final class TabCoordinator: ObservableObject {
     /// but we keep the listing alphabetical so additions land in
     /// predictable spots.
     private func cleanupAfterClose(id: UUID) {
+        selectionHistory.removeAll { $0 == id }
         cancelMaterialize(forTabID: id)
         csvFilterStates.removeValue(forKey: id)
         editorBuffers.removeValue(forKey: id)
