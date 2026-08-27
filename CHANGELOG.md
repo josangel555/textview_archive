@@ -3,6 +3,20 @@
 ## 2026-08-27
 
 ### Fixed
+- **"Close Other Tabs" / "Close Tabs to the Right" are pane-scoped.** In a
+  split they closed tabs across BOTH panes ("to the right" even followed an
+  internal order you couldn't see); now they act only on the clicked tab's
+  pane, and un-split behavior is unchanged.
+- **Move Tab Left/Right works in a split** — it now moves the tab within
+  its own pane's strip (it used to shuffle a hidden global order and do
+  nothing visible).
+- **Reordering tabs by drag no longer silently reverts.** An un-split strip
+  drag applied visually but snapped back on the next tab click (the pane
+  order was re-mirrored from an unmoved internal list).
+- **A restored split shows both panes' content immediately.** The unfocused
+  pane's tab could sit as a permanent placeholder until clicked — lazily
+  restored tabs only loaded on selection; every visible pane tab now loads
+  on its own.
 - **Opening files in one split pane no longer blanks the other pane.** The
   keep-webviews-warm retention set only protected the *selected* tab, so
   opening a few docs in the right pane could push the left pane's on-screen

@@ -39,6 +39,46 @@ final class TabCoordinatorPaneTests: XCTestCase {
         XCTAssertTrue(c.paneAssignment.isConsistent(against: openIDs(c)))
     }
 
+    // MARK: pane reorder (owner audit 2026-08-27)
+
+    /// UN-split, the store owns the order — a pane-side reorder must drive
+    /// the store, or `mirrorSinglePane` silently REVERTS it on the next
+    /// coordinator mutation (the strip drag looked applied, then a tab
+    /// click snapped the order back).
+    func test_reorderPaneTab_unsplit_persistsThroughSubsequentSelect() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)
+
+        // Move `a` (position 0) to the end: gap 3 in TabsState.move coords.
+        c.reorderPaneTab(id: a.id, to: 3)
+        XCTAssertEqual(c.paneAssignment.panes[0].tabIDs, [b.id, x.id, a.id])
+        XCTAssertEqual(openIDs(c), [b.id, x.id, a.id], "the STORE order moved too")
+
+        // The clobber trigger: any store mutation re-mirrors the pane.
+        c.select(at: 0)
+        XCTAssertEqual(c.paneAssignment.panes[0].tabIDs, [b.id, x.id, a.id],
+            "the reorder must survive the next sync — not snap back")
+    }
+
+    /// Split: reorder stays inside the tab's pane; the flat store and the
+    /// other pane are untouched.
+    func test_reorderPaneTab_split_reordersWithinPaneOnly() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)   // x selected
+        c.splitFocusedPane(movingSelected: true) // pane1=[a,b], pane2=[x]
+        c.select(at: 1)                          // select b (pane1)
+        let storeBefore = openIDs(c)
+
+        // Move b (position 1 in pane1) to the front: gap 0.
+        c.reorderPaneTab(id: b.id, to: 0)
+        XCTAssertEqual(c.paneAssignment.panes[0].tabIDs, [b.id, a.id])
+        XCTAssertEqual(c.paneAssignment.panes[1].tabIDs, [x.id], "other pane untouched")
+        XCTAssertEqual(openIDs(c), storeBefore,
+            "while split the flat store order is deliberately untouched")
+    }
+
     // MARK: split + focus semantics
 
     func test_splitMovingSelected_tearsTheCurrentTabRight_selectionIntact() {

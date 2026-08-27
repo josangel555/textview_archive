@@ -105,6 +105,26 @@ public struct TabsState: Equatable, Sendable {
         selectedIndex = 0
     }
 
+    /// Remove every tab whose id is in `ids`, preserving survivor order.
+    /// Selection: the selected tab keeps selection if it survives; else the
+    /// index clamps to the nearest survivor (callers with a better anchor —
+    /// e.g. the pane-scoped close variants' kept tab — re-select on top).
+    public mutating func close(ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        let selectedID = selectedIndex.flatMap { i in
+            tabs.indices.contains(i) ? tabs[i].id : nil
+        }
+        tabs.removeAll { ids.contains($0.id) }
+        if tabs.isEmpty {
+            selectedIndex = nil
+        } else if let sid = selectedID,
+                  let idx = tabs.firstIndex(where: { $0.id == sid }) {
+            selectedIndex = idx
+        } else if let cur = selectedIndex {
+            selectedIndex = min(cur, tabs.count - 1)
+        }
+    }
+
     /// Removes every tab whose index is greater than `index`.
     public mutating func closeAllToRight(of index: Int) {
         guard tabs.indices.contains(index) else { return }

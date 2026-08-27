@@ -3721,6 +3721,9 @@ public final class DocumentModel: ObservableObject {
         // Owner 2026-08-22: keep the unfocused panes' file watchers in
         // lockstep with the pane fronts (cheap when nothing changed).
         syncPaneFileWatchers()
+        // Owner audit 2026-08-27: lazy pane-visible tabs materialize even
+        // though they're never "selected" (idempotent; .empty-guarded).
+        materializePaneVisibleTabs()
         // `openTabURLs` maintenance now lives on `TabCoordinator`
         // — every coordinator-side mutation refreshes it. We don't
         // need to fan that out from here.

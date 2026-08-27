@@ -4751,3 +4751,29 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
   bundle (forces the re-copy) and `grep` the bundle copy for your change
   marker. Extends the TSK-626 staleness family from compiled objects to
   RESOURCES.
+
+- **The panes-regression AUDIT is COMPLETE (2026-08-27) — the "current X
+  singleton / flat-store assumption" checklist, closed.** The owner was
+  discovering panes regressions one by one; a systematic sweep of every
+  surface touching `tabs.selected`/store indices/store order found and
+  fixed the remainder in one pass. Full ledger: REGRESSED+FIXED = watcher
+  (08-22), cycling (08-22), keyboard-focus loop (08-22), FileNav select
+  chain (08-11), session pane-layout leak (08-26), MountedPanesLRU
+  eviction of visible tabs (08-27 white pane), rendered-HTML cache riding
+  the LRU (same), close-others/close-to-right (flat → pane-scoped),
+  move-tab-left/right (flat swap → pane reorder), un-split strip
+  drag-reorder REVERTING on next sync (`reorderPaneTab` mutated only the
+  pane; `mirrorSinglePane` clobbered it from the store — un-split the
+  STORE owns order, so pane-side reorders must drive the store),
+  lazy-tab materialization (rode `selectTab` only → restored split's
+  unfocused pane = permanent placeholder). CHECKED-SAFE BY DESIGN =
+  find bar (single, follows focus — pre-panes parity), diagnostics/
+  outline/footer/window-title (deliberately focused-pane surfaces),
+  reopen-closed-tab → focused pane, "+" button (focuses its pane first),
+  `selectTab(id:)` focus-follow, ⌘1-9 (view modes, not tabs), ⌘W
+  last-tab pane absorb, session-switch bulk close (whole-session by
+  design). RESIDUE (BACKLOG): ContentView's not-mounted fallback branch
+  lacks the PaneCompositingPolicy attributes; LRU capacity 4 assumes
+  pane count ≤ 4. Rule for NEW tab verbs: route by PANE (id-based, via
+  `pane(containing:)`) not store index/order, and end selection changes
+  in `model.selectTab`.

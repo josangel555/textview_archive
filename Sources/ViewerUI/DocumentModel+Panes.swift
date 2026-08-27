@@ -27,6 +27,23 @@ extension DocumentModel {
         syncPaneFileWatchers()
     }
 
+    /// Owner audit 2026-08-27 — materialization was ANOTHER "the current
+    /// tab" singleton: a lazy tab materializes only through `selectTab`, so
+    /// a restored split's UNFOCUSED pane showed its visible tab as a
+    /// permanent placeholder until clicked. Kick the (idempotent, .empty-
+    /// guarded) materialize for every pane-visible tab; driven from
+    /// `updateDerived` alongside the watcher sync.
+    func materializePaneVisibleTabs() {
+        let a = tabCoordinator.paneAssignment
+        guard a.isSplit else { return }
+        for pane in a.panes where pane.id != a.focusedPaneID {
+            if let sel = pane.selectedTabID,
+               let idx = tabCoordinator.tabs.tabs.firstIndex(where: { $0.id == sel }) {
+                materializeIfNeeded(at: idx)
+            }
+        }
+    }
+
     /// Owner 2026-08-22 ("markdown previews are not updating when files
     /// are updated"): the app watched ONE file — the selected tab's — but
     /// since the panes epic OTHER panes show their own selected tabs

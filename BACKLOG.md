@@ -430,6 +430,18 @@ Remaining findings stay "plausible, unconfirmed". Full reports in `docs/research
 (3 verifiers × ~30 dims at once) is what burns the limit — thin the verify panel / cap concurrency before resuming.
 Once `MASTER_REPORT.md` lands, file its findings as a board wave + spin fix worktrees.
 
+## ⚠ PANES-AUDIT RESIDUES (2026-08-27 — the systematic sweep is DONE, ledger in LESSONS)
+
+- **paneContentRegion's not-mounted fallback branch** (`ContentView.swift:826`) lacks the
+  `PaneCompositingPolicy` attributes (compositingGroup/zIndex/hitTesting) the mounted
+  branch gets — TSK-488 compositor class, cosmetic risk only in the transient
+  fallback window (S).
+- **MountedPanesLRU capacity 4 assumes pane count ≤ 4** — the visible-tab pin
+  (2026-08-27) exhausts the LRU if we ever allow 5+ panes; scale capacity with pane
+  count or make pins capacity-exempt then (S).
+- `TabCoordinator.swapWithPrevious/Next` are now app-unused (move verbs route through
+  `reorderPaneTab`) — fold into the next dead-code pass with the `TabBar` deletion (XS).
+
 ## ⚠ OPEN FOLLOW-UPS (updated at the 2026-08-01 handoff — everything below is COMMITTED)
 
 State: main @ f711c2b8 (17 commits landed 07-31..08-01: owner-queue drain + release pipeline +

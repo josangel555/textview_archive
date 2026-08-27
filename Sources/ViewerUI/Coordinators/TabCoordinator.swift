@@ -226,14 +226,23 @@ public final class TabCoordinator: ObservableObject {
         }
     }
 
-    /// Reorder a tab WITHIN its pane (the strip drag). `gap` is in
-    /// `TabsState.move` coordinates against the PANE's order. The flat
-    /// store's order is deliberately untouched while split — each pane
-    /// owns its strip order; the un-split world mirrors the store.
+    /// Reorder a tab WITHIN its pane (the strip drag + the Move Tab
+    /// Left/Right commands). `gap` is in `TabsState.move` coordinates
+    /// against the PANE's order. While split, each pane owns its strip
+    /// order and the flat store is deliberately untouched. UN-split, the
+    /// STORE owns the order (`mirrorSinglePane` overwrites the pane from
+    /// it on every sync) — so the reorder must drive the store, or it
+    /// visually applies and then REVERTS on the next coordinator mutation
+    /// (owner audit 2026-08-27; the pane order == store order un-split,
+    /// so the gap coordinates are identical).
     public func reorderPaneTab(id tabID: UUID, to gap: Int) {
-        var next = paneAssignment
-        next.reorderTab(id: tabID, to: gap)
-        if next != paneAssignment { paneAssignment = next }
+        if paneAssignment.isSplit {
+            var next = paneAssignment
+            next.reorderTab(id: tabID, to: gap)
+            if next != paneAssignment { paneAssignment = next }
+        } else if let from = tabs.tabs.firstIndex(where: { $0.id == tabID }) {
+            move(from: from, to: gap)
+        }
     }
 
     /// S4d — commit a divider drag's rebalanced weights (equality-guarded;
@@ -462,6 +471,22 @@ public final class TabCoordinator: ObservableObject {
         refreshOpenTabURLs()
         syncPaneAssignment()
         return closed.id
+    }
+
+    /// Close an arbitrary id set (the pane-scoped close variants). Returns
+    /// the ids actually closed. Same cleanup pipeline as the index-batch
+    /// primitives; `syncPaneAssignment` reconciles the panes afterwards.
+    @discardableResult
+    public func closeTabs(ids: Set<UUID>) -> [UUID] {
+        let closedIDs = tabs.tabs.filter { ids.contains($0.id) }.map(\.id)
+        guard !closedIDs.isEmpty else { return [] }
+        tabs.close(ids: Set(closedIDs))
+        for id in closedIDs { cleanupAfterClose(id: id) }
+        let openIDs = Set(tabs.tabs.map { $0.id })
+        formattedTabIDs.formIntersection(openIDs)
+        refreshOpenTabURLs()
+        syncPaneAssignment()
+        return closedIDs
     }
 
     /// Close every tab except the one at `index`. Returns the ids of

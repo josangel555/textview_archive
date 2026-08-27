@@ -14,62 +14,47 @@ extension DocumentModel {
         }
     }
 
+    /// PANE-SCOPED (owner 2026-08-27): "Close Other Tabs" closes the other
+    /// tabs OF THE KEPT TAB'S PANE — a split's other panes are untouched.
+    /// Un-split, the single pane holds every tab, so the classic behavior
+    /// is unchanged (no special case).
     public func closeOtherTabs(keeping index: Int) {
-        let keepID = tabs.tabs.indices.contains(index) ? tabs.tabs[index].id : nil
-        // Prompt-then-act for every dirty tab that's about to vanish.
-        // We process indices in descending order so the user can cancel
-        // mid-batch and what's left of the close still makes sense.
-        let doomed = tabs.tabs.enumerated()
-            .filter { $0.element.id != keepID && $0.element.isDirty }
-            .map { $0.offset }
-            .sorted(by: >)
-        for i in doomed {
-            switch confirmCloseIfDirty(at: i) {
-            case .none: break
-            case .discard: hexDirtyBytes.removeValue(forKey: tabs.tabs[i].id)
-            case .save:
-                if isHexDirtyTab(at: i) {
-                    if !saveHexEdits(forTabID: tabs.tabs[i].id) { return }
-                } else if !saveEditor(forTabID: tabs.tabs[i].id) { return }
-            case .cancel:
-                return
-            }
-        }
-        // Snapshot doomed tabs' URLs *before* the coordinator mutates
-        // `tabs`, so the non-coordinator cache purge has the right
-        // URLs to pass.
-        let doomedURLsByID: [UUID: URL?] = Dictionary(
-            uniqueKeysWithValues: tabs.tabs
-                .filter { $0.id != keepID }
-                .map { ($0.id, $0.url) }
-        )
-        // Recently Closed (⇧⌘T) — record BEFORE the coordinator mutates
-        // `tabs`. Oldest-first so the leftmost tab ends up deepest in the
-        // stack and ⇧⌘T walks back right-to-left, matching browsers.
-        for i in tabs.tabs.indices where tabs.tabs[i].id != keepID {
-            noteTabClosed(at: i)
-        }
-        let closedIDs = tabCoordinator.closeOtherTabs(keeping: index)
-        for id in closedIDs {
-            purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)
-        }
-        settleSelectionAfterClose()
-        updateDerived()
-        startWatchingCurrentFile()
+        guard tabs.tabs.indices.contains(index) else { return }
+        let keepID = tabs.tabs[index].id
+        let paneIDs = tabCoordinator.paneAssignment.pane(containing: keepID)?.tabIDs
+            ?? tabs.tabs.map(\.id)
+        closeTabs(withIDs: Set(paneIDs.filter { $0 != keepID }), keeping: keepID)
     }
 
+    /// PANE-SCOPED (owner 2026-08-27): "to the right" means the kept tab's
+    /// PANE-STRIP order — the flat store order interleaves panes in a split,
+    /// which closed tabs the user couldn't even see to the right.
     public func closeTabsToRight(of index: Int) {
-        // Same dirty-prompt loop as closeOtherTabs. Process the
-        // doomed tabs from right-to-left so a Cancel partway through
-        // leaves a contiguous tail intact (rather than holes).
-        // Bounds-check up front: a stale gesture (menu/script verb
-        // firing after the tab vanished from another path) can hand
-        // us an out-of-range index, and the `(index+1)..<count`
-        // range construction below would trap before the coordinator
-        // ever runs.
-        guard index >= 0, index < tabs.tabs.count else { return }
-        let toClose = (index + 1)..<tabs.tabs.count
-        let doomedDirty = toClose.reversed().filter { tabs.tabs[$0].isDirty }
+        // Bounds-check up front: a stale gesture (menu/script verb firing
+        // after the tab vanished from another path) can hand us an
+        // out-of-range index.
+        guard tabs.tabs.indices.contains(index) else { return }
+        let keepID = tabs.tabs[index].id
+        let paneIDs = tabCoordinator.paneAssignment.pane(containing: keepID)?.tabIDs
+            ?? tabs.tabs.map(\.id)
+        guard let pos = paneIDs.firstIndex(of: keepID) else { return }
+        closeTabs(withIDs: Set(paneIDs.suffix(from: pos + 1)), keeping: keepID)
+    }
+
+    /// Shared close pipeline over an arbitrary doomed-id set: dirty-prompt
+    /// loop (cancel aborts the remainder), Recently-Closed recording, cache
+    /// purge, coordinator batch close, selection settle. If the store's
+    /// selected tab was among the doomed, selection lands on `keeping` via
+    /// the full `selectTab` pipeline (FileNav/watcher/footer follow — the
+    /// coordinator-select-is-not-a-selection lesson).
+    private func closeTabs(withIDs doomedIDs: Set<UUID>, keeping keepID: UUID) {
+        guard !doomedIDs.isEmpty else { return }
+        // Prompt-then-act for every dirty doomed tab, descending store order
+        // so a mid-batch Cancel leaves a sensible remainder.
+        let doomedDirty = tabs.tabs.enumerated()
+            .filter { doomedIDs.contains($0.element.id) && $0.element.isDirty }
+            .map(\.offset)
+            .sorted(by: >)
         for i in doomedDirty {
             switch confirmCloseIfDirty(at: i) {
             case .none: break
@@ -82,21 +67,28 @@ extension DocumentModel {
                 return
             }
         }
+        // Snapshot doomed URLs *before* the coordinator mutates `tabs`, so
+        // the non-coordinator cache purge has the right URLs.
         let doomedURLsByID: [UUID: URL?] = Dictionary(
             uniqueKeysWithValues: tabs.tabs
-                .suffix(from: index + 1)
+                .filter { doomedIDs.contains($0.id) }
                 .map { ($0.id, $0.url) }
         )
-        // Recently Closed (⇧⌘T) — record BEFORE the mutation, left-to-right
-        // so ⇧⌘T brings them back right-to-left.
-        for i in (index + 1)..<tabs.tabs.count {
+        let selectionWasDoomed = tabs.selected.map { doomedIDs.contains($0.id) } ?? false
+        // Recently Closed (⇧⌘T) — record BEFORE the mutation, oldest-first
+        // so ⇧⌘T walks back right-to-left, matching browsers.
+        for i in tabs.tabs.indices where doomedIDs.contains(tabs.tabs[i].id) {
             noteTabClosed(at: i)
         }
-        let closedIDs = tabCoordinator.closeTabsToRight(of: index)
+        let closedIDs = tabCoordinator.closeTabs(ids: doomedIDs)
         for id in closedIDs {
             purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)
         }
         settleSelectionAfterClose()
+        if selectionWasDoomed,
+           let keepIndex = tabs.tabs.firstIndex(where: { $0.id == keepID }) {
+            selectTab(at: keepIndex)
+        }
         updateDerived()
         startWatchingCurrentFile()
     }

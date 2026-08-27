@@ -10,15 +10,25 @@ extension DocumentModel {
         updateDerived()
     }
 
+    /// PANE-SCOPED (owner audit 2026-08-27): Move Tab Left/Right walks the
+    /// current tab's PANE-STRIP order — the flat-store swap was invisible
+    /// (or cross-pane) while split, because each pane owns its strip order.
+    /// Un-split, the single pane mirrors the store, so the gap coordinates
+    /// are identical to the old swap — no special case.
     public func moveCurrentTabLeft() {
-        guard let i = tabs.selectedIndex else { return }
-        tabCoordinator.swapWithPrevious(at: i)
+        guard let selID = tabs.selected?.id,
+              let pane = tabCoordinator.paneAssignment.pane(containing: selID),
+              let pos = pane.tabIDs.firstIndex(of: selID), pos > 0 else { return }
+        tabCoordinator.reorderPaneTab(id: selID, to: pos - 1)
         updateDerived()
     }
 
     public func moveCurrentTabRight() {
-        guard let i = tabs.selectedIndex else { return }
-        tabCoordinator.swapWithNext(at: i)
+        guard let selID = tabs.selected?.id,
+              let pane = tabCoordinator.paneAssignment.pane(containing: selID),
+              let pos = pane.tabIDs.firstIndex(of: selID),
+              pos < pane.tabIDs.count - 1 else { return }
+        tabCoordinator.reorderPaneTab(id: selID, to: pos + 2)
         updateDerived()
     }
 
