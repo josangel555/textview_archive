@@ -411,6 +411,31 @@ public final class SessionsCoordinator: ObservableObject {
         return live
     }
 
+    /// Recently closed sessions still in the 30-day trash window, most
+    /// recently closed first (store passthrough).
+    public func trashedSessions() -> [SessionSnapshot] { store.trashedSnapshots() }
+
+    /// Reopen a CLOSED session from trash (owner ask 2026-08-26): back into
+    /// the live list under its OWN identity — it's the same session
+    /// resuming, not a copy — removed from trash, and activated
+    /// (detach-then-mount, mirroring `restoreSavedSession`).
+    @discardableResult
+    public func reopenClosedSession(id: UUID) -> SessionSnapshot? {
+        guard let snap = store.loadTrashed(id: id) else { return nil }
+        // Defend against an id collision with a live session (close()
+        // removed it from the list, so this shouldn't happen — but a
+        // duplicate id would corrupt the LRU): mint fresh in that case.
+        let collision = sessions.contains { $0.id == snap.id }
+        let live = snap.with(id: collision ? UUID() : nil, lastActiveAt: Date())
+        if let prev = active { lifecycle?.detach(prev) }
+        sessions.append(live)
+        activeID = live.id
+        lifecycle?.mount(live)
+        store.removeFromTrash(id: id)
+        persist()
+        return live
+    }
+
     /// Every save point, newest first (store passthrough).
     public func savedSessions() -> [SessionSnapshot] { store.savedSnapshots() }
 

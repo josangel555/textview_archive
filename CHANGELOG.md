@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-08-26
+
+### Added
+- **Reopen Closed Session.** Closed sessions were already kept for 30 days
+  (full state: tabs, selection, scroll, panes) but had no way back. The
+  session strip's context menu and the "+" menu now carry a
+  "Recently Closed ▸" list — click to resume the session exactly where it
+  was closed.
+
+### Fixed
+- **Splitting panes in one session no longer corrupts other sessions.**
+  Switching from a split session to one that was never split leaked the
+  split through and folded the other session's tabs into the stale panes;
+  a session with no pane layout now always arrives un-split, and switching
+  back restores the original session's split.
+- **Markdown links render in blue again.** Every color variable in the
+  rendered-markdown stylesheet was written as an invalid two-value list,
+  silently falling back to inherited colors — links painted black, and
+  small headings (h5/h6) lost their secondary grey. Links are now a proper
+  blue in both light and dark mode, and the smallest headings get their
+  intended grey.
+
 ## 2026-08-23
 
 ### Changed

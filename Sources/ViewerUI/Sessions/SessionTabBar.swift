@@ -265,6 +265,7 @@ private struct SessionStripContent: View {
                 // on open — the saved-list read never rides a re-body.
                 Divider()
                 SavedSessionsMenuSection(sessionsApp: sessionsApp)
+                RecentlyClosedSessionsMenuSection(sessionsApp: sessionsApp)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: model.uiSize(11), weight: .medium))
@@ -545,6 +546,7 @@ private struct SessionTabContextMenu: View {
         }
         .accessibilityIdentifier("mdv.sessionTab.saveAs")
         SavedSessionsMenuSection(sessionsApp: sessionsApp)
+        RecentlyClosedSessionsMenuSection(sessionsApp: sessionsApp)
         Divider()
         if let path = snapshot.sidebarRootPath, !path.isEmpty {
             Button("Copy Path") { Pasteboard.copy(path) }
@@ -598,6 +600,34 @@ struct SavedSessionsMenuSection: View {
         let tabs = point.openTabs.count
         let tabWord = tabs == 1 ? "1 tab" : "\(tabs) tabs"
         return "\(tabWord) \u{00B7} saved \(fmt.string(from: point.savedAt))"
+    }
+}
+
+// MARK: - Recently closed sessions menu section --------------------------
+
+/// The "Recently Closed ▸" recovery surface (owner ask 2026-08-26): closed
+/// sessions sit in the 30-day trash with their full state — tabs,
+/// selection, scroll, panes — but had no way back until now. Same
+/// build-on-menu-open discipline as `SavedSessionsMenuSection` (the trash
+/// directory read never rides a strip re-body); renders nothing while the
+/// trash is empty.
+struct RecentlyClosedSessionsMenuSection: View {
+    @ObservedObject var sessionsApp: SessionsAppCoordinator
+
+    var body: some View {
+        let closed = sessionsApp.trashedSessions()
+        if !closed.isEmpty {
+            Menu("Recently Closed") {
+                ForEach(closed, id: \.id) { snap in
+                    Button(SessionTabLabel.truncated(snap.displayName)) {
+                        _ = sessionsApp.reopenClosedSession(id: snap.id)
+                    }
+                    .accessibilityIdentifier(
+                        "mdv.sessionTab.reopenClosed.\(snap.id.uuidString)")
+                }
+            }
+            .accessibilityIdentifier("mdv.sessionTab.recentlyClosed")
+        }
     }
 }
 

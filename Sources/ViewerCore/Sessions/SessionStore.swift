@@ -336,6 +336,46 @@ public final class SessionStore: @unchecked Sendable {
         try? fm.moveItem(at: src, to: dst)
     }
 
+    /// A trashed snapshot by id (same forward-compat contract as `load(id:)`:
+    /// a newer-schema file reads as nil rather than a torn value).
+    public func loadTrashed(id: UUID) -> SessionSnapshot? {
+        guard let snap = JSONFileStore.read(SessionSnapshot.self,
+                                            from: trashURL(for: id),
+                                            maxSize: Self.maxSnapshotFileSize) else {
+            return nil
+        }
+        if snap.schemaVersion > SessionSnapshot.currentSchema { return nil }
+        return snap
+    }
+
+    /// Every trashed snapshot, most recently CLOSED first — the trash file's
+    /// mtime IS the close time (`close` saveSyncs the latest state, then
+    /// moves). Corrupt / newer-schema files are skipped, never fatal.
+    public func trashedSnapshots() -> [SessionSnapshot] {
+        let trash = directory.appendingPathComponent("trash")
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: trash, includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]) else { return [] }
+        func mtime(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate) ?? .distantPast
+        }
+        return urls
+            .filter { $0.pathExtension == "json" }
+            .sorted { mtime($0) > mtime($1) }
+            .compactMap { url in
+                UUID(uuidString: url.deletingPathExtension().lastPathComponent)
+                    .flatMap { loadTrashed(id: $0) }
+            }
+    }
+
+    /// Remove a trashed snapshot — called after a successful reopen so the
+    /// live session doesn't also linger as a stale "closed" entry. The
+    /// 30-day sweep remains the backstop for everything else.
+    public func removeFromTrash(id: UUID) {
+        try? FileManager.default.removeItem(at: trashURL(for: id))
+    }
+
     // MARK: Saved sessions (named save points, 2026-07-31) ------------
 
     /// NAMED session save points live in `saved/<uuid>.json` — the same

@@ -414,6 +414,16 @@ public final class SessionsAppCoordinator: ObservableObject {
     public func savedSessions() -> [SessionSnapshot] { core.savedSessions() }
     public func deleteSavedSession(id: UUID) { core.deleteSavedSession(id: id) }
 
+    /// Recently closed sessions (30-day trash), most recently closed first.
+    public func trashedSessions() -> [SessionSnapshot] { core.trashedSessions() }
+
+    /// Reopen a closed session from trash and switch to it (owner ask
+    /// 2026-08-26). The trash entry is consumed — the session is live again.
+    @discardableResult
+    public func reopenClosedSession(id: UUID) -> SessionSnapshot? {
+        core.reopenClosedSession(id: id)
+    }
+
     /// Consume the gate (read+clear). Returns `true` exactly once
     /// after each arm. Exposed for the view layer's `onChange` hook.
     public func consumeFirstPaintGoTo() -> Bool {

@@ -45,6 +45,45 @@ final class SavedSessionsTests: XCTestCase {
         return (coord, file, sessionA)
     }
 
+    // MARK: reopen closed sessions (trash recovery, owner ask 2026-08-26)
+
+    /// Close → the session sits in the 30-day trash with its final state →
+    /// "Recently Closed" reopens it under its OWN identity, consuming the
+    /// trash entry, and switches to it.
+    func test_closeThenReopen_restoresTheSessionWithItsTabs() throws {
+        let (coord, file, sessionA) = try makeFixture()
+        // A second session so closing A doesn't leave an empty coordinator.
+        let rootB = tmpRoot.appendingPathComponent("rootB")
+        try FileManager.default.createDirectory(at: rootB, withIntermediateDirectories: true)
+        coord.openFolder(rootB, forceNew: true)
+
+        coord.close(id: sessionA)
+        XCTAssertFalse(coord.core.sessions.contains { $0.id == sessionA },
+            "closed session leaves the live list")
+
+        let closed = coord.trashedSessions()
+        XCTAssertTrue(closed.contains { $0.id == sessionA },
+            "the closed session must be recoverable from the trash listing")
+        let entry = try XCTUnwrap(closed.first { $0.id == sessionA })
+        XCTAssertTrue(entry.openTabs.contains { $0.path == file.path },
+            "the trashed snapshot carries the session's final tab set")
+
+        let reopened = try XCTUnwrap(coord.reopenClosedSession(id: sessionA))
+        XCTAssertEqual(reopened.id, sessionA,
+            "reopen resumes the SAME session, not a copy")
+        XCTAssertEqual(coord.core.activeID, sessionA, "reopen activates it")
+        XCTAssertTrue(coord.model.tabs.tabs.contains { $0.url == file },
+            "the reopened session mounts with its tabs")
+        XCTAssertFalse(coord.trashedSessions().contains { $0.id == sessionA },
+            "a reopened session no longer lingers in the trash listing")
+    }
+
+    func test_reopenUnknownTrashedID_isANoOp() throws {
+        let (coord, _, sessionA) = try makeFixture()
+        XCTAssertNil(coord.reopenClosedSession(id: UUID()))
+        XCTAssertEqual(coord.core.activeID, sessionA, "active session untouched")
+    }
+
     func test_saveActiveSession_freezesTheLiveTabs() throws {
         let (coord, file, sessionA) = try makeFixture()
 
@@ -129,5 +168,21 @@ final class SavedSessionsTests: XCTestCase {
             "retrieval mounts in BOTH the context menu and the + menu")
         XCTAssertTrue(bar.contains("restoreSavedSession(id: point.id)"),
                       "the section must route restore through the coordinator")
+    }
+
+    /// Same dead-channel pin for the trash-recovery surface (2026-08-26).
+    func test_menus_mountReopenClosed() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let bar = try String(
+            contentsOf: root.appendingPathComponent(
+                "Sources/ViewerUI/Sessions/SessionTabBar.swift"),
+            encoding: .utf8)
+        XCTAssertEqual(
+            bar.components(separatedBy: "RecentlyClosedSessionsMenuSection(sessionsApp:").count - 1, 2,
+            "trash recovery mounts in BOTH the context menu and the + menu")
+        XCTAssertTrue(bar.contains("reopenClosedSession(id: snap.id)"),
+                      "the section must route reopen through the coordinator")
     }
 }
