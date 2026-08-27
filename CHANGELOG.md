@@ -2,6 +2,15 @@
 
 ## 2026-08-27
 
+### Fixed (evening)
+- **The window remembers its size per display arrangement.** Plugging or
+  unplugging a monitor (or relaunching without it) used to leave the window
+  screen-sized ("maximized") forever: the single saved frame got clamped to
+  the smaller screen and the clamp overwrote the original. The frame is now
+  remembered separately for each screen layout — unplug, use the laptop,
+  replug, and the window returns to exactly where and how big it was on the
+  external display.
+
 ### Changed
 - **Closing a tab returns to the previously selected tab** (most recently
   used), like browsers — instead of an arbitrary neighbor. Fallback when

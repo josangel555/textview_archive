@@ -20,6 +20,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         initialRoot: PreferencesStore().lastFolderURL
     )
     var window: NSWindow?
+
+    // MARK: Per-display-layout frame memory (owner 2026-08-27)
+
+    /// Loaded once; every record() writes back through `persistFrameMemory`.
+    private lazy var windowFrameMemory = WindowFrameMemory.decode(
+        UserDefaults.standard.stringArray(forKey: Self.frameMemoryKey) ?? [])
+    private static let frameMemoryKey = "MDVWindowFrameMemoryV1"
+    /// Records are suppressed briefly after a display reconfiguration —
+    /// AppKit moves/resizes windows itself then, and those system frames
+    /// must not overwrite the user's remembered intent.
+    private var screenReconfigAt: Date?
+    private var frameRecordDebounce: DispatchWorkItem?
+
+    private func installWindowFrameMemoryObservers(for window: NSWindow) {
+        guard !PristineChrome.isActive else { return }
+        let center = NotificationCenter.default
+        for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification] {
+            center.addObserver(
+                forName: name, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleFrameRecord() }
+            }
+        }
+        center.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.screenLayoutDidChange() }
+        }
+    }
+
+    /// Debounced user-intent capture (live resizes fire didResize per tick).
+    private func scheduleFrameRecord() {
+        if let at = screenReconfigAt, Date().timeIntervalSince(at) < 2.0 { return }
+        frameRecordDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.recordWindowFrameForCurrentLayout() }
+        }
+        frameRecordDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    private func recordWindowFrameForCurrentLayout() {
+        guard !PristineChrome.isActive, let window else { return }
+        let key = WindowFrameMemory.layoutKey(
+            visibleFrames: NSScreen.screens.map(\.visibleFrame))
+        windowFrameMemory.record(frame: window.frame, layoutKey: key)
+        UserDefaults.standard.set(windowFrameMemory.encoded(),
+                                  forKey: Self.frameMemoryKey)
+    }
+
+    /// Display plugged/unplugged: once AppKit's own reshuffle settles,
+    /// re-apply the frame the user last had on THIS arrangement (safety-
+    /// clamped). No memory for the layout → leave AppKit's placement.
+    private func screenLayoutDidChange() {
+        guard !PristineChrome.isActive else { return }
+        screenReconfigAt = Date()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let window = self.window else { return }
+                let visibleFrames = NSScreen.screens.map(\.visibleFrame)
+                guard let remembered = self.windowFrameMemory.frame(
+                    forLayoutKey: WindowFrameMemory.layoutKey(visibleFrames: visibleFrames))
+                else { return }
+                let minWindowSize = window.frameRect(forContentRect:
+                    NSRect(origin: .zero, size: window.contentMinSize)).size
+                switch WindowGeometry.resolve(
+                    requested: WindowGeometry.Frame(remembered),
+                    visibleFrames: visibleFrames, minSize: minWindowSize) {
+                case .restore: window.setFrame(remembered, display: true)
+                case let .clamped(clamped): window.setFrame(clamped, display: true)
+                case .centerDefault: break
+                }
+            }
+        }
+    }
+
     /// TSK-1571: the menu-opened Claude Session Monitor window, held SEPARATELY
     /// from `window` (the main doc window) so opening the monitor from the Tools
     /// menu doesn't clobber the main-window reference. In `--claude-monitor`
@@ -418,6 +495,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 ?? NSRect(origin: .zero, size: WindowGeometry.defaultContentSize)
             window.setFrame(resolution.frame(primaryVisible: primary), display: false)
         }
+        // Owner 2026-08-27 ("I often find it maximized"): the AppKit
+        // autosave keeps ONE frame — a big-external-display frame clamped
+        // onto the laptop screen (the "maximized" look) then OVERWRITES the
+        // record, so the preference never comes back when the display does.
+        // Our per-LAYOUT memory wins over the single autosave when it has
+        // an entry for the current screen arrangement (still routed through
+        // the resolve clamp for safety); the observers below keep it fresh
+        // and re-apply it on display plug/unplug.
+        if !PristineChrome.isActive,
+           let remembered = windowFrameMemory.frame(
+               forLayoutKey: WindowFrameMemory.layoutKey(visibleFrames: visibleFrames)) {
+            switch WindowGeometry.resolve(
+                requested: WindowGeometry.Frame(remembered),
+                visibleFrames: visibleFrames, minSize: minWindowSize) {
+            case .restore: window.setFrame(remembered, display: false)
+            case let .clamped(clamped): window.setFrame(clamped, display: false)
+            case .centerDefault: break
+            }
+        }
+        installWindowFrameMemoryObservers(for: window)
         // TSK-1576: in UAT SCENE mode only, force a deterministic, generous
         // window size so the WHOLE app chrome — including the status-bar FOOTER
         // (the app's bottom row) — renders and is captured. Scene spawns restore
@@ -789,6 +886,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Owner 2026-08-27: capture the final frame under the CURRENT
+        // screen layout so a quit-on-external → relaunch-on-laptop →
+        // replug round trip comes back at the remembered size.
+        recordWindowFrameForCurrentLayout()
+
         // O-6 flush-before-read: pull any pending (debounced) CM6 edits
         // into the Swift mirror BEFORE the session snapshot below captures
         // unsaved buffers — a ⌘Q within ~200ms of typing used to hot-exit
