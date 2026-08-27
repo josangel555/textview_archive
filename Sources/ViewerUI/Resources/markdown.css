@@ -4,12 +4,18 @@
 
 :root {
     color-scheme: light dark;
-    --mdv-fg: -apple-system-label, #1d1d1f;
-    --mdv-fg-secondary: -apple-system-secondary-label, #4a4a4f;
-    --mdv-bg: -apple-system-background, #ffffff;
+    /* ⚠ A custom property is ONE value — `-apple-system-x, #fallback`
+       comma lists are INVALID at computed-value time, which made every
+       var() consumer fall back to inheritance: links rendered in the
+       body's black, h5/h6 lost their secondary grey (owner bug
+       2026-08-26). Standard system colors / light-dark() instead —
+       both color-scheme-aware in WebKit. */
+    --mdv-fg: CanvasText;
+    --mdv-fg-secondary: color-mix(in srgb, CanvasText 62%, Canvas);
+    --mdv-bg: Canvas;
     --mdv-code-bg: rgba(127, 127, 127, 0.12);
     --mdv-code-border: rgba(127, 127, 127, 0.20);
-    --mdv-link: -apple-system-blue, #0066cc;
+    --mdv-link: light-dark(#0066cc, #419cff);
     --mdv-rule: rgba(127, 127, 127, 0.25);
     --mdv-blockquote-border: rgba(127, 127, 127, 0.40);
 }

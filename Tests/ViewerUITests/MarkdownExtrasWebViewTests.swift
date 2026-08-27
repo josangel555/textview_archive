@@ -56,6 +56,48 @@ final class MarkdownExtrasWebViewTests: WebViewTestCase {
         }
     }
 
+    /// Owner bug 2026-08-26 — links rendered BLACK: every `--mdv-*`
+    /// system-color var was an invalid comma list (`-apple-system-blue,
+    /// #0066cc`), so var() consumers fell back to inheritance (links = body
+    /// black; h5/h6 lost their secondary grey the same way). Pin the PAINT:
+    /// computed anchor color must differ from body text and be
+    /// blue-dominant; the secondary-heading grey must differ from body too.
+    func test_links_paintBlue_notBodyText() async throws {
+        await loadRendered("[a link](https://example.com) and text\n\n##### fine print\n")
+        let linkColor = await evalString(
+            "getComputedStyle(document.querySelector('a')).color")
+        let bodyColor = await evalString(
+            "getComputedStyle(document.body).color")
+        XCTAssertFalse(linkColor.isEmpty, "anchor missing from the render")
+        XCTAssertNotEqual(linkColor, bodyColor,
+            "a link must not paint in the body text color (the invalid-var inherit bug)")
+        // Blue-dominance (works for both appearances: #0066cc / #419cff).
+        // Computed form is `rgb(r, g, b)`; parse defensively — the inequality
+        // pins above are the hard teeth.
+        let comps = linkColor.dropFirst(4).dropLast()
+            .split(separator: ",")
+            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        if comps.count == 3 {
+            XCTAssertGreaterThan(comps[2], comps[0], "link color must be blue-dominant")
+            XCTAssertGreaterThan(comps[2], comps[1], "link color must be blue-dominant")
+        }
+        let h5Color = await evalString(
+            "getComputedStyle(document.querySelector('h5')).color")
+        XCTAssertNotEqual(h5Color, bodyColor,
+            "h5 must paint the secondary grey, not the body color (same invalid-var class)")
+    }
+
+    /// Class tripwire (host-cheap, runs in this lane anyway): no `--mdv-*`
+    /// custom property may hold a `-apple-system-*, fallback` comma list —
+    /// that value is invalid at computed-value time and silently reverts
+    /// every consumer to inheritance.
+    func test_stylesheet_hasNoInvalidCommaListSystemColorVars() {
+        let css = MarkdownStylesheet.cached
+        let pattern = #"--mdv-[a-z-]+:\s*-apple-system-[a-z-]+\s*,"#
+        XCTAssertNil(css.range(of: pattern, options: .regularExpression),
+            "markdown.css regressed to the invalid `-apple-system-x, fallback` var pattern")
+    }
+
     func test_gfmAlert_paintsTintedBoxWithColoredTitle() async throws {
         await loadRendered("> [!WARNING]\n> mind the gap\n")
         let h = await evalDouble(
