@@ -520,6 +520,12 @@ public final class SessionState: ObservableObject {
         // still see splits").
         if let paneLayout = snapshot.paneLayout {
             model.tabCoordinator.applyPaneLayout(paneLayout)
+        } else {
+            // FAÇADE LEAK GUARD (owner bug 2026-08-26, same class as the
+            // splitURL guard above): a session with no persisted pane layout
+            // was never split — collapse the shared coordinator's panes so
+            // the previous session's split can't swallow this session's tabs.
+            model.tabCoordinator.resetPaneLayout()
         }
     }
 

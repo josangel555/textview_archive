@@ -304,6 +304,44 @@ final class TabCoordinatorPaneTests: XCTestCase {
                      "un-split persists nothing (byte-compatible snapshots)")
     }
 
+    /// Owner bug 2026-08-26 — the session-switch façade-leak guard: a split
+    /// coordinator collapses to ONE pane mirroring the store (order +
+    /// selection) when the incoming session has no persisted pane layout.
+    func test_resetPaneLayout_collapsesToSingleStorePane() {
+        let c = TabCoordinator()
+        let a = makeTab("a"), b = makeTab("b"), x = makeTab("c")
+        c.append(a); c.append(b); c.append(x)
+        c.splitFocusedPane(movingSelected: true)
+        XCTAssertTrue(c.paneAssignment.isSplit)
+
+        c.select(at: 1)
+        c.resetPaneLayout()
+        let pa = c.paneAssignment
+        XCTAssertFalse(pa.isSplit)
+        XCTAssertEqual(pa.panes.count, 1)
+        XCTAssertEqual(pa.panes[0].tabIDs, openIDs(c),
+                       "the single pane mirrors the store order")
+        XCTAssertEqual(pa.focusedSelectedTabID, b.id,
+                       "the store's selection survives the collapse")
+        XCTAssertTrue(pa.isConsistent(against: openIDs(c)))
+    }
+
+    /// A degenerate persisted single-pane layout means "un-split" — applying
+    /// it over a live split must collapse, exactly like the nil case.
+    func test_applyPaneLayout_singlePaneState_collapsesALiveSplit() {
+        let c = TabCoordinator()
+        c.append(makeTab("a")); c.append(makeTab("b"))
+        c.splitFocusedPane(movingSelected: true)
+        XCTAssertTrue(c.paneAssignment.isSplit)
+
+        let degenerate = SessionSnapshot.PaneLayoutState(
+            panes: [["/tmp/panes/a"]], selected: ["/tmp/panes/a"],
+            focusedIndex: 0, orientation: "horizontal")
+        c.applyPaneLayout(degenerate)
+        XCTAssertFalse(c.paneAssignment.isSplit,
+                       "a 1-pane persisted layout must not leave the live split standing")
+    }
+
     func test_paneLayoutState_codable_andLegacyDecode() throws {
         let state = SessionSnapshot.PaneLayoutState(
             panes: [["/a.md"], ["/b.md"]], selected: ["/a.md", "/b.md"],

@@ -140,6 +140,42 @@ final class SessionIsolationTests: XCTestCase {
             "switching back to A must restore A's split pane")
     }
 
+    // MARK: editor-pane split is per-session (owner bug 2026-08-26) ------
+
+    /// Splitting the EDITOR PANES in session A then switching to B leaked
+    /// A's split through the shared coordinator: B (never split, so no
+    /// persisted pane layout) skipped `applyPaneLayout` entirely and its
+    /// tabs were folded into A's stale panes. The guard collapses the panes
+    /// whenever the incoming session has no pane layout.
+    func test_switchSessions_editorPaneSplitDoesNotLeak_andRestores() {
+        let coord = makeCoordinator()
+        let folderA = makeWorkspace(named: "PaneA", files: ["a1.md", "a2.md"])
+        let folderB = makeWorkspace(named: "PaneB", files: ["b1.md"])
+
+        // Session A: two tabs, split tearing the selected tab right.
+        coord.openFolder(folderA, forceNew: true)
+        coord.model.appendLazyTab(url: folderA.appendingPathComponent("a1.md"), viewMode: .source)
+        coord.model.appendLazyTab(url: folderA.appendingPathComponent("a2.md"), viewMode: .source)
+        coord.model.tabCoordinator.splitFocusedPane(movingSelected: true)
+        let aID = coord.core.activeID!
+        XCTAssertTrue(coord.model.tabCoordinator.paneAssignment.isSplit)
+
+        // Session B (never split): the shared coordinator must collapse.
+        coord.openFolder(folderB, forceNew: true)
+        coord.model.appendLazyTab(url: folderB.appendingPathComponent("b1.md"), viewMode: .source)
+        let b = coord.model.tabCoordinator.paneAssignment
+        XCTAssertFalse(b.isSplit,
+            "B was never split — A's editor-pane split must not leak into it")
+        XCTAssertEqual(Set(b.panes.flatMap(\.tabIDs)),
+                       Set(coord.model.tabs.tabs.map(\.id)),
+            "every one of B's tabs lives in B's single pane")
+
+        // Switching back to A restores its split.
+        coord.activate(id: aID)
+        XCTAssertTrue(coord.model.tabCoordinator.paneAssignment.isSplit,
+            "switching back to A must restore A's editor-pane split")
+    }
+
     // MARK: panel layout is per-session --------------------------------
 
     func test_switchSessions_preservesPanelLayout_independently() {

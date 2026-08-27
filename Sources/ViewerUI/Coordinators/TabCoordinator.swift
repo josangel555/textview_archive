@@ -306,8 +306,22 @@ public final class TabCoordinator: ObservableObject {
     /// ids, the result normalizes against the store (missing files drop;
     /// unassigned tabs join the focused pane), and the app-wide selection
     /// follows the focused pane's memory.
+    /// Session-switch FAÇADE-LEAK GUARD (owner bug 2026-08-26): collapse to
+    /// a single pane holding the store's tabs and selection. A session with
+    /// no persisted pane layout (never split) must not inherit the previous
+    /// session's split through the shared coordinator — without this, the
+    /// stale panes swallow the incoming session's tabs via `normalized`.
+    /// Same class as the `splitURL` guard in `SessionState.hydrate`.
+    public func resetPaneLayout() {
+        let next = PaneAssignment(tabIDs: tabs.tabs.map(\.id),
+                                  selectedTabID: tabs.selected?.id)
+        if next != paneAssignment { paneAssignment = next }
+    }
+
     public func applyPaneLayout(_ state: SessionSnapshot.PaneLayoutState) {
-        guard state.panes.count > 1 else { return }
+        // A degenerate single-pane persisted layout means "un-split" — treat
+        // it exactly like the nil case (reset, don't keep the live split).
+        guard state.panes.count > 1 else { resetPaneLayout(); return }
         let idByPath: [String: UUID] = Dictionary(
             tabs.tabs.compactMap { t in t.url.map { ($0.path, t.id) } },
             uniquingKeysWith: { first, _ in first })
