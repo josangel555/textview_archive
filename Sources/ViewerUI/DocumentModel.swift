@@ -3103,6 +3103,20 @@ public final class DocumentModel: ObservableObject {
 
     /// Shared reload body once the target index is validated.
     private func applyReload(url: URL, at index: Int) {
+        // Owner 2026-08-29 ("Local History of an externally modified
+        // file?"): the content this reload REPLACES — an external write's
+        // casualty — is snapshotted first, extending the 2026-07-28
+        // preservation directive ("don't delete anything; never silently
+        // overwrite") to the silent clean-tab adoption path. Without this a
+        // file you opened but never saved has NO history at all when an
+        // external tool rewrites it. Best-effort: the store's policy
+        // (secrets/oversize/binary/off) may decline; dedup makes the
+        // nothing-changed case free.
+        if case .loaded(let old) = tabs.tabs[index].state {
+            localHistoryStore.snapshot(
+                path: url.standardizedFileURL.path,
+                content: old.contents, at: Date())
+        }
         // Preserve a per-tab "Open As…" override across a watcher reload
         // so an overridden file doesn't snap back to auto-detection when
         // it changes on disk (WAVE 2b item 6).

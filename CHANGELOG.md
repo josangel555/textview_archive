@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-29
+
+### Added
+- **Browse a deleted file's Local History without recreating it.** The
+  Recover Deleted File picker now has a "History" button per file — opens
+  the full version viewer (timeline, diffs, restore) for files that no
+  longer exist on disk. Recreate (latest or a specific version) stays a
+  separate, explicit action.
+
+### Fixed
+- **External file changes no longer erase unseen content from history.**
+  When a file changed on disk and the app adopted the new version, the
+  content being replaced was simply discarded — a file you'd opened but
+  never saved had no Local History at all. The replaced content is now
+  snapshotted before every adoption, so anything an external tool
+  overwrites is recoverable.
+
 ## 2026-08-27
 
 ### Fixed (evening)

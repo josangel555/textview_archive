@@ -68,6 +68,19 @@ struct RecoverDeletedFileView: View {
                     .truncationMode(.head)
             }
             Spacer(minLength: 8)
+            // Owner 2026-08-29: BROWSE the deleted file's history without
+            // recreating anything — the unified viewer works for a gone
+            // path (diff-vs-current just has no current side). This was the
+            // missing link: every other entry to the viewer (File menu,
+            // sidebar context) needs a live tab or file row.
+            Button("History") {
+                model.openLocalHistory(for: url)
+                onClose?()
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 11))
+            .help("Browse this file's Local History versions without recreating it")
+            .accessibilityIdentifier("mdv.recover.history")
             // TSK-1573: the primary click recreates the LATEST version; the
             // dropdown picks a SPECIFIC older version (date · size). Both route
             // through the host-tested `resurrectFile(at:version:)`.

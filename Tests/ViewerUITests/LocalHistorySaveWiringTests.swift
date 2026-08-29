@@ -48,6 +48,33 @@ final class LocalHistorySaveWiringTests: XCTestCase {
             localHistory: store)
     }
 
+    /// Owner 2026-08-29 ("Local History of an externally modified file?"):
+    /// adopting an external rewrite via the reload path snapshots the content
+    /// it REPLACES — so a file that was opened but never saved in-app still
+    /// has its pre-rewrite state recoverable. Extends the 2026-07-28
+    /// preservation directive to the silent clean-tab adoption.
+    func test_externalReload_snapshotsTheReplacedContent() throws {
+        let model = makeModel()
+        let url = try writeFile("watched.md", "original opened content")
+        model.open(url: url)
+        XCTAssertTrue(model.localHistoryStore.versions(
+            for: url.standardizedFileURL.path).isEmpty,
+            "precondition: opening alone records nothing")
+
+        // The external tool rewrites the file; the watcher path adopts it.
+        try "external tool overwrote this".write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertTrue(model.reloadFileFromDisk(url))
+
+        let versions = model.localHistoryStore.versions(for: url.standardizedFileURL.path)
+        XCTAssertEqual(versions.count, 1,
+            "the replaced content must land in Local History")
+        XCTAssertEqual(
+            model.localHistoryStore.contentString(
+                of: versions[0], for: url.standardizedFileURL.path),
+            "original opened content",
+            "the snapshot is the PRE-rewrite state — the external write's casualty")
+    }
+
     @discardableResult
     private func writeFile(_ name: String, _ contents: String = "before") throws -> URL {
         let url = tmpDir.appendingPathComponent(name)
