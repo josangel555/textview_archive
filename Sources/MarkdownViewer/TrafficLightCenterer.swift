@@ -26,7 +26,9 @@ enum TrafficLightCenterer {
         let names: [Notification.Name] = [
             NSWindow.didResizeNotification,
             NSWindow.didBecomeKeyNotification,
+            NSWindow.didBecomeMainNotification,
             NSWindow.didChangeScreenNotification,
+            NSWindow.didEnterFullScreenNotification,
             NSWindow.didExitFullScreenNotification,
         ]
         for name in names {
@@ -41,7 +43,33 @@ enum TrafficLightCenterer {
         }
     }
 
+    /// Owner 2026-08-29 (screenshot: the bold file name bleeding through
+    /// behind the session pill — "do we still have the old title component
+    /// lying around?"): it's AppKit's NATIVE title field. `titleVisibility =
+    /// .hidden` hides it, and with the old toolbar spacer its frame was
+    /// zero, so nothing could ever show; without the toolbar the field sits
+    /// at x≈82 right after the traffic lights — exactly where the ghost
+    /// appeared — so any AppKit path that un-hides it (headless probes
+    /// couldn't reproduce one; a titlebar rebuild on a fullscreen or
+    /// key/main transition is the likely trigger) paints the title over
+    /// our band. Belt over the public API: re-assert the hidden visibility
+    /// AND hide the field itself. Runs after every title set and on the
+    /// same re-layout notifications as the button shift; idempotent.
+    static func hideNativeTitle(in window: NSWindow) {
+        if window.titleVisibility != .hidden { window.titleVisibility = .hidden }
+        guard let container = window.standardWindowButton(.closeButton)?.superview else { return }
+        let title = window.title
+        func hide(in view: NSView) {
+            if let tf = view as? NSTextField, tf.stringValue == title, !tf.isHidden {
+                tf.isHidden = true
+            }
+            for sub in view.subviews { hide(in: sub) }
+        }
+        hide(in: container)
+    }
+
     private static func apply(to window: NSWindow, bandHeight: CGFloat) {
+        hideNativeTitle(in: window)
         let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
         for type in buttons {
             guard let button = window.standardWindowButton(type),

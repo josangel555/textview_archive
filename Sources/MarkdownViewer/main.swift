@@ -558,7 +558,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.$windowTitle
             .receive(on: DispatchQueue.main)
             .sink { [weak self] title in
-                self?.window?.title = title
+                guard let window = self?.window else { return }
+                window.title = title
+                // The title stays SET for Mission Control/Dock but must never
+                // paint over the session band (owner 2026-08-29 screenshot).
+                TrafficLightCenterer.hideNativeTitle(in: window)
             }
             .store(in: &cancellables)
 
