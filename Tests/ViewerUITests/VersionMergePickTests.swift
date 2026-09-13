@@ -101,8 +101,15 @@ final class VersionMergePickTests: XCTestCase {
             contentsOf: root.appendingPathComponent(
                 "Sources/ViewerUI/DocumentModel+FileHistory.swift"),
             encoding: .utf8)
+        // 2026-09-13: the entry points (tab, unsaved-changes, URL) share ONE
+        // presenter, which is where onMergePick is wired — pin both halves so
+        // neither an entry point bypassing the presenter nor the presenter
+        // dropping the wiring can slip through.
+        XCTAssertGreaterThanOrEqual(
+            hosts.components(separatedBy: "presentLocalHistory(source:").count - 1, 3,
+            "every Local History entry point routes through the shared presenter")
         XCTAssertEqual(
-            hosts.components(separatedBy: "beginVersionMergePick").count - 1, 2,
-            "BOTH Local History entry points wire onMergePick")
+            hosts.components(separatedBy: "beginVersionMergePick").count - 1, 1,
+            "the shared presenter wires onMergePick")
     }
 }
