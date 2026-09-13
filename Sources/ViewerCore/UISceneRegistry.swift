@@ -202,6 +202,11 @@ public enum UISceneRegistry {
             themeID: "xcode-dark",
             summary: "Marketing: file nav on a git root + bookmarks, 3 tabs, Swift source highlighting, command palette overlay"),
         SceneSpec(
+            id: "history-unsaved",
+            fixture: .defaultDocument,
+            closesExistingTabs: true,
+            summary: "Owner 2026-08-29: a dirty tab's 'Show Unsaved Changes' — the Local History viewer on the On-disk entry in diff-vs-current mode"),
+        SceneSpec(
             id: "panes-split",
             fixture: .defaultDocument,
             closesExistingTabs: true,

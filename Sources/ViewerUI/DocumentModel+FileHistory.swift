@@ -73,15 +73,31 @@ extension DocumentModel {
     /// can Cmd-Z and must explicitly save (which then snapshots it as a new
     /// version). This is the integration seam with the save path.
     public func openLocalHistory(forTabID id: UUID) {
-        guard let url = tabs.tabs.first(where: { $0.id == id })?.url else { return }
+        guard let url = tabs.tabs.first(where: { $0.id == id })?.url,
+              let source = makeLocalHistorySource(for: url, tabID: id) else { return }
+        presentLocalHistory(source: source, url: url)
+    }
+
+    /// Owner 2026-08-29 ("I see the blue/red dot and have no clue what the
+    /// delta is"): open the Local History viewer on the synthetic **"On
+    /// disk"** entry in diff-vs-current mode — the diff IS the unsaved delta
+    /// (disk → tab). The "On disk" row is listed first whenever disk ≠ tab,
+    /// and the viewer auto-selects the first row, so the delta shows at once.
+    public func showUnsavedChanges(forTabID id: UUID) {
+        guard let url = tabs.tabs.first(where: { $0.id == id })?.url,
+              let source = makeLocalHistorySource(for: url, tabID: id) else { return }
+        presentLocalHistory(source: source, url: url, initialSingleMode: .diffVsCurrent)
+    }
+
+    /// The Local-History version source for an OPEN tab: `currentContent`
+    /// reads the LIVE editor buffer (falling back to disk); `diskState` reads
+    /// the file itself (content + mtime), which powers the "On disk" entry.
+    /// Internal so the wiring is host-testable without a view.
+    func makeLocalHistorySource(for url: URL, tabID: UUID) -> LocalHistoryVersionSource? {
         let path = url.standardizedFileURL.path
-        let store = localHistoryStore
-        let tabID = id
         // Live current content for "diff vs current". The diff loads run on a
-        // detached (off-main) task, so this closure must be main-actor-safe.
-        // We hold a thread-safe latest-snapshot box updated on the main actor,
-        // and refresh it from the live editor buffer (falling back to disk) each
-        // time the closure is read via a synchronous main-actor hop.
+        // detached (off-main) task, so this closure must be main-actor-safe:
+        // a synchronous main-actor hop reads the buffer each time it's called.
         let currentContent: @Sendable () -> String? = { [weak self] in
             // `DispatchQueue.main.sync` is safe here: the caller is a detached
             // background task, never the main thread (which would deadlock).
@@ -98,19 +114,40 @@ extension DocumentModel {
                 }
             }
         }
-        let source = LocalHistoryVersionSource(
-            store: store,
+        return LocalHistoryVersionSource(
+            store: localHistoryStore,
             path: path,
             displayName: url.lastPathComponent,
-            currentContent: currentContent)
+            currentContent: currentContent,
+            diskState: Self.diskStateReader(for: url))
+    }
+
+    /// Pure filesystem read (safe off-main): the on-disk content + mtime, or
+    /// nil when the file is gone/unreadable (no "On disk" entry then).
+    static func diskStateReader(for url: URL)
+        -> @Sendable () -> LocalHistoryVersionSource.DiskSnapshot? {
+        { () -> LocalHistoryVersionSource.DiskSnapshot? in
+            guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+            return .init(content: content, modified: modified)
+        }
+    }
+
+    private func presentLocalHistory(
+        source: LocalHistoryVersionSource, url: URL,
+        initialSingleMode: UnifiedHistoryViewModel.SingleMode = .ownChange
+    ) {
         let view = UnifiedHistoryView(
             doc: self,
             source: source,
             kind: .localHistory,
+            initialSingleMode: initialSingleMode,
             onRestore: { [weak self] text in
                 // TSK-1331/1462 — the unified restore path: backup-before-
                 // restore, select + editor mode, then an undoable buffer edit
-                // (never a disk write).
+                // (never a disk write). Restoring the "On disk" entry = an
+                // undoable revert of the unsaved edits.
                 self?.restoreLocalHistoryVersion(text, at: url)
             },
             onMergePick: { [weak self] text in
@@ -153,16 +190,9 @@ extension DocumentModel {
         let source = LocalHistoryVersionSource(
             store: store, path: path,
             displayName: url.lastPathComponent,
-            currentContent: currentContent)
-        let view = UnifiedHistoryView(
-            doc: self, source: source, kind: .localHistory,
-            onRestore: { [weak self] text in
-                self?.restoreLocalHistoryVersion(text, at: url)
-            },
-            onMergePick: { [weak self] text in
-                self?.beginVersionMergePick(versionText: text, url: url)
-            })
-        openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
+            currentContent: currentContent,
+            diskState: Self.diskStateReader(for: url))
+        presentLocalHistory(source: source, url: url)
     }
 
     // MARK: - Restore (TSK-1331 / TSK-1462)

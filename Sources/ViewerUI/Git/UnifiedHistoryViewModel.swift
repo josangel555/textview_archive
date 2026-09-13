@@ -76,9 +76,11 @@ final class UnifiedHistoryViewModel: ObservableObject {
     private var detailToken = 0
     private var loaded = false
 
-    init(source: VersionSource, kind: VersionRef.Kind) {
+    init(source: VersionSource, kind: VersionRef.Kind,
+         initialMode: SingleMode = .ownChange) {
         self.source = source
         self.kind = kind
+        self.singleMode = initialMode
     }
 
     // MARK: - Version load

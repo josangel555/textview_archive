@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-13
+
+### Added
+- **See exactly what's unsaved.** Right-click a tab with the blue (unsaved)
+  or red (changed-on-disk) dot → **Show Unsaved Changes** opens the Local
+  History viewer straight on a new **"On disk"** entry in diff-vs-current
+  mode: the diff is precisely what's in the tab that isn't on disk yet. The
+  "On disk" entry also appears at the top of Local History whenever disk and
+  tab differ — its "own change" view shows what changed on disk since your
+  last save, and Restore on it is an undoable revert of the unsaved edits.
+
+### Fixed
+- **The file name no longer bleeds through behind the session tabs.** That
+  bold title was macOS's native window title (kept set for Mission Control
+  and the Dock) painting through the transparent title bar after a titlebar
+  re-layout; it's now re-hidden after every title change and layout pass.
+
 ## 2026-08-29
 
 ### Added

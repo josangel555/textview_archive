@@ -23,21 +23,44 @@ public struct LocalHistoryVersionSource: VersionSource {
     /// when there is no current content (e.g. file gone) — diffs against current
     /// then treat current as empty.
     private let currentContent: @Sendable () -> String?
+    /// The file's current ON-DISK state (owner 2026-08-29: the unsaved delta).
+    /// nil closure ⇒ no on-disk entry is ever listed (pure-store sources).
+    private let diskState: (@Sendable () -> DiskSnapshot?)?
+
+    /// What's on disk right now — content + mtime.
+    public struct DiskSnapshot: Sendable, Equatable {
+        public let content: String
+        public let modified: Date?
+        public init(content: String, modified: Date?) {
+            self.content = content
+            self.modified = modified
+        }
+    }
+
+    /// Stable id of the synthetic on-disk entry.
+    public static let onDiskID = "on-disk"
 
     public init(
         store: LocalHistoryStore,
         path: String,
         displayName: String,
-        currentContent: @escaping @Sendable () -> String?
+        currentContent: @escaping @Sendable () -> String?,
+        diskState: (@Sendable () -> DiskSnapshot?)? = nil
     ) {
         self.store = store
         self.path = path
         self.displayName = displayName
         self.currentContent = currentContent
+        self.diskState = diskState
     }
 
+    /// Newest-first snapshots — headed by the synthetic **"On disk"** entry
+    /// whenever the disk differs from the live current content (unsaved
+    /// edits in the tab, or an external change the tab hasn't adopted). The
+    /// entry's "diff vs current" IS the unsaved delta; its "own change"
+    /// (vs the newest snapshot) is what changed on disk since the last save.
     public func listVersions() -> [VersionRef] {
-        store.versions(for: path).map { v in
+        let stored = store.versions(for: path).map { v in
             VersionRef(
                 id: v.id,
                 shortLabel: Self.label(for: v.savedAt),
@@ -47,9 +70,28 @@ public struct LocalHistoryVersionSource: VersionSource {
                 byteSize: v.byteSize,
                 kind: .localHistory)
         }
+        guard let onDisk = onDiskEntry() else { return stored }
+        return [onDisk] + stored
+    }
+
+    /// The synthetic entry, or nil when there's no disk state or it matches
+    /// the current content (nothing unsaved ⇒ nothing to show).
+    private func onDiskEntry() -> VersionRef? {
+        guard let disk = diskState?(), disk.content != (currentContent() ?? "") else {
+            return nil
+        }
+        return VersionRef(
+            id: Self.onDiskID,
+            shortLabel: "On disk",
+            timestamp: disk.modified,
+            author: nil,
+            subject: "Differs from this tab — unsaved changes",
+            byteSize: disk.content.utf8.count,
+            kind: .onDisk)
     }
 
     public func content(of version: VersionRef) -> String? {
+        if version.kind == .onDisk { return diskState?()?.content }
         guard let v = storeVersion(for: version) else { return nil }
         return store.contentString(of: v, for: path)
     }
@@ -113,6 +155,11 @@ public struct LocalHistoryVersionSource: VersionSource {
     }
 
     private func isOlder(_ a: VersionRef, than b: VersionRef) -> Bool {
+        // The on-disk entry is always the NEWEST end of any pair/range: its
+        // mtime can predate a later snapshot (e.g. a restore backup taken
+        // while the disk file is old), but it is "now" for diff purposes.
+        if a.kind == .onDisk { return false }
+        if b.kind == .onDisk { return true }
         let ta = a.timestamp ?? .distantPast
         let tb = b.timestamp ?? .distantPast
         if ta != tb { return ta < tb }

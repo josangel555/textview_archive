@@ -399,6 +399,11 @@ struct TabContextMenu: View {
             // range cumulative diff / restore.
             Button("Local History") { model.openLocalHistory(for: url) }
                 .disabled(!model.canShowLocalHistory(for: url))
+            // Owner 2026-08-29: "I see the blue/red dot and have no clue what
+            // the delta is" — the Local History viewer opened straight on the
+            // "On disk" entry in diff-vs-current mode = the unsaved delta.
+            Button("Show Unsaved Changes") { model.showUnsavedChanges(forTabID: tab.id) }
+                .disabled(!(tab.isDirty || tab.diskState.showsTabDot))
             // OPEN-AS FOLD (2026-06-01): the tab-context "Open As…" submenu
             // was fully redundant with the ModeBar "Open As" chip — both act
             // on the CURRENT tab via setCurrentCategoryOverride (this one even
@@ -523,7 +528,7 @@ struct TabBarItem: View {
                             .fill(Color.accentColor)
                             .frame(width: 7 * scale, height: 7 * scale)
                             .helpInfo(title: "Unsaved changes",
-                                      description: "This tab has edits that haven't been saved")
+                                      description: "This tab has edits that haven't been saved. Right-click the tab → Show Unsaved Changes to see the delta vs disk.")
                             .accessibilityLabel("Unsaved changes")
                             .accessibilityIdentifier("mdv.tab.dirtyDot")
                     }

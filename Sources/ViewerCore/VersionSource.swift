@@ -28,6 +28,11 @@ public struct VersionRef: Sendable, Equatable, Identifiable {
     public enum Kind: Sendable, Equatable {
         case localHistory
         case git
+        /// The file's CURRENT ON-DISK state, surfaced as a synthetic "version"
+        /// so the viewer can diff it against the live tab (owner 2026-08-29:
+        /// "what is the delta between disk and what's in the buffer?"). Only
+        /// listed while disk ≠ current; never restorable into the store.
+        case onDisk
     }
 
     public init(

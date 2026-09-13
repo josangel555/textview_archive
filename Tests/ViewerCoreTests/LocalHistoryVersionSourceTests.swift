@@ -103,6 +103,54 @@ final class LocalHistoryVersionSourceTests: XCTestCase {
         XCTAssertEqual(s.diffAgainstCurrent(v), "")
     }
 
+    // MARK: - the "On disk" entry (owner 2026-08-29: the unsaved delta)
+
+    private func source(current: String, disk: String?) -> LocalHistoryVersionSource {
+        LocalHistoryVersionSource(
+            store: store, path: path, displayName: "notes.md",
+            currentContent: { current },
+            diskState: { disk.map { .init(content: $0, modified: Date(timeIntervalSince1970: 2000)) } })
+    }
+
+    func test_onDiskEntry_listedFirst_onlyWhenDiskDiffersFromCurrent() {
+        store.snapshot(path: path, content: "saved\n", at: date(1000))
+        let dirty = source(current: "saved\nplus unsaved\n", disk: "saved\n")
+        let list = dirty.listVersions()
+        XCTAssertEqual(list.first?.kind, .onDisk, "disk ≠ tab ⇒ the On-disk entry heads the list")
+        XCTAssertEqual(list.first?.id, LocalHistoryVersionSource.onDiskID)
+        XCTAssertEqual(list.count, 2, "…above the real snapshot")
+
+        let clean = source(current: "saved\n", disk: "saved\n")
+        XCTAssertEqual(clean.listVersions().map(\.kind), [.localHistory],
+                       "nothing unsaved ⇒ no On-disk entry")
+        let gone = source(current: "x\n", disk: nil)
+        XCTAssertEqual(gone.listVersions().map(\.kind), [.localHistory],
+                       "no disk state ⇒ no entry (deleted file)")
+    }
+
+    func test_onDiskEntry_diffVsCurrent_isTheUnsavedDelta() {
+        store.snapshot(path: path, content: "saved\n", at: date(1000))
+        let s = source(current: "saved\nplus unsaved\n", disk: "saved\n")
+        let onDisk = s.listVersions()[0]
+        XCTAssertEqual(s.content(of: onDisk), "saved\n", "content = what's on disk")
+        // disk → tab: applying the diff to disk reconstructs the tab's buffer.
+        XCTAssertEqual(reconstructNew(s.diffAgainstCurrent(onDisk)), ["saved", "plus unsaved"])
+    }
+
+    func test_onDiskEntry_ownChange_isDiskVsNewestSnapshot_andSortsNewest() {
+        store.snapshot(path: path, content: "saved\n", at: date(1000))
+        // External tool rewrote the disk; the tab still holds the old text.
+        let s = source(current: "saved\n", disk: "saved\nexternal line\n")
+        let list = s.listVersions()
+        let onDisk = list[0], snap = list[1]
+        XCTAssertEqual(reconstructNew(s.diff(from: onDisk, to: nil)), ["saved", "external line"],
+                       "own change = what changed on disk since the last snapshot")
+        // Pair order: the on-disk entry is always the NEWEST end regardless
+        // of its mtime (2000 here vs the snapshot's 1000 — but must hold
+        // even when the mtime predates a snapshot).
+        XCTAssertEqual(reconstructNew(s.diff(from: onDisk, to: snap)), ["saved", "external line"])
+    }
+
     // MARK: - this version's own change (vs predecessor)
 
     func test_diff_ownChange_vsPredecessor() {

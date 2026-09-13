@@ -1110,6 +1110,27 @@ public enum UISceneApplier {
             return "ui-scene: applied 'panes-sessions' panes=\(model.tabCoordinator.paneAssignment.panes.count)"
         }
 
+        // Owner 2026-08-29: the unsaved-delta rung — a tab with unsaved edits,
+        // then "Show Unsaved Changes" opens the history viewer on the On-disk
+        // entry in diff-vs-current mode (the capture shows the delta).
+        if scene == "history-unsaved" {
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.panelLayout.setOverride(.terminal, .hidden)
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("unsaved.md")
+            try? "# Notes\n\nline one\nline two\n".write(to: f, atomically: true, encoding: .utf8)
+            model.open(url: f)
+            guard let tabID = model.tabs.selected?.id else {
+                return "ui-scene: 'history-unsaved' had no tab"
+            }
+            model.setCurrentViewMode(.editor)
+            model.updateEditorText("# Notes\n\nline one\nline two (edited, unsaved)\nline three added\n",
+                                   forTabID: tabID)
+            model.showUnsavedChanges(forTabID: tabID)
+            return "ui-scene: applied 'history-unsaved' tabs=\(model.tabs.tabs.count)"
+        }
+
         // I-21 S4a: the vertical run — split DOWN (stacked rows).
         if scene == "panes-down" {
             while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }

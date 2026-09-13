@@ -82,6 +82,8 @@ scene_expect() {
     panes-down) echo "mdv.paneStrip mdv.paneStrip.focused mdv.pane.close mdv.contentToolbar mdv.viewModeControl" ;;
     # The owner-bug repro: the SESSION strip must coexist with the split.
     panes-sessions) echo "mdv.sessionTabBar mdv.paneStrip mdv.paneStrip.focused" ;;
+    # Owner 2026-08-29: the unsaved-delta viewer must mount its list + mode picker + restore.
+    history-unsaved) echo "mdv.history.versionList mdv.history.modePicker mdv.history.restore" ;;
     # Sidebar-fill scenes (owner 2026-08-09): the PNG is the visual fill
     # proof; the a11y gate pins the right panel actually mounted. Without
     # these they fell through to the TERMINAL dense-chip pixel eval, which

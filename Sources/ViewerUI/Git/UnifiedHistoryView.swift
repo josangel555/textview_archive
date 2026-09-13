@@ -41,11 +41,13 @@ struct UnifiedHistoryView: View {
         doc: DocumentModel,
         source: VersionSource,
         kind: VersionRef.Kind,
+        initialSingleMode: UnifiedHistoryViewModel.SingleMode = .ownChange,
         onRestore: ((String) -> Void)? = nil,
         onMergePick: ((String) -> Void)? = nil
     ) {
         self.doc = doc
-        _model = StateObject(wrappedValue: UnifiedHistoryViewModel(source: source, kind: kind))
+        _model = StateObject(wrappedValue: UnifiedHistoryViewModel(
+            source: source, kind: kind, initialMode: initialSingleMode))
         self.onRestore = onRestore
         self.onMergePick = onMergePick
     }
