@@ -5,7 +5,7 @@
 - **Script:** `.claude/workflows/giga-uat.js`
 - **Session:** `80ad52ff-c401-4cd4-9a0a-7558a3ded7c4`
 - **Args:** `date=2026-06-03, venue=host-live, fixPolicy=land-safe, mode=full`
-- **App under test:** `dist/TextView.app` @ `main 798b7ee` (load-bug fix verified + installed)
+- **App under test:** `dist/TextView.app` @ `main c2eac32` (load-bug fix verified + installed)
 
 ## Phases
 Context (mine git/docs/tasks/code + unprimed explorers) → Author (`docs/uat/smokes/*.md`) →
@@ -31,7 +31,7 @@ Prior run failed: schema executor ended without StructuredOutput; bare await abo
 
 ## COMPLETE (2026-06-03 11:08)
 - Result: 33 found / 32 fixed / 1 non-bug; severity 7xS2, 14xS3, 12xS4, no S1.
-- **Landed on main (ground truth): 2** — `136883e` (BUG-019 view-mode clamp, gate-green), `5ed7c85` (BUG-021 dirty-close verb). Report says 0 (trusted fixer self-reports); reconcile.
+- **Landed on main (ground truth): 2** — `6f21d7d` (BUG-019 view-mode clamp, gate-green), `2b54f37` (BUG-021 dirty-close verb). Report says 0 (trusted fixer self-reports); reconcile.
 - **30 fixes NOT durable yet:** ~27 are UNCOMMITTED in their worktree dirs (`-49,-51..-79` mostly `commits=0 dirty>0`); only `-47/-50/-54/-58` committed. Report wrongly says "staged on branches."
 - **31 worktrees / 55GB NOT reaped** — would destroy the uncommitted fixes. Needs harvest-first (commit each worktree fix to a clean branch, untangle the shared-stash mess: RECOVERED-*-belongs-to-sibling, dedupe -52/-56 [BUG-009] and -65/-71 [BUG-028]) THEN reap.
 - **Gate can never be green on host** (macOS-26 MarkdownLinkPolicy + FoldBench/CrossFileSearchBench parallel flakes) → land-safe stages everything. Quarantine those to unblock landing.

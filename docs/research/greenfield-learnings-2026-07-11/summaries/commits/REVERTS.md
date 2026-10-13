@@ -12,17 +12,17 @@ These are commits created by `git revert` or manually formatted as `Revert "..."
 
 ### 4 × Terminal/Tmux Control-Mode Reverts (2026-06-19, TSK-964 integration failure)
 
-**Commit cluster:** 600d0a14, e58a39fe, ae5c36c9, 4aaa4992
+**Commit cluster:** 127f2aa9, c760d0d0, 484d237e, 02f967f2
 **Unified author/date:** Jos, Fri Jun 19 07:15:12 2026 -0400
 **Span:** ~7 hours after initial landing (original commits ~00:08, reverts ~07:15)
 
 #### What was reverted
 
 Four interdependent TSK-964 terminal/tmux features that landed as a cohesive wave on 2026-06-19 at ~00:08:
-1. **TmuxLayoutParser** (9f631ac0) — hand-written recursive-descent parser for tmux layout strings (`WxH,X,Y{...}` grammar) into a PaneNode tree; 156 lines code + 206 lines tests
-2. **TmuxControlParser** (4ea55dc6) — control-mode protocol parser (line/byte stream → typed ControlModeEvent); 304 lines + 271 tests
-3. **TmuxSession topology model** (49de67ef) — window/pane/session state machine; 273 lines + 363 tests
-4. **TerminalPaneTree** (3feef0a9) — split-tree node model + geometry + key-routing; 199 lines + 209 tests
+1. **TmuxLayoutParser** (041de517) — hand-written recursive-descent parser for tmux layout strings (`WxH,X,Y{...}` grammar) into a PaneNode tree; 156 lines code + 206 lines tests
+2. **TmuxControlParser** (7fb2a7d5) — control-mode protocol parser (line/byte stream → typed ControlModeEvent); 304 lines + 271 tests
+3. **TmuxSession topology model** (c2f25e01) — window/pane/session state machine; 273 lines + 363 tests
+4. **TerminalPaneTree** (8a6ed06d) — split-tree node model + geometry + key-routing; 199 lines + 209 tests
 
 Total: ~932 lines of code + 1,049 lines of tests deleted.
 
@@ -38,14 +38,14 @@ The decision was **immediate and complete rollback** — all four interdependent
 #### How fixed (re-landed)
 
 Same day, ~4 hours after the reverts (11:06):
-- **69aa58e3** (feat): "tmux coherent typed-PaneNode model + layout/control parsers + session topology (TSK-1018)"
+- **d382abc9** (feat): "tmux coherent typed-PaneNode model + layout/control parsers + session topology (TSK-1018)"
   - **Reconciled design:** ONE canonical typed `PaneNode` enum, replacing the conflicting geometry enum
   - **Kept TmuxControlParser & TmuxSession:** restored mostly as-is from the reverted commits
   - **Rewrote TmuxLayoutParser:** now produces the typed PaneNode (not the rejected geometry enum)
   - **Re-tested:** 96 ViewerCoreTests covering all four classes end-to-end
   - **Scope reduction:** explicitly excluded controller/router/PTY wiring (deferred to VM tail) — the reverted wave included more than the parsers
 
-- **4db0f360** (~2.5h later): "re-land tmux controller host-logic core — TmuxControllerCore (TSK-1018)"
+- **51d9d315** (~2.5h later): "re-land tmux controller host-logic core — TmuxControllerCore (TSK-1018)"
   - Slimmed-down re-land of the core event-demuxer + routing logic (no full control wiring yet)
 
 **Key lesson:** The collision revealed that the wave had tried to land **too much in one shot** (design reconciliation, parsers, session model, AND controller logic). The re-land succeeded by splitting: (1) parsers + model on day 1, (2) controller core a few hours later.
@@ -56,9 +56,9 @@ Same day, ~4 hours after the reverts (11:06):
 
 These follow a similar pattern (reverting prior work) but use the lowercase `revert(category):` prefix instead of the formal `Revert "..."` format.
 
-### Commit 663c6a1a: Inside-Out Signing Rollback (2026-05-30)
+### Commit 1a9f1f6c: Inside-Out Signing Rollback (2026-05-30)
 
-**Hash:** 663c6a1a
+**Hash:** 1a9f1f6c
 **Date:** Sat May 30 21:46:54 2026 -0400
 **Ticket:** G14 / inside-out signing (Phase-9 item)
 **Category:** Build infrastructure
@@ -87,9 +87,9 @@ These follow a similar pattern (reverting prior work) but use the lowercase `rev
 
 ---
 
-### Commit 7ac0147c: NSTextView Compositor Bug Regression (2026-05-15)
+### Commit ad030f30: NSTextView Compositor Bug Regression (2026-05-15)
 
-**Hash:** 7ac0147c
+**Hash:** ad030f30
 **Date:** Fri May 15 03:45:26 2026 -0400
 **Ticket:** #88 (UI rendering compositor bug)
 **Category:** UI/rendering
@@ -124,7 +124,7 @@ And explicitly lists what was tried and failed:
 
 #### How fixed
 
-**Reverted to pure-SwiftUI approach** from commit 2412c82, keeping complementary work:
+**Reverted to pure-SwiftUI approach** from commit 82679e3, keeping complementary work:
 - **Kept:** `findState` plumbing (find bar still highlights matches; scroll-to-match noted as missing)
 - **Kept:** `wordWrap` honored (toggle between vertical-only and horizontal+vertical scroll axes)
 - **Kept:** All call-site contracts preserved (ContentView / DocumentModel didn't need to change)
@@ -149,10 +149,10 @@ The 56 remaining mentions of "revert/rollback/undo" in commit subjects/bodies ar
 
 | Category | Count | Examples |
 |---|---|---|
-| **Feature behavior** — code that implements reversible/undoable operations | ~25 | `055b1988` (Escape reverts edits), `62f90115` (rollback semantics), `79d51edd` (disk-conflict revert), `e685d3c8` (undo toast) |
-| **Auto-revert on failure** — safety patterns that automatically roll back state on errors | ~8 | `365ca952` (auto-revert attach on connection loss), `14581321` (fail-safe to in-process) |
-| **Test/guard semantics** — test names or guard descriptions mentioning revert patterns | ~10 | `4b3ec3e4` (guard against clone-to-serialize revert) |
-| **Documentation/discussion** — handoff/docs commits discussing reverts as a concept | ~13 | `6de9df03` (revert over-baked docs), various handoff checkpoints |
+| **Feature behavior** — code that implements reversible/undoable operations | ~25 | `dbd3794e` (Escape reverts edits), `1cb22ae5` (rollback semantics), `730c1412` (disk-conflict revert), `030215fe` (undo toast) |
+| **Auto-revert on failure** — safety patterns that automatically roll back state on errors | ~8 | `06ba3422` (auto-revert attach on connection loss), `692af1c4` (fail-safe to in-process) |
+| **Test/guard semantics** — test names or guard descriptions mentioning revert patterns | ~10 | `6e4d2ba3` (guard against clone-to-serialize revert) |
+| **Documentation/discussion** — handoff/docs commits discussing reverts as a concept | ~13 | `d9a5dfc5` (revert over-baked docs), various handoff checkpoints |
 
 None of these represent commits that UNDO prior code commits.
 

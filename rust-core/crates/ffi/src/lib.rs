@@ -974,7 +974,7 @@ pub unsafe extern "C" fn mdvcore_session_free(handle: *mut SessionHandle) {
 // Canvas (TSK-1360 M1.S5c) — the REAL engine boundary. Stateful doc ⇒ the
 // CsvSession opaque-handle pattern (canvas_handle.rs). Wire shapes:
 // mdvcore_core::canvas::wire. (The M0 spike's demo boundary lived here through
-// 5401e5b0; TSK-1343 has its verdict.)
+// f13edc6d; TSK-1343 has its verdict.)
 // ---------------------------------------------------------------------------
 
 /// Open an EMPTY canvas document (default theme + root page `pg:1`) and

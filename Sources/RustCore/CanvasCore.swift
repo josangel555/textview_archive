@@ -5,7 +5,7 @@ import Foundation
 // `mdvcore_canvas_doc_open/html/apply/free`, speaking the `canvas::wire`
 // shapes ({baseRev, ops} → {rev, patches} | structured rejection). Replaces
 // the M0 demo wrapper (numeric ids, mirror ops) that lived here through
-// commit 5401e5b0.
+// commit f13edc6d.
 
 /// A canvas op value: literal or a design-token reference.
 public enum CanvasValue: Equatable, Sendable {

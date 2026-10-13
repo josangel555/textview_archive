@@ -611,7 +611,7 @@ struct StatusBar: View {
             // tab can report on switch-in before materialize flips it back to
             // `.loaded`. Without covering `.empty` too, switching between two
             // ALREADY-LOADED tabs flashed the footer blank for a frame
-            // (TSK-1120; the TSK-452/1615b98 fix only covered `.loading`).
+            // (TSK-1120; the TSK-452/b324a43 fix only covered `.loading`).
             // Show at least Size (the path shows separately) so a switch never
             // flashes empty; Lines/Chars/EOL/Enc fill in when `.loaded` lands
             // and the coordinator republishes.

@@ -3,7 +3,7 @@ import XCTest
 import ViewerKit
 @testable import ViewerUI
 
-/// FolderState → SF Symbol mapping (Batch A, commit d175548) and
+/// FolderState → SF Symbol mapping (Batch A, commit ea89818) and
 /// IconCategory palette completeness. Symbol names are an AppKit
 /// implicit-API contract: a typo here ships an empty icon, so locking
 /// in "every state names a symbol that resolves on this OS" is cheap

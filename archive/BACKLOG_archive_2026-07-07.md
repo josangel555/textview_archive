@@ -96,7 +96,7 @@ Mostly user-facing render-VM (image-editor / panes / terminal / menus); host-mod
 - **TSK-1215** formula flip (`MDV_RUST_FORMULA`) · **TSK-1202** fold flip (`MDV_RUST_FOLD`) — both parity-proven (34 tests, re-verified 2026-06-29); pick to enable.
 - **TSK-1129** — LSP workspace-binary RCE-guard enforcement: (a) prompt-first-then-block [rec] / (b) block-by-default / (c) warn-only. Model+store BUILT, spawn warns. **SECURITY** — unblocks the TSK-1128 picker.
 - **TSK-543** — cm_apply stateful-delta redesign (the real typing-latency fix; ~10× FFI traffic). **[design call]**
-- **TSK-1138** — Tier-D PTY/socket plugin contract (design delivered `aa03d6fc`) — **ratify**.
+- **TSK-1138** — Tier-D PTY/socket plugin contract (design delivered `c9493df8`) — **ratify**.
 - **TSK-1182** diff-selection model · **TSK-589** session-eviction · **TSK-810** hex Stage-B fallback · **TSK-1045** per-session DocumentModel sign-off.
 - **TSK-470** zoom-split · **683** app name · **686** Developer-ID signing · **276** debugger/DAP · **293** encryption · **296** markdown scope · **298** Java ext-tool · **781** LSP own-vs-external · **1137** mutation-tester · **1287** crypto-hash dep · **508** digraph dep.
 - **Close the ~417 review/fixed queue** (`→ done`, render items by on-screen glance) · **Grant Accessibility/Automation TCC** (unblocks the AX executor, the one blocked lane).
@@ -109,10 +109,10 @@ TSK-687 deep agent integrations · 688 walkthrough-as-presentation · 689 PinBoa
 ## ✅ DONE — agent-complete, awaiting owner-close (moved to bottom 2026-06-29)
 *These need no more agent work; the owner closes them (`→ done` / a flip).*
 - **TSK-1110** — DocumentModel SRP: **cohesive-logic extraction COMPLETE** (5835→3346 lines, ~43%, 57 extensions; CM6-LSP / Command-registry / Editable-HEX / view-mode-lock all carved). Remaining 3346 = the irreducible open/close/select orchestrators + @Published state (not behavior-preserving-movable). → owner **close/de-scope**.
-- **TSK-1300** — CSV convert commands routed off the Swift twin onto `RustCSVAdapter` (~2.5× faster, output-preserving). **validated** `e24d23fd`.
-- **TSK-1301** — unified favorites+history terminal command-search model. **validated** `009cc573`.
+- **TSK-1300** — CSV convert commands routed off the Swift twin onto `RustCSVAdapter` (~2.5× faster, output-preserving). **validated** `25384ad7`.
+- **TSK-1301** — unified favorites+history terminal command-search model. **validated** `8cdac8bd`.
 - **TSK-1202** — code-fold-region rust port. **validated** (the FLIP is the owner item above).
-- This session also landed (host-tested, on `main`): **TSK-1176** host-half (populate `43fac093` + search models) · **TSK-1128** lsp.json write-back model `6a3e6ac0` · transcript contract proptest `24df4a65` · 8 render features + spell-check (→review) · 40 SRP slices · 3 validated subprocess-crash fixes (SIGPIPE/ffmpeg) · 2 gate-flake fixes.
+- This session also landed (host-tested, on `main`): **TSK-1176** host-half (populate `75c0df0d` + search models) · **TSK-1128** lsp.json write-back model `b45ca9e8` · transcript contract proptest `f8882cf9` · 8 render features + spell-check (→review) · 40 SRP slices · 3 validated subprocess-crash fixes (SIGPIPE/ffmpeg) · 2 gate-flake fixes.
 - Earlier (since 2026-06-27): TSK-847 (gate), 1270 (find-highlights), 1151 (line-height), 400 (rpcd spike), 836/794 (timings/threading audit). Coverage landed: RichTextSerializer, FileQuarantine, cspMeta, Focus-shortcuts.
 
 *Coverage now (2026-06-29): 69.74% region / 64.72% line (host) — the uncovered is render UI [VM-tested]; pure-logic is comprehensively covered. Full archive → `archive/BACKLOG_archive_2026-06-27.md`.*
@@ -174,7 +174,7 @@ The app-wide usability push (TSK-1411 tree) is parked mid-drain. Everything is p
   subagent brief) + `docs/FEATURE_INVENTORY.md` + `docs/USABILITY_VALIDATION_PROTOCOL.md` (batch queue)
   + `docs/WISHLIST_RECONCILE_2026-07-02.md`.
 - **Landed on main (verified):** batches 1-2 (11 tickets: 1483/1435/1436/1479/1437 + 1461/1462+1331/
-  1463/1464/1465) + tool-results panel (1434) + spell/autocomplete footer toggles (92dec034).
+  1463/1464/1465) + tool-results panel (1434) + spell/autocomplete footer toggles (5a84b00a).
 - **SALVAGED, NOT INTEGRATED:** branches `worktree-wf_dadf7ab6-e88-{1..9}` — 7 complete per-ticket
   commits (1439-export, 1466, 1467, 1446, 1447, 1498, 1484) + 9 `wip(salvage)` commits (NOT
   gate-verified). Integration ticket: TSK-1506 (branch↔ticket map + rebase→gate→ff recipe).
@@ -193,7 +193,7 @@ Do NOT pull from review/validated lanes (owner runs the validation look separate
 item ⇒ park it, take the next. Mark finished items ✅ in this list each tick.
 
 ### TIER 0 — Fable/XL only (get-right-first-time; do NOT hand to workers)
-F1. ✅ TSK-1516 S1 EditorSession core (shipped 8e2771d8)
+F1. ✅ TSK-1516 S1 EditorSession core (shipped cccccdf5)
 F2. TSK-1517 S2 stateful FFI family + eviction wiring (the forever-ABI)
 F3. TSK-1518 S3 shadow-mode differential net (gates the supervised cutovers)
 F4. TSK-1530 M6 TextDisplayView→CM6 read-only (pattern-prover for all M-migrations)

@@ -183,7 +183,7 @@ WebContent processes are pooled **per pool**, not per app. A session that has to
 
 ## 3. macOS-26 libmalloc dirty-page caching vs. a real leak
 
-`commit 11d376a` added `SourceTextController.teardownStorage()` (`TextDisplayView.swift` `dismantleNSViewController` hook) to drop the glyph store **synchronously on tab close** rather than at a deferred autorelease drain. Verified observation: repeated open/close of a 5 MB file **plateaus rather than ratchets** — the signature of page-caching, not a leak.
+`commit fb0959f` added `SourceTextController.teardownStorage()` (`TextDisplayView.swift` `dismantleNSViewController` hook) to drop the glyph store **synchronously on tab close** rather than at a deferred autorelease drain. Verified observation: repeated open/close of a 5 MB file **plateaus rather than ratchets** — the signature of page-caching, not a leak.
 
 **Mechanism:** macOS-26 `libmalloc` does not hand freed dirty pages back to the kernel while idle. Freed large allocations are marked **reusable** but left mapped and counted **dirty** — kept hot for the next large allocation (re-opening the same file reuses them instead of zero-fill faulting). RSS stays high at idle but is reclaimable on demand.
 
@@ -202,7 +202,7 @@ WebContent processes are pooled **per pool**, not per app. A session that has to
 | `leaks <pid>` | no roots | leaked nodes with backtraces |
 | `phys_footprint` (`ProcessMemory.appFootprintBytes()`) | high but stable across cycles | monotonically climbing |
 
-The operative rule (from `commit 11d376a` / `BACKLOG.md:630` #191): **idle footprint is the wrong metric; the lever is peak-bounding.** The render caps already enforce it on the way in — `markdownRenderMaxBytes = 4 MB` (refuses → placeholder), 512 KB source-highlight cap (`TreeSitterEngine.swift:66`), 50 MB CM6 → NSTextView fallback (`BACKLOG.md:343-350`). Bounding the *peak* bounds the cached-dirty floor — the cache can't exceed the high-water mark.
+The operative rule (from `commit fb0959f` / `BACKLOG.md:630` #191): **idle footprint is the wrong metric; the lever is peak-bounding.** The render caps already enforce it on the way in — `markdownRenderMaxBytes = 4 MB` (refuses → placeholder), 512 KB source-highlight cap (`TreeSitterEngine.swift:66`), 50 MB CM6 → NSTextView fallback (`BACKLOG.md:343-350`). Bounding the *peak* bounds the cached-dirty floor — the cache can't exceed the high-water mark.
 
 The ~60 MB empty-app baseline is **almost entirely mapped shared pages, not private heap:** the dyld shared cache (arm64e, multi-GB, COW across all processes), 29 system frameworks + the Swift runtime resolving to **`/usr/lib/swift/`** (ABI-stable, OS-resident — *not* shipped in the bundle, near-zero private RSS). Private-but-unavoidable: the 27,362,064 B main Mach-O's `__DATA` dirty pages, the window/menu object graph, and CA/Metal backing stores. The WebKit floor is **not** in a truly-empty app — it appears only after the first `WKWebView`.
 

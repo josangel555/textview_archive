@@ -4715,7 +4715,7 @@ func runResourceSelfCheck() -> Bool {
     check("mermaid.min.js",
           Bundle.viewerUIResources.url(forResource: "mermaid.min", withExtension: "js"))
     // (The ViewerCore Queries/*.scm bundle was DELETED with the Swift fold
-    // twin — B3.6, 78c8e973; fold queries are baked into the rust core's
+    // twin — B3.6, 8653eedd; fold queries are baked into the rust core's
     // static lib now, so there is no on-disk resource left to check.)
     emit(ok ? "OK    all resource bundles resolved from the app bundle\n"
             : "FAIL  resource self-check failed — app would crash on a clean machine\n")

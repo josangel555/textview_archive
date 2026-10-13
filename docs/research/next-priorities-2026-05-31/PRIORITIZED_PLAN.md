@@ -79,7 +79,7 @@ A standing constraint governs *how* every item ships, not just *what*: subscribe
 | 0c | **Tooltip model** — `HelpInfo {title, description}` (ViewerKit, Equatable/Sendable) + `HelpSink` (separate `ObservableObject`, **not** on DocumentModel) + `.helpInfo(_:)` modifier driving native `.help(title)` + `.onHover`→sink. Also feeds a11y label/hint. | M (model S; 26-file migration is the bulk — good fan-out) | new ViewerKit type; new `ViewerUI/HelpSink.swift`; ~26 call-site files; `StatusBar.swift` | none |
 | 0d | **Per-tab disk-staleness signal** — generalize `EditorBuffer.hasExternalEdit`/`hasUnknownDiskState` to all loaded tabs (baseline `(mtime,size)` already on `TextFile`); add `diskState {fresh, staleVsDisk, deleted}`; change watcher policy from silent-reload to flag-and-offer (behind a pref). | M (L if watching all background tabs) | `EditorBuffer.swift:102-138`, `DocumentModel.swift:2102-2205`, `FileWatcher.swift`, `Tab.swift` | none (reuses watcher) |
 
-> **Already done — do NOT rebuild:** `DocumentState.{loading,error}` + `LoadingStateView`/`ErrorView` + off-main `materializeIfNeeded`/`openLargeFileOffMain` (commits `e5e659b`/`2639656`). Action: strike the "off-main file loading" BACKLOG item; replace with the narrow follow-up (watcher-reload + view-mode-recovery reads still sync on main).
+> **Already done — do NOT rebuild:** `DocumentState.{loading,error}` + `LoadingStateView`/`ErrorView` + off-main `materializeIfNeeded`/`openLargeFileOffMain` (commits `b422ee2`/`af5bef0`). Action: strike the "off-main file loading" BACKLOG item; replace with the narrow follow-up (watcher-reload + view-mode-recovery reads still sync on main).
 
 ### Tier 1 — Quick-win bugs (high trust/day, contained, mostly S)
 

@@ -96,7 +96,7 @@ ModeBar picker (Preview + HEX only)
   Preview, chip de-tints. (Regression guard for the centering/HEX-return
   bugs.)
 - **Regression sentinel:** a freshly-opened image must default to Preview,
-  not HEX (Bug B, `7737e2b`). Re-confirm after every code change touching
+  not HEX (Bug B, `6d04444`). Re-confirm after every code change touching
   default-mode order or the `.hex` carry block.
 
 ---
@@ -136,7 +136,7 @@ keybind · UnsupportedPreview fallback
   dump via mmap (large file), `mdv.hexView` renders, picker de-emphasizes
   Preview. Switch back to Auto → Preview again.
 - **Regression sentinel:** native-preview tabs (audio/video) must NOT flip
-  to HEX on open (`7de0f44`, `08176e9`).
+  to HEX on open (`35af305`, `ade3d04`).
 
 ---
 
@@ -456,9 +456,9 @@ re-confirm — they encode the documented bug history:
 
 1. **Fresh native-preview tab never opens as HEX.** Images, PDFs, SQLite,
    audio, video all default to `.preview` / `.preview(sqlite)`, not `.hex`
-   (Bug B `7737e2b`; hex-carry twins `f3cd05a` / `7de0f44` / `08176e9`).
+   (Bug B `6d04444`; hex-carry twins `1e29835` / `35af305` / `ade3d04`).
 2. **Mode-switch is latest-wins.** No `HexView` under a non-HEX picker; no
-   endless spinner on rapid toggles (Bug C `b3b06bc`).
+   endless spinner on rapid toggles (Bug C `ac4fcee`).
 3. **SQLite is read-only by construction.** No INSERT/UPDATE/DELETE/DDL/
    ATTACH/DETACH ever mutates the DB; runaway queries cancel cleanly.
 4. **CSV memory stays bounded** (LazyVStack) — never the ~1 GB blow-up.

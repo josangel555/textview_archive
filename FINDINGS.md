@@ -1,6 +1,6 @@
 # Investigation: source-view invisible content
 
-Status: **fixed (commit 73baa53)**. Replaced `NSScrollView.verticalRulerView`
+Status: **fixed (commit 5fdac1c)**. Replaced `NSScrollView.verticalRulerView`
 with a sibling `GutterScrollContainerView` that lays out a custom
 `LineNumberGutterView` next to the `NSScrollView`. User confirmed the
 text is now visible.

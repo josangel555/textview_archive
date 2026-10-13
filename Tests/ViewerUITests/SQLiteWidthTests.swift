@@ -3,7 +3,7 @@ import SwiftUI
 @testable import ViewerUI
 
 /// Column-width math for the SQLite results table (Batch B,
-/// commit 2457015). Tests the pure helper that auto-sizes columns
+/// commit 94fa823). Tests the pure helper that auto-sizes columns
 /// from header + cell samples and caps the runaway-wide case.
 @MainActor
 final class SQLiteWidthTests: XCTestCase {

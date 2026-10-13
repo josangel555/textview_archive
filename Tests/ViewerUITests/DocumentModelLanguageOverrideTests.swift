@@ -4,7 +4,7 @@ import XCTest
 @testable import ViewerKit
 
 /// Tests for `DocumentModel.languageOverrides` — the per-tab manual
-/// language picker added in commit 45abc87.
+/// language picker added in commit 332521e.
 ///
 /// Contract:
 ///   - `effectiveLanguage(forTabID:url:)` returns the auto-detected

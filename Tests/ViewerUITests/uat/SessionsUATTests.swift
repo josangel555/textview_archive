@@ -18,7 +18,7 @@ import Foundation
 /// tab capture & restore, sidebar re-root on switch) are now fully observable
 /// from a scripted run and are asserted hard below.
 ///
-/// **History (F-SESS-1, RESOLVED 2026-06-03 by commit 5b9d82e / SFB-10):** the
+/// **History (F-SESS-1, RESOLVED 2026-06-03 by commit 10da3d6 / SFB-10):** the
 /// façade layer used to be un-observable here because the lifecycle bridge
 /// (`SessionsCoordinator.setLifecycle` → tab reset + `hydrate` + sidebar
 /// re-root) was wired EXCLUSIVELY inside `SessionsAppCoordinator.bootstrap()`,

@@ -2,7 +2,7 @@ import XCTest
 @testable import ViewerCore
 
 /// Two explicit contract tests for the polish items flagged in
-/// commit bbae9d5's CR notes:
+/// commit d2f8a50's CR notes:
 ///
 ///   1. Date encoded with `.iso8601` strategy is **whole-second** —
 ///      sub-second precision is dropped by design. We pin this so a

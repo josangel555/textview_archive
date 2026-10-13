@@ -27,13 +27,13 @@ attribution P1.
 
 ## 2. Are you making commits?
 
-**Yes — 18 commits landed 2026-07-31..08-01 on local `main`** (head `adcebf7d`; e.g.
-`f711c2b8` hex hot-exit + AX catalog 16:52, `ebba3a8b` wikilinks 16:34, `f806c48c` conflict
-pre-confirm 15:54, `1bad80f4`/`0667f75e` AX tier 07-31, `a908439e` saved sessions,
-`5c45c04a` tab→session drag). Where the confusion likely came from: the **`icloud-backup`
-mirror was a month stale** (last push `84c4a2bd`, 07-05) — if you looked there (or at
+**Yes — 18 commits landed 2026-07-31..08-01 on local `main`** (head `1d5ee2dc`; e.g.
+`8bc4217e` hex hot-exit + AX catalog 16:52, `7cd44fd3` wikilinks 16:34, `18beed95` conflict
+pre-confirm 15:54, `74bd44d2`/`6ab96d25` AX tier 07-31, `deda8c8a` saved sessions,
+`0b57ff63` tab→session drag). Where the confusion likely came from: the **`icloud-backup`
+mirror was a month stale** (last push `12cbabfe`, 07-05) — if you looked there (or at
 `textview_dist`, which only gets release zips), you'd see nothing recent. **Realigned:** backup
-mirror pushed to `adcebf7d` now, and the SOP discipline line now includes pushing
+mirror pushed to `1d5ee2dc` now, and the SOP discipline line now includes pushing
 `icloud-backup` after each committed round so the mirror never lags again.
 
 ## 3. Why can't I select a variable and see all instances? Is that LSP?

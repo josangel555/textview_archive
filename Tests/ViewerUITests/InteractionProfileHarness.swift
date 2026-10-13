@@ -8,7 +8,7 @@ import ViewerKit
 /// HEADLESS PER-INTERACTION PROFILER (profiling-harness branch).
 ///
 /// PURPOSE: the owner reports the WHOLE UI went laggy *per-interaction*
-/// after the `b38ed03..0905416` batch — scrolling a 12KB Swift file,
+/// after the `e317a07..3c90d78` batch — scrolling a 12KB Swift file,
 /// sidebar hover highlight, expand/collapse, opening tool windows, basic
 /// navigation. At IDLE the app is silent (only parked threads), so the
 /// cost is main-thread work paid on each interaction: SwiftUI body

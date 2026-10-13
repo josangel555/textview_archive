@@ -40,7 +40,7 @@ the audit trail survives.
   save the modal fires). The dot just never re-renders.
 - **Root cause:** `EditorCoordinator.onReplaceTab = { tc.replace(at:with:) }`
   (`DocumentModel.swift:300`) fires only `tabCoordinator.objectWillChange`; PERF #1
-  severed `tabCoordinator → DocumentModel` forwarding, and the 61c1aef LOADBUG fix
+  severed `tabCoordinator → DocumentModel` forwarding, and the 82f97f1 LOADBUG fix
   re-published only at the async load completions, not the editor edit/save replace
   path. `TabBar` (`TabBar.swift:5`) observes only `@ObservedObject DocumentModel`,
   so it never re-bodies. The dot is rendered on `tab.isDirty` at `TabBar.swift:265`.
@@ -657,7 +657,7 @@ the audit trail survives.
   `Sources/ViewerUI/DocumentModel.swift:1168-1194`.
 
 ### BUG-027 · T4 session smokes pollute the user's real Sessions store (persist fires even under the clean-room flag)
-- **Severity:** S4 · **Kind:** quality · **Status:** FIXED (2026-06-19, TSK-1024, `0e5645e8`) — AppLauncher now sets `MDV_SESSIONS_DIR=<artifacts>/SessionsScratch` on both spawn paths (the `SessionStore.defaultDirectory` override was already on main); `defaultDirectory` made injectable + 3 host tests. So T4 session smokes write to per-run scratch, never the user's real store.
+- **Severity:** S4 · **Kind:** quality · **Status:** FIXED (2026-06-19, TSK-1024, `dd18a2d7`) — AppLauncher now sets `MDV_SESSIONS_DIR=<artifacts>/SessionsScratch` on both spawn paths (the `SessionStore.defaultDirectory` override was already on main); `defaultDirectory` made injectable + 3 host tests. So T4 session smokes write to per-run scratch, never the user's real store.
 - **Area:** Sessions — group 7/12 · **Smoke:** cross-cutting (test scratch / persistence)
 - **Repro:** Run any `session-open-folder` scripted scenario, then inspect
   `~/Library/Application Support/MarkdownViewer/Sessions/index.json` and the
@@ -778,7 +778,7 @@ the audit trail survives.
   lagging published copy). So a SELECTED lazy tab transits `.loading` (transient)
   then `.loaded` (settled) and can never appear `.empty` once selected; the
   "transient .empty" in the original evidence is stale, predating that synchronous
-  `.loading` flip. The model-republish load-bug fix (commit 61c1aef) is intact
+  `.loading` flip. The model-republish load-bug fix (commit 82f97f1) is intact
   (`updateDerived()` in the materialize completion, line 3022); the tab settles to
   `.loaded` and never lands in `.error`. The referenced test
   `test_PMA04_scriptVerbDispatch` already asserts on the SETTLED last dump

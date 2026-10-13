@@ -135,7 +135,7 @@ final class InfraInvariantTests: XCTestCase {
     /// AWAITED `addTeardownBlock`, never a detached `defer { Task { … } }`:
     /// the detached Task is never awaited, so the test (or the whole process)
     /// exits with sourcekit-lsp/fake-server children still alive. The fix
-    /// swapped every site (commit 6703798); this pin fails if any test file
+    /// swapped every site (commit 4556481); this pin fails if any test file
     /// reverts a process-reaping call to the fire-and-forget shape.
     func test_lspTestCleanup_neverFireAndForgetProcessReap() throws {
         let testsDir = Self.repoRoot.appendingPathComponent("Tests")

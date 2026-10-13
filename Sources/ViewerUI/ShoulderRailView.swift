@@ -136,11 +136,11 @@ struct ShoulderRailView: View {
         // `Palette.textBackground` — pure white in light mode, the SAME tone
         // as the sibling sidebar accordion — so the shoulder reads as a clean
         // continuation of the sidebar rather than a recessed grey activity
-        // bar (the prior `underPageBackground` from cca666b). Pure SwiftUI
+        // bar (the prior `underPageBackground` from a0b7ad8). Pure SwiftUI
         // chrome — no NSView nesting, so the compositor rule (LESSONS.md) is
         // untouched.
         //
-        // The risk this reintroduces is exactly what cca666b fixed: with a
+        // The risk this reintroduces is exactly what a0b7ad8 fixed: with a
         // matching-white background, the rail can visually merge into the
         // white sidebar and "vanish". We bound it WITHOUT going grey again by:
         //   (1) a STRONGER inner-edge separator (1.5pt, full separatorColor)

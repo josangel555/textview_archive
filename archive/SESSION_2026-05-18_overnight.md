@@ -8,18 +8,18 @@ tests, multi-agent review sweep with fixes applied. VM-canary final:
 
 | Commit | Subject |
 |---|---|
-| `30464f4` | fix: ModeBar picker overflow at high uiScale; ClaudeTimeline VoiceOver |
-| `e863291` | docs: LESSONS — Foundation URL portability + NSViewControllerRepresentable intrinsic-size |
-| `492fca5` | fix + test: review-agent findings (HIGH MediaPreview, MED engine reentrancy + loader portability, LOW transport perms/bound) |
-| `5b74676` | docs: BACKLOG — MCP research findings, defer swift-mcp dep |
-| `cccf487` | feat: walkthrough engine + loader + drop transport |
-| `582efd7` | ui: polish — file icons, glyph badges, scalable ModeBar picker |
-| `bbc57e6` | docs: TreeSitter lazy-load design + CLAUDE.md + BACKLOG |
-| `add8a5d` | perf: SourceGutterView digit-count → label size lookup |
-| `97134e7` | perf: CSV filter pre-lowercased rows cache |
-| `e5e659b` | perf: materializeIfNeeded off-main with .loading placeholder |
-| `d5b0bde` | fix: .md opens in narrow source strip on first interaction |
-| `7c0eb40` | fix: 6 bugs from code-quality audit (continued from prior session) |
+| `fed8eff` | fix: ModeBar picker overflow at high uiScale; ClaudeTimeline VoiceOver |
+| `9f4d41e` | docs: LESSONS — Foundation URL portability + NSViewControllerRepresentable intrinsic-size |
+| `4cbbad8` | fix + test: review-agent findings (HIGH MediaPreview, MED engine reentrancy + loader portability, LOW transport perms/bound) |
+| `08df588` | docs: BACKLOG — MCP research findings, defer swift-mcp dep |
+| `1711f2f` | feat: walkthrough engine + loader + drop transport |
+| `df734bd` | ui: polish — file icons, glyph badges, scalable ModeBar picker |
+| `49da010` | docs: TreeSitter lazy-load design + CLAUDE.md + BACKLOG |
+| `576ebaa` | perf: SourceGutterView digit-count → label size lookup |
+| `1564929` | perf: CSV filter pre-lowercased rows cache |
+| `b422ee2` | perf: materializeIfNeeded off-main with .loading placeholder |
+| `18378c9` | fix: .md opens in narrow source strip on first interaction |
+| `b2f6515` | fix: 6 bugs from code-quality audit (continued from prior session) |
 
 ## High-impact items
 

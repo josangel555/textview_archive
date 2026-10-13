@@ -1,9 +1,9 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — 2026-08-22 full day: UX batch + dead band + split-cycling fixes (23:00)
 
-**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ `55df2e66`
+**cwd:** /Users/me/Documents/workspaces/claude/markdown_viewer · main @ `de4c4aa0`
 (ALL CI-green; tree clean but for the 4 protected untracked: OwnerWishlist.md[.bak],
-Untitled.txt, archive/Untitled.txt — NEVER touch). /Applications = `1fa35538`-era
+Untitled.txt, archive/Untitled.txt — NEVER touch). /Applications = `6ce102b8`-era
 build (22:34). CI loop = background Monitor per commit; NEVER wait.
 tasked board OFFLINE — BACKLOG + commits are the record. **VM is RUNNING again**
 (restarted 22:20; AX suites 6/6 green on the final build).
@@ -15,25 +15,25 @@ tab-strip DEAD BAND root-cause, then the split-view tab-cycling repro fixes.
 (Earlier: startup 5.6s→0.53s, 2026-08-16.)
 
 ## Current state — all DONE & CI-green
-- **Dead band** (`0dafe31a`): the empty-NSToolbar traffic-light spacer laid a
+- **Dead band** (`e323c7c7`): the empty-NSToolbar traffic-light spacer laid a
   66pt invisible titlebar hit container over the 46pt session band — ~20px of
   the tab strip swallowed clicks ("dead spots right above the text"). Toolbar
   gone; `TrafficLightCenterer` (new file) repositions the standard buttons
   (~3px above perfect center due to the hit-test clamp — owner may comment).
-- **Split-view cycling** (`1fa35538`): ⌃Tab/⌘] now cycle within the FOCUSED
+- **Split-view cycling** (`6ce102b8`): ⌃Tab/⌘] now cycle within the FOCUSED
   pane's strip order while split (was flat store order — hopped panes, yanked
   focus, first responder fell to a session pill = the focus-ring screenshot).
   Chrome (chips+pills) `.focusable(false)` + `.focusEffectDisabled()`.
-- **Stuck-drag WATCHDOG** (`1fa35538`): heavy re-renders cancel DragGestures
+- **Stuck-drag WATCHDOG** (`6ce102b8`): heavy re-renders cancel DragGestures
   silently IN PLACE (no onEnded, no disappear, ids unchanged) — a 250ms
   physical-button poll now reaps any dead drag (state + pill highlight +
   click suppression). Kills the screenshot ghost from ANY cause.
-- **5-item batch** (`f95651ed`): drag-ghost guards, micro-drag click disarm,
+- **5-item batch** (`bec566ee`): drag-ghost guards, micro-drag click disarm,
   ALL NSCursor sites → `.pointerStyle` (CM6 flicker, I-07 ph2 done), stale
   previews (unfocused-pane watchers `syncPaneFileWatchers` + Split diskStamp;
   selected-tab chain PROVEN by `RenderedPreviewStalenessTests`), pill
   separator removed.
-- **Chrome-pin family migration COMPLETE** (`bae242bd`, `55df2e66`): under
+- **Chrome-pin family migration COMPLETE** (`86ad24af`, `de4c4aa0`): under
   the 18-worker gate, starved async stragglers + measurement-coupled pane
   chrome land benign bodies in retry windows — pins now hard-zero ONLY on
   model-only observers (StatusBar, BottomAttributesBar), ≤1 storm bounds on

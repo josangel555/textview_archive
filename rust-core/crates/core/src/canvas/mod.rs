@@ -8,7 +8,7 @@
 //! (the FFI-facing façade: state + tokens + root page).
 //!
 //! History: the M0 patch-loop spike engine (hardcoded 201-node demo doc,
-//! SetText/SetStyle mirror ops) lived here through commit 5401e5b0 and was
+//! SetText/SetStyle mirror ops) lived here through commit f13edc6d and was
 //! retired by the S5c FFI swap — the E2E suite now builds its content through
 //! the real op engine (TSK-1343 has the spike's verdict + numbers).
 

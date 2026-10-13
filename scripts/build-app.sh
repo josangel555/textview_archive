@@ -446,7 +446,7 @@ fi
 # ---- PRE-INSTALL LIVE-APP SMOKE GATE ----------------------------------
 # Drive the just-assembled (signed, lsregistered) bundle through the
 # (file type x view mode) matrix and assert the RIGHT content rendered in
-# the RIGHT view — the gap that let the fd11e61 "source won't load / Editor
+# the RIGHT view — the gap that let the 0bf6c36 "source won't load / Editor
 # shows HEX" regression ship (every other gate asserts on model state,
 # which stays self-consistent; the desync is purely in the realized view
 # tree, and the WKWebView-backed Editor/Rendered modes are #192-excluded

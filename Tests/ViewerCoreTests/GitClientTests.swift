@@ -123,7 +123,7 @@ final class GitClientTests: XCTestCase {
         XCTAssertTrue(GitClient(repoRoot: outside).status().isEmpty)
     }
 
-    // MARK: - diff (Batch C, commit db57c6a)
+    // MARK: - diff (Batch C, commit 24a9542)
 
     func test_diff_returns_unified_diff_for_modified_file() throws {
         // Stage a tracked file at HEAD, modify it, ask for diff.

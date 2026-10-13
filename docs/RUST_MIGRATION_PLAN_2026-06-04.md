@@ -3,7 +3,7 @@
 > Synthesized from a 6-agent mapping workflow (`wf_ae970068`: ViewerCore
 > inventory · DocumentModel anatomy · rust-core template · Swift↔Rust seam ·
 > one unprimed architect → ranked synthesis). Builds on the locked decisions in
-> `docs/RUST_CORE_MIGRATION.md §1` and the proven CSV beachhead (`ace7d5c`).
+> `docs/RUST_CORE_MIGRATION.md §1` and the proven CSV beachhead (`3e60cd3`).
 >
 > **Goal:** move as much pure/domain logic as possible out of Swift into the
 > Rust core so the SwiftUI app becomes a *projection*; the same core later backs
@@ -29,7 +29,7 @@
 
 | # | Slice | Purity | Value | Risk | New dep? | Phase |
 |---|---|---|---|---|---|---|
-| 1 | **CSV** parse+filter+session | pure | high | low | none | **DONE** (`ace7d5c`) |
+| 1 | **CSV** parse+filter+session | pure | high | low | none | **DONE** (`3e60cd3`) |
 | 2 | **CMEditApplier** (CodeMirror edit batch → string) | pure | high | low | none | A |
 | 3 | **Diff parsers** (unified-diff → hunks; → gutter marks) | pure | med | low | none | A |
 | 4 | **HexDumpBuilder + HexLayout + HexCaretMap** | pure | med | low | none | A |
@@ -160,13 +160,13 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
   Author golden corpora for HTMLRenderer / FileIconClassifier. Write the
   FindEngine ReDoS-placement decision.
   - **Slice #2 (CMEditApplier) — IN PROGRESS:**
-    - ✅ **Stage 1 (done, `0cead3c`):** `rust-core/.../cm_edit.rs` — UTF-16-correct
+    - ✅ **Stage 1 (done, `d6740a9`):** `rust-core/.../cm_edit.rs` — UTF-16-correct
       port (`Vec<u16>` + validating `from_utf16`), 11 cargo tests incl.
       astral/split-surrogate/overlap/OOB/CRLF. Core only; not FFI-exposed; Swift
       gate untouched.
-    - ✅ **Stage 2a (done, `0419c72`):** core `apply_wire` (serde request/response
+    - ✅ **Stage 2a (done, `85fb39c`):** core `apply_wire` (serde request/response
       + MessagePack frame in/out), 15 cm_edit cargo tests.
-    - ✅ **Stage 2b (done, `568ce40`):** the FIRST *stateless* FFI fn
+    - ✅ **Stage 2b (done, `8bde541`):** the FIRST *stateless* FFI fn
       `mdvcore_cm_apply` (cbindgen-exported) + `CoreClient.mdvCoreApplyCMEdits`
       (builds the request via the Swift→Rust encoder — its first end-to-end use)
       + `RustCMEditAdapter` behind `RustCoreFallback(.cmEdit)` (default-OFF,
@@ -175,7 +175,7 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
     - **Slice #2 COMPLETE** — and it established the reusable **Type-1 stateless
       template** (bytes-in/frame-out, no handle) for slices #3 (diff), #4–5
       (hex), #6 (fuzzy), #7 (indent).
-  - **Slice #3 (Diff parsers) — DiffParser COMPLETE** (`02fa9a2`/`057f220`/`0b292a5`):
+  - **Slice #3 (Diff parsers) — DiffParser COMPLETE** (`60514f0`/`b52b062`/`62d056e`):
     - ✅ Stage 1: `diff::parse` Rust port (File/Hunk/Line, 4-strategy path split,
       coord clamp), 13 cargo tests. Cleared deny-level `clippy::indexing_slicing`
       panics incl. two pre-existing in `cm_edit.rs`.
@@ -186,16 +186,16 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
       parity vs `DiffParserTests`. Only parsing moves; git subprocess stays Swift.
     - ⏳ `DiffHunkParser` (diff→gutter-mark flattener) NOT yet ported — lower value,
       queued behind slice #4.
-  - **Slice #4 (HEX dump render) COMPLETE** (`75fb1d7`): `hex::render_all` +
+  - **Slice #4 (HEX dump render) COMPLETE** (`9a97a5d`): `hex::render_all` +
     row math (`HexLayout` `rowCount`/`renderedRowLength`); FFI `mdvcore_hex_render`
     passes bytes by raw pointer and returns the dump as RAW UTF-8 (a 4 MB file
     renders to ~18 MB, so no MessagePack wrapping); `RustHexAdapter` behind `.hex`;
     12-case A/B vs `HexDumpBuilder.buildAll`. The chunked streaming fill stays Swift.
-  - **Slice #5 (HEX search) COMPLETE** (`24f1796`): `hex::hex_search_parse/find/
+  - **Slice #5 (HEX search) COMPLETE** (`d55e0c8`): `hex::hex_search_parse/find/
     search` + `hex_search_frame`; FFI `mdvcore_hex_search` returns a
     `{offsets:[u32]}` frame; `RustHexSearchAdapter` behind `.hexSearch`; 13-case
     A/B vs `HexSearchEngine.search`.
-  - **Slice #7 (IndentDetector) COMPLETE** (`17de8e3`): `indent::detect`; FFI
+  - **Slice #7 (IndentDetector) COMPLETE** (`12cb326`): `indent::detect`; FFI
     `mdvcore_indent_detect` (text by pointer, result raw UTF-8); `RustIndentAdapter`
     behind `.indent`; 13-case A/B vs `IndentDetector.detect`.
   - **No-dep Phase-A clean wave COMPLETE** (CSV, CMEdit, diff, hex render, hex
@@ -205,7 +205,7 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
     grapheme vs Rust scalar index domains) — default is leave-in-Swift; **#8
     FileIconClassifier** is low value with a 290-line drift-prone table + a
     ViewerKit `FileIconKind` type RustCore can't import.
-  - **DiffHunkParser (slice #3 gutter half) COMPLETE** (`dad890d`):
+  - **DiffHunkParser (slice #3 gutter half) COMPLETE** (`fff0d3e`):
     `diff::DiffMark` + `hunk_marks` + `hunk_marks_wire`; FFI
     `mdvcore_diff_hunk_marks`; `RustDiffAdapter.hunkMarks` on the `.diff` gate;
     9-case A/B vs `DiffHunkParser.parse`. **Slice #3 fully ported.**

@@ -7,7 +7,7 @@
 # workspace `[workspace.lints]` table DENIES indexing_slicing / panic /
 # unwrap_used / expect_used in non-test code (the core is sans-panic by design),
 # but with nothing invoking clippy those denies were dead letters — two
-# panic-capable slices in cm_edit.rs shipped (0cead3c) before clippy ever ran.
+# panic-capable slices in cm_edit.rs shipped (d6740a9) before clippy ever ran.
 # And the 65+ pure cargo tests never gated a merge.
 #
 #   * `cargo clippy` exits non-zero on the DENY-level lints (the no-panic

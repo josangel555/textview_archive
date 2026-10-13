@@ -4,7 +4,7 @@ import XCTest
 @testable import ViewerKit
 
 /// Tests for `DocumentModel.showGitPanel(tab:)` — the View-menu wiring
-/// added in commit c3200e8. It must bump `gitPanelFocusRequest` (so
+/// added in commit d8cf789. It must bump `gitPanelFocusRequest` (so
 /// SwiftUI's value-blind publish doesn't swallow repeat asks) and
 /// publish `gitPanelDesiredTab`. Model-only — the actual panel
 /// expansion happens inside `GitPanelSection` which observes both.

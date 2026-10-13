@@ -2,7 +2,7 @@
 
 **Dimension:** Logic errors — inverted conditions, wrong ranges, bad math, wrong string/offset
 handling (UTF-16 vs Character vs bytes), state machines with unreachable/absorbing states.
-**Date:** 2026-07-10 · **Repo @** `main` (working tree; last commit `92c72206`)
+**Date:** 2026-07-10 · **Repo @** `main` (working tree; last commit `304a8290`)
 
 ## Executive summary
 

@@ -6,7 +6,7 @@ Two SPIKES, one doc (they share the same evidence base):
 - **TSK-788** — Test-suite audit: scope + depth + ranked gap list.
 
 Spike + design auto-approved (owner, 2026-06-13). Investigated **empirically**
-(grep/read of the live tree at commit `25462cf`); no tests were run, no files
+(grep/read of the live tree at commit `809bb2f`); no tests were run, no files
 mutated. Where this overlaps the prior `docs/TEST_AUDIT_2026-06-07.md`, that doc
 is cited and its drifted numbers are refreshed here.
 
@@ -279,7 +279,7 @@ with exactly one automated instance.**
 
 ---
 
-*Evidence: grep/read of the tree at `25462cf` on 2026-06-13. Cross-refs:
+*Evidence: grep/read of the tree at `809bb2f` on 2026-06-13. Cross-refs:
 `docs/TEST_AUDIT_2026-06-07.md`, `Tests/ViewerUITests/Harness/TierBaseCases.swift`,
 `Tests/ViewerUITests/Harness/TierGateObserver.swift`,
 `scripts/test-headless-gate.sh`, `.github/workflows/pr.yml`,

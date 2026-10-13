@@ -1,6 +1,6 @@
 # Pre-launch product review — Crash situations + consequences
 
-Date: 2026-07-10 · Reviewer: crash-dimension audit agent · Repo state: `main` @ `92c72206` (+ uncommitted WIP in `main.swift` / `MCPSocketBridge.swift`, reviewed as-is)
+Date: 2026-07-10 · Reviewer: crash-dimension audit agent · Repo state: `main` @ `304a8290` (+ uncommitted WIP in `main.swift` / `MCPSocketBridge.swift`, reviewed as-is)
 
 ## Executive summary
 

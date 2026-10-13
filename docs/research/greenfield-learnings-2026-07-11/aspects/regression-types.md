@@ -8,7 +8,7 @@ guard classes would have caught each earliest and cheapest.
 `.../scaling-limits.md`; `docs/research/greenfield-learnings-2026-07-11/summaries/commits/{INDEX,c-15of19}.md`;
 `LESSONS.md` (compositor bug §890-1030, terminal-tab-strip §3061-3090, CSV 1MB→1GB §1535-1560,
 markdown 4MB cap §1902); `CLAUDE.md` root-cause-discipline + compositor-occlusion sections;
-`git log` (`847b7921`, `47489558`).
+`git log` (`e4429513`, `2bf2d4f8`).
 
 ---
 
@@ -20,16 +20,16 @@ markdown 4MB cap §1902); `CLAUDE.md` root-cause-discipline + compositor-occlusi
 **Severity:** P1 (when the missing tail is a data-safety fallback) down to P2/P3 (dead menu).
 
 - `ConflictResolutionView.swift` + `DocumentModel.beginConflictResolution` — **0 callers**,
-  built and host-tested (`f9127559`), but the live auto-merge path (`5ed63734`) that needed
+  built and host-tested (`3755420f`), but the live auto-merge path (`498ecdc1`) that needed
   it as its escape hatch ships without it. A real overlapping edit still forces a lossy
   keep-mine/reload-theirs binary choice — the exact scenario the feature exists to protect.
   (`regressions.md` P1 #2.)
 - `activeContentMenu` (`DocumentModel.swift:2153`) — computed, host-tested, **0 UI consumers**;
-  the commit itself says "the live dynamic NSMenu is the AppKit tail" (`9addfda8`).
+  the commit itself says "the live dynamic NSMenu is the AppKit tail" (`5fda425a`).
   (`regressions.md` P2 #4.)
 - `allowHTMLNetwork`/`revokeHTMLNetwork` — CSP-escalation core built and security-tested,
   **0 callers** outside the definition; no grant UI exists so a user cannot use the feature
-  at all (`8253d8cb`). Fail-closed, so not a security hole — but reads as shipped on the
+  at all (`348ff57c`). Fail-closed, so not a security hole — but reads as shipped on the
   board while inert on screen. (`regressions.md` P2 #3.)
 - `TSK-956` Audio-plugin hosting: the discovery layer (`AudioUnitInventory` etc.) shipped and
   the epic was marked `fixed`; the headline capability (live `AVAudioEngine` hosting) was
@@ -48,7 +48,7 @@ user cannot reach it (`regressions.md` P2 #5, "systemic pattern").
 path that flips default-on before its documented fallback is proven).
 **Severity:** P1 — flips into the hot/default render path.
 
-- `847b7921` flips `domPatchEnabled` to default-ON (opt-out `MDV_DOM_PATCH=0`) to kill a
+- `e4429513` flips `domPatchEnabled` to default-ON (opt-out `MDV_DOM_PATCH=0`) to kill a
   2-9s reload storm. `BlockPatchJS.swift` documents *"the Swift caller treats `false` as
   fall back to loadHTMLString … non-regressing by construction."* The actual caller
   (`MarkdownRenderedView.tryApplyDOMPatch`) fires `evaluateJavaScript(..., completionHandler:
@@ -60,8 +60,8 @@ path that flips default-on before its documented fallback is proven).
 - The commit message itself flags "re-run as the agentic UAT" — i.e. the confirming UAT was
   not done at flip time, and the flip shipped ahead of its own validation gate.
 
-**Mechanism:** a flag went from default-OFF, tested (`47489558`, TSK-1183 slice B) to
-default-ON (`847b7921`) on a *perf* justification without an equivalent audit of the
+**Mechanism:** a flag went from default-OFF, tested (`2bf2d4f8`, TSK-1183 slice B) to
+default-ON (`e4429513`) on a *perf* justification without an equivalent audit of the
 *documented* safety contract — the contract was written in a comment, never asserted by a
 test, and the implementation silently diverged from the comment.
 
@@ -103,9 +103,9 @@ alone, c-15), not correctness risk once actually fixed.
   `didFinish` → SwiftUI re-eval → `Task` hop → render) where no single stage owned the
   state. Fix strategy evolved sequence-patch → fallback-read → finally collapsed to a
   single pull-based source of truth (`tab.renderedScrollY`), landing in ~5 lines
-  (`a28a5a35`) once found. Test-harness debugging (async-await continuation bridge, probe
+  (`fd353f63`) once found. Test-harness debugging (async-await continuation bridge, probe
   timeout scaling) consumed most of the 13 commits — proving the *test vehicle itself* was
-  the wrong tool before the real render-layer fix (`1e339e9c`) landed.
+  the wrong tool before the real render-layer fix (`ea974b0f`) landed.
 - **TSK-1243 (UAT env-delivery, 11 commits, 10+ VM round-trips):** `LaunchServices open
   --env` silently drops env vars under `sudo -u` (the VM GUI lane). Three sequential wrong
   theories (ProcessInfo snapshot, `getenv`, `didFinishLaunching` timing) before the actual

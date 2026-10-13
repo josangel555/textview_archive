@@ -535,7 +535,7 @@ final class DocumentModelTests: XCTestCase {
         if case .empty = model.currentState {} else {
             XCTFail("expected .empty initial state")
         }
-        // App was renamed to TextView (commit dab1759); ensure the
+        // App was renamed to TextView (commit d58d716); ensure the
         // default window title matches what users see in Finder.
         XCTAssertEqual(model.windowTitle, "TextView")
     }
@@ -1063,7 +1063,7 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertTrue(model.sourceFindIsRegex)
     }
 
-    // MARK: - HEX state routing (Batch A, commit d175548)
+    // MARK: - HEX state routing (Batch A, commit ea89818)
 
     /// Picking HEX on a text-loaded tab must request a binary load.
     /// Pre-Batch-A this only fired from `.loaded` state; the new code
@@ -1133,7 +1133,7 @@ final class DocumentModelTests: XCTestCase {
             return false
         }
         XCTAssertTrue(bIsBinary,
-                      "HEX must persist across file switch — bug fixed in d175548")
+                      "HEX must persist across file switch — bug fixed in ea89818")
     }
 
     // MARK: - Media file: HEX round-trip restores `.preview` state

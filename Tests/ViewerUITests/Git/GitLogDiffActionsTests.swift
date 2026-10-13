@@ -18,7 +18,7 @@ final class GitLogDiffActionsTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         repo = try GitTestRepo.makeRepo(prefix: "GitLogActions", email: "t@t", name: "t")
-        // SALT the fixture content (CI reds 3e54d32d/83a31470/f3e0d600, root-
+        // SALT the fixture content (CI reds 658a1c67/4bb50669/9f55431e, root-
         // caused via the assert diagnostics): identical content + author +
         // same-second commit timestamps produce IDENTICAL SHAs across the
         // parallel gate's xctest PROCESSES, and the diff cache path is the
@@ -200,7 +200,7 @@ final class GitLogDiffActionsTests: XCTestCase {
         GitLogDiffActions.maxDiffBytes = 64
         defer { GitLogDiffActions.maxDiffBytes = old }
 
-        // CI-flake hardening (2026-08-01, CI 3e54d32d): under the parallel
+        // CI-flake hardening (2026-08-01, CI 658a1c67): under the parallel
         // sweep a transient git SPAWN failure makes commitDiff return "" (the
         // `try? run` contract), which writes an EMPTY diff — that's load, not
         // a truncation regression. Retry the click (idempotent — same sha
@@ -209,7 +209,7 @@ final class GitLogDiffActionsTests: XCTestCase {
         // A REAL commitDiff of this fixture is >200 B (40-char sha line +
         // author/date/subject + the patch). Under gate load git can emit a
         // partial/empty shred (spawn failure or a partial pipe drain — CI reds
-        // 3e54d32d + 83a31470, different shapes of the same environmental
+        // 658a1c67 + 4bb50669, different shapes of the same environmental
         // class); treat anything ≤100 B as a failed ATTEMPT and retry. The
         // teeth survive: a truncation regression produces a LARGE body with
         // no notice, which no retry can turn green.

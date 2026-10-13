@@ -38,7 +38,7 @@ Earlier follow-ups still open: **TSK-1018** tmux live PTY+render (VM-tail), **TS
 - **Very-large / aspirational:** 689 PinBoard · 694 log-clustering · 695 credential-handling · 700 collaboration · 702 Mac-intelligence · 774 Music · 687/693/699 agent-integrations · 250/256/409 web-port tail.
 
 ## ✅ DONE / LANDED (bottom — for record)
-- **The ultracode wave** (~117 commits, `bd1f8ca`→`main`, gate-green, shipped) — Bugs (894/895/896/910/921/948/1008/1016/1017…), cheap+medium Features (912/302/303/668/811/746/358/264/305/319/677/685/708/670/676/727…), epics' foundations (704/711/712/713/716/717/722/723/706/703/749/754…). All at `fixed`/`review` (your in-app close, or a VM pass).
+- **The ultracode wave** (~117 commits, `510efc5`→`main`, gate-green, shipped) — Bugs (894/895/896/910/921/948/1008/1016/1017…), cheap+medium Features (912/302/303/668/811/746/358/264/305/319/677/685/708/670/676/727…), epics' foundations (704/711/712/713/716/717/722/723/706/703/749/754…). All at `fixed`/`review` (your in-app close, or a VM pass).
 - **Security review wave (965–1015)** — all landed; **965/966/967/968/976/987 `validated`** (proof-backed); rest `fixed`.
 - **Rust-core migration** — ports 630/631/632/633 + contract 634 + highlight 660 + flips 645–648 + remote-core 652/655/661 + envelope 580 — **all `validated`/`fixed`**. (583 `wontdo`.)
 - **S2/S3 audit batch (116–159)** — ~44 ReDoS/path-traversal/leak/OOM/UAF/contract fixes — **`validated`**.

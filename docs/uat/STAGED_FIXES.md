@@ -3,8 +3,8 @@
 Run `wf_7f6adec6-3ab` (2026-06-03). Each fix is committed to its own branch; worktrees reaped (55GB reclaimed). Full repro/root-cause per bug: `UAT_BUGS.md`. Report: `docs/uat/UAT_REPORT_undated.md`.
 
 ## Already landed on `main`
-- `136883e` — BUG-019 (off-menu .rendered clamp, gate-green)
-- `5ed7c85` — BUG-021 (dirty-close script verb)
+- `6f21d7d` — BUG-019 (off-menu .rendered clamp, gate-green)
+- `2b54f37` — BUG-021 (dirty-close script verb)
 
 ## Prerequisite to land the rest
 The host headless gate is red on KNOWN-unrelated failures (#201 macOS-26 MarkdownLinkPolicy + FoldBench/CrossFileSearchBench parallel flakes). Quarantine/guard those, then rebase+ff each vetted branch.
@@ -50,6 +50,6 @@ The host headless gate is red on KNOWN-unrelated failures (#201 macOS-26 Markdow
 | `-79` | BUG-031 | `7368929` |
 
 ## FINAL OUTCOME (2026-06-03 13:19) — 27 fixes landed on main, gate GREEN
-- Bulk-landed (cherry-pick + gate-verified): 49,51,52,53,55,57,59,60,61,62,65,66,67,68,69,70,71,73,74,75,77,78 (22) + earlier 47(BUG-007),58(BUG-011),#201 + run-landed 136883e(BUG-019),5ef...(BUG-021). All redundant fixer branches reaped (content on main).
+- Bulk-landed (cherry-pick + gate-verified): 49,51,52,53,55,57,59,60,61,62,65,66,67,68,69,70,71,73,74,75,77,78 (22) + earlier 47(BUG-007),58(BUG-011),#201 + run-landed 6f21d7d(BUG-019),5ef...(BUG-021). All redundant fixer branches reaped (content on main).
 - **5 HELD for manual reconcile (branches kept):** -54 BUG-010 off-menu clamp (overlaps landed BUG-007/019 guards — worth reconciling, completes the family); -64 BUG-027 sessions-store (overlaps -62); -63 BUG-013 (redundant dup of landed -51 wireLifecycle — likely droppable); -50 BUG-023 + -79 BUG-031 (comment-only scope notes, trivial).
 - 1 non-bug (-72 BUG-032).

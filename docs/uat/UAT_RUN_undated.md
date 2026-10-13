@@ -3,7 +3,7 @@
 Append-only per-smoke run log. Each UAT executor group appends its own
 section; never overwrite a prior group's entry.
 
-App under test: `dist/TextView.app` @ `main 798b7ee` (build 2026-06-03).
+App under test: `dist/TextView.app` @ `main c2eac32` (build 2026-06-03).
 Driven live + occluded (`MDV_BACKGROUND=1`) via the `--script` verb
 dispatcher; one `DiagnosticDump` JSON per step. a11y ids (`mdv.*`) do NOT
 propagate onto `NSView.accessibilityIdentifier()` in the dump (confirmed via
@@ -427,7 +427,7 @@ levers the rigid assertions don't introspect at the view-geometry level:
 ## Group 2/12 — sidebar-filetree-and-bookmarks — RE-RUN / VERIFY (fresh)
 
 - **When:** fresh re-run, same session date 2026-06-03.
-- **App under test:** `dist/TextView.app` @ `main 798b7ee` (live, occluded via `MDV_BACKGROUND=1`, `MDV_SKIP_WORKSPACE_RESTORE=1`).
+- **App under test:** `dist/TextView.app` @ `main c2eac32` (live, occluded via `MDV_BACKGROUND=1`, `MDV_SKIP_WORKSPACE_RESTORE=1`).
 - **Suite:** `Tests/ViewerUITests/uat/SidebarFileTreeAndBookmarksUATTests.swift` (already authored by the prior run; compiled ONCE via `swift build --build-tests`, then run live).
 - **Command:** `env -u MDV_HEADLESS_GATE swift test --filter 'ViewerUITests.SidebarFileTreeAndBookmarksUATTests'`
 - **Result:** **10/10 tests PASSED** in 47.9s. No regressions vs the prior run.
@@ -814,8 +814,8 @@ MANUAL / VM beats.
 Both stem from the **same severed publish path**: `EditorCoordinator.onReplaceTab`
 is wired as `{ [tc] idx, tab in tc.replace(at: idx, with: tab) }`
 (`DocumentModel.swift:300`), which fires only `tabCoordinator.objectWillChange`.
-PERF #1 (`fd11e61` era) severed `tabCoordinator.objectWillChange →
-DocumentModel.objectWillChange` forwarding; the `61c1aef` LOADBUG fix re-added an
+PERF #1 (`0bf6c36` era) severed `tabCoordinator.objectWillChange →
+DocumentModel.objectWillChange` forwarding; the `82f97f1` LOADBUG fix re-added an
 explicit `updateDerived()` republish **only at the three async load completions**,
 NOT on the editor edit/save replace path. `TabBar` and `StatusBar` observe ONLY
 `@ObservedObject DocumentModel`, so neither re-bodies when an editor edit/save

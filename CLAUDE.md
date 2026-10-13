@@ -273,8 +273,6 @@ ViewerCoreTests is the unambiguous host-safe target).
     `cargo build` on the VM.
   - The VM has no git remote — it's an rsync mirror. Do not
     `git pull` on the VM.
-- **VM credentials**: host `macOS15`, user `vm-tester@<vm-ip>`,
-  sudo password `<vm-sudo-password>`. Safe to `sudo -S` over ssh.
 
 ## Project-specific
 

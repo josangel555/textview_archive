@@ -98,7 +98,7 @@ The single highest-leverage item is the **shared core sink** (last section). Eve
 
 ### Terminal tool window with tabs ("a must")
 
-**Status today.** Does not exist. Grep confirms no pty/`openpty`/`forkpty`/shell-spawn-for-interactive anywhere. There **is** a "Open in Terminal" context-menu action (BACKLOG, commit `94e130d`) but that shells out to **Terminal.app** — it's not an embedded terminal. `ProcessRunner` (`ProcessRunner.swift`) runs one-shot drain-to-EOF processes, the opposite of an interactive pty.
+**Status today.** Does not exist. Grep confirms no pty/`openpty`/`forkpty`/shell-spawn-for-interactive anywhere. There **is** a "Open in Terminal" context-menu action (BACKLOG, commit `7530130`) but that shells out to **Terminal.app** — it's not an embedded terminal. `ProcessRunner` (`ProcessRunner.swift`) runs one-shot drain-to-EOF processes, the opposite of an interactive pty.
 
 **Root cause / gap.** No PTY layer, no terminal emulator, no ANSI/VT parser. This is a from-scratch subsystem, not an extension of anything present.
 

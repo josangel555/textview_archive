@@ -111,7 +111,7 @@ final class InteractionDeepTests: HeadlessMultiScenarioTestCase {
                         zoom-in
                         open \(b.path)
                         """) { dumps, file, line in
-                // Post mode-normalization flake (commit 169a4de) resolved
+                // Post mode-normalization flake (commit 3a70c3f) resolved
                 // 2026-05-18 — see BACKLOG.md. A step-dump count mismatch is
                 // now a real regression, so assert it precisely; early-return
                 // so the p[3]/p[4] indexing below can't trap on a short array.

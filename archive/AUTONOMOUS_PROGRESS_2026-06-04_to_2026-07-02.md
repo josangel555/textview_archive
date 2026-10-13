@@ -5,7 +5,7 @@
 
 - **[sheets] TSK-1141 slice 3 — sheet-tabs view (SpreadsheetView).** A horizontal sheet-tab strip above `CSVTableView`, shown only when `file.xlsxSheets.count > 1` (the ContentView `.table` branch); a tab-click sets `activeSheet` → `TextFile.withActiveSheet` (host-tested, slices 1+2) re-derives the grid text. Both the strip and the grid are SwiftUI (no compositor-occlusion ordering concern). The split-pane table path is ext-based (csv/tsv only, no TextFile) and doesn't grid xlsx → correctly out of scope; only ContentView is wired. Host-gate-green (compiles + no regression); the switch LOGIC is host-tested (withActiveSheet). RENDER-CONFIRM (the tab strip appears + switches for a multi-sheet xlsx) is the T4-structural VM tail → staying at progress until VM-validated (per the render-confirm directive — not claiming it on host-compile alone). AX id `mdv.sheetTab.<i>` / `mdv.sheetTabStrip` for the structural check.
 
-- **[sheets] TSK-1141 slices 1+2 — multi-sheet xlsx host model (design-first, then built).** Design (docs/SPREADSHEET_MULTISHEET_DESIGN.md, eeb39117) confined the high-blast file-representation concern (the xlsx tab held only a flattened sheet-0 CSV-String; `file.contents`-as-String is load-bearing across save/find/dirty/editor) to an ADDITIVE, String-contract-safe build. Slices 1+2 (the model) shipped: `TextFile.xlsxSheets: [XLSXSheet]?` (additive, defaulted init param → low-blast; reuses the existing Sendable XLSXSheet; excluded from Equatable so no SwiftUI diff-churn) retains ALL sheets (verified XLSXDocument.load parses every sheet — the "v1 single sheet" doc-comment was stale) + a pure `withActiveSheet(_:)` re-deriving `contents` from the chosen sheet via the existing tabSeparated (out-of-range/no-sheets → unchanged) + the load-wiring (`xlsxSheets: workbook.sheets`). `contents` stays the active sheet's TSV so save/find/dirty/editor are unchanged. Host-tested: TextFileMultiSheetTests (3/0 — re-derive + out-of-range + non-spreadsheet no-op); headless gate green. Slice 3 (a sheet-tabs view reading `xlsxSheets` + calling `withActiveSheet`) is the T4-structural render-tail; slice 4 (recalc) reuses the done FormulaEngine. The xlsx WRITE round-trip is the explicitly-deferred gotcha (currently saves the active sheet as CSV).
+- **[sheets] TSK-1141 slices 1+2 — multi-sheet xlsx host model (design-first, then built).** Design (docs/SPREADSHEET_MULTISHEET_DESIGN.md, 5494c381) confined the high-blast file-representation concern (the xlsx tab held only a flattened sheet-0 CSV-String; `file.contents`-as-String is load-bearing across save/find/dirty/editor) to an ADDITIVE, String-contract-safe build. Slices 1+2 (the model) shipped: `TextFile.xlsxSheets: [XLSXSheet]?` (additive, defaulted init param → low-blast; reuses the existing Sendable XLSXSheet; excluded from Equatable so no SwiftUI diff-churn) retains ALL sheets (verified XLSXDocument.load parses every sheet — the "v1 single sheet" doc-comment was stale) + a pure `withActiveSheet(_:)` re-deriving `contents` from the chosen sheet via the existing tabSeparated (out-of-range/no-sheets → unchanged) + the load-wiring (`xlsxSheets: workbook.sheets`). `contents` stays the active sheet's TSV so save/find/dirty/editor are unchanged. Host-tested: TextFileMultiSheetTests (3/0 — re-derive + out-of-range + non-spreadsheet no-op); headless gate green. Slice 3 (a sheet-tabs view reading `xlsxSheets` + calling `withActiveSheet`) is the T4-structural render-tail; slice 4 (recalc) reuses the done FormulaEngine. The xlsx WRITE round-trip is the explicitly-deferred gotcha (currently saves the active sheet as CSV).
 
 - **[image][perf] TSK-1049 — off-main image render (completes the P0 perf foundation).** The image editor's debounced slider render (scheduleRender) ran the CoreImage tonal pipeline + the O(W*H) histogram on @MainActor — so a large image FROZE the UI on each slider-settle (the owner's "clunky / lots of sync ops" pain). Moved it off-main: scheduleRender now awaits a new `performRenderOffMain()` that runs Renderer.render + Renderer.histogram on a `Task.detached(priority:.userInitiated)` and publishes rendered/histogram back on the main actor, with a post-await `Task.isCancelled` check so a superseded render's stale result is dropped. CGImage crosses the actor boundary via a documented `UncheckedSendableImage` (@unchecked Sendable — CGImage is immutable/thread-safe); ImageDocument + Histogram are already Sendable. The sync `render()` stays for immediate discrete commits (crop/resize/reset). Host-tested: TSK1049OffMainRenderTests pins OUTPUT PARITY (off-main histogram == sync histogram, i.e. identical pixels) + an end-to-end smoke (2/0). The other P0 parts were already done (cached `sharedCIContext`, debounce, cancellation, off-main save) — this completes the foundation.
 
@@ -39,25 +39,25 @@
 
 - **[walkthrough] TSK-1326 — walkthrough authoring guide + validated sample (owner "authoring is opaque").** Existing docs (WALKTHROUGH.md/_DESIGN_v2) cover design but not a practical "how do I make one"; the only example (Tests/Fixtures/sample.json) wasn't user-discoverable. Added: docs/WALKTHROUGH_AUTHORING.md (the format — schema/id/title/rootHint/steps; the action-kind table narrateOnly/openFile/highlightRange/addBookmark/diagram[ascii|image|mermaid]; where files go [the Walkthroughs/ Application Support dir → the browser]; the rootHint/trustedRoot path-fencing security; the loader + error cases) + docs/examples/sample-walkthrough.json (a copy-and-edit starter using the confirmed action kinds). Host-tested (WalkthroughAuthoringSampleTests loads the DOCUMENTED sample via WalkthroughLoader → asserts it parses + unique step ids, so the guide's example can't rot). The discoverable in-app authoring entry (a UI affordance) is a follow-on slice.
 
-- **[audio] TSK-1323/1324 — audio extract/convert view-model (slice 1, host-completable).** The AudioExporter.transcodeArgs/transcodeFile primitive (ffmpeg argv per AudioExportSpec; dropVideo=extract) was host-done (f5ca0622). Built the shared controller AudioConvertViewModel (@MainActor) — one VM serves both extract (dropVideo:true, TSK-1323) + convert (false, TSK-1324): target format/bitRate over a source URL, convert() runs transcodeFile OFF-MAIN → output URL; availableFormats / isBitRateMeaningful (lossy-only) drive the picker; ffmpeg-unavailable surfaces a graceful lastError (ffmpeg is best-effort). Host-tested (AudioConvertViewModelTests: bit-rate-meaningful tracks lossiness, ffmpeg-unavailable/bad-source → graceful error + no crash, dropVideo distinguishes extract/convert). **Slice 2 (the UI):** AudioConvertView (format picker + bit-rate picker [lossy only] + Extract/Convert→new-tab + error; one panel, the title/action follow dropVideo) · DocumentModel showAudioConvert/audioConvertVM + openExtractAudio()/openConvertAudio() (isVideoFile/isAudioFile guards) + openConvertedAudio() · ContentView .sheet · View ▸ Extract Audio from Video… / Convert Audio… menu items. Render guard AudioConvertHostingTests (host AudioConvertView → the format NSPopUpButton renders WAV/AIFF/CAF/AAC/MP3). Drives TSK-1323 + TSK-1324 → validated after the VM run.
+- **[audio] TSK-1323/1324 — audio extract/convert view-model (slice 1, host-completable).** The AudioExporter.transcodeArgs/transcodeFile primitive (ffmpeg argv per AudioExportSpec; dropVideo=extract) was host-done (9c206397). Built the shared controller AudioConvertViewModel (@MainActor) — one VM serves both extract (dropVideo:true, TSK-1323) + convert (false, TSK-1324): target format/bitRate over a source URL, convert() runs transcodeFile OFF-MAIN → output URL; availableFormats / isBitRateMeaningful (lossy-only) drive the picker; ffmpeg-unavailable surfaces a graceful lastError (ffmpeg is best-effort). Host-tested (AudioConvertViewModelTests: bit-rate-meaningful tracks lossiness, ffmpeg-unavailable/bad-source → graceful error + no crash, dropVideo distinguishes extract/convert). **Slice 2 (the UI):** AudioConvertView (format picker + bit-rate picker [lossy only] + Extract/Convert→new-tab + error; one panel, the title/action follow dropVideo) · DocumentModel showAudioConvert/audioConvertVM + openExtractAudio()/openConvertAudio() (isVideoFile/isAudioFile guards) + openConvertedAudio() · ContentView .sheet · View ▸ Extract Audio from Video… / Convert Audio… menu items. Render guard AudioConvertHostingTests (host AudioConvertView → the format NSPopUpButton renders WAV/AIFF/CAF/AAC/MP3). Drives TSK-1323 + TSK-1324 → validated after the VM run.
 
-- **[image] TSK-1325 — image-convert view-model (slice 1, host-completable).** The Exporter.convert primitive (decode→re-encode, 6 formats + quality) was host-done (5bd739dd); built the controller layer toward the convert UI: ConvertImageViewModel (@MainActor) holds the target format/quality over a source URL, convert() runs Exporter.convert OFF-MAIN (Task.detached — a large image won't block the main thread) → writes a temp file → returns the URL (the caller opens it in a new tab); availableFormats / isQualityMeaningful (tracks format lossiness) drive the picker; errors surface as lastError. Host-tested (ConvertImageViewModelTests: png→jpeg produces a valid JPEG, missing-source surfaces an error, quality-meaningful tracks lossiness). **Slice 2 (the UI, the console template):** ConvertImageView (format picker + quality slider [lossy only] + Convert→new-tab + error line) · DocumentModel showConvertImage/convertImageVM + openConvertImage() (seeds from the active image tab; isConvertibleImage extension guard) + openConvertedImage() (openInNewTab) · ContentView .sheet · View ▸ Convert Image… menu. Render guard ConvertImageHostingTests (host ConvertImageView → the format NSPopUpButton renders with PNG/JPEG/HEIC/BMP/GIF/TIFF) + isConvertibleImage host test. Drives TSK-1325 → validated after the VM run.
+- **[image] TSK-1325 — image-convert view-model (slice 1, host-completable).** The Exporter.convert primitive (decode→re-encode, 6 formats + quality) was host-done (a1927c2b); built the controller layer toward the convert UI: ConvertImageViewModel (@MainActor) holds the target format/quality over a source URL, convert() runs Exporter.convert OFF-MAIN (Task.detached — a large image won't block the main thread) → writes a temp file → returns the URL (the caller opens it in a new tab); availableFormats / isQualityMeaningful (tracks format lossiness) drive the picker; errors surface as lastError. Host-tested (ConvertImageViewModelTests: png→jpeg produces a valid JPEG, missing-source surfaces an error, quality-meaningful tracks lossiness). **Slice 2 (the UI, the console template):** ConvertImageView (format picker + quality slider [lossy only] + Convert→new-tab + error line) · DocumentModel showConvertImage/convertImageVM + openConvertImage() (seeds from the active image tab; isConvertibleImage extension guard) + openConvertedImage() (openInNewTab) · ContentView .sheet · View ▸ Convert Image… menu. Render guard ConvertImageHostingTests (host ConvertImageView → the format NSPopUpButton renders with PNG/JPEG/HEIC/BMP/GIF/TIFF) + isConvertibleImage host test. Drives TSK-1325 → validated after the VM run.
 
-- **[image] TSK-1306 — New-Image entry point on the New-Tab landing, render guard.** The action (newBlankImageForLanding → BlankImageCreator) was host-tested + the empty-state "New Image" button added (f767a564), at review on a VM-tail note. EmptyStateView is a separable internal struct → in-process-hostable. Added EmptyStateNewImageHostingTests: host EmptyStateView(model:) → assert an NSButton with title "New Image" (or AX id mdv.emptyState.newImage) renders, + New File still renders alongside. Registered in the webview lane. Drives TSK-1306 → validated after the VM run.
+- **[image] TSK-1306 — New-Image entry point on the New-Tab landing, render guard.** The action (newBlankImageForLanding → BlankImageCreator) was host-tested + the empty-state "New Image" button added (2c606d35), at review on a VM-tail note. EmptyStateView is a separable internal struct → in-process-hostable. Added EmptyStateNewImageHostingTests: host EmptyStateView(model:) → assert an NSButton with title "New Image" (or AX id mdv.emptyState.newImage) renders, + New File still renders alongside. Registered in the webview lane. Drives TSK-1306 → validated after the VM run.
 
-- **[audio] TSK-1308 — audio survives a session/tab switch, render guard (user bug "switching session stops music").** Fix (52d37b7f): app-level AudioPlaybackController.shared owns the AVPlayer (survives view teardown); AudioPlayerHost.makeNSView binds `v.player = controller.player(for: url)` instead of owning. Controller host-tested (reuse/replace/outlives-view). Added the VIEW-half render guard AudioPlayerHostIntegrationTests: widened AudioPlayerHost private→internal; host it → assert the controller registered the URL + holds the player → tear the host down → assert the SAME player survives (the session-switch scenario). Registered in the webview lane. Drives TSK-1308 → validated after the VM run.
+- **[audio] TSK-1308 — audio survives a session/tab switch, render guard (user bug "switching session stops music").** Fix (151e5047): app-level AudioPlaybackController.shared owns the AVPlayer (survives view teardown); AudioPlayerHost.makeNSView binds `v.player = controller.player(for: url)` instead of owning. Controller host-tested (reuse/replace/outlives-view). Added the VIEW-half render guard AudioPlayerHostIntegrationTests: widened AudioPlayerHost private→internal; host it → assert the controller registered the URL + holds the player → tear the host down → assert the SAME player survives (the session-switch scenario). Registered in the webview lane. Drives TSK-1308 → validated after the VM run.
 
 - **[shoulder] TSK-1316 — empty shoulder bars hidden unless dragging (user bug "empty shoulder bars always show").** ShoulderRailView rendered a bare thickness-wide strip for any edge with no docked panels (right/bottom in v1, which docks all panels left). FIX: factored the rail content into railContent(panels:) and gated body on `if hasContent || isDraggingPanel` (hasContent = !panels.isEmpty || edge == .left; the left rail always carries the terminal toggle). Added an `isDraggingPanel: Bool = false` param (defaulted → no call-site churn; the future drag-redock wiring sets it true to reveal the empty shoulder as a drop target — the owner's "only during drag" behavior). Today empty shoulders stay hidden = the immediate declutter win. Render guard ShoulderRailEmptyHidingHostingTests (in-process NSHostingView): empty right rail renders nothing when idle, reveals when dragging; the left rail always renders. Registered in the webview lane. Drives TSK-1316 → validated after the VM run.
 
-- **[nav] TSK-1314 — file-nav tree respects its shoulder toggle, render guard (user bug "side nav shows file-nav even when toggle off").** Fix (df3572a6): SidebarView.filesPanel gated on filesPanelVisible = panelLayout.isVisible(.files) (was keyed on rootURL, bypassing the override). Visibility logic host-tested (SidebarFilesVisibilityTests). Added SidebarFilesToggleHostingTests (in-process NSHostingView): host SidebarView(...) with .files=.shown vs .hidden → assert the rendered NSView count drops when hidden (the filesPanel subtree is gone — the tree respects its toggle). Used a count-delta (SwiftUI .accessibilityIdentifier on a Text doesn't reliably surface as a walkable NSView id). Registered in the webview lane. Drives TSK-1314 → validated after the VM run.
+- **[nav] TSK-1314 — file-nav tree respects its shoulder toggle, render guard (user bug "side nav shows file-nav even when toggle off").** Fix (c2cc1891): SidebarView.filesPanel gated on filesPanelVisible = panelLayout.isVisible(.files) (was keyed on rootURL, bypassing the override). Visibility logic host-tested (SidebarFilesVisibilityTests). Added SidebarFilesToggleHostingTests (in-process NSHostingView): host SidebarView(...) with .files=.shown vs .hidden → assert the rendered NSView count drops when hidden (the filesPanel subtree is gone — the tree respects its toggle). Used a count-delta (SwiftUI .accessibilityIdentifier on a Text doesn't reliably surface as a walkable NSView id). Registered in the webview lane. Drives TSK-1314 → validated after the VM run.
 
-- **[terminal] TSK-1312 — terminal colour-scheme picker render guard (user bug "colors look off running claude code").** The fix's LOGIC was host-tested (AnsiTheme.named → theme-aware TerminalPalette; DocumentModel.terminalColorThemeName didSet → pref + live palette; 12/0) + the Settings picker built (667412be + 7e60fb98), at review on a "render = VM/owner tail" note. But the picker is a SwiftUI Picker in the flat single-page SettingsView → in-process-hostable (NOT T5/AX). Built SettingsTerminalColorSchemeHostingTests (in-process NSHostingView, panel pattern): host SettingsView(model:) → assert the colour-scheme NSPopUpButton renders with the AnsiTheme options (incl. "Classic xterm", the vivid-ANSI fix). Registered in the webview lane. Drives TSK-1312 → validated after the VM run. (Verify-before-build found a clean render-validation where the prior pass assumed VM/owner-only.)
+- **[terminal] TSK-1312 — terminal colour-scheme picker render guard (user bug "colors look off running claude code").** The fix's LOGIC was host-tested (AnsiTheme.named → theme-aware TerminalPalette; DocumentModel.terminalColorThemeName didSet → pref + live palette; 12/0) + the Settings picker built (ffa4111f + 6001b859), at review on a "render = VM/owner tail" note. But the picker is a SwiftUI Picker in the flat single-page SettingsView → in-process-hostable (NOT T5/AX). Built SettingsTerminalColorSchemeHostingTests (in-process NSHostingView, panel pattern): host SettingsView(model:) → assert the colour-scheme NSPopUpButton renders with the AnsiTheme options (incl. "Classic xterm", the vivid-ANSI fix). Registered in the webview lane. Drives TSK-1312 → validated after the VM run. (Verify-before-build found a clean render-validation where the prior pass assumed VM/owner-only.)
 
 - **[editor] TSK-1136/463 — LSP autocomplete render guard (editor invocation + popup, webview lane).** The autocomplete was built end-to-end + host-tested (codec + model seam) but had NO render test; the trigger was untestable (startCompletion not exposed; insertAtCursor uses plain replaceSelection [no input.type userEvent] so it can't fire autocomplete, and modifying it would change production behavior). FIX: exposed `startCompletion` on window.CM (entry.js import+export + `npm run build` rebundle of codemirror.js — +23 bytes, startCompletion was already bundled). Built EditorCompletionWebViewTests (webview lane): install a fake `window.webkit.messageHandlers.mdvEditor` to capture the bridge → startCompletion → assert a `requestCompletion` was POSTED (the literal TSK-463 fix: "never invoked from the editor" → now invoked) → inject a `completionResponse` with the captured replyId → assert the CM6 `.cm-tooltip-autocomplete` popup renders. Webview-lane (in-process WKWebView + JS), NOT TCC-blocked. Registered in test-in-vm.sh. Closes TSK-1136's + TSK-463's render gap → drives to validated after the VM run.
 
 - **[editor] TSK-1146 — diagnostics-render webview guard (the spell-squiggle render path, shared with LSP).** The spell-underline LOGIC was fully host-tested (SpellCheckEngine → MarkdownSpellMask → SpellDiagnosticMapping → EditorCoordinator spell+LSP merge → trigger) but the actual lint-marker RENDER had NO test (for spell OR LSP — one shared CM6 lintGutter path). Built EditorDiagnosticsWebViewTests (webview lane, mirrors FoldGutterWebViewTests): loads codemirror.html → cmDispatch setText + setDiagnostics → asserts `.cm-lintRange` renders in the live CM6 DOM + clearing removes it. Found the bridge: cmDispatch {type:"setDiagnostics", diagnostics:[{from,to,severity,message,source}]} → applySetDiagnostics (codemirror.html:1652) → view.dispatch(setDiagnostics) → .cm-lintRange. This is webview-lane (in-process WKWebView + JS DOM introspection), NOT the TCC-blocked T5 screencapture — so it's agent-runnable. Registered in test-in-vm.sh's webview lane. Closes TSK-1146's render gap → drives it to validated (after the VM run).
 
-- **[paste] TSK-1163 / TSK-958 — Universal Paste live action HOST-validated (was wrongly held at review-as-VM-only).** The live action (Edit ▸ Paste as New Document / ⇧⌘V → DocumentModel.universalPaste: NSPasteboard → PasteDispatch.resolve → UniversalPastePlan → materialize-temp → openInNewTab) was built @e3438e72 + left at review on a wrong "AppKit live behavior = VM-only" assumption. But universalPaste(from:) takes an INJECTABLE NSPasteboard → fully host-testable (no window/render). Added UniversalPasteActionTests (3/0): plain text → opens a tab; PNG image → opens a .png tab (the dispatch routes image → the image viewer by extension); empty clipboard → false (no-op). Validates the END-TO-END dispatch host-side → drove TSK-1163 + parent TSK-958 to validated. LESSON: "AppKit/pasteboard = VM-only" is often FALSE — NSPasteboard + an injectable-pasteboard seam are host-testable (the verify-headless-before-declaring-live-only directive). ALSO corrected a premature "render exhausted" read this tick: the webview lane (CM6/rendered, e.g. TSK-1146 spell squiggles) is NOT TCC-blocked — only the T5 SCREENCAPTURE lane is (TSK-1334).
+- **[paste] TSK-1163 / TSK-958 — Universal Paste live action HOST-validated (was wrongly held at review-as-VM-only).** The live action (Edit ▸ Paste as New Document / ⇧⌘V → DocumentModel.universalPaste: NSPasteboard → PasteDispatch.resolve → UniversalPastePlan → materialize-temp → openInNewTab) was built @940c68b7 + left at review on a wrong "AppKit live behavior = VM-only" assumption. But universalPaste(from:) takes an INJECTABLE NSPasteboard → fully host-testable (no window/render). Added UniversalPasteActionTests (3/0): plain text → opens a tab; PNG image → opens a .png tab (the dispatch routes image → the image viewer by extension); empty clipboard → false (no-op). Validates the END-TO-END dispatch host-side → drove TSK-1163 + parent TSK-958 to validated. LESSON: "AppKit/pasteboard = VM-only" is often FALSE — NSPasteboard + an injectable-pasteboard seam are host-testable (the verify-headless-before-declaring-live-only directive). ALSO corrected a premature "render exhausted" read this tick: the webview lane (CM6/rendered, e.g. TSK-1146 spell squiggles) is NOT TCC-blocked — only the T5 SCREENCAPTURE lane is (TSK-1334).
 
 - **[walkthrough] TSK-1333 (slice-2 foundation) — Mermaid HTML-page builder + the T5-pixel build scoped.** Spiked the rendered-Mermaid path (no reusable standalone mermaid view exists — mermaid renders through the full `.mmd`→ContentView WebView pipeline): the path is markdown ```mermaid fence → HTMLRenderer().renderPage(_, stylesheet: MermaidBundle.shimCSS) → a WKWebView with MermaidBundle.runtime + shimJS injected as WKUserScripts (the MarkdownRenderedView pattern — they bypass the page CSP `default-src 'none'`). Built the host-testable FOUNDATION: WalkthroughMermaidPage.html(forSource:) (pure page construction, occlusion-free), host-tested (WalkthroughMermaidPageTests 2/0: embeds source in a complete page + CSP-locked, runtime injected at the WebView layer). REMAINING (TSK-1333, T5-pixel): a WKWebView NSViewRepresentable loading this page + the occlusion-safe layering (compositingGroup().zIndex(1) over the WebView in WalkthroughDiagramOverlay's mermaid branch, replacing the source-callout interim) + a spawned-app T5 PixelTestCase (window-ID capture; the in-process test false-greens occlusion). PixelTestCase spawns the app, so the T5 test drives a walkthrough to a mermaid diagram step + captures the overlay window. This is a dedicated VM-pixel build. UPDATE: built the WalkthroughMermaidWebView NSViewRepresentable STANDALONE (deliberately unwired — inert, so no occlusion risk → safe to land), loading WalkthroughMermaidPage.html + injecting runtime/shimJS WKUserScripts (sole-owner userContentController, MarkdownRenderedView pattern), source-change-guarded reload; mount-validated (WalkthroughMermaidWebViewHostingTests — mounts a WKWebView; mount≠occlusion so the in-process check is valid). T5-feasibility spiked + confirmed (ClaudeMonitorVisualRegressionTests pattern: spawn into an MDV_UI_SCENE → window-ID → screencapture -l → region-variety). So TSK-1333's ATOMIC completing unit = wire the component into the overlay's mermaid branch occlusion-safe (compositingGroup().zIndex) + an MDV_UI_SCENE + a PixelTestCase — fully scoped, no unknowns.
 
@@ -65,7 +65,7 @@
 
 - **[test-infra] TSK-1328 follow-up — settle() requires 2 consecutive empty pumps (kills the recurring find-typeahead gate flake).** ChromeBodyEvalCountTests.test_findTypeahead_doesNotReBodyChromeStrip recurred 3× this session (StatusBar=1 ContentView=1 vs expected 0) under the 18-worker gate. Root: settle() broke on a SINGLE empty pump, so a slow async residual landing just after one idle tick declared false quiescence + leaked into the measured window. Hardened settle() to require TWO consecutive empty pumps (sustained-idle across a full pump cycle) + doubled the bound (12→24). Isolation-confirmed it's the load-flake (ChromeBodyEvalCountTests 8/0 alone; the palette change is body-eval-neutral — its @Published props aren't touched by a find keystroke). LESSONS refined.
 
-- **[terminal] TSK-1176 — command-palette controller (host core; the host half is now fully UI-ready).** The entire host half was already done (populate 43fac093, search TerminalCommandSearch.unified 009cc573/TSK-1301 validated, favorites TSK-769); this adds the palette's controller. TerminalCommandPaletteViewModel (@MainActor ObservableObject, ViewerUI): @Published query → TerminalCommandSearch.unified(favorites + history) → @Published results (favorites-first, deduped) + wrapping keyboard selection (moveSelection / selectedCommand). Host-tested (TerminalCommandPaletteViewModelTests: favorites-first+dedup, query-filter+selectedCommand, wrap-selection; 3/0). Then (same firing batch) built the FULL UI via the console template: TerminalCommandPaletteView (query field + result rows with pin/clock badge + displayLabel; tap or Enter-on-top-match inserts; AX-ids mdv.terminalPalette.*) + DocumentModel showTerminalCommandPalette/terminalCommandPaletteVM + openTerminalCommandPalette() (seeds terminalFavorites + TerminalCommandHistory.shared) + .sheet (onInsert → model.insertTerminalFavorite, the existing no-newline PTY-insert path) + View ▸ Terminal Command Palette… trigger. Render coverage = TerminalCommandPaletteHostingTests (in-process NSHostingView, registered in the webview lane). User-reachable: View ▸ Terminal Command Palette → type → favorites/history list → pick → inserted at the prompt. Remaining: VM-validate the hosting test → validated.
+- **[terminal] TSK-1176 — command-palette controller (host core; the host half is now fully UI-ready).** The entire host half was already done (populate 75c0df0d, search TerminalCommandSearch.unified 8cdac8bd/TSK-1301 validated, favorites TSK-769); this adds the palette's controller. TerminalCommandPaletteViewModel (@MainActor ObservableObject, ViewerUI): @Published query → TerminalCommandSearch.unified(favorites + history) → @Published results (favorites-first, deduped) + wrapping keyboard selection (moveSelection / selectedCommand). Host-tested (TerminalCommandPaletteViewModelTests: favorites-first+dedup, query-filter+selectedCommand, wrap-selection; 3/0). Then (same firing batch) built the FULL UI via the console template: TerminalCommandPaletteView (query field + result rows with pin/clock badge + displayLabel; tap or Enter-on-top-match inserts; AX-ids mdv.terminalPalette.*) + DocumentModel showTerminalCommandPalette/terminalCommandPaletteVM + openTerminalCommandPalette() (seeds terminalFavorites + TerminalCommandHistory.shared) + .sheet (onInsert → model.insertTerminalFavorite, the existing no-newline PTY-insert path) + View ▸ Terminal Command Palette… trigger. Render coverage = TerminalCommandPaletteHostingTests (in-process NSHostingView, registered in the webview lane). User-reachable: View ▸ Terminal Command Palette → type → favorites/history list → pick → inserted at the prompt. Remaining: VM-validate the hosting test → validated.
 
 - **[bug] TSK-1032 — HEX byte-grid "blank" is a T4 UAT false-negative, not a product bug (+ reliable host guard).** The full-VM-suite UATs (ViewModeMatrixSmokeTests.test_singleModeSwitch, PreviewsUATTests.PV_02) reported the HEX byte grid "did not mount / blank" on a switch to HEX. ROOT (host-investigated): those are T4 LiveAppTestCase (spawned-app) tests, and their `anyTextViewWithGlyphs` reads `layoutManager.numberOfGlyphs` — a TK1 metric that stays ~0 for the TK2 fixed-grid HexNSTextView even when populated → false "blank". The byte grid DOES mount with content: proven host-side by a new HexFixedGridFrameTests.test_byteGrid_mountsWithHexContent_TSK1032 (HexTextController.apply → textView.textStorage holds the hex dump; frame non-zero; 4/0). This is the owner-burn class (a UAT false-negative masquerading as a render bug) — caught + replaced with a reliable host guard. Filed TSK-1332 for the actual UAT-harness fix (introspection should accept textStorage.length / TK2 glyph state). TSK-1032 → resolved (harness-false; host-guarded).
 
@@ -130,7 +130,7 @@
 
 - **[search] TSK-723 — structural-search query DSL parser (host slice; engine already built).** The host engine (StructuralQuery model + StructuralSearchEngine matcher, @33cbb7d1, 16 tests) existed; the user-facing PATTERN GRAMMAR was the explicit follow-on. Added StructuralQueryParser.parse(query) → StructuralQuery: a tree-sitter-inspired syntax — `kind`, `kind1|kind2` (OR set), `*` (wildcard), `@cap` (root capture), `field="text"` / `field~text` (contains) / `field:kind` (node-kind) / `field=$cap` (bind capture), `(childQuery)` (descendant containment). Pure + TOTAL (untrusted user input → throws ParseError, never traps). Host-tested (StructuralQueryParserTests: 11 — each construct, error cases, 3000-input no-panic fuzz + degenerate strings). The search UI surface (query bar / panel / results) is TSK-1161 (render tail). Found via the BACKLOG re-read (intake drained → the board's P2/P8 host-engine follow-ons); TSK-723 had been stale-lease-reset to reported — model + grammar are now host-done.
 
-- **[script-console] TSK-698 slice 2 — safe off-main execution + soft timeout (host; owner-approved approach B).** Slice 1 (JSTransform JSC sandbox engine) shipped @0db4c6a; the owner RESOLVED the exec-safety park (seq 8793: "B: off-main + soft timeout"), unblocking slice 2. Added JSTransform.runAsync(json:expression:timeout:): the synchronous, non-preemptible JSC eval runs on a detached thread, raced against a soft deadline via a lock-guarded OneShot continuation (resume-exactly-once, first wins) → returns .failure(.timedOut) if the deadline wins, so the caller/UI never hangs. A genuinely non-terminating script leaks ONE spinning thread until app exit (the documented approach-B edge; SPI preemption + subprocess isolation were weighed + rejected for v1). Added .timedOut(TimeInterval) to TransformError. Host-tested (JSTransformTests: runAsync normal-returns + runaway-script soft-times-out in ~0.1s without hanging — bounded loop so the test leaks no permanent thread; 15/0). REMAINING: console UI + apply-back (slice 3, render) + beyond-JSON (slice 4). Found via the host-engine-epic re-check (the owner had already unblocked it; epic was stale-lease-reset to reported).
+- **[script-console] TSK-698 slice 2 — safe off-main execution + soft timeout (host; owner-approved approach B).** Slice 1 (JSTransform JSC sandbox engine) shipped @d632cc3; the owner RESOLVED the exec-safety park (seq 8793: "B: off-main + soft timeout"), unblocking slice 2. Added JSTransform.runAsync(json:expression:timeout:): the synchronous, non-preemptible JSC eval runs on a detached thread, raced against a soft deadline via a lock-guarded OneShot continuation (resume-exactly-once, first wins) → returns .failure(.timedOut) if the deadline wins, so the caller/UI never hangs. A genuinely non-terminating script leaks ONE spinning thread until app exit (the documented approach-B edge; SPI preemption + subprocess isolation were weighed + rejected for v1). Added .timedOut(TimeInterval) to TransformError. Host-tested (JSTransformTests: runAsync normal-returns + runaway-script soft-times-out in ~0.1s without hanging — bounded loop so the test leaks no permanent thread; 15/0). REMAINING: console UI + apply-back (slice 3, render) + beyond-JSON (slice 4). Found via the host-engine-epic re-check (the owner had already unblocked it; epic was stale-lease-reset to reported).
 
 ## LOG 2026-06-29 — DocumentModel SRP slices continue (view-mode-lock) + orphaned-doc audit/cleanup
 
@@ -155,7 +155,7 @@
 - **[host] TSK-1128 model slice: lsp.json write-back behind the Settings LSP binary picker.** Per the owner's build-don't-hold (build the VM-tail feature's MODEL host-side, leave render at review): `LSPWorkspaceOverrides` was read-only — added `setServerCommand(_:args:for:workspaceRoot:)`, the write the Settings ▸ LSP binary picker (TSK-1128) will call. PRESERVES all other entries + their env/args/initOpts + unknown top-level keys (mutates the RAW JSON object, never a lossy typed round-trip), updates an existing alias entry (e.g. `sourcekitLSP`) IN PLACE (no duplicate canonical key), creates the file if absent, atomic write, THROWS rather than clobber a malformed file. 5 host tests (round-trip, preserve-others/env/unknown-keys, update-alias-in-place + args-preserved, refuse-malformed). `swift build` + focused tests green. The picker UI (NSOpenPanel in the Settings LSP section → setServerCommand) is the render-VM follow-on (review). Process note: over-spent on verify-before-build triage first this tick (confirmed the actionable user-facing items are render-VM-coupled, rust-core audit all-validated, per-tab memory audited-clean) before landing this concrete model slice — thorough, but should have committed to a build faster.
 - **[host] TSK-1176 populate-model: terminal command-history capture (input-side line accumulator).** Found via triaged-pool mining + read-understanding-first: the command-history STORE (TerminalCommandHistory) was built+tested but ORPHANED — nothing populated it. Built the recommended populate path (a) input-side capture: `TerminalInputLineAccumulator` (ViewerCore, pure value type) reconstructs completed command lines from the raw keystroke stream — printable accumulates, Enter emits (trimmed, blanks skipped), backspace edits, ESC/Tab DROP the whole line (cursor-move/recall/completion are untrackable from the input side → never record garbage/escape-bodies), Ctrl-C/U clear the partial. Wired into `TerminalModel.sendInput`/`sendString` via a host-testable `recordTypedInput`, feeding a process-wide `TerminalCommandHistory.shared` (MainActor-isolated → one writer, no per-tab file race). 18 host tests: 13 accumulator + 5 TerminalModel wiring (all host-safe: PTY unstarted → `write` no-ops on `masterFD<0`). `swift build` + focused tests green. REMAINING (render follow-on, →review when built): the in-app history-search palette over history+favorites. The genuine host-completable feature-build the relentless re-verify finally surfaced.
 - **[host] Slow-test perf hunt + CSV gate-default audit (TSK-1299 dismissed → TSK-1300 fix).** Ran the suite with `--xunit-output` for per-test timing: the slow outliers are almost all INTENTIONAL (perf benches HotPathPerfRegression/EditorPerfBench/CrossFileSearchBench; subprocess/timeout tests GrandchildPipe/ProcessRunner/MCPServerWedge that wait by design); Swift-Testing engines all ≤0.058s. One looked real — CSVParserTests.test_large_csv_50mb_correctness (9s). I initially mis-filed TSK-1299 ("flip RustCSVGate default-on") by reading the adapter's ambiguous comment, NOT the gate default — then read RustCoreGates.swift:78 `case .csv: return true` (CSV already defaults to Rust; the 9s test calls CSVParser.parse DIRECTLY = a Swift-twin unit test, not the user path). Self-corrected: dismissed TSK-1299 (invalid), cleared it from the owner's queue. Gate-default audit: all soaked engines default-ON; only formula/fold ship OFF (already-tracked flips). The one genuine residual → TSK-1300: the CSV CONVERT commands (DocumentModel+ActiveFileDataConvert) bypassed RustCSVAdapter (raw CSVParser.parse) — routed the 3 sites through RustCSVAdapter.parse (the documented drop-in; rust-default, fail-safe). Migration-aligned (off the port-superseded Swift twin), ~2.5× faster on large converts, consistent with the view. Output-preserving: 6 DocumentModelCSVExportTests pass unchanged; build clean. LESSON REINFORCED: read the actual default/source, not an ambiguous comment, BEFORE filing a recommendation (the 5th read-first miss-or-save this session).
-- **[host] TSK-1301: unified terminal command-search model (TSK-1176 search-half).** Acting on the owner directive "don't HOLD for VM-tail features — build the model, leave render at review; the HOLD bar is much higher than I set it" (I'd been over-classifying things render-VM). The terminal command-SEARCH (owner ask: "command history search" + "fav commands... command history search") needed a unified search over favorites + history for the palette. Built `TerminalCommandSearch.unified(query:favorites:history:) -> [Result]` (ViewerCore, pure model): favorites first (tagged isFavorite + title), then history-only commands deduped by command text (MRU); a both-listed command appears ONCE as the favorite; case-insensitive (delegates to each store's search); blank query → everything. 6 host tests (favorites-first, both-deduped-as-favorite, case-insensitive-cross-store, history-only-not-favorite, no-match-empty, history-MRU). Build clean. The palette VIEW (render the Result rows + pin badge + insert at PTY prompt) is the render follow-on. With the populate-model (43fac093) this completes TSK-1176's host-testable half; only the palette UI (render) remains.
+- **[host] TSK-1301: unified terminal command-search model (TSK-1176 search-half).** Acting on the owner directive "don't HOLD for VM-tail features — build the model, leave render at review; the HOLD bar is much higher than I set it" (I'd been over-classifying things render-VM). The terminal command-SEARCH (owner ask: "command history search" + "fav commands... command history search") needed a unified search over favorites + history for the palette. Built `TerminalCommandSearch.unified(query:favorites:history:) -> [Result]` (ViewerCore, pure model): favorites first (tagged isFavorite + title), then history-only commands deduped by command text (MRU); a both-listed command appears ONCE as the favorite; case-insensitive (delegates to each store's search); blank query → everything. 6 host tests (favorites-first, both-deduped-as-favorite, case-insensitive-cross-store, history-only-not-favorite, no-match-empty, history-MRU). Build clean. The palette VIEW (render the Result rows + pin badge + insert at PTY prompt) is the render follow-on. With the populate-model (75c0df0d) this completes TSK-1176's host-testable half; only the palette UI (render) remains.
 - **[host][rust-core] transcript-parser contract proptest (re-verify-fresh of the proptest-backfill lane).** Re-checked rust-core's proptest coverage fresh (not trusting the stale "drained" claim): every engine module has a `proptest!` block OR — `transcript` — a hand-rolled LCG no-panic fuzz; `git`/`trace`/`lib`/`bench` aren't pure-proptest-friendly. `transcript`'s existing fuzz asserts ONLY no-panic, so (applying the read-the-tests-FIRST lesson — didn't duplicate it) added a `proptest!` block pinning the CONTRACT invariants the fuzz misses: `parse` upholds the event cap (`MAX_EVENTS` + explicit cap incl 0), every projected event carries a non-empty id (uuid/id/`line-<n>` fallback), and `parse` is deterministic (pure). `cargo test transcript`: 18 passed incl the 2 new proptests. rust-core-gate green.
 
 - **[host] TSK-1110 — DocumentModel SRP slice: per-file view-mode lock + orphaned-doc audit.** 36th DocumentModel+*.swift. Moved `currentViewModeIsLocked` + `toggleCurrentViewModeLock()` → `DocumentModel+ViewModeLock.swift`; zero widening (reads currentURL / currentViewMode / viewModeLocks). SEPARATELY, re-verified all 19 SRP pointer comments for the orphaned-doc-comment risk (LESSONS): found exactly ONE — the `displayedText` slice left its `///` doc dangling before its pointer (that one extraction's old_string started at the `func`, not the `///`); removed it. The other 18 were clean. Behavior-preserving: `swift build` + headless gate green. DocumentModel.swift now ~5020 lines (from 5835 at session start, ~14%; 36 extensions).
@@ -175,7 +175,7 @@
 - **TSK-836 [host] AX drift-guard test sped up 36× (test perf).** `everyCriticalIdExistsInViewerUISource` (the Swift-Testing suite's slowest test / parallel long-pole, found by mining the slice-15 gate log) ran `source.contains("\"id\"")` once PER catalogued id over a multi-MB concatenated-source blob — O(ids × source). Replaced with a single regex pass → Set of every quoted `"mdv.…"` literal + O(1) membership per id (O(ids + source)); semantically identical with the same teeth (a renamed/removed id absent → guard fires), plus a new `quotedMdvLiterals` teeth test (quoted-exact: bare/prefix/absent excluded). 1.992s→0.055s (36×); 7/7 AXIdentifierCatalogTests green + host gate. A clean efficiency win atop the existing 836 timing-capture work.
 - **TSK-585 [host] serve envelope codec fuzz lane.** A fresh empirical sweep (grepping BOTH `proptest!` AND `*_fuzz_*` across all rust-core crates, per the run-fresh discipline — the "vein exhausted" handoff claim was stale) found `serve/src/envelope.rs`: a hand-rolled MessagePack wire codec decoding UNTRUSTED bytes, with only example tests, no property/fuzz coverage. Added a DIY xorshift fuzz pair (no dep): `envelope_fuzz_decode_never_panics_on_arbitrary_bytes` (20k hostile/truncated inputs → Ok|Err, never a crash — the untrusted-wire boundary) + `envelope_fuzz_round_trip_arbitrary_frames` (5k arbitrary Frames across all 3 types incl. full-range u64 ids + the aux side-channel → encode→decode==identity). Both pass; rust gate green (cargo test --workspace + clippy). Vindicates the cron's "run searches fresh" — the sweep found a genuine gap the handoff had marked done. (Separately: mined the 836 serial per-class timings — the slow XCTest classes are now overwhelmingly inherent IO (git/LSP/watcher/subprocess spawns) + the deliberate perf benches; DocumentModelTests healthy at 47ms/test post-TSK-1294; no clear O(N×M) pure-logic bug remains, so the 836 quick-win vein is drained.)
 - **[host] rust-core `whitespace::reveal` proptest hardening.** A FRESH per-module rust sweep (grep `pub fn` vs `proptest!`/`*_fuzz_*` per src/*.rs — a different angle than the prior whole-crate sweep) flagged THREE engines with zero property/fuzz refs despite the "rust lane drained" claim: `git` (IO — skip), `trace` (stateful logging sink — not pure), and `whitespace` (genuinely pure). `whitespace::reveal` (the show-invisibles per-line space→·/tab→→ transform shared by every front-end) had 4 example tests but no proptest. Added 4 properties over arbitrary input: char-count invariant (the documented same-count guarantee), idempotence (· and → are neither space nor tab → a 2nd pass is a no-op), no raw space/tab survives, identity on already-clean lines. 4/4 pass; rust gate green (cargo test --workspace + clippy). Again vindicates run-fresh: a per-MODULE sweep angle found a gap the whole-crate sweep missed.
-- **[host] TSK-1110 — DocumentModel SRP slice: view-hosting carved out.** Continuing the SRP split (Focus-shortcuts aed6171c earlier this session). Moved the view-hosting tab logic — `hostedView(forID:)`, `openHTTPClient()`, `openHostedView(_:rootView:)` — from DocumentModel.swift to a new `DocumentModel+ViewHosting.swift` (the 22nd DocumentModel+*.swift extension). The `hostedViews: [UUID: AnyView]` registry stays a STORED property (extensions can't add storage), widened private→internal; `updateDerived()` widened private→internal so SRP-slice extensions can republish derived state (compiler caught it — only access-widening, no behavior change). Behavior-preserving move: `swift build` + headless gate green = COMPLETE confidence (the BACKLOG's stated bar for a behavior-preserving move). DocumentModel.swift down ~30 lines (5835→~5805).
+- **[host] TSK-1110 — DocumentModel SRP slice: view-hosting carved out.** Continuing the SRP split (Focus-shortcuts 804b9de5 earlier this session). Moved the view-hosting tab logic — `hostedView(forID:)`, `openHTTPClient()`, `openHostedView(_:rootView:)` — from DocumentModel.swift to a new `DocumentModel+ViewHosting.swift` (the 22nd DocumentModel+*.swift extension). The `hostedViews: [UUID: AnyView]` registry stays a STORED property (extensions can't add storage), widened private→internal; `updateDerived()` widened private→internal so SRP-slice extensions can republish derived state (compiler caught it — only access-widening, no behavior change). Behavior-preserving move: `swift build` + headless gate green = COMPLETE confidence (the BACKLOG's stated bar for a behavior-preserving move). DocumentModel.swift down ~30 lines (5835→~5805).
 - **[host] TSK-1110 — DocumentModel SRP slice: command registry carved out.** 23rd DocumentModel+*.swift. Moved the keybinding load/reload + palette-dispatch cluster — `loadKeybindings(directory:)`, `logKeybindingResult(_:)`, `invokeCommand(id:)` — to `DocumentModel+CommandRegistry.swift`. The `commandRegistry` (lazy), `macros`, `sessionsCoordinator` stored props stay; `commandRegistry`'s setter widened private(set)→internal(set) (the moved `loadKeybindings` reloads it) and `logKeybindingResult` widened private→internal (the `commandRegistry` lazy init in DocumentModel still calls it cross-file). Behavior-preserving: `swift build` + headless gate green = complete confidence. DocumentModel.swift down a further ~75 lines.
 - **[host] TSK-1110 — DocumentModel SRP slice: active-theme derivation carved out.** 24th DocumentModel+*.swift. Moved the 4 computed theme-derivation vars (`activeThemeDefinition`, `activeTheme`, `activeThemeCMPalette`, `themedExtraStylesheet`) → `DocumentModel+Theming.swift`. The `@Published themeOverride`/`selectedThemeID` stored state stays (their didSet still calls activeThemeDefinition cross-file — public, fine). ZERO visibility-widening this slice — the computed vars read only public deps (selectedThemeID/themeOverride/ThemeStore/SyntaxTheme/NSApp/MermaidBundle), the cleanest slice yet. Behavior-preserving: `swift build` + headless gate green = complete confidence. DocumentModel.swift down a further ~30 lines.
 - **[host] TSK-1110 — DocumentModel SRP slice: syntax-highlight cache access carved out.** 25th DocumentModel+*.swift. Moved `highlightCacheActor(forTabID:)` + `highlightRuns(forTabID:url:text:language:modifiedTime:)` → `DocumentModel+Highlighting.swift`. The `highlightCaches` [UUID:HighlightCacheActor] registry + the `HighlightCacheKey` typealias stay on DocumentModel (registry widened private→internal). The extension needed `import ViewerKit` (HighlightLanguage lives there; HighlightRun is ViewerCore — compiler-caught the missing import). Behavior-preserving: `swift build` + headless gate green = complete confidence. DocumentModel.swift down a further ~45 lines.
@@ -197,14 +197,14 @@
 - **[host] TSK-847 — headless-gate parallelism bump (measured).** Found by actually re-reading BACKLOG P2 (which I'd been skipping by self-directing into sweeps — a process miss). The gate ran plain `swift test --parallel` (SwiftPM default = core count = 12). Measure-first signal: the suite is 2422s of per-test CPU time completing in ~100s wall = heavily I/O/wait-bound (LSP/MCP process spawns, timeout/fd-leak tests), so the 12 cores sit idle waiting. A/B then a worker sweep (warm .build, test phase only): 12w=101s, 18w=94s (-7%), 24w=93s, 32w=90s but rc=1 (2.7× oversubscription tips a test into a flake). Bumped scripts/test-headless-gate.sh to `--num-workers 18` — the reliable knee (most of the gain, rc=0, safely below the flake threshold). Other P2 host candidates re-checked fresh and NOT actionable: 836 validated + 794 fixed (done), 382 VM-memory-profile-gated (not host), 837 the umbrella mostly sliced by 847/836. So 847 was the last genuine host-actionable P2 item.
 - **[host] TSK-1110 SRP continued — Focus-shortcuts extracted.** Carved the Focus-shortcuts family (TSK-937) out of DocumentModel.swift into DocumentModel+FocusShortcuts.swift: 3 computed gates (canFocusTerminal/canFocusFileNav/canFocusActiveDocument) + 4 actions (focusTerminal/focusFileNav/focusGitPanel/focusActiveDocument) moved to the extension; the 3 @Published focus-nonces (terminalFocusRequest/fileNavFocusRequest/documentFocusRequest) stay on the class, WIDENED private(set)→internal(set) so the extension can bump them (an extension can't write a private(set) cross-file). CORRECTION to the prior "SRP clean vein drained" claim: it was premature — a fresh spike of DocumentModel.swift (still 5788 lines) shows cohesive un-extracted clusters remain (Editable-HEX #234 ~290 lines, View-hosting-tabs, CM6-LSP-bridge ~800 lines, Open-As, view-mode-lock, Command-registry). Compiles clean; host gate green. Pure refactor — existing tests are the behavior guard.
 - **[user-facing] TSK-1271 — rendered-MD find can't-scroll-past: FIXED (host model + JS validated; VM key-event = on-screen proof).** ROOT-CAUSE CORRECTION first: the ticket report blamed `scrollIntoView({block:'center'})` re-centering "on every render" — REFUTED by reading the code (scrollIntoView fires only inside `__mdvFindRun`, called only on query/next/prev with direction always ±1, so `current` always advances → never re-scrolls the same match). The REAL cause: the rendered webview takes first responder only on an explicit focusRequest (MarkdownRenderedView L440-442); while the find bar is shown its TextField holds first responder, so document-scroll keys (PageUp/PageDown/arrows) land in the field, not the webview → user pinned at the match. FIX: forward those keys to the webview while find is focused. Plumbing on the established nonce pattern across 6 files: `FindCoordinator.renderedScroll(_:)` (+ `RenderedScrollCommand` enum + `renderedScrollRequest` nonce), DocumentModel forwarders, `MarkdownRenderedView` (findScrollNonce/Command props + `scrollJS(_:)` + updateNSView handler + dedupe field), `FindBar` (`onScrollKey` + `.onKeyPress(.pageDown/.pageUp/.downArrow/.upArrow)` → `forwardScroll`, returns `.handled` only when wired so source/editor keep field behavior), `MarkdownFindBar` wires it to the rendered scroll. VALIDATION (per the riskiness directive — named, not deferred): host gate proves the model nonce + the JS mapping (FindCoordinatorTests: renderedScroll bumps+sets command, repeat-same still bumps, other bags untouched, scrollJS direction mapping w/ pageUp≠pageDown teeth); the real key event (field→onKeyPress→scroll) is AppKit-runtime → a VM/T4 key-routing UI test is the on-screen proof. Render-tier ceiling = review.
-- **[host-foundation] TSK-1136 — LSP/in-file completion bridge: protocol+codec foundation landed; render slice de-risked + fully scoped.** Run-fresh verified the render slice is genuinely unbuilt: no `@codemirror/autocomplete` in entry.js OR the bundle, no `completionSource` in codemirror.html; the Swift backend seam (`handleCompletionRequest` → `requestCompletions`/in-file fallback, fe38eefc) IS ready+tested. Cleared the gating unknown: `npm ci` SUCCEEDS here (installs from the committed lock → reproducible rebundle), resolving the earlier "is the rebundle even possible" doubt. Landed the host-completable foundation: the CM6 bridge completion protocol — `CMInboundMessage.requestCompletion`, `CMOutboundMessage.completionResponse`, `CMCompletionItem` (ViewerCore) + codec encode/decode + the `onCompletionRequest` closure + a dispatch reply-empty fallback (mirrors hover exactly). Host-validated by codec round-trip tests (decode requestCompletion + encode completionResponse incl. omitted-optionals/empty-dismiss) — the JS↔Swift field-name-mismatch risk surface. REMAINING (the focused render session, fully mapped against current code): (a) entry.js import+export `autocompletion`; (b) codemirror.html async completionSource mirroring the hover bridge (`_pendingCompletions` + `requestCompletionFromSwift` + `resolveCompletionResponse` + `autocompletion({override:[...]})` in baseExtensions, inbound `case "completionResponse"`); (c) ContentView `onCompletionRequest` → `handleCompletionRequest` → send `.completionResponse` back via the model→editor send path hover uses; (d) `npm run build` rebundle; (e) VM-validate the popup. Closes TSK-463 when it lands. Host gate green.
+- **[host-foundation] TSK-1136 — LSP/in-file completion bridge: protocol+codec foundation landed; render slice de-risked + fully scoped.** Run-fresh verified the render slice is genuinely unbuilt: no `@codemirror/autocomplete` in entry.js OR the bundle, no `completionSource` in codemirror.html; the Swift backend seam (`handleCompletionRequest` → `requestCompletions`/in-file fallback, 831135ec) IS ready+tested. Cleared the gating unknown: `npm ci` SUCCEEDS here (installs from the committed lock → reproducible rebundle), resolving the earlier "is the rebundle even possible" doubt. Landed the host-completable foundation: the CM6 bridge completion protocol — `CMInboundMessage.requestCompletion`, `CMOutboundMessage.completionResponse`, `CMCompletionItem` (ViewerCore) + codec encode/decode + the `onCompletionRequest` closure + a dispatch reply-empty fallback (mirrors hover exactly). Host-validated by codec round-trip tests (decode requestCompletion + encode completionResponse incl. omitted-optionals/empty-dismiss) — the JS↔Swift field-name-mismatch risk surface. REMAINING (the focused render session, fully mapped against current code): (a) entry.js import+export `autocompletion`; (b) codemirror.html async completionSource mirroring the hover bridge (`_pendingCompletions` + `requestCompletionFromSwift` + `resolveCompletionResponse` + `autocompletion({override:[...]})` in baseExtensions, inbound `case "completionResponse"`); (c) ContentView `onCompletionRequest` → `handleCompletionRequest` → send `.completionResponse` back via the model→editor send path hover uses; (d) `npm run build` rebundle; (e) VM-validate the popup. Closes TSK-463 when it lands. Host gate green.
 - **[render-cohort] TSK-1136 — editor autocomplete render slice LANDED (host-built; VM validates the popup).** Built the full cohesive render cohort on top of the protocol foundation: entry.js exports `autocompletion`; codemirror.html gains the async completion bridge mirroring hover (`_pendingCompletions` map + `requestCompletionFromSwift` + `resolveCompletionResponse` + `buildCompletionExtension` = `autocompletion({override:[async source]})` wired into baseExtensions, inbound `case "completionResponse"`); DocumentModel gains `respondToEditorCompletion` (async → `handleCompletionRequest` → `sendEditorCompletionResponse` via the `CodeMirrorEditorRegistry.current()` cmDispatch path, mirroring `sendEditorHoverResponse`); ContentView wires `onCompletionRequest`. Rebundled codemirror.js (esbuild) — `autocompletion`/`completionStatus` now in the 1.1MB bundle. ENV NOTE: `npm ci` exited 0 but had SKIPPED esbuild (its platform-binary postinstall); a targeted `npm install esbuild@0.25.0` fixed it (added 42 pkgs) — so the rebundle toolchain needs that one extra step after a fresh `npm ci`. The completion source triggers on an identifier prefix or explicit ⌃Space; maps items→CM6 {label, detail, apply=insertText||label}; 2s safety timeout so the popup never hangs. Validation: host gate (Swift compiles + codec round-trip tests) green; the live popup is render-tier → VM lane / review (can't host-test the WKWebView autocomplete widget). Closes TSK-463. Swift build clean.
 - **[host-foundation] TSK-1139 — CSV viewport-paging: window-decision core host-built+tested; scroll integration = VM tail.** Verified unbuilt (CSVTableView materializes the full `displayRows`; doesn't consume the existing fail-safe `CSVRowWindowSource`, ec335ed3). Built the host-testable decision core `CSVViewportPager.plan(filteredCount, firstVisibleRow, visibleRowCount, cached) → (offset, limit, needsFetch)`: fetches the visible range padded by a buffer, clamped to bounds; cache-diff returns needsFetch=false while the visible range stays within the cached span (the buffer is the scroll slack). 11 Swift Testing cases (no-cache buffer fetch, cache-hit no-refetch, escape above/below, clamp top/bottom, filter-shrink clamp, zero-buffer, degenerate empty/zero-visible, negative-buffer clamp) — all green; host gate green. Factors the host-testable window-math OUT of the VM-only SwiftUI scroll handler. REMAINING (VM-tail render session): CSVTableView wires `onScrollGeometryChange` (macOS 15) → pager.plan → CSVRowWindowSource.window(offset,limit) → cache + render the window, sizes the scrollbar from filteredRowCount(), keeps the full-materialize fallback (fail-safe: source throws → today's path). VM-validated (scroll a huge CSV → smooth windowed fetch); gated as an accelerator so normal CSVs are unaffected.
 - **[user-facing] TSK-1163 — Universal Paste live action + menu LANDED (host-tested decision; live action review/VM).** Built the live-action half of TSK-958 (the PasteDispatch resolver was already done @ d6ba90f). Edit ▸ Paste as New Document (⇧⌘V) → DocumentModel.universalPaste: reads NSPasteboard → PasteDispatch.resolve picks the target (file>image>table>rich>plain precedence, HTML-body peek for `<table>`) → UniversalPastePlan.plan maps target → materialization (which pasteboard representation + temp-file extension) → the AppKit shell reads bytes/string → writes a per-user temp file (sanctioned temporaryDirectory) → openInNewTab (routes to the viewer by extension); fileURL opens directly. Clipboard treated as DATA, never executed (security). Host-tested DECISION: PasteDispatchTests (resolve precedence) + new UniversalPastePlanTests (7: each target → right source/extension, exhaustive no-default-gap, non-empty extension). The NSPasteboard read + temp write + menu + open are AppKit → review/VM. Host gate green. Closes the live-action slice of TSK-958; the broader epic (more clipboard types) continues.
 - **[host-foundation] TSK-1146 — spell→CM6 squiggle mapping landed; LSP-squiggle half found already DONE.** Verify-before-build: the LSP-diagnostic inline squiggles are ALREADY built+tested (EditorCoordinator.setEditorDiagnostics → CMDiagnosticMapping → setDiagnostics → lintGutter in codemirror.html; CMDiagnosticMappingTests/LSPDiagnosticsStoreTests present) and SpellCheckEngine is host-tested (94d8bfb). Landed the host-testable producer SpellDiagnosticMapping.cmDiagnostics([SpellingIssue]) → [CMDiagnostic]: a direct UTF-16 offset copy (SpellingIssue.range is already CM6's coordinate space — no doc-text needed, unlike LSP's line/char), severity .info (advisory), source "spell" (distinguishes from LSP for independent merge/toggle), drops NSNotFound/empty ranges, "did you mean" with ≤3 suggestions. 8 Swift Testing cases. The render path (setDiagnostics → squiggles) is already done; REMAINING render slice: a debounced spell pass in EditorCoordinator that maps + MERGES spell diags with LSP diags into pendingEditorDiagnostics (neither clobbers). Matches the project's SpellCheckEngine/surface split (host-testable core + separate surface wiring). Host gate green.
 - **[host] TSK-1146 — spell+LSP editor-diagnostics MERGE landed (host-tested, zero LSP regression); trigger = remaining render slice.** EditorCoordinator's single `pendingEditorDiagnostics` channel was LSP-only (overwritten on each publish). Now it source-tracks `lspEditorDiagnostics` + `spellEditorDiagnostics` separately and re-merges (`Self.mergeEditorDiagnostics`, offset-sorted) on either source change → LSP errors + spell underlines COEXIST, and re-publishing one never clobbers the other. Added `setEditorSpellDiagnostics(issues, forTabID)` (maps via SpellDiagnosticMapping → spell source → merge); refactored `setEditorDiagnostics` (LSP source → merge); `resetEditorState` clears both sources. Host-tested (EditorCoordinatorTests +4: merge offset-sort; the spell seam maps+publishes; empty clears the spell layer; LSP+spell coexist + LSP re-publish keeps spell — the source-tracking contract — using a real tab+buffer for the LSP path). The squiggle RENDER (setDiagnostics→lintGutter) was already built. REMAINING: a debounced spell pass in updateEditorText running SpellCheckEngine off-main → setEditorSpellDiagnostics (the render/timing trigger, VM-validated) + grammar. Host gate green.
-- **[host] TSK-1146 — markdown-aware spell scope (MarkdownSpellMask) landed.** For CORRECT markdown spell-check (not squiggling code — a "highest standards" requirement), built the host-testable mask: `excludedRanges(in markdown) → [Range<Int>]` (UTF-16) of fenced code blocks (line-scan + fence-toggle) + inline code spans (backtick-run regex), + `filterProse(issues, in markdown)` dropping spelling issues that overlap the code ranges. 6 Swift Testing cases (inline span excluded / prose not; filter drops code-span + fenced-block issues, keeps prose; prose-only → no exclusions; invalid-range drop — the test helper overflow-guarded per the prior signal-5 lesson). The 1146 spell stack is now: SpellCheckEngine (done) → MarkdownSpellMask.filterProse (this) → SpellDiagnosticMapping (a6715db7) → EditorCoordinator source-tracked merge (f9649a3f) → CM6 squiggle render (done). REMAINING: ONLY the debounced trigger in updateEditorText (run SpellCheckEngine off-main on markdown/text → filterProse → setEditorSpellDiagnostics) — render/timing, VM-validated. Host gate green.
-- **[user-facing] TSK-1146 — editor spell-check COMPLETE (trigger landed; live squiggles = VM/review).** The final layer: EditorCoordinator.updateEditorText (CM6 already debounces text changes) now runs a spell pass for prose files → live squiggles. `shouldSpellCheckEditor` gates to prose extensions (md/markdown/mdown/mkd/mdwn/txt/text) under a 200K UTF-16 cap (huge files skipped — no whole-doc NSSpellChecker per edit); `runEditorSpellPass` runs SpellCheckEngine → MarkdownSpellMask.filterProse (markdown only) → setEditorSpellDiagnostics; the seam now DEDUPES an unchanged spell layer so a code file doesn't re-publish its LSP diags on every keystroke (churn guard). Host-tested (EditorCoordinatorTests +6: prose-under-cap gate, code/over-cap/nil/empty gate-false, isMarkdownProse, the code-file no-spell-published gate, the unchanged-empty no-republish dedupe). FULL 1146 spell stack now on main: SpellCheckEngine (94d8bfb) → MarkdownSpellMask (925b2481) → SpellDiagnosticMapping (a6715db7) → EditorCoordinator merge (f9649a3f) → trigger (this) → CM6 lintGutter render (already built). The live squiggles appearing/feeling-right + the debounce/perf are VM/review; every layer's LOGIC is host-tested. Closes the spell-underline half of TSK-685; grammar is the remaining epic tail (separate).
+- **[host] TSK-1146 — markdown-aware spell scope (MarkdownSpellMask) landed.** For CORRECT markdown spell-check (not squiggling code — a "highest standards" requirement), built the host-testable mask: `excludedRanges(in markdown) → [Range<Int>]` (UTF-16) of fenced code blocks (line-scan + fence-toggle) + inline code spans (backtick-run regex), + `filterProse(issues, in markdown)` dropping spelling issues that overlap the code ranges. 6 Swift Testing cases (inline span excluded / prose not; filter drops code-span + fenced-block issues, keeps prose; prose-only → no exclusions; invalid-range drop — the test helper overflow-guarded per the prior signal-5 lesson). The 1146 spell stack is now: SpellCheckEngine (done) → MarkdownSpellMask.filterProse (this) → SpellDiagnosticMapping (eb4b43f4) → EditorCoordinator source-tracked merge (b71621fe) → CM6 squiggle render (done). REMAINING: ONLY the debounced trigger in updateEditorText (run SpellCheckEngine off-main on markdown/text → filterProse → setEditorSpellDiagnostics) — render/timing, VM-validated. Host gate green.
+- **[user-facing] TSK-1146 — editor spell-check COMPLETE (trigger landed; live squiggles = VM/review).** The final layer: EditorCoordinator.updateEditorText (CM6 already debounces text changes) now runs a spell pass for prose files → live squiggles. `shouldSpellCheckEditor` gates to prose extensions (md/markdown/mdown/mkd/mdwn/txt/text) under a 200K UTF-16 cap (huge files skipped — no whole-doc NSSpellChecker per edit); `runEditorSpellPass` runs SpellCheckEngine → MarkdownSpellMask.filterProse (markdown only) → setEditorSpellDiagnostics; the seam now DEDUPES an unchanged spell layer so a code file doesn't re-publish its LSP diags on every keystroke (churn guard). Host-tested (EditorCoordinatorTests +6: prose-under-cap gate, code/over-cap/nil/empty gate-false, isMarkdownProse, the code-file no-spell-published gate, the unchanged-empty no-republish dedupe). FULL 1146 spell stack now on main: SpellCheckEngine (94d8bfb) → MarkdownSpellMask (c12662f0) → SpellDiagnosticMapping (eb4b43f4) → EditorCoordinator merge (b71621fe) → trigger (this) → CM6 lintGutter render (already built). The live squiggles appearing/feeling-right + the debounce/perf are VM/review; every layer's LOGIC is host-tested. Closes the spell-underline half of TSK-685; grammar is the remaining epic tail (separate).
 
 - **TSK-1110 [host] DocumentModel SRP split — Git-diff-gutter slice (slice 15).** Carved the off-main git-diff/git-blame gutter compute (4 funcs + resolveGutterRoot/relativePath + gutterDiffTimeout/diffMarksDebounceNanos statics) into DocumentModel+GitDiffGutter.swift. 3rd grab-bag split + the MOST intricate yet: the gutter MARK is a 5-concern grab-bag (diff-marks + blame + editor-folds + sticky-scroll + shared loadedText/gutter-root helpers); extracted the diff/blame/split sub-cluster, left folds (refreshEditorFolds/editorFoldsTask) + sticky (stickyScrollHeaders/recompute) + loadedText. Used ALL THREE state patterns: VEND (setSourceDiffMarks for the @Published private(set) sourceDiffMarks, with 2 write-site rewrites), WIDEN (diffMarksTask/splitDiffMarksTask private→internal), MOVE (resolveGutterRoot/relativePath/2 statics — exclusive to the moved funcs). A compaction landed mid-extraction (extension written, class-side pending) — resumed cleanly via git-status + re-read. Compiled first try post-resume; zero render risk; host gate PASSED (EditorRepublishInvariant + SplitPaneClose + SessionSwitchDrainBatching). Core 5938→5788 (cumulative 7692→5788, ~1904 out, 15 slices). LAST decent-payoff slice — the SRP clean/mechanical+grab-bag vein is now complete; the remainder (keybindings low-ROI ~20L, HEX/Opening/Tab) is design-grade entangled-core track-2.
 - **TSK-1110 [host] DocumentModel SRP split — Go-to-path slice (slice 14).** Carved the Go-to-path prompt's show/dismiss/record/commit + open-panel-recents (6 funcs) into DocumentModel+GoToPath.swift — the GoToPath half of the Command-registry grab-bag MARK (keybindings half stays). 2nd grab-bag split. The 2 prompt-intent stored vars widened private(set)→internal(set) (the setter-widen variant); commitGoToPath uses public openPath (NOT the private opening machinery — spike confirmed it's not the Open-As entanglement trap). Compiled first try; zero render risk; host gate PASSED (GoToPathUITests + OpenInNewSession). Core 6007→5938 (cumulative 7692→5938, ~1754 out, 14 slices). REMAINING grab-bag/entangled: command-registry keybindings half (loadKeybindings/invokeCommand), git-diff-gutter (3 @Published+Tasks), rendered-HTML-cache remainder, HEX/Opening/Tab core.
@@ -233,21 +233,21 @@
 ## LOG 2026-06-27 — render-test coverage (find ×2 validated), dark-mode pixel guard, rpcd reconcile
 
 Autonomous-cron + owner redirect ("do the VM stuff, finish as much as you can, work around AX"). All on main, host-gate-green per item.
-- **TSK-1270 — rendered-MD find clear → VALIDATED.** Already fixed by TSK-1207 (dismiss empties `renderedQuery` → `__mdvFindClear`; `clearMarks` unwraps both `mdv-find` + the active `mdv-find-current` losslessly); the gap was render-tier TEST coverage. Wrote `RenderedFindClearWebViewTests` (`e88da14a`), wired into the VM WebView lane (`521b0e80`) — caught the false-green trap (a #192 suite absent from `run_webview_tests`' filter list silently skips 100%). VM-validated on a live WKWebView (both tests passed, ~15s each).
-- **TSK-1290 — find RUN-behavior WebView coverage → VALIDATED (`2f7e4a05`).** 4 tests pinning `__mdvFindRun`: count accuracy (total + DOM marks agree), case sensitivity (3 vs 1), next/prev navigation cycling+wrap (0→1→2→0; prev wraps to last), regex-metachar escaping ('a.b' literal = 2, not 3). VM-validated (all 4 passed).
-- **TSK-1279 — dark-mode pixel guard → review (`0da209aa`).** `test_darkModeScene_chromePaintsDark` (in `SourceViewVisualRegressionTests`): spawns `MDV_UI_SCENE=theme-dark`, asserts >60% dark window pixels, light-mode teeth (delta >0.2). The scene APPLIES on the VM (`ui-scene: applied 'theme-dark'`) — the `MDV_UI_SCENE` T5 path needs NO AX/Automation grant. Pixel capture validates in the all-mode/nightly lane.
+- **TSK-1270 — rendered-MD find clear → VALIDATED.** Already fixed by TSK-1207 (dismiss empties `renderedQuery` → `__mdvFindClear`; `clearMarks` unwraps both `mdv-find` + the active `mdv-find-current` losslessly); the gap was render-tier TEST coverage. Wrote `RenderedFindClearWebViewTests` (`83f2424f`), wired into the VM WebView lane (`b4c33cc2`) — caught the false-green trap (a #192 suite absent from `run_webview_tests`' filter list silently skips 100%). VM-validated on a live WKWebView (both tests passed, ~15s each).
+- **TSK-1290 — find RUN-behavior WebView coverage → VALIDATED (`ad94cdb3`).** 4 tests pinning `__mdvFindRun`: count accuracy (total + DOM marks agree), case sensitivity (3 vs 1), next/prev navigation cycling+wrap (0→1→2→0; prev wraps to last), regex-metachar escaping ('a.b' literal = 2, not 3). VM-validated (all 4 passed).
+- **TSK-1279 — dark-mode pixel guard → review (`c55a3715`).** `test_darkModeScene_chromePaintsDark` (in `SourceViewVisualRegressionTests`): spawns `MDV_UI_SCENE=theme-dark`, asserts >60% dark window pixels, light-mode teeth (delta >0.2). The scene APPLIES on the VM (`ui-scene: applied 'theme-dark'`) — the `MDV_UI_SCENE` T5 path needs NO AX/Automation grant. Pixel capture validates in the all-mode/nightly lane.
 - **TSK-400 — mdvcore-rpcd spike → VALIDATED.** Superseded by the implemented `mdv-serve` daemon (compact-binary envelopes over a UNIX socket, ssh-tunnel auth, no server-side FFI hop). Rust-core gate green as the checks artifact.
-- **RTF surrogate-pair fix** (`fd7c1013`) — emoji/astral chars (>U+FFFF) no longer dropped from opened `.rtf` (the hand-rolled extractor now combines the UTF-16 surrogate halves). +4 tests. CHANGELOG'd.
-- **Hex mode-switch UAT load-flake** diagnosed + documented (`2b61d921`) — `ViewModeMatrixSmokeTests` md_rendered→hex false-fails under full-suite VM load (the tight, load-bearing 300ms window); passes isolated. RULE: re-run isolated before believing a full-`all`-run fail of that one case.
-- **Test-tier boundary documented (`884a4905`):** the agent-validatable line — **WebView/DOM render-tests validate clean + fast (`webview` mode, no screencapture); T5-pixel tests need the all-mode/nightly capturing context** (`test`-mode screencapture is TCC-denied — the TSK-1245 `.build` chown context). LESSONS + a `test-in-vm.sh` note.
-- **BACKLOG reconciled + next-50 reprioritized** (`a5f6b70b`/`ad09d628`); full pre-reconcile snapshot → `archive/BACKLOG_archive_2026-06-27.md`. Board: ~410 review+fixed awaiting owner close (the bottleneck); §E owner-unblocks unchanged (DOM-patch flip, AX/Screen-Recording grants, rust-port flips, TSK-590).
+- **RTF surrogate-pair fix** (`1e69c20b`) — emoji/astral chars (>U+FFFF) no longer dropped from opened `.rtf` (the hand-rolled extractor now combines the UTF-16 surrogate halves). +4 tests. CHANGELOG'd.
+- **Hex mode-switch UAT load-flake** diagnosed + documented (`9d7c7adc`) — `ViewModeMatrixSmokeTests` md_rendered→hex false-fails under full-suite VM load (the tight, load-bearing 300ms window); passes isolated. RULE: re-run isolated before believing a full-`all`-run fail of that one case.
+- **Test-tier boundary documented (`526822bf`):** the agent-validatable line — **WebView/DOM render-tests validate clean + fast (`webview` mode, no screencapture); T5-pixel tests need the all-mode/nightly capturing context** (`test`-mode screencapture is TCC-denied — the TSK-1245 `.build` chown context). LESSONS + a `test-in-vm.sh` note.
+- **BACKLOG reconciled + next-50 reprioritized** (`2389b620`/`e39a6919`); full pre-reconcile snapshot → `archive/BACKLOG_archive_2026-06-27.md`. Board: ~410 review+fixed awaiting owner close (the bottleneck); §E owner-unblocks unchanged (DOM-patch flip, AX/Screen-Recording grants, rust-port flips, TSK-590).
 
 ## LOG 2026-06-26 — prod-build packaging fix, gate repair, vim caret, eval/AX kickoff
 
 Owner-interactive + first autonomous-cron ticks. All on main, host-gate-green per item.
-- **TSK-1257 — prod `.app` clean-machine crash FIXED (`d810d4c6`).** Root cause: the minimal SwiftPM `Bundle.module` accessor resolves resource bundles from the `.app` root then a hardcoded dev `.build` path, never `Contents/Resources` — so the hand-assembled app silently read the build machine's `.build` and `_assertionFailure`d on any clean machine (M5-Pro). Fix: `Bundle.resolveResourceBundle` (ViewerCore) preferring the app's own `Contents/Resources` + per-target `viewerCoreResources`/`viewerUIResources`; minimal `Info.plist` per bundle; host-safe `--verify-resources` gate wired into `build-app.sh`+`verify-app.sh`; strict-codesign on a de-xattr'd copy. Fixed dist vended to `textview_dist` + installed to `/Applications`. VM-validated (resolver tests green on macOS15). At review (owner M5-Pro retest).
-- **TSK-1258 — headless gate restored to green (`206bbbfc`).** `ScriptVerbCatalog` drift test now treats `ScriptRunner.swift` as the 2nd dispatch surface (the runner-only `wait-editor-line`/`wait-rendered-scroll` were false-flagging since TSK-1047). main was secretly red.
-- **TSK-1259 — steady vim caret (`0f11e59b`).** `drawSelection({cursorBlinkRate:0})` — one facet drives both NORMAL block + INSERT line cursors. In-process WebView guard (`EditorCursorBlinkWebViewTests`), wired into the VM/nightly lane (`e6a5576b`) and **VM-validated** (live cursor layer `animationDuration==0s`). At review (owner on-screen close).
+- **TSK-1257 — prod `.app` clean-machine crash FIXED (`27532e4b`).** Root cause: the minimal SwiftPM `Bundle.module` accessor resolves resource bundles from the `.app` root then a hardcoded dev `.build` path, never `Contents/Resources` — so the hand-assembled app silently read the build machine's `.build` and `_assertionFailure`d on any clean machine (M5-Pro). Fix: `Bundle.resolveResourceBundle` (ViewerCore) preferring the app's own `Contents/Resources` + per-target `viewerCoreResources`/`viewerUIResources`; minimal `Info.plist` per bundle; host-safe `--verify-resources` gate wired into `build-app.sh`+`verify-app.sh`; strict-codesign on a de-xattr'd copy. Fixed dist vended to `textview_dist` + installed to `/Applications`. VM-validated (resolver tests green on macOS15). At review (owner M5-Pro retest).
+- **TSK-1258 — headless gate restored to green (`d3f96a3d`).** `ScriptVerbCatalog` drift test now treats `ScriptRunner.swift` as the 2nd dispatch surface (the runner-only `wait-editor-line`/`wait-rendered-scroll` were false-flagging since TSK-1047). main was secretly red.
+- **TSK-1259 — steady vim caret (`70aee68e`).** `drawSelection({cursorBlinkRate:0})` — one facet drives both NORMAL block + INSERT line cursors. In-process WebView guard (`EditorCursorBlinkWebViewTests`), wired into the VM/nightly lane (`3630f452`) and **VM-validated** (live cursor layer `animationDuration==0s`). At review (owner on-screen close).
 - **Docs/cron:** BACKLOG gained the **🎯 OWNER PRIORITY ORDER (2026-06-26)** block (P0a eval/AX + agent-drivable interfaces; P0b battle-test the fixed/review pile to validated with teeth; P1 wave-12), and the session cron was re-armed (`beafb39c`, every 5 min). VM confirmed accessible+working (macOS 15.6.1, Swift 6.3); in-process WebView UI tests render+pass over ssh.
 - **TSK-1254 (eval/AX epic) — spike + Slice 1.** Spike: 362 `mdv.*` ids + `ClickTargetRegistry`/`UIEventSynth` exist; the out-of-process `AXUIElement` driver is the gap (in-process AX tree is empty). Slice 1 landed: `AXDriverCore` (ViewerCore/Automation) — pure-logic find-by-`mdv.*`-id (exact + prefix-glob) over an abstract `AXNode` + press-action resolution (native AX action → CGEvent-at-frame fallback → unavailable), host-tested (13 cases, teeth-proven). Breakdown filed: TSK-1260/1261/1263 (VM-tail: AXUIElement adapter, driver executable + CGEvent-at-AX-frame, agent-driven entry) + TSK-1262 (host). **Slice 4 (TSK-1262):** `AXIdentifierCatalog` — the curated agent-drivable ADDRESSING CONTRACT (22 critical `mdv.*` control ids across 8 surfaces, the AX/native-chrome sibling of `ScriptVerbCatalog`) + a host drift guard that scans ViewerUI source so renaming/removing a critical control goes RED (teeth-proven). Host-validated.
 - **TSK-1255 (test-pyramid doc):** wrote `docs/TEST_PYRAMID.md` — the ONE canonical pyramid map (T1/T1m/T2' headless · WebView lane · T4 · the new AX native-interaction tier · T5 · T6), grounded in fresh counts (64 headless / 3 T4 / 7 T5 / 16 WebView / 22 script-bus UAT suites; ~8,960 XCTest + 75 Swift-Testing fns), with gating (merge gate vs VM/nightly vs rust-core-gate), the tier-justify rule + TierGateObserver, the two UAT lanes (structural-AX vs human-screenshot), and the native-real-interaction GAP that TSK-1254 closes. Referenced from CLAUDE.md Quick references so it's discoverable (the "scattered" fix). At review (doc deliverable; the gap-close continues under TSK-1254).
@@ -263,13 +263,13 @@ Owner-interactive + first autonomous-cron ticks. All on main, host-gate-green pe
 - **TSK-1254 (AX epic, P0a) — expanded the agent-drivable AX-id catalog 22→29.** Promoted 7 stable top-level surfaces/controls to the curated AXIdentifierCatalog contract: `mdv.sidebar` (file-nav), `mdv.emptyState.recents`, `mdv.gitPanel` (git tool window), `mdv.imageEditor`, `mdv.terminal.pane` (PTY tool window), `mdv.gitLog.searchField`, `mdv.settings.languages`. All verified to exist in ViewerUI source by the drift guard (AXIdentifierCatalogTests `everyCriticalIdExistsInViewerUISource`, 6/6; teeth-proven — a bogus id goes RED). Broadens the surface the out-of-process AX driver + element-refs + agent journeys can address by id (the consumer/driver is the AX-TCC VM-tail).
 - **TSK-1154 (Agent Services MCP tools, P1 wave-12) — shipped `list_runnable_tasks` (13th MCP tool, host-completable).** New agent-callable tool in MCPToolCatalog backed by the pure host scan `RunnableTaskDiscovery.discover` (package.json scripts / Cargo / Makefile / common test commands) — read-only (scans manifests, runs nothing), path-jailed via `validatedExistingURL` (home + per-user temp). Host-tested (MCPToolCatalogTests 37: returns-discovered-tasks ties the tool output to `discover` count+names = teeth; path-outside-home → permissionDenied; count 12→13). VERIFY-STATE finding: the OTHER 3 of TSK-1154's tools (LSP-search, refactor, code-review) wrap engines NOT in host-callable ViewerCore (ViewerUI/LSP-server-coupled) ⇒ VM/integration-tail, not host-completable; the test-runner's RUN half (process spawn) is likewise the integration tail. The discovery/list half was the cleanly host-completable slice.
 - **TSK-1193 (process_memory MCP tool, agent-tools) — shipped (14th MCP tool, host-completable).** New agent-callable tool wrapping the existing host-callable reader `ProcessMemory.sample()` (already consumed by the status bar → NON-orphan): returns `appFootprintBytes` = phys_footprint (the CORRECT metric — includes compressed; NOT VSZ/RSS, per the owner's memory-metrics directive) + the WebKit helper-process footprint sum (bytes/count/complete). Read-only, no args. Host-tested (MCPToolCatalogTests 38: test_processMemory_reportsAppFootprint asserts the live process footprint > 0 = teeth; count 13→14, all 3 count-drift sites synced — catalog literal + expected set + the VM UAT expected list). The clean host-completable MCP pattern (wrap a host-callable ViewerCore reader) again — like list_runnable_tasks.
-- **TSK-1186 (palette parity, P0a) — 11 menu-only edit transforms made palette- + script-verb-invokable.** Heading promote/demote, line sort-asc/desc/reverse/dedup, line-ending lf/crlf/cr, indentation to-spaces/to-tabs — all reuse existing FILE-WRITE model methods via the enumerated-target pattern, each wired across all 5 verb-sites (descriptor + ScriptVerbDispatch + ScriptVerbCatalog + CommandRegistryTests known-vocab + PaletteEditTransformVerbTests behavior+recognition). Host-tested + gate-green per slice (68ec2dc6/c0d6d9ad/1fdb21b1/d3c84f69). The clean file-write verb vein is now mined; the remaining tail (encoding 20-target prompt, align-tables editor-buffer, render-panels) is render/param-coupled. LESSON: a script-verb lives in 5 sites — missing the CommandRegistryTests known-vocabulary set fails the gate.
+- **TSK-1186 (palette parity, P0a) — 11 menu-only edit transforms made palette- + script-verb-invokable.** Heading promote/demote, line sort-asc/desc/reverse/dedup, line-ending lf/crlf/cr, indentation to-spaces/to-tabs — all reuse existing FILE-WRITE model methods via the enumerated-target pattern, each wired across all 5 verb-sites (descriptor + ScriptVerbDispatch + ScriptVerbCatalog + CommandRegistryTests known-vocab + PaletteEditTransformVerbTests behavior+recognition). Host-tested + gate-green per slice (68ec2dc6/63cc66c4/5183e3f2/5e23733e). The clean file-write verb vein is now mined; the remaining tail (encoding 20-target prompt, align-tables editor-buffer, render-panels) is render/param-coupled. LESSON: a script-verb lives in 5 sites — missing the CommandRegistryTests known-vocabulary set fails the gate.
 - **TSK-543 (cm-delta, P2 rust-core) stage-1 — the delta seam is now CALLABLE (FFI + serve).** Deep spike re-scoped it: the LIVE editor uses the in-process Swift CMEditApplier (no FFI); cm_apply is the gated/remote path — so this is a remote-core wire-traffic optimization, NOT the live editor lag (TSK-598/891). The built-but-unwired `apply_delta_wire` (returns the changed region + new length, not the whole buffer) is now an envelope method: `dispatch::Method::CmApplyDelta=16` + `MDV_CAP_CM_APPLY_DELTA=1<<15` + `MDV_METHOD_CM_APPLY_DELTA=16` + serve `"cm_apply_delta"` dispatch + Swift `CoreCapabilities.cmApplyDelta` pin; cbindgen regenerated the header (drift OK). Gates green (rust-core-gate cargo-test all crates + header-drift; headless gate Swift cap pins). Stage-2 (Swift mirror adopts the delta — host-testable, gate-off=no live risk) + stage-3 (session-keyed base-once = the request-half win + remote-core enabler) follow. **Stage-2a:** the Swift `mdvCoreApplyCMEditsDelta` wrapper + `CMChangedRegion` (UTF-16 from/lenAfter/removed) + the CoreTransport `"cm_apply_delta"`→method-id mapping make the seam callable from Swift end-to-end; 3 round-trip tests in CMEditApplyABTests mirror the rust wire tests (insert→(2,1,0)/len6, overlap→nil/len0, astral→(0,1,2)/len2), 9/9 green — stage-1's FFI method is now CONSUMED. stage-2b (the live editor RustCMEditAdapter/CodeMirrorEditorView adopting the delta — apply the changed region to the mirror vs full-text replace) is the render/VM tail.
 
 ## LOG 2026-06-22 — cron drain continuation: formula on-screen, eviction engine, LSP cores, differential-fuzz suite
 
 Inline autonomous cron (no workflows); all on main, host/rust-core-gate-green per item. (Durable record of the post-port continuation — board has per-item detail.)
-- **Formula ON-SCREEN wiring (TSK-1215, BUILT @ 9983e46d):** `CSVTableView` renders computed formula values, gated behind `RustFormulaGate` (OFF) + file order → zero-risk (gate-off/sorted/filtered = raw, byte-identical). Pure host-tested `formulaCellDisplay`. The formula engine's missing view consumer — now built; the flip remains the owner's (above).
+- **Formula ON-SCREEN wiring (TSK-1215, BUILT @ 32388631):** `CSVTableView` renders computed formula values, gated behind `RustFormulaGate` (OFF) + file order → zero-risk (gate-off/sorted/filtered = raw, byte-identical). Pure host-tested `formulaCellDisplay`. The formula engine's missing view consumer — now built; the flip remains the owner's (above).
 - **Differential parity fuzz (TSK-1125/586) — COMPLETE for formula:** seeded Swift-vs-Rust fuzz across 4 eval paths (arithmetic · aggregate-range · text · date; ~4000 cases/run, fixed seeds in the merge gate, each teeth-proven). FOUND a real divergence → **TSK-1218** (Swift strips whitespace from cell TEXT, Rust preserves = Excel-correct); filed, fuzz scoped to the clean domain. Dates (two independent calendars) confirmed parity-clean.
 - **Session eviction ENGINE (TSK-589 slices 1-3):** `runtime.rs` — `eviction_plan` (byte-budget + count-cap LRU, pinned-never-evicted, TTL) + `CoreRuntime<D>` registry + `TableArena.estimated_bytes`. Host-tested; the design to bound the unbounded `handle.rs` map. Remaining: FFI shims + Swift rehydration (slices 4-5, focused integration).
 - **LSP-spike children (from reconciled TSK-781):** **TSK-1129** slice 1 — workspace-local-binary trust decision core (symlink-safe path confinement; the RCE-on-browse guard), host-tested. **TSK-1127** — zero-server fallback completion core + cursor-aware API (in-file identifier completions when no LSP), host-tested. Both have render/FFI wiring tails.
@@ -291,7 +291,7 @@ Inline autonomous cron (no workflows); all on main, host/rust-core-gate-green pe
 The SATURATION above was REOPENED: state-checking curated `[reported]` items against the code surfaced a real vein — features built+validated whose MODEL-layer wiring had ZERO host coverage (only the engines were tested), hidden by the stale curated list. Drained as a campaign, each filed→validated with teeth (~38 host tests):
 - **Document-tools model wiring:** TSK-1113 (case transforms), TSK-1224 (Edit▸Lines), TSK-1225 (cleanup + line-ending), TSK-1226 (CSV-export), TSK-1227 (stats + Markdown link-check), **TSK-1228 (HTML-export + 2 SECURITY fences — author-HTML escape TSK-966 + image-inlining containment TSK-997)**, TSK-1229 (JSON minify-action + JSON→CSV). All pin `applyTextTransformToActiveFile`-family + CSV/JSON conversion wiring (write-through-to-disk, the can* gates, no-op/no-file contracts).
 - **CI-guard arc (TSK-788 audit gaps verified G1–G4 all done):** TSK-1098 residual doc-drift cleanup (MERMAID_IMPL "25 MB policy cap" + the DECISIONS-NEEDED entry) + the never-shipped WebView-lane CI guard (TSK-1231, consolidated into `InfraInvariantTests`: the load-bearing nightly-only WebView lane can't be silently dropped or leaked into the merge gate).
-- **DUPLICATE caught + reversed:** TSK-1230 (a bundle-cap drift guard) duplicated the pre-existing `BundleCapDocConsistencyTests` — removed + dismissed-as-duplicate (commit 11960e27); LESSON recorded (grep `Tests/` for an existing guard before building; CI-invariants live in `InfraInvariantTests`, bundle-cap doc-sync in `BundleCapDocConsistencyTests`).
+- **DUPLICATE caught + reversed:** TSK-1230 (a bundle-cap drift guard) duplicated the pre-existing `BundleCapDocConsistencyTests` — removed + dismissed-as-duplicate (commit 3a845671); LESSON recorded (grep `Tests/` for an existing guard before building; CI-invariants live in `InfraInvariantTests`, bundle-cap doc-sync in `BundleCapDocConsistencyTests`).
 - **Methodologies (both now THINNING):** (1) state-check curated-stale `[reported]` → built-but-under-tested model wiring; (2) read validated tickets' reports for un-shipped sub-deliverables. The dup signals the vein is re-covering ground — the clean host-buildable internal-quality pool is again largely drained; boundary returns to owner-flips / render / focused-session.
 
 ## LOG 2026-06-21 — Rust FormulaEngine port (owner redirect) + web markdown + strategy spikes
@@ -300,30 +300,30 @@ Inline autonomous cron run (no workflows); all on main, host/rust-core-gate-gree
 - **Rust FormulaEngine PORT (TSK-1213) — hand-written, ZERO deps, owner-directed.** Full Swift-parity pure evaluator (arithmetic/refs/ranges/comparisons/aggregates/conditional-aggregates/logical/IS*/lookup/text/math/dates, hand-rolled Hinnant civil-date) → FFI (`FormulaEvaluate`+`FormulaRecalc` over mdvcore_call; MessagePack float added) → Swift `RustFormulaAdapter` (gate + #NAME-fallback) → `EditableCSVModel.recalcAllFormulas` (batch, recursion-gap closed via cycle-detecting recalc). ~60 cross-language A/B parity cases (`FormulaParityTests`). Gated OFF.
 - **Formula extensions BEYOND Swift (TSK-1216, validated):** wildcards (`* ? ~`) in criteria, COUNTIFS/SUMIFS/AVERAGEIFS, IFNA, TEXTJOIN, CHOOSE. Rust supersedes the bugfix-only Swift twin.
 - **Web rendered Markdown (TSK-256, validated):** `markdown::render` wired into the std-only web front-end; renders `.md` to sanitized HTML BY DEFAULT (Source/Hex toggles). 96 web tests.
-- **SYSTEMIC FINDING — "engine tested != feature shipped":** the formula engine passes every host gate yet has ZERO view consumers. Corrected an over-claimed CHANGELOG entry (e4ad9f10); shipped a partial consumption guard (`EngineConsumptionGuardTests`, TSK-1217) + filed the reachability limitation.
+- **SYSTEMIC FINDING — "engine tested != feature shipped":** the formula engine passes every host gate yet has ZERO view consumers. Corrected an over-claimed CHANGELOG entry (536f26ad); shipped a partial consumption guard (`EngineConsumptionGuardTests`, TSK-1217) + filed the reachability limitation.
 - **Strategy spikes:** migration roadmap (TSK-775), test-suite audit (TSK-788), bundle-size spike (TSK-1214 — exec is __TEXT-heavy/grammar tables, strip already maxed, precise share needs bloaty/map).
 
 ## LOG 2026-06-20 (PM, 5-min cron) — trust-local-HTML feature + sidebar cache fix + integrations
 
 Inline autonomous cron run (no workflows). All on main, host-gate-green per item.
 - **TSK-1189 trust-local-HTML (4 slices, at `review` — on-screen UNVERIFIED):** slice 1
-  fail-closed gate `HTMLTrustPolicy` (2d6eeb24); slice 2 bounded relaxation — sanitizer
+  fail-closed gate `HTMLTrustPolicy` (295efdcc); slice 2 bounded relaxation — sanitizer
   keeps the doc's own script/style, CSP relaxes script-src but KEEPS `connect-src 'none'`
-  anti-exfil fence (6e4c871a); slice 2b render wiring + `FileQuarantine` probe +
-  `DocumentModel.htmlTrusted` (6bfe1633); slice 3 Trust&Run banner trigger (ca6d64b3).
+  anti-exfil fence (a083805b); slice 2b render wiring + `FileQuarantine` probe +
+  `DocumentModel.htmlTrusted` (d8a34179); slice 3 Trust&Run banner trigger (81c3b7cd).
   Security design `docs/research/html-trust-mode-2026-06-20/`; ~37 host tests + teeth.
   Banner-appears + Weather-Console-renders = owner/T6 review ceiling. Slice 3b
   (failure-surfacing + consent-network) = TSK-1203.
 - **TSK-854** Swift-treesitter highlight-twin kill — integrated + re-gated on main
-  (71d3e0ff), **VALIDATED**; ~12.7 MB reclaim. Scope-corrected (engine kept for folds/
+  (2e10576c), **VALIDATED**; ~12.7 MB reclaim. Scope-corrected (engine kept for folds/
   structural-search); follow-ups TSK-1201/1202.
 - **TSK-1103 LocalHistory cluster** — storage Myers-linear-space diff + unified version
-  viewer reconciled onto main (8d4726a5); duplicate snapshot-hook + duplicate
+  viewer reconciled onto main (ab10c9f1); duplicate snapshot-hook + duplicate
   secret-exclusion unified at the store (one instance, one chokepoint hook); at `review`
   (viewer UI render ceiling).
 - **TSK-991** sidebar children-cache cap — pinned-aware eviction via pure
-  `childrenCacheEvictions`, **VALIDATED** (eba0330d).
-- Docs/skills committed (affb7a19): the T6 on-screen-confirm rule, the agent-UAT (T6)
+  `childrenCacheEvictions`, **VALIDATED** (32849c44).
+- Docs/skills committed (f5bec410): the T6 on-screen-confirm rule, the agent-UAT (T6)
   framework, the agent-productivity feedback, highlighting/image research outputs.
 
 ## LOG 2026-06-20 — unified version-history + diff viewer (TSK-301/1103)
@@ -347,15 +347,15 @@ Owner-directed RETHINK: ONE well-designed version-history + diff viewer serving 
 
 5-min inline cron resumed (job d1fcac5b; SOP rules: inline-only, never-idle). Landed this firing-chain, each commit per-item, host-gate-green (`main` linear):
 
-- **TSK-1116** (`899b976e`) — View ▸ Focus Mode menu (6 presets) surfacing the host-tested FocusWorkMode engine: PanelLayoutStore.applyOverrides bulk setter + DocumentModel.applyFocusMode (pin sidebar panels + preferred lens-if-supported) + the submenu. Reconcile-filed "built-but-unwired" item. Teeth: apply-pins-panels + lens-when-supported (2) + engine (16). → `fixed` (menu/panel render = review ceiling).
+- **TSK-1116** (`93895e95`) — View ▸ Focus Mode menu (6 presets) surfacing the host-tested FocusWorkMode engine: PanelLayoutStore.applyOverrides bulk setter + DocumentModel.applyFocusMode (pin sidebar panels + preferred lens-if-supported) + the submenu. Reconcile-filed "built-but-unwired" item. Teeth: apply-pins-panels + lens-when-supported (2) + engine (16). → `fixed` (menu/panel render = review ceiling).
 
-- **TSK-936** (`00e49732`) — Toggle View Only command: ⇧⌘L + View-menu item (checkmark reflects state) + `toggle-view-only` palette verb, flipping the existing ViewModeControl read-only lock. Owner unblocked the key gate (⌘1-9 reserved). 7 surfaces wired (model/descriptor/verb/catalog/menu/validate/test-vocab); teeth = verb flip-state test + CommandRegistry uniqueness/vocab sync. → `fixed` (keypress/menu render = review ceiling).
+- **TSK-936** (`8e7e16d3`) — Toggle View Only command: ⇧⌘L + View-menu item (checkmark reflects state) + `toggle-view-only` palette verb, flipping the existing ViewModeControl read-only lock. Owner unblocked the key gate (⌘1-9 reserved). 7 surfaces wired (model/descriptor/verb/catalog/menu/validate/test-vocab); teeth = verb flip-state test + CommandRegistry uniqueness/vocab sync. → `fixed` (keypress/menu render = review ceiling).
 
-- **TSK-1113** (`07696606`) — Edit ▸ Transformations menu + `edit-uppercase`/`lowercase`/`capitalize` palette verbs, surfacing the host-tested TextTransform engine (TSK-351) across 4 surfaces (DocumentModel methods, AppKit submenu + validate-enable, ScriptVerbDispatch, ScriptVerbCatalog sync). Teeth: 3 end-to-end verb→file tests + catalog-sync + engine green. → `fixed` (menu render = review ceiling).
+- **TSK-1113** (`acb1f2d6`) — Edit ▸ Transformations menu + `edit-uppercase`/`lowercase`/`capitalize` palette verbs, surfacing the host-tested TextTransform engine (TSK-351) across 4 surfaces (DocumentModel methods, AppKit submenu + validate-enable, ScriptVerbDispatch, ScriptVerbCatalog sync). Teeth: 3 end-to-end verb→file tests + catalog-sync + engine green. → `fixed` (menu render = review ceiling).
 
-- **TSK-986** (`50521d04`) — Hex search no longer scans the full buffer per keystroke: added a 180ms cancel-and-reschedule debounce (`scheduleRecompute`, the `searchTask` idiom). Search logic already covered by HexSearchEngine/MatchCap tests; → `fixed` (review ceiling = UI-timing).
-- **docs/SOP** (`bcfa3c01`) — Codified the two cron hard-rules (work INLINE / never-idle) into CLAUDE.md + TASK_WORKFLOW §0/§5; added `docs/CURATED_TASKS_2026-06-20.md` as the active selector; recorded the render-path-VM-verify + partial-epic-lost-work lessons.
-- **TSK-1120** (`41017b83`) — Footer file-stats no longer flash blank on tab switch: `.empty` tab state now routes through the same Size+"loading…" placeholder as `.loading` (extracted `StatusBar.loadingPlaceholder`). Observation layer verified already-correct (StatusBar observes tabCoordinator). Host teeth on the placeholder contract; → `fixed` (review ceiling; owner-repro flagged for the residual intermittent-chip case).
+- **TSK-986** (`a649d441`) — Hex search no longer scans the full buffer per keystroke: added a 180ms cancel-and-reschedule debounce (`scheduleRecompute`, the `searchTask` idiom). Search logic already covered by HexSearchEngine/MatchCap tests; → `fixed` (review ceiling = UI-timing).
+- **docs/SOP** (`3503f8ab`) — Codified the two cron hard-rules (work INLINE / never-idle) into CLAUDE.md + TASK_WORKFLOW §0/§5; added `docs/CURATED_TASKS_2026-06-20.md` as the active selector; recorded the render-path-VM-verify + partial-epic-lost-work lessons.
+- **TSK-1120** (`e4c62f5e`) — Footer file-stats no longer flash blank on tab switch: `.empty` tab state now routes through the same Size+"loading…" placeholder as `.loading` (extracted `StatusBar.loadingPlaceholder`). Observation layer verified already-correct (StatusBar observes tabCoordinator). Host teeth on the placeholder contract; → `fixed` (review ceiling; owner-repro flagged for the residual intermittent-chip case).
 
 NOTE (API outage): the click→selection-bug subagent (aaacbb3f) DIED on an API ConnectionRefused with no commit — that bug is NOT fixed, needs re-dispatch on an interactive turn. Scroll (TSK-1046/1047) + CM6-Lezer-22 (TSK-1135) remain on worktrees awaiting owner-gated integration (scroll: VM trace shows the warm cache works; the UAT harness is the broken part).
 
@@ -401,7 +401,7 @@ not-yet-laid-out fresh CM6 and effectively no-ops.
 Two modes, both yielding (board reconciled; `/Applications` rebuilt @ 21:57):
 
 - **Reconciled ~20 wave-built epic foundations `fixed→review`** (model host-tested-green; the consuming UI is the owner's visual close). The ultracode wave built far more model-tested foundations than the board tracked: 712 (3-way merge), 717 (notebooks), 318 (CR-Q&A), 319 (dep-explorer), 345 (work-items), 346 (ForgeRemote), 351 (TextTransform), 264 (sessions-seam), 338 (extensions), 341 (terminal OSC7 cwd), 353 (InstanceRegistry), 316 (walkthrough-catalog), 280/311/333/305/300/283/285/302/284/334/259/275 (render-path). **"Check-before-building" repeatedly avoided duplicate work** (712/717/403/404/405 were all already built).
-- **Built 4 genuinely-un-built foundations** (verify-absent-first, host-tested with teeth, gate-green): **406** raster selection (RasterSelection rect+polygon + fill-in-selection, `07d91d40`), **680** RTF export (`19046c24`), **764** external-edit reconciliation (composes 712, `2805ecf6`), **1033** ODS .ods grid parser (repeat-aware + OOM guard, `cba50ed7`). NOTE: the ODS work was first mis-attached to 674 — which is `wontdo` (Excel dup of 673); re-homed to new TSK-1033. Lesson: `task_get` the TITLE before building, not a guessed topic.
+- **Built 4 genuinely-un-built foundations** (verify-absent-first, host-tested with teeth, gate-green): **406** raster selection (RasterSelection rect+polygon + fill-in-selection, `029fcbfd`), **680** RTF export (`81d9095a`), **764** external-edit reconciliation (composes 712, `cfdb8544`), **1033** ODS .ods grid parser (repeat-aware + OOM guard, `ad56fcc7`). NOTE: the ODS work was first mis-attached to 674 — which is `wontdo` (Excel dup of 673); re-homed to new TSK-1033. Lesson: `task_get` the TITLE before building, not a guessed topic.
 - **Validated** (pure-logic/infra, regression-guarded): 992 (PTY double-fork + callback-sync), 849 (test-sleep ratchet), + earlier 309/997/999/1014. **+ the full M-series adversarial-review correctness vein** (host-tested, non-bottlenecked): 978 (NSRange offset-overflow clamp), 989 (StatusBarMemorySampler timer deinit), 970 (RepoStatsCache off-actor git + coalesce), 979 (PTY child signal-safety via parent-precomputed spawn plan), 983 (rust-core JSON-number Foundation A/B parity, cargo-tested), 982 (version-skewed method-id distinguished), 977 (MCPServer deadline-bound main-actor wait). Each: verified TITLE↔test↔fix (#NNN-trap guard caught 983's wrong Swift test — its fix is rust-core json.rs). The `fixed` lane (~130) is now fully scanned; validatable correctness drained, render-path → review, render/epic/perf residuals stay at fixed (owner/VM).
 
 ## LOG 2026-06-19 PM (late) — fixed-lane drain + concurrency/paint landings
@@ -410,14 +410,14 @@ Post-handoff continuation of the fallback fixed-lane drain (pattern: pure-logic�
 render-path model-tested→review, design/epic→scope; #NNN-trap check first — now in LESSONS +
 memory `feedback_render_path_review_ceiling`).
 
-- **TSK-992 (validated, `12c7f07c`)** — PTYProcess concurrency: closed the `start()` double-fork
+- **TSK-992 (validated, `2adff3bd`)** — PTYProcess concurrency: closed the `start()` double-fork
   window (atomic `claimStartSlot()` marks `starting` under the lock; released on fork-fail + after
   childPID is set) and lock-synchronized `onOutput`/`onExit` (computed vars; invoked OUTSIDE the
   lock = no deadlock). Host tests: claimStartSlot second-claim refused + accessor round-trip. The
   fork-timing lifecycle tests are heavy-tier-gated (flake under host load; pre-existing on clean main).
-- **TSK-1026 follow-up (`1fcc30ee`)** — destructive tab close now drops the file's >1 MiB hot-exit
+- **TSK-1026 follow-up (`2f45ba97`)** — destructive tab close now drops the file's >1 MiB hot-exit
   spill (closed-while-dirty orphan; NOT the session-switch preserve path). Test: `test_closeTab_removesOrphanSpill`.
-- **TSK-406 (fixed, `07d91d40`)** — raster selection foundation: `RasterSelection` (rect half-open +
+- **TSK-406 (fixed, `029fcbfd`)** — raster selection foundation: `RasterSelection` (rect half-open +
   freeform-polygon even-odd ray-cast `contains`) + `RasterCanvas.fill(_:in:)` selection-constrained +
   bounds-clamped. Host-tested (RasterSelectionTests 7/7). Render tail (marquee/lasso UI + VM wiring) = VM/owner.
 - **Paint reconciliation** — 403/404/405 were already implemented by TSK-285's raster paint
@@ -439,7 +439,7 @@ persistence/hot-exit/security work:
   LSPUATTests, InteractionUATTests, KeySynthUATTests, MetadataChecksumUATTests, and all the
   *VisualRegression / *PixelEval / *WebView / Mermaid* suites.
 - **Failure 1 — PMA01 (PluginsAndMcpAutomationUATTests):** stale — expected 10 MCP tools, app
-  correctly has 12 (set_zoom + search_files). FIXED as TSK-1031 (`b76eb496`); re-validates next VM run.
+  correctly has 12 (set_zoom + search_files). FIXED as TSK-1031 (`3986706e`); re-validates next VM run.
 - **Failures 2+3 — PV_02 (PreviewsUATTests, video→hex) + ViewModeMatrixSmokeTests (md→hex):** SAME
   root cause — switching to HEX mode → "no Hex* view in tree — byte grid did not mount" under the VM
   GUI lane. Filed TSK-1032 (broadened, live-validation): real mount regression vs view-tree-name
@@ -464,10 +464,10 @@ exhaustive sources so no orphan escapes:
   [main's SC-MENU-01 is a superior re-done version], `cbe68e2e` audit-batch whose flagship MessagePack
   `maxDepth=128` cap + MCP framing are on main).
 - **One scare resolved:** `3d39813d` (1008/1009 "5 silent error sinks") read as missing under a TSK-id
-  grep, but is on main as **`3ab811c4`** — all 5 sinks verified present (the cherry-pick conflicted
+  grep, but is on main as **`348473c6`** — all 5 sinks verified present (the cherry-pick conflicted
   precisely *because* main already has them). 1008 + 1009 reconciled reported/review → **validated**.
 - **The only genuine gap** was **BUG-027** (the directive-excluded `4050b4bb` orphan), fixed fresh this
-  session as **TSK-1024** (`0e5645e8`).
+  session as **TSK-1024** (`dd18a2d7`).
 
 **Verdict: nothing is lost — every workflow commit's work is integrated on `main`.** All 133 worktree
 branch refs reaped (0 left, repo clean). Dangling commits are expected post-squash orphans.
@@ -478,15 +478,15 @@ Owner refined the method mid-run: **do the work INLINE in-session, a few tickets
 more giant background fleets); same goal (all tasks → done). Two things happened this segment:
 
 **Inline tickets (fix → host tests w/ teeth → commit → self-validated):** TSK-1013 (parseTimestamp
-non-finite guard, `449bb858`), TSK-1004 (HexEditBuffer bounded undo, `449bb858`), TSK-1002 (terminal
-eraseLineFromCursor Range-trap clamp, `3eac2c4a`), TSK-1003 (git cumulativeDiff/commitDiff
-option-injection guard, `7eb85668`). All 4 → **validated** with proof.
+non-finite guard, `b4b1742c`), TSK-1004 (HexEditBuffer bounded undo, `b4b1742c`), TSK-1002 (terminal
+eraseLineFromCursor Range-trap clamp, `cf94f472`), TSK-1003 (git cumulativeDiff/commitDiff
+option-injection guard, `d433cb3b`). All 4 → **validated** with proof.
 
 **Wave 3 (50-item drain `w99dpfj2i`) STALLED after batch 1** — 7 of 8 agents committed but no batch 2
 spawned across ~15 ticks (slot-freeing hung; 969 never committed). Per the inline directive, STOPPED
 the wave, **harvested the 7 done commits** onto `wave3/harvest`, cherry-picked clean (7/7, no
 conflicts), ran the **rust-core gate** (green, 0 fail — validates 973's `find_engine`/`search.rs`,
-header-drift OK = ABI-stable) + the **Swift headless gate** (PASSED, 0 fail), ff `main` → **`61e3e28f`**.
+header-drift OK = ABI-stable) + the **Swift headless gate** (PASSED, 0 fail), ff `main` → **`8545af08`**.
 The 7 (971 statusbar-rescan, 972 git-off-main, 973 search.files-prune, 974 exact-grammar-pins, 975
 supply-chain-CI-gate, 980 lsp-env-denylist, 981 WireError-surface) all → **validated**; CHANGELOG
 union-merged the agents' perf entries. Worktree reaped (disk 78 GB). 2 spikes (589/810) parked.
@@ -499,15 +499,15 @@ select-drain (`wfykpwfqh`, 8-concurrent worktrees, one-foundation-slice-per-epic
 (2 correctly blocked: **TSK-891** PageUp + **TSK-794** async/inlining audit — both returned
 "VM-profile-needed, no safe host fix," respecting measure-don't-guess).
 
-Integration onto `wave2/integration` off main `2ad9131f`, cherry-pick (CHANGELOG union-merged):
+Integration onto `wave2/integration` off main `355a4677`, cherry-pick (CHANGELOG union-merged):
 47/48 clean, **1 semantic clash** — TSK-697 (`search_files`) vs a parallel commit that added the
 `set_zoom` MCP tool: both modified `MCPToolCatalog` + its catalog/count tests. Resolved by merging
 BOTH tools (catalog = 12), and fixing a **3rd/4th clash class** the gate caught: hardcoded tool-count
 `11→12` in `MCPServerTests`/`MCPToolCatalogTests`, and **`ScriptVerbCatalog` parity** — TSK-326 added
 4 omni-verbs (`fold-all`/`unfold-all`/`clear-recents`/`show-repo-history`) to `ScriptVerbDispatch` but
-not the catalog (`testCatalogMatchesDispatchSwitch` failed). One integration-fix commit `f7e94872`.
+not the catalog (`testCatalogMatchesDispatchSwitch` failed). One integration-fix commit `48af5c90`.
 
-Build green → **headless gate PASSED** (0 failures, tier enforcement OK) → ff `main` → **`f7e94872`**
+Build green → **headless gate PASSED** (0 failures, tier enforcement OK) → ff `main` → **`48af5c90`**
 (48 wave + 1 fix). Reaped the wave2 worktree + 48 branch refs (disk 80 GB). CHANGELOG union-merged
 the agents' user-facing entries cleanly. **All 48 board items → `fixed`** (commits recorded). The
 2 blocked stay `reported` (need VM profile). Lessons → LESSONS.md (zsh `${=VAR}` split; staged
@@ -535,20 +535,20 @@ Shipped the hand-rolled perf-floor RATCHET bench, the host-completable half of a
 
 ## LOG 2026-06-19 (PM) — ULTRACODE WAVE MERGED TO MAIN: +116 commits, headless gate GREEN
 
-The full backlog-drain wave landed on `main` (fast-forward `bd1f8ca` → `d4a8612c`, **116 commits**). All 4 retry lanes + the first/second waves were integrated onto `ultracode/backlog-drain` in an isolated worktree, gated, then ff-merged. Headless gate: **7329 tests, 0 failures, tier enforcement OK**. `/Applications/TextView.app` rebuilt + installed from the merged main.
+The full backlog-drain wave landed on `main` (fast-forward `510efc5` → `035a6f1d`, **116 commits**). All 4 retry lanes + the first/second waves were integrated onto `ultracode/backlog-drain` in an isolated worktree, gated, then ff-merged. Headless gate: **7329 tests, 0 failures, tier enforcement OK**. `/Applications/TextView.app` rebuilt + installed from the merged main.
 
 - **Integration method:** cherry-pick all curated commits → dedup (drop orphans `4050b4bb`/`abe06af7`; pick-one for 910/948; epic-slices keep-all) → resolve conflicts → `cargo build` + `swift build --build-tests` to clear compile clashes → full `test-headless-gate.sh` → ff `main`. (Full how-to + the 5 clash patterns in LESSONS.md 2026-06-19.)
 - **5 parallel-worktree semantic clashes fixed at integration** (clean git-merge, broken-when-combined): RemoteTransport `orphanEvents`→`OrphanStore` (976+987); `RGBAColor` byte-vs-double (285+287)→renamed vector to `OverlayColor`; 989-vs-963 hover test removed; union-strip brace loss restored; sleep-ratchet baseline 75→77.
 - **DROPPED from the wave (re-land coherently via follow-up):** tmux 964 (4 model slices had 2 incompatible `PaneNode` designs + a competing controller — TSK-1018 + a model-reconcile follow-up); CSV inline-editor wiring (TSK-1019; the EditableCSVModel landed); 897 grammars (landed the coverage test only — grammars need the dep + a non-sandbox build); 704 Markdown side-by-side (lane-A connection-error miss — re-retry).
-- **704 DONE** (ff `7361a075`, MarkdownPreviewMap scroll-sync model, 17/17 host tests) + **TSK-1019 DONE** (ff `69c6b5a6`, CSV inline-editor wired dark behind CSVEditingGate, 10/10 host tests) + **TSK-1018 MODEL FOUNDATION DONE** (ff `69aa58e3`, tmux re-land on ONE typed PaneNode + layout/control parsers + session, 96/96 host tests) — the host-doable parts of all three deferred follow-ups landed + confirmed on main. 1018 kept at `progress` (its titled TmuxController/Router/PTY/render deliverable is VM-tail, `live-validation`). All wave worktrees reaped (1 worktree, ~93 GB).
+- **704 DONE** (ff `e1fb6bab`, MarkdownPreviewMap scroll-sync model, 17/17 host tests) + **TSK-1019 DONE** (ff `2702ff7c`, CSV inline-editor wired dark behind CSVEditingGate, 10/10 host tests) + **TSK-1018 MODEL FOUNDATION DONE** (ff `d382abc9`, tmux re-land on ONE typed PaneNode + layout/control parsers + session, 96/96 host tests) — the host-doable parts of all three deferred follow-ups landed + confirmed on main. 1018 kept at `progress` (its titled TmuxController/Router/PTY/render deliverable is VM-tail, `live-validation`). All wave worktrees reaped (1 worktree, ~93 GB).
 - **FALL-BACK DRAIN OUTCOME:** advanced the 9 headline user-facing fixes `fixed→review` (owner's in-app validation checklist). Then verified across all 3 board pools (task_next/triaged/reported) that the clean autonomous **host implement-pool is drained** — what remains is umbrella `[PARTIAL]` trackers (need owner scoping), owner-gated (470/498/508/343/256/399), foreign (441-445), a big spike (400 rpcd), the `[PAINT]` slices (403-406, fulfilled by the wave's 285/287), and the big deferred items.
 - **VM RENDER-VALIDATION PASS DONE (the highest-leverage remaining item):** ran the full GUI-lane suite on the UTM VM against the merged main (`MDV_VM_GUI_SESSION=1 … test-in-vm.sh all`, fresh `dist/` rebuilt). Result: **~3998/4000 GREEN** — the 117-commit merge builds, launches, and renders healthily on a real GUI. Only **2 UAT failures, both confirmed NON-regressions** (consistent in isolation, root-caused): (1) **TSK-1020** KeySynthUATTests/KEY_01 — the real-keydown harness (added by the wave's 818) can't deliver synth NSEvents into the CM6 WKWebView (T4 webview-input limitation; editor typing is fine for users, host model tests green); (2) **TSK-1021** PreviewsUATTests/PV_04 — 1008 now CORRECTLY surfaces an error on an unenumerable DB instead of mounting an empty browser, so the test's "expect mount" assertion is stale (valid-DB browsing unaffected). Both filed `live-validation`; neither blocks main.
-- **TSK-1021 FIXED + VALIDATED @ `a43b0a72`:** the PV_04 failure was a latent malformed-fixture defect (writeSQLiteFixture wrote a header-only db with a zeroed sqlite_master b-tree) that 1008 honestly exposed — NOT a regression. Fixed via a shared `UATSQLiteFixture.write()` (real `sqlite3` db). HOST: UATSQLiteFixtureTests 5/5 (incl. teeth + the enumerable-property core-guard, so a fixture regression now fails on the HOST gate). VM: PreviewsUATTests 9/9 green, PV_04 passes (browser mounts). Self-validated with host+VM proof.
-- **TSK-1020 FIXED @ `ab496eb3`+`89f0e382`:** added the `editor-focus` script verb (host-tested EditorFocusVerbTests 4/4, headless gate green) — a real automation improvement reusing the existing focus path. VM-validation then PROVED synthesized CGEvent keydowns still don't insert into the CM6 WKWebView even when focused (KEY_02 confirms delivery works; WebContent only takes genuine hardware / JS-injection input), so KEY_01's round-trip is infeasible in the T4 harness → `XCTSkip`'d (documented, not deleted). Both VM findings (1020+1021) now resolved; the host compile is green @ 89f0e382.
-- **TSK-845 VALIDATED @ `5ae82042`:** measure-don't-guess — all host-measurable perf claims are non-wins (utf8.count O(1) even foreign-backed; MsgPackReader lazy decode only ~19% / dominated by unavoidable cell materialization), so production code UNCHANGED (frugality) + shipped PerfMicroBundle2GuardTests (4 host tests pinning the facts, green on main). lazy-tab 45-92ms (UI-opening) split to **TSK-1022** (VM xctrace/PerfSignpost profile).
+- **TSK-1021 FIXED + VALIDATED @ `432ccb10`:** the PV_04 failure was a latent malformed-fixture defect (writeSQLiteFixture wrote a header-only db with a zeroed sqlite_master b-tree) that 1008 honestly exposed — NOT a regression. Fixed via a shared `UATSQLiteFixture.write()` (real `sqlite3` db). HOST: UATSQLiteFixtureTests 5/5 (incl. teeth + the enumerable-property core-guard, so a fixture regression now fails on the HOST gate). VM: PreviewsUATTests 9/9 green, PV_04 passes (browser mounts). Self-validated with host+VM proof.
+- **TSK-1020 FIXED @ `797c7ae5`+`18b8001f`:** added the `editor-focus` script verb (host-tested EditorFocusVerbTests 4/4, headless gate green) — a real automation improvement reusing the existing focus path. VM-validation then PROVED synthesized CGEvent keydowns still don't insert into the CM6 WKWebView even when focused (KEY_02 confirms delivery works; WebContent only takes genuine hardware / JS-injection input), so KEY_01's round-trip is infeasible in the T4 harness → `XCTSkip`'d (documented, not deleted). Both VM findings (1020+1021) now resolved; the host compile is green @ 18b8001f.
+- **TSK-845 VALIDATED @ `532885f0`:** measure-don't-guess — all host-measurable perf claims are non-wins (utf8.count O(1) even foreign-backed; MsgPackReader lazy decode only ~19% / dominated by unavoidable cell materialization), so production code UNCHANGED (frugality) + shipped PerfMicroBundle2GuardTests (4 host tests pinning the facts, green on main). lazy-tab 45-92ms (UI-opening) split to **TSK-1022** (VM xctrace/PerfSignpost profile).
 - **TSK-1022 MEASURED (fixed):** VM-profiled the lazy-tab/nav path (vm-profile.sh nav debug, os_signpost). The app's instrumented lazy-tab MODEL materialize is ~2ms/tab (materialize/load/open/interact all single-digit ms even debug-on-VM) — the claimed "45-92ms lazy-tab materialize" does NOT reproduce as a model/app-side hotspot. Big trace durations are system slstransaction (WindowServer idle) + long-lived WebView render intervals. No actionable model optimization (measure-don't-guess + frugality). If real tab-switch lag is felt → separate WebView-render investigation (reopen-mode + WebContent scope), not the lazy-tab model. LESSON: an unmeasured perf claim ("45-92ms") was a non-hotspot — measure-first paid off.
 - **VALIDATION DRAIN (fixed→validated, proof-backed):** validated the wave's SECURITY hardening subset with cited gate-covered tests (several teeth-demonstrated): **965** (MsgPack recursion-depth DoS → MsgPackDecoderDepthCapTests), **966** (export stored-XSS + CSP → HtmlExportXSSTests), **967** (HTMLSanitizer event-handler/js-URL bypass → HTMLSanitizerTests), **968** (sqlite SQLITE_TRANSIENT UAF → SQLiteReaderTests), **976** (RemoteTransport sub use-after-teardown → RemoteOrphanStoreTests), **987** (orphan-dict OOM → RemoteOrphanStoreTests, teeth: grows to K red unfixed). Plus **704** (MarkdownPreviewMap model, 17 tests), **845**, **1021** earlier. **Boundary (highest-standards, no rubber-stamping):** I did NOT validate perf fixes whose perf-characteristic isn't unit-guarded (e.g. 564 double-copy — a correctness test wouldn't catch a regression), nor infra items of uncertain scope (586 differential-fuzzing), nor user-visible features (owner closes by using the app). Those stay at `fixed`.
-- **TSK-1018 CONTROLLER-CORE re-landed @ `4db0f360` (fixed):** the dropped controller (45946cdd) split cleanly into a pure host-logic core + VM-tail glue — re-landed the core as TmuxControllerCore (%output→per-pane demux, reply-frame FIFO correlation, active-pane input routing, topology), reconciled onto the canonical model, 26 host tests (122/122 combined with the model). So the ENTIRE host-completable scope of tmux (model `69aa58e3` + controller-core `4db0f360`) is landed + host-tested. The live edges (tmux -CC PTY spawn + RouterBox queue + ObservableObject + SwiftUI TerminalSplitView render) split to **TSK-1023** (VM-tail, live-validation). NB: I'd initially mis-bucketed the whole controller as VM-only — the honest fork (extract-core-or-confirm-VM-tail) found a real ~26-test host slice.
+- **TSK-1018 CONTROLLER-CORE re-landed @ `51d9d315` (fixed):** the dropped controller (45946cdd) split cleanly into a pure host-logic core + VM-tail glue — re-landed the core as TmuxControllerCore (%output→per-pane demux, reply-frame FIFO correlation, active-pane input routing, topology), reconciled onto the canonical model, 26 host tests (122/122 combined with the model). So the ENTIRE host-completable scope of tmux (model `d382abc9` + controller-core `51d9d315`) is landed + host-tested. The live edges (tmux -CC PTY spawn + RouterBox queue + ObservableObject + SwiftUI TerminalSplitView render) split to **TSK-1023** (VM-tail, live-validation). NB: I'd initially mis-bucketed the whole controller as VM-only — the honest fork (extract-core-or-confirm-VM-tail) found a real ~26-test host slice.
 - **REMAINING (all genuinely needs owner steer / big-VM):** **TSK-1023** tmux live PTY + SwiftUI split render (VM-tail), **897** grammars (dep approval), and the wave's `fixed`/`review` items for the owner to close `done` (gate-trusting / in-app). **The confidently-validatable autonomous pool — host follow-ups, both VM findings, measurable perf (845+1022), the proof-backed security subset, AND the full tmux host scope (model + controller-core) — is now fully drained.** Every remaining item is VM-render/PTY-coupled or owner-dep-gated.
 
 ## LOG 2026-06-19 — Ultracode wave: 19 items landed (reconciled→fixed), 47 rate-limited→retrying; /Applications rebuilt
@@ -573,7 +573,7 @@ mid-run**, so each lane finished SELECT + committed the agents that ran before t
   06-18) so the owner gets the already-shipped 06-16/06-18 work (vim-mode footer, palette focus, search-scroll cap,
   git-log copy, CSV copy, find-all-matches, bookmarks scope, shebang highlight, ⌘F/split/I-beam fixes).
 - **Integration still pending** (the big step): cherry-pick all `fixed` SHAs onto `ultracode/backlog-drain`, headless
-  gate, owner-validate before mainline. None of the wave is on `main` yet (main @ `bd1f8ca`).
+  gate, owner-validate before mainline. None of the wave is on `main` yet (main @ `510efc5`).
 
 ## LOG 2026-06-18 — TSK-888 (slice): global-search per-file match-row cap (result-scroll perf)
 
@@ -664,7 +664,7 @@ minimap lives — it has model.sourceFindMatchLines + displayText(for:file) + sc
 button above the minimap opens the list in a popover; clicking a row jumps via the existing `scrollSource(toLine:)`
 (reuses the minimap's jump) and dismisses. Host teeth: FindMatchListTests (4 — mapping/trim, out-of-range+same-line
 distinct ids, truncation, empty). The list view + popover render = VM/owner tail.
-VM-validate (4cdd0cb): REGRESSION-CLEAN — 5838 tests, only red is the known TSK-960 capture artifact. 374 → review.
+VM-validate (e7f8ad6): REGRESSION-CLEAN — 5838 tests, only red is the known TSK-960 capture artifact. 374 → review.
 (Lesson: shipped 374 solo → a full VM cycle for one item; BATCH 2-3 before VM-validating going forward.)
 
 ## LOG 2026-06-18 — TSK-960 diagnosed: the last VM red is a T5-capture artifact, NOT a bug
@@ -695,7 +695,7 @@ Two clean items, gated together (velocity directive), committed separately.
   scroll-restoration on a retained-WebView reload is version/state-dependent — passed run 1, failed runs 2-3 with
   identical app code) with a tolerant "scroll-readable after reload" check; the load-bearing capture + restore
   assertions are unchanged. De-reds the VM `all` lane (root cause: it's a raw WKWebView test, unrelated to 905/922).
-- **VM batch-validate (66e5907, GUI all-lane):** 5834 tests, **1 failure** = only TSK-491 (terminal, known-open).
+- **VM batch-validate (2cb3c3d, GUI all-lane):** 5834 tests, **1 failure** = only TSK-491 (terminal, known-open).
   PaneScrollRestoreWebViewTests now PASSES → **TSK-959 VALIDATED**; 947-half regression-clean (947 → review, both
   halves host-tested). The VM baseline is now clean except the single known TSK-491.
 
@@ -711,7 +711,7 @@ SplitPaneViewSizeGateTests (media never gated; text gated strictly above the wat
 async-load + loading-state render = VM tail; a VM repro will confirm it resolves the felt "slow + doesn't appear"
 (921's close button is already wired). Minor accepted trade: the split caches per-URL (the old sync read's
 freshness was incidental — body-eval-driven, not file-watched — so little is lost; the dirty-editor-buffer branch
-is unchanged). VM render-validate (fd4180a, GUI all-lane): REGRESSION-CLEAN — 5833 tests, split suites + the new
+is unchanged). VM render-validate (5c9fec7, GUI all-lane): REGRESSION-CLEAN — 5833 tests, split suites + the new
 SplitPaneViewSizeGateTests pass, PMA(954) holds; only reds = TSK-491 (terminal, known) + TSK-959 (PaneScrollRestore,
 root-caused as a RAW-WKWebView scroll-restoration flake — it uses no app views + failed the prior run without 922,
 so 905/922 are ruled out). 922 stays at review (felt "appears fast" = owner/VM-render-test). 959 root-cause recorded
@@ -724,7 +724,7 @@ parking render items as "VM tail, owner-gated" as if I couldn't run the GUI/pixe
 the project memory already said so). Ran the VM GUI lane (`test-in-vm.sh all`, MDV_VM_GUI_SESSION): **5832 tests incl
 T5 pixel + every WebView suite**. The accumulated review work (905/893/901/307) is **regression-clean** on the VM —
 none appears in any failure. The only reds were 2 pre-existing known issues.
-- **FIXED + VALIDATED TSK-954** (`8f91de5`): the PMA UAT's MCPClient spawned the `--mcp-stdio` server as ROOT
+- **FIXED + VALIDATED TSK-954** (`b0e4907`): the PMA UAT's MCPClient spawned the `--mcp-stdio` server as ROOT
   (NSHomeDirectory=/var/root → open_path containment rejected the console-user fixtures from TSK-953). Now spawns via
   `sudo -n -u <consoleUser> /usr/bin/env HOME=<spawnUserHome> … --mcp-stdio` (mirrors AppLauncher). VM re-run:
   `PluginsAndMcpAutomationUATTests` PASSES (PMA01/PMA01var/PMA02/PMA03 all green, was 3-red). PMA self-skips on host.
@@ -1146,7 +1146,7 @@ HOLD — preceded by an exhaustive re-scan:
 
 Per the anti-paper-cut rule ("after 2+ marginal firings, surface the blocker, don't manufacture work"),
 this tick: (1) board hygiene — released the TSK-564 progress-zombie (stale claim, lease expired ~06-13;
-valid finding deferred to the perf lane); (2) refreshed HANDOFF.md (was stale at 4a2c4b6) with the current
+valid finding deferred to the perf lane); (2) refreshed HANDOFF.md (was stale at 423cf73) with the current
 state + a prominent VM-down escalation + a Next-action decision tree; (3) updated DECISIONS NEEDED below.
 `main` stays gate-green; tree clean. No marginal feature manufactured.
 
@@ -1569,7 +1569,7 @@ but carries a PERSISTED mode (could be a user's explicit Open-As-HEX), so upgrad
 Owner posted a ~75-item bug/improvement batch. Analyzed inline, de-duped against the (shared) board, filed
 **59 new tickets TSK-887..945** (`[INTAKE-0614]` prefix; parents git→537, split→714, csv→711, agent→687,
 cli→353), linked re-reports onto existing tickets (791 editor-slow, 698 JQ-console, 769 terminal-pwd), and
-wrote a prioritized P0–P3 map to `WORK_QUEUE.md` (commit 70c146e). Cron paused then re-enabled at owner request.
+wrote a prioritized P0–P3 map to `WORK_QUEUE.md` (commit 5f9a30e). Cron paused then re-enabled at owner request.
 
 Then drained the top of the new P1 lane (host-fixable bugs):
 - **TSK-907 — Git log duplicate tab (FIX).** `GitLogDiffActions.showCommit`/`showCumulativeDiff` called
@@ -1646,7 +1646,7 @@ leading-blanks collapse + trailing preserved) → 16 LineOps tests total, all pa
 Run tally **19 features → `review`**. §2.5-safe (pure transform, not the ported engines). Owner still away;
 standing unblocks unchanged (VM validation pass; TSK-343/470/733). Submenu kept tidy — TSK-751 still relevant.
 
-## LOG 2026-06-14 — Edit ▸ Lines (in-place line ops) shipped (TSK-883, 1cba668, → review)
+## LOG 2026-06-14 — Edit ▸ Lines (in-place line ops) shipped (TSK-883, ec9a560, → review)
 
 Standard editor line ops as IN-PLACE active-file commands (the existing TSK-352 line tools are clipboard-only —
 confirmed in CommandRegistry+BuiltIn; in-place is the version every editor actually has). **Edit ▸ Lines ▸ {Sort
@@ -1662,7 +1662,7 @@ Run tally **18 features → `review`**. Note the Edit/View menus are now feature
 (menu organization, parked) is increasingly relevant; this firing used a submenu to mitigate. Owner still away.
 Standing unblocks unchanged (VM pass; 343/470/733). Keep shipping real features; prefer submenus to reduce clutter.
 
-## LOG 2026-06-14 — Promote/Demote Headings shipped (TSK-882, 9ffb911, → review)
+## LOG 2026-06-14 — Promote/Demote Headings shipped (TSK-882, 1327c25, → review)
 
 Continued the §2.5-safe consumer/transform vein. **Edit ▸ Promote/Demote Headings** shifts every ATX heading
 level (doc restructuring: nest under a parent, merge, flatten). `MarkdownHeadingShift.shift` (pure ViewerCore)
@@ -1677,7 +1677,7 @@ leading-ws+title kept, zero-delta no-op, demote↔promote round-trip). Host gate
 Run tally **17 features → `review`**. Standing unblocks unchanged (VM pass; 343/470/733). Owner still away
 (no board engagement). Keep shipping real consumer/transform features; HOLD only when genuinely nothing real remains.
 
-## LOG 2026-06-14 — Open in Browser shipped (TSK-881, 35a3e5b, → review) — HOLD reconsidered
+## LOG 2026-06-14 — Open in Browser shipped (TSK-881, 7956182, → review) — HOLD reconsidered
 
 Re-examined last firing's HOLD and RESUMED — the HOLD was over-precious. KEY LESSON: the SOP anti-paper-cut /
 §5 "don't fill with marginal" rule targets **test/coverage busywork**, NOT real user features ("ten throwaway
@@ -1724,7 +1724,7 @@ code this firing (HOLD keeps main gate-green at 5581 tests). HANDOFF.md is curre
 I'll resume high-value shipping the moment any of these lands (or you point me at a specific build). Until then I'm
 holding rather than burning tokens on marginal features.
 
-## LOG 2026-06-14 — Self-contained HTML export shipped (TSK-871, 4251369, → review)
+## LOG 2026-06-14 — Self-contained HTML export shipped (TSK-871, 7bb8cce, → review)
 
 Pivoted to rule 1 (bugs) first: no actionable host-fixable bug — **733** (save-prompt on session switch) is
 correctly PARKED with a genuine A/B UX decision (preserve dirty buffers silently vs keep the save-safety prompt;
@@ -1747,7 +1747,7 @@ existing feature (portability) rather than a fresh area; the next fresh consumer
 owner (checksum, more lint rules, etc.). Next firing: one more probe, else groom/HOLD — not marginal manufacturing.
 Standing unblocks: VM pass (the ~15-feature `review` pile), 343/470/733 owner decisions.
 
-## LOG 2026-06-14 — CSV → Markdown table / JSON shipped (TSK-870, 6ca616f, → review)
+## LOG 2026-06-14 — CSV → Markdown table / JSON shipped (TSK-870, e4c1534, → review)
 
 Found a FRESH §2.5-safe consumer feature (the probe-once-before-HOLD plan worked again): bridge CSV (a supported
 format) into the markdown-doc + data workflows. Confirmed feasibility first — CSV tabs are `.loaded(TextFile)` fed
@@ -1770,7 +1770,7 @@ Run tally: 14 features shipped to `review` this session (675 ×5: 862-865; markd
 868/870; audio 533/534; settings 358) + 853/575 validated. The clean consumer-feature vein keeps yielding when
 probed; standing unblocks for the pile remain a VM pass + 343/470.
 
-## LOG 2026-06-14 — Lint Markdown shipped (TSK-869, 0c7f8cf, → review) + reassessed the pool
+## LOG 2026-06-14 — Lint Markdown shipped (TSK-869, 6e3125e, → review) + reassessed the pool
 
 Reassessment firing (per last log's note). Verified more of the "drained?" claim by checking items I'd dismissed:
 **506 treemap** is already built (`FolderStatsView` + `TreemapLayout` + SidebarModel treemap refs — overlaps the
@@ -1793,7 +1793,7 @@ HONEST STATE: the clean high-value host pool is now genuinely tapped (markdown o
 (local-history, parked), TSK-470 (zoom-split, parked). Next firing: if no fresh high-value clean area surfaces,
 the honest move is grooming/HOLD rather than manufacturing marginal features (the bar the owner set).
 
-## LOG 2026-06-14 — Minify JSON shipped (TSK-868, 6ce0946, → review)
+## LOG 2026-06-14 — Minify JSON shipped (TSK-868, 8cfff6d, → review)
 
 Brought variety after three markdown features — a fresh, clean §2.5-safe data tool. First checked the reported-bug
 pool (no actionable host-fixable user-facing bug — the q="bug" hits were infra/wish items). Then **Edit ▸ Minify
@@ -1813,7 +1813,7 @@ Note: the markdown-output/data-tool consumer vein remains productive but is thin
 high-value clean area exists or whether to consolidate/groom; the standing VM-pass + 343/470 owner asks remain
 the big unblocks for the ~12-feature `review` pile.
 
-## LOG 2026-06-14 — Check Links shipped (TSK-867, c2cabbb, → review)
+## LOG 2026-06-14 — Check Links shipped (TSK-867, 324dd97, → review)
 
 Third consecutive §2.5-safe markdown feature (TOC → HTML export → Check Links), all found by probing for
 consumer/output features rather than HOLDing. **View ▸ Check Links** reports broken LOCAL links/images in the
@@ -1833,7 +1833,7 @@ v1 limits (documented): reference-style links + links inside inline-code spans a
 (extract incl. fenced-skip + nested + title-drop, kind classification, broken-relative-only via injected exists,
 #fragment strip). Host gate green (5553 tests). Menu + alert = VM tail. Filed standalone (TSK-867).
 
-## LOG 2026-06-14 — Copy/Export as HTML shipped (TSK-866, 5c95a23, → review)
+## LOG 2026-06-14 — Copy/Export as HTML shipped (TSK-866, 16aab72, → review)
 
 Kept applying the "§2.5-safe CONSUMER features still exist" lesson — shipped a high-value, commonly-wanted
 markdown export. **View ▸ Copy as HTML / Export as HTML…** renders the active Markdown to a STANDALONE HTML
@@ -1856,7 +1856,7 @@ Filed standalone (TSK-866) — it's a markdown-app export, not part of the 675 e
 
 This + last firing's TOC confirm the lesson: keep probing for §2.5-safe consumer/output features before any HOLD.
 
-## LOG 2026-06-14 — TSK-675 slice 5: Insert Table of Contents (d07a815, → review) — CORRECTS the prior HOLD
+## LOG 2026-06-14 — TSK-675 slice 5: Insert Table of Contents (cff6b10, → review) — CORRECTS the prior HOLD
 
 Re-challenged last firing's HOLD (the owner's bar is high) and found it was partly OVER-CAUTIOUS: I'd deferred a
 markdown "Insert Table of Contents" on §2.5 grounds because `outline.rs` is Rust-ported. But a TOC generator is a
@@ -1864,7 +1864,7 @@ markdown "Insert Table of Contents" on §2.5 grounds because `outline.rs` is Rus
 migration-safe (survives any future outline port; just swap the heading source). LESSON: §2.5 forbids building
 FEATURES INTO the Swift port-target engines, NOT building new consumers of their output. Don't over-apply it.
 
-Shipped (commit d07a815, child TSK-865 → review):
+Shipped (commit cff6b10, child TSK-865 → review):
 - **MarkdownTOC** (pure, ViewerCore) consumes `MarkdownOutline.headings`: GitHub-style anchor slugs (lowercase,
   punctuation dropped, spaces→hyphens, `-1`/`-2` dedup), a level-nested bullet list indented from the shallowest
   heading present, `[`/`]` escaped in link text. `insert(into:headings:)` is IDEMPOTENT via `<!-- toc -->` /
@@ -1921,7 +1921,7 @@ With the clean host-buildable FEATURE pool drained (last firing), worked the SOP
 drain) on the `fixed` pool. Most of it is `blocker: live-validation` (VM-gated render features — not host-
 validatable); the two `blocker: none` host-testable items both re-verified GREEN on current main and validated:
 
-- **TSK-853** (perf: launch warm heats the gate-selected highlight engine, commit 31affba) → **validated**. Prior
+- **TSK-853** (perf: launch warm heats the gate-selected highlight engine, commit 1a65287) → **validated**. Prior
   firing left it at `fixed` out of caution ("timing is VM"), but the BEHAVIOR+MECHANISM are host/rust-guarded:
   re-ran `RustHighlightAdapterTests` (10/10, incl. `test_warm_gateOn_…routesRust` + `…gateOff_warmsSwiftFallback`)
   proving the warm routes to the gate-selected engine, and the rust-core gate's `configured_grammar_is_cached_not_
@@ -1929,7 +1929,7 @@ validatable); the two `blocker: none` host-testable items both re-verified GREEN
   the config ⇒ the cold-start compile moves off first-open. Reverting the gate-aware warm fails the host test =
   regression guard. (Absolute ms = VM/manual, a consequence of the proven mechanism, not a separate regression
   surface.)
-- **TSK-575** (rust-core: clippy warn-tier saturation / cast safety, commits 6ca8d8b+0728a13) → **validated** for
+- **TSK-575** (rust-core: clippy warn-tier saturation / cast safety, commits 7e3dc36+ad0a81b) → **validated** for
   its shipped scope. All 11 cast_possible_truncation/cast_sign_loss sites audited (none truncate) and both lints
   RATCHETED TO DENY with reasoned allows, so a new unjustified i64→usize cast now FAILS the gate — re-ran the
   rust-core gate GREEN on current main (the enforcing guard); teeth demonstrated at fix time (probe cast → clippy
@@ -1943,7 +1943,7 @@ owner decisions (VM pass; TSK-343 local-history default; zoom-split 321/322/470)
 host-buildable feature AND no host-validatable drain item left → a documented HOLD is the honest move absent an
 owner steer.
 
-## LOG 2026-06-14 — TSK-675 slice 4 shipped: Convert Indentation (Tabs↔Spaces) (2a8b111, → review)
+## LOG 2026-06-14 — TSK-675 slice 4 shipped: Convert Indentation (Tabs↔Spaces) (c366179, → review)
 
 Drained the last clean host-buildable robust-editor command from the 675 runway. Child TSK-864 → review.
 
@@ -1964,7 +1964,7 @@ delete are caret-dependent; column/block select; macro record-replay; insert/ove
 save) → VM/later. So the next firings face the same VM/owner-gated frontier; the banked `review` pile (now ~6
 features + 4 675 slices) increasingly needs a VM validation pass to convert to user value.
 
-## LOG 2026-06-14 — TSK-675 slices 2+3 shipped: Document Statistics + Whitespace cleanup (90196d2, → review)
+## LOG 2026-06-14 — TSK-675 slices 2+3 shipped: Document Statistics + Whitespace cleanup (a7f706e, → review)
 
 Continued draining the P0 epic's host-buildable runway (the payoff of unblocking it last firing). Batched two
 independent slices, gated once, child TSK-863 → review:
@@ -1984,10 +1984,10 @@ DocumentStats incl. line-count edge cases + multibyte). Host gate green (5519 te
 
 675 now has 3 slices shipped (862 line-endings; 863 cleanup+stats). REMAINING is render-coupled CM6 (line ops:
 duplicate/move/delete; column/block select; macro record-replay; insert/overwrite; optional auto-cleanup-on-save) —
-VM/later. Commit note: both slices interleave in DocumentModel/main, so they landed as one gated commit (90196d2)
+VM/later. Commit note: both slices interleave in DocumentModel/main, so they landed as one gated commit (a7f706e)
 rather than two (clean per-hunk split needs interactive staging).
 
-## LOG 2026-06-14 — TSK-675 (P0 epic) spiked + first slice shipped: Convert Line Endings (f472ad6, → review)
+## LOG 2026-06-14 — TSK-675 (P0 epic) spiked + first slice shipped: Convert Line Endings (a9bc4e0, → review)
 
 Broke the "everything's VM/owner-blocked" run by advancing the **highest-priority epic**. Confirmed first that the
 groomed fallback pools are drained: the **security** and **rust-core** pools are nearly all `validated`/`done`
@@ -2003,7 +2003,7 @@ detection/settings, in-file + cross-file + project-wide replace, go-to-line, Con
 Filed the breakdown on 675 (→ triaged): the robustness slices, several overlapping TSK-351/352. Cleanest
 host-buildable gaps: (1) Convert Line Endings, (2) document statistics, (3) trim-trailing/ensure-final-newline.
 
-SLICE 1 SHIPPED (commit `f472ad6`, child **TSK-862** → review): the app DETECTED line endings but couldn't
+SLICE 1 SHIPPED (commit `a9bc4e0`, child **TSK-862** → review): the app DETECTED line endings but couldn't
 convert them. New `LineEndingConverter.convert` (pure, **scalar-walk** so the `\r\n` grapheme splits correctly —
 the recurring CRLF trap) normalizes every `\r\n`/`\r`/`\n` to a target terminator WITHOUT appending one (content
 untouched, only break bytes). `DocumentModel.convertActiveFileLineEnding(to:)` write-throughs in the file's
@@ -2015,7 +2015,7 @@ green (5503 tests). Menu render = VM tail.
 NEXT: 675 slices 2 (document statistics — pure model + status-bar/panel) + 3 (trim-trailing-whitespace +
 ensure-final-newline on save — pure transforms + a save hook) are clean host-buildable pulls for the next firing(s).
 
-## LOG 2026-06-14 — TSK-358 rendered-markdown half: Text Size now scales the rendered view too (2ad2518, → review)
+## LOG 2026-06-14 — TSK-358 rendered-markdown half: Text Size now scales the rendered view too (e3544b0, → review)
 
 Continued 358 to cover the rendered-markdown content type (the prior firing did editor/source/gutter). Spent the
 firing's front half mapping the queue frontier — and found the top-down host pool genuinely blocked this tick:
@@ -2033,7 +2033,7 @@ firing's front half mapping the queue frontier — and found the top-down host p
 - rust-core P1 contract (579) is already **validated**; the `fixed`/`review` validation-drain pool is VM-render-coupled.
 
 So I completed the one genuinely clean, in-scope, behaviour-neutral host build available: extend Text Size to the
-rendered-markdown view (commit `2ad2518`). Mechanism (cache-safe by design): `markdown.css` body is now
+rendered-markdown view (commit `e3544b0`). Mechanism (cache-safe by design): `markdown.css` body is now
 `calc(15px * var(--mdv-content-scale, 1))`; `ContentFontSizing.markdownScale(contentFontSize:) = base/13` (host-
 tested: default→1.0 neutral, 26→2.0, 32→32/13); the view pushes the var LIVE via `evaluateJavaScript` in
 `updateNSView` + re-applies in `didFinish` (mirrors the existing `pageZoom` live-update) — so the markdown HTML/
@@ -2047,13 +2047,13 @@ want a separate document-zoom back despite the 2026-05 merge? One answer closes/
 (4) **358 window-sizing half**: the ticket's other clause ("Window sizing [left menu, text]") is ambiguous —
 which dimension(s)? sidebar width already has a drag handle + pref.
 
-## LOG 2026-06-14 — TSK-358 absolute content text-size (base × zoom) SHIPPED (6a045e0, → review)
+## LOG 2026-06-14 — TSK-358 absolute content text-size (base × zoom) SHIPPED (95f7184, → review)
 
 The committed-next item from last firing. Resolves the long-standing "is it font-size OR zoom?" — it's **both**:
 a new absolute base size sets the un-zoomed baseline; the existing unified `zoom` slider multiplies it (and the
 UI chrome) on top.
 
-What shipped (commit `6a045e0`):
+What shipped (commit `95f7184`):
 - **Pref** (`PreferencesStore`): `contentFontSize` (clamped 8–32pt, default **13** = the historical hard-coded
   content base, so an un-set pref is **behaviour-neutral**). Mirrors the `zoom` getter/setter clamp pattern.
 - **Pure model** (`ContentFontSizing.effective(baseSize:zoom:)`, ViewerCore): isolates the base×zoom multiply so
@@ -2079,14 +2079,14 @@ reversal). So 358 ships clean; 343 is teed up for its own focused firing (its `L
 + tested — remaining = best-effort capture-on-save wiring + a `prepareRevert`-style revert action + a History
 menu mirroring the Convert-Encoding pattern).
 
-## LOG 2026-06-14 — TSK-534 audio trim/fade + Save-a-Copy SHIPPED (dc17ac8, → review)
+## LOG 2026-06-14 — TSK-534 audio trim/fade + Save-a-Copy SHIPPED (3bc613b, → review)
 
 Third "backend already built" discovery in a row (after 524 image-editor + 533 spectrum analyzer): the audio
 EDIT backend is **fully built + host-tested** — `AudioDocument` (source + replayable ops) + `AudioEditOp`
 (.trim/.fade/.gain/.normalize, apply/rendered/undo) + `AudioExporter.encode(buffer,spec,to:)` +
 `AudioPCMBuffer`. So 534 = the VM/UI layer over a proven model (same shape as 524 was).
 
-What shipped (commit `dc17ac8`):
+What shipped (commit `3bc613b`):
 - **Pure policy** (`AudioTrimFade`, ViewerCore, host-tested): maps the editor SELECTION (trim range + fade-in/out
   seconds + shape) → the ordered `[AudioEditOp]` the document replays. Trim emitted ONLY for a true subrange
   (untouched selection = faithful copy, no op); fades convert secs→frames via the sample rate, cap to the clip,
@@ -2114,7 +2114,7 @@ uniformly meaty render-coupled UI-over-built-backends (463/710/708 LSP bridges, 
 343 history/revert — its store core is built, the save-path wiring + UI remain) or owner-policy-touched
 (343 retention, 358 font×zoom) — so "drain top-down" now means one complete render-tail feature per firing.
 
-## LOG 2026-06-14 — TSK-533 audio frequency-spectrum panel SHIPPED (fb2ada6, → review)
+## LOG 2026-06-14 — TSK-533 audio frequency-spectrum panel SHIPPED (111395c, → review)
 
 Built the first item off last firing's mapped niche tail, and **corrected last firing's own blocker**:
 the prior sweep called 533 "not a clean leaf — the viewModel keeps PEAKS, not the float buffer." That was
@@ -2122,7 +2122,7 @@ wrong — `AudioWaveform.samples` holds the **full** deinterleaved mono buffer (
 so the view can re-reduce per zoom without re-decoding). So the FFT can read `samples` directly; 533 *was* a
 clean additive leaf.
 
-What shipped (commit `fb2ada6`):
+What shipped (commit `111395c`):
 - **Pure model** (`AudioWaveform`, host-tested): `spectrumWindow(centeredOn:fftSize:)` extracts a playhead-
   centred, buffer-clamped window (clamps at both edges; whole buffer when shorter than the FFT; empty when
   empty); `spectrum(at:)` runs the existing host-tested `SpectrumAnalyzer`. `SpectrumBins` now carries
@@ -2194,7 +2194,7 @@ the owner's repeated guidance (build VM features, leave render at review; the HO
 a list mirroring the PROVEN command/file-list pattern is low-risk feature progress, and review-validation is the
 accepted norm. Built it.
 
-- **TSK-727 slice 5 @ `651eaca`** — `#`/`@` upgraded from jump-to-first to an arrow-navigable LIST. A unified
+- **TSK-727 slice 5 @ `0947e1e`** — `#`/`@` upgraded from jump-to-first to an arrow-navigable LIST. A unified
   `jumpRows` model (over the host-tested `InFileSearch` matches / `SymbolJump` headings) renders rows mirroring
   the command/file lists; ↑↓ + hover move selection, Return/click jumps to the SELECTED target's line.
   `moveSelection` bounds to the active list; empty/no-match keep their hints. Pure-VM render upgrade of
@@ -2211,7 +2211,7 @@ accepted norm. Built it.
 Continued the velocity (3rd palette slice in as many firings). Shipped the `@` operator, COMPLETING the unified
 Goto-Anything operator set (the epic's titled `@`/`:` ask).
 
-- **TSK-727 slice 4 @ `224b7b9`** — the `@` operator jumps to a Markdown heading: `@term` fuzzy-ranks the active
+- **TSK-727 slice 4 @ `cb3e7a3`** — the `@` operator jumps to a Markdown heading: `@term` fuzzy-ranks the active
   file's headings + Return jumps to the best match's line. Pure `SymbolJump.rank` model (ViewerCore, host-tested):
   fuzzy-rank `MarkdownOutline.headings` by title via the shared `RustFuzzyAdapter`; gated to
   `currentCategory == .markdown` so a code file's `#` comments aren't mis-parsed as ATX headings. Palette `@`-mode
@@ -2230,7 +2230,7 @@ Goto-Anything operator set (the epic's titled `@`/`:` ask).
 Per last firing's handoff commitment (build a VM feature to-review, not another design/escalate firing). Shipped the
 Goto-Anything `#` operator (slice 3 of the 727 epic).
 
-- **TSK-727 slice 3 @ `55129eb`** — the palette `#` operator searches the ACTIVE file's text: `#term` shows the
+- **TSK-727 slice 3 @ `4c898cd`** — the palette `#` operator searches the ACTIVE file's text: `#term` shows the
   match count + jumps to the first match's line on Return (mirrors the shipped `:` operator). Pure `InFileSearch`
   model (ViewerCore): case-insensitive literal scan via **`enumerateLines`** (LF/CRLF/CR-aware 1-based line numbers
   — deliberately NOT `split("\n")`, which hits the `\r\n`-is-one-Swift-grapheme trap and would mis-number CRLF
@@ -2270,7 +2270,7 @@ Absent that, decisions on 847 (bench isolation) / 343 / 358 each unblock a clean
 
 Kept the momentum (after 829). Scoped the perf pool, measured to avoid two false wins, and shipped a real one.
 
-- **TSK-842 [perf, Section 0, VALIDATED @ `a9103b3`]** — `openResolved` deferred the read+decode off-main only
+- **TSK-842 [perf, Section 0, VALIDATED @ `acd8588`]** — `openResolved` deferred the read+decode off-main only
   above `softWarnBytes` (64 MiB), so files ≤64 MiB read SYNC on main. MEASURED warm read+decode is cheap (256KB
   0.19ms → 64MB 8.17ms), so the premise of a decode stall is weak for warm reads — but a SYNC read on main of a
   COLD or iCloud-stubbed file blocks the UI for the disk-read / cloud-DOWNLOAD (the repo lives on iCloud-synced
@@ -2295,7 +2295,7 @@ Kept the momentum (after 829). Scoped the perf pool, measured to avoid two false
 Committed to building the SPEED win this firing (after 3 design/triage firings). Implemented the finalized design
 with the TSK-847 measurement discipline.
 
-- **TSK-829 [perf, VALIDATED @ `a3ca530`]** — cross-file search (`CrossFileSearch.search`) now matches files in
+- **TSK-829 [perf, VALIDATED @ `41f9204`]** — cross-file search (`CrossFileSearch.search`) now matches files in
   PARALLEL. The serial walk (dir-skip + symlink-loop guard + caps + cancellation) is unchanged and collects
   candidate URLs into batches of 24; each batch is matched via `DispatchQueue.concurrentPerform` into per-index
   slots (`withUnsafeMutableBufferPointer` + `nonisolated(unsafe)` base pointer — disjoint writes, race-free; the
@@ -2353,7 +2353,7 @@ not manufacture risky/marginal code; instead closed loops + groomed (real triage
   `.map([(K,V)])` enum case is SHARED with the encoder (it walks pairs to write), so a clean decode-straight-to-dict
   needs a NEW enum case threaded through both paths; (2) the gain is marginal — the hot wire paths moved to
   POSITIONAL arrays (TSK-841/563), so named maps are now small non-hot frames (~3-element throwaway Vec). Verdict:
-  skip. 830 fully dispositioned: (a) SHIPPED @ 6c0be50, (b) port-superseded (§2.5), (c) won't-do — stays at review.
+  skip. 830 fully dispositioned: (a) SHIPPED @ 86c53f4, (b) port-superseded (§2.5), (c) won't-do — stays at review.
 - **TSK-829 (parallelize CrossFileSearch) — TRIAGED with a ready-to-execute plan.** Read `search()`: the walk is a
   STATEFUL lazy DFS (skipDescendants for dir-skip + symlink-loop guard + serial maxResults/maxEntriesScanned/cancel
   early-breaks) — NOT naively parallelizable. Plan recorded on the ticket: Phase A serial walk → collect candidate
@@ -2381,7 +2381,7 @@ Fresh firing. No owner activity / no new app regression. Pursued a COMPLETE, ful
 win (vs another VM-tail slice). TSK-830 was a 3-part micro-opt bundle; the migration policy + a contract concern
 split it:
 
-- **(a) [SHIPPED @ `6c0be50`, review]** — `runs_utf16` (the highlight hot path: every file open + scroll) did
+- **(a) [SHIPPED @ `86c53f4`, review]** — `runs_utf16` (the highlight hot path: every file open + scroll) did
   `kind.to_string()` per distinct run although `kind` is a `&'static str` from the `APP_CAPTURES` table. Changed
   `Run.kind` `String → Cow<'static, str>`: produced runs are `Cow::Borrowed(kind)` (ZERO per-run alloc),
   deserialized runs own a `String`. `Run` is highlight-crate-local (no cross-crate ripple); `Cow<str>` serializes
@@ -2414,7 +2414,7 @@ Fresh firing. No owner activity / no new app regression. Drained from WORK_QUEUE
   B: relax the load-sensitive ceilings keeping cliff-guard + printed timing; C: stay at 12). No code changed —
   measure-don't-guess prevented shipping a flakier gate.
 
-- **TSK-727 [epic] slice 2 @ `283d894`** — made last firing's `GotoQueryParser` LIVE: the command palette now
+- **TSK-727 [epic] slice 2 @ `0c1e8db`** — made last firing's `GotoQueryParser` LIVE: the command palette now
   routes through the unified classifier (ad-hoc `hasPrefix(">")` replaced) and surfaces the **`:` go-to-line**
   operator — `:42` shows a go-to-line hint and Return jumps via `model.scrollSource(toLine:)`. Added host-tested
   `GotoQuery.submitAction` (`:N`→goToLine, bare-colon/`:abc`/`:0`→none, `>`→runCommand, files/@/#→openFile) so the
@@ -2427,7 +2427,7 @@ Fresh firing. No owner activity / no new app regression. Drained from WORK_QUEUE
 Fresh firing. No owner activity, no new app regression (the `bug`-query pool is build-perf/test-infra only). Drained
 WORK_QUEUE top-down; **scoped the top unchecked items and found the host-shippable tail is thin** (signal below).
 
-- **TSK-727 [epic, slice 1 @ `a4022b9`, progress]** — built the pure `GotoQueryParser` (ViewerCore): a total
+- **TSK-727 [epic, slice 1 @ `d977438`, progress]** — built the pure `GotoQueryParser` (ViewerCore): a total
   `String -> GotoQuery` classifier routing the palette input by leading operator (bare→files, `>`→command,
   `@`→symbol, `:`→line[:col], `#`→text), with `:line:col` parsing (positive-int, first-colon split). Generalizes
   CommandPaletteView's ad-hoc `hasPrefix(">")` and adds the @/:/# operators. 17 host tests + teeth (mutating the
@@ -2453,7 +2453,7 @@ WORK_QUEUE top-down; **scoped the top unchecked items and found the host-shippab
 Fresh firing. Two newly-filed board bugs (not in WORK_QUEUE) pre-empted the queue per rank rule 1 (user-facing
 bug) + rule 2 (test-infra correctness). Batched, gated ONCE, committed separately.
 
-- **TSK-861 [bug, user-facing, validated `e7a5649`]** — `EditorWriter.save` wrote `text.data(using: encoding)`;
+- **TSK-861 [bug, user-facing, validated `3e8016f`]** — `EditorWriter.save` wrote `text.data(using: encoding)`;
   for `.utf16LittleEndian`/`.utf16BigEndian` (the encodings `TextDecoder.decodeViaBOM` records *after stripping
   the BOM on read*) that produces BOM-LESS bytes. On reopen a SHORT UTF-16 file fails the read side's ≥32-byte
   BOM-less heuristic → mis-decodes as CP1252/Latin-1 (garbled) — or, with the fix disabled, `binaryFile`.
@@ -2463,7 +2463,7 @@ bug) + rule 2 (test-infra correctness). Batched, gated ONCE, committed separatel
   Latin-1 untouched). 7 host tests (LE+BE short-file open→edit→save→reopen round-trip, BOM-byte check, helper
   unit cases, UTF-8-stays-BOM-less); TEETH: disabling the re-emission makes the round-trip decode as `binaryFile`.
   Self-validated (pure ViewerCore logic). CHANGELOG Fixed entry added.
-- **TSK-855 [CI/test-infra bug, review `96851a1`]** — `RemoteTransportLoopbackTests` spawns the real `mdv-serve`
+- **TSK-855 [CI/test-infra bug, review `2022da3`]** — `RemoteTransportLoopbackTests` spawns the real `mdv-serve`
   to prove engine surface byte-equal local-FFI vs remote, but `build-rust-core.sh` builds ONLY the dist FFI
   staticlib, never the serve bin — so the suite ran against a possibly days-stale `mdv-serve` (false RED on the
   TSK-841 wire change; worse, a false PASS for a non-decode-breaking wire change, defeating the loopback's point).
@@ -2488,7 +2488,7 @@ IntelliJ-style **double-tap Shift opens the command palette** (Section-A, the la
   `model.showPalette()` on fire. Observation-only (returns the event) so Shift still types normally.
 - **Host-tested (teeth):** 10 detector tests + 8 classifier tests (fire/no-fire, interval boundary, ⌘-chord +
   caps-lock handling, triple-tap-fires-once, end-to-end stream). Headless gate green (5422 tests, no heavy tier).
-  Commit `da10ae9`. → `review` (blocker: live-validation) — the live gesture firing + palette appearing is the
+  Commit `c9e416f`. → `review` (blocker: live-validation) — the live gesture firing + palette appearing is the
   VM/owner glance; only the pure logic is host-coverable.
 
 ## LOG 2026-06-14 — TSK-844 CSV-arena perf SHIPPED (parse straight into the arena; broke the "fresh-session-careful" HOLD)
@@ -2501,7 +2501,7 @@ double-allocation** fix. The heap cap is the pre-existing TSK-557 guard, which t
 - **What it was:** `CsvSession::open` built a `Vec<Vec<String>>` (one heap `String`/cell via `mem::take`), then
   `TableArena::from_table` copied every cell's bytes into the contiguous arena and freed the Vec. For a 1M-cell
   file: ~2M allocations + a full second byte-copy. (Ticket measured 140 ms open.)
-- **Fix (commit `3d75f39`):** refactored the SINGLE CSV tokenizer to drive a `CsvSink` trait. `VecSink` keeps the
+- **Fix (commit `fbc5675`):** refactored the SINGLE CSV tokenizer to drive a `CsvSink` trait. `VecSink` keeps the
   wire `Vec<Vec<String>>` DTO path (TUI/web table View, `csv::parse`); new `ArenaSink` writes cell bytes STRAIGHT
   into the arena buffer with a **reused** field scratch (`field.clear()` not `mem::take`) — no per-cell `String`,
   no second copy. `CsvSession::open` → `csv::parse_arena`. Fast path: when rows are at header arity the as-built
@@ -2549,11 +2549,11 @@ worked).
   (`len_utf16()` ≤2), fuzzy ×2 (filename-bounded index/position), hex (intentional documented low-32-bit
   offset), transcript ×2 (finite + i64-range/integral checked before f64→i64), serve envelope (guarded
   `v<0x80`). This definitively resolves the audit's over-claimed "13 cast safety bugs" (TSK-538/S3).
-- **Ratcheted both lints to DENY** with a reasoned `#[allow]` at each audited site (`6ca8d8b`). **TEETH
+- **Ratcheted both lints to DENY** with a reasoned `#[allow]` at each audited site (`7e3dc36`). **TEETH
   DEMONSTRATED:** a probe `i64 as usize` in core made `cargo clippy --workspace` exit 101 (`could not compile
   mdvcore-core`) — a new unjustified cast now FAILS the gate; reverted the probe.
 - **Teeth-test caught a real gap:** the workspace deny only reaches *inheriting* crates (core). `serve` has a
-  LOCAL `[lints.clippy]` → its envelope cast wasn't ratcheted → added the deny there too (`0728a13`). core+serve
+  LOCAL `[lints.clippy]` → its envelope cast wasn't ratcheted → added the deny there too (`ad0a81b`). core+serve
   = all 6 current cast sites covered. `ffi`/`tui`/`web` have local lints + NO current cast sites (a future cast
   there would warn under pedantic — documented follow-up, not silently claimed-covered).
 - Validated: `cargo clippy --workspace` clean (0 errors, 0 cast warns) + `scripts/rust-core-gate.sh` green.
@@ -2586,7 +2586,7 @@ Autonomous tick. Tapped the one lane I'd only surveyed, not characterized — **
 last-resort (575-noise / 573). Combined with the earlier exhaustive survey (Swift queue drained, snippets model
 done, 382 needs a VM profile, security 309 deferred-by-design, fixed-lane VM-gated, reported = epics/render/
 foreign/owner-gated), **there is no clean, safe, high-value, host-validatable unit appropriate for unsupervised
-deep-session execution.** Documented HOLD (SOP §5); main stays gate-green (`6ff2182`). No code — correctly: the
+deep-session execution.** Documented HOLD (SOP §5); main stays gate-green (`b6ed15f`). No code — correctly: the
 only real-value rust-core work is correctness-critical and belongs in a fresh, focused session.
 
 **Recommendation to the owner:** the autonomous loop has genuinely drained the clean work; further 10-min firings
@@ -2628,7 +2628,7 @@ snippets epic (MODEL 100% done, only CM6 render + UI left), security (309 deferr
 a *security* heap-cap re-derivation for a fresh focused session; 573 web last-resort), reported pool (epics /
 [PARTIAL] umbrellas / [PORT]/dep-gated / foreign 441-445 / owner-gated), and the fixed-lane drain (gated /
 already-handled). So this firing is a **documented HOLD** per SOP §5 — main stays headless-gate-green
-(`343ea6f`); NOT manufacturing marginal slices.
+(`4415859`); NOT manufacturing marginal slices.
 
 **The owner's input is now the bottleneck (all captured + parked):**
 - **TSK-343** (parked, waiting:human) — local-history snapshot-on-save: default-on vs opt-in + retention.
@@ -2649,7 +2649,7 @@ security item TSK-309 (TOCTOU bookmark symlinks) was explicitly TEAM-DEFERRED (o
 non-sandboxed) + architectural → skip; the rest of reported is epics / [PARTIAL] umbrellas / [PORT]/dep-gated /
 foreign (441-445 = tasked-tool dev) / owner-gated. So continued TSK-705 with the one remaining clean
 host-testable MODEL slice:
-- **TSK-705 (`9393706`, review)** — slice 5: `SnippetSession` tab-stop navigation model (pure). Given a
+- **TSK-705 (`da294e1`, review)** — slice 5: `SnippetSession` tab-stop navigation model (pure). Given a
   ParsedSnippet + insertion offset → absolute caret targets in visit order ($1→$2→…→$0), advance/retreat
   (clamped), current/isFinished; repeated index → first occurrence. Host-tested (SnippetSessionTests, 5 cases).
   This **completes the snippets MODEL layer**: parse (1) → library (2) → insert (3) → user store (4) →
@@ -2668,7 +2668,7 @@ design, + a lane-steer (rust-core careful / VM-render slices / 382 profiling). H
 
 ## LOG 2026-06-14 — snippets epic slice 4: user-defined JSON snippet store (TSK-705)
 
-Autonomous tick, continued TSK-705. **Slice 4 (`08d4e28`, review)** — user-defined snippets:
+Autonomous tick, continued TSK-705. **Slice 4 (`08d47ec`, review)** — user-defined snippets:
 - `SnippetStore` (ViewerCore) persists user snippets as JSON (AppSupport/MarkdownViewer/snippets.json), merged
   over `SnippetLibrary.builtIns` — a user snippet whose `id` matches a built-in OVERRIDES it (user wins), others
   append. Mirrors BookmarksStore (JSONFileStore, off-main coalesced writes). `Snippet` is now Codable.
@@ -2686,7 +2686,7 @@ current "build, don't HOLD" vein — its host-testable model slices are now exha
 ## LOG 2026-06-14 — snippets epic slices 2-3: library + Insert Snippet (TSK-705, now usable)
 
 Autonomous tick, continued the TSK-705 snippets epic (no owner lane-steer arrived; per "build, don't HOLD",
-kept shipping host-testable slices). **TSK-705 (`8de8b2c`, review)** — slices 2-3 on the slice-1 parser:
+kept shipping host-testable slices). **TSK-705 (`9cbe726`, review)** — slices 2-3 on the slice-1 parser:
 - `SnippetLibrary.builtIns` — 5 markdown/code starters (table, code fence, link, collapsible `<details>`, TODO).
 - `DocumentModel.insertSnippet(_:)` (+ `canInsertSnippet`) — editor-mode-gated, posts the snippet's expanded
   plain text to the caret via the existing `editorInsertRequest`. Host-testable at the request level (the CM6
@@ -2715,7 +2715,7 @@ Autonomous tick. The clean user-facing Swift feature queue is drained; surveyed 
 
 Per the owner's strong "build, don't HOLD" directive (don't idle on a thin queue), built a SAFE, host-testable
 foundation slice of a Section-C epic instead of rushing a risky item or holding:
-- **TSK-705 (`667f8ba`, progress — epic slice 1)** — pure snippet-expansion parser. `SnippetExpansion.parse`
+- **TSK-705 (`6bbc498`, progress — epic slice 1)** — pure snippet-expansion parser. `SnippetExpansion.parse`
   → `ParsedSnippet` (segments, plainText, tab-stop visit order with `$0` last, UTF-16 stop offsets for caret
   placement). TextMate/LSP syntax (`$1`, `${1:default}`, `$0`, escapes). Host-tested (11 cases). Design +
   5-slice breakdown on the ticket; slices 2-3 (store + Insert-Snippet command) are the next host-testable
@@ -2744,7 +2744,7 @@ foundation slice of a Section-C epic instead of rushing a risky item or holding:
 Autonomous tick, WORK_QUEUE Section-B. Checked the `fixed`-lane validation drain first — it's dominated by
 `live-validation` (VM-gated) blockers, so not host-re-validatable (that's WHY they're stuck). Per the owner's
 "build [VM] items, host-test the model, leave render at review", built the next queue [VM] item:
-- **TSK-360 (`933737b`, review)** — git-blame line-age heatmap, built ON the existing blame gutter. Pure
+- **TSK-360 (`038d237`, review)** — git-blame line-age heatmap, built ON the existing blame gutter. Pure
   `BlameHeatmap` (per-line commit timestamp → recency 0..1 normalized over the file's own min/max → dark→light
   blue hex). Threaded an ADDITIVE `CMGutterMarker.color` through the bridge encoder; `BlameGutterFeeder` attaches
   it; CM6 `DiffGutterMarker.toDOM` applies it as the gutter cell's inline background. Note: that JS is a DOM
@@ -2763,7 +2763,7 @@ and 358's zoom-interaction design.
 ## LOG 2026-06-14 — encoding-convert (TSK-352 slice); TSK-343 parked (privacy default = owner call)
 
 Autonomous tick, WORK_QUEUE Section-B. Shipped one slice + parked one owner-gated item:
-- **TSK-352 (`0686526`, review)** — the **encoding-convert** slice of the NotePad++ umbrella. Edit ▸ Convert
+- **TSK-352 (`63ce3e2`, review)** — the **encoding-convert** slice of the NotePad++ umbrella. Edit ▸ Convert
   Encoding ▸ {UTF-8/UTF-16/Windows-1252/Latin-1} re-saves the active file's current text (incl. unsaved edits)
   in the target encoding. `EditorBuffer.encoding` is immutable, so: write-through (EditorWriter.save with the
   target) → discard the buffer → reload (re-detects the new encoding from disk). Non-representable conversions
@@ -2780,7 +2780,7 @@ Autonomous tick, WORK_QUEUE Section-B. Shipped one slice + parked one owner-gate
 
 ## LOG 2026-06-14 — richer PDF + media-codec file-info (TSK-348, validated)
 
-Autonomous tick, WORK_QUEUE Section-B drain. Shipped **TSK-348 (`575c1c5`, VALIDATED)** — deep-metadata
+Autonomous tick, WORK_QUEUE Section-B drain. Shipped **TSK-348 (`c7d4832`, VALIDATED)** — deep-metadata
 enrichment, fully host-tested + self-validated (a data/model change to the existing model-driven file-info
 panel — no new render path, so host-validatable):
 - **PDF**: `pdfMetadata` was Pages/Title/Author/Producer → now also Subject/Keywords/Creator/Created/Modified/
@@ -2803,13 +2803,13 @@ fully-validated ticket this firing rather than force a messy second; flagged the
 ## LOG 2026-06-14 — ⇧⌥F Format + shortcut audit (TSK-757); markdown table align (TSK-350)
 
 Autonomous tick, WORK_QUEUE Section-A/B drain. Two host-testable items, one gate:
-- **TSK-757 (`664a8d1`, review)** — keyboard-shortcut audit + gap-fill. Bound **⇧⌥F → Format Document**
+- **TSK-757 (`a0cf167`, review)** — keyboard-shortcut audit + gap-fill. Bound **⇧⌥F → Format Document**
   (lsp.format) — VS Code's universal chord; ⌘⌥F was Find-and-Replace, ⇧⌥F free; auto-wires the Edit-menu
   item via the registry's applyShortcut. Wrote `docs/KEYBOARD_SHORTCUTS_AUDIT.md` (full catalog vs macOS/VS
   Code/Xcode). Conservative on gap-fill: divergent/conflicting candidates (Go-to-Def F12-vs-⌃⌘J, rename
   F2-already-sidebar-rename, code-actions ⌘.-is-Mac-Cancel, sidebar ⌘B-vs-existing-⌃⌘S) flagged in the doc
   for an owner pick, NOT imposed. Host-tested via shortcutMap.
-- **TSK-350 (`8449333`, review)** — markdown pipe-table alignment. Pure `Formatter.prettyPrintMarkdown`
+- **TSK-350 (`68f8a96`, review)** — markdown pipe-table alignment. Pure `Formatter.prettyPrintMarkdown`
   (column pad, :--/:-:/--: alignment, escaped-pipe + fenced-code aware) surfaced as an in-place **Align
   Markdown Tables** Edit-menu command (rewrites the active editor buffer). Host-tested (FormatterTests +
   MarkdownTableFormatModelTests).
@@ -2830,7 +2830,7 @@ format types (YAML/TOML/SQL) would each be a from-scratch dependency-free format
 ## LOG 2026-06-14 — sticky-scroll model (TSK-719); 708 deferred (render-coupled command)
 
 Autonomous tick, WORK_QUEUE Section-A drain. Scoped the next unchecked items with two unprimed Explore
-agents (LSP hover/preview-def; sticky-scroll scope data). Shipped **TSK-719 (`cf9ac7c`, review)**:
+agents (LSP hover/preview-def; sticky-scroll scope data). Shipped **TSK-719 (`c87c07f`, review)**:
 - Pure `StickyScrollHeaders` (ViewerCore): enclosing scope-header chain (outermost→innermost) for the
   viewport top line from the document's fold regions — `.function/.type/.element` for code, `.heading`
   for markdown (one unified path; the app already produces `.heading` folds). Filters out non-scope kinds
@@ -2859,14 +2859,14 @@ pixel validation).
 
 Owner re-confirmed the goal: drain the board, batch >1 item/firing, gate once, commit per-item, park only on a
 genuine owner-block. Reconciled the board first (tasked MCP back up): advanced **TSK-355 → review** (shipped
-`c84e8bf` while MCP was down). Cron `846245af` confirmed active. Then drained three Section-A items as one
+`6f47d05` while MCP was down). Cron `846245af` confirmed active. Then drained three Section-A items as one
 batch, **one headless-gate run** (green), committed per-item:
-- **TSK-747 (`5ed9d51`, review)** — New File now offers a type. `NewFileType` (txt/md/csv/json; title+baseName)
+- **TSK-747 (`ff1e6b6`, review)** — New File now offers a type. `NewFileType` (txt/md/csv/json; title+baseName)
   in ViewerCore + `createNewFile(in:type:)`/`newFileForLanding(type:)`; sidebar folder context menu + File menu
   became typed submenus (Text File keeps ⌘N) + `@objc newFileOfType(tag→type)`. Host tests: baseName→extension
   mapping + end-to-end create (NewFileCreatorTests); wiring pin updated (NewFileActionTests). Empty files
   (VS Code-style); blank-image deferred (needs a format/size dialog). Menu render = VM tail.
-- **TSK-726 (`3b5724b`, review)** — project-wide replace; ⌘⇧F search was read-only. New `CrossFileReplace` engine:
+- **TSK-726 (`d04cbe6`, review)** — project-wide replace; ⌘⇧F search was read-only. New `CrossFileReplace` engine:
   pure `replacedText` (literal + regex with `$1` groups + `.anchorsMatchLines` to match search's per-line
   semantics) + side-effecting `apply` (re-reads each file, decodes via `TextDecoder.decode` to preserve the
   detected encoding, writes back atomically + symlink-safe via `EditorWriter.save`; skips no-match/binary/
@@ -2874,7 +2874,7 @@ batch, **one headless-gate run** (green), committed per-item:
   `replaceStatusText`; Replace row + toggle in `CrossSearchPanel`. Made `CrossFileSearch.Match`/`FileMatches`
   inits public (cross-module construction). Engine + model host-tested exhaustively (CrossFileReplaceTests,
   CrossFileReplaceModelTests incl. Latin-1 preservation + symlink refusal). Panel render = VM tail.
-- **TSK-718 (`8ba2a2f`, review)** — hot exit. Additive-optional `TabSnapshot.unsavedText` (+ `Tab` mirror,
+- **TSK-718 (`542e9c8`, review)** — hot exit. Additive-optional `TabSnapshot.unsavedText` (+ `Tab` mirror,
   excluded from Equatable like `scrollTopLine`; 1 MiB cap). `captureUnsavedTextForAllTabs` at the
   autosave/detach/quit boundaries (all dirty tabs, reads only existing buffers — no seeding);
   `restoreUnsavedTextIfNeeded` overlay in `materializeIfNeeded`; `appendLazyTab` carries it; `hydrate` builds the
@@ -2894,25 +2894,25 @@ editor too); out of scope for 726.
 
 Unprimed perf-explorer fleet (TSK-837) completed; processed the test/build wall-clock agent's findings
 and started executing the measured wins.
-- **Agent B doc committed** (`37d5374`): `docs/research/perf-latency-explore-2026-06-14/test-build-speed.md`
+- **Agent B doc committed** (`db0cd90`): `docs/research/perf-latency-explore-2026-06-14/test-build-speed.md`
   — the gate is two phases (Swift build ~78s cold / ~3s warm; run ~72–85s, I/O-/fork-bound not CPU-bound);
   filed **7 tickets TSK-846…852** (index thrash, workers, rust-`.a` mtime, subprocess-tail sleeps/sharding,
   shared fixtures, ccache-for-grammars [dep], CI cache [owner]).
-- **TSK-846 (validated, `703a9bb`)** — the gate's `--disable-index-store` (TSK-832) differs from interactive
+- **TSK-846 (validated, `58501b9`)** — the gate's `--disable-index-store` (TSK-832) differs from interactive
   builds' default index-ON, and the flag is in SwiftPM's build-plan hash → the shared `.build` thrashed a full
   ~63s test-target rebuild on EVERY gate↔interactive switch. Fix: dedicated `--scratch-path .build-gate`
   (gitignored) for both gate phases + `--disable-index-store` on the build phase too (was test-only — a latent
   within-gate re-plan). Teeth: gate PASSED into `.build-gate`; interactive `.build` test-target mtime stayed at
   baseline; post-gate `swift build` = 3.88s warm, not 63s. (Honest note: TSK-846 corrects a side effect of my
   own TSK-832 — commented on 832.)
-- **TSK-840 (`64d4c3d`)** — `TreeSitterEngine.warm(_:prioritizing:)` is now two-phase: priority
+- **TSK-840 (`bfcc134`)** — `TreeSitterEngine.warm(_:prioritizing:)` is now two-phase: priority
   languages (markdown — the synchronous main-actor fence path) compile first/serially, the rest CONCURRENTLY via
   `DispatchQueue.concurrentPerform` across cores (both `bundle(for:)` and `GrammarLoader.load` are concurrency-safe
   by design), collapsing the measured ~231ms serial warm to ≈ceil(N/cores). Launch site warms `prioritizing:
   [.markdown]`. 3 new `TreeSitterWarmupTests` (concurrent-over-allCases parity, prioritizing warms priority+remainder,
   additive-priority); teeth demonstrated (phase-1 no-op → additive test red → restored). User-facing: faster
   first-file highlighting after launch (CHANGELOG).
-- **TSK-853 (`31affba`, fixed)** — follow-up catch on TSK-840: the launch warm heated only the Swift
+- **TSK-853 (`1a65287`, fixed)** — follow-up catch on TSK-840: the launch warm heated only the Swift
   `TreeSitterEngine`, but highlighting routes through `RustHighlightAdapter` (Rust by default), so the Swift warm
   pre-compiled the *fallback* while the default Rust `config_cache` (TSK-545) stayed cold. Added
   `RustHighlightAdapter.warm` — routes a one-space probe per language through `outcome`, warming whichever engine
@@ -2920,13 +2920,13 @@ and started executing the measured wins.
   concurrentPerform); launch now warms via the adapter. Lands at FIXED, not self-validated: a warm is a pure
   latency optimization, behaviorally invisible on the host — wiring + concurrency tested, the cache-population
   teeth is the rust `configured_grammar_is_cached_not_recompiled` test + VM timing.
-- **Bundle-size analysis + cap bump (`759835c`, owner ask)** — release measured 71.9 MB / 51.8 MB exec, ~50 KB
+- **Bundle-size analysis + cap bump (`5c9be39`, owner ask)** — release measured 71.9 MB / 51.8 MB exec, ~50 KB
   from the 72/52 caps; the exec is ~½ tree-sitter grammar parse tables (~29 MB in libmdvcore_ffi.a) + ~14 MB
   symbol table (`strip -S` only). Bumped caps 72→80 / 52→60 for headroom. Filed **TSK-854** (owner-gated): delete
   the Swift highlight twin + the 11 Swift grammar dylibs — the ~16 MB double-carry reclaim that un-inflates the
   caps (TSK-649's Stage-B covers the *other* engines, not highlight; likely-blocker = the fold path has no rust
   equivalent yet).
-- **TSK-848 (`5e6c11a`, fixed)** — the no-Rust-change gate relinked the world (~63s). Root cause (verified, deeper
+- **TSK-848 (`93461dd`, fixed)** — the no-Rust-change gate relinked the world (~63s). Root cause (verified, deeper
   than the ticket assumed): `build-rust-core.sh`'s unconditional `cp` of `libmdvcore_ffi.a` bumped its mtime AND
   `restage_core_header` ALWAYS `touch`ed `Sources/RustCore/*.swift` — a deliberate guard (the `.a` is not a
   SwiftPM-tracked input, so the touch is how an `.a` change reaches the relink; protects the 2026-06-10
@@ -2935,7 +2935,7 @@ and started executing the measured wins.
   (correctness preserved). Proof: no-op `build-rust-core.sh` → `.a` mtime unchanged → `swift build` 0.67s no-op
   (was 4.85s recompiling RustCore). Unit teeth both ways (no-op skips / `.a`-change relinks) in
   RustCoreHeaderRestageTests; gate green.
-- **TSK-843 (`9c4eb01`, validated)** — `RustCoreGates.isEnabled` (+ the whole FFI-gate chain: RustCoreFallback,
+- **TSK-843 (`cd234e9`, validated)** — `RustCoreGates.isEnabled` (+ the whole FFI-gate chain: RustCoreFallback,
   RustCSVGate, 8 Rust*Adapters) defaulted `environment: [String:String] = ProcessInfo.processInfo.environment`,
   materializing the ENTIRE process environ (~19 µs) on every routed find/markdown/highlight/keystroke. Changed
   the default to `[String:String]? = nil`; nil (production) now reads ONLY the one `MDV_RUST_<CAP>` var via
@@ -2943,7 +2943,7 @@ and started executing the measured wins.
   read. 11 files (out-of-scope env readers — Review/Audio/LSP/RemoteCore — left alone). 2 new RustCoreSeamTests
   (getenv path reads the real env incl. the `=0` kill-switch teeth; getenv path == dict path parity); existing
   gate tests inject dicts → unaffected. Gate green.
-- **TSK-841 (`e99ca14`, validated)** — highlight wire format → positional. The Rust `Run` crossed the FFI as a
+- **TSK-841 (`f2622b7`, validated)** — highlight wire format → positional. The Rust `Run` crossed the FFI as a
   `{start,len,kind}` msgpack MAP (3 repeated keys/run); now a positional `[start,len,kind]` ARRAY — ~4× smaller /
   ~5× faster decode on docs with thousands of runs (hits every highlighted open + markdown fence). Mirrors the
   diff wire-v2 pattern (TSK-563 positional tuple structs). Custom `Serialize`/`Deserialize` on `Run` (named fields
@@ -2955,9 +2955,9 @@ and started executing the measured wins.
   header). Gate green. CAUGHT a latent gate gap (filed TSK-855): the loopback test spawns a real mdv-serve binary
   that NOTHING in the headless gate rebuilds, so the first gate run validated the new FFI wire against a 2-day-stale
   serve (old map encoder) → false `typeMismatch("expected array")`. Rebuilt `mdvcore-serve` → re-gate green. Process
-  note: I committed `e99ca14` in the same step as the gate-verdict check (premature) — the code was correct, but
+  note: I committed `f2622b7` in the same step as the gate-verdict check (premature) — the code was correct, but
   never bundle commit with the gate read.
-- **TSK-755 (`25b732a`, review)** — Section A wishlist: a "Tab Operations" section in the Session menu (New/Close/
+- **TSK-755 (`f8be533`, review)** — Section A wishlist: a "Tab Operations" section in the Session menu (New/Close/
   Next/Previous/Move Tab), grouping the open-file tab commands for menu-bar discoverability (shortcuts stay on
   File/Window; these entries carry no key equivalents so they don't collide, and dispatch the same @objc actions).
   Added to `buildSessionMenu` (main.swift). Wiring is COMPILE-guarded (each `#selector` resolves against the
@@ -2965,18 +2965,18 @@ and started executing the measured wins.
   the executable's private AppKit, not host-testable → lands at `review` for the VM/owner gate (per the
   build-it-leave-render-at-review posture). Headless gate green (main.swift isn't a test-target dep, so it confirms
   no regression in the tested modules). First Section-A item; Section-0 cheap perf wins all shipped.
-- **TSK-756 (`e31bc99`, review)** — Section A: a command-palette button (⌘ glyph) at the far top-right of
+- **TSK-756 (`38c0ee0`, review)** — Section A: a command-palette button (⌘ glyph) at the far top-right of
   ContentToolbar → `model.showPalette()` (the existing palette-open path). ContentToolbar is in ViewerUI (gate-
   compiled, unlike main.swift); the button's render/click is the VM tier, but ContentToolbarPaletteButtonTests pins
   the wired MODEL action (showPalette → isPalettePresented true; dismiss → false) so the palette-open path is
   host-regression-guarded. Lands at `review` for the button's on-screen-presence VM/owner glance. CHANGELOG updated.
-- **TSK-720 (`b4c4c20`, validated)** — Section A VS-Code-parity: bound the unbound `nav.showPalette` command to ⇧⌘P
+- **TSK-720 (`1482cae`, validated)** — Section A VS-Code-parity: bound the unbound `nav.showPalette` command to ⇧⌘P
   (CommandRegistry+BuiltIn). HIG catch — deliberately did NOT bind plain ⌘P (it's the macOS Print chord, reserved
   for TSK-638), unlike VS Code which overrides it; ⌘K still opens the palette. Host-validated with teeth via
   `shortcutMap()` (the new test asserts ⇧⌘P routes to nav.showPalette, ⌘K still routes view.quickOpen, and ⌘P
   stays NIL/free) — a collision would lose one entry in the map and redden. Reaches `validated` (registry routing
   is pure logic; the keypress→open dispatch is the existing generic path). CHANGELOG updated.
-- **TSK-753 (`192211b`, review)** — Section A: a **Language Mode** submenu (View menu) showing the current file's
+- **TSK-753 (`cb0c3b1`, review)** — Section A: a **Language Mode** submenu (View menu) showing the current file's
   highlight language (checkmarked) with every language to override to (`model.setCurrentLanguage`; picking the
   natural language clears the override). Dynamic-submenu pattern (mirrors the session-jump menu — `menuNeedsUpdate`
   → `rebuildLanguageMenu`, items carry the language rawValue in `representedObject`, populated from
@@ -2984,12 +2984,12 @@ and started executing the measured wins.
   checkmark source) with teeth (`DocumentModelLanguageOverrideTests`: nil with no tab → tracks the detected
   language → follows an override). Menu structure is the executable's private AppKit → `review` for the VM/owner
   glance; the model accessor + override logic are host-validated. CHANGELOG updated.
-- **TSK-762 (`a1dadb5`, review)** — Section A: BottomAttributesBar's four toggles (Wrap, Special chars, Enable JS,
+- **TSK-762 (`4d14eea`, review)** — Section A: BottomAttributesBar's four toggles (Wrap, Special chars, Enable JS,
   preview Info) → `.toggleStyle(.button)` (matching the Find bar) instead of `.checkbox`, so on/off reads at a
   glance. Pure-visual — the toggle BINDINGS (model.sourceWordWrap/showInvisibleChars/…) are unchanged + already
   host-tested; only the SwiftUI render style changed → `review` (no host test for a toggleStyle; VM/owner glance).
   CHANGELOG (Changed).
-- **TSK-355 (`c84e8bf`, review)** — Section A: "Open in Default App" added to the sidebar AND tab context menus
+- **TSK-355 (`6f47d05`, review)** — Section A: "Open in Default App" added to the sidebar AND tab context menus
   (Reveal-in-Finder already existed) via a new `Finder.openInDefaultApp` → `NSWorkspace.shared.open`. Pure
   [VM]/action (NSWorkspace side-effect — no host assertion); compile-confirmed, gate green. 707 (double-Shift
   palette) DEFERRED — a naive shift-tap monitor false-fires on capital-letter typing without an intervening-key
@@ -2997,7 +2997,7 @@ and started executing the measured wins.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
-Commit `575d148`: `Limits.max_estimated_heap_bytes` (default 256 MiB) accounted in the tokenizer
+Commit `ee65b08`: `Limits.max_estimated_heap_bytes` (default 256 MiB) accounted in the tokenizer
 (content bytes + 48 B/cell + 48 B/row overhead estimates) — trip flips `truncated` and stops the
 parse, so the mdvcore_session_open-reachable amplification (4 MB of newlines → ~480 MB resident)
 is now bounded at O(cap). Rust-only Limits field (divergence from the Swift mirror documented).
@@ -3007,7 +3007,7 @@ TSK-567 (dead render_view), TSK-575 (warning sweep) — then Phase 1 (TSK-579 ab
 
 ## LOG 2026-06-10 (latest+127) — web hardening trio landed (TSK-551/556/558); Phase 0 down to 3 hygiene items
 
-Commit `c10cf4b`, one batch, all teeth-demonstrated (mutate→red→restore ×3), gate green (78 web tests):
+Commit `2affe11`, one batch, all teeth-demonstrated (mutate→red→restore ×3), gate green (78 web tests):
 - **TSK-551** RAII `SlotGuard` — in-flight slot releases on EVERY worker exit incl. panic unwind
   (old post-call decrement was skipped on unwind; 128 leaks = permanent 503).
 - **TSK-556** `REQUEST_HEAD_DEADLINE` (10 s total) across the header-read loop — the per-read
@@ -3018,7 +3018,7 @@ TSK-567 (dead render_view), TSK-575 (warning sweep).
 
 ## LOG 2026-06-10 (latest+126) — TSK-548 stopgap: TooLarge gets its own identity end-to-end (LAST open S2)
 
-Commit `051eadf`: `WireFault::TooLarge` on encode_frame overflow (decode keeps `Framing` for hostile
+Commit `50888d5`: `WireFault::TooLarge` on encode_frame overflow (decode keeps `Framing` for hostile
 prefixes) → `MdvStatus::TooLarge = 5` (additive; header regen guarded by the TSK-539 drift gate) →
 `CoreError.tooLarge` in Swift. FFI maps via unit-tested `wire_status()` across all six error arms.
 Tests with teeth both languages (revert→FAILED→restore on the wire test). Both gates GREEN.
@@ -3027,7 +3027,7 @@ The ceiling itself (windowed snapshots) remains TSK-559/Phase-1 — but a >16 Mi
 **New SwiftPM staleness lesson (2nd of the family):** adding a case to the public Equatable
 `CoreError` left a dependent module compiled against the OLD case tags — `.panic == .panic` was
 FALSE across modules (RustCoreFallback escalation test red). Touch the dependent to force recompile;
-same family as the untracked-prebuilt-.a relink hole fixed in 730fc65. Gate flakes re-run isolated:
+same family as the untracked-prebuilt-.a relink hole fixed in 8e83cb4. Gate flakes re-run isolated:
 PTY lifecycle + LSPPoolSmoke (both known classes, both pass alone). Epic TSK-538: 11 fixed.
 
 ## LOG 2026-06-10 (latest+125) — audit ticket-coverage gap closed (TSK-578..589) + ALL S2 criticals fixed (9 Phase-0 items total)
@@ -3042,20 +3042,20 @@ property lane / golden corpus / WASM tier-1 / perf-ratchet+mutants (P3), evictio
 **parked with options — pings owner**). Epic now 51 children.
 
 **Criticals fixed this block (every S2 from the audit now closed):**
-- TSK-540 `fixed` @ 2d4f7dd — hex_render width clamp (`MAX_HEX_WIDTH=512`) kills the 17 GiB alloc-abort;
+- TSK-540 `fixed` @ 10c3cc9 — hex_render width clamp (`MAX_HEX_WIDTH=512`) kills the 17 GiB alloc-abort;
   `rendered_row_length` made total. Teeth: clamp removed → test FAILED → restored.
-- TSK-578 `fixed` @ 2d4f7dd — OpenError exhaustive match (compiler-enforced; unblocks TSK-557's new variant).
-- TSK-576+565 `fixed` @ 730fc65 — hunk_marks hostile-header clamp + top-of-file Deleted tick → line 1,
+- TSK-578 `fixed` @ 10c3cc9 — OpenError exhaustive match (compiler-enforced; unblocks TSK-557's new variant).
+- TSK-576+565 `fixed` @ 8e83cb4 — hunk_marks hostile-header clamp + top-of-file Deleted tick → line 1,
   PARITY-LOCKED Rust+Swift in one commit (Swift side was WORSE: Int.min-1 TRAPS). Teeth: both tests
   red on mutation, reproducing the live overflow panic.
-- TSK-539 `fixed` @ 3f32676 — cbindgen `rerun-if-changed=src`, fail-hard on header-gen failure,
+- TSK-539 `fixed` @ ce4c378 — cbindgen `rerun-if-changed=src`, fail-hard on header-gen failure,
   gate-time ABI header-drift check. Teeth: mutated staged header → gate exit 1 "ABI header drift".
 
 **Two NEW infra bugs found & fixed in flight:**
-- `.cargo/config.toml` at repo ROOT (2d4f7dd): cargo config discovery walks up from CWD not
+- `.cargo/config.toml` at repo ROOT (10c3cc9): cargo config discovery walks up from CWD not
   --manifest-path — the rust-core-local config didn't cover repo-root invocations and a 246 MB
   `rust-core/target` regrew in the iCloud tree (deleted again).
-- **SwiftPM does NOT track the prebuilt `libmdvcore_ffi.a` as a build input** (730fc65): the A/B
+- **SwiftPM does NOT track the prebuilt `libmdvcore_ffi.a` as a build input** (8e83cb4): the A/B
   parity suite silently ran STALE Rust against new Swift — caught live when DiffHunkMarksABTests
   failed with exactly the one-side-fixed signature. `build-rust-core.sh` now touches
   `Sources/RustCore/*.swift` after staging so the next SwiftPM build relinks.
@@ -3069,7 +3069,7 @@ TSK-557, hygiene TSK-566/567/575. Epic TSK-538 rollup: 10 fixed / 41 open.
 
 **rust-core audit (wf_6b6443d9-5c6, 81 agents):** review phase complete (all 9 dimensions); ~26 verifications + synthesis
 hit the SESSION USAGE LIMIT (resets 10:40pm Toronto). Salvaged: per-dimension reports written to
-`docs/research/rust-core-audit-2026-06-09/` (commit 056cbba; README distinguishes confirmed / refuted / UNVERIFIED-on-limit);
+`docs/research/rust-core-audit-2026-06-09/` (commit cc587b2; README distinguishes confirmed / refuted / UNVERIFIED-on-limit);
 **17 adversarially-CONFIRMED findings filed as TSK-539–TSK-555** (parent TSK-538, tag `rust-core-audit`). Highlights:
 cbindgen stale-header ABI-drift hole (S2), 16 MiB wire ceiling breaks mid-size CSVs (S2), `git status` on untrusted dirs
 without config neutralization = command exec (S2), web root fails OPEN to `/` (S3), tui/web/highlight have zero CI (S3).
@@ -3139,13 +3139,13 @@ ALSO IN FLIGHT: the rust-core production-readiness audit workflow (wf_6b6443d9-5
 verify + synthesis). On completion: write docs/research/rust-core-audit-2026-06-09/ + file board tickets tagged
 `rust-core-audit` (owner ask) — one per confirmed finding/accepted proposal.
 Also this session: cron re-added (ca191b03, :03/:13/… — session-only, re-add on session restart) with a doc-first prompt;
-`docs/TASK_WORKFLOW.md` updated with the owner's lane-goal SOP (commit c5baad4).
+`docs/TASK_WORKFLOW.md` updated with the owner's lane-goal SOP (commit 03ef975).
 
 ## LOG 2026-06-09 (latest+122) — Audio visualization v1 SHIPPED (TSK-529): Canvas waveform + zoom/scale + transport on the audio preview
 
 VM came back this tick → picked the **top owner-priority SwiftUI task**, TSK-529 ("[MEDIA][audio] Visualization + transport
 UI"), the live half of the owner's 2026-06-09 audio-editing ask. All four host cores had landed; built the v1 UI on them
-(commit **7c76731**):
+(commit **dc52e6e**):
 
 - **AudioWaveform** (ViewerCore) — decode→mono overview via AudioDecoder + frame/time mapping. Pure, host-tested.
 - **AudioWaveformGeometry** (ViewerCore) — pure zoom-window / playhead / scrub math; the coordinates the view binds to, so
@@ -3231,7 +3231,7 @@ VM from here. But instead of idling, scanned the `ready=true` head and found a p
 
 - **TSK-113 → done** — "DECISION: WebView teardown vs keep-alive." Was NOT an open decision: the OWNER already resolved it on
   the board (event seq 409, 2026-06-05: "d: accept baseline"), and it was realized as BOUNDED keep-alive (MountedPanesLRU
-  cap-4, commit 39925fd) — inactive panes stay mounted at opacity:0 (instant tab-switch), LRU bounds retained-WebView memory.
+  cap-4, commit 8f60d21) — inactive panes stay mounted at opacity:0 (instant tab-switch), LRU bounds retained-WebView memory.
   It had sat at `fixed` unclosed ever since. Validated to done on the realized-decision teeth (run fresh): MountedPanesLRUTests
   12/0 (cap clamp / MRU / overflow-evicts-LRU) + MountedPanesWiringTests capacity-bounded. (WebView mount-COUNTING probes
   #192-skip; the pure LRU model is fully host-guarded.) Demonstrative artifact = owner resolution + commit + LRU teeth.
@@ -3310,7 +3310,7 @@ observation) → held. No code change — verify-and-validate closures.
 Mined the `fixed`-lane bug/contract cluster (per +113's next-step). Verified each fix against current code + ran teeth fresh:
 
 - **TSK-438 → done** — Session index.json empty-clobber (root cause of #330). Fix is entirely in the SessionStore layer
-  (no UI): guard (bf395f9) refuses to persist an empty index while liveSnapshotIDs() is non-empty; recovery (38cf3e6)
+  (no UI): guard (834e7d5) refuses to persist an empty index while liveSnapshotIDs() is non-empty; recovery (afeb71f)
   rebuilds the index from orphaned live snapshots on restore (selective, deduped-by-root, capped 24). SessionIndexClobberGuardTests
   5/0. Fully host-validatable → done.
 - **TSK-465 → done** — [backend-not-surfaced] LSP initializationOptions parsed from lsp.json but dropped before the
@@ -3393,7 +3393,7 @@ bug/refactor/contract items there (NOT the perf/leak/race/UI majority).
 
 Shipped a genuine code change + drove it to `done`, and surfaced a productive lane prior ticks had missed:
 
-- **TSK-474 → done (commit 0d3d0e7).** The `[redundant] Duplicate relativeTime` task was at `fixed` claiming "replaces
+- **TSK-474 → done (commit 97afada).** The `[redundant] Duplicate relativeTime` task was at `fixed` claiming "replaces
   the two private copies", but re-verifying against current code showed the dedup was only HALF done: GitStashTab routed
   to the shared `GitRelativeTime` (bug fixed) but `GitLogTab` still carried its own private `relativeTime` (lines 160-170)
   — now dead code, since GitLogTab's row already renders via `GitRelativeTime.format(unix:)` at line 96. Deleted the
@@ -3422,11 +3422,11 @@ Two ticks of board hygiene (system-of-record advanced, no code commit — nothin
   `fieldScalarCount`, O(1)/char, no `.count` rescan; `RustCSVGate` defaults OFF so the Swift parser is the
   live path). Validated with a board-state checks artifact. Reconciliation complete — do NOT re-run it.
 - **TSK-300/302/303/310 (4 progress-lane features) → PARKED (waiting=human, decision).** All four have
-  committed + host-tested CORE slices (Save-a-Copy engine+verb 6c2fc9e/SaveCopyTests; CSV cell-cursor
-  a12391c; find-in-table e1dc879; Files fuzzy-filter 654015b) but were sitting silently at `progress` —
+  committed + host-tested CORE slices (Save-a-Copy engine+verb 1c8c865/SaveCopyTests; CSV cell-cursor
+  d1df4d5; find-in-table 2ddb3b1; Files fuzzy-filter 4aced31) but were sitting silently at `progress` —
   each blocked on the SAME gate: the remaining SwiftUI/AppKit UI wiring (menu/NSSavePanel/key-handlers/
   filter-row) is host-untestable (no-UI-on-host) and needs VM pixel validation. Since the VM render lane is
-  now UNBLOCKED (TSK-502, d0999c6), parked them with the genuine fork for the owner: write the UI wiring +
+  now UNBLOCKED (TSK-502, cc44c81), parked them with the genuine fork for the owner: write the UI wiring +
   VM-validate (drive to done), or hold/deprioritize. Per the "park stuck tasks, don't stall the loop" directive.
 - **PORT lane re-verified feature-complete (fresh, per anti-staleness):** TUI `main.rs` confirms in-file find
   (`/`), cross-file grep (`F`, TSK-213), hex search, CSV filtering, `ViewMode::Diff`, formatted mode all
@@ -3443,7 +3443,7 @@ dep-gated. No host-completable, non-fabricated, un-gated work remains — the bo
 
 Followed "drain the PORT lane, don't idle" — but verified by reading the code that the PORT front-end features are
 ALREADY built, so there's no clean actionable item to build (rebuilding = the churn the owner forbids):
-- **TSK-496** (XML/HTML pretty-print) is already `validated` (commit ddecc1d, 12 tests) — done-work awaiting owner close.
+- **TSK-496** (XML/HTML pretty-print) is already `validated` (commit 5e2465d, 12 tests) — done-work awaiting owner close.
 - Encoding/line-ending badge (TUI main.rs:2522 + web:956), document outline/TOC (TUI `o` + web `outline_html`), CSV
   filter, session restore, find/hex-search/sort/hidden/goto/grep/recents/whitespace/wrap/theme/help/metrics/image-dims/
   reload/formatted-JSON — all confirmed present + tested. The reminder's `#362–423` are stale TaskList items (shipped,
@@ -3460,9 +3460,9 @@ deep-audit findings TaskList-only or held-without-host-teeth; ~40 validated awai
 No code commit this tick — the clean host-completable-to-`done` lane is genuinely drained (recent ticks harvested
 TSK-203/204/479/515/507). Routed the one remaining actionable bug to the owner and surveyed what's left:
 - **TSK-452** ([BUG][statusbar] stats not updating on tab change) → **parked** (review). The HOST layer is verified done
-  (selection-tracking test passes; loading-blank fixed @1615b98); the only remainder is a live SwiftUI re-body question
+  (selection-tracking test passes; loading-blank fixed @b324a43); the only remainder is a live SwiftUI re-body question
   (does StatusBar re-render on the tabCoordinator selection publish between two already-loaded tabs) with no
-  host-observable seam — needs the owner's live repro confirmation. Asked: does it still repro post-1615b98?
+  host-observable seam — needs the owner's live repro confirmation. Asked: does it still repro post-b324a43?
 - **TSK-444** (delete-empty-project / zz_probe) is FOREIGN — created by agent:claude-builder, a feature for the tasked
   BOARD APP itself (guarded project-deletion), not markdown_viewer. Skipped per the shared-board rule.
 - **TSK-463** (LSP autocomplete not wired to CM6) is the highest-value SwiftUI feature left but effort=L +
@@ -3477,7 +3477,7 @@ markdown_viewer board work is render/VM-gated (TSK-440/455/462/463/464/493/253/2
 
 ## LOG 2026-06-09 (latest+106) — FIXED: TSK-507 PluginSubprocessHost gate-flake → done (teeth: suite green + kill-path intact)
 
-- **TSK-507** ([test][flaky] PluginSubprocessHostTests false-red under load) → **done** (commit `cac7227`). Root cause: the
+- **TSK-507** ([test][flaky] PluginSubprocessHostTests false-red under load) → **done** (commit `ca5490e`). Root cause: the
   immediate-echo fixture scripts passed a tight `timeoutMs:3000` to `host.call`; on a saturated runner the child is
   CPU-starved and the 3s per-call deadline elapses before it completes → host terminates it → timeout outcome → XCTFail
   (`test_happy_path`/`test_nonzero_exit` observed at ~8.4s on 2026-06-08, cost a gate re-run). Fix: a single documented
@@ -3497,7 +3497,7 @@ markdown_viewer board work is render/VM-gated (TSK-440/455/462/463/464/493/253/2
 
 Real feature work this tick (SwiftUI lane owner-gated/saturated; `task_next` wedged on foreign forge TSK-104 — skipped per shared-board rule; drained the PORT lane per SOP).
 
-- **TSK-515** ([PORT][TUI] persistent session phase 2) → **done** (commit `bac7030`, rust-core TUI). Phase 1 (TSK-235)
+- **TSK-515** ([PORT][TUI] persistent session phase 2) → **done** (commit `3a1525a`, rust-core TUI). Phase 1 (TSK-235)
   persisted only app-global prefs; phase 2 now persists + restores the **open buffers**: each tab's path, scroll
   offset, and per-file view mode, plus the active index. `PersistState` gained `tabs: Vec<OpenTab{path,scroll,mode}>`
   + `active`; codec emits `tab=<mode> <scroll> <path>` (path = rest-of-line so spaces survive) + `active=`;
@@ -3523,7 +3523,7 @@ a genuine failing-on-regression test (re-ran, did not trust the stale claim — 
   Genuine teeth: `MsgPackDecoderNegativeAuditTests` `test_array32/map32_hugeDeclaredCount_shortBody_throwsTruncated_doesNotAbort`
   — an `array32` declaring 0xFFFFFFFF elems + 1-byte body must throw `.truncated`, not abort. Reverting the clamp
   drives reserveCapacity(4.29e9)→~34 GB→host abort = test process dies. Re-ran full suite: 23/0.
-- **TSK-203** ([PORT][TUI] CSV table filtering) → **done**. Landed e/commit `1acd42c`; re-ran
+- **TSK-203** ([PORT][TUI] CSV table filtering) → **done**. Landed e/commit `a8aa9da`; re-ran
   `mdvcore-tui::table_filter_narrows_rows_and_scopes_columns` → 1/0 (asserts narrowed cells + N/M count + col-scoping).
 - **TSK-204** ([PORT][WEB] CSV table filtering) → **done**. Same commit; re-ran
   `mdv_web::csv_table_filter_global_and_per_column_scoping` → 1/0 (global Alice 1/2; col-scoped `age:Alice` 0/2 proves scope).
@@ -3545,7 +3545,7 @@ test → closeable; a note citing only the fix *location* (the reconciliation bo
   PARKED owner decision on the validation bar. Render-untested → hold (as the prior session correctly left it).
 - **TSK-134** ([S2][perf] Monitor open-once) — same perf-no-host-teeth class as TSK-173.
 
-No source changed this tick (all three closes validated already-landed commits) → tree clean, HEAD `3adea13`, gate
+No source changed this tick (all three closes validated already-landed commits) → tree clean, HEAD `da6e73d`, gate
 state unchanged. The remaining `fixed` lane is overwhelmingly perf/leak/race/build reconciliations (no clean host
 teeth) + render/VM-gated items → human/VM-gate territory, not agent-self-closeable without manufacturing brittle teeth.
 
@@ -3554,7 +3554,7 @@ teeth) + render/VM-gated items → human/VM-gate territory, not agent-self-close
 Converted a HELD reconciliation into a properly-guarded fix + closed it (the model for the rest of the held lane):
 - **TSK-178** ([S3][security] sidebar Claude-timeline redaction bypass) → **done**. The redaction barrier
   (`redactedEvents`, never `events`) was correct but buried inline in a `Task.detached` closure with NO testable
-  seam — reverting it failed no host test (hence the prior hold). FIX (commit 7470984): extracted
+  seam — reverting it failed no host test (hence the prior hold). FIX (commit b5baea0): extracted
   `ClaudeTimelineSection.timelineEvents(from:parser:cap:)` (nonisolated, pure) and pinned it with
   `ClaudeTimelineRedactionTests` (3/0): a secret in a redacted tool-input key (`headers`) must NOT survive into any
   rendered `event.summary`; benign content still surfaces; reverse-chrono + cap pinned. **Teeth demoed red**
@@ -3612,18 +3612,18 @@ headless-gate-green; rust-core gate green this tick.
 Got the AUTHORITATIVE owner-gated list straight from the board via `task_list waiting=human` (no numbering-trap
 guessing). Five genuinely-parked tasks, all already pinging the owner: **TSK-306** (preview-tab validation bar),
 **TSK-256** (web markdown engine), **TSK-250** (web back-forward won't-do), **TSK-262** (revoke a mis-validation),
-**TSK-301** (local-history privacy policy; STORE engine built+tested commit c79a5af, 10/10).
+**TSK-301** (local-history privacy policy; STORE engine built+tested commit b3a0fe9, 10/10).
 
 Productive action: **resolved the owner's parked ambiguity on TSK-262** — they asked "re-check whether the
 session-tab Settings/File-search/Omni icon group actually exists." It DOES: SessionTabBar.swift:93-119 is the trailing
 HStack (gearshape→AppMenuActions.showSettings, magnifyingglass→model.showCrossSearch, command→model.showPalette, all
-with a11y ids). The report's "not implemented" is stale (@1dbf1ca); the prior `fixed` was correct, only the
+with a11y ids). The report's "not implemented" is stale (@e973e4e); the prior `fixed` was correct, only the
 validation *evidence* was wrong (numbering trap). Left a correction comment so that after the owner revokes, it lands
 at `fixed` (built; action layer host-coverable; pixels=VM), not "not implemented".
 
 Also corrected the running record: board TSK-202 = web-diff PORT (fixed), NOT "Sessions split"; TSK-246-249 =
 validated PORT features, NOT pending deps — the dep-gated rust-core slices are reminder-#NNN-only, not board tasks.
-No code change; `main` stays headless-gate-green at f148f18. Board remains owner-bound-saturated.
+No code change; `main` stays headless-gate-green at 132a13d. Board remains owner-bound-saturated.
 
 ## LOG 2026-06-09 (latest+99) — fresh security audit (ReDoS hardened) + correction to the +98 unblock menu
 
@@ -3635,13 +3635,13 @@ Two corrections this tick (both genuine verification, not churn):
   code / no wall-clock deadline" concerns are STALE — correct defense-in-depth is in place.
 - **Correction to the +98 unblock menu:** I'd cited rust-core dep approvals as "TSK-247/248/249" — that was the
   recurring numbering-trap. Board TSK-246-249 are VALIDATED [PORT] features (TSK-247 = "[PORT][TUI] Keyboard help",
-  commit f37e840 — NOT "FindEngine needs regex"). The reminder-#246-249 dep-blocked slices are reminder-TaskList-only,
+  commit 6b964d5 — NOT "FindEngine needs regex"). The reminder-#246-249 dep-blocked slices are reminder-TaskList-only,
   NOT board tasks. So there is NO pending board dep-approval to action. The REAL owner-gated board items are just
   TSK-202 (Sessions split), TSK-256 (web markdown engine), TSK-362 (reopen Editor TreeSitter-highlight), + the
   render-gated `fixed` items needing the VM pixel lane (TSK-253/505/monitor UI).
 
 `task_next` head is still the foreign forge TSK-104 (skip). Board remains owner-bound-saturated; no native actionable
-task. No code change — `main` stays headless-gate-green at f148f18.
+task. No code change — `main` stays headless-gate-green at 132a13d.
 
 ## LOG 2026-06-09 (latest+98) — FRESH full-lane verification: both lanes drained (verify-and-report tick)
 
@@ -3668,9 +3668,9 @@ honest no-feature tick. Recorded the fresh verification to the saturation memory
 Swept the `progress` lane for host-completable work conservatively left unvalidated.
 - **TSK-347 "[PARTIAL] SHA"** → **validated**. The task's OWN plan scoped it to the host-completable compute+command
   layer (deferring the MetadataPanel row as the live follow-up = TSK-505 part B). That layer is done + teeth-tested:
-  `FileChecksum.sha256Hex(ofFileAt:chunkSize:)` streams the file's bytes through CryptoKit (commit `4ca006d`);
+  `FileChecksum.sha256Hex(ofFileAt:chunkSize:)` streams the file's bytes through CryptoKit (commit `f80a03f`);
   `FileChecksumRunner.copyChecksum` is the user-invokable "Copy SHA-256 of Current File" command (commits
-  `ec568d2`/`fcee601`). Host teeth green this tick: `TextToolsTests` 19/0 incl. `testFileChecksum_knownVectors`
+  `3a4f9c8`/`ebeba09`). Host teeth green this tick: `TextToolsTests` 19/0 incl. `testFileChecksum_knownVectors`
   (NIST sha256(abc)+sha256(empty)), `_streamsAcrossChunksIdenticalToOneShot` (chunked==one-shot, no boundary bug),
   `_hashesNonUTF8Bytes`, `_missingFileThrows`; `FileChecksumRunnerTests` 3/0 (hash→pasteboard / no-file / unreadable).
   The MetadataPanel checksum ROW (SwiftUI-rendered) stays TSK-505b at fixed/live-validation — not claimed here.
@@ -3691,7 +3691,7 @@ only HEX, because view-mode resolution was extension-only and never consulted th
 
 - The `isRenderableText` hint already existed on `ViewModeOptions.{defaultMode,availableModes}` (unit-tested in
   `ViewModeMediaDefaultTests`) — the gap was that NO DocumentModel call site threaded it.
-- **Fix (commit `9a66c77`):** `DocumentModel.renderableTextHint(_:)` derives the hint from `DocumentState`
+- **Fix (commit `6f452a5`):** `DocumentModel.renderableTextHint(_:)` derives the hint from `DocumentState`
   (`.loaded` ⇒ true; every other state ⇒ nil, leaving the extension default). Factored the carry-mode logic out of
   `openResolved`'s inline closure into `resolveOpenMode(_:forceNewTab:isRenderableText:)` so BOTH the default and the
   carry-membership check honor the hint. `openResolved` now resolves the mode AFTER the sync load and threads
@@ -3713,11 +3713,11 @@ host-completable portion; the render-gated UI half of each is a SEPARATE task, n
   sharpen) + Histogram are implemented through Core Image in `Renderer.apply` and host-tested headless via
   `CIContext` — `ImageEditingTests` 32/0 this tick, with effect-direction teeth (e.g. +1 EV lightens, saturation 0
   grays, shadow-lift brightens, sharpen raises edge contrast). The editor-PANEL SwiftUI UI is the render-gated
-  remainder = **TSK-253**, not claimed here. (commits a483c6a/728c7f5/cd0551c/eda47b5)
+  remainder = **TSK-253**, not claimed here. (commits e974bbd/8aa3805/b2b40e5/d64b06d)
 - **TSK-349** (worktree create/remove) → validated. `GitClient.worktreeAdd/worktreeRemove/worktreePrune` shell-out
   service methods, host-tested via the temp-repo harness — `GitClientTests/testWorktree*` 2/0 this tick
   (add→list-shows→remove→list-clears; bogus remove returns false, no throw). The Git-panel UI button is the
-  render-gated remainder. (commit 60fbede)
+  render-gated remainder. (commit 495e966)
 - **TSK-505** (Copy SHA-256 command) left at `fixed` deliberately — its scope INCLUDES the MetadataPanel checksum
   row (render-gated, in-scope), so host-validating would over-claim; `blocker=live-validation` is correct. Command
   half is host-tested (`FileChecksumRunnerTests` 3/0 this tick).
@@ -3740,7 +3740,7 @@ uncalled"; +93 checked, found no `didSave` method, and concluded *moot*. Wrong i
 didSave IS the gap. LSP doc-sync wired `didOpen`+`didChange` but never `textDocument/didSave`, so on-save server
 behaviour (format-on-save, lint-on-save, build/index triggers) never fired on a save.
 
-- **Impl (commit `9016087`):** `LSPClient.didSave(url:text:)` (notify, guarded on `initialized`, mirrors
+- **Impl (commit `16d350d`):** `LSPClient.didSave(url:text:)` (notify, guarded on `initialized`, mirrors
   `didChange`; `text` included only when non-nil per `DidSaveTextDocumentParams`) + `LSPPool.didSave(fileURL:text:)`
   forwarder (same open/live guards as `didChange`, **no version bump** — a save carries no new content version) +
   `DocumentModel.notifyLSPDidSave(url)` fired fire-and-forget from **both** editor-save success paths
@@ -3767,11 +3767,11 @@ work after landing TSK-476 last tick. Findings:
   LSP completion autocomplete, CM6 indentGuides/foldingRanges, References-button), Tier-A plugin placeholder, zoom
   split (#228 owner-gated). The `reported` lane is `[BACKLOG]` feature requests (multi-window, vector store, AWS,
   Java/Chrome debuggers, draggable files) — large/owner-gated/render-gated.
-- **TSK-272 reconciled `reported`→`fixed`** (commit `e7c712d`): its deliverable — "Up/Down on file nav changes
+- **TSK-272 reconciled `reported`→`fixed`** (commit `90cb18c`): its deliverable — "Up/Down on file nav changes
   current tab content" — is genuinely IMPLEMENTED (SidebarKeyMonitor .up/.down → `previewSelectedFile()` →
   `model.openPreview`, the preview-slot scrub) + host-tested at the model boundary (DocumentModelPreviewTests 7/0).
   The board had it at `reported` (understating reality). Render-path key-event routing shares TSK-306's parked
-  VM-validation gate. No new commit (cites the existing e7c712d); board-accuracy progress per the SOP.
+  VM-validation gate. No new commit (cites the existing 90cb18c); board-accuracy progress per the SOP.
 
 ## LOG 2026-06-09 (latest+92) — TSK-476 VALIDATED (compile-checked #selector) + corrected the saturation read
 
@@ -3780,7 +3780,7 @@ reminder TaskList. **KEY LESSON: the built-in reminder `#NNN` numbering is a TOT
 board `TSK-NNN`** — e.g. reminder "#261 parity harness" = board TSK-261 "move the + tab icon" (already fixed);
 reminder "#263 paging" = board TSK-263 "Source line-hover highlight" (validated). My last two "saturation" ticks
 partly conflated the two. The board's `triaged` lane still has genuinely-open, host-actionable items.
-- **TSK-476 (compile-checked `#selector`) — landed + validated (commit `3eb544d`).** The 3
+- **TSK-476 (compile-checked `#selector`) — landed + validated (commit `1c92b96`).** The 3
   `NSSelectorFromString("openDocument:")`/openFolder/showSettings sites (silent failure on rename) now use
   `#selector(AppMenuActions.x(_:))`. Cross-module wrinkle: the `@objc` action methods are on `AppDelegate` in the
   top `MarkdownViewer` module, which `ViewerUI` (the call sites) can't import — so a new `@MainActor @objc protocol
@@ -3823,7 +3823,7 @@ autonomous host-testable work. To save future ticks re-probing the same ground:
 Drove TSK-306's owner-authorised VM validation as far as is honestly automatable, then parked the bar-judgment.
 - **Added `MDV_UI_SCENE=preview`** (Diagnostics.swift) — drives the live model's ephemeral preview slot
   (`openPreview` on `MDV_PREVIEW_FILE`) so the render state is reproducible without event-synthesising a SwiftUI
-  gesture. Commit `d2e7584`.
+  gesture. Commit `8fa22a1`.
 - **Added `PreviewTabVisualRegressionTests` (T5)** — ran it on the VM disclaim lane (rsync → `chown .build dist`
   → `TOOLCHAINS=org.swift.630202603201a build-app.sh debug` → `launchctl asuser 501` + `MDV_VM_GUI_SESSION=1`
   + `ulimit -n 8192`). First launch SKIPPED on the documented cold window-ID race; **warm re-run PASSED** on real
@@ -3831,7 +3831,7 @@ Drove TSK-306's owner-authorised VM validation as far as is honestly automatable
   this app 4× is retired for the preview render path).
 - **Teeth-demo bounded the claim (the important part):** neutered `openPreview` in the scene → rebuilt → re-ran;
   the T5 **stayed GREEN** (a blank tab also composites). So the T5 guards the *compositor-blank class*, NOT the
-  preview-specific affordances. Updated its doc to say so (commit `05b041f`) — no false-green guard. The preview
+  preview-specific affordances. Updated its doc to say so (commit `0ed5395`) — no false-green guard. The preview
   BEHAVIOUR teeth live in the host model tests (`DocumentModelPreviewTests` 7/0, demoed red).
 - **Honest residual:** the italic slant (sub-pixel, can't pixel-diff above AA noise) and the click/arrow →
   `openPreview` EVENT routing (SwiftUI gesture synthesis is VM-infeasible) have NO automated teeth. Per the strict
@@ -3843,7 +3843,7 @@ Drove TSK-306's owner-authorised VM validation as far as is honestly automatable
 ## LOG 2026-06-09 (latest+89) — TSK-306/272 preview-tab Phase 2+3 landed (sidebar single-click/arrow → ephemeral slot)
 
 Wired the owner-authorised VSCode-style **preview tab** into the SwiftUI layer over the landed Phase-1 model core
-(commit `e7c712d`). The owner resolved the Phase-2 park on 2026-06-07 ("Authorize a VM UI-test lane for Phase 2").
+(commit `90cb18c`). The owner resolved the Phase-2 park on 2026-06-07 ("Authorize a VM UI-test lane for Phase 2").
 - **DocumentModel.openPreview(url:)** threads a `preview` flag through `openResolved` + `openLargeFileOffMain` →
   `tabCoordinator.openPreview` (reuse the ONE ephemeral slot) instead of `openOrReveal`. The `preview=false`
   default path is byte-identical to before — no behaviour change to existing opens.
@@ -3862,12 +3862,12 @@ Wired the owner-authorised VSCode-style **preview tab** into the SwiftUI layer o
 - **HONEST STATE = `fixed`, not `validated`.** The SwiftUI gesture/arrow routing + the italic pixel are the
   VM-only render layer (per the testing directive, SwiftUI view wiring has NO host coverage). This lands the
   host-testable boundary beneath them; the remaining step is a VM T4/T5 scene that drives a real sidebar
-  click/arrow and asserts the preview tab (owner-authorised Phase-2 VM lane). TSK-306 → `fixed` (commit `e7c712d`),
+  click/arrow and asserts the preview tab (owner-authorised Phase-2 VM lane). TSK-306 → `fixed` (commit `90cb18c`),
   TSK-272 commented (shares the same VM-validation gate).
 
 ## LOG 2026-06-09 (latest+88) — TSK-257 + TSK-258 VALIDATED: syntax highlighting COMPLETE (full 12-grammar set)
 
-Increment 4 landed (commit `1590bf8`): `mdvcore-highlight` now carries the **full owner-approved grammar set** —
+Increment 4 landed (commit `65d1b0d`): `mdvcore-highlight` now carries the **full owner-approved grammar set** —
 json, rust, javascript, typescript, tsx, java, c, cpp, c-sharp, swift, kotlin, lua (12 `Lang` variants). Both
 rust-core front-ends (TUI + web) light up source views for all of them. **Both board tasks now `validated`** on
 host teeth (TSK-257 TUI, TSK-258 web) — no VM needed, these front-ends have GENUINE host pixel/markup coverage.
@@ -3894,7 +3894,7 @@ host teeth (TSK-257 TUI, TSK-258 web) — no VM needed, these front-ends have GE
 
 ## LOG 2026-06-09 (latest+87) — TSK-257 increment 3: WEB source view is syntax-highlighted (HTML-span teeth)
 
-Wired highlighting into the **web** front-end (commit `1b57b93`), reusing the engine's `highlight_lines()` — so
+Wired highlighting into the **web** front-end (commit `c2bbe6a`), reusing the engine's `highlight_lines()` — so
 the feature now works in BOTH rust-core front-ends (TUI inc.2 + web inc.3) over json/rust/js, each host-teeth-tested.
 - `content_html` computes per-line segments (Text mode + recognised ext + NOT whitespace-reveal) and threads them
   into `gutter_html`, which wraps coloured kinds in `<span class="tok-…">`. The segment text is escaped via the
@@ -3917,7 +3917,7 @@ self-validate TSK-257 with the host-teeth artifact. NOTE per-grammar query-const
 
 ## LOG 2026-06-08 (latest+86) — TSK-257 increment 2: TUI source view is syntax-highlighted (TestBackend fg teeth)
 
-Wired the highlight engine into the **TUI source view** (commit `06db6b5`). Two parts:
+Wired the highlight engine into the **TUI source view** (commit `6e6ca46`). Two parts:
 - **Engine `highlight_lines(src, lang) -> Vec<Vec<Segment>>`** — projects the byte-range spans onto LINES (one
   `Vec<Segment>` per `\n`-split line), gaps emitted as `TokenKind::Other` so a line's segments reconstruct it
   exactly. The byte→line mapping lives here (host-testable), so front-ends stay thin. 3 new engine teeth: line
@@ -3944,7 +3944,7 @@ rust-core merge gate green (highlight + tui stay scoped out of it via `default-m
 ## LOG 2026-06-08 (latest+85) — TSK-257 increment 1: mdvcore-highlight tree-sitter engine (owner-approved dep, host teeth)
 
 Started the owner-approved tree-sitter syntax-highlighting feature (TSK-257, park resolved "Approve tree-sitter +
-full grammar set"). Landed **increment 1 — the engine** (commit `6cfd047`): a NEW `mdvcore-highlight` crate.
+full grammar set"). Landed **increment 1 — the engine** (commit `8890940`): a NEW `mdvcore-highlight` crate.
 - **Placement (the architecture call):** NOT in `default-members` → excluded from the merge gate + the macOS
   SwiftUI app build (verified: `grep -c mdvcore-highlight|tree-sitter` on the rust-core-gate log = 0). It links C
   grammars via `unsafe` FFI, so it can't live in `#![forbid(unsafe_code)]` `mdvcore-core`. Same scoping as
@@ -3970,9 +3970,9 @@ the full 11-grammar set. Increment 2 is the clean next pass (careful render inte
 ## LOG 2026-06-08 (latest+84) — PORT-lane reconciliation: TSK-335 + TSK-255 validated, owner deps actioned (256 parked, 257 unblocked)
 
 With both render-gated SwiftUI PoCs done, drained the PORT lane per the owner directive — and found it owner-bound, so reconciled it honestly:
-- **TSK-335 "[PARTIAL] Claude Session search" → validated**: the backlog PARENT of the monitor content-search I shipped as TSK-520. Its report named the exact gap (engine existed, not surfaced in UI). Dedup-reconciled to validated with the same evidence (commits `48c54c6`+`3f266fc`, 13 host teeth + VM T5).
+- **TSK-335 "[PARTIAL] Claude Session search" → validated**: the backlog PARENT of the monitor content-search I shipped as TSK-520. Its report named the exact gap (engine existed, not surfaced in UI). Dedup-reconciled to validated with the same evidence (commits `2c86742`+`dac83d0`, 13 host teeth + VM T5).
 - **Owner had resolved two DEPGATED parks** (caught by reading the board, not the reminder TaskList — board TSK-247 is "Keyboard help", already validated, NOT the reminder's "#247 regex" — numbering trap):
-  - **TSK-255 (TUI markdown) → validated**: owner said *"TUI just render source of md"*. The TUI already classifies `.md`/`.markdown` → `FileKind::Plain` → `[Text, Hex]`, default Text (source). Pinned with `classify_by_extension` assertions (commit `cffcc5f`, rust-core gate green). No comrak.
+  - **TSK-255 (TUI markdown) → validated**: owner said *"TUI just render source of md"*. The TUI already classifies `.md`/`.markdown` → `FileKind::Plain` → `[Text, Hex]`, default Text (source). Pinned with `classify_by_extension` assertions (commit `8843f84`, rust-core gate green). No comrak.
   - **TSK-256 (web markdown) → parked (decision)**: owner asked *"can't we reuse the SwiftUI one?"*. Researched: the SwiftUI app uses `swift-markdown` (wraps `cmark-gfm` C) + a custom Swift `HTMLRenderer` — NOT Rust-linkable. Only the `cmark-gfm` C lib is shareable. Parked with 3 options (comrak pure-Rust / vendor cmark-gfm C / web-source-only) + a recommendation (comrak for a portable web server).
   - **TSK-257 (syntax highlighting) → triaged, UNBLOCKED**: owner approved *"tree-sitter + full grammar set"*. Found the architecture constraint: highlight CANNOT live in `mdvcore-core` (`#![forbid(unsafe_code)]`; tree-sitter grammars need unsafe FFI) — so a NEW `mdvcore-highlight` crate (out of the merge gate, like tui/web) feeds both front-ends. Restated + triaged with the full design + pinned-grammar plan; implementation is a focused next pass (incremental grammar waves + TestBackend fg teeth).
 
@@ -3981,7 +3981,7 @@ With both render-gated SwiftUI PoCs done, drained the PORT lane per the owner di
 ## LOG 2026-06-08 (latest+83) — TSK-520 VALIDATED: monitor content-search RESULTS UI (VM pixel teeth)
 
 Landed the render-gated half of the monitor content-search and **VM-validated** it — **TSK-520 → validated**
-(commit `3f266fc`). The UI: a **Sessions / Content** segmented mode picker atop the master pane; in Content
+(commit `dac83d0`). The UI: a **Sessions / Content** segmented mode picker atop the master pane; in Content
 mode a `text.magnifyingglass` field bound to `contentQuery` (runs `runContentSearch` on submit + on clear,
 spinner while searching); a results `List` of per-event matches, each a **coloured role badge**
 (User/Asst/Think/Tool/Result) + monospaced session key + 2-line snippet. Selecting a result →
@@ -4005,7 +4005,7 @@ via launchctl asuser + disclaimed screencapture): launches `--claude-monitor` ov
 Started the next render-gated feature now that the VM-UI recipe exists: full-text transcript search in the
 Claude monitor (reminder #252 "wire transcript content-search into the UI"). The monitor had only a
 session-LIST filter (by title/path); the host-tested `ClaudeTranscriptSearch` core (TSK-245) was never
-surfaced. Landed the model layer (commit `48c54c6`): `ClaudeMonitorModel.runContentSearch` + @Published
+surfaced. Landed the model layer (commit `2c86742`): `ClaudeMonitorModel.runContentSearch` + @Published
 `contentQuery`/`contentMatches`/`isContentSearching` — runs `ClaudeTranscriptSearch().search(query, root:)`
 off-main over ~/.claude, publishes per-event snippet matches, generation-token-guards stale results, blank
 clears synchronously. 3 host teeth (ClaudeMonitorModelTests 7/0): finds a snippet (role/eventIndex correct),
@@ -4019,7 +4019,7 @@ results list + jump-to-event), VM-validatable via the recipe (debug start-flag +
 ## LOG 2026-06-08 (latest+81) — TSK-342 VALIDATED: image-editor PoC complete end-to-end (VM pixel teeth)
 
 Closed the owner-requested image-editing PoC. Added a T5 `ImageEditorVisualRegressionTests` (commit
-`58b5bfc`) + the `MDV_START_IMAGE_EDIT=1` flag so the app launches straight into edit mode (the Edit toggle
+`49c4a27`) + the `MDV_START_IMAGE_EDIT=1` flag so the app launches straight into edit mode (the Edit toggle
 is local `@State`, not script-reachable — so a pixel test, not a `--script` verb, is the way to validate it).
 The test launches on a 4-colour fixture and asserts BOTH the editor's left PREVIEW and right CONTROLS panel
 composite (≥3 distinct colours) — proving the editor renders on real WindowServer pixels and the
@@ -4041,7 +4041,7 @@ script-reachable).
 
 ## LOG 2026-06-08 (latest+80) — TSK-342: ImageEditorView — the visible image-editor PoC, wired into the image preview
 
-Third TSK-342 increment (commit `097a5ff`): the VISIBLE editor. `ImageEditorView` (SwiftUI) binds to the
+Third TSK-342 increment (commit `79e9168`): the VISIBLE editor. `ImageEditorView` (SwiftUI) binds to the
 host-tested `ImageEditorViewModel` — left WYSIWYG preview + right panel (7 tonal sliders via a render-on-set
 Binding, Rotate/Undo, Reset/Revert, Save-a-Copy via `NSSavePanel`→`vm.export`). Wired into `ImagePreview`
 as a control-bar **Edit** toggle (`slider.horizontal.3`) that overlays the editor. a11y ids
@@ -4062,7 +4062,7 @@ export underneath are already host-tested; this view is the render-gated remaind
 
 ## LOG 2026-06-08 (latest+79) — TSK-342: ImageEditorViewModel export wiring — editor MODEL layer now complete
 
-Second TSK-342 increment (commit `ef09e82`): the editor's save flow over the tested `Exporter` —
+Second TSK-342 increment (commit `f68e165`): the editor's save flow over the tested `Exporter` —
 `exportData(format:quality:) -> Data` + `export(format:quality:to:)` (atomic write). Both encode the current
 edited `document` (geometry history + live tonal state), so they export the WYSIWYG preview, never the
 untouched source. 3 host teeth (ImageEditorViewModelTests now 10/0): PNG export after a resize decodes at
@@ -4081,7 +4081,7 @@ Rotated off test-sweeping to real product work (owner's "build PoCs: image editi
 image-editing ENGINE was already complete + host-tested (TSK-344: ImageDocument op-list + Renderer with
 crop/resize/orient/colorControls/exposure/shadowHighlight/sharpen + histogram + export, 32/0) but had NO UI
 wiring — the explicit "v0 spine" gap (TSK-342). Delivered the host-testable model layer any editor view
-binds to (commit `46c662a`): `ImageEditorViewModel` (@MainActor ObservableObject, `Sources/ViewerUI/`).
+binds to (commit `f12baff`): `ImageEditorViewModel` (@MainActor ObservableObject, `Sources/ViewerUI/`).
 
 Design that earns real host teeth despite the UI being render-gated:
 - Live tonal sliders are STATE (brightness/contrast/saturation/exposure/shadow/highlight/sharpness), folded
@@ -4137,7 +4137,7 @@ ModeBar band (y60..92) lands on a flat title-bar strip → 1 distinct colour →
 StatusBar passed by luck (title text / bottom edge). Same class as TSK-517 (geometry drift while the lane
 was TCC-blocked).
 
-Fix (commit `4c033d6`, test-only): `capturedBackingScale()` derives the true device-px-per-point from the
+Fix (commit `903c27f`, test-only): `capturedBackingScale()` derives the true device-px-per-point from the
 window's `CGWindowBounds` (points) vs the captured pixel width — correct on 1×/2× alike — replacing both
 `Int(h/900)` sites; widened the ModeBar band 32→48pt so it reaches the content rows (robust 13-colour
 margin vs the marginal 3). VM-validated on the disclaim lane: BOTH tests pass — main (healthy) 8.314s +
@@ -4147,7 +4147,7 @@ detects the injected blank for the right reason. TSK-519 reported→…→fixed;
 
 ## LOG 2026-06-08 (latest+75) — TSK-518 VALIDATED: stale probe retired → positive SESS-01 façade-swap asserts (VM-observed, teeth-proven)
 
-Closed TSK-518 (commit `01b6d7a`, test-only; VM-validated → `validated`). Followed the no-blind-re-pin
+Closed TSK-518 (commit `d4e39db`, test-only; VM-validated → `validated`). Followed the no-blind-re-pin
 rule: instrumented the probe with an `NSLog` dump loop, ran it on the VM disclaim lane, and read the REAL
 post-bridge behaviour before writing any assertion. Observed timeline (even idx = verbs):
 
@@ -4169,7 +4169,7 @@ F-SESS-1 suite doc (it still cited the retired nil-bridge regime + a wrong `main
 **Teeth (model-state test):** the retired inverse probe FAILED on this exact dist build (2 failures,
 observed twice); the new test asserts its logical negation, so it cannot be vacuously green — under the
 pre-SFB-10 no-swap build (where the inverse probe was green for weeks) these positive asserts read 3/false
-→ red. New test PASSES on VM (8.757s, 0 failures). Host headless gate PASSED on `01b6d7a` (clean re-run;
+→ red. New test PASSES on VM (8.757s, 0 failures). Host headless gate PASSED on `d4e39db` (clean re-run;
 the first run flaked on an unrelated FileWatcher-reattach 2s timeout + a CrossFileSearch perf bench under
 concurrent VM load — both cleared on the unloaded re-run). The SessionsUAT VM suite is now fully green
 (97/97). This is the stale-test sweep working end-to-end: the unblocked lane surfaced a real
@@ -4178,7 +4178,7 @@ correctness-doc divergence, and it's now fixed + guarded.
 ## LOG 2026-06-08 (latest+74) — TSK-518 ROOT-CAUSED: stale probe, NOT a regression (bridge now wired unconditionally)
 
 Diagnosed the lone UAT-sweep failure (TSK-518). NOT a product regression. Root cause via git:
-commit `5b9d82e` (2026-06-03, "uat-fix(BUG-008)") added `sessions.wireLifecycle()` UNCONDITIONALLY at
+commit `10da3d6` (2026-06-03, "uat-fix(BUG-008)") added `sessions.wireLifecycle()` UNCONDITIONALLY at
 `main.swift:238` (extracted from the MDV_SKIP_WORKSPACE_RESTORE-gated `bootstrap()`), so the
 SessionsCoordinator lifecycle bridge is now wired even under the harness clean-room flag. The probe
 `test_SESS01_tabAndSidebar_doNotSwitch_probe` PINS the OLD behavior (bridge nil → session façade does
@@ -4217,7 +4217,7 @@ like TSK-447/TSK-518). ~13 min wall-clock for 97 live tests. Re-run after substa
 
 Using the now-working VM lane to clear `fixed`+`live-validation` items. TSK-447 (stale GP-10 git-panel
 test that asserted pre-BUG-026 behavior; renamed test_GP_10_untrackedInRepoFileHistoryNoOps, commit
-541b3df) — ran it on the VM (launchctl asuser 501, MDV_VM_GUI_SESSION=1): **PASSED 8.4s** → `validated`.
+4574de9) — ran it on the VM (launchctl asuser 501, MDV_VM_GUI_SESSION=1): **PASSED 8.4s** → `validated`.
 It's a `GitPanelUATTests` T4 LiveAppTestCase, so this confirms the **T4 LiveApp lane** works on the VM,
 not just T5 pixel. No code change this tick — a pre-existing teeth-bearing test run on the authorized lane.
 
@@ -4230,7 +4230,7 @@ TSK-447 did (TSK-500's ulimit fix makes the full single-process run viable).
 ## LOG 2026-06-08 (latest+71) — TSK-517 VALIDATED: first render-path fix driven on the newly-unblocked pixel lane
 
 First end-to-end use of the now-working disclaim pixel lane (TSK-502) to drive a real render-path item to
-`validated` — proof the unblock is usable, not just demonstrable. Commit `8d463d0`.
+`validated` — proof the unblock is usable, not just demonstrable. Commit `dd90264`.
 
 `test_rightDockedPane_terminalComposites` failed on its FIRST-EVER `swift test` run (it had always skipped
 on TCC before the disclaim fix; TSK-491 was validated via the separate Aqua lane). Added an
@@ -4260,7 +4260,7 @@ screencapture spawned from xctest inherits xctest as its TCC *responsible proces
 the parked TSK-502 this tick, my own park listed **option 2 (a code workaround I could try without the
 owner)** — and it works.
 
-Fix (commit `d0999c6`, test-harness only): `Tests/ViewerUITests/Harness/DisclaimedCapture.swift` spawns
+Fix (commit `cc44c81`, test-harness only): `Tests/ViewerUITests/Harness/DisclaimedCapture.swift` spawns
 `/bin/bash` via `posix_spawn` with the private `responsibility_spawnattrs_setdisclaim` SPI (the
 `/usr/bin/disclaim` mechanism, bound test-only via `@_silgen_name`). The bash DISCLAIMS xctest's
 responsibility → becomes its OWN responsible process → bash's existing grant authorizes the screencapture
@@ -4300,7 +4300,7 @@ CRLF line `"  \r"` failed the all-whitespace skip (CR isn't space/tab) and was m
 `"Spaces (2)"` (spurious width-2 lines outscore width-4 since 2 divides 4). **Root cause it slipped:
 the `IndentDetectABTests` A/B corpus had ZERO CRLF cases.**
 
-Fix (commit `15af4eb`): one-line `strip_suffix('\r')` per line + 3 Rust unit teeth + 4 CRLF cases
+Fix (commit `73b1136`): one-line `strip_suffix('\r')` per line + 3 Rust unit teeth + 4 CRLF cases
 added to the A/B corpus. Filed as **TSK-516** (new), walked reported→…→**validated** (agent
 self-validate — pure-logic rust-core + FFI A/B is host-testable, no VM). Teeth DEMONSTRATED red→green:
 reverted the strip → 2 of 3 Rust tests went red (`"Mixed"`, `"Spaces (2)"`) → restored → green.
@@ -4312,8 +4312,8 @@ A/B parity test only guards what its corpus covers (the CRLF gap here).
 
 ## LOG 2026-06-08 (latest+68) — TSK-344: shadowHighlight + sharpen — engine tonal set now 6/6 (fixed)
 
-Closed the engine side of TSK-344. Two final tonal ops, commit `eda47b5` (TSK-344 four commits total:
-`a483c6a` colorControls, `728c7f5` histogram, `cd0551c` exposure, `eda47b5` shadows+sharpen):
+Closed the engine side of TSK-344. Two final tonal ops, commit `d64b06d` (TSK-344 four commits total:
+`e974bbd` colorControls, `8aa3805` histogram, `b2b40e5` exposure, `d64b06d` shadows+sharpen):
 - `EditOp.shadowHighlight(shadow:highlight:)` via `CIHighlightShadowAdjust` — identity
   `(shadow:0, highlight:1)`; shadow 0…1 lifts darks, highlight 1…0 recovers brights.
 - `EditOp.sharpen(sharpness:)` via `CISharpenLuminance` — identity `0`; unsharp-mask edge overshoot.
@@ -4341,8 +4341,8 @@ Third image-engine increment this session. `EditOp.exposure(ev:)` via Core Image
 (`inputEV`): identity `ev=0`, scales in LINEAR light (`output = input·2^EV`) — the camera/photo-editor
 exposure model, deliberately distinct from `colorControls`'s additive brightness. Per-pixel,
 geometry-preserving, re-normalized; composes with the other ops and rides the lossless history. No
-new deps. Commit `cd0551c`, TSK-344 still **fixed** (three commits: `a483c6a` colorControls, `728c7f5`
-histogram, `cd0551c` exposure).
+new deps. Commit `b2b40e5`, TSK-344 still **fixed** (three commits: `e974bbd` colorControls, `8aa3805`
+histogram, `b2b40e5` exposure).
 
 Host teeth (ImageEditingTests 22→25): `ev=0` identity preserves color+dims; `+1` EV lightens a
 mid-tone (sampled R up >10); op survives Codable round-trip.
@@ -4363,8 +4363,8 @@ path from an additive CoreImage op. Not a regression.
 
 Continued the image-engine vein (owner's standing "build PoCs: image editing" directive) with the
 Histogram — explicitly named in TSK-344's title and the purest host-testable piece left (raw pixel
-statistics, no CIFilter, no deps). Commit `728c7f5`, TSK-344 still **fixed** (two commits now:
-`a483c6a` colorControls, `728c7f5` histogram).
+statistics, no CIFilter, no deps). Commit `8aa3805`, TSK-344 still **fixed** (two commits now:
+`e974bbd` colorControls, `8aa3805` histogram).
 
 `Renderer.histogram(CGImage) -> Histogram`: redraws into the canonical premultiplied-RGBA8 sRGB
 context (byte layout known + independent of the source CGImage's format), un-premultiplies each
@@ -4390,7 +4390,7 @@ isolation), unrelated to this additive image-analysis change.
 Same `[PARTIAL]`-task-has-a-host-testable-engine-core move as +64: TSK-344 (Wishlist > Image —
 "Format conversion, Histogram, Editing[brightness/contrast/saturation/exposure/shadows/sharpness]")
 already had export (PNG/JPEG/HEIC) in `Exporter`; the gap is histogram + tonal adjustments. Shipped
-the first tonal slice as a host-testable engine op. Commit `a483c6a`, board TSK-344 → **fixed**.
+the first tonal slice as a host-testable engine op. Commit `e974bbd`, board TSK-344 → **fixed**.
 
 `EditOp.colorControls(brightness:contrast:saturation:)` (ImageDocument) baked through Core Image
 `CIColorControls` in `Renderer` (`CIContext.createCGImage` → `normalized()` to canonical
@@ -4416,7 +4416,7 @@ engine and cannot touch FoldBench or LSP. No non-bench failure persisted.
 ## LOG 2026-06-08 (latest+64) — TSK-349: GitClient worktree create/remove/prune service methods (fixed; UI button render-gated)
 
 Found a genuinely-buildable service-layer core inside a `[PARTIAL]` backlog task by looking past
-the render-gated surface. Commit `60fbede`, board TSK-349 → **fixed** (not validated — see below).
+the render-gated surface. Commit `495e966`, board TSK-349 → **fixed** (not validated — see below).
 
 `GitClient` (ViewerCore) could `worktreeList()` but not mutate. Added the host-testable core:
 `worktreeAdd(path:branch:createBranch:)` / `worktreeRemove(path:force:)` / `worktreePrune()` —
@@ -4441,7 +4441,7 @@ fd delta against a quiesced baseline, or mark it serial/non-parallel.)
 
 Reversed last tick's over-cautious park and BUILT it — the owner's standing "drain PORT rather
 than idle" + "features over test-backfill" make the call clear, and on closer scoping the design
-concern (cross-request state) was resolvable safely. Commit `8054540`, board TSK-234 → **validated**.
+concern (cross-request state) was resolvable safely. Commit `c421d85`, board TSK-234 → **validated**.
 
 Wired the already-tested core MRU (`mdvcore_core::history::push`) into the std-only web front-end:
 a single global `Arc<Mutex<Vec<String>>>` recorded on each confined `/view`, served at a new
@@ -4490,17 +4490,17 @@ board project (`tasked`, shared with `forge`/`wx_site`) heads on a FOREIGN forge
 `sess-forge-03`) — skipped. A priority-sorted `task_list{ready}` confirms: **the markdown_viewer
 new-implementation queue is drained** — every non-foreign actionable task is already `fixed`/
 `review`/`validated` or owner/VM-gated (deps TSK-247/248/249, parked TSK-502). The remaining
-backlog is the deep-audit findings (TSK-122..190) sitting at `fixed`/`review` ("landed @ 1dbf1ca
+backlog is the deep-audit findings (TSK-122..190) sitting at `fixed`/`review` ("landed @ e973e4e
 with regression tests"), which per the owner's anti-drift flag I'm pacing rather than binge-
 validating.
 
-Reconciled the two raw [S3] findings that THIS session's `6703798` (TSK-485) remediated:
+Reconciled the two raw [S3] findings that THIS session's `4556481` (TSK-485) remediated:
 - **TSK-140** ([S3][leak] applicationWillTerminate closeAll 2s budget) → **validated**. Beyond the
-  prior 15s-budget reconciliation, `6703798` fixed the root cause (concurrent `withTaskGroup`
+  prior 15s-budget reconciliation, `4556481` fixed the root cause (concurrent `withTaskGroup`
   teardown) with a deterministic regression test (3 servers, all STARTs precede first END; proven
   red on the sequential loop). Cross-referenced TSK-485.
 - **TSK-139** ([S3][leak] LSP test fire-and-forget teardown) → commented + left at `fixed`. The 3
-  smoke-test sites were swapped to awaited `addTeardownBlock` in `6703798`, but it's test-infra
+  smoke-test sites were swapped to awaited `addTeardownBlock` in `4556481`, but it's test-infra
   hygiene with no standalone regression-bite test, so it doesn't meet the self-validation bar —
   flagged for the owner to dismiss-as-dup-of-485 or close on the diff.
 
@@ -4513,7 +4513,7 @@ committed fixes but no `validated` close — drove both to **validated** after c
 host tests are genuine teeth (not the paper-cut backfill the owner flagged; these are a perf fix
 and a security-containment fix, each with a regression guard).
 
-- **TSK-486** (terminal typing/Enter slow) → validated. Fix `d8141c5` extracted the render-throttle
+- **TSK-486** (terminal typing/Enter slow) → validated. Fix `fa5ea24` extracted the render-throttle
   DECISION into a pure `ViewerCore.FrameThrottle` (leading-edge: first event after idle paints
   immediately, then coalesces) + memoized the 256-colour `NSColor` palette. Backfilled the commit
   SHA on the board (was empty). Teeth: `FrameThrottleTests` 7/7 — `test_firstEventAfterIdle_emitsImmediately`
@@ -4533,13 +4533,13 @@ markdown_viewer actionable head is thin (remaining mine-able work is owner-gated
 ## LOG 2026-06-08 (latest+59) — TSK-485 VALIDATED: LSPPool.closeAll() parallelized + deterministic teeth
 
 SwiftUI/ViewerCore tick (SwiftUI lane first per SOP). Picked up the executable spec I left
-on TSK-485 last tick and shipped it. Commit `6703798`, board TSK-485 → **validated**.
+on TSK-485 last tick and shipped it. Commit `4556481`, board TSK-485 → **validated**.
 
 The leak: `LSPPool.closeAll()` shut live clients down SEQUENTIALLY; each `LSPClient.shutdown()`
 costs up to ~2.4s, so with N≥2 live servers (sourcekit-lsp + a TS server, say) teardown was
 N×2.4s and blew past the bounded app-quit deadline — un-shut servers got reparented to launchd.
 
-Three-part fix, all in `6703798`:
+Three-part fix, all in `4556481`:
 - **`LSPPool.closeAll()`** — sequential `for` → `await withTaskGroup(of: Key.self)`: children call
   `client.shutdown()` and return their `Sendable` `Key`; the actor-isolated parent is the sole
   mutator of `entries`. Outer drain-while loop preserved (catches a late `.live` spawn past the
@@ -4570,7 +4570,7 @@ is eliminated at the source by the test-proven concurrency.
 ## LOG 2026-06-07 (latest+58) — self-review found + fixed a real crash in my own JSON formatter
 
 Autonomous tick. Instead of grabbing another PORT feature, reviewed THIS session's
-rust-core additions for problems before they spread — and found one. Commit `f47c7d3`.
+rust-core additions for problems before they spread — and found one. Commit `23433d4`.
 
 - **Bug:** `format::pretty_json` (shipped this session for TSK-217/218, already validated)
   is recursive with NO depth bound. A balanced deeply-nested `.json` (`[[[[…]]]]`) overflows
@@ -4587,7 +4587,7 @@ rust-core additions for problems before they spread — and found one. Commit `f
 ## LOG 2026-06-07 (latest+57) — TSK-239 DONE: TUI reload-current-file (`r` key)
 
 Autonomous tick. Real TUI feature (genuine gap — the preview was a one-shot read;
-`reload_dir` only refreshed the *directory* list, never the open file). Commit `ddc1da2`;
+`reload_dir` only refreshed the *directory* list, never the open file). Commit `33764ed`;
 TSK-239 → **validated**.
 
 - `Preview` gains a `path: PathBuf`; new `reload_current()` re-reads via `read_capped`,
@@ -4604,10 +4604,10 @@ TSK-239 → **validated**.
 ## LOG 2026-06-07 (latest+56) — TSK-218 DONE: web JSON Formatted parity (test + validate)
 
 Autonomous tick. Finished TSK-218 (web Formatted). The actual wiring already landed with
-TSK-217 (`0f20fb5`): web `parse_mode` accepts `?mode=formatted` for Structured, `mode_str`
+TSK-217 (`0c1760e`): web `parse_mode` accepts `?mode=formatted` for Structured, `mode_str`
 labels it, and the mode switcher is built from `view::available_modes` — so a `.json` file
 shows a `mode=formatted` link **by construction**. This tick added the missing regression
-test; commit `656c59f`; TSK-218 → **validated**.
+test; commit `656703d`; TSK-218 → **validated**.
 
 - **Test** `json_offers_formatted_mode_and_pretty_prints` (web, host-safe — std-only
   router/render, no browser): default Text render of `config.json` offers `&mode=formatted`
@@ -4618,7 +4618,7 @@ test; commit `656c59f`; TSK-218 → **validated**.
 
 ## LOG 2026-06-07 (latest+55) — TSK-217 DONE: JSON Formatted view mode end-to-end (TUI + core + web)
 
-Autonomous tick. Finished TSK-217 on top of last tick's core slice; commit `0f20fb5`;
+Autonomous tick. Finished TSK-217 on top of last tick's core slice; commit `0c1760e`;
 TSK-217 → **validated** (host cargo test). XML split out as a new task **TSK-496**.
 
 - **Core view-model:** `ViewMode::Formatted` + `FileKind::Structured` (`.json`).
@@ -4644,7 +4644,7 @@ Autonomous tick. Verify-sweep complete → shifted back to feature work. The `re
 lane had no actionable SwiftUI task (all `[PORT]` W2 + backlog), so per SOP took the
 `[PORT]` lane: TSK-217 (TUI JSON/XML pretty-print). Research found the core had NO
 formatter + no `ViewMode::Formatted` — so it's not front-end-only. Shipped the shared
-foundation slice; commit `77c170f`, rust-core gate green.
+foundation slice; commit `c3ee98e`, rust-core gate green.
 
 - **New** `mdvcore_core::format::pretty_json(&str) -> Option<String>` — std-only, no-dep
   recursive-descent JSON reformatter (2-space indent, matches SwiftUI `FormatViewer`).
@@ -4665,7 +4665,7 @@ foundation slice; commit `77c170f`, rust-core gate green.
 
 ## LOG 2026-06-07 (latest+53) — audit verify-sweep COMPLETE: 8 more validated, 2 honestly held
 
-Autonomous tick. Finished the `1dbf1ca` audit-cluster verify-and-validate sweep. Each
+Autonomous tick. Finished the `e973e4e` audit-cluster verify-and-validate sweep. Each
 validated finding had its teeth-bearing test spot-read + re-run green this tick:
 
 - **TSK-120** [leak] PTYProcess restart respawns a live shell (childPID sentinel reset) — LifecycleTests 4/4.
@@ -4691,7 +4691,7 @@ these last ticks — the work was confirming teeth + closing board state honestl
 ## LOG 2026-06-07 (latest+52) — verify-and-validate sweep cont'd: 4 more audit findings validated (ReDoS/cmark/EACCES)
 
 Autonomous tick. Ran ALL 24 per-finding `Audit_*` regression suites in one batch —
-**144 tests, 0 failures** — confirming the `1dbf1ca` audit-resolution fixes are present
+**144 tests, 0 failures** — confirming the `e973e4e` audit-resolution fixes are present
 and green. Then deep-read 3 more suites for teeth (ReDoS, cmark, EACCES) — pattern is
 consistent: each asserts the exact audit failure case, not a tautology. Validated 4:
 
@@ -4715,23 +4715,23 @@ read): TSK-118/120/121/122/123/125/129/131/132/133. No code change this tick.
 Autonomous tick. Continued the `review`-lane verify-and-validate sweep — for each, confirm
 the fix is present AND a teeth-bearing host test exists, then validate (don't rubber-stamp).
 
-- **TSK-127** [S2][bug] IndentDetector CRLF collapse → **validated**. Fix (`1dbf1ca`):
+- **TSK-127** [S2][bug] IndentDetector CRLF collapse → **validated**. Fix (`e973e4e`):
   scalar-view split on LF + per-line trailing-CR strip. `Audit_..._IndentDetector_..._CRLFTests`
   (11 tests) directly pins the audit case (`"def f():\r\n    pass\r\n"` → "Spaces (4)", was "—")
   + tabs/2-space/mixed/whitespace-only/final-no-LF/mixed-endings/lone-CR/LF-parity. 11/11 green.
 - **TSK-119** [S2][security] URLSchemePolicy temp-arm unanchored-prefix sibling bypass →
-  **validated**. Fix (`1dbf1ca`): dropped the bare `hasPrefix(temp)` arm for the anchored
+  **validated**. Fix (`e973e4e`): dropped the bare `hasPrefix(temp)` arm for the anchored
   `== temp || hasPrefix(temp + "/")` + symlink-resolve both operands.
   `URLSchemePolicyTests.test_tempSiblingDirectoryPrefix_rejected` asserts `<temp>_evil/loot.md`
   is rejected (exact AUDIT S2 case). 12/12 green.
 - No code change this tick — these were already fixed-with-tests in the big audit-resolution
-  commit `1dbf1ca`; the sweep's job is to confirm coverage has teeth and close the board state.
+  commit `e973e4e`; the sweep's job is to confirm coverage has teeth and close the board state.
 
 ## LOG 2026-06-07 (latest+50) — TSK-101: theme-override persistence — closed the test gap, validated
 
-The Settings → Appearance → Theme fix (`40c7b5b`) was sitting in `review`. Before
+The Settings → Appearance → Theme fix (`3e0e05c`) was sitting in `review`. Before
 validating I checked whether its tests actually guard the bug — they didn't fully.
-Commit `4ef2f3e`; TSK-101 → **validated**.
+Commit `f34f376`; TSK-101 → **validated**.
 
 - **Gap found:** the 3 existing `PreferencesStoreTests` cover only the *storage*
   round-trip (`themeOverrideRaw` survives a fresh store). The actual TSK-101 bug
@@ -4749,7 +4749,7 @@ Commit `4ef2f3e`; TSK-101 → **validated**.
 ## LOG 2026-06-07 (latest+49) — TSK-205: hex-byte search ported to the ratatui TUI front-end
 
 [PORT][TUI][W1] Hex search — front-end-only port over the already-complete
-`mdvcore_core::hex` (no core/FFI change). Commit `0f7e607`; TSK-205 →
+`mdvcore_core::hex` (no core/FFI change). Commit `f4e231c`; TSK-205 →
 **validated** (self, host cargo test).
 
 - **What:** in HEX view, `/` now searches the raw bytes. The query parses as a
@@ -4774,7 +4774,7 @@ Commit `4ef2f3e`; TSK-101 → **validated**.
 ## LOG 2026-06-07 (latest+48) — TSK-488 REAL FIX: terminal tabs were compositor-occluded (validated w/ real pixels)
 
 The recurring "I see a gap before the terminal but no tabs" — finally root-caused and fixed with REAL
-compositor-pixel proof, not another symptom guess. Commits `1dd0483` (fix) + `a99e978` (test);
+compositor-pixel proof, not another symptom guess. Commits `50e65c6` (fix) + `02b3300` (test);
 TSK-488 → **validated** (self, with a teeth-proven T5 test).
 
 - **Root cause = compositor occlusion.** The opaque, layer-backed `TerminalNSView`
@@ -4799,7 +4799,7 @@ TSK-488 → **validated** (self, with a teeth-proven T5 test).
 ## LOG 2026-06-07 (latest+47) — Terminal: configurable tab-strip position + scroll-persist on tab switch
 
 Owner-requested (direct, batched: a feature + a bug). Both in the terminal subsystem; shipped together
-`dd8570f`. Also: the owner connected the `tasked` MCP — switched off `/tmp/board.py` to `mcp__tasked__*`
+`3a4c46c`. Also: the owner connected the `tasked` MCP — switched off `/tmp/board.py` to `mcp__tasked__*`
 this firing (filed TSK-488/489 + advanced via the MCP).
 
 - **TSK-488 (feature) — tab strip position left(default)/top/right, always-shown:** `TerminalPaneStore`
@@ -4831,7 +4831,7 @@ Did BOTH a Task-Breakdown and shipped the host-testable foundation (not doc-only
   immediately+permanently at `SidebarView.swift:257`/`:1174`; `TabCoordinator.openOrReveal:219`), a
   phased host-testable-first plan, and isolates the ONE real owner decision (preview-tab persistence
   across relaunch) with a recommendation.
-- **Phase 1 model core (`a37f861`)**: `Tab.isPreview` (in `Equatable`; in-memory only — `Tab` isn't
+- **Phase 1 model core (`9bf1838`)**: `Tab.isPreview` (in `Equatable`; in-memory only — `Tab` isn't
   `Codable`, persistence is via `TabSnapshot` which won't carry it, so relaunch rehydrates permanent =
   persistence Option A for free); `TabsState.openPreview` (reuse-one-slot / reveal-not-preview-when-
   already-open / blank-reuse) + `promoteTab` + `previewTabID`; `TabCoordinator` forwarders. 8 pure
@@ -4869,7 +4869,7 @@ visual). Date-insert is self-contained, owner-requested, host-testable.
 - **Menu:** Edit → "Insert Date and Time" + `insertDateTime` handler + `validateMenuItem` gate (editor
   mode + mounted webview).
 - 8 host tests (formatter ×3, bridge encode + v2-gate, coordinator set/distinct-nonce/empty-noop).
-  swift build clean; headless gate green (4115); committed **`63b03ce`**; debug bundle installed.
+  swift build clean; headless gate green (4115); committed **`8a9fac0`**; debug bundle installed.
 - VM-pending (visual only): the stamp actually lands at the caret in the live CM6 editor.
 
 ## LOG 2026-06-07 (latest+44) — TSK-487: CM6 indent guides wired (opt-in)
@@ -4884,7 +4884,7 @@ call): `PreferencesStore.editorIndentGuides` (persisted, default false) + `Docum
 `@Published editorIndentGuides`/`toggleEditorIndentGuides`/init-seed (mirrors `showInvisibleChars`
 exactly) + Settings → Editor "Show indent guides" toggle + `ContentView:570` passes
 `indentGuides: model.editorIndentGuides`. 4 host tests (pref default-false + round-trip; model
-seed/toggle/persist). swift build clean; headless gate green (4113); committed **`f5a3f38`**; debug
+seed/toggle/persist). swift build clean; headless gate green (4113); committed **`15a38de`**; debug
 bundle installed. Board: TSK-487 → fixed. **Only remaining owner tweak:** flip the default to ON (opt
 to show guides for everyone) — not a blocker. VM-pending: visual confirmation the guide lines render.
 
@@ -4910,7 +4910,7 @@ path was **already fully built** — `CodeMirrorEditorView` accepts `foldingRang
 **Source decision taken (v1):** TreeSitter-only — needs no language server, always available, and is
 the same syntax-fold source the read-only Source view (#139) already uses. An LSP-fold *union* is an
 additive follow-up in `refreshEditorFolds` (filed as a note on TSK-466). swift build clean; headless
-gate green (4113); committed **`bef2b82`**; debug bundle built + installed to `/Applications/TextView.app`.
+gate green (4113); committed **`89a1c9c`**; debug bundle built + installed to `/Applications/TextView.app`.
 
 **VM-pending (visual only):** that the fold gutter arrows actually appear + collapse correctly in the
 WKWebView. The model layer (correct ranges flow to `foldingRanges:`) is host-proven; only the CM6
@@ -4930,7 +4930,7 @@ pure core** first, so the model layer is fully host-tested and only the WebView 
 - **`Tests/ViewerCoreTests/SyntaxFoldRangeMappingTests.swift`** (NEW): 7 tests — start/end offset
   contract (pinned by an independent `endOfLine` helper), kind passthrough, degenerate same-line drop,
   beyond-EOF clamp, multi-region ordering, UTF-16 surrogate-pair (emoji) offset correctness. All pass.
-- `swift build` clean; headless gate green (4106 tests); committed **`24cc94b`**. Board comment on
+- `swift build` clean; headless gate green (4106 tests); committed **`cfdbf67`**. Board comment on
   TSK-466 records step 1 landed.
 
 **Remaining for TSK-466 (staged, NOT landed):** step 2 — DocumentModel per-tab `[CMFoldRange]` side
@@ -4980,7 +4980,7 @@ First genuinely-unfixed board item this session. The ReDoS shape guard
   nothing (TSK-279 — a real hole, not just a missing test).
 - `(?:a|aa)+` / `(?<g>a|aa)+` — same corruption defeated the alternation-overlap check.
 All are exponential ReDoS that the find/MCP-find/cross-file-search paths must reject. **Fix
-(`c7a9bb8`):** replaced the loose inline skip in BOTH heuristics with a precise shared
+(`54067df`):** replaced the loose inline skip in BOTH heuristics with a precise shared
 `skipGroupPrefix()` (handles `(?:`,`(?=`,`(?!`,`(?<=`,`(?<!`,`(?<name>`,`(?P<name>`,`(?flags:`/`(?flags)`).
 10 tests: 6 newly-caught ReDoS forms + 4 benign forms that must still pass (anchored `(?:\.\d+)+`,
 named bounded body, inline flags, look-around). Headless gate green (FoldBench load-flake only).
@@ -5014,14 +5014,14 @@ The genuinely-remaining board work is NOT host-implementable by the autonomous l
 - **Live / VM-only (need the screen — UI renders in WebView or needs a GUI session):**
   - TSK-467 editable-HEX end-to-end (keystroke→buffer→**save-to-disk**) — wiring landed, file-mutating
     round-trip needs a VM sanity check.
-  - TSK-466 CM6 fold gutter — **model layer DELIVERED (latest+43, `bef2b82`)**: per-tab fold pipeline
+  - TSK-466 CM6 fold gutter — **model layer DELIVERED (latest+43, `89a1c9c`)**: per-tab fold pipeline
     + `foldingRanges:` wired; only the WebView *visual* (arrows appear + collapse) is VM-pending.
   - TSK-468 LSP References button enable, TSK-464 LSP formatting/decl/typeDef commands, TSK-463 LSP
     autocomplete — all need a running language server + live UI.
   - TSK-469 Plugin Tier A real rows (vs placeholder).
 - **Owner UX decision (small code, needs a call):**
   - TSK-470 zoom split (UI-chrome vs document zoom) — single unified `model.zoom` today.
-  - ~~TSK-487 indent-guides~~ **SHIPPED opt-in (latest+44, `f5a3f38`)**: persisted pref (default OFF)
+  - ~~TSK-487 indent-guides~~ **SHIPPED opt-in (latest+44, `15a38de`)**: persisted pref (default OFF)
     + Settings → Editor toggle + call-site wire. Only optional owner tweak left: flip default to ON.
   - TSK-221 remove "Open As" menu in favour of the file-type chip dropdown.
 - **Owner dep-approval (new crates):** TSK-247 (`regex`), TSK-248 (`serde_json`), TSK-249
@@ -5036,7 +5036,7 @@ limited to board hygiene + opportunistic real bugs as they're reported.
 
 ## LOG 2026-06-06 (latest+36) — TSK-477 keep-note; TSK-326 stale-fixed; TSK-476 WONT-DO
 
-- **TSK-477 (`e89d3cd`) → fixed:** added an INTENTIONALLY-RETAINED / DO-NOT-DELETE header to
+- **TSK-477 (`4545f88`) → fixed:** added an INTENTIONALLY-RETAINED / DO-NOT-DELETE header to
   `LineNumberRulerView` — it looks like dead legacy (CM6 editor has its own gutter; #102 reworked line
   numbers) but is STILL the live gutter for the read-only Source `NSTextView` path
   (`TextDisplayView.swift:416`); a prior pass (batch #64) nearly deleted it. Cites the dependency + a
@@ -5056,7 +5056,7 @@ limited to board hygiene + opportunistic real bugs as they're reported.
 
 ## LOG 2026-06-06 (latest+35) — TSK-473 xattr dedup; TSK-466 scoped (live-only)
 
-- **TSK-473 (`3a78425`) → fixed:** `EditorBuffer.ExistingFileMeta` and `HexEditBuffer.HexFileMeta`
+- **TSK-473 (`351b653`) → fixed:** `EditorBuffer.ExistingFileMeta` and `HexEditBuffer.HexFileMeta`
   each carried a byte-identical `readXattrs`/`readOneXattr` pair + the same `setxattr` replay loop
   (preserve quarantine/ACL xattrs across an atomic rewrite). Extracted to one `ViewerCore.XattrIO`
   (`read`/`readOne`/`apply`); both delegate, no behaviour change. New `XattrIOTests` round-trip REAL
@@ -5073,7 +5073,7 @@ limited to board hygiene + opportunistic real bugs as they're reported.
 
 ## LOG 2026-06-06 (latest+34) — TSK-465 LSP initializationOptions forwarded
 
-- **TSK-465 (`a13fc24`) → fixed:** `lsp.json`'s per-server `initializationOptions` was parsed into
+- **TSK-465 (`78e2f68`) → fixed:** `lsp.json`'s per-server `initializationOptions` was parsed into
   `ServerOverride` but **silently dropped** — `LSPClient.Config` had no field for it and
   `initialize()` never sent it, so a workspace's server config was ignored. Threaded it through:
   `LSPClient.Config` gains `initializationOptions: Data?`; extracted a pure, testable
@@ -5086,7 +5086,7 @@ limited to board hygiene + opportunistic real bugs as they're reported.
 
 ## LOG 2026-06-06 (latest+33) — TSK-467 HEX View Only toggle wired + 2 stale audit closes
 
-- **TSK-467 (`14c6bf6`) → fixed:** HEX byte-editing (#234 — buffer/keystroke/save) was shipped but
+- **TSK-467 (`5ed8bfa`) → fixed:** HEX byte-editing (#234 — buffer/keystroke/save) was shipped but
   **unreachable**. Root cause was two-layered: `ViewModeControl.present(.hex)` hardcoded `viewOnly:true`
   ('deferred capability'), so `HexView.isEditable` (`p.viewOnly == false`) was never true; AND the
   toolbar's View Only toggle only rendered `if showsEditorPrimary`, so a binary (HEX-only) file showed
@@ -5107,7 +5107,7 @@ limited to board hygiene + opportunistic real bugs as they're reported.
 
 ## LOG 2026-06-06 (latest+32) — TSK-459 terminal background-tab bump pause
 
-- **TSK-459 (`ba1e463`) → fixed:** continuation of the terminal-perf work. With `.id(selectedTabID)`,
+- **TSK-459 (`42b95cc`) → fixed:** continuation of the terminal-perf work. With `.id(selectedTabID)`,
   a deselected terminal tab's representable is torn down but its `TerminalModel` keeps running the
   shell and bumping `version` at up to 60fps with no mounted observer — wasted `Task { @MainActor }`
   hops per output chunk for any chatty background tab. Added a thread-safe foreground flag on
@@ -5117,16 +5117,16 @@ limited to board hygiene + opportunistic real bugs as they're reported.
   `isOpen`+`selectedTabID` across open/select/cycle/close/init. 7 headless store-wiring tests. Gate
   green (FoldBench load-flake only).
 - **Board reconciled:** board came back up; advanced TSK-459 → fixed; backfilled last turn's two fixes
-  (TSK-486 created+fixed for terminal latency `d8141c5`; commented on TSK-454 re the LaunchHarness
-  second prod-nuke site `f6499fe`).
+  (TSK-486 created+fixed for terminal latency `fa5ea24`; commented on TSK-454 re the LaunchHarness
+  second prod-nuke site `3293e53`).
 
 ## LOG 2026-06-06 (latest+31) — owner two-bug batch: terminal latency + 2nd prod-app-nuke site
 
 Owner reported two bugs interactively; both fixed, gated, committed, and the fresh debug
 bundle installed to `/Applications/TextView.app` (owner must relaunch to pick up new code).
 
-- **BUG #2 — "headless test STILL nuking /Applications/TextView" (`f6499fe`):** a SECOND
-  by-exec-name kill site after the `install-app.sh` killall (`e5ffa08`). `LaunchHarness.cleanup()`
+- **BUG #2 — "headless test STILL nuking /Applications/TextView" (`3293e53`):** a SECOND
+  by-exec-name kill site after the `install-app.sh` killall (`b3bc353`). `LaunchHarness.cleanup()`
   did `AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }` — `currentPID` is a
   raw `pgrep -x`-by-name lookup, so it SIGTERM'd the owner's running prod app (shared exec name).
   Fires in heavy-tier TEAR-DOWN, which runs **even when the body self-skips in the gate** (setUp/
@@ -5134,7 +5134,7 @@ bundle installed to `/Applications/TextView.app` (owner must relaunch to pick up
   Fixed: route through `AppLauncher.killTestInstances(named:)` (MDV_TEST_INSTANCE-scoped). Lesson:
   the footgun isn't only `killall`, and "self-skip" doesn't cover tear-down. (LESSONS + memory
   `feedback-killall-footgun` updated.)
-- **BUG #1 — "terminal very slow typing/Enter" (`d8141c5`):** root cause = `TerminalModel.scheduleBump`
+- **BUG #1 — "terminal very slow typing/Enter" (`fa5ea24`):** root cause = `TerminalModel.scheduleBump`
   was a PURELY TRAILING-edge throttle — every keystroke echo spawned a Task that slept a full frame
   (≥16ms, more under Task.sleep imprecision) BEFORE bumping `version`, so input never painted until a
   frame after the shell echoed, even on an idle prompt. Replaced with a LEADING-edge throttle (new
@@ -5148,7 +5148,7 @@ bundle installed to `/Applications/TextView.app` (owner must relaunch to pick up
 
 ## LOG 2026-06-06 (latest+30) — killall footgun, status-bar headless-verify, board hygiene
 
-- **KILLALL FOOTGUN closed (`e5ffa08`, TSK-454):** owner's `/Applications` app "kept getting closed" —
+- **KILLALL FOOTGUN closed (`b3bc353`, TSK-454):** owner's `/Applications` app "kept getting closed" —
   `install-app.sh` ran `killall MarkdownViewer` on every `--install`; shared exec name → it SIGTERM'd the
   owner's running app each rebuild. Removed (macOS swaps a running bundle fine). Headless gate never killed
   the app — only this install path did. install-app.sh also now `ditto --noextattr` + `xattr -cr` so
@@ -5158,11 +5158,11 @@ bundle installed to `/Applications/TextView.app` (owner must relaunch to pick up
   assert `currentState`/`currentURL` track the selected file. **PASSES.** So the data source is correct for
   loaded tabs + wiring is right (`StatusBar(tabCoordinator: model.tabCoordinator, …)`). Fixed the one
   headless-identifiable blank window: selecting a not-yet-materialized tab (`.loading`) returned nil metrics
-  → blank; now shows Size + "loading…" (`1615b98`). Any residual blank on LOADED-tab switches would be a
+  → blank; now shows Size + "loading…" (`b324a43`). Any residual blank on LOADED-tab switches would be a
   live-only SwiftUI re-render quirk (can't repro headless) — awaiting owner confirmation post-relaunch.
 - **Board hygiene:** TSK-276 (IndentDetector CRLF) verify-and-closed → fixed (already iterates unicodeScalars
   + has a dedicated CRLF test file; audit finding stale, matches the deep-audit-mostly-already-fixed pattern).
-- `main` linear @ `1615b98`, headless-gate-green on the committed commit (re-verified; the intermittent
+- `main` linear @ `b324a43`, headless-gate-green on the committed commit (re-verified; the intermittent
   exit-1 earlier was only `FoldBench`/`CrossFileSearchBench` wall-clock benches under machine load).
 - **Standing blockers (DECISIONS/live):** status-bar live re-render (owner confirm); GP_10 TSK-447 + sidebar
   TSK-440 need the VM live lane (TSK-451 full-suite hang; orphan VM PIDs 28912/29140 need owner kill).
@@ -5170,62 +5170,62 @@ bundle installed to `/Applications/TextView.app` (owner must relaunch to pick up
 ## LOG 2026-06-06 (latest+29) — owner UI-bug batch: terminal Enter (real cause), palette hover-scroll, Settings back, killall footgun
 
 Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, host-compiled, installed.
-- **Terminal Enter — REAL cause (`8b8a547`):** typing worked but Enter was dead because `SidebarKeyMonitor`
+- **Terminal Enter — REAL cause (`eca6781`):** typing worked but Enter was dead because `SidebarKeyMonitor`
   installs an app-wide `NSEvent` keyDown monitor that ate Return and only yielded to `NSText`. The terminal
   is a custom NSView → swallowed before the responder chain. Added `SidebarKeyMonitorExempt` marker; monitor
-  yields to it; `TerminalNSView` conforms. (Earlier `performKeyEquivalent` fix `c3a7b83` was necessary too.)
-- **Command palette hover-scroll (`65b2b32`):** hover set `selectedIndex` and `onChange`→`scrollTo(.center)`
+  yields to it; `TerminalNSView` conforms. (Earlier `performKeyEquivalent` fix `499fca6` was necessary too.)
+- **Command palette hover-scroll (`5e6534c`):** hover set `selectedIndex` and `onChange`→`scrollTo(.center)`
   re-centered the list under the pointer. Gated scroll on a keyboard-only flag set by `moveSelection`.
-- **Settings → Plugins/LSP back button (`e3cd4a2`):** macOS NavigationStack renders its back chevron only in
+- **Settings → Plugins/LSP back button (`d748d9f`):** macOS NavigationStack renders its back chevron only in
   a window toolbar (the hosted Settings window has none) → user stuck. Added explicit in-content `SettingsSubPage`
   back button via `@Environment(\.dismiss)`.
-- **KILLALL FOOTGUN (`e5ffa08`) — owner's app kept closing:** `install-app.sh` ran `killall MarkdownViewer`
+- **KILLALL FOOTGUN (`b3bc353`) — owner's app kept closing:** `install-app.sh` ran `killall MarkdownViewer`
   on every `--install`; shared exec name → it killed the owner's running /Applications app each rebuild.
   Removed it (macOS swaps a running bundle fine). Headless gate never killed the app — only this install path.
-- **Build/install xattr (`47adc00`,`d9d5b1c`):** sign in TMPDIR + `ditto --noextattr` + `xattr -cr` install,
+- **Build/install xattr (`903d36b`,`24d2a7c`):** sign in TMPDIR + `ditto --noextattr` + `xattr -cr` install,
   closing the iCloud codesign-detritus race (TSK-449). /Applications verified clean.
 - **Board:** TSK-448 (terminal) fixed; TSK-449 (build flake) fixed; TSK-447 (GP_10) progress (VM-blocked);
   TSK-451 (VM `all` hang) + TSK-452 (status-bar tab-change, owner-clarification-blocked) filed.
 - **Blocked / DECISIONS:** status-bar tab-change fix is live-only — awaiting owner symptom (blank vs frozen
   vs after-click vs wrong). VM live lane still blocked (TSK-451 hang; orphan PIDs 28912/29140 need owner kill).
-- `main` linear @ `e5ffa08`; functional tiers gate-green (only flaky `FoldBench`/`CrossFileSearchBench`
+- `main` linear @ `b3bc353`; functional tiers gate-green (only flaky `FoldBench`/`CrossFileSearchBench`
   wall-clock benches red under load; subsequent commits are script-only).
 
 ## LOG 2026-06-06 (latest+28) — terminal Enter fix (owner) + iCloud build-flake fix + VM-suite-hang finding
 
-- **Owner interactive: "Terminal — can't press enter or execute commands."** TSK-448 fixed (`c3a7b83`):
+- **Owner interactive: "Terminal — can't press enter or execute commands."** TSK-448 fixed (`499fca6`):
   typing echoed but Enter was dead because AppKit routes Return through the window default-button
   (key-equivalent) path BEFORE keyDown; SwiftUI installs a default button for any `.defaultAction`/`.return`
   button in the chrome, so Return fired that and never reached `TerminalNSView.keyDown` (no CR to the PTY).
   Fix: override `performKeyEquivalent` to claim Return/keypad-Enter while first responder (⌘-chords pass
   through). swift build + **host headless gate green**; built + installed to /Applications. Board → fixed.
-- **Build-flake fix (TSK-449, `47adc00`):** the rebuild's codesign failed with "resource fork … not
+- **Build-flake fix (TSK-449, `903d36b`):** the rebuild's codesign failed with "resource fork … not
   allowed" — repo under iCloud-synced `~/Documents`; the file provider re-stamps FinderInfo/fpfs#P onto the
   TreeSitter bundles racing `codesign --options runtime`. Fix: build-app.sh signs in a mktemp TMPDIR
   (outside iCloud) then swaps the signed bundle into dist/; install-app.sh `cp -R`→`ditto --noextattr`.
   Validated: `build-app.sh debug` signs in /tmp + Built, no detritus. Board → fixed.
-- **GP_10 stale test (TSK-447):** fix committed (`541b3df`, host-compiles) but **live VM validation is
+- **GP_10 stale test (TSK-447):** fix committed (`4574de9`, host-compiles) but **live VM validation is
   BLOCKED** — the VM `all` sweep hung (below). Task stays `progress`.
 - **NEW finding — TSK-451:** `test-in-vm.sh all` HANGS after `TabBarWidthTests` (swift-test+xctest alive
   30+ min, no output) — a T4/live suite never returns; the full VM suite can't run unattended. Workaround:
   targeted `--filter` runs. Could not free the VM (auto-classifier blocked killing remote PIDs 28912/29140
   without owner OK) — **owner: those PIDs are orphaned on the VM, safe to `kill`.**
 - **Confirmed earlier:** all 11 `Cm6EditorUATTests` PASS against the fresh dist (the `test`-mode failures
-  were stale-dist artifacts; TSK-446 live lane validated). LESSONS updated (`9d7113f`) with both gotchas.
-- `main` single linear trunk @ `47adc00`, host headless-gate-green.
+  were stale-dist artifacts; TSK-446 live lane validated). LESSONS updated (`bee83df`) with both gotchas.
+- `main` single linear trunk @ `903d36b`, host headless-gate-green.
 
 ## LOG 2026-06-06 (latest+27) — VM UI-test lane UNBLOCKED end-to-end (TSK-439 + TSK-446 fixed)
 
 - Finished the owner-approved VM toolchain upgrade ("OK to upgrade the VM Xcode/toolchain to 6.2+ — Yes")
   and discovered + fixed the *second* blocker behind it. Both board tasks now `fixed`.
-- **TSK-439 fixed (`bafa9a1`):** `scripts/test-in-vm.sh` `ensure_tools()` now calls `select_toolchain()`,
+- **TSK-439 fixed (`2576f4d`):** `scripts/test-in-vm.sh` `ensure_tools()` now calls `select_toolchain()`,
   which picks the newest installed `/Library/Developer/Toolchains/swift-6.x-RELEASE` (6.3, id
   `org.swift.630202603201a`) and exports `TOOLCHAINS`. The VM default `swift` is 6.1.2, which rejects the
   test target (`try await super.setUp()` in `@MainActor` classes = "sending non-Sendable self") so the
   whole bundle never compiled. **Verified on VM (`test` mode): `Build complete!` on 6.3 + every
   headless/logic suite 0 failures.** CLAUDE.md VM commands + owner-directive note updated (a bare
   `swift test` still uses 6.1.2 and fails — use the script).
-- **NEW finding → TSK-446 fixed (`bc2fdf7`):** running the *full* lane (`test-in-vm.sh all`) then died at
+- **NEW finding → TSK-446 fixed (`07d9f1a`):** running the *full* lane (`test-in-vm.sh all`) then died at
   `build-app.sh` → `build-rust-core.sh`: **`cargo not found`**. The VM has no Rust toolchain (links the
   host-rsynced `rust-core/link/libmdvcore_ffi.a` + `Sources/CMdvCore/mdvcore.h`). So a FRESH `dist/`
   could never be assembled on the VM — the earlier T4 `Cm6EditorUATTests` failures + a signal-5 crash in
@@ -5239,7 +5239,7 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
   SwiftUI fix validatable end-to-end without touching the owner's Mac). A full VM `all` run was in
   flight at log time to capture the fresh-dist T4/T5 verdict.
 - Memories updated: `feedback-no-ui-tests-on-mac` (lane unblocked), `vm-no-rust-toolchain` (build-app
-  fallback). `main` single linear trunk @ `bc2fdf7`; both commits are scripts/docs only (no `Sources/`),
+  fallback). `main` single linear trunk @ `07d9f1a`; both commits are scripts/docs only (no `Sources/`),
   validated by the VM run itself (not the host headless gate).
 
 ## LOG 2026-06-06 (latest+26) — dev-loop fix: build-app.sh --install (closes the rebuild gotcha)
@@ -5247,13 +5247,13 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
   upgrade — in DECISIONS NEEDED, not blasting an 85-file backport). Picked the warm dev-loop friction
   the owner just hit: "don't see Reset" because `build-app.sh debug` writes `dist/` but the owner runs
   `/Applications/TextView.app` (stale).
-- **`c69947f`:** `build-app.sh` gains a `--install` flag that chains `install-app.sh` after a green
+- **`61eab06`:** `build-app.sh` gains a `--install` flag that chains `install-app.sh` after a green
   build, so a rebuild actually updates the launched app. Robust arg parsing (`debug|release` +
   `--install`, any order; unknown arg → exit 2). Validated `bash -n` + arg-rejection (errors before
   any build). CLAUDE.md SOP validation-ladder rung-4 updated to `build-app.sh debug --install`.
 - **Also this session (manual, for the owner):** installed the fresh build to `/Applications`
   (`install-app.sh`) + relaunched, so File→Reset + session fixes + disk-dot are now live.
-- Script/docs only (no `Sources/` change) → headless gate not required. `main` @ `c69947f`, single
+- Script/docs only (no `Sources/` change) → headless gate not required. `main` @ `61eab06`, single
   linear trunk.
 
 ## LOG 2026-06-06 (latest+25) — rebuilt app + ran tests in UTM + CLAUDE.md SOP (owner asks)
@@ -5276,7 +5276,7 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
 
 ## LOG 2026-06-06 (latest+24) — session SELF-HEAL recovery (TSK-438 follow-up done)
 - Completed the optional half of TSK-438: the app now self-heals lost session tabs on launch.
-- **`38cf3e6`:** `SessionsCoordinator.restore()` — when the index is empty/absent/corrupt but
+- **`afeb71f`:** `SessionsCoordinator.restore()` — when the index is empty/absent/corrupt but
   substantial snapshots survive (the clobber outcome), rebuild the live list + index from them and
   mount the newest. New `SessionStore.recoverableSnapshots()` keeps only LIVE (non-trash) snapshots
   with an existing root AND ≥1 open tab, deduped by root (newest wins), capped 24. Intentionally-closed
@@ -5285,14 +5285,14 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
 - **Validation:** 4 ViewerCore tests (`SessionRecoveryTests`: recover-on-absent / skip-stubs+dead-root /
   empty-stays-empty / dedupe-by-root) + `swift build` + headless gate **PASSED (exit 0)** on the
   committed commit — no session-suite regressions.
-- **TSK-438 fully closed:** guard (`bf395f9`) prevents the clobber, recovery (`38cf3e6`) heals existing
+- **TSK-438 fully closed:** guard (`834e7d5`) prevents the clobber, recovery (`afeb71f`) heals existing
   damage. Owner's lost tabs will now come back automatically on next launch (after a debug rebuild),
   filtered to real working sessions. `main` @ recovery commit, single linear trunk, gate-green.
 
 ## LOG 2026-06-06 (latest+23) — ROOT-CAUSE FIX: session-index clobber guard (TSK-438 fixed)
 - Continued from the session-tab diagnosis. Shipped the durable fix the owner actually wants (the Reset
   menu was only the escape hatch).
-- **TSK-438 FIXED (`bf395f9`):** `SessionStore` now refuses to persist an EMPTY `SessionIndex` while
+- **TSK-438 FIXED (`834e7d5`):** `SessionStore` now refuses to persist an EMPTY `SessionIndex` while
   `liveSnapshotIDs()` (non-trashed `<uuid>.json` files) is non-empty — at BOTH write entry points
   (`saveIndexSync`, `enqueueSaveIndex`). Keeps the prior index + logs to stderr. That is the exact
   clobber signature (empty index.json next to live snapshots → empty strip). A legitimate close-all has
@@ -5315,7 +5315,7 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
   empty `SessionIndex`; matches audit #330 saveSync-races-enqueueSave). Snapshots intact — data not lost.
   NOTE: persisted state lives under `Application Support/MarkdownViewer/` (NO bundle-id prefix); the
   bundle-id dir holds only Plugins/Walkthroughs/jdtls-data.
-- **SHIPPED — File → Reset (TSK-437 `28331c3`, fixed):** the requested escape hatch. New ViewerCore
+- **SHIPPED — File → Reset (TSK-437 `3f4be43`, fixed):** the requested escape hatch. New ViewerCore
   `AppCacheReset` (enum `CacheDomain`: sessions/workspaces/bookmarks/recents/lspCache) MOVES each store to
   a recoverable `_reset-backups/<ts>/` backup (never hard-deletes), + Reset Preferences (UserDefaults
   `removePersistentDomain`) + Reset Everything. Menu wired in `main.swift` (NSAlert confirm → backup →
@@ -5333,7 +5333,7 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
   owner-design-gated (TSK-272 needs preview-tab semantics ↔ TSK-220; TSK-359 needs a risky custom
   NSLayoutManager; TSK-267 HEX is live-blocked). Picked **TSK-371** — the one with a clean,
   headless-validatable core and the lowest blast radius.
-- **TSK-371 SHIPPED (`8767b5e`, fixed):** red disk-change dot on tabs. `Tab.diskState` already
+- **TSK-371 SHIPPED (`8ac6439`, fixed):** red disk-change dot on tabs. `Tab.diskState` already
   carried the FSEvents/stat staleness signal (surfaced as the StatusBar "Modified" chip) and
   `Tab.swift` literally pre-declared a tab red-dot as the planned consumer. Added pure
   `DiskState.showsTabDot`/`tabDotHelpTitle`/`tabDotHelpDescription` helpers (3 ViewerCore unit tests,
@@ -5370,24 +5370,24 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
 - **Docs:** `docs/HANDOFF_2026-06-06.md` (new; supersedes 06-05) + `LESSONS.md` §"Session 2026-06-06"
   (killall footgun, VM-builds-now/Swift-6.1.2 patterns, flaky-gate, board-id≠audit-#N) +
   memory updates (`reference_vm_no_rust_toolchain` VM-builds-now; new `feedback_killall_footgun`).
-  Committed `56d7311`.
-- **Board hygiene:** TSK-401 (VM build) → `fixed` (`1a9aabc`); TSK-113 (WebView teardown DECISION) →
+  Committed `fd4a872`.
+- **Board hygiene:** TSK-401 (VM build) → `fixed` (`630018a`); TSK-113 (WebView teardown DECISION) →
   `fixed` (resolved+shipped by perf Fix#1 TSK-108 = bounded keep-alive, LRU cap 4); filed+fixed
-  TSK-435 (AppLauncher killall fix `ca67005`) and TSK-436 (3 remaining killall sites `8bfb4ee`);
+  TSK-435 (AppLauncher killall fix `3b28590`) and TSK-436 (3 remaining killall sites `20284f2`);
   commented honest status on stalled TSK-109/111 (screen-gated roll-ups, not failures).
 - **"Retry failed tasks":** the only `regressed:true` board task is TSK-104 (CSV export,
   `agent:forge`) — grep-confirmed FOREIGN (not in this repo), skipped per shared-board discipline.
   No genuine failed MDV task remained; the stalled `progress` ones are live-gated, not failed.
-- **killall footgun fully closed (`8bfb4ee`, TSK-436):** SourceViewVisualRegressionTests (×2) +
+- **killall footgun fully closed (`20284f2`, TSK-436):** SourceViewVisualRegressionTests (×2) +
   WalkthroughAndCodeReviewUATTests now tag direct spawns `MDV_TEST_INSTANCE=1` and reap via
   `AppLauncher.killTestInstances` instead of blanket `killall` (which killed the user's own app).
   Verified `swift build --build-tests` = Build complete. LSPUATTests `killall sourcekit-lsp` is a
-  separate lower-severity daemon case, left noted. `main` @ `56d7311`.
+  separate lower-severity daemon case, left noted. `main` @ `fd4a872`.
 
 ## LOG 2026-06-06 (latest+18) — TSK-263 line HOVER highlight FIXED (Source + Editor) — larger feature
 - Owner asked for bigger 20–30min tasks (keep the session busy). Took the line-hover-highlight cross-view
   feature end-to-end.
-- **TSK-263 (LANDED `848050b`):** a mouse-over line backdrop, distinct from + fainter than the
+- **TSK-263 (LANDED `621d351`):** a mouse-over line backdrop, distinct from + fainter than the
   caret/selection current-line highlight.
   - **Source view (NSTextView):** new `SourceHoverHighlight` SwiftUI overlay drawn as a *non-interactive*
     sibling in a `ZStack`; `.onContinuousHover` on the container maps pointer→line via
@@ -5411,7 +5411,7 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
 
 ## LOG 2026-06-06 (latest+17) — TSK-262 session-tab action icons FIXED (Settings/Search/Omni)
 - Heartbeat firing — finishing the session/tab-strip UX cluster.
-- **TSK-262 (LANDED `3105935`):** the session-tab row ended at the `+` with no trailing action icons.
+- **TSK-262 (LANDED `2d8f75a`):** the session-tab row ended at the `+` with no trailing action icons.
   Added a pinned, right-aligned icon group on `SessionTabBar` (after the `ScrollView`, always visible):
   `gearshape`→Settings, `magnifyingglass`→File search, `command`→Omni/Command Palette. All three wire to
   EXISTING actions — `model.showCrossSearch()`, `model.showPalette()`, and Settings via
@@ -5430,7 +5430,7 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
 
 ## LOG 2026-06-06 (latest+16) — TSK-261 "+" beside last tab FIXED (file + session bars); TSK-269 dup closed
 - Heartbeat firing. Board-driven SwiftUI work (continuing the tab-strip UX cluster after TSK-268).
-- **TSK-261 (LANDED `c72ed38`):** both `TabBar` (file tabs) and `SessionTabBar` pinned the `+` button
+- **TSK-261 (LANDED `6191f4c`):** both `TabBar` (file tabs) and `SessionTabBar` pinned the `+` button
   OUTSIDE the horizontal `ScrollView`, so it always sat at the strip's far-right edge. Moved it INSIDE
   the scroll content after the `ForEach` in both, so the `+` sits immediately beside the last tab (owner
   ask). `computedTabWidth` still reserves ~32pt so it stays visible beside the last tab until the strip
@@ -5448,10 +5448,10 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
   deep-audit "#N" numbers are NOT board TSK ids — board `TSK-270`="[BACKLOG] Delay in opening files",
   `TSK-271`="PNG/Media info ignore zoom" (already `fixed`), unrelated to audit-list #270/#271. So I
   worked the board's actual reported SwiftUI queue (the `[PORT]` items stay deprioritized).
-- **TSK-268 (LANDED `4246ec9`):** "Can't see right border of last tab." `TabBar.swift` drew the
+- **TSK-268 (LANDED `3fb41b7`):** "Can't see right border of last tab." `TabBar.swift` drew the
   inter-tab separator only `if index < count-1`, so the last/only tab had no trailing right edge before
   the `+` button. Now drawn after EVERY tab. Verified fresh vs current code (report was from old
-  `1dbf1ca`). Validated: headless gate green (3975, tier-clean) + live T4 ViewModeMatrix 3/3 on the
+  `e973e4e`). Validated: headless gate green (3975, tier-clean) + live T4 ViewModeMatrix 3/3 on the
   assembled bundle. Cosmetic view-only change (no clean headless sub-view-count assertion) → human
   review is the visual confirm.
 - **TSK-260 (closed → `fixed`, verified-resolved, not a new commit):** "picking one shoulder button
@@ -5469,7 +5469,7 @@ Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, ho
 - **This is the loudest real pain killed** — the perf cluster's dominant view-side fix, NOT a paper cut.
   Switching tabs tore down + reloaded the WKWebView-backed panes (rendered-markdown / CM6 editor) ~1s;
   A→B→A reloaded twice. Root cause was view-side (model already minimal: 1 republish/switch).
-- **Implementation (commit `39925fd`, landed on main via ff):** `ContentView.content` now renders a
+- **Implementation (commit `8f60d21`, landed on main via ff):** `ContentView.content` now renders a
   `ZStack` of ALL **mounted** tab panes (the `MountedPanesLRU`, cap 4, held `@Published` on
   `DocumentModel`), not just the active one. Inactive panes stay mounted (gated `opacity:0` /
   `allowsHitTesting(false)` / `accessibilityHidden`) → switch-back is a pure visibility flip, **zero
@@ -5546,7 +5546,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
    shipped code (pinned by TSK-419's tests) — please mark that board finding done, don't redo.
 
 ## LOG 2026-06-06 (latest+11) — Test-backfill #5: RustCoreFallback (TSK-419 → fixed); pool drained
-- **`ed3e24e` test(rust-core)** covers `RustCoreFallback.run` (the gate-OFF/Rust-ok/Rust-throws
+- **`76fd6a3` test(rust-core)** covers `RustCoreFallback.run` (the gate-OFF/Rust-ok/Rust-throws
   fail-safe router every Rust slice ships behind — the migration safety net) — was untested. 6 headless
   cases via injected env/defaults gate state. **Incidental finding:** the audit's `#301` ("RustCoreFallback
   swallows the bridge fault, no observability") is **already fixed in the shipped code** — the catch
@@ -5570,7 +5570,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   where owner input is the bottleneck.
 
 ## LOG 2026-06-06 (latest+10) — Test-backfill #4: ClaudeLogParser system-record accessors (TSK-418 → fixed)
-- **`f0354af` test(claude)** covers the `recordType`/`recordCwd`/`recordSessionId`/`titleRecord`/
+- **`66376d7` test(claude)** covers the `recordType`/`recordCwd`/`recordSessionId`/`titleRecord`/
   `userPromptText` accessors (0 prior test refs; the security-critical `redact()` sibling is covered in
   3 other files). 14 headless cases incl. custom>ai title precedence, and `userPromptText`'s
   plain-string / default-role / block-array-first-text / tool_result→nil discrimination. No bug
@@ -5585,7 +5585,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   low-value tests for already-covered code.
 
 ## LOG 2026-06-06 (latest+9) — Test-backfill #3: TerminalCell SGR/attributes (TSK-417 → fixed)
-- **`aaec3d1` test(terminal)** covers `TerminalCell.swift` (`TerminalColor.fromSGR` + `CellAttributes`
+- **`a4a4a62` test(terminal)** covers `TerminalCell.swift` (`TerminalColor.fromSGR` + `CellAttributes`
   inverse/bold/`effectiveFg`/`effectiveBg` + `isBlank`) — was untested. 15 headless cases incl. the
   bold→bright promotion, inverse fg/bg swap, inverse+bold compound, and 256-/true-colour-introducer
   (38/48) rejection. No bug surfaced. Gate green (3851). Board TSK-417 → `fixed`. (Test gotcha:
@@ -5598,7 +5598,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   supervised window, the live-gated features).
 
 ## LOG 2026-06-06 (latest+8) — Test-backfill #2: ReviewSidecar (TSK-416 → fixed)
-- **`ba9ecf5` test(review)** covers `ReviewSidecar.swift` (`.textview/` session.json + config.json +
+- **`43bb28b` test(review)** covers `ReviewSidecar.swift` (`.textview/` session.json + config.json +
   git-tracking-file emission, 230 LOC, pure Foundation/JSONFileStore) — was untested. 12 headless
   cases: session/config round-trips, schema-too-new refusal (session→nil, config→default),
   corrupt-JSON→nil, missing-file recommended default, `.gitignore`/`.gitattributes` bodies (tracked vs
@@ -5615,7 +5615,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
 ## LOG 2026-06-06 (latest+7) — Pivot to test-backfill: TerminalScreen (TSK-415 → fixed)
 - Pivoted off the closed command-wiring vein. Scanned ViewerKit/ViewerCore for sources with no test
   reference; **`TerminalScreen.swift`** (the #226 terminal grid, 225 LOC, pure Foundation) was
-  genuinely untested. **`cced59b` test(terminal)** adds 20 headless cases: write/auto-wrap (+ last-row
+  genuinely untested. **`34522fb` test(terminal)** adds 20 headless cases: write/auto-wrap (+ last-row
   scroll), lineFeed, cursor clamping, tab stops, resize anchoring (grow/shrink/cursor-clamp/no-op),
   the full erase family, scroll up/down with count clamping + no-op guards. No bug surfaced (behavior
   matches the doc comments). Gate green (3824). Board TSK-415 → `fixed`.
@@ -5628,7 +5628,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   whose TYPES are tested under a different name — not actually uncovered.
 
 ## LOG 2026-06-06 (latest+6) — Omni: Show File History (TSK-414 → fixed); command-wiring vein CLOSED
-- **`2a4cb4a` feat(commands)** wired the last cheap one: `git.fileHistory`→`git-file-history`→
+- **`2ea86e0` feat(commands)** wired the last cheap one: `git.fileHistory`→`git-file-history`→
   `openFileHistory(for: currentURL)` (no-arg current-file; the existing `file-history <path>` verb
   stays for explicit-path automation). 3 headless tests incl. a **real temp git repo** (tracked file
   opens a hosted History tab; off-repo no-op; catalog). Gate green (3804). Board TSK-414 → `fixed`.
@@ -5647,7 +5647,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   spike** if neither is clean. Do NOT keep mining command-wiring — it's exhausted.
 
 ## LOG 2026-06-06 (latest+5) — Omni batch 2: Show Git Panel + Toggle Line Bookmark (TSK-413 → fixed)
-- **`c000d6d` feat(commands)** wired the next 2 model-backed `scriptVerb: nil` commands:
+- **`f6c0e2e` feat(commands)** wired the next 2 model-backed `scriptVerb: nil` commands:
   `git.showPanel`→`show-git-panel`→`showGitPanel()` (bumps `gitPanelFocusRequest`),
   `view.toggleLineBookmark`→`toggle-line-bookmark`→`toggleCurrentLineBookmark()`. 4 headless tests
   (focus bump, line-bookmark add/remove toggle via seeded `sourceSelection`, no-caret no-op, catalog).
@@ -5665,7 +5665,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
 
 ## LOG 2026-06-06 (latest+4) — Omni-invokability batch: split + move-tab (TSK-412 → fixed)
 - The TSK-411 reload gap turned out to be a **gap class**: audited all 26 `scriptVerb: nil` descriptors.
-  **`d597cfd` feat(commands)** wired the 4 that map cleanly to existing no-arg @MainActor model methods:
+  **`da126c4` feat(commands)** wired the 4 that map cleanly to existing no-arg @MainActor model methods:
   `view.toggleSplit`→`toggleSplit()`, `view.swapSplit`→`swapSplit()`, `tabs.moveLeft`/`moveRight`→
   `moveCurrentTabLeft()`/`Right()`. They were menu/keyboard-only; now palette-invokable + scriptable +
   tested (4 headless tests + catalog assertions). Headless gate green (3797). Board TSK-412 → `fixed`.
@@ -5678,7 +5678,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   `instrumentation`, `find.find` (mode router). Next heartbeat can take the model-backed subset.
 
 ## LOG 2026-06-06 (latest+3) — Reload made Omni-invokable + automatable (TSK-411 → fixed, complete)
-- **`a8e69a7` feat(commands): reload script verb.** Found a real gap: `file.reload` shipped with
+- **`1621adc` feat(commands): reload script verb.** Found a real gap: `file.reload` shipped with
   `scriptVerb: nil`, so the Reload command was menu/⌘R-only — NOT in the command palette (despite the
   #232 Omni-invokability work) and untestable headless. Wired a `reload` ScriptVerb →
   `model.reloadCurrentFile()` (the same entry the menu uses; `applyReload` rebases only a CLEAN editor
@@ -5693,7 +5693,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
 ## LOG 2026-06-06 (latest+2) — Save a Copy engine LANDED (TSK-300, headless), menu deferred
 - Challenged the "pool drained" conclusion: there IS a headless-shippable SwiftUI class — **@MainActor
   model/command logic** drivable via ScriptVerb/HeadlessHarness (not pixel rendering). TSK-300 fits.
-- **`6c2fc9e` feat(save): Save a Copy engine + `save-copy` verb.** `DocumentModel.saveCopy(ofTabAt:to:)`
+- **`1c8c865` feat(save): Save a Copy engine + `save-copy` verb.** `DocumentModel.saveCopy(ofTabAt:to:)`
   + `saveCopyOfCurrentTab(to:)` write the tab's CURRENT effective content to a NEW path, leaving the
   open tab untouched (no save, no retarget, no dirty-flag change). Content precedence: HEX-dirty bytes
   → dirty editor text (buffer encoding) → verbatim on-disk file. Production-grade write: atomic for the
@@ -5713,7 +5713,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   or self-deferred-to-live (TSK-332 deferred half, picker-desync zone); no clean headless SwiftUI
   implementation task remains.
 - Per the mandate's "if nothing to ship headlessly, research/breakdown" clause, did a **Spike** on the
-  highest-value owner-requested SwiftUI feature: **`docs/SIDEBAR_FUZZY_FILTER_DESIGN.md` (`2326a95`)** —
+  highest-value owner-requested SwiftUI feature: **`docs/SIDEBAR_FUZZY_FILTER_DESIGN.md` (`6dd7281`)** —
   execute-ready plan for TSK-282 (fuzzy file-nav filter + highlight). Grounds it in the real code:
   reuse the shipped `FuzzyMatcher.filterWithMatches` (already palette-proven) + the palette's
   highlight helper; `VisibleRow`/`flatVisibleRows()` row model. Key design call: the naive "global
@@ -5726,7 +5726,7 @@ Everything below is built/spec'd and waiting on ONE of: a live window, profiling
   confidence high. Not owner-gated — self-deferred.
 
 ## LOG 2026-06-06 (latest) — Tools surface LANDED (clipboard, option a); Swift headless pool drained
-- **`7e9d78f` feat(tools): clipboard text-tools surface** — wired the (previously unwired) TextTools
+- **`0da4cfe` feat(tools): clipboard text-tools surface** — wired the (previously unwired) TextTools
   core into the command palette. Built **option (a)** from the prior DECISION NEEDED exactly per the
   execute-ready plan: `protocol PasteboardIO` + `SystemPasteboard` adapter + `TextToolRunner.run(verb:
   pasteboard:) -> status` in `Sources/ViewerCore/TextToolRunner.swift`; 4 `CommandDescriptor`s
@@ -5794,7 +5794,7 @@ SwiftUI-first progress, the next wave needs ONE of:
 ## LOG 2026-06-06 — OWNER RESET: stop paper cuts; SOP added; board triaged; perf Fix#1 is the active item
 - Owner flagged the ~14-firing drift into pure-logic **test backfill (paper cuts)** and asked to work
   the **`tasked` board** properly. Added the operating-procedure SOP (`docs/TASK_WORKFLOW.md`,
-  commit `6f2c577`) + pinned pointers atop this file and `HANDOFF`, + updated memory
+  commit `6bedf2e`) + pinned pointers atop this file and `HANDOFF`, + updated memory
   `project_autonomous_loop_mandate`. **Test backfill is now last-resort only.**
 - **Board triage (the SOR):** queried `tasked` — only **4 open defect-type tasks**, all gated
   (`TSK-401` VM/CI, `TSK-408/409` PORT, `TSK-399` dep-approval). The deep-audit S-findings are
@@ -5812,7 +5812,7 @@ SwiftUI-first progress, the next wave needs ONE of:
   next firing** (not rushed at this turn's tail).
 
 ## LOG 2026-06-06 — ClaudeMonitor aggregation coverage (ViewerCore func-scan, 4/4 — vein drained)
-- **`81d0ed1` test(viewercore): ClaudeMonitorLog eventCounts/toolFrequency was untested** (board
+- **`726fcc8` test(viewercore): ClaudeMonitorLog eventCounts/toolFrequency was untested** (board
   TSK-434). Monitor per-type aggregations. 6 cases: empty, descending-by-count, the
   **count-desc/name-asc tie-break**, `toolFrequency` skips nil-tool events, all-nil→empty. Gate green.
 - **ViewerCore func-scan high-value vein is now drained** (safeURL/uniqueSlug/atxHeadingLevel/
@@ -5825,7 +5825,7 @@ SwiftUI-first progress, the next wave needs ONE of:
   this run (TSK-420…434) + #298 pin.
 
 ## LOG 2026-06-06 — atxHeadingLevel coverage (ViewerCore func-scan, 3)
-- **`5bfd73c` test(viewercore): TreeSitterEngine.atxHeadingLevel was untested** (board TSK-433).
+- **`e9eb5a7` test(viewercore): TreeSitterEngine.atxHeadingLevel was untested** (board TSK-433).
   Markdown `#`-count heading level for a 1-based line (drives folding). 7 cases: levels 1–6, cap at
   6 (7 and 20 hashes), leading space/tab skip, multi-line addressing, no-space-after-`#` still
   counts, non-heading/empty→1, out-of-range line→1. Gate green.
@@ -5833,7 +5833,7 @@ SwiftUI-first progress, the next wave needs ONE of:
   `RustDiffAdapter.hunkMarks`.
 
 ## LOG 2026-06-06 — uniqueSlug coverage (ViewerCore func-scan, 2)
-- **`61f36bd` test(viewercore): HTMLVisitor.uniqueSlug was untested** (board TSK-432). GFM
+- **`4f41ada` test(viewercore): HTMLVisitor.uniqueSlug was untested** (board TSK-432). GFM
   heading-anchor slug + in-document dedup. 8 cases: lowercase/dash-collapse/edge-trim, numbers
   kept, empty→`section`, **Unicode letters survive** (pins the doc-says-ASCII / code-uses-`isLetter`
   mismatch), the duplicate counter (`x`/`x-1`/`x-2`) + per-key independence, dedup keyed post-slugify.
@@ -5842,7 +5842,7 @@ SwiftUI-first progress, the next wave needs ONE of:
   `ClaudeMonitorLog.eventCounts` (aggregation), `RustDiffAdapter.hunkMarks`.
 
 ## LOG 2026-06-06 — safeURL security coverage; ViewerCore func-scan is a LIVE axis (hold was premature)
-- **`0f874db` test(viewercore)[security]: HTMLVisitor.safeURL was untested directly** (board TSK-431).
+- **`772991f` test(viewercore)[security]: HTMLVisitor.safeURL was untested directly** (board TSK-431).
   The href/src scheme allowlist that rewrites `javascript:`/`vbscript:`/`data:`/custom → `about:blank`
   so malicious markdown can't smuggle them past WKWebView nav policy. 8 cases pinning the full
   link/image × scheme matrix + the `data:image/*` sub-rule + authority-relative/fragment/relative
@@ -5856,7 +5856,7 @@ SwiftUI-first progress, the next wave needs ONE of:
   `ClaudeMonitorLog.eventCounts` (aggregation), `RustDiffAdapter.hunkMarks`. Hold deferred.
 
 ## LOG 2026-06-06 — shortDate coverage (static-func scan 4/4) → SCAN AXES EXHAUSTED
-- **`5aeb7f8` test(viewerui): FileHistoryView.shortDate was untested** (board TSK-430). git `%ai`
+- **`a35d9ba` test(viewerui): FileHistoryView.shortDate was untested** (board TSK-430). git `%ai`
   timestamp → `YYYY-MM-DD HH:MM` compaction. 6 cases: drops seconds+tz, no-tz, already-minute,
   repeated-space collapse, colonless-time kept, malformed/empty/date-only pass-through. Gate green.
 - **Both ViewerUI uncovered-pure-logic scan axes are now exhausted of GENUINE targets.** Over this
@@ -5878,7 +5878,7 @@ Until one lands, heartbeats will **deliberately HOLD** (documented no-op) rather
 ever-more-marginal tests — per the standing honesty rule. `main` is gate-green.
 
 ## LOG 2026-06-06 — repoRelativePath coverage (static-func scan, 3/4)
-- **`3c42a22` test(viewerui): DocumentModel.repoRelativePath was untested** (board TSK-429). Pure
+- **`a52e6c1` test(viewerui): DocumentModel.repoRelativePath was untested** (board TSK-429). Pure
   `nonisolated` path helper (file→relative-to-repo-root, or nil if outside). 7 cases incl the
   load-bearing **sibling-prefix guard** (`/proj` must not swallow `/proj-sibling` — the
   trailing-slash boundary), exact-root→`""`, nested slash-join no-leading-slash, outside→nil,
@@ -5888,7 +5888,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
   honest next step (substantive remaining SwiftUI work is owner-gated, see DECISIONS NEEDED).
 
 ## LOG 2026-06-06 — TabBar.computedTabWidth coverage (static-func scan, 2/4)
-- **`a6fcb36` test(viewerui): TabBar.computedTabWidth was untested** (board TSK-428). The tab-strip
+- **`f218e8a` test(viewerui): TabBar.computedTabWidth was untested** (board TSK-428). The tab-strip
   width math. 7 **relational** cases (no hardcoded private constants): positive/ordered bounds, the
   `count==0` + non-positive-`available` div-by-zero guards (→ upper), sparse→upper, crowded→lower,
   within-`[lower,upper]` over a grid, non-increasing as count grows, scale-linear at both
@@ -5897,7 +5897,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
   `ContentView.categoryLabel`, `FileHistoryView.shortDate`.
 
 ## LOG 2026-06-06 — jsEscape (security) coverage; NEW scan axis = static helper functions
-- **`85db189` test(viewerui): MarkdownRenderedView.jsEscape was untested** (board TSK-427,
+- **`aca5978` test(viewerui): MarkdownRenderedView.jsEscape was untested** (board TSK-427,
   `[SECURITY]`). The escaper turning a search string into a safe JS string literal for the
   rendered-markdown find injection (`evaluateJavaScript`). 4 cases: quoted-literal shape, exact
   round-trip through tricky inputs (quotes/backslash/newline/tab/emoji/empty/`</script>`),
@@ -5912,7 +5912,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
   axis extends the runway. (Skip `private` funcs — unreachable even via @testable.)
 
 ## LOG 2026-06-06 — CMIndentation coverage; #315 confirmed already-covered
-- **`72fef7a` test(viewerui): CMIndentation was untested** (board TSK-426). 5 cases pinning the
+- **`c5f61c0` test(viewerui): CMIndentation was untested** (board TSK-426). 5 cases pinning the
   `size` clamp to [1,16] on both `tabs`/`spaces` arms (0/negative→1, 17/100/Int.max→16, in-range
   passthrough + boundaries), `useTabs` discriminator, Equatable by case+value. Gate green.
 - Assessed #315 (editable-HEX dirty/save/close, a bigger test-gap) — **already covered** by
@@ -5923,7 +5923,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
   first; the reliable yield is the zero-test-ref TYPE scan, not the finding list).
 
 ## LOG 2026-06-06 — LogTimestamp coverage; first full ViewerUI scan
-- **`a1dbd90` test(viewerui): LogTimestamp was untested** (board TSK-425). The observability-logs
+- **`43bef23` test(viewerui): LogTimestamp was untested** (board TSK-425). The observability-logs
   `nanos→HH:mm:ss.SSS` formatter. 5 cases, all **timezone-independent** (only `HH:mm` shift with
   zone; `ss`/`.SSS` don't — no modern zone has a sub-minute offset), pinning the format shape,
   the `ss.SSS` tail, millisecond zero-padding, 1ms-apart distinctness, and epoch well-formedness.
@@ -5938,7 +5938,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
   see DECISIONS NEEDED.
 
 ## LOG 2026-06-06 — CommandCategory coverage (uncovered-pure-logic lane)
-- **`2f4e960` test(viewercore): CommandCategory was untested** (board TSK-424). 6 cases pinning the
+- **`39e0567` test(viewercore): CommandCategory was untested** (board TSK-424). 6 cases pinning the
   `title` header labels (incl non-obvious `.lsp`→"Language") and the custom `Comparable` that orders
   by `allCases` **declaration order, not alphabetical** (load-bearing for palette section order).
   Discriminator tests (`view<edit`, `git<find`, `tabs<sessions`) have teeth — a rawValue-derived
@@ -5949,7 +5949,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
   `ObsMetricKind`, plus an unscanned ViewerUI pass.
 
 ## LOG 2026-06-06 — LSPRequestID Codable coverage (uncovered-pure-logic lane)
-- **`85d8b04` test(viewercore): LSPRequestID was untested** (board TSK-423). The JSON-RPC id union
+- **`45724f0` test(viewercore): LSPRequestID was untested** (board TSK-423). The JSON-RPC id union
   (`number(Int64)|string`, hand-rolled Codable) had zero tests. 8 cases: number/string decode, the
   load-bearing numeric-string-stays-`.string` disambiguation (the `try?` Int64 probe must not coerce
   a quoted `"5"`), large Int64, both round-trips, encode wire-shape (unquoted number vs quoted
@@ -5961,7 +5961,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
   `project_audit_pending_list_stale`.
 
 ## LOG 2026-06-06 — ByteFormat coverage + 5 audit findings confirmed already-fixed (pending-list is stale)
-- **`b48935a` test(viewerui): ByteFormat was untested** (board TSK-422). `ByteFormat.human/.mib`
+- **`5594663` test(viewerui): ByteFormat was untested** (board TSK-422). `ByteFormat.human/.mib`
   (memory + logs byte readouts, 5 `MemoryView` call sites) had zero tests. 6 cases pinning the
   edge logic: `unit==0` no-decimal path, exact-1024 boundary promotion, **GB ceiling (no TB
   rollover)**, `Int` negative-clamp, `Int`/`UInt64` parity, `mib` binary-MB. Gate green.
@@ -5986,7 +5986,7 @@ ever-more-marginal tests — per the standing honesty rule. `main` is gate-green
 
 ## LOG 2026-06-06 — ViewerUI headless coverage: LSPMarkdownRenderer + #298 stale-tree pin
 Two items, SwiftUI lane, both committed + central-gate-green (3883 headless) + board-recorded.
-- **`c207318` test(viewerui): LSPMarkdownRenderer was untested** (board TSK-420). Scanned
+- **`6d288bc` test(viewerui): LSPMarkdownRenderer was untested** (board TSK-420). Scanned
   `Sources/ViewerUI` for untested non-View model/logic types; triaged the 3 top hits —
   `TrackedReposChannel`/`RepoRootKind` was a FALSE POSITIVE (its `repoRootKind`/`isRepoRoot`
   methods are already covered in `TrackedReposChannelReadTests` under a different type name),
@@ -5995,7 +5995,7 @@ Two items, SwiftUI lane, both committed + central-gate-green (3883 headless) + b
   plain-vs-markdown branch, fenced-code fence-stripping + monospaced/background styling, inline
   bold/italic/code trait bridging (confirms the `NSInlinePresentationIntent` decode holds on
   macOS 15), trailing-newline trim, empties.
-- **`95b6c34` test(sidebar): pin deep-audit #298** (board TSK-421). Verified #298
+- **`8252139` test(sidebar): pin deep-audit #298** (board TSK-421). Verified #298
   (SidebarModel.clearCache() leaves flatVisibleRows memo stale → stale tree on git branch switch)
   is **already fixed in code** — but the fix was UNPINNED (the existing memo test only covers
   expansion-toggle invalidation). Added `test_clearCache_dropsFlatMemo_withoutReload` (mirrors the
@@ -6008,7 +6008,7 @@ Two items, SwiftUI lane, both committed + central-gate-green (3883 headless) + b
   code change — it's verified-fixed + now regression-pinned.
 
 ## LOG 2026-06-06 — adversarial self-audit of TSK-410 found + fixed a silent Rust regression
-- **`ef05840` fix(highlight): repair rust @constant query typo** (TSK-410 follow-up). Audited every
+- **`f8cabf9` fix(highlight): repair rust @constant query typo** (TSK-410 follow-up). Audited every
   grammar query's `#match?` regex for NSRegularExpression mis-evaluation now that predicates are
   honored (TSK-410). Found ONE latent typo it activated: `rust-highlights.scm` matched
   SCREAMING_CASE with `^[A-Z][A-Z\d_]+$'` — the stray trailing quote = end-anchor + literal quote,
@@ -6018,7 +6018,7 @@ Two items, SwiftUI lane, both committed + central-gate-green (3883 headless) + b
   a rescan for `$<char>` never-match patterns found no others. Gate green (3764).
   **Lesson:** enabling query-predicate evaluation can activate latent broken-regex typos that were
   dead while predicates were ignored — audit all `#match` patterns when flipping that on.
-- Also extended TSK-410 regression coverage to JavaScript (`2cc59e9`, prior heartbeat).
+- Also extended TSK-410 regression coverage to JavaScript (`b8eae92`, prior heartbeat).
 
 ## LOG 2026-06-05 (latest+2) — board lanes swept; SwiftUI clean-defect pool confirmed empty
 Swept the non-`reported` lanes for actionable SwiftUI work (mandate: any SDLC type):
@@ -6046,7 +6046,7 @@ now fixed + live-validated). Productive SwiftUI work from here needs a steer:
 Until then, heartbeats will idle on SwiftUI or fall to the PORT lane (deprioritized).
 
 ## LOG 2026-06-05 (latest+1) — live-smoke validation of the session's highlighting fixes
-- **`bash scripts/build-app.sh debug` PASSED** at `ab735b5`: `dist/TextView.app` built + signed;
+- **`bash scripts/build-app.sh debug` PASSED** at `052a4fe`: `dist/TextView.app` built + signed;
   pre-install T4 `ViewModeMatrixSmokeTests` 3/3 green (default-mode render, lazy-tab content-not-
   blank, single mode-switch). Confirms TSK-195 (.tsx grammar) + TSK-410 (predicate eval) don't
   break the live app's build/launch/file-load across view modes. Session work now headless + live
@@ -6054,7 +6054,7 @@ Until then, heartbeats will idle on SwiftUI or fall to the PORT lane (deprioriti
   TreeSitterEngineGoldenTests.)
 
 ## LOG 2026-06-05 (latest) — TSK-410 predicate evaluation FIXED
-- **`5e840b3` fix(highlight): evaluate tree-sitter query predicates** (TSK-410 → `fixed`).
+- **`b0866a1` fix(highlight): evaluate tree-sitter query predicates** (TSK-410 → `fixed`).
   `TreeSitterEngine.tokenize` now routes the query cursor through SwiftTreeSitter's
   `resolve(with: Predicate.Context)` so `#match?`/`#eq?`/`#any-of?` are evaluated. The
   textProvider returns each node's source slice; the default group-membership provider keeps
@@ -6070,7 +6070,7 @@ Until then, heartbeats will idle on SwiftUI or fall to the PORT lane (deprioriti
   `@type` is filtered for lowercase tags) — a small follow-up could re-add a tsx-highlights query.
 
 ## LOG 2026-06-05 (late) — TSK-195 .tsx grammar landed + defect-pool exhausted
-- **`71586a5` feat(highlight): route `.tsx` through `tree_sitter_tsx`** (TSK-195 → `fixed`).
+- **`e37df73` feat(highlight): route `.tsx` through `tree_sitter_tsx`** (TSK-195 → `fixed`).
   Pure wiring — the tsx grammar already ships in `libTreeSitterTypeScriptLazy` (keepalive +
   `TreeSitterTSX` bundle already in `dist/`); no new dep/dylib/product. Added
   `HighlightLanguage.tsx` + `GrammarLoader.Grammar.tsx`, reused TS highlights/folds queries,
@@ -6094,7 +6094,7 @@ Until then, heartbeats will idle on SwiftUI or fall to the PORT lane (deprioriti
 ### Wave 0 — infra + land pending fixes  [IN PROGRESS]
 - [x] Hourly safety-net cron (`1c077a77`).
 - [x] This progress doc.
-- [ ] Reinstall the fixed build to /Applications (terminal `6153c9b` + crash `49647fb` + L1 `1625563`) so the owner tests current code. Needs one live smoke (authorized).
+- [ ] Reinstall the fixed build to /Applications (terminal `3bb04d8` + crash `aed21dd` + L1 `8c03a24`) so the owner tests current code. Needs one live smoke (authorized).
 
 ### Wave 1 — perf cluster  [DIAGNOSED; fixes need LIVE validation]
 **Finding (2026-06-04):** model-side ops are fast (~4ms, TabOpPerfTests); the freeze is
@@ -6116,24 +6116,24 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 - [ ] Regression guard (headless timing assertion where possible).
 
 ### Wave 2 — quick wins (low risk, visible)
-- [~] File ▸ New + right-click folder ▸ New [File] — **model core done** (`5026518`
+- [~] File ▸ New + right-click folder ▸ New [File] — **model core done** (`a65c5e8`
   NewFileCreator, collision-safe O_CREAT|O_EXCL, 9 tests). UI wiring (menu +
   sidebar context menu + in-place rename) needs the view layer → screen-unlock turn.
-- [~] Bookmark remove via Delete key + undo — **model core done** (`217f92d`
+- [~] Bookmark remove via Delete key + undo — **model core done** (`cfc2fae`
   removal-undo stack). UI wiring (Delete key + Cmd-Z in the bookmarks list) → unlock.
 - [x] **Default plain-text / allowlist known plain-text formats** ✅ — FileTypeDetector
-  known-basename map + config-extension allowlist (commit 3206cf1, headless tests, gate-green).
+  known-basename map + config-extension allowlist (commit b638d47, headless tests, gate-green).
 - [ ] Can't-see-right-border-of-last-tab. (view-layer — needs --diagnose/visual)
 - [ ] PNG/media file-info respect zoom. (view-layer)
 
 ### Wave 3 — PoCs (research + build, validate automatically)
-- [x] **Image editing PoC engine spine** ✅ — ViewerCore ImageDocument/Renderer/Exporter (op-list history, lossless revert, ImageIO export). 16 headless tests. Commit 8420b29. (UI not built; engine only.)
-- [x] **Image engine: rotate/flip verbs + orientation algebra** ✅ — `065d482` ImageDocument
+- [x] **Image editing PoC engine spine** ✅ — ViewerCore ImageDocument/Renderer/Exporter (op-list history, lossless revert, ImageIO export). 16 headless tests. Commit c23e62f. (UI not built; engine only.)
+- [x] **Image engine: rotate/flip verbs + orientation algebra** ✅ — `40352fd` ImageDocument
   rotate/flip verb API + D4 `.then()` compose + gesture coalescing; FIXED a shipped
   leftMirrored render bug (off-canvas); 8×8 render-equivalence + all-8 corner-pin tests.
-- [x] **Agent-monitoring index PoC** ✅ — ViewerCore ClaudeSessionIndex over ~/.claude transcripts (streamed, redaction gate, byte-offset index) + ClaudeLogParser+SystemRecords. 21 headless tests. Commit ab4f583. (UI not built; index only.)
+- [x] **Agent-monitoring index PoC** ✅ — ViewerCore ClaudeSessionIndex over ~/.claude transcripts (streamed, redaction gate, byte-offset index) + ClaudeLogParser+SystemRecords. 21 headless tests. Commit e33bf80. (UI not built; index only.)
 - [x] **Claude Code hooks research** ✅ — docs/research/autorun-2026-06-04/hooks.md; recommendation = passive JSONL logger feeding the monitor. (Owner flag: ~/.claude/settings.json has no hooks key → existing scripts dormant.)
-- [x] **Claude hooks logger + reader** ✅ — `814c470` scripts/hooks/monitor-log.sh
+- [x] **Claude hooks logger + reader** ✅ — `6ef8641` scripts/hooks/monitor-log.sh
   (passive per-session JSONL, env-overridable, exits 0, NOT auto-wired) +
   ViewerCore/ClaudeMonitorLog (typed events + tool-freq/failures/turn-latency
   aggregations). 14 tests incl. script→reader round-trip. **OWNER OPT-IN:** to
@@ -6144,14 +6144,14 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
   (session list + redacted transcript), off-main load w/ stale-completion guard,
   metadata filter, launched via `--claude-monitor` (`openClaudeMonitorWindow` in
   main.swift, its own window — zero main-UI regression risk). **Now tested**
-  (`39f46c1`, headless `ClaudeMonitorModelTests`: read→redact→parse pipeline + cap
+  (`a62afc4`, headless `ClaudeMonitorModelTests`: read→redact→parse pipeline + cap
   + filter/sort). GAP: the search field filters the session LIST by metadata only;
   transcript CONTENT search (the built+tested `ClaudeTranscriptSearch` engine) is
   NOT yet wired into the monitor — a real additive enhancement for a live turn.
 - [ ] NEXT for these: image-editor view on `ImageDocument`; wire transcript
   content-search into the monitor. Both view-layer → live validation (screenshot
   self-read), additive (no central-ContentView risk). **Content-search is now
-  redaction-safe by construction** (`a91a063`): `ClaudeTranscriptSearch` matches
+  redaction-safe by construction** (`cfccfd2`): `ClaudeTranscriptSearch` matches
   over `redactedEvents` only, so wiring it into the monitor can't leak a
   `headers`/`signature` value the detail view already hides. Leak was LATENT
   (engine had no live UI consumer yet) — fixed pre-emptively.
@@ -6171,9 +6171,9 @@ Owner: `.build/debug/MarkdownViewer --claude-monitor` to eyeball the monitor PoC
 
 **Headless queue status (2026-06-04 ~09:40): the original queue is DRAINED** — perf
 republish-guard, File-New core, hooks logger+reader, image rotate/flip+leftMirrored fix
-all landed, then an adversarial review (wf_511ce2c0) caught+fixed 8 real issues (7fac492).
-**Transcript search DONE** (`ead4b12`). **Fix#1 DESIGN-LOCKED** (`38f40a7`
-docs/research/perf-fix1-view-retention.md). **Fix#1 LRU MODEL CORE DONE** (`8e23540`
+all landed, then an adversarial review (wf_511ce2c0) caught+fixed 8 real issues (f9cbac1).
+**Transcript search DONE** (`f085c8d`). **Fix#1 DESIGN-LOCKED** (`f5dd1f9`
+docs/research/perf-fix1-view-retention.md). **Fix#1 LRU MODEL CORE DONE** (`7c8b7ef`
 MountedPanesLRU + 12 tests) — the live turn now just WIRES it into DocumentModel +
 the ZStack ForEach (per the design doc's code shape) and adds the mount-count probe.
 **Headless work is now genuinely exhausted** (build queue drained, dominant fix's
@@ -6285,20 +6285,20 @@ build it, else hold.
 
 ## LOG (per item: commit + what shipped + how validated)
 - 2026-06-06 **Terminal feature arc + loose-ends audit (owner-driven, this session).** Shipped to the terminal:
-  copy/paste + mouse selection + right-click menu + real 256/truecolor (`531a5f0`); scrollback + scroll-wheel
-  viewport (`13c6422`); multiple tabs + tab strip (`6cfa211`); review-fix viewport-pin-on-output (`3d7ed9e`);
-  keyboard tab cycling ⌃Tab/⌃⇧Tab (`550ece5`); batched scrollback trim — drop O(n) removeFirst/line (`1712f3e`);
-  scrollback scrollbar + ⌘T/⌘W tab new/close (`3677f7b`). All headless-tested (TerminalScreen/Selection/Scrollbar/
+  copy/paste + mouse selection + right-click menu + real 256/truecolor (`b73d39a`); scrollback + scroll-wheel
+  viewport (`7849c68`); multiple tabs + tab strip (`3b1fb1b`); review-fix viewport-pin-on-output (`e45f78f`);
+  keyboard tab cycling ⌃Tab/⌃⇧Tab (`9a0b827`); batched scrollback trim — drop O(n) removeFirst/line (`b7020dc`);
+  scrollback scrollbar + ⌘T/⌘W tab new/close (`95c70f3`). All headless-tested (TerminalScreen/Selection/Scrollbar/
   PaneStore) + host gate green + installed per item. **`loose-ends-audit` workflow** (`wf_6586bc7b-ef6`, 9 agents:
   6 primed finders + 2 unprimed explorers + synthesis): 31 findings (24 filed as **TSK-462…485** tagged
   **`loose-ends`** + category; 7 document-only). New project tags: loose-ends, backend-not-surfaced, incomplete,
   unfinished, redundant, cleanup. Full report: `docs/research/loose-ends-audit-2026-06-06/README.md`. Key result:
   the deep-audit [S*] cluster is ~90% ALREADY-FIXED (re-confirms the stale-audit lesson); genuine remainder is
   backend-not-surfaced features (image editor, LSP completion/format/init-options, CM indentGuides/foldingRanges)
-  + a mechanical redundancy/cleanup batch + low-sev hardening. `main` @ `3677f7b`, gate-green (FoldBench re-confirmed
+  + a mechanical redundancy/cleanup batch + low-sev hardening. `main` @ `95c70f3`, gate-green (FoldBench re-confirmed
   0.13s idle; the mid-workflow red was load-induced flake).
 
-- 2026-06-06 **Terminal: mouse selection + copy/paste + right-click menu + real 256/truecolor (TSK-456 → `fixed`, `531a5f0`; lessons `dfce312`).**
+- 2026-06-06 **Terminal: mouse selection + copy/paste + right-click menu + real 256/truecolor (TSK-456 → `fixed`, `b73d39a`; lessons `aeeed4a`).**
   Owner asked for terminal copy/paste, text selection, right-click menu, and "support color." Root cause of the
   monochrome terminal: `TERM=xterm-256color` was advertised but the ANSI parser *parsed-then-DROPPED* 256-color
   (`38;5;n`) and truecolor (`38;2;r;g;b`) — the dominant colour path for modern tools — so they rendered with no
@@ -6319,7 +6319,7 @@ build it, else hold.
   toggle (TSK-374/375), go-to-line (TSK-376/377). All were shipped in prior commits but left `reported`.
   Also (owner directive) flipped the standing priority to **SwiftUI-first** and moved the heartbeat cron
   to a 20-min cadence. No `main` change → no gate needed; board now reflects reality.
-- 2026-06-05 **Web: in-file content find — reuses the shared core module → TUI/web parity (TSK-198 → `fixed`, `d82eb30`).**
+- 2026-06-05 **Web: in-file content find — reuses the shared core module → TUI/web parity (TSK-198 → `fixed`, `da8559d`).**
   Second consumer of `crates/core/src/find.rs` (built in TSK-197). Stateless query-param design on `/view`:
   `?find=<query>` runs `find::find_matches` over the raw bytes; `?fmatch=<i>` (clamped) selects the current
   match. New `find_box` renders the query input, an `i of n` count, and wrapping prev/next links that bump
@@ -6331,7 +6331,7 @@ build it, else hold.
   `scripts/rust-core-gate.sh` GREEN + `cargo test --workspace` all-green (web 41→44, +3 find tests:
   count+anchor, fmatch-selects-second, no-match+query-escaped). (Pre-existing `render_view` dead_code warning
   noted — test-only since `handle` calls `render_view_filtered`; unrelated, not gate-gated.)
-- 2026-06-05 **Front-ends: in-file content find — shared core module + TUI wiring (TSK-197 → `fixed`, `f6108a5`).**
+- 2026-06-05 **Front-ends: in-file content find — shared core module + TUI wiring (TSK-197 → `fixed`, `9c31360`).**
   New lane (Rust front-ends, all headless via cargo). Built the missing shared primitive
   **`crates/core/src/find.rs`** — `find_matches(text, query, Case)` → byte-accurate, non-overlapping
   `Match{line,start,end}` in document order (literal + ASCII-case-insensitive; the fold preserves byte
@@ -6345,7 +6345,7 @@ build it, else hold.
   `scripts/rust-core-gate.sh` GREEN + `cargo test --workspace` all-green (191 core incl. find + 31 TUI) +
   new code clippy-clean. (Aside: found `App.status` is a write-only field — set in ~10 places, never
   rendered; bypassed it by surfacing the find count in the help bar. Worth a future status-bar wiring task.)
-- 2026-06-05 **SwiftUI: default-plain-text-for-readable-ASCII — pure layer (TSK-332 → still `progress`, `427fe3c`).**
+- 2026-06-05 **SwiftUI: default-plain-text-for-readable-ASCII — pure layer (TSK-332 → still `progress`, `8ee1c68`).**
   Investigated: `controller.open` ALREADY returns `.loaded(text)` for unknown-extension readable-ASCII files
   (the text loader only rejects on NUL bytes), so the content loads fine — the HEX default is purely a
   view-mode-resolution gap. `defaultMode` already carried an `isRenderableText` hint (prior turn) but
@@ -6362,7 +6362,7 @@ build it, else hold.
   mangled symbol; SwiftPM
   didn't auto-recompile callers that omit the new arg → stale-symbol link error. Fix: `touch` all
   `availableModes(` callers to force recompile. Worth remembering for any defaulted-param API change.)
-- 2026-06-05 **SwiftUI: natural next/prev-tab keybindings (TSK-328 → `fixed`, `5a3e184`).**
+- 2026-06-05 **SwiftUI: natural next/prev-tab keybindings (TSK-328 → `fixed`, `db84cd9`).**
   The Next/Prev Tab commands existed but shipped non-natural defaults (⌘⌥arrow). Changed the SHIPPED
   DEFAULTS to the natural macOS combos — **Next Tab = ⌘⇧]**, **Previous Tab = ⌘⇧[** (Safari/Terminal/Notes
   convention). Updated BOTH layers: the registry descriptors (`tabs.next`/`tabs.previous` — feeds the
@@ -6372,7 +6372,7 @@ build it, else hold.
   Old ⌘⌥arrow stays user-rebindable via keybinding.json. **Validated:** new headless test
   `test_tabSwitch_naturalDefaults_routeWithoutCollision` (defaults + routing + no Move-Tab collision),
   `swift build` clean (incl. executable target), `scripts/test-headless-gate.sh` **PASSED**.
-- 2026-06-05 **SwiftUI: tooltip coverage on the two flagged views (TSK-324 → `fixed`, `01b4faf`).**
+- 2026-06-05 **SwiftUI: tooltip coverage on the two flagged views (TSK-324 → `fixed`, `2e50690`).**
   Re-audited both views the backlog flagged. **ShoulderRailView** is already fully covered — every rail
   button routes through `PanelRailButton`/`TerminalToggleButton`, both of which carry `.helpInfo` (title +
   status-bar description); the cited "2/4" predates the UX-H (#230) tooltip pass. **SidebarView**: the one
@@ -6383,7 +6383,7 @@ build it, else hold.
   its native `.help(path)`. **Validated:** `swift build` clean + `scripts/test-headless-gate.sh` **PASSED**.
   helpInfo is a view modifier (not headlessly introspectable), so hover = owner live spot-check; a literal
   every-element sweep across all ~40 views is a broader follow-up, but both NAMED views are now complete.
-- 2026-06-05 **SwiftUI: default keyboard shortcuts for git-history + folder-stats commands (TSK-325 → `fixed`, `4c931b8`).**
+- 2026-06-05 **SwiftUI: default keyboard shortcuts for git-history + folder-stats commands (TSK-325 → `fixed`, `1cc4a61`).**
   The command catalog makes every descriptor bindable/rebindable, but three user-facing actions shipped
   `defaultShortcut: nil` so they were keyboard-unreachable out of the box. Assigned conflict-free defaults:
   `view.folderStats` ⌘⌃I, `git.fileHistory` ⌘⌥⇧H, `git.repoHistory` ⌘⌥⇧L — each keystroke verified free
@@ -6394,7 +6394,7 @@ build it, else hold.
   tree-nav; `debug.*` are gated; `window.zoom` is an AppKit standard) but stay user-bindable via the editor.
   **Validated:** new `test_addedDefaultShortcuts_arePresentAndConflictFree` + `scripts/test-headless-gate.sh`
   **PASSED** (GATE_EXIT=0, tier-enforcement OK) on the committed commit.
-- 2026-06-05 **SwiftUI: image/media file-info respects document zoom (TSK-271 → `fixed`, `0f5d33d`).**
+- 2026-06-05 **SwiftUI: image/media file-info respects document zoom (TSK-271 → `fixed`, `a2be0bc`).**
   The native-preview file-info chrome was hard-wired at fixed point sizes, ignoring the unified zoom:
   image overlay (dimensions / sibling counter / zoom %), the unsupported-file card, AND the dedicated
   `MetadataPanel` side panel. Threaded `DocumentModel.zoom` (already passed to `MediaPreviewView` as
@@ -6403,7 +6403,7 @@ build it, else hold.
   zoom). **Validated:** new `MediaPreviewInfoZoomTests` (scaling contract) + `test-headless-gate.sh`
   **PASSED** (GATE_EXIT=0) on the committed commit. (Live visual zoom = owner spot-check.) Closes the
   residual logged under the TSK-323 zoom audit.
-- 2026-06-05 **SwiftUI: theme override now persists (TSK-101 → `fixed`, `40c7b5b`).** First Swift-app
+- 2026-06-05 **SwiftUI: theme override now persists (TSK-101 → `fixed`, `3e0e05c`).** First Swift-app
   *implementation* of the focus wave. Settings → Appearance → Theme (Follow System / Xcode Light /
   Xcode Dark) bound to `DocumentModel.themeOverride`, which was in-memory only → reverted to Follow
   System (dark) on reload. Fix mirrors the `zoom`/`sourceWordWrap` globals: new
@@ -6428,7 +6428,7 @@ build it, else hold.
   selection). Implementation (claimed → `progress` for next turns) — `TSK-271` media-info zoom,
   `TSK-324` tooltip coverage, `TSK-325` default-shortcut coverage. No code commits this turn (board
   + analysis + docs); Swift implementations begin next turn with `scripts/test-headless-gate.sh`.
-- 2026-06-05 **`[PORT][W1]` open-as / forced view-mode override** (`04b6c15`, TSK-219/220 → `fixed`).
+- 2026-06-05 **`[PORT][W1]` open-as / forced view-mode override** (`078b0f7`, TSK-219/220 → `fixed`).
   TUI: `set_mode(idx)` + number keys `1-9` force the file's Nth `available_modes` entry directly
   (deliberate override vs the `x` cycle; the applied table filter survives the rebuild); status help
   updated. Web: the `?mode=` param already forced a mode over the default — locked it with an explicit
@@ -6436,7 +6436,7 @@ build it, else hold.
   `cargo clippy --workspace` clean + `cargo test --workspace` 277 pass (new TUI open-as snapshot test
   + web mode-override test) + `rust-core-gate.sh` GATE_EXIT=0. **W1 port tally now: 18 fixed, 4
   reported, 2 review.** Remaining `[W1]` reported = in-file find (197/198) + hex search (205/206).
-- 2026-06-05 **`[PORT][W1]` CSV table filtering shipped to BOTH front-ends** (`1acd42c`, TSK-203/204 →
+- 2026-06-05 **`[PORT][W1]` CSV table filtering shipped to BOTH front-ends** (`a8aa9da`, TSK-203/204 →
   `fixed`). Global + per-column (`col:term`). Reused the EXISTING `mdvcore_core::filter` module
   (case-insensitive, Unicode-correct, no-panic) instead of re-implementing — added rows-based
   `matching_indices_in`/`apply_rows` (the `wire::Table` entry points now delegate) + a shared
@@ -6449,7 +6449,7 @@ build it, else hold.
   (new TUI snapshot test + web global/col-scoping test) + `rust-core-gate.sh` GATE_EXIT=0. Remaining
   fuzzy `[W1]` ports: in-file find 197/198, hex search 205/206; open-as 219/220 (web done via
   `?mode=`, TUI cycle-only).
-- 2026-06-05 **`[PORT][W1]` image preview shipped to BOTH front-ends** (`c5700a0`, TSK-225/226 →
+- 2026-06-05 **`[PORT][W1]` image preview shipped to BOTH front-ends** (`340517b`, TSK-225/226 →
   `fixed`). New dependency-free, panic-free `mdvcore_core::image` module (PNG/JPEG/GIF/BMP/WEBP
   header parse → pixel dimensions, every byte access bounds-checked). `view.rs` gains
   `FileKind::Image` + `ViewMode::Image` + `ViewBody::Image(Option<ImageInfo>)`; images open in
@@ -6462,7 +6462,7 @@ build it, else hold.
   --workspace` 264 pass (incl. `image.rs` 7 tests + web image/base64 tests) + `rust-core-gate.sh`
   GATE_EXIT=0. Remaining fuzzy `[W1]` ports still open: in-file find 197/198, CSV filter 203/204,
   hex search 205/206; open-as 219/220 (web done via `?mode=`, TUI cycle-only).
-- 2026-06-05 **`[PORT][W1]` diff/patch view mode shipped to BOTH front-ends** (`63f5e5f`, TSK-201/202 →
+- 2026-06-05 **`[PORT][W1]` diff/patch view mode shipped to BOTH front-ends** (`b8afbd6`, TSK-201/202 →
   `fixed`). One vertical slice through the shared `mdvcore_core::view`: added `ViewMode::Diff` +
   `ViewBody::Diff(Vec<DiffLine>)` classified by a leading-char `classify_diff_line` (NOT the
   git-structured `diff::parse`, which requires a `diff --git` header and is pinned to the Swift A/B
@@ -6489,10 +6489,10 @@ build it, else hold.
   fixes). Reconciled 37 already-fixed `[S3]` findings to `fixed` (evidence-gated), then fixed the
   4 genuinely-open + the 3 "half-landed" gaps the sweep surfaced — where the audit-fix wave added
   the *mechanism* but never wired the load-bearing call site, so the vuln/leak stayed live while
-  reading as fixed: **TSK-136** (`e2b94a7`, MCP `validatedExistingURL` resolves symlinks — HOME/temp
-  jail escape), **TSK-137** (`07240ad`, walkthrough drop boundary injects `trustedRoot`),
-  **TSK-155** (`24c544f`, `ViewBody::Table.truncated` propagated to tui/web banners),
-  **TSK-148** (`dd0f27f`, `LSPPool.closeFile` wired into the tab-close path via a level-triggered
+  reading as fixed: **TSK-136** (`f2b3b13`, MCP `validatedExistingURL` resolves symlinks — HOME/temp
+  jail escape), **TSK-137** (`087ef1b`, walkthrough drop boundary injects `trustedRoot`),
+  **TSK-155** (`b6daabd`, `ViewBody::Table.truncated` propagated to tui/web banners),
+  **TSK-148** (`1b6b53f`, `LSPPool.closeFile` wired into the tab-close path via a level-triggered
   `openTabURLs` diff). Each swift/rust-gated on the committed commit. **0 `[S2]`/`[S3]` reported
   remain.** LESSON: a "half-landed fix" (API/param/helper added, call site not wired) reads as done
   at title level — only evidence-based reconciliation catches it. `[S4]` tier next.
@@ -6500,14 +6500,14 @@ build it, else hold.
   subagent reconciled all 16 still-`reported` `[S2]` audit findings against current code; I
   hand-spot-verified the 4 highest-stakes (web `confined(root)` path-confinement, ffi Cargo.toml
   4 no-panic denies, `FindEngine.searchBounded`→`boundedMatches(deadline)`, CSV `fieldScalarCount`).
-  **All 16 were already fixed** by the `1dbf1ca` deep-audit wave (each with an audit-referencing
+  **All 16 were already fixed** by the `e973e4e` deep-audit wave (each with an audit-referencing
   fix + usually a regression test) but sat stale in `reported` — drove them all to `fixed` with
   per-task evidence. Plus TSK-119 (dup of done TSK-268, URLSchemePolicy temp anchor) and TSK-177
   (aspectFit NaN guard, already tested). **18 board tasks → `fixed` this pass; 0 `[S2]` remain
   reported.** No code change (all pre-fixed). Confirms the staleness signal: the audit board
   overstated remaining work; the `[S3]/[S4]` tail likely similar — next reconciliation batches
   should sweep those (genuinely-open ones are mostly perf: HexView/MsgPackReader/CsvSession).
-- 2026-06-05 **perf wave LANDED → `main @ e83408d`** (workflow `welby3hxf`, 5 sequential
+- 2026-06-05 **perf wave LANDED → `main @ 4c21601`** (workflow `welby3hxf`, 5 sequential
   edit-only agents in the `mdv-perf` worktree). Shipped all 5 no-dep rust-core perf wins from
   the research doc: TSK-394 dist `opt-level z→3`; TSK-395 QW-1 FFI→`snapshot_frame()` (drop
   owned per-pull row clone); TSK-396 QW-2 `filter::matching_indices` (no discarded clone in
@@ -6532,7 +6532,7 @@ build it, else hold.
   rust-core concurrently). Filed on the tasked board.
 - 2026-06-05 **backlog audit + tasked bulk-file**: backlog-audit workflow (wf_332394c9,
   40 agents, resumed after a null-stitch crash) classified all **373** braindump items
-  vs `main @ 1dbf1ca` — implemented 211 · partial 62 · not-impl 62 · ambiguous 21 ·
+  vs `main @ e973e4e` — implemented 211 · partial 62 · not-impl 62 · ambiguous 21 ·
   contradicting 6 · duplicate 6 · not-needed 4 · not-possible 1. Wrote
   `docs/FEATURE_BACKLOG_AUDIT_2026-06-05.md` (the four owner-requested buckets +
   duplicates, each with a one-line why). **Filed the whole backlog onto the `tasked`
@@ -6541,7 +6541,7 @@ build it, else hold.
   partial = 266 new tasks (TSK-117..). Board 15→281. `task_create_many` not yet deployed,
   so looped `task_create`. (The ~204 mis-filed Claude-Code tasks #266-#423 are now a
   redundant mirror — can be purged.)
-- 2026-06-04 `1dbf1ca` **deep-audit fixes LANDED on main** (verify-and-fix workflow
+- 2026-06-04 `e973e4e` **deep-audit fixes LANDED on main** (verify-and-fix workflow
   wf_1ccf773f-919, 133 agents): fixed the S2/S3/S4 findings still present at HEAD
   across ViewerCore/ViewerUI/ViewerKit/RustCore + rust-core + scripts (85 files,
   +6493/-414, 26 new regression test files). Branch `audit-fixes-2026-06-04` →
@@ -6564,7 +6564,7 @@ build it, else hold.
   reconnect), so "create a task" silently hit the built-in tool. Fix: hit the board over
   HTTP. Holding the bulk re-file (80 audit + 62 port) until the owner deploys a `tasked`
   backend with `task_create_many` + native blocker/ready-set fields (offered; ~2s restart).
-- 2026-06-04 `ebfefe1` **institutional-knowledge docs**: LESSONS.md +111 ("Session
+- 2026-06-04 `efff068` **institutional-knowledge docs**: LESSONS.md +111 ("Session
   2026-06-04" — FFI template, lint-enforcement gap, one-core-three-front-ends,
   grapheme-vs-scalar, containment patterns, redaction-before-surface, fixture
   pid-race, deep-audit+spend, trust-fresh-state) + `docs/HANDOFF_2026-06-04.md`
@@ -6574,17 +6574,17 @@ build it, else hold.
 - 2026-06-04 **deep-audit shipped + top findings fixed**: workflow run
   `wf_d702368e-244` (516 agents, 74 cells) → 80 verified findings (S1:1 S2:17
   S3:47 S4:15), committed to `AUDIT_BUGS.md` + `docs/audit/AUDIT_REPORT_undated.md`.
-  Fixed the filesystem-containment cluster: `c0bc6dc` mdv-web S1 (Host-allowlist
+  Fixed the filesystem-containment cluster: `918af8e` mdv-web S1 (Host-allowlist
   anti-rebinding + non-GET 405 + `confined()` path jail; the audit caught a real
-  arbitrary-file-read in code from this same session) + `40fa688` URLSchemePolicy
+  arbitrary-file-read in code from this same session) + `36df618` URLSchemePolicy
   (S2) & MCPToolCatalog (S3) temp-sibling-prefix bypass (anchored prefix +
   containment-before-existence). +regression tests, headless gate green.
   Remaining ~76 findings → triage task #265. **Spend limit hit — see DECISIONS NEEDED.**
 - 2026-06-04 **Rust-core front-ends ("one core, three front-ends")**: ratatui TUI
-  `mdv-tui` (`01ac648` MVP + `1cd0887` CSV table) and std-only HTTP web `mdv-web`
-  (`d042c67`) — file nav + text/HEX/CSV-table via the core, both validated
+  `mdv-tui` (`5c40ef4` MVP + `9d9da12` CSV table) and std-only HTTP web `mdv-web`
+  (`8fd2476`) — file nav + text/HEX/CSV-table via the core, both validated
   headlessly (TestBackend / socket+curl). Then `core::view` shared view-model
-  (`694a9aa`) + rewired TUI (`f9e9b64`) + web (`3482d14`) onto it → structural
+  (`2f3a10c`) + rewired TUI (`3711bea`) + web (`afa3d73`) onto it → structural
   parity (#259). Both bins isolated from CI via `default-members = core+ffi`.
   Backlog: `docs/RUST_FRONTENDS_BACKLOG.md` + tracker #257/#260-#263.
 - 2026-06-04 **deep-audit workflow** created (`.claude/workflows/deep-audit.js`,
@@ -6592,28 +6592,28 @@ build it, else hold.
   multi-agent audit (subsystem×dimension reviewers → adversarial verify →
   critic → ranked report). Findings land in `docs/audit/AUDIT_REPORT_2026-06-04.md`
   + `AUDIT_BUGS.md`; triage them when it completes (tracker #264).
-- 2026-06-04 `39f46c1` + `6f4275a` agent-monitor PoC was built-but-untested + doc said "not built" (stale); added headless `ClaudeMonitorModelTests` (read→redact→parse pipeline, cap, filter/sort) + corrected the doc. Gate-green.
-- 2026-06-04 `a91a063` **security (latent)**: `ClaudeTranscriptSearch` matched RAW events (`parser.events`), so the monitor's planned content-search would surface `headers`/`signature`/image-blob content the detail view redacts. Split `ClaudeLogParser.parse` → `parseCore(redacting:)` + `parseRedacted`/`redactedEvents`; routed search through redacted events; test proves a `headers` secret is unfindable + `[REDACTED]` in the snippet. No live UI consumer yet (latent). Gate-green.
-- 2026-06-04 `6153c9b` terminal runtime-toggle fix (body greedy + clip + focus) — --diagnose verified, gate-green.
-- 2026-06-04 `1625563` L1 LSP-diagnostics reclaim on close + MemoryReclaimOnCloseTests — gate-green.
-- 2026-06-04 `49647fb` GitLogTab OOB crash fix + roadmap capture — gate-green.
-- 2026-06-04 `5026518` NewFileCreator (collision-safe File-New model core, O_CREAT|O_EXCL) + 9 tests — gate-green. UI wiring deferred to unlock.
-- 2026-06-04 `096246f` republish-count guard (TSK-108 infra) — gate-green. **FINDING below.**
-- 2026-06-04 `814c470` Claude hook logger (scripts/hooks/monitor-log.sh) + ClaudeMonitorLog reader + 14 tests — gate-green. NOT auto-wired (owner opt-in documented).
-- 2026-06-04 `065d482` image rotate/flip verb API + D4 compose/coalesce + **FIXED a shipped
-  bug**: Renderer.leftMirrored (from 8420b29) drew off-canvas (all-black) — no test had
+- 2026-06-04 `a62afc4` + `aa1e866` agent-monitor PoC was built-but-untested + doc said "not built" (stale); added headless `ClaudeMonitorModelTests` (read→redact→parse pipeline, cap, filter/sort) + corrected the doc. Gate-green.
+- 2026-06-04 `cfccfd2` **security (latent)**: `ClaudeTranscriptSearch` matched RAW events (`parser.events`), so the monitor's planned content-search would surface `headers`/`signature`/image-blob content the detail view redacts. Split `ClaudeLogParser.parse` → `parseCore(redacting:)` + `parseRedacted`/`redactedEvents`; routed search through redacted events; test proves a `headers` secret is unfindable + `[REDACTED]` in the snippet. No live UI consumer yet (latent). Gate-green.
+- 2026-06-04 `3bb04d8` terminal runtime-toggle fix (body greedy + clip + focus) — --diagnose verified, gate-green.
+- 2026-06-04 `8c03a24` L1 LSP-diagnostics reclaim on close + MemoryReclaimOnCloseTests — gate-green.
+- 2026-06-04 `aed21dd` GitLogTab OOB crash fix + roadmap capture — gate-green.
+- 2026-06-04 `a65c5e8` NewFileCreator (collision-safe File-New model core, O_CREAT|O_EXCL) + 9 tests — gate-green. UI wiring deferred to unlock.
+- 2026-06-04 `0c00852` republish-count guard (TSK-108 infra) — gate-green. **FINDING below.**
+- 2026-06-04 `6ef8641` Claude hook logger (scripts/hooks/monitor-log.sh) + ClaudeMonitorLog reader + 14 tests — gate-green. NOT auto-wired (owner opt-in documented).
+- 2026-06-04 `40352fd` image rotate/flip verb API + D4 compose/coalesce + **FIXED a shipped
+  bug**: Renderer.leftMirrored (from c23e62f) drew off-canvas (all-black) — no test had
   exercised its pixels. Found via an exhaustive 8×8 render-equivalence property test;
   fixed by composing two verified primitives. All-8 corner-permutation pin test added. Gate-green.
-- 2026-06-04 `7fac492` **adversarial-review fixes** (8 confirmed of 24 raw; workflow
+- 2026-06-04 `f9cbac1` **adversarial-review fixes** (8 confirmed of 24 raw; workflow
   wf_511ce2c0). monitor-log.sh: drop full-payload persistence (secrets→sizes+200-char
   preview), atomic mkdir-lock + small flat lines (closes >PIPE_BUF concurrent-append
   interleave → silent loss), malformed→<log>.errors. NewFileCreator: reject traversal
   baseName + O_NOFOLLOW. +concurrency proof, +traversal-rejection, +privacy-regression
   + jq-via-`which` test fixes. Gate-green. (Rejected 16 raw incl. a minor formatter dup.)
-- 2026-06-04 `ead4b12` ClaudeTranscriptSearch (substring/regex over ~/.claude, 13 tests).
-- 2026-06-04 `8e23540` MountedPanesLRU — Fix#1 model core (12 tests).
-- 2026-06-04 `38f40a7` Fix#1 view-retention design doc (Approach A; opacity:0-not-.hidden gotcha).
-- 2026-06-04 `067a40a` **wave-2 review fixes** (workflow wf_fe28208a, 17 confirmed of 30;
+- 2026-06-04 `f085c8d` ClaudeTranscriptSearch (substring/regex over ~/.claude, 13 tests).
+- 2026-06-04 `7c8b7ef` MountedPanesLRU — Fix#1 model core (12 tests).
+- 2026-06-04 `f5dd1f9` Fix#1 view-retention design doc (Approach A; opacity:0-not-.hidden gotcha).
+- 2026-06-04 `eb5a465` **wave-2 review fixes** (workflow wf_fe28208a, 17 confirmed of 30;
   fixed the real subset, skipped over-confirmed/out-of-scope). ClaudeTranscriptSearch:
   reuse RegexComplexityGuard.reject (ReDoS) + clamp Options≥0 + cap-0 correctness.
   monitor-log.sh: trap INT/TERM, input 256KB cap (disk-DoS), session_id 128-char cap,
@@ -6624,32 +6624,32 @@ build it, else hold.
 
 ### Rust-core migration (headless, no new deps) — `docs/RUST_MIGRATION_PLAN_2026-06-04.md`
 - **Slice #2 (CMEditApplier) COMPLETE** — established the Type-1 stateless template
-  (`0cead3c`/`0419c72`/`568ce40`).
+  (`d6740a9`/`85fb39c`/`8bde541`).
 - **Slice #3 (DiffParser) COMPLETE** (this wave):
-  - `02fa9a2` Stage 1 — `diff::parse` Rust port (File/Hunk/Line + 4-strategy path
+  - `60514f0` Stage 1 — `diff::parse` Rust port (File/Hunk/Line + 4-strategy path
     split + coord clamp), 13 cargo tests. Also cleared the workspace's deny-level
     `clippy::indexing_slicing` panics — incl. **two pre-existing slices in
-    `cm_edit.rs`** that shipped in `0cead3c` because nothing ran clippy.
-  - `057f220` **CI hygiene** — `scripts/rust-core-gate.sh` (clippy deny-enforce +
+    `cm_edit.rs`** that shipped in `d6740a9` because nothing ran clippy.
+  - `b52b062` **CI hygiene** — `scripts/rust-core-gate.sh` (clippy deny-enforce +
     cargo test) wired into `pr.yml`. The no-panic lints were dead letters before;
     the 65+ pure cargo tests never gated a merge either.
-  - `0b292a5` Stage 2 — `mdvcore_diff_parse` FFI + `mdvCoreParseDiff` (nested
+  - `62d056e` Stage 2 — `mdvcore_diff_parse` FFI + `mdvCoreParseDiff` (nested
     MessagePack decode) + `RustDiffAdapter` behind `RustCoreFallback(.diff)`
     (default-OFF) + 14-case A/B parity vs `DiffParser`. Headless gate green (3539).
-- **Slice #4 (HEX dump render) COMPLETE** (`75fb1d7`): `hex::render_all` +
+- **Slice #4 (HEX dump render) COMPLETE** (`9a97a5d`): `hex::render_all` +
   row math; FFI `mdvcore_hex_render` (bytes by pointer, dump out as RAW UTF-8 —
   no MessagePack, a 4 MB file → ~18 MB string); `RustHexAdapter` behind `.hex`;
   12-case A/B vs `HexDumpBuilder.buildAll` (all-256-bytes/widths/trunc/empty).
-- **Slice #5 (HEX search) COMPLETE** (`24f1796`): `hex::hex_search_parse/find/
+- **Slice #5 (HEX search) COMPLETE** (`d55e0c8`): `hex::hex_search_parse/find/
   search` + `hex_search_frame`; FFI `mdvcore_hex_search` ({offsets:[u32]} frame);
   `RustHexSearchAdapter` behind `.hexSearch`; 13-case A/B vs `HexSearchEngine.search`.
 - **Remaining slice #3/#4 sub-items (lower value, deferred):** `DiffHunkParser`
   (diff→gutter-marks flattener), `HexCaretMap` + `HexLayout` caret/click mapping,
   `HexSearchEngine.offsets(ofByte:)` (single-byte click-highlight).
-- **Slice #7 (IndentDetector) COMPLETE** (`17de8e3`): `indent::detect`; FFI
+- **Slice #7 (IndentDetector) COMPLETE** (`12cb326`): `indent::detect`; FFI
   `mdvcore_indent_detect` (text by pointer, result raw UTF-8); `RustIndentAdapter`
   behind `.indent`; 13-case A/B vs `IndentDetector.detect`.
-- **DiffHunkParser (slice #3 gutter half) COMPLETE** (`dad890d`): `diff::DiffMark`
+- **DiffHunkParser (slice #3 gutter half) COMPLETE** (`fff0d3e`): `diff::DiffMark`
   + `hunk_marks` + `hunk_marks_wire`; FFI `mdvcore_diff_hunk_marks`;
   `RustDiffAdapter.hunkMarks` reuses the `.diff` gate; 9-case A/B vs
   `DiffHunkParser.parse`. **Slice #3 (diff) is now fully ported.**
@@ -6735,12 +6735,12 @@ streams ~/.claude/projects/*/*.jsonl top-level, key=filename-stem, redaction gat
 rewrite.sh are on disk but DORMANT/unregistered (you may think they're active).
 
 ## STATUS
-Wave 1 plan LOCKED + research persisted (d0c87da). Two PoC-build agents dispatched
+Wave 1 plan LOCKED + research persisted (4623d2a). Two PoC-build agents dispatched
 (image engine + ~/.claude index; write-only, disjoint files; I build+gate centrally
 to avoid concurrent-build races). NEXT (on agent completion): build+gate their PoCs,
 then measure tab-switch view cost via InteractionProfileHarness, then implement perf
 Fix#1 (view retention) behind the mount-count guard. CANNOT run `swift test` until
-the writing agents finish (compile race). main @ d0c87da gate-green + reinstalled.
+the writing agents finish (compile race). main @ 4623d2a gate-green + reinstalled.
 
 ## LOG +59 (2026-06-07, autonomous tick — owner re-scoped: "always tasks on the board, finish them all, park-if-stuck, move on")
 - **Cron updated.** Replaced the `<<autonomous-loop>>` sentinel cron (`8f1cc30d`)
@@ -6758,7 +6758,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   - TSK-146 — MsgPackReader reserveCapacity clamp (OOM-abort)
     (`MsgPackDecoderNegativeAuditTests` array32/map32 huge-count → .truncated).
   - TSK-144 — ReDoS named-group classification + wall-clock bound (`ReDoSTests`).
-  - rust-core gate green @ 01c443d; targeted host `swift test` (window-free,
+  - rust-core gate green @ 6ef4c3d; targeted host `swift test` (window-free,
     ViewerCore/ViewerKit/RustCore suites only) exit 0.
 - **Held (no teeth, NOT validated):** TSK-142 (session snapshot clone) + TSK-143
   (filter cache dup) are perf/leak optimizations — functional tests pass with or
@@ -6769,7 +6769,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   do NOT correspond (board TSK-303/304 are backlog items, not the diff/view audit
   findings the `#303/#304` reminder rows describe). Always `task_get` the board id
   before acting. (→ memory `reference_board_vs_tasklist_numbering`.)
-- main @ 01c443d, headless/rust gates green. No source changes this tick (board
+- main @ 6ef4c3d, headless/rust gates green. No source changes this tick (board
   validations + this log). Next ticks: continue draining `fixed`/`review` audit
   findings that have host teeth → validated; implement clean PORT TUI/web features;
   park live/VM/owner-gated ones.
@@ -6789,7 +6789,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
     web crate via cargo, exit 0. No source changes (board validations + this log).
 - Cumulative this session: 9 audit findings validated (5 in +59, 4 in +60).
 - Still held (no host teeth): TSK-122/123 (HexView repaint / session_table clone —
-  perf, VM or alloc-assert needed). main @ a51e4e6 + this doc; gates green.
+  perf, VM or alloc-assert needed). main @ 03333e4 + this doc; gates green.
 
 ## LOG +61 (2026-06-07, autonomous tick — found+fixed a real TUI bug while draining PORT)
 - **Found a real red:** `cargo test -p mdvcore-tui` failed 2 tests
@@ -6800,7 +6800,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TMPDIR). NOT caught by the merge gate: rust-core `default-members = [core, ffi]`
   by design, so tui/web tests never gate a merge (corrected my earlier wrong
   assumption that "rust gate green ⇒ tui green").
-- **Fixed (TSK-497, commit 5449b59):** bounded `short_path` to <=36 cols, tail-kept
+- **Fixed (TSK-497, commit 03e37e4):** bounded `short_path` to <=36 cols, tail-kept
   with a leading `…`, so the state suffix always fits. Added a direct unit test.
   mdvcore-tui now 35/0 (was 33/2). rust-core gate GATE_EXIT=0.
 - **Validated this tick:** TSK-497 (the fix, teeth = the 2 flipped tests + new
@@ -6810,7 +6810,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   are outside the merge gate, so they rot silently. A nightly/explicit
   `cargo test -p mdvcore-tui -p mdvcore-web` lane would catch this class. (Filed
   mentally for a follow-up; the bug itself is fixed + the test is green.)
-- main @ 5449b59 + this doc; rust gate green. Cumulative session: 12 board items
+- main @ 03e37e4 + this doc; rust gate green. Cumulative session: 12 board items
   validated + 1 real bug fixed.
 
 ## LOG +62 (2026-06-07, autonomous tick — fixed-state audit drain, pure-logic teeth)
@@ -6837,11 +6837,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   perf), TSK-147/148 (FileWatcher/LSPPool leaks), TSK-150/151 (Git/fold races),
   TSK-179/181 (perf/race) — leak/race/perf without a host teeth assert; VM or an
   added alloc/timing assert needed.
-- main @ 5449b59 + this doc; gates green. Cumulative session: 18 board items
+- main @ 03e37e4 + this doc; gates green. Cumulative session: 18 board items
   validated + 1 real bug fixed + 2 follow-up tasks filed.
 
 ## LOG +63 (2026-06-07, autonomous tick — implemented a real PORT feature)
-- **Shipped TSK-223 [PORT][TUI] encoding / line-ending badge** (commit 18c1fb4):
+- **Shipped TSK-223 [PORT][TUI] encoding / line-ending badge** (commit 08364e0):
   - New no-dep shared core module `core::meta` — `line_ending()`
     (LF/CRLF/CR/Mixed/None; CRLF never double-counted; trailing-CR-at-EOF = CR)
     + `encoding_label()` (BOM sniff → UTF-8 / UTF-8 BOM / UTF-16 LE / BE). 8
@@ -6858,11 +6858,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   to re-validate; confirmed via jq rather than guessing.
 - **Next-tick follow-on:** TSK-224 [PORT][WEB] encoding badge is now a thin wire
   over the same `core::meta` (add to the web /view header).
-- main @ 18c1fb4 + this doc; gates green. Cumulative session: 19 validated +
+- main @ 08364e0 + this doc; gates green. Cumulative session: 19 validated +
   1 bug fixed + 1 new shared-core feature module + 2 follow-ups filed.
 
 ## LOG +64 (2026-06-07, autonomous tick — completed the encoding-badge parity slice)
-- **Shipped TSK-224 [PORT][WEB] encoding / line-ending badge** (commit 2c63475):
+- **Shipped TSK-224 [PORT][WEB] encoding / line-ending badge** (commit ec2f7da):
   a thin wire over the `core::meta` helper landed in +63 — the web `/view` content
   bar now renders ` · UTF-8 · CRLF` for Text mode (HEX/table/image suppress it).
   Web test asserts a CRLF no-BOM file shows the distinctive `UTF-8 · CRLF` form
@@ -6873,12 +6873,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   identically in the TUI (TSK-223) and web (TSK-224) from a single gated
   `core::meta` — the "one core, three front-ends" pattern paying off (a Swift
   badge would be the same call if/when wanted).
-- main @ 2c63475 + this doc; gates green. Cumulative session: 20 validated +
+- main @ ec2f7da + this doc; gates green. Cumulative session: 20 validated +
   1 bug fixed + 1 shared-core module (now used by 2 front-ends) + 2 follow-ups.
 
 ## LOG +65 (2026-06-07, autonomous tick — file-metadata metrics across both front-ends)
 - **Shipped TSK-221 (TUI) + TSK-222 (WEB) status-bar file-metadata metrics**
-  (commit 356e751): extended `core::meta` with `text_metrics(&str) -> {lines,
+  (commit 0a82ee8): extended `core::meta` with `text_metrics(&str) -> {lines,
   words, chars}` (5 gated unit tests: trailing-newline = no phantom line,
   whitespace-run collapse, unicode-scalar chars) and surfaced ` · N lines · M
   words` in BOTH content bars (Text mode only). Front-end tests use a 2-line /
@@ -6886,12 +6886,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   web 47 (+1); gate GATE_EXIT=0. Drove both reported→…→validated.
 - `core::meta` now backs THREE shipped features across two front-ends
   (line-ending + encoding badge + metrics) — the one-core pattern compounding.
-- main @ 356e751 + this doc; gates green. Cumulative session: 22 validated +
+- main @ 0a82ee8 + this doc; gates green. Cumulative session: 22 validated +
   1 bug fixed + 1 shared-core module + 2 follow-ups.
 
 ## LOG +66 (2026-06-07, autonomous tick — show-invisibles, TUI side)
 - **Shipped TSK-241 [PORT][TUI] show-invisibles / whitespace markers** (commit
-  49778c2): new no-dep `core::whitespace::reveal` (space→·, tab→→; 4 gated tests)
+  371e459): new no-dep `core::whitespace::reveal` (space→·, tab→→; 4 gated tests)
   + TUI `i` toggle (`show_whitespace` bool) rendering each visible Text line
   through it; help line shows `i ws`. core 216 (+4) / tui 38 (+1); gate
   GATE_EXIT=0. Drove reported→…→validated.
@@ -6903,11 +6903,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Next-tick follow-on:** TSK-242 [PORT][WEB] whitespace markers — needs a `?ws=`
   param threaded through `content_html`'s call chain + a per-line reveal before
   HTML-escape + a toggle link (deeper than the bar-append features, so split out).
-- main @ 49778c2 + this doc; gates green. Cumulative session: 23 validated +
+- main @ 371e459 + this doc; gates green. Cumulative session: 23 validated +
   1 bug fixed + 2 shared-core modules (meta, whitespace) + 2 follow-ups.
 
 ## LOG +67 (2026-06-07, autonomous tick — show-invisibles web side, completes the slice)
-- **Shipped TSK-242 [PORT][WEB] whitespace markers** (commit 306208d): threaded a
+- **Shipped TSK-242 [PORT][WEB] whitespace markers** (commit 44c4ea0): threaded a
   `?ws=1` flag through render_view_filtered → content_html, revealing each Text
   line via the shared `core::whitespace::reveal` BEFORE the gutter_html HTML-escape
   (Text mode only), plus a show/hide-whitespace bar toggle link that flips `?ws`
@@ -6916,12 +6916,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Whitespace markers now parity across TUI + web** off one `core::whitespace`.
   Both `core::meta` (line-ending/encoding/metrics) and `core::whitespace` (reveal)
   now back features in both front-ends.
-- main @ 306208d + this doc; gates green. Cumulative session: 24 validated +
+- main @ 44c4ea0 + this doc; gates green. Cumulative session: 24 validated +
   1 bug fixed + 2 shared-core modules + 2 follow-ups. Next PORT veins: word-wrap
   (TSK-231/232), breadcrumb nav (TSK-229/230), empty/error states (TSK-245/246).
 
 ## LOG +68 (2026-06-07, autonomous tick — TUI word-wrap)
-- **Shipped TSK-231 [PORT][TUI] word-wrap toggle** (commit 4e0cd26): `wrap` bool
+- **Shipped TSK-231 [PORT][TUI] word-wrap toggle** (commit 7230e07): `wrap` bool
   (on by default), `w` key — the Text-pane Paragraph soft-wraps long lines when on,
   truncates at the pane edge when off; help shows `w wrap`. Test: a 200-char line
   + TAIL shows the wrapped tail when on, hides it (truncated) when off. tui 39 (+1);
@@ -6932,11 +6932,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   render_view_filtered → content_html (add `#[allow(too_many_arguments)]`; content_html
   would hit 8 args) + an inline `.src{white-space:pre-wrap}` override + a bar toggle
   link. Split out (the web side is deeper than a render flag).
-- main @ 4e0cd26 + this doc; gates green. Cumulative session: 25 validated +
+- main @ 7230e07 + this doc; gates green. Cumulative session: 25 validated +
   1 bug fixed + 2 shared-core modules + 2 follow-ups.
 
 ## LOG +69 (2026-06-07, autonomous tick — web word-wrap, completes the slice)
-- **Shipped TSK-232 [PORT][WEB] word-wrap toggle** (commit 8077fc3): `?wrap=1`
+- **Shipped TSK-232 [PORT][WEB] word-wrap toggle** (commit e187b0b): `?wrap=1`
   threads a `wrap` bool from the query through render_view_filtered → content_html
   (`#[allow(too_many_arguments)]` since content_html now takes 10 args). When on,
   an inline `<style>.src{white-space:pre-wrap;overflow-wrap:anywhere}</style>`
@@ -6946,14 +6946,14 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   rust-core gate GATE_EXIT=0. Drove reported→…→validated.
 - **Word-wrap now parity across TUI + web**, completing the TSK-231/232 slice. Web
   uses a CSS override (no core component needed); TUI uses ratatui `.wrap()`.
-- main @ 8077fc3 + this doc; gates green. Cumulative session: 26 validated +
+- main @ e187b0b + this doc; gates green. Cumulative session: 26 validated +
   1 bug fixed + 2 shared-core modules + 2 follow-ups. Next PORT veins: breadcrumb
   nav (TSK-229/230), recently-opened/history (TSK-233/234), empty/error/too-large
   states (TSK-245/246), reload (TSK-239/240).
 
 ## LOG +70 (2026-06-07, autonomous tick — breadcrumb path navigation, both front-ends)
 - **Shipped TSK-229 + TSK-230 [PORT][TUI/WEB] breadcrumb / clickable path nav**
-  (commit 72c2e50) off ONE new shared core helper:
+  (commit ca9b4f0) off ONE new shared core helper:
   - **core**: `nav::breadcrumbs(path) -> Vec<Crumb{label,path}>` — pure splitter:
     absolute paths lead with a root crumb, empty segments (`//`/trailing `/`)
     skipped, `.`/`..` kept verbatim, relative paths get no root crumb. 6 unit
@@ -6971,14 +6971,14 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **One core, three front-ends** holds again: TUI + web breadcrumbs are identical
   by construction (same `nav::breadcrumbs`). 5th shared-core module-or-helper this
   session (meta, whitespace, breadcrumbs added to nav).
-- main @ 72c2e50 + this doc; gates green. Cumulative session: 28 validated +
+- main @ ca9b4f0 + this doc; gates green. Cumulative session: 28 validated +
   1 bug fixed + shared-core helpers. Next PORT veins: recently-opened/history
   (TSK-233/234), empty/error/too-large states (TSK-245/246), reload web (TSK-240),
   table column-width parity (TSK-237/238).
 
 ## LOG +71 (2026-06-08, autonomous tick — empty/binary content-state banner, both front-ends)
 - **Shipped TSK-245 + TSK-246 [PORT][TUI/WEB] empty/binary states** off ONE new
-  shared core classifier (commit f86a97c):
+  shared core classifier (commit ee23783):
   - **core**: `view::content_state(bytes) -> ContentState{Empty,Binary,Readable}`
     + `content_state_banner(state)`. Heuristic: empty → Empty; NUL byte or >30%
     control bytes (excl tab/LF/CR) in the first 8 KiB → Binary; else Readable.
@@ -6999,13 +6999,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   PREVIEW_CAP truncation. So the pair's title is fully covered across old+new.
 - **One core, three front-ends** holds: 6th shared-core helper this run
   (meta, whitespace, nav::breadcrumbs, view::content_state).
-- main @ f86a97c + this doc; gates green. Cumulative session: 30 validated +
+- main @ ee23783 + this doc; gates green. Cumulative session: 30 validated +
   1 bug fixed. Next PORT veins: recently-opened/history (TSK-233/234), reload web
   (TSK-240), table column-width parity (TSK-237/238), dark mode (TSK-243/244).
 
 ## LOG +72 (2026-06-08, autonomous tick — table column-width parity, both front-ends)
 - **Shipped TSK-237 + TSK-238 [PORT][TUI/WEB] table column-width parity**
-  (commit 60e4d56) by hoisting the width math into shared core:
+  (commit d45f6eb) by hoisting the width math into shared core:
   - **core**: `view::table_col_widths(header, rows) -> Vec<usize>` — widest of
     header + first-200-rows sample, clamped 4..=30 chars, char-counted, never
     indexes. 2 unit tests + doctest.
@@ -7026,12 +7026,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   columns to the pane) — not blocking; left for a later TUI-scroll pass if wanted.
 - 7th shared-core helper this run (meta, whitespace, nav::breadcrumbs,
   view::content_state, view::table_col_widths).
-- main @ 60e4d56 + this doc; gates green. Cumulative session: 32 validated +
+- main @ d45f6eb + this doc; gates green. Cumulative session: 32 validated +
   1 bug fixed. Next PORT veins: web reload (TSK-240), recently-opened/history
   (TSK-233/234), dark-mode tokens (TSK-243/244).
 
 ## LOG +73 (2026-06-08, autonomous tick — web reload-from-disk)
-- **Shipped TSK-240 [PORT][WEB] reload current file from disk** (commit 249a9c0):
+- **Shipped TSK-240 [PORT][WEB] reload current file from disk** (commit 8b256a3):
   the mdv-web view toolbar gets a `↻ reload` link that re-requests the current
   /view URL preserving the active mode, shown for EVERY view mode (unlike the
   text-only ws/wrap toggles). `.reload` CSS added. The server already re-reads the
@@ -7040,14 +7040,14 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   web 53 (+1); rust-core gate GATE_EXIT=0; clippy clean. Drove reported→…→validated.
 - Singleton (no TUI pair — TUI reload landed earlier). Process clean this tick:
   restate→triage→claim→record→validate in order.
-- main @ 249a9c0 + this doc; gates green. Cumulative session: 33 validated +
+- main @ 8b256a3 + this doc; gates green. Cumulative session: 33 validated +
   1 bug fixed. Next PORT veins: recently-opened/history (TSK-233/234 — needs an
   in-memory recents list, web side threads shared state), dark-mode tokens
   (TSK-243/244 — web @media prefers-color-scheme is clean; TUI palette thin),
   keyboard help overlay (TSK-247/248), persistent session state (TSK-235/236).
 
 ## LOG +74 (2026-06-08, autonomous tick — web dark mode + TUI dark-mode parked)
-- **Shipped TSK-244 [PORT][WEB] dark mode** (commit c335759): the page CSS gains a
+- **Shipped TSK-244 [PORT][WEB] dark mode** (commit 4a079c5): the page CSS gains a
   `@media (prefers-color-scheme: dark)` override block so mdv-web follows the OS
   appearance with no toggle. Dark values cover body/nav/links/inputs/table/diff/
   gutter/current-line/outline/imgcard/banner; the light defaults stay (dark is a
@@ -7060,13 +7060,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   via the user's emulator, so a built-in TUI palette is arguably redundant. Asked
   the owner: skip / model-layer-only / VM-pixel-validated. Did NOT ship a blind,
   untestable color change. Loop continues per SOP.
-- main @ c335759 + this doc; gates green. Cumulative session: 34 validated +
+- main @ 4a079c5 + this doc; gates green. Cumulative session: 34 validated +
   1 bug fixed + 1 parked (TSK-243). Next PORT veins: keyboard help overlay
   (TSK-247/248), recently-opened/history (TSK-233/234 — web threads shared state),
   persistent session state (TSK-235/236), cross-file grep (TSK-213/214).
 
 ## LOG +75 (2026-06-08, autonomous tick — keyboard help, both front-ends)
-- **Shipped TSK-247 + TSK-248 [PORT][TUI/WEB] keyboard help** (commit f37e840):
+- **Shipped TSK-247 + TSK-248 [PORT][TUI/WEB] keyboard help** (commit 6b964d5):
   - **tui (TSK-247)**: `?` opens a centered modal help popup listing all 19
     keybindings (key + action); ANY key dismisses it without firing that key's
     command. Mirrors the outline overlay (centered_rect + Clear). Bottom help line
@@ -7078,7 +7078,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
     Test `browse_shows_controls_help_legend`.
   - tui 43 (+1), web 55 (+1); rust-core gate GATE_EXIT=0; clippy clean. Drove both
     reported→…→validated.
-- main @ f37e840 + this doc; gates green. Cumulative session: 36 validated +
+- main @ 6b964d5 + this doc; gates green. Cumulative session: 36 validated +
   1 bug fixed + 1 parked (TSK-243). Next PORT veins: recently-opened/history
   (TSK-233/234 — web threads shared state), persistent session state (TSK-235/236),
   cross-file grep (TSK-213/214), multi-file tabs/back-forward (TSK-249/250),
@@ -7086,7 +7086,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 
 ## LOG +76 (2026-06-08, autonomous tick — web cross-file folder grep)
 - **Shipped TSK-214 [PORT][WEB] cross-file folder grep (search anywhere)**
-  (commit 0d611b3):
+  (commit ff66b0b):
   - **core**: new `find::grep_lines(text, query, case, max) -> Vec<LineHit>` —
     distinct matching lines (multi-match line collapsed), capped, CR-stripped;
     built on `find_matches` so "what's a hit" matches the in-file find. 1 unit
@@ -7101,14 +7101,14 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
     keep the single-threaded server from hanging on a pathological tree.
 - **Next-tick follow-on:** TSK-213 [PORT][TUI] cross-file grep — reuse
   `find::grep_lines` + a results overlay (walk cwd, grep, Enter opens file@line).
-- main @ 0d611b3 + this doc; gates green. Cumulative session: 37 validated +
+- main @ ff66b0b + this doc; gates green. Cumulative session: 37 validated +
   1 bug fixed + 1 parked. 8th shared-core helper this run (find::grep_lines).
   Next veins: TUI grep (TSK-213), recently-opened/history (TSK-233/234),
   persistent session state (TSK-235/236), find minimap (TSK-253/254).
 
 ## LOG +77 (2026-06-08, autonomous tick — TUI cross-file grep, completes the pair)
 - **Shipped TSK-213 [PORT][TUI] cross-file folder grep (search anywhere)**
-  (commit 9aaa4d8), reusing last tick's shared `find::grep_lines`:
+  (commit c7bbd2d), reusing last tick's shared `find::grep_lines`:
   - `F` opens a "search anywhere" prompt (modal, captures text); Enter runs
     `run_grep` — a bounded recursive walk under cwd mirroring the web `grep_walk`
     (caps 2000 files / 500 hits / 50-per-file, dotfile-skip per `show_hidden`,
@@ -7122,27 +7122,27 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Grep pair complete** (TSK-213 TUI + TSK-214 web) off ONE shared core helper —
   the "one core, three front-ends" pattern: web `/grep` route and TUI `F` overlay
   derive identical matches from `find::grep_lines`.
-- main @ 9aaa4d8 + this doc; gates green. Cumulative session: 38 validated +
+- main @ c7bbd2d + this doc; gates green. Cumulative session: 38 validated +
   1 bug fixed + 1 parked. Next veins: recently-opened/history (TSK-233/234 — web
   shared-state cost), persistent session state (TSK-235/236), find minimap
   (TSK-253/254), git status (TSK-251/252).
 
 ## LOG +78 (2026-06-08, autonomous tick — find match minimap, both front-ends)
 - **Shipped the find match-minimap PAIR over one shared core helper** — TSK-254
-  [PORT][WEB] (commit 0f48dd3) + TSK-253 [PORT][TUI] (commit d1a2e33). Both
+  [PORT][WEB] (commit 0bbe73f) + TSK-253 [PORT][TUI] (commit fc05b5b). Both
   validated. A find's matches are bucketed into a FIXED number of slots so a user
   sees WHERE matches cluster in the document + which one is current, at a glance.
-- **Core (0f48dd3):** added pure, panic-free `find::bucket_of(line, total,
+- **Core (0bbe73f):** added pure, panic-free `find::bucket_of(line, total,
   buckets)` (clamped) and `find::match_minimap(match_lines, total, buckets) ->
   Vec<usize>` (per-bucket hit counts). Both front-ends bucket IDENTICALLY by
   construction. Core tests `bucket_of_maps_lines_into_clamped_buckets` +
   `match_minimap_buckets_match_counts` (core 230).
-- **Web (0f48dd3):** find_box draws a 40-bucket `span.minimap` of `<i>` cells
+- **Web (0bbe73f):** find_box draws a 40-bucket `span.minimap` of `<i>` cells
   after the "N of M" count — `class=hit` for buckets with matches, `class=cur`
   for the current match's bucket; `.minimap` CSS in light + `prefers-color-scheme:
   dark`. Test `in_file_find_renders_match_minimap` (markup present with an active
   find, absent without) — web 57.
-- **TUI (d1a2e33):** `App::find_minimap()` builds a 24-bucket bracketed strip in
+- **TUI (fc05b5b):** `App::find_minimap()` builds a 24-bucket bracketed strip in
   the find status line — `▮` current bucket, `▪` other hit bucket, `·` empty.
   GLYPHS (not color) carry the signal so the COLORLESS snapshot has teeth. Test
   `find_minimap_marks_match_buckets_and_current_and_renders_in_status` asserts
@@ -7154,19 +7154,19 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   reported→ack→triaged→progress→fixed→validated with checks artifacts.
 - **Numbering-trap note:** the web commit message says "TSK-419" — that was the
   built-in Claude Code TaskList #419, NOT the board id. The real board task is
-  **TSK-254**; the board (system of record) now correctly links 0f48dd3 to it.
+  **TSK-254**; the board (system of record) now correctly links 0bbe73f to it.
   Always `task_get` a board id before acting (board TSK-### ≠ TaskList ####).
-- main @ d1a2e33 + this doc; gates green. Cumulative session: 40 validated +
+- main @ fc05b5b + this doc; gates green. Cumulative session: 40 validated +
   1 bug fixed + 1 parked. Next veins: git status (TSK-251/252), status-bar
   metrics (TSK-386/387), encoding/line-ending badge (TSK-388/389 — web half),
   recently-opened/history + persistent session (web shared-state cost).
 
 ## LOG +79 (2026-06-08, autonomous tick — git status summary, both front-ends)
 - **Shipped the git working-tree status PAIR over one new shared core module** —
-  TSK-251 [PORT][TUI] (commit 3fb2178) + TSK-252 [PORT][WEB] (commit a05315e).
+  TSK-251 [PORT][TUI] (commit e8b9dd1) + TSK-252 [PORT][WEB] (commit d9efa7d).
   Both validated. The status SUMMARY slice; working-tree diff overlay is an
   explicit deferred follow-on.
-- **Core (3fb2178):** new pure, sans-IO `git` module. `git::parse_status(&str)`
+- **Core (e8b9dd1):** new pure, sans-IO `git` module. `git::parse_status(&str)`
   parses `git status --porcelain=v1 --branch` into `RepoStatus{branch, ahead,
   behind, staged, modified, untracked, conflicted}` with `is_clean()` +
   `summary()` (e.g. `main ↑1 ↓2 +3 ~1 ?4 !1` / `main ✓`). NO process spawning in
@@ -7174,14 +7174,14 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   the clippy no-panic denies. 8 parser tests: clean tracking branch, distinct
   staged/modified/untracked/conflicted counts, fresh-repo `No commits yet`,
   detached HEAD, ahead/behind-only, empty/garbage no-panic, all 7 unmerged codes.
-- **TUI (3fb2178):** `git_status_for(dir)` spawns `git --no-optional-locks` for
+- **TUI (e8b9dd1):** `git_status_for(dir)` spawns `git --no-optional-locks` for
   the cwd (None when not a repo / git absent), refreshed per directory change in
   `reload_dir`; `files_title()` appends ` · git: <summary>` to the files-pane
   title. Teeth: `files_title_shows_git_branch_and_dirty_summary_for_a_repo`
   stands up a throwaway repo + untracked file, asserts parsed `untracked==1` and
   the rendered title carries `git:`+`?1` (git_status_for → parse_status → title).
   tui 46 (+1).
-- **Web (a05315e):** `git_status_html(dir)` (same git invocation, empty when not
+- **Web (d9efa7d):** `git_status_html(dir)` (same git invocation, empty when not
   a repo) renders a `<div class="gitstatus clean|dirty">git: <summary></div>`
   after the breadcrumb in `nav_html`; `.gitstatus` CSS clean-green / dirty-amber
   in light + `prefers-color-scheme: dark`. Teeth:
@@ -7192,7 +7192,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TSK-251 then TSK-252 reported→ack→triaged→progress→fixed→validated with checks
   artifacts. The parse logic lives once in core; TUI + web render identical
   summaries by construction (one core, three front-ends).
-- main @ a05315e + this doc; gates green. Cumulative session: 42 validated +
+- main @ d9efa7d + this doc; gates green. Cumulative session: 42 validated +
   1 bug fixed + 1 parked. **Remaining PORT veins are stateful or dep-gated:**
   recents/history (TSK-233/234), persistent session (TSK-235/236), multi-file
   tabs / back-forward (TSK-249/250) — the WEB halves are awkward on the stateless
@@ -7201,7 +7201,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TUI-side slice is recents/history backed by a pure core MRU helper.
 
 ## LOG +80 (2026-06-08, autonomous tick — TUI recents + parked the dep-gated tier)
-- **Shipped TSK-233 [PORT][TUI] recently-opened picker** (commit 7ca401f),
+- **Shipped TSK-233 [PORT][TUI] recently-opened picker** (commit cd5be75),
   validated. New pure core module `history`: `history::push<T>(list, item, cap)`
   = dedupe + front-insert + truncate (cap=0 → empty), the one shared MRU
   definition for all front-ends. 5 core tests (newest-first, reopen-bumps-no-dup,
@@ -7219,7 +7219,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `tree-sitter`). Per the CLAUDE.md minimal-dependency rule these can't proceed
   without an explicit OK; both sit `waiting=human` with approval questions +
   options. Their web siblings (TSK-256/258) ride the same decisions.
-- `bash scripts/rust-core-gate.sh` GREEN on the committed tree. main @ 7ca401f
+- `bash scripts/rust-core-gate.sh` GREEN on the committed tree. main @ cd5be75
   + this doc.
 - **Session cumulative: 43 validated + 1 bug fixed + 1 parked-earlier + 2
   dep-parked.** Tick +78/+79/+80 added 5 validated features (find-minimap pair,
@@ -7236,7 +7236,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   shared `Mutex`/`LazyLock` global — a deliberate design choice to confirm).
 
 ## LOG +81 (2026-06-08, autonomous tick — TUI multi-file tabs)
-- **Shipped TSK-249 [PORT][TUI] multi-file tabs** (commit 967341b), validated.
+- **Shipped TSK-249 [PORT][TUI] multi-file tabs** (commit 6c1e648), validated.
   The largest remaining no-dep PORT feature.
 - **Refactor:** App's single `preview: Option<Preview>` → `tabs: Vec<Preview>` +
   `active: usize`, so each open file is a buffer with its OWN scroll/mode/etc
@@ -7254,7 +7254,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   strip; 2nd open → 2 tabs + active strip marker; cycle a tab's mode, switch away
   and back → per-tab mode retained; re-open focuses existing tab, no dup; X
   closes). tui 48 (+1). Gate green; drove reported→…→validated.
-- main @ 967341b + this doc. **Session cumulative: 44 validated + 1 bug fixed +
+- main @ 6c1e648 + this doc. **Session cumulative: 44 validated + 1 bug fixed +
   1 parked-earlier + 2 dep-parked.**
 - **The no-dep PORT lane is now EXHAUSTED.** Every remaining `[PORT]` board task
   is one of: (a) **stateful-on-the-stateless web server** — web recents
@@ -7267,7 +7267,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TSK-235 as the keystone design decision for the stateful cluster.
 
 ## LOG +82 (2026-06-08, autonomous tick — TUI command palette)
-- **Shipped TSK-408 [TUI] command palette** (commit 00031d4), validated. Found
+- **Shipped TSK-408 [TUI] command palette** (commit c75c643), validated. Found
   via `task_next`/board scan after the no-dep PORT *feature* lane was declared
   exhausted — TSK-408/409 are children of a NEW command-palette epic (TSK-407)
   that the earlier PORT sweep didn't cover.
@@ -7288,7 +7288,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   host-testable, per the render-path policy). No new dep is actually needed (the
   web already ships 11 inline `<script>` blocks) — asked the owner to confirm
   "vanilla-JS, land at fixed/review for VM/manual validation" vs WONT-DO.
-- main @ 00031d4 + this doc. **Session cumulative: 45 validated + 1 bug fixed +
+- main @ c75c643 + this doc. **Session cumulative: 45 validated + 1 bug fixed +
   4 owner-parked** (comrak TSK-255, tree-sitter TSK-257, stateful-cluster
   TSK-235, web-palette TSK-409). The TUI front-end now has: find+minimap, grep,
   git-status, recents, multi-file tabs, AND a command palette — a genuinely
@@ -7296,7 +7296,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   owner-gated (4 parks) or the bigger TSK-400 mdvcore-rpcd remote spike.
 
 ## LOG +83 (2026-06-08, autonomous tick — core XML/HTML pretty-print)
-- **Shipped TSK-496 [PORT] XML/HTML pretty-print** (commit ddecc1d), validated.
+- **Shipped TSK-496 [PORT] XML/HTML pretty-print** (commit 5e2465d), validated.
   The deferred half of the Formatted-mode slice (JSON landed in TSK-217); this
   completes XML parity with the SwiftUI FormatViewer.
 - **Impl (all in `crates/core`, no new dep):** `format::pretty_xml(&str)->
@@ -7324,7 +7324,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   gate's stricter lints caught it). Switched to the `match { .. _ => unreachable!() }`
   pattern the existing view tests use (`unreachable!` isn't flagged by
   `clippy::panic`).
-- main @ ddecc1d + this doc. **Session cumulative: 46 validated + 1 bug fixed +
+- main @ 5e2465d + this doc. **Session cumulative: 46 validated + 1 bug fixed +
   4 owner-parked.** Remaining board work is owner-gated (comrak TSK-255,
   tree-sitter TSK-257, stateful-cluster TSK-235, web-palette TSK-409) or the
   bigger TSK-400 mdvcore-rpcd remote spike.
@@ -7332,7 +7332,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 ## LOG +84 (2026-06-08, autonomous tick — TSK-337 verified-closed + audit-staleness HOLD)
 - **Verified-and-validated TSK-337 [PARTIAL] Custom LSP integration** (no code
   change). The finding ("lsp.json initializationOptions parsed but not forwarded
-  into LSPClient.initialize()", audit vs main @ 1dbf1ca) is already fixed under
+  into LSPClient.initialize()", audit vs main @ e973e4e) is already fixed under
   TSK-465 and regression-guarded end-to-end: parse (LSPWorkspaceOverrides) →
   thread (LSPLanguageRegistry.overrideConfig, both trusted + discovered-fallback
   branches) → emit (LSPClient.makeInitializeParams forwards verbatim, omits when
@@ -7341,12 +7341,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Systemic finding — BOTH audits are comprehensively STALE** (the deep-audit
   S1–S4 findings = built-in Claude-Code TaskList #266–345, AND the board's
   feature-backlog-audit items TSK-259–382, all sourced wf_332394c9 vs `main @
-  1dbf1ca`). This tick re-sampled 3 more across lanes the prior 9 hadn't touched
+  e973e4e`). This tick re-sampled 3 more across lanes the prior 9 hadn't touched
   — ALL already-fixed-with-teeth: TSK-337 (LSP initializationOptions, board
   feature-backlog item), `diff::parse_coord` comma-led/empty-start (rust-core
   diff.rs:669-672 asserts it), wire frame end-of-stream check (wire.rs:109-129 + 3
   trailing-garbage tests). Cumulative **12/12 audit samples already resolved**.
-  The codebase has advanced far past the `main @ 1dbf1ca` baseline; re-validating
+  The codebase has advanced far past the `main @ e973e4e` baseline; re-validating
   one-by-one is near-zero-yield churn (owner-flagged drift). Recommend bulk triage
   or a fresh audit against current HEAD.
   - NOTE / self-correction: I first posted the bulk-triage recommendation as a
@@ -7364,7 +7364,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   comrak/tree-sitter dep approval, **TSK-243** TUI theme, **TSK-498** front-end test
   gate (nightly-vs-gate). All carry board human gates. Honoring the SOP: shipped a
   real feature + a verified close, then HOLD rather than manufacture marginal churn.
-- main @ 6b14498 + this doc. **Session cumulative: 47 validated + 1 bug fixed +
+- main @ 13cfb13 + this doc. **Session cumulative: 47 validated + 1 bug fixed +
   4 owner-parked.**
 
 ## LOG +85 (2026-06-08, autonomous tick — preview-tab Phase 2 parked; queue re-verified owner-bound)
@@ -7387,7 +7387,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   persistence (gates 234/236/250), TSK-255/257 comrak/tree-sitter dep approval,
   TSK-243 TUI theme, TSK-498 front-end test gate, TSK-306 preview-tab Phase 2
   (parked this tick). All carry board human gates / pings. No code change this
-  tick; main @ e9a869e, tree clean, gates green.
+  tick; main @ aa4bf23, tree clean, gates green.
 
 ## LOG +86 (2026-06-08, autonomous tick — TSK-145 validated w/ new teeth; found the fixed/review lane)
 - **Course-correction: the loop was NOT saturated.** Prior ticks leaned on
@@ -7401,7 +7401,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Validated TSK-145** `[S3][bug] MCP.Value.int/optionalInt trap on out-of-Int64
   JSON numbers — a malformed tools/call crashes the host`. Fix present
   (`Int(exactly:)` at MCPProtocol.swift:97/117) but the overflow case had NO
-  asserted test. Added 4 teeth (commit c9af964): out-of-range double → throws
+  asserted test. Added 4 teeth (commit dec0613): out-of-range double → throws
   `.invalidParams` (not trap), fractional → throws, optionalInt → nil, in-range
   whole double → accepted. Real teeth — a revert to `Int(d)` aborts the run on the
   1e19 case. MCPProtocolTests 14/14 green; claim→validate as claude-mdv.
@@ -7410,7 +7410,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   perf/leak/race (TSK-122/123/134/141/142/143/…) — clone-vs-borrow / O(n)-vs-O(1) /
   zombie-reap produce identical output so a correctness test can't guard them; they
   correctly sit at `review` for the human (prior session held TSK-122/123 for this).
-- main @ c9af964 + this doc. **Session cumulative: 48 validated + 1 bug fixed +
+- main @ dec0613 + this doc. **Session cumulative: 48 validated + 1 bug fixed +
   4 owner-parked.** Next ticks: continue the fixed/review teeth-able cluster
   (TSK-135 security sibling-bypass, TSK-147/148 leaks w/ behavior teeth).
 
@@ -7421,7 +7421,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   before existence so no notFound/permissionDenied oracle; both operands
   symlink-resolved) but the SPECIFIC sibling case was unpinned — existing
   `test_openPath_pathOutsideHome` only used `/etc/hosts`. Added
-  `test_openPath_tempDirSiblingPrefix_throwsPermissionDenied` (commit 0e16101):
+  `test_openPath_tempDirSiblingPrefix_throwsPermissionDenied` (commit 40c0145):
   a path at `<temp>-evil/loot` is rejected with `.permissionDenied`. Real teeth —
   a revert to a bare `hasPrefix(temp)` admits the sibling → it falls through to a
   `notFound` existence probe, so the test (expecting `.permissionDenied`) fails.
@@ -7433,7 +7433,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   Existing `test_stop_preventsFurtherFires` covers the event-after-stop guard, not
   the reattach-no-op. Correctly LEFT at `fixed` for the human (per the rule: skip
   race/leak/perf where a correctness test can't fail on regression).
-- main @ 0e16101 + this doc. **Session cumulative: 49 validated + 1 bug fixed +
+- main @ 40c0145 + this doc. **Session cumulative: 49 validated + 1 bug fixed +
   4 owner-parked.** Lane continues next tick (TSK-148 LSPPool closeFile teeth,
   TSK-159/160 vm-smoke.sh script findings, etc.).
 
@@ -7449,7 +7449,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   caveat noted in the validate artifact: the one-line DocumentModel close→closeFile
   hook is integration wiring (not separately unit-tested); the prune mechanism it
   drives is fully guarded.
-- main @ 0e16101 (no code change; board state only) + this doc. **Session
+- main @ 40c0145 (no code change; board state only) + this doc. **Session
   cumulative: 50 validated + 1 bug fixed + 4 owner-parked.** Lane continues
   (remaining clean-teeth fixed/review candidates thinning; next: re-scan
   `task_list {ready:true}` for any still at fixed/review with behavior teeth).
@@ -7474,7 +7474,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   drained at review — validated TSK-145/135/148/194 across the last 4 ticks; the
   remainder is perf/race (122/123/147, no behavior teeth → human) or `[PARTIAL]`
   features (UI-deferred → live/owner).
-- main @ 0e16101 (no code change; board state only) + this doc. **Session
+- main @ 40c0145 (no code change; board state only) + this doc. **Session
   cumulative: 51 validated + 1 bug fixed + 4 owner-parked.**
 
 ## LOG +90 (2026-06-08, autonomous tick — 2 rust-core test-gap findings validated)
@@ -7496,7 +7496,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   empties differently from Swift` — `rename_keeps_both_paths` covers normal renames
   but the specific leading-space/whitespace-run parity edge is unpinned; a real
   teeth test needs Swift-parity study (S4, not a quick verify). Next-tick candidate.
-- main @ 0e16101 (no code change; board state only) + this doc. **Session
+- main @ 40c0145 (no code change; board state only) + this doc. **Session
   cumulative: 53 validated + 1 bug fixed + 4 owner-parked.** Remaining `fixed`
   test-gaps for future ticks: TSK-165 (.handleDead), 166 (editable-HEX),
   169 (EditorRepublish), 182 (diff parity), 184/186 (MCP).
@@ -7514,7 +7514,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   drops-stash+refreshes-baseline, close-confirm SAVE routes to HexWriter (not
   EditorWriter — data integrity), DISCARD drops stash w/o write, CANCEL keeps tab+
   stash, stash-only-save, no-stash-leak-after-discard. Validated.
-- main @ 0e16101 (no code change; board state only) + this doc. **Session
+- main @ 40c0145 (no code change; board state only) + this doc. **Session
   cumulative: 55 validated + 1 bug fixed + 4 owner-parked.** Remaining `fixed`
   test-gaps: TSK-169 (EditorRepublish assertion-tightening — needs care, the
   finding is the test was too lax), 182 (diff parity — needs Swift-parity study),
@@ -7534,7 +7534,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Examined **TSK-186** (MCP current_state 0-based vs select_tab 1-based off-by-one)
   — needs a closer read of the index-convention contract test; deferred to a future
   tick (didn't validate without confirming the round-trip teeth pin the convention).
-- main @ 431622d (no code change; board state only) + this doc. **Session
+- main @ 72d16aa (no code change; board state only) + this doc. **Session
   cumulative: 57 validated + 1 bug fixed + 4 owner-parked.** 10 fixed/review audit
   findings validated across the last 7 ticks (145/135/148/194/167/168/165/166/169/184).
 
@@ -7553,7 +7553,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   no behavior teeth), race (150/151/181/330 — non-deterministic), infra/script
   (157/159/160/170/171), or need study (182 diff Swift-parity; 187 process-exit
   path). Those correctly sit at fixed/review for the human or a dedicated effort.
-- main @ add6d85 (no code change; board state only) + this doc. **Session
+- main @ 6e6e601 (no code change; board state only) + this doc. **Session
   cumulative: 58 validated + 1 bug fixed + 4 owner-parked.** 11 audit findings
   validated across the last 8 ticks.
 
@@ -7561,7 +7561,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **TSK-182** `[S4][bug] diff::parse_diff_git_paths strategy-4 splits empties
   differently from Swift (leading-space/whitespace-run)`. Unlike the recent
   verify-and-validates, the strategy-4 Swift-parity fix was present but UNPINNED —
-  so I WROTE the missing teeth (commit 0f4655e). The fallback does
+  so I WROTE the missing teeth (commit 4adf90b). The fallback does
   `rest.trim_start_matches(' ').splitn(2,' ').filter(non-empty)` to mirror Swift's
   `split(maxSplits:1, omittingEmptySubsequences:true)`; <2 tokens → `(rest,rest)`
   on the untrimmed original. New `git_paths_strategy4_leading_space_splits_like_swift`:
@@ -7569,7 +7569,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `'foo   qux'→(foo,qux)`, `'solo'/'   '→(rest,rest)`. Teeth confirmed: dropping the
   `trim_start_matches` degenerates the leading-space case to `(rest,rest)` → fails.
   diff 19/19; rust-core gate exit 0. Validated.
-- main @ 0f4655e + this doc. **Session cumulative: 59 validated + 1 bug fixed +
+- main @ 4adf90b + this doc. **Session cumulative: 59 validated + 1 bug fixed +
   4 owner-parked.** 12 audit findings validated across the last 9 ticks. Remaining
   `fixed`-state items are perf/race/infra (no behavior teeth) or process-exit
   (TSK-187) — correctly held for the human.
@@ -7588,7 +7588,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (SessionStore startup size cap), TSK-329 (ReviewStore.loadIndex maxReviewFileSize
   — cap present at loadIndex, may need a test added), TSK-295 (MessagePack reserve
   cap), TSK-273/274 (ReDoS wall-clock deadline).
-- main @ 0f4655e (no code change; board state only) + this doc. **Session
+- main @ 4adf90b (no code change; board state only) + this doc. **Session
   cumulative: 60 validated + 1 bug fixed + 4 owner-parked.** 13 audit findings
   validated across the last 10 ticks.
 
@@ -7608,11 +7608,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   title before validating" caveat). Prevents the recurring mis-map trap.
 - Net: the deep-audit fixed/review cluster (TSK-122…194) is now essentially fully
   validated; remaining items are perf/race/infra without behavior teeth. No code
-  change this tick; main @ 0f4655e, tree clean, gates green.
+  change this tick; main @ 4adf90b, tree clean, gates green.
 
 ## LOG +97 (2026-06-08, autonomous tick — TSK-180 ReviewStore.loadIndex _index.json cap teeth)
 - **TSK-180** [S3][security] "ReviewStore.loadIndex (_index.json) is the one Review
-  read with no size cap" → **validated** (commit `c21c1fa`). The cap IS present
+  read with no size cap" → **validated** (commit `01d21c7`). The cap IS present
   (`ReviewStore.swift:199-201` reads `_index.json` with `maxSize: maxReviewFileSize`
   = 10 MiB) but the index-tab boot path had NO teeth — the only oversize test
   (`test_oversizeFile_isRefused_inProjectLocalDir`) guards the per-review
@@ -7630,7 +7630,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   Gotcha logged: the first fixture used a bare `JSONEncoder` and the teeth DIDN'T
   bite (decode failed on date format regardless of cap) — had to encode via the
   store's own encoder. ReviewStoreProjectLocalTests 10/10 green.
-- main @ `c21c1fa`, tree clean, headless gate path green (pure-logic ViewerCore
+- main @ `01d21c7`, tree clean, headless gate path green (pure-logic ViewerCore
   test). **Session cumulative: 61 validated + 1 bug fixed + 4 owner-parked.**
 
 ## LOG +98 (2026-06-08, autonomous tick — TSK-188 MsgPack end-of-stream validated; TSK-333 held honestly)
@@ -7653,7 +7653,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (TSK-329/333) have host-testable BACKENDS but a UI-wiring remainder, so the
   WHOLE task must NOT be agent-self-validated even when the backend teeth pass
   (it overclaims the UI). Verify+comment the backend; leave at review.
-- main @ `681d6c1` (TSK-188/333 = board state only, no code), tree clean, gates
+- main @ `d07f12e` (TSK-188/333 = board state only, no code), tree clean, gates
   green. **Session cumulative: 62 validated + 1 bug fixed + 4 owner-parked.**
 
 ## LOG +99 (2026-06-08, autonomous tick — PORT lane is done/duplicate; caught + retracted a board-id mis-park)
@@ -7685,7 +7685,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 ## LOG +100 (2026-06-08, autonomous tick — TSK-303 find-in-CSV-table CORE matcher shipped + tested)
 - Acted on last tick's direction: build a real SwiftUI feature's host-testable model
   layer, leave the render path for VM. **TSK-303** "[BACKLOG] Find support in table"
-  (CSV grid Cmd-F highlight + next/prev jump) → **progress** (commit `e1dc879`).
+  (CSV grid Cmd-F highlight + next/prev jump) → **progress** (commit `2ddb3b1`).
 - **Slice 1 (CORE, done + host-validated):** new `Sources/ViewerCore/CSVFind.swift` —
   pure `CSVFind` over `CSVParser.Result`: case-insensitive substring → matching CELL
   coordinates (`Match{row,column}`, `row=-1`=header) in reading order (header first,
@@ -7701,13 +7701,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   no host coverage → recorded with `blocker: live-validation`; needs VM/owner pixel
   validation per the no-UI-on-host directive. Did NOT self-validate.
 - Verified the board id first (`task_get` TSK-303 = "Find support in table") before
-  acting — applying the hardened rule after last tick's mis-map. main @ `e1dc879`,
+  acting — applying the hardened rule after last tick's mis-map. main @ `2ddb3b1`,
   tree clean. Honest forward motion on a priority SwiftUI feature, host-validated half.
 
 ## LOG +101 (2026-06-08, autonomous tick — TSK-302 CSV cell-cursor CORE model shipped + tested)
 - Continued the model-first SwiftUI lane (sibling of +100's CSVFind). **TSK-302**
   "[BACKLOG] Make table as cells … arrow keys, Cmd+C copies whole cell" → **progress**
-  (commit `a12391c`). Verified board id first (`task_get` TSK-302 = the cell-nav task).
+  (commit `d1df4d5`). Verified board id first (`task_get` TSK-302 = the cell-nav task).
 - **Slice 1 (CORE, done + host-validated):** new `Sources/ViewerCore/CSVCellCursor.swift`
   — pure `CSVCellCursor` over a rowCount×columnCount grid. Clamped NON-wrapping
   movement (moveUp/Down/Left/Right, moveToRowStart/End = Home/End, moveToTop/Bottom,
@@ -7724,11 +7724,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   Render+key-event path, no host coverage → `blocker: live-validation`, VM/owner gate,
   not self-validated.
 - Two CSV slices now landed (TSK-303 find + TSK-302 cell-nav), both host-validated
-  cores with the UI halves honestly flagged for VM. main @ `a12391c`, tree clean.
+  cores with the UI halves honestly flagged for VM. main @ `d1df4d5`, tree clean.
 
 ## LOG +102 (2026-06-08, autonomous tick — TSK-310 Files-pane tree-filter CORE model shipped + tested)
 - Third model-first SwiftUI slice this run. **TSK-310** "[BACKLOG] A filter button on
-  Files pane … fuzzy [narrow the tree]" → **progress** (commit `654015b`). Board id
+  Files pane … fuzzy [narrow the tree]" → **progress** (commit `4aced31`). Board id
   verified (`task_get` TSK-310 = the Files-pane filter task).
 - **Slice 1 (CORE, done + host-validated):** new `Sources/ViewerCore/FileTreeFilter.swift`
   — pure enum, generic over the caller's node via closures (id/children/isMatch), so
@@ -7747,7 +7747,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `SidebarModel` rows + focus/clear. SwiftUI render+focus path → `blocker: live-validation`,
   VM/owner gate, not self-validated.
 - Run total: three host-validated model cores for filed SwiftUI features (TSK-303/302/310),
-  each with the UI half honestly flagged for VM. main @ `654015b`, tree clean.
+  each with the UI half honestly flagged for VM. main @ `4aced31`, tree clean.
 
 ## LOG +103 (2026-06-08, autonomous tick — board-integrity fix: offset trap corrupted TSK-326/276)
 - Looked for a host-COMPLETABLE item (to drive something to `validated`, not pile up more
@@ -7770,7 +7770,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `progress`, `blocker: live-validation`); plus TSK-333 backend (review). A VM-wiring session
   would convert these into shipped features. Board also needs a small audit pass to fix the
   offset-corrupted TSK-326/276 (and check for other same-session mislabels).
-- No code change this tick (board hygiene + memory + log). main @ `654015b`, tree clean,
+- No code change this tick (board hygiene + memory + log). main @ `4aced31`, tree clean,
   gate green from +102. **NEXT TICK plan:** build ONE UI slice (likely TSK-302 cell-cursor,
   pure-SwiftUI CSVTableView, lowest compositor risk) WITH a VM T4/T5 test, leave at `review`
   for the nightly VM lane — the documented "implement + VM test + leave for VM" path — to
@@ -7781,7 +7781,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   a real on-disk subsystem whose behaviour is end-to-end testable (like ReviewStore/SessionStore).
   Reconsidered building blind interactive CSV-grid focus/keyboard UI — that's genuinely a
   supervised/VM-interactive job (ScrollView focus management), not safe to ship blind, so deferred.
-- **TSK-301** "[BACKLOG] View local history" → **progress** (commit `c79a5af`), board id verified.
+- **TSK-301** "[BACKLOG] View local history" → **progress** (commit `b3a0fe9`), board id verified.
   **Slice 1 (STORE, done + host-validated end-to-end):** new `Sources/ViewerCore/LocalHistoryStore.swift`
   — Sendable on-disk file-version store: `snapshot(path:content:at:)` (dedup vs latest, skip >10 MiB,
   prune oldest beyond 50/file, `_N` bump on same-ms collision), `versions(for:)` newest-first,
@@ -7795,7 +7795,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   decision; the store is INERT until wired (no behaviour change on main), so safe to land the engine now.
 - Why not taper: this is a real, host-validated subsystem advancing a filed feature — different from the
   value-type model cores, and its behaviour (not just pixels) is regression-guarded on the host gate.
-  main @ `c79a5af`, tree clean.
+  main @ `b3a0fe9`, tree clean.
 
 ## LOG +105 (2026-06-08, autonomous tick — TSK-499 rust-core find_in_table: host-COMPLETABLE [PORT] slice, drains the PORT lane)
 - Found the sustainable host-completable lane the owner authorized: **rust-core / front-end work is
@@ -7803,7 +7803,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (Also re-confirmed two more offset-corruption mislabels exist — board TSK-260 = a resolved shoulder
   bug, not the FileKind classifier; `view::classify` is already shared by TUI+web.)
 - Filed **TSK-499** "[PORT] CSV table cell-find for TUI/web" (parity with the Swift CSV find TSK-303),
-  → **progress** (commit `37fc03d`). **Slice 1 (CORE, done + gate-green):** added `find_in_table`
+  → **progress** (commit `cab0dfd`). **Slice 1 (CORE, done + gate-green):** added `find_in_table`
   + `TableHit`/`TABLE_HEADER_ROW` to `rust-core/.../find.rs` — case-sensitive/insensitive substring
   cell-find over a parsed table, reading order (header-first then rows L-to-R), column scope (+OOB→none),
   reusing the existing `fold`/`Case` + next_index/prev_index wraparound. Lint-clean under the core
@@ -7813,12 +7813,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Slice 2 (follow-on, ALSO host-completable, no VM):** wire into the TUI table overlay (snapshot
   test) + web `/view` table mode (HTML-handler test). This makes TSK-499 a task I can drive fully to
   `validated` over the next 1-2 ticks entirely on the host — the sustainable lane I was hunting for.
-- main @ `37fc03d`, tree clean, gates green. Run total: 5 host-validated cores (TSK-303/302/310/301 +
+- main @ `cab0dfd`, tree clean, gates green. Run total: 5 host-validated cores (TSK-303/302/310/301 +
   499) + board-integrity fixes. **NEXT TICK:** TSK-499 slice 2 (front-end wiring, host-validatable).
 
 ## LOG +106 (2026-06-08, autonomous tick — TSK-499 slice 2a: web CSV cell-find wired + host-tested)
 - Drove TSK-499 forward on the host-completable PORT lane (web front-end = pure request→HTML, fully
-  cargo-testable, no VM). **TSK-499 → progress** (commit `7f43701`); core + web now done, TUI remains.
+  cargo-testable, no VM). **TSK-499 → progress** (commit `9be33a4`); core + web now done, TUI remains.
 - **Web cell-find:** in `mdv-web` `/view` Table mode, `?find=` runs the shared `find::find_in_table`
   over the SHOWN (filtered) rows and (1) highlights each matching cell — `table_html` gained a hit-set
   + current-coord param emitting `<td class="hit">`/`<th class="hit">` and `class="hit cur" id="fcell"`
@@ -7829,12 +7829,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   case_insensitive` / `_no_matches`); full web suite 61/61; `cargo clippy -p mdvcore-web` clean. Web is
   outside the central rust-core gate (TSK-498), so validated directly via cargo.
 - **REMAINING (slice 2b):** wire `find_in_table` into the TUI table overlay (ratatui snapshot test) —
-  also host-completable, no VM. Then TSK-499 is fully done → validated. main @ `7f43701`, tree clean.
+  also host-completable, no VM. Then TSK-499 is fully done → validated. main @ `9be33a4`, tree clean.
 
 ## LOG +107 (2026-06-08, autonomous tick — TSK-499 slice 2b: TUI CSV cell-find wired + host-tested → TSK-499 DONE/validated)
 - Closed out TSK-499 on the host-completable PORT lane: wired the shared `find::find_in_table` into
-  the ratatui TUI table view (commit `4315a94`) → **TSK-499 validated** (all 3 tiers — core `37fc03d`,
-  web `7f43701`, TUI `4315a94` — each regression-guarded by automated tests).
+  the ratatui TUI table view (commit `ee78ddc`) → **TSK-499 validated** (all 3 tiers — core `cab0dfd`,
+  web `9be33a4`, TUI `ee78ddc` — each regression-guarded by automated tests).
 - **Design decision (UX trigger):** in table mode `/` is already the row FILTER (established, tested),
   so cell-FIND gets NO new keybinding — it's reachable via the command **palette** ("find in file" →
   `Cmd::Find` → `open_find`), which is discoverable and leaves `/` alone. Find LOCATES (highlight +
@@ -7855,7 +7855,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   style non-distinct turned it red (`left: Some(Yellow), right: Some(Magenta)`), then restored → green.
 - Gates: TUI suite 50/50; web 61/61; `cargo clippy -p mdvcore-tui` no NEW warnings (4→3 after factoring
   out a `type_complexity`; remaining 3 are pre-existing module-doc lints); **rust-core-gate green**
-  (core 262 tests + ffi no_panic + doctests; covers the generic `find_in_table` change). main @ `4315a94`,
+  (core 262 tests + ffi no_panic + doctests; covers the generic `find_in_table` change). main @ `ee78ddc`,
   tree clean. **PORT lane note:** the [PORT][TUI/WEB] W1 backlog (TSK-362..423) remains the standing
   host-completable queue when no SwiftUI task is actionable.
 
@@ -7883,13 +7883,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TSK-235 (PORT persistence location decision — also blocks TSK-234/236/250 web stateful);
   TSK-255/257 (comrak / tree-sitter dep approvals — DEPGATED render); TSK-306/272 (preview-tab Phase 2
   — VM UI-test-lane decision); TSK-243 (TUI theme — value+validation); TSK-362 (Editor langs — dep+VM).
-- main @ `f68fbfd` (unchanged this tick), tree clean. No commit — triage-only. NEXT TICK: if the owner
+- main @ `9bfb335` (unchanged this tick), tree clean. No commit — triage-only. NEXT TICK: if the owner
   has answered any park, execute it; else the queue remains owner-gated (host-completable feature work
   is genuinely exhausted — avoid paper-cut test backfill on already-covered code per owner steer).
 
 ## LOG +109 (2026-06-08, autonomous tick — TSK-447 lane fixed; TSK-332 investigated + parked with exact seam)
 - Dug past last tick's "drained" conclusion into the `progress`-state tasks. Two outcomes:
-- **TSK-447 → fixed.** The GP-10 stale-T4 fix was already landed (commit `541b3df`: renamed
+- **TSK-447 → fixed.** The GP-10 stale-T4 fix was already landed (commit `4574de9`: renamed
   `test_GP_10_untrackedInRepoOpensEmptyHistory` → `_untrackedInRepoFileHistoryNoOps`, asserting the
   BUG-026 no-op — 1 tab, not hostedView, stays on hist.md) but the board lane was stuck at `progress`
   with no commit recorded. Verified the renamed test (GitPanelUATTests.swift:214) matches current
@@ -7909,7 +7909,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   supervised/VM pass) rather than shipped blind. Workaround exists (Open-As / cycle to Source).
 - Confirmed the board↔built-in-TaskList offset persists (`task_next` again surfaced foreign forge
   TSK-104); acted only on title-verified board ids per [[reference_board_vs_tasklist_numbering]].
-- main @ `f660343` (+ this log). No source change this tick — one lane advanced, one precisely parked.
+- main @ `3e1d4a7` (+ this log). No source change this tick — one lane advanced, one precisely parked.
 
 ## LOG +110 (2026-06-08, autonomous tick — documented HOLD: ready:true lane is skip-dominated, audit confirmed ~100% stale)
 - Checked the `task_list {ready:true, sort:priority}` lane (the productive lane per
@@ -7932,7 +7932,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TSK-235 (front-end persistence — gates 234/236/250), TSK-255/257 (comrak/tree-sitter dep approval),
   TSK-306/272 (preview-tab Phase 2 — VM UI lane), TSK-243 (TUI theme), TSK-332 (open-path mode
   re-resolution — supervised), TSK-362 (Editor language packs — dep+VM). Answering any one refills the
-  actionable queue. main @ `a54d752` (+ this log).
+  actionable queue. main @ `96ee046` (+ this log).
 
 ## LOG +111 (2026-06-08, autonomous tick — HOLD continues; verified TSK-339 fixed + worktree hygiene clean)
 - Two checks, both negative-for-new-work: (1) TSK-339 [S4][bug] "TUI --snapshot uses .expect()" is
@@ -7944,7 +7944,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   ready:true lane skip-dominated (perf/leak/race + forge + bash-infra), PORT no-dep tier feature-complete
   with no open bugs, SwiftUI feature halves VM/owner-gated. Outstanding owner parks (answering any one
   refills the queue): TSK-235 (persistence), TSK-255/257 (deps), TSK-306/272 (preview VM lane), TSK-243
-  (TUI theme), TSK-332 (open-path mode re-resolution), TSK-362 (Editor langs). main @ `9691eff` (+ this log).
+  (TUI theme), TSK-332 (open-path mode re-resolution), TSK-362 (Editor langs). main @ `c082c4c` (+ this log).
 
 ## LOG +112 (2026-06-08, autonomous tick — ran the VM lane; root-caused "158 failures" as environmental, not regressions; filed TSK-500)
 - Broke the multi-tick HOLD by actually exercising the owner's standing VM ask: synced + ran
@@ -7964,7 +7964,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   via `launchctl asuser <uid>` (TSK-151 pattern) + export TMPDIR, and stop masking the failing exit.
   Once fixed, the VM lane becomes usable for autonomous UI validation. Saved durable memory
   `reference_vm_plain_ssh_breaks_tests`.
-- main @ `2d7e062` (+ this log); no source change (the VM run was read-only validation). NEXT: TSK-500
+- main @ `8822266` (+ this log); no source change (the VM run was read-only validation). NEXT: TSK-500
   (make the VM lane usable) is the highest-leverage unblock — host-editable script change, but its
   validation needs a VM re-run, so a focused effort.
 
@@ -7977,19 +7977,19 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   "could not open temp file" cascade. PROOF: XattrIOTests SKIPS in the full run but PASSES 5/5 in
   isolation on the VM; TextFileLoaderTests 21/21 green on host AND on VM in isolation; `ulimit -n 8192`
   succeeds on the VM.
-- **FIX landed (commit 7447e3a):** `scripts/test-in-vm.sh` now raises `ulimit -n 8192` (fallback 4096)
+- **FIX landed (commit 71e5627):** `scripts/test-in-vm.sh` now raises `ulimit -n 8192` (fallback 4096)
   before any `swift test`, with a logged limit line. Syntax-checked (`bash -n`). Synced to the VM.
 - **Validation re-run in flight** (background job b0ow56msa: `test-in-vm.sh test`, capturing the limit
   line + suite summary + any residual "could not open temp"). Expect the ~158 file-IO failures to
   collapse; any residue should be only the heavy UI tiers (occlusion — they need a GUI login session,
   the remaining half of TSK-500). Will record TSK-500 → fixed + self-validate with the re-run's
   checks artifact next turn (NOT before — don't claim fixed until the re-run confirms).
-- Corrected memory `reference_vm_plain_ssh_breaks_tests` (was wrong root cause). main @ `7447e3a`.
+- Corrected memory `reference_vm_plain_ssh_breaks_tests` (was wrong root cause). main @ `71e5627`.
 
 ## LOG +114 (2026-06-08, autonomous tick — TSK-500 VALIDATED: VM full suite 158→6 failures after the ulimit fix)
 - VM re-validation (post-fix `test-in-vm.sh test`) completed: **Executed 4220 tests, 41 skipped, 6
   failures (1 unexpected)** in 967s — down from **158 failures (102 unexpected)** before. 0 "could not
-  open temp file"; TextFileLoaderTests (was 18-failed) passes. The `ulimit -n 8192` fix (commit 7447e3a)
+  open temp file"; TextFileLoaderTests (was 18-failed) passes. The `ulimit -n 8192` fix (commit 71e5627)
   eliminated the EMFILE false-failure flood.
 - **TSK-500 driven to `validated`** (agent self-validate with a checks artifact: 158→6 before/after VM
   run + the diff). The VM headless lane is now USABLE for autonomous validation — the multi-tick blocker
@@ -8002,7 +8002,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Impact for the loop: future ticks CAN now use the VM lane to validate HEADLESS-tier behavior of the
   `fixed` cluster (model/logic), distinguishing the 6 known occlusion residuals from real failures. The
   heavy-tier RENDER validation still needs the GUI nightly lane / owner.
-- main @ `7447e3a` (fix) + docs. Memory `reference_vm_plain_ssh_breaks_tests` corrected to the real
+- main @ `71e5627` (fix) + docs. Memory `reference_vm_plain_ssh_breaks_tests` corrected to the real
   (fd-exhaustion) root cause earlier this arc.
 
 ## LOG +115 (2026-06-08, autonomous tick — TSK-500 residual scoped → TSK-501; VM GUI session confirmed present)
@@ -8018,11 +8018,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (fiddly asuser/sudo/env incantation + ~16-min heavy re-validation — not safe to cram into this very
   long session). Once TSK-501 lands, the FULL VM UI lane is usable → the autonomous loop can drive the
   `fixed` SwiftUI UI cluster to validated.
-- No source change this tick (investigation + scoping). main @ `7dc9597`. Memory
+- No source change this tick (investigation + scoping). main @ `3d0ccce`. Memory
   `reference_vm_plain_ssh_breaks_tests` already notes the GUI-session requirement.
 
 ## LOG +116 (2026-06-08, autonomous tick — TSK-501 VALIDATED: VM heavy/UI lane now usable end-to-end)
-- **TSK-501 driven reported→…→validated.** The fix (commit `b3ec338`, prior tick) adds an additive
+- **TSK-501 driven reported→…→validated.** The fix (commit `d6581c3`, prior tick) adds an additive
   `MDV_VM_GUI_SESSION=1` path to `scripts/test-in-vm.sh`: `swift_test()` wraps `swift test` in
   `sudo -S launchctl asuser $(stat -f %u /dev/console) /bin/bash -lc`, exporting cwd/`ulimit -n 8192`/
   `TOOLCHAINS` INSIDE the spawned shell (asuser drops env from /usr/bin/env). **Default-off → the
@@ -8052,7 +8052,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   assertion is structurally guaranteed to fail regardless of code.txt's state. Fix = scope the assertion
   to the ACTIVE pane (or close the bin tabs first); audit `LSPUATTests.assertNoHexView` for the same
   hazard. A focused tick should do the scoped-fix + VM re-run (UAT is VM-only). NOT blind-fixed.
-- Filed **TSK-502 / TSK-503 / TSK-504** (follow-ups). main @ `b3ec338` (+ this doc log). Per the
+- Filed **TSK-502 / TSK-503 / TSK-504** (follow-ups). main @ `d6581c3` (+ this doc log). Per the
   no-blind-rendered-change rule, no app source touched this tick.
 
 ## LOG +117 (2026-06-08, autonomous tick — TSK-503 fixed: deterministic Base64 decode + host teeth)
@@ -8076,7 +8076,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   would also confirm cross-platform, but the host repro makes it unnecessary for validation.
 
 ## LOG +118 (2026-06-08, autonomous tick — TSK-504 VALIDATED on the VM; first end-to-end use of the VM UI lane)
-- **TSK-504 driven reported→…→validated** (commit `d9862f8`). Confirmed it was a **stale TEST assertion,
+- **TSK-504 driven reported→…→validated** (commit `2583499`). Confirmed it was a **stale TEST assertion,
   not an app bug**: `PreviewsUATTests.assertNoHexView` did a WHOLE-WINDOW `hasViewClass("Hex")`, but the
   diagnostic dump is whole-window (`DiagnosticDump.swift:60/67`) and `DocumentModel.mountedPanes =
   MountedPanesLRU(capacity:4)` keeps the PV_07 scenario's 3 tabs (data.bin HEX + empty.bin HEX +
@@ -8095,7 +8095,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Tick arc (TSK-501 → 502 → 503 → 504):** the VM lane is built (ulimit + asuser), its residuals
   triaged + filed, and now PROVEN by validating a real UI fix through it. TSK-502 (Screen-Recording TCC)
   remains parked for the owner — the only thing between here and a fully-green VM UI+pixel lane.
-- main @ `d9862f8` (+ this log). Sibling `assertNoHexView` copies in LSPUATTests/Cm6/SearchSurfaces share
+- main @ `2583499` (+ this log). Sibling `assertNoHexView` copies in LSPUATTests/Cm6/SearchSurfaces share
   the hazard but only fail if their scenarios mount ≥2 panes incl. a binary one — not yet observed
   failing; left as-is (fix-on-demand).
 
@@ -8105,7 +8105,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   is stateful and needs your call"), turned to the `[PARTIAL]` reported lane (owner-endorsed:
   "uncovered-pure-logic backfill"). Picked **TSK-347 [PARTIAL] SHA** (SHA infra exists but isn't
   user-surfaced).
-- **Landed slice 1/2 (commit `4ca006d`):** the host-completable file-checksum CORE — streamed
+- **Landed slice 1/2 (commit `f80a03f`):** the host-completable file-checksum CORE — streamed
   `FileChecksum.sha256Hex(ofFileAt:)` (chunked FileHandle reads folded into an incremental CryptoKit
   `SHA256`, so a large file isn't slurped) + a `TextTools.sha256Hex(Data)` overload (the text version now
   delegates to it). Host teeth-tests: 19/19 TextToolsTests green — NIST vectors via the file path,
@@ -8115,7 +8115,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   off-main, + a "Copy SHA-256 of Current File" command mirroring `tools.sha256`) — SwiftUI-rendered →
   VM-validated. So the landed `FileChecksum` core has a documented, imminent consumer (not abandoned
   infra). TSK-347 left at `progress` until the surfacing lands.
-- main @ `4ca006d` (+ this log). The board's actionable autonomous queue remains owner-gated beyond this
+- main @ `f80a03f` (+ this log). The board's actionable autonomous queue remains owner-gated beyond this
   (PORT decisions, dep approvals, TSK-502 TCC, SwiftUI UI surfacing needing VM); the `[PARTIAL]`/`[BACKLOG]`
   lane is the standing fallback for host-completable slices like this one.
 
@@ -8197,7 +8197,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   HTML-assertion/TestBackend tests), NOT SwiftUI-rendered — so host self-validation is legitimate
   (unlike the VM-gated render parts above).
 - **Deliberately NOT touched:** the `[BACKLOG]` SwiftUI cluster (TSK-260–324, many VM-gated + several with
-  title≠understanding mismatches) and the audit cluster (TSK-134–196, bulk-reconciled `fixed` @ 1dbf1ca —
+  title≠understanding mismatches) and the audit cluster (TSK-134–196, bulk-reconciled `fixed` @ e973e4e —
   honest validation needs per-finding AUDIT_BUGS.md + teeth confirmation, a separate focused pass). No
   code changes / no commits this tick — board-state validations only; `main` unchanged + gate-green.
 
@@ -8250,7 +8250,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   @objc AppDelegate actions in the EXE target, dispatched via NSApp.sendAction to the first responder; the
   call sites are in the ViewerUI FRAMEWORK, which can't import the exe — so #selector is impossible across
   that module boundary. Not a defect; only the owner can close to wont-do.
-- No code changes this tick — board-state only; `main` unchanged @ 13fda83, rust-core gate GREEN.
+- No code changes this tick — board-state only; `main` unchanged @ d4ee4b4, rust-core gate GREEN.
 
 ## LOG +126 (2026-06-08, autonomous tick — loop is INPUT-BOUND; consolidated the live blocker set)
 - Swept for any un-gated host-completable task; found none. Confirmed two more audit test-gaps are already
@@ -8273,9 +8273,9 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **TSK-243** (decision) — TUI dark-mode palette: skip (terminal already themes) / model-only / VM-pixel.
   WEB dark-mode (TSK-244) already shipped.
 - **TSK-301** (decision) — local-history retention/privacy policy (opt-in? cap? which files? location). The
-  STORE is built+host-tested (c79a5af); only snapshot-on-save wiring + UI await the policy.
+  STORE is built+host-tested (b3a0fe9); only snapshot-on-save wiring + UI await the policy.
 - **TSK-306** (decision) — preview-tab Phase 2 (sidebar click/arrow triggers + promote-on-edit): authorize VM
-  UI lane / land-at-review / defer. Phase 1 model core shipped+validated (a37f861).
+  UI lane / land-at-review / defer. Phase 1 model core shipped+validated (9bf1838).
 - **TSK-332** (decision) — unknown-ext readable-ASCII → default Source (not HEX): supervised/VM wire / land-at-
   review / wont-do. Resolution core built+host-tested; only the delicate open-path re-resolution wiring remains.
 - **TSK-476** (decision) — close as WONT-DO: the 3 NSSelectorFromString sites aren't convertible to #selector
@@ -8283,7 +8283,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **TSK-492 / TSK-502** (owner action) — VM visual-test lane: install the LaunchAgent + grant Screen-Recording
   TCC to xctest on macOS15. Unblocks ALL SwiftUI render/pixel validation (the T5 lane) → would let the agent
   self-validate the render-gated cluster (505-B/506/334/504/preview-tab/…) instead of leaving them for manual VM checks.
-- Net this tick: board-state + doc only; `main` unchanged @ 13fda83, rust-core gate GREEN. The highest-leverage
+- Net this tick: board-state + doc only; `main` unchanged @ d4ee4b4, rust-core gate GREEN. The highest-leverage
   unblocks are **TSK-502** (opens the whole render-validation lane) and **TSK-235** (opens 3 web features).
 
 ## LOG +127 (2026-06-08, autonomous tick — corrected "input-bound": the teeth-able security cluster IS work)
@@ -8302,11 +8302,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   alone ≠ validatable; the teeth must be a PURE-KERNEL test, not view-wiring.
 - **Confirmed 5 more findings already-fixed-and-tested** (csv #316, msgpack #313, ReDoS #279/#293 in
   RegexComplexityGuardTests) → staleness ~18/18 across the session. Don't re-mine; work the teeth-able cluster.
-- Net: 2 validated, 1 held — board-state + doc only; `main` unchanged @ 13fda83, host gate green (LinkPolicy 40/40).
+- Net: 2 validated, 1 held — board-state + doc only; `main` unchanged @ d4ee4b4, host gate green (LinkPolicy 40/40).
 
 ## LOG +128 (2026-06-08, autonomous tick — validated TSK-195 .tsx grammar-routing contract)
 - Continued the teeth-able `fixed` lane. **Validated TSK-195** ([S4][contract] .tsx routed to plain TS
-  grammar; tsx grammar unreachable): fix landed (commit 71586a5 — `HighlightLanguage.tsx` +
+  grammar; tsx grammar unreachable): fix landed (commit e37df73 — `HighlightLanguage.tsx` +
   `GrammarLoader.Grammar.tsx`, cSymbol `tree_sitter_tsx`), guarded by a pure-kernel golden test
   `TreeSitterEngineGoldenTests.testTSX` — `MDV_HEADLESS_GATE=1 swift test --filter TreeSitterEngineGoldenTests`
   → 13/13 green, ^EXIT=0. testTSX tokenizes a JSX-bearing `.tsx` snippet via `language:.tsx` and asserts
@@ -8316,7 +8316,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   dominated by perf/leak/race/infra (no teeth → held for human) + findings that live only in the built-in
   TaskList (#266–345, e.g. aspectFit #326 — has `AspectFitFiniteGuardTests` but no board TSK to validate).
   Per [[project_audit_pending_list_stale]]: validate the pure-kernel BUG/SECURITY/contract findings that
-  have a board task + teeth test; hold the rest. No code change; `main` @ d3b8cac, host gate green.
+  have a board task + teeth test; hold the rest. No code change; `main` @ fa3f0a2, host gate green.
 
 ## LOG +129 (2026-06-08, autonomous tick — board `fixed` audit cluster fully triaged; teeth-able subset DRAINED)
 - Enumerated every `fixed` BUG/SECURITY/contract finding (jq over the board) and mapped validatability.
@@ -8350,7 +8350,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   are the VM/render concern, not claimed.
 - **Lane for future ticks ([[project_audit_pending_list_stale]]):** for each `[BACKLOG]`/`[PARTIAL]` feature
   task, grep Sources/ for its model type FIRST — many shipped in later waves but the tasks were never closed;
-  if built + host-model-teeth-tested, walk to `validated`. No code change; `main` @ b9be9f7, host gate green.
+  if built + host-model-teeth-tested, walk to `validated`. No code change; `main` @ 8dc55d5, host gate green.
 
 ## LOG +131 (2026-06-08, autonomous tick — drained 2 more stale-but-built BACKLOG features via host teeth)
 - Worked the lane from +130. Both were already built (fix landed in earlier waves) but their board tasks
@@ -8366,12 +8366,12 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   routes tap→selectTab through the tested model; pixel render is the VM concern (prior live T4 smoke green).
 - Pattern holding: the `[BACKLOG]` cluster has many shipped-but-unclosed features; those with a pure
   ViewerCore/kernel layer are honestly validatable on host teeth (scope to the kernel, note UI-pixel as VM).
-  No code change; `main` @ b9be9f7, host gate green.
+  No code change; `main` @ 8dc55d5, host gate green.
 
 ## LOG +132 (2026-06-08, autonomous tick — drained 3 more stale-but-built BACKLOG features; held 1 honestly)
 - Same lane (+130/+131). All four were already built in earlier waves; their board tasks sat at `fixed`
   unvalidated. The three with a pure host kernel were validated on that kernel; the fourth has no teeth for
-  its actual change → held for the owner. No code change this tick; `main` @ 7e033dc, host gate green.
+  its actual change → held for the owner. No code change this tick; `main` @ 3dd9085, host gate green.
 - **TSK-299** ("Date enter like Notepad" — Insert Date & Time at caret) → **validated**. Host teeth at every
   host-testable layer: `DateTimeStamp.string(for:locale:timeZone:)` (date-injected formatter, x3) +
   `CMBridgeCodec` `.insertAtCursor` encode shape + v2-gate refusing a v1 peer (x2) + `EditorCoordinator.
@@ -8389,7 +8389,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   past-last nil, degenerate (0 line-height / 0 lines) nil, round-trip inverse. Green. The painted backdrop
   (`SourceHoverHighlight` `.onContinuousHover`; CM6 `.cm-line:hover` CSS) is the mouse-driven VM visual.
 - **TSK-331** ("tabs shrink, do not overflow at all") → **HELD at `fixed`, owner decision** (board comment
-  left). The fix was a single floor-constant tweak (`minShrunkWidth 54→40`, e2dd381) so the strip packs more
+  left). The fix was a single floor-constant tweak (`minShrunkWidth 54→40`, fee3195) so the strip packs more
   tabs before scrolling; `TabBarWidthTests` is *deliberately relational* ("survive a constants tweak"), so
   reverting 40→54 fails ZERO tests → no teeth for the actual change. Also the literal "do not overflow at all"
   is only partially met (still scrolls past the floor; TSK-304 dropdown is the escape hatch) — accept the
@@ -8399,7 +8399,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 
 ## LOG +133 (2026-06-08, autonomous tick — validated the whole Tools cluster + the TreeSitter predicate bug)
 - Paged the board `fixed` cluster to offset 40; surfaced two clean, host-testable groups beyond the
-  view-layout/hijacked ones. No code change this tick; `main` @ 146f7e5, host gate green.
+  view-layout/hijacked ones. No code change this tick; `main` @ d6715b0, host gate green.
 - **Tools cluster → all validated** (TSK-291 umbrella + 292 SHA-256 + 294 Base64 + 295 UUID). Shipped as
   `Sources/ViewerCore/TextTools.swift`: a PURE, surface-agnostic core (CryptoKit only, no 3rd-party dep) —
   `TextToolVerb` catalog + `apply(verb,to:)` dispatcher backing `sha256Hex`(+`FileChecksum`), `base64Encode/
@@ -8423,7 +8423,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 ## LOG +134 (2026-06-08, autonomous tick — validated the two command-registry keybinding data tasks)
 - Two [PARTIAL] keybinding tasks were genuine CommandRegistry *data* changes (not view-layout) with precise
   host teeth in `CommandRegistryTests` that pin the exact values — validated. No code change; `main` @
-  81d37ca, host gate green (`swift test --filter CommandRegistryTests` → 32 tests, 0 failures).
+  c4ebfce, host gate green (`swift test --filter CommandRegistryTests` → 32 tests, 0 failures).
 - **TSK-325** ("keyboard shortcutable" — assign defaults to nil-shortcut commands) → **validated**. Three
   user-facing commands got conflict-free defaults (view.folderStats=⌘⌃I, git.fileHistory=⌘⌥⇧H,
   git.repoHistory=⌘⌥⇧L). `test_addedDefaultShortcuts_arePresentAndConflictFree` pins non-nil default +
@@ -8452,7 +8452,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
     snapshots = no teeth); **TSK-255/257** (comrak / tree-sitter) parked dep-approvals gating **256/258**.
     The handoff's "PoC feature-complete on the no-dep tier" holds — only stateful + DEPGATED remain, all
     owner-gated.
-- **Preview-tab (TSK-306 + TSK-272):** Phase 1 model core shipped+validated (a37f861); **Phase 2** (sidebar
+- **Preview-tab (TSK-306 + TSK-272):** Phase 1 model core shipped+validated (9bf1838); **Phase 2** (sidebar
   single/double-click + arrow-nav triggers + auto-promote-on-edit) is render-path/live and already PARKED on
   TSK-306 (owner decision: VM lane / wire-and-leave-at-review / defer). TSK-272 is the keyboard half of the
   same feature → commented as blocked-by-306 (no duplicate owner ping); left at `reported` (blocked), NOT
@@ -8465,7 +8465,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   unsupervised change the SOP says to avoid.
 - **Net:** the agent-actionable-without-owner-input queue is genuinely drained. ~14 owner gates are already
   parked/pinging (PORT 235/243/255/257, preview-tab 306, + SwiftUI 202/204/205, + the audit perf/leak/race
-  human-gate cluster, + greenfield triage). No code change this tick; `main` @ 866e622, host gate green.
+  human-gate cluster, + greenfield triage). No code change this tick; `main` @ a043b6e, host gate green.
   The single highest-leverage unblock remains **TSK-502 VM Screen-Recording TCC** (would open the whole
   render-path validation lane — preview-tab Phase 2, view-layout BACKLOG, TUI dark-mode pixels).
 
@@ -8474,7 +8474,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   zero-risk, host-testable feature core. First re-verified the audit cluster is genuinely done (aspectFit
   #326 NaN guard present; MessagePack #295 OOM guards present; wire negative-path coverage #313 already
   exists — `MsgPackDecoderNegative_Audit_*Tests.swift`). So no un-hardened bug there. Then shipped:
-- **TSK-290 phase 1 → validated** (commit d4c8977). `Sources/ViewerCore/DotGraph.swift`: a pure,
+- **TSK-290 phase 1 → validated** (commit c90fe34). `Sources/ViewerCore/DotGraph.swift`: a pure,
   dependency-free Graphviz `.dot` parser — `DotGraphParser.parse(_:) -> DotGraph?{isDirected,name,nodes,
   edges}` over the common subset (strict?/graph|digraph header; node + edge-chain statements `a -> b -> c`
   / `a -- b`; quoted + bare ids incl. leading-`-` numerals; `//`,`#`,`/* */` comments preserved inside
@@ -8487,7 +8487,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   recommended first) vs graphical layout (needs a layout-engine dep + approval), plus the VM/manual
   validation path. So the render half is tracked, not lost.
 - Lane unchanged otherwise: validation lane + PORT lane + preview-tab Phase 2 remain owner-gated (see +135).
-  `main` @ d4c8977 (+ this log). The `.dot` parser is the kind of no-dep, self-contained forward motion
+  `main` @ c90fe34 (+ this log). The `.dot` parser is the kind of no-dep, self-contained forward motion
   available without an owner unblock; deeper features (render, stateful PORT, view-wiring) still need the
   parked decisions answered.
 
@@ -8497,13 +8497,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (NOT grapheme — `\r\n` is one cluster, the exact trap IndentDetector documents). Counts CRLF pairs / lone
   CR / lone LF → 0 kinds=none, 1=that, ≥2=mixed. **11 host tests** (LineEndingDetectorTests) pin it incl.
   the load-bearing CRLF cases (blank CRLF line stays CRLF not mixed; lone-CR-before-non-LF is CR not CRLF;
-  mixed combos). Commit c38b258; `swift build` clean; **central headless gate PASSED on the committed
+  mixed combos). Commit 2348a3c; `swift build` clean; **central headless gate PASSED on the committed
   commit** (tier-clean). Drove reported→ack→triaged→progress→fixed→validated. Phase 2 (status-bar chip
   next to the indent chip = view/VM) is follow-up, not in scope.
 - This is the standard editor "LF/CRLF" readout (VS Code parity) and the obvious companion to the existing
   indent chip (TSK-113) — a genuine, complete, zero-risk model unit. Same shape as the +136 `.dot` parser.
 - Lane otherwise unchanged: validation/PORT/preview-tab-Phase-2 still owner-gated (see +135). `main` @
-  c38b258 (+ this log). Two consecutive ticks of real no-dep feature cores (DotGraphParser, LineEndingDetector)
+  2348a3c (+ this log). Two consecutive ticks of real no-dep feature cores (DotGraphParser, LineEndingDetector)
   while the owner-gated lanes wait on the parked decisions.
 
 ## LOG +138 (2026-06-08, autonomous tick — self-corrected a duplication I introduced; DRY'd StatusBar EOL)
@@ -8511,7 +8511,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   via `DocumentMetrics`, and `StatusBar.detectLineEndings` was an UNTESTED, APPROXIMATE byte scan
   (any-CR + any-LF ⇒ "CRLF", no Mixed) — i.e. last tick's `LineEndingDetector` (TSK-509) had **duplicated**
   existing logic. Rather than ship a 3rd new model on top, fixed my own mess.
-- **TSK-510 → validated** (commit 4a7be3a): deleted the StatusBar duplicate; routed the EOL chip through the
+- **TSK-510 → validated** (commit 9032778): deleted the StatusBar duplicate; routed the EOL chip through the
   host-tested `LineEndingDetector` (single source of truth, now correctly distinguishing CR/Mixed instead of
   blanket CRLF). Preserved the multi-MB hot-path guard by adding a `sampleScalars` bound to the detector +
   replaced its full-array alloc with an index-based scalar scan (no behavior change unbounded). 3 new
@@ -8523,13 +8523,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   so a "new" detector may be a duplicate. Net of +137/+138: the line-ending feature is now correct, tested,
   and de-duplicated (one source of truth) rather than two divergent copies.
 - Encoding detector deliberately NOT built: `TextFile.encoding` + `StatusBar.encodingShort` already cover
-  the Enc chip; a new byte-sniffer would be the same duplication trap. `main` @ 4a7be3a (+ this log).
+  the Enc chip; a new byte-sniffer would be the same duplication trap. `main` @ 9032778 (+ this log).
 
 ## LOG +139 (2026-06-08, autonomous tick — Markdown heading-outline model, grep-verified non-redundant)
 - Applied the +138 lesson: grepped ViewerCore AND ViewerUI first — confirmed NO navigable markdown TOC
   exists (LSPOutlineSection is code-only / documentSymbol; `atxHeadingLevel` is a tree-sitter fold helper;
   `HTMLRenderer.visitHeading` only emits HTML). So a heading-outline model is genuinely additive.
-- **TSK-511 → validated** (commit f702203): `Sources/ViewerCore/MarkdownOutline.swift` — pure no-dep scanner
+- **TSK-511 → validated** (commit 811037d): `Sources/ViewerCore/MarkdownOutline.swift` — pure no-dep scanner
   `headings(in:) -> [MarkdownHeading{level 1-6, title, 1-based line}]` over the common subset: ATX
   (space-required; trailing-`#` closing seq stripped only when space-preceded so `C#` keeps the `#`; all-`#`
   body → empty); setext (`===`→h1 / `---`→h2 of the preceding paragraph line); fenced-code skip (```` ``` ````/`~~~`);
@@ -8539,7 +8539,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   line) — the EXACT trap I keep citing. Fixed to split on the LF *scalar* before commit. `swift build` clean;
   central headless gate PASSED on the committed commit.
 - Scope: scanner (structure) host-validated; the sidebar TOC view + click-to-scroll is phase 2 (view/VM),
-  not claimed. `main` @ f702203 (+ this log). Cadence holding: DotGraph (+136), LineEndingDetector (+137),
+  not claimed. `main` @ 811037d (+ this log). Cadence holding: DotGraph (+136), LineEndingDetector (+137),
   DRY fix (+138), MarkdownOutline (+139) — four no-dep, host-tested ViewerCore units while owner gates wait.
 
 ## LOG +140 (2026-06-08, autonomous tick — TODO/annotation scanner; grep-first averted a broken TOC)
@@ -8548,14 +8548,14 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   whereas MarkdownOutline.title keeps raw inline syntax — so a TOC built from raw titles would emit anchors
   that MISMATCH the rendered headings for any formatted heading (`# **Bold**`). Correctness trap → DROPPED
   the TOC idea rather than ship subtly-broken anchors. (Grep-first paid off again.)
-- Instead shipped **TSK-512 → validated** (commit 26e41cc): `Sources/ViewerCore/SourceAnnotationScanner.swift`
+- Instead shipped **TSK-512 → validated** (commit 6cd6886): `Sources/ViewerCore/SourceAnnotationScanner.swift`
   — pure no-dep `scan(_:maxLines:) -> [SourceAnnotation{kind,message,line}]` for TODO/FIXME/HACK/XXX/NOTE/BUG
   (the VS Code TODO-tree idea). Whole-word + case-sensitive guards (TODOS/aTODO/lowercase don't match),
   optional `:` separator, first-per-line, CRLF-safe (LF-scalar split), maxLines bound. 11 host tests
   (SourceAnnotationScannerTests). swift build clean; central gate PASSED on the committed commit. Verified
   non-redundant first (no existing scanner; FindEngine/CrossFileSearch are generic search). Phase 2 (sidebar
   Annotations jump-list) = view/VM, not in scope.
-- `main` @ 26e41cc (+ this log). Five no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
+- `main` @ 6cd6886 (+ this log). Five no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
   Outline/AnnotationScanner + the DRY fix). NOTE for future ticks/owner: these are all phase-1 model cores
   with phase-2 (sidebar/menu wiring) blocked on the render-path validation gap (TSK-502 VM Screen-Recording).
   The no-dep model lane is productive but the user-facing payoff needs those phase-2 wirings unblocked.
@@ -8566,13 +8566,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   throws. No action. Then grep-first averted TWO would-be duplications: a CSV delimiter sniffer
   (`CSVParser.detectDelimiter` already exists, quote-aware) and (last tick) a TOC renderer (slug coupling).
   Signal: the codebase is mature; easy no-dep wins are genuinely thinning.
-- Shipped the one genuinely-missing, non-redundant unit found: **TSK-513 → validated** (commit 18dbbdb):
+- Shipped the one genuinely-missing, non-redundant unit found: **TSK-513 → validated** (commit b2cf232):
   `Sources/ViewerCore/JSONSyntaxChecker.swift` — pure RFC-8259 validator `check(_:) -> .valid |
   .invalid(line,column,message)` reporting the FIRST error with 1-based position (Foundation's
   JSONSerialization gives none → the JSON viewer can finally point at *where* it broke). Recursive-descent
   over scalars, depth-capped at 512 (pretty_json/cmark recursion lesson applied proactively). 16 host tests
   pin valid cases + each error class at EXACT line:col + the deep-nesting guard. Gate PASSED on the commit.
-- `main` @ 18dbbdb (+ this log). Six no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
+- `main` @ b2cf232 (+ this log). Six no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
   Outline/AnnotationScanner/JSONSyntaxChecker + DRY fix). STANDING NOTE for the owner: all are phase-1 model
   cores; their user-facing phase-2 (sidebar/menu/banner wiring) is blocked on the render-path validation gap
   — **TSK-502 (VM Screen-Recording TCC) remains the single highest-leverage unblock**, and the easy no-dep
@@ -8583,7 +8583,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Grep-first (per +138): confirmed the only diff line-counter in the tree was `DiffView.stats(_ file:)`
   — an UNTESTED inline `+added/−removed` loop in the SwiftUI view (same view-layer-duplication smell DRY'd
   for StatusBar EOL in TSK-510); `GitClient` has no diff line-stat, so no redundancy. Shipped
-  **TSK-514 → validated** (commit b1c62f7): `Sources/ViewerCore/Git/DiffStat.swift` — pure
+  **TSK-514 → validated** (commit 2740cfb): `Sources/ViewerCore/Git/DiffStat.swift` — pure
   `UnifiedDiff.File.lineStats` (added/removed; context & noNewline excluded; binary/rename-only hunkless →
   0/0) + `DiffStat(_ files:) {filesChanged, additions, deletions}` + `shortStat` (git-diff-shortstat string,
   correct singular/plural, zero-clause omission, "no changes" for empty). `DiffView.stats(_:)` now delegates
@@ -8593,7 +8593,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   deletions-only, binary (0/0 lines yet filesChanged=1), empty diff. `MDV_HEADLESS_GATE=1 swift test --filter
   DiffStatTests` → 6/0; central `scripts/test-headless-gate.sh` PASSED on the committed commit
   ("tier enforcement: OK"). Phase 2 (show the aggregate `shortStat` in the diff-tab header) = view/VM, deferred.
-- `main` @ b1c62f7 (+ this log). Seven no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
+- `main` @ 2740cfb (+ this log). Seven no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
   Outline/AnnotationScanner/JSONSyntaxChecker/DiffStat + the StatusBar-EOL DRY fix). Standing note unchanged:
   these are all phase-1 model cores; their user-facing phase-2 wiring (sidebar/menu/banner/diff-header display)
   is blocked on the render-path validation gap — **TSK-502 (VM Screen-Recording TCC) is the single
@@ -8623,7 +8623,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 
 ## LOG +144 (2026-06-08, autonomous tick — TSK-243 TUI dark-mode/theme palette, owner-greenlit; + footer 2-row split)
 - Owner RESOLVED the TSK-243 park with "c" (build the core palette + apply to the TUI + validate the actual
-  colors via a pixel test). Shipped **TSK-243 → validated** (commit 72a3af7): NEW `rust-core/crates/core/src/
+  colors via a pixel test). Shipped **TSK-243 → validated** (commit 69499f6): NEW `rust-core/crates/core/src/
   theme.rs` — `Rgb`, `Mode{Light,Dark}`, `Role{Accent,Header,Muted,HighlightBg,CurrentBg,OnHighlight,Added,
   Removed,Hunk,Context}`, `Palette::for_mode(mode).color(role)` (One Dark/One Light values) + panic-free
   `parse_hex` (no `unwrap` → passes the gate's clippy no-panic deny). TUI gains `ThemeMode{Adaptive,Dark,Light}`
@@ -8637,13 +8637,13 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - OWNER ASK mid-tick (footer): split the TUI footer help into two lines. Done in the same commit — `draw`'s
   footer is now `Length(2)` and `draw_status` soft-wraps (`Wrap{trim:false}`) so the (now longer, with
   `t theme`) key legend flows onto a 2nd row instead of truncating. Default look otherwise unchanged.
-- `main` @ 72a3af7 (+ this log). Drained a PORT-lane item to validated while the SwiftUI render-path lane is
+- `main` @ 69499f6 (+ this log). Drained a PORT-lane item to validated while the SwiftUI render-path lane is
   owner-gated (TSK-502 parked). Unrouted TUI color sites (diff lines, file-nav entries) stay Adaptive — safe
   (they keep the ANSI colors) and routable incrementally in a follow-up.
 
 ## LOG +145 (2026-06-08, autonomous tick — TSK-235 TUI persistent session state, owner-greenlit location)
 - Owner RESOLVED the TSK-235 park: "Save config in ~/.textview/tui or wui". Shipped **TSK-235 phase 1 →
-  validated** (commit a3c546d): the TUI now persists app-global session prefs to ~/.textview/tui/config —
+  validated** (commit b93e5f4): the TUI now persists app-global session prefs to ~/.textview/tui/config —
   a hand-rolled (no-serde, panic-free → clears the gate's clippy no-panic deny) key=value `PersistState`
   codec {cwd, sort, show_hidden, wrap, show_gutter, theme} with lenient parse (unknown keys ignored,
   malformed/missing → defaults). main() loads on launch (start dir = explicit arg > persisted cwd if still a
@@ -8653,11 +8653,11 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   real ~/.textview, per the no-write-to-home rule), and apply_prefs sets App view state. Full TUI suite 55/55;
   rust-core gate green. Phase 2 (restore last OPEN file + scroll + per-file mode — needs best-effort reopen of
   possibly-moved files) filed as **TSK-515**. Web parity (~/.textview/wui) remains TSK-236.
-- `main` @ a3c546d (+ this log). Three PORT-lane items driven to validated this session (TSK-243 theme, footer
+- `main` @ b93e5f4 (+ this log). Three PORT-lane items driven to validated this session (TSK-243 theme, footer
   split, TSK-235 persistence) while the SwiftUI render-path lane stays owner-gated (TSK-502 parked).
 
 ## LOG +146 (2026-06-08, autonomous tick — TSK-236 web persistent session state, parity of TSK-235)
-- Shipped **TSK-236 → validated** (commit 0b4fa59): the std-only web front-end persists its only server-side
+- Shipped **TSK-236 → validated** (commit 8bf11cd): the std-only web front-end persists its only server-side
   session state — the served ROOT dir — to ~/.textview/wui/config (owner-chosen per-front-end location). Pure
   `WebConfig{root}` key=value codec (no serde, panic-free, lenient) + config_path/load_config/save_config.
   main(): with no path arg, restore the persisted root (if still a dir) else current_dir; save the resolved
@@ -8668,7 +8668,7 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Web recents (TSK-234) + back-forward (TSK-250) stay BLOCKED**: they require cross-request GLOBAL mutable
   state (a Mutex/LazyLock list) in the otherwise-stateless per-connection server — the park's option (3),
   which the owner did NOT grant (the resolution only picked the persistence-location). Noted on the board.
-- `main` @ 0b4fa59 (+ this log). Four PORT items validated this session (TSK-243 theme + footer, TSK-235 TUI
+- `main` @ 8bf11cd (+ this log). Four PORT items validated this session (TSK-243 theme + footer, TSK-235 TUI
   persist, TSK-236 web persist). The no-dep PORT lane is now essentially exhausted: what remains is dep-gated
   (TSK-247/248/249/255/257 comrak/regex/serde/tree-sitter), global-state-gated (TSK-234/250), or owner-wishlist
   ([PAINT]/image-editor/[PARTIAL]) — and the SwiftUI render-path lane is owner-gated on TSK-502 (parked).
@@ -8681,30 +8681,30 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   reinforced [[reference_board_vs_tasklist_numbering]] with the incident + an absolute rule (task_get+title-match
   is the FIRST call on any board id, every time). No other validations affected (TSK-243/235/236 stand).
   → OWNER ACTION: revoke the TSK-262 validation.
-- **TSK-468 → fixed** (commit c21f311, blocker=live-validation): removed the permanently-`.disabled(true)` dead
+- **TSK-468 → fixed** (commit f539238, blocker=live-validation): removed the permanently-`.disabled(true)` dead
   "References" item from the LSPNavigationPanel modePicker Menu (empty action; references mode needs an origin
   symbol only the source-view "Find References" context menu supplies; empty-state hint documents the real entry).
   `swift build` clean; central headless gate PASSED on the committed commit (main green). NOT agent-validated on
   purpose: pure SwiftUI view change, no host-testable behavior — visual confirmation is the VM/human gate
   (same render-path lane gated behind TSK-502). Honest ceiling = `fixed`, awaiting live validation.
-- `main` @ c21f311 (+ this log). The self-validatable lane stays exhausted; the productive frontier remains
+- `main` @ f539238 (+ this log). The self-validatable lane stays exhausted; the productive frontier remains
   owner-input-bound (deps 247/248/249, web global-state 234/250, render-path/VM behind parked TSK-502).
 
 ## LOG +148 (2026-06-09, autonomous tick — owner's #1 priority: nailing Code Review, host cores)
 Per the owner directive "focus on nailing the Code review feature" — three host-completable Code-Review cores
 this run, each behind teeth, each with the VM-gated UI slice honestly deferred:
-- **TSK-522 (multi-select commits → cumulative diff), slices 1+2** (commits d09e631, 306452e, 435a8af):
+- **TSK-522 (multi-select commits → cumulative diff), slices 1+2** (commits 0848a84, 09d9270, 7bfa2d4):
   `CumulativeDiffSelection` pure range resolver (selected commits → `git diff base..tip`, root→empty-tree base,
   contiguous-vs-spanned gap accounting) + `GitClient.cumulativeDiff(baseRef:tipRef:)` + confirmed the existing
   `commitDiff(sha:)` producer (root-safe `git show`). Fixture teeth prove cumulative ≠ per-commit (intermediate
   state collapses). Slice 3 (GitLogTab multi-select + cumulative DiffView + "includes N intermediate" banner) = VM-gated.
-- **TSK-523 (click any commit → diff + comments), slice 2** (commit d04c2e6): extended the FILE-scoped review-comment
+- **TSK-523 (click any commit → diff + comments), slice 2** (commit eb23e55): extended the FILE-scoped review-comment
   model to a COMMIT-DIFF context — additive optional `ReviewComment.commitSha` (absent key decodes to nil ⇒ existing
   on-disk reviews load unchanged, no Review schema bump) + `CommitDiffAnchor` pure resolver (partition by commit,
   per-commit counts, distinct commented-commits, `blobRev(side:commitSha:firstParent:)` bridging to `AnchorStaleness`,
   root→empty-tree). 10 teeth incl. the backward-compat decode guard. Slice 3 (inline DiffView-on-select + gutter→
   composer→save) = VM-gated, overlaps TSK-205.
-- **TSK-530 (NEW ticket — two export modes, with/without code)** (commit 9e6ae99): `ReviewExporter.ExportMode`;
+- **TSK-530 (NEW ticket — two export modes, with/without code)** (commit 46a3772): `ReviewExporter.ExportMode`;
   `.withoutCode` drops each comment's `context` (the only source-bearing field) + sets top-level `includesCode=false`;
   with-code output byte-identical (context now optional, encodeIfPresent). 3 teeth incl. a no-source-leak assertion.
   Slice 2 (mode picker in the export sheet) = VM-gated. NOTE: board TSK-204 is a DIFFERENT (done, CSV-filtering) task —
@@ -8714,7 +8714,7 @@ this run, each behind teeth, each with the VM-gated UI slice honestly deferred:
   machine load (PASSES isolated, 0.108s; zero interaction with Review code). The appended `echo` masked the gate's
   real EXIT=1 (the exit-masking footgun [[reference_vm_plain_ssh_breaks_tests]]) — read the in-log `==>` marker, not
   the wrapper exit.
-- `main` @ 9e6ae99 (+ this log). Code-Review host cores are landing fast; the remaining Code-Review work (cumulative
+- `main` @ 46a3772 (+ this log). Code-Review host cores are landing fast; the remaining Code-Review work (cumulative
   DiffView multi-select, inline commit-diff add-comment, export mode picker) is all VM-gated UI on the same render
   lane behind TSK-502. Next host-completable frontier = the audio-editing greenfield cores (TSK-525 decode+waveform
   peaks, 526 FFT, 527 trim/fade, 528 encoders) + image Save-As-spec fields (TSK-524).
@@ -8723,12 +8723,12 @@ this run, each behind teeth, each with the VM-gated UI slice honestly deferred:
 Owner's "next major need is media editing → audio". New `Sources/ViewerCore/Audio/` subsystem (greenfield), two
 fully-host-testable cores closed end-to-end (these have NO UI in scope — the render is the separate TSK-529 — so the
 host teeth fully cover the deliverable and self-validation to `done` is in-policy):
-- **TSK-525 → DONE** (commit cc07205): `AudioPCMBuffer` (deinterleaved float PCM + `monoSamples()` downmix),
+- **TSK-525 → DONE** (commit 7be5728): `AudioPCMBuffer` (deinterleaved float PCM + `monoSamples()` downmix),
   `AudioDecoder.decode` via `AVAudioFile` (system framework — headless file I/O, no `AVAudioSession`/hardware/new
   deps; bounded by `maxFrames`), `WaveformReducer.reduce` (N samples → `width` (min,max) columns over a clamped zoom
   window, ≥1 frame/column when zoomed in). 19 teeth incl. a REAL CAF write→decode round-trip + silence/full-scale/
   window-clamp/zoom-in DSP asserts.
-- **TSK-526 → DONE** (commit 4d99a1c): `SpectrumAnalyzer.analyze` — Hann-windowed real FFT via Accelerate/vDSP
+- **TSK-526 → DONE** (commit ab4d22d): `SpectrumAnalyzer.analyze` — Hann-windowed real FFT via Accelerate/vDSP
   (`vDSP_fft_zrip`, system framework, no new deps) → per-bin dB magnitude + bin-frequency map; `peakBin`/
   `binResolution`. 7 teeth: sine peaks map to the bin of its frequency (8k@1k, 44.1k@5k), DC→bin 0, silence→floor,
   non-power-of-two→nil.
@@ -8736,18 +8736,18 @@ host teeth fully cover the deliverable and self-validation to `done` is in-polic
   TSK-525's gate failed only on `GrandchildPipeTests` (plugin-subprocess fd-accounting under parallel load → 28→36,
   boundary miss; passes isolated). TSK-526's gate failed only on `FoldBenchTests.testCold10KLineJSONUnder250ms`
   (394ms vs 250ms — the perf-bench flake CLAUDE.md explicitly calls out). Neither touches audio.
-- `main` @ 4d99a1c (+ this log). Remaining audio host cores: TSK-527 (trim/fade ops on AudioPCMBuffer — pure,
+- `main` @ ab4d22d (+ this log). Remaining audio host cores: TSK-527 (trim/fade ops on AudioPCMBuffer — pure,
   host-testable, next) and TSK-528 (WAV/AAC encoders — host-testable; MP3 ENCODE is unsupported by AVFoundation →
   needs an owner dep decision). The audio viz UI (TSK-529) + image Save-As UI (TSK-524) are VM-gated.
 
 ## LOG +150 (2026-06-09, autonomous tick — audio edit-ops DONE + encoders fixed, MP3 parked)
 Audio host-core wave continued — the ViewerCore/Audio subsystem now covers decode→PCM, waveform, FFT, edit ops,
 and lossless+AAC export:
-- **TSK-527 → DONE** (commit e33f5e2): non-destructive `AudioEditOp{trim,fade(linear|equalPower,in|out)}` +
+- **TSK-527 → DONE** (commit 716770d): non-destructive `AudioEditOp{trim,fade(linear|equalPower,in|out)}` +
   `AudioDocument(source+ops)` (rendered/undo/revert), mirroring the ImageDocument op-list pattern. 13 teeth
   (trim range/clamp/invert; fade-in 0→1 linear-mid 0.5 / equalPower-mid 0.707=-3dB; fade-out symmetric;
   range-isolation; silence-stays-silent; doc replay+undo+revert; op Codable). Gate PASSED clean (no flake).
-- **TSK-528 → fixed + PARKED** (commit 1ad4c92): `AudioExportSpec` + `AudioExporter.encode` — WAV/AIFF/CAF
+- **TSK-528 → fixed + PARKED** (commit ad58c72): `AudioExportSpec` + `AudioExporter.encode` — WAV/AIFF/CAF
   (lossless PCM, selectable bit depth) + AAC (lossy, bitrate) via `AVAudioFile` (system framework, no deps).
   6 teeth (WAV int16+float32 round-trip through our decoder, bit-depth honored, AAC→non-empty decodable .m4a,
   empty-guard). **MP3 encode is NOT supported by AVFoundation on macOS** → `.mp3` throws
@@ -8756,7 +8756,7 @@ and lossless+AAC export:
 - **Gate flake (recurring, documented):** TSK-528's gate failed only on `GrandchildPipeTests` (plugin-subprocess
   fd-accounting, 32→40 grew exactly 8 under parallel load) — same one TSK-525 hit; passes isolated, audio spawns
   no subprocesses. No real failures.
-- `main` @ 1ad4c92 (+ this log). The audio HOST-CORE wave is essentially drained: every remaining audio piece is
+- `main` @ ad58c72 (+ this log). The audio HOST-CORE wave is essentially drained: every remaining audio piece is
   VM-gated UI (waveform/spectrum render + transport TSK-529; trim-handle/fade-curve drag) or the parked MP3 dep.
   The whole media-editing + Code-Review host-core frontier is now owner/VM-bound; image Save-As UI (TSK-524) is
   also VM-gated. Next host-completable work, if any, is back in the rust-core [PORT] lane or net-new core asks.
@@ -8768,13 +8768,13 @@ Reconnaissance + one real host-completable feature:
   no clean host-completable rust-core [PORT] task remains there either. Verified board TSK-276 = mislabeled
   "[BACKLOG] Debugger" (the IndentDetector-CRLF work it carries is genuinely already fixed+tested; a prior session
   flagged the #NNN-vs-TSK-NNN mislabel for owner reopen). So the owner-priority host frontier is genuinely drained.
-- **TSK-531 → DONE (NEW, net-new audio core)** (commit 1f13105): the most basic missing audio edit — amplitude
+- **TSK-531 → DONE (NEW, net-new audio core)** (commit 7c7e468): the most basic missing audio edit — amplitude
   control. `AudioEditOp.gain(decibels:)` (×10^(dB/20)) + `.normalize(targetPeakDB:)` (peak→target dBFS, silence
   no-op) on the op-list, + `AudioPCMBuffer.peakAmplitude()/rmsAmplitude()` metering. 13 teeth (26/26 with the
   trim/fade suite — the internal fadeGain rename is regression-free). Squarely in the owner's "basic audio editing
   … scale" ask; pure float DSP, zero deps. Gate's only failure = the documented FoldBench perf flake (486ms vs
   250ms under load); no non-bench failures.
-- `main` @ 1f13105 (+ this log). HONEST STATE: the host-completable frontier for the owner's stated priorities is
+- `main` @ 7c7e468 (+ this log). HONEST STATE: the host-completable frontier for the owner's stated priorities is
   exhausted — further audio/image additions would be gold-plating, and everything left on the board is VM-gated UI
   (render lane behind parked TSK-502), an owner decision (MP3 dep TSK-528; comrak TSK-256; deps 247–249), or a
   large unscoped wishlist (Debugger, Photo-editor, Vector-store, Layers, multi-window, archive-browsing). To
@@ -8787,7 +8787,7 @@ confirmed every one is already-done or non-actionable, hardening the LOG +151 co
 - **`diff::parse_coord` (built-in TaskList #303)** — ALREADY FIXED + TESTED: rust-core `diff.rs` parse_coord
   explicitly mirrors Swift's `split(omittingEmptySubsequences:true)` via `.filter(|p| !p.is_empty())`, with
   asserts for `",3"→(3,1)`, `"5,"→(5,1)`, `","→(0,1)`, big-number clamp. Not a divergence.
-- **XML/HTML pretty-print (TSK-496)** — ALREADY VALIDATED (commit ddecc1d, 12 behavior tests): `format::pretty_xml`
+- **XML/HTML pretty-print (TSK-496)** — ALREADY VALIDATED (commit 5e2465d, 12 behavior tests): `format::pretty_xml`
   + `.xml/.svg/.plist/.xib/.storyboard → FileKind::Structured` + `formatted_lines = pretty_json.or_else(pretty_xml)`.
   The Formatted view mode (JSON **and** XML) is complete across all front-ends. (My handoff note that XML was
   "deferred" was stale.)
@@ -8800,7 +8800,7 @@ confirmed every one is already-done or non-actionable, hardening the LOG +151 co
 - **NET:** the host-completable lane is verified-exhausted. The loop is genuinely input-bound — productive work
   requires the owner to unblock the VM pixel lane (TSK-502 — drains the large fixed-but-unvalidated render-path
   backlog: TSK-300/302/303/310 + image/monitor UI + the Code-Review/audio UI siblings), answer a parked dep
-  decision (MP3 TSK-528 / comrak TSK-256 / 247–249), or scope a big wishlist feature. `main` @ 1f13105, gate-green.
+  decision (MP3 TSK-528 / comrak TSK-256 / 247–249), or scope a big wishlist feature. `main` @ 7c7e468, gate-green.
 
 ## LOG +153 (2026-06-09, autonomous tick — PORT lane also verified DONE; built-in #362–423 list is stale)
 Took the "drain the PORT lane" directive at face value and verified the rust-core front-end state FRESH (not from
@@ -8817,12 +8817,12 @@ recollection). Result: the PORT lane is also exhausted.
   genuinely-open work is VM-gated UI, owner-gated decisions, or large unscoped wishlist features. The loop is
   input-bound; further "work" would mean re-doing done items or shipping marginal/risky change the owner
   deprioritized. Unblocks unchanged: VM pixel lane (TSK-502) ≫ parked deps (TSK-528/256/247–249) ≫ wishlist scoping.
-  `main` @ 0757b61, gate-green.
+  `main` @ adc8c17, gate-green.
 
 ## LOG +154 (2026-06-09, autonomous tick — OWNER UNBLOCKED MP3; TSK-528 encoder set completed → validated)
 The owner answered the parked MP3 dep decision: "ffmpeg approved, but it's a host dependency, neither a dependency
 or vendored. Do best effort to find it in host, also add a setting for user to provide ffmpeg. Disable the feature
-if ffmpeg not found." Delivered exactly that (commit 4b707d4):
+if ffmpeg not found." Delivered exactly that (commit 94d2d40):
 - **`FFmpegLocator`** (new) — `resolve(override:environment:commonPaths:fileManager:)`: Settings-override → `PATH` →
   common install dirs (`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `/usr/bin`) → `nil` (⇒ MP3 disabled).
   Pure + injectable, 6 deterministic teeth.
@@ -8834,38 +8834,38 @@ if ffmpeg not found." Delivered exactly that (commit 4b707d4):
   the Save-As panel + the Settings ffmpeg-path field are VM-gated SwiftUI (the `ffmpegOverride` param is host-done;
   the UserDefaults persistence + NSSavePanel sheet is the live slice). Durable decision saved to memory
   ([[project_ffmpeg_external_host_tool]]).
-- `main` @ 4b707d4, gate-green (only the documented FoldBench/Grandchild flake). The ffmpeg-as-best-effort-host-tool
+- `main` @ 94d2d40, gate-green (only the documented FoldBench/Grandchild flake). The ffmpeg-as-best-effort-host-tool
   pattern is the precedent for any future external CLI integration. Still owner/VM-bound otherwise (VM lane TSK-502).
 
 ## LOG +155 (2026-06-09, autonomous tick — ffmpeg-path SETTING storage host-done; TSK-528 fully host-complete)
-Closed the host-completable half of the owner's "add a setting for user to provide ffmpeg" (commit c0796ad):
+Closed the host-completable half of the owner's "add a setting for user to provide ffmpeg" (commit a3c1bc6):
 `PreferencesStore.audioFFmpegPath` — UserDefaults-backed, trimmed, empty/whitespace→nil (degrades to
 `FFmpegLocator` auto-discovery); the export action passes it as `AudioExporter.encode(ffmpegOverride:)`. 6 host teeth
 (PreferencesStoreTests 31/31). Gate green modulo the documented GrandchildPipe fd flake. TSK-528 is now FULLY
 host-complete at the model/encoder/preference layer (validated); the ONLY remainder is pure VM-gated SwiftUI: the
-Settings→Audio text field bound to `audioFFmpegPath` + the Save-As format/bitrate picker sheet. `main` @ c0796ad.
+Settings→Audio text field bound to `audioFFmpegPath` + the Save-As format/bitrate picker sheet. `main` @ a3c1bc6.
 
 ## LOG +156 (2026-06-09, autonomous tick — literal "multiple comments → cumulative diff" core)
 Re-read the owner's Code-Review ask literally: "select multiple comments and see cumulative diff" — distinct from the
-multiple-COMMITS cumulative diff (TSK-522, done). Built the COMMENTS reading (TSK-532 → validated, commit 4ce7b40):
+multiple-COMMITS cumulative diff (TSK-522, done). Built the COMMENTS reading (TSK-532 → validated, commit c331d1d):
 `CommentDiffSelection.regions(from: [ReviewComment]) -> [Region{filePath, side, ranges}]` — groups selected comments
 by (filePath, anchor side), merges overlapping/adjacent line ranges into the minimal set a "diff of everything I
 flagged" view reveals; old/new sides kept separate (distinct coordinate systems); reversed bounds normalised;
 deterministic ordering. 9 host teeth; **headless gate PASSED clean (no flake this run)**. The multi-select gesture +
-region-scoped DiffView is the VM-gated UI slice. `main` @ 4ce7b40, gate-green. (If "comments" was a typo for
+region-scoped DiffView is the VM-gated UI slice. `main` @ c331d1d, gate-green. (If "comments" was a typo for
 "commits", no harm — combined-diff-of-commented-regions is a genuinely useful review workflow regardless.)
 
 ## LOG +129 (2026-06-10, autonomous tick — user-facing pool opened: TSK-599 + TSK-600 session-open flows fixed)
 First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreated post-compaction (:03/:13/…).
-- **TSK-599 → fixed (418b0b4).** Right-click folder → "Open in New Session" was a TOTAL silent no-op for anything
-  under `~/Documents` (= the owner's whole workspace): the 2026-06-03 SESS-01 harvest (7c11d94) put a blanket
+- **TSK-599 → fixed (1efc84f).** Right-click folder → "Open in New Session" was a TOTAL silent no-op for anything
+  under `~/Documents` (= the owner's whole workspace): the 2026-06-03 SESS-01 harvest (3721d6a) put a blanket
   `isUnderTCCProtectedRoot` guard in `SessionsAppCoordinator.openFolder` — swallowing every EXPLICIT open, including
   the open-panel pick (which explains the "opens the Open dialog / no new session" framing). Policy revised: explicit
   user gestures (context menu / open panel / script verbs / Go-to-path) proceed; the TCC guard now applies ONLY to
   implicit launch-time touches (bootstrap prefs seed, `restorePreviousFolderIfAvailable`). Contract updated in
   `docs/uat/smokes/sessions.md`; `SessionTCCGuardTests` rewritten to pin both directions; teeth shown (re-adding the
   guard → 5 red asserts).
-- **TSK-600 → fixed (f5cb39b).** SessionTabBar `+` → Go-to-path → picking `~` with plain Return "flashed" the current
+- **TSK-600 → fixed (006110b).** SessionTabBar `+` → Go-to-path → picking `~` with plain Return "flashed" the current
   tab and created nothing: the ContentView first-paint bridge presented the prompt with no memory of WHY, so default
   Open ran `model.openPath` (active-session re-root = the flash). New one-shot `DocumentModel.goToPathNewSessionIntent`
   set by the gate bridge, honored by both submit twins (`GoToPathPrompt.submit` + headless `commitGoToPath`), cleared
@@ -8873,10 +8873,10 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   re-root) on the broken build.
 - Both recorded `fixed` on the board with checks artifacts; host gate green on each committed SHA; fresh bundle built +
   installed to `/Applications/TextView.app` (owner: relaunch to pick it up). RESIDUE for the VM lane: menu-item
-  visibility + the SwiftUI onChange bridge are render-path; model layers fully pinned. `main` @ f5cb39b.
+  visibility + the SwiftUI onChange bridge are render-path; model layers fully pinned. `main` @ 006110b.
 
 ## LOG +130 (2026-06-10, autonomous tick — TSK-609 inert shoulder buttons 4/5/6: reveal-on-toggle-on)
-- **TSK-609 → fixed (c82498f).** Diagnosis ruled out dead wiring: the toggle model was already test-pinned
+- **TSK-609 → fixed (bdfc0e4).** Diagnosis ruled out dead wiring: the toggle model was already test-pinned
   green, and the owner's LIVE defaults (`panelOverrides`) show six panels successfully forced `:hidden` —
   the buttons work. The "inert" trio (4=git, 5=claudeTimeline, 6=lspOutline) are exactly the sections with
   their OWN disclosure state: flipping one ON mounted a thin COLLAPSED header (Claude was transient
@@ -8885,10 +8885,10 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   `SidebarPanelKind.expandedStateKey` when flipping a panel ON (git reuses its legacy key); Claude + Outline
   disclosure moved to `@AppStorage` on those keys so the reveal lands live and persists. 3 new headless teeth
   (reveal-on-on ×3 kinds, off-leaves-alone, key stability); mutation-checked red; host gate green; bundle
-  installed. VM-lane residue: pixel proof the expanded body paints. `main` @ c82498f.
+  installed. VM-lane residue: pixel proof the expanded body paints. `main` @ bdfc0e4.
 
 ## LOG +131 (2026-06-10, autonomous tick — TSK-266 tab-close: lazy survivor left dormant on every close path)
-- **TSK-266 → fixed (5336262), held at fixed (blocker=live-validation).** Fresh trace (per the re-run-fresh rule)
+- **TSK-266 → fixed (0004ccf), held at fixed (blocker=live-validation).** Fresh trace (per the re-run-fresh rule)
   found a concrete defect the earlier spike missed: `selectTab` runs `materializeIfNeeded` for the incoming tab,
   but NONE of the three close paths did — closing the active tab auto-selects a neighbor, and if that neighbor is
   a LAZY `.empty` tab (every multi-open non-last tab + every workspace-restored tab) it never starts loading; the
@@ -8897,10 +8897,10 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   (one per path), mutation-checked (stripping the calls reproduces the dormant `.empty` survivor); gate green;
   bundle installed. HONEST RESIDUE: any remaining felt latency when the neighbor was already loaded is the
   single-mounted content-view rebuild — the parked SUPERVISED MountedPanesLRU work (TSK-254 class) which needs
-  live Instruments; owner to confirm felt latency on the new build. `main` @ 5336262.
+  live Instruments; owner to confirm felt latency on the new build. `main` @ 0004ccf.
 
 ## LOG +132 (2026-06-10, autonomous tick — TSK-591 hover-lag triage + diagnostics; RELEASE build installed)
-- **TSK-591 (file-nav hover lag) → investigated, instrumented, flagged live-validation (868207e).** Code-trace
+- **TSK-591 (file-nav hover lag) → investigated, instrumented, flagged live-validation (e203a54).** Code-trace
   RULED OUT: row hover state (row-local `@State`), HelpSink/TooltipPresenter (narrow observables with dedupe).
   THREE live candidates remain: (1) per-row tracking-area density (`.onHover` + native `.help(path)` per row —
   AppKit mouse-moved walks all of them); (2) re-body amplification (`FileRowView` observes DocumentModel +
@@ -8912,7 +8912,7 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
 - **Owner ask: production build.** `bash scripts/build-app.sh release --install` → SUCCESS; installed at
   `/Applications/TextView.app` (release config, 44M — under the 48M cap; `codesign --verify --deep` OK). The
   release bundle carries all five of today's user-facing fixes (TSK-599/600/609/266 + TSK-591 diagnostics).
-  `main` @ 868207e.
+  `main` @ e203a54.
 
 ## LOG +133 (2026-06-10, autonomous tick — TSK-598 MD-open lag: headless attribution complete, parked to owner)
 - **TSK-598 (MD open laggy) → attributed headlessly, parked (waiting:human).** Measured the app-side pipeline with
@@ -8951,7 +8951,7 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
 ## LOG +134 (2026-06-10, autonomous tick — TSK-598: measure-don't-guess; harness gap found + fixed)
 Owner corrections this tick: (1) "we did have some harness to do profiling etc. measure don't guess";
 (2) "pls use utm for tests that require UI to open".
-- **Harness gap FOUND + FIXED (1668d68):** the documented capture recipe in `docs/PERFORMANCE_PROFILING.md`
+- **Harness gap FOUND + FIXED (c28d6ef):** the documented capture recipe in `docs/PERFORMANCE_PROFILING.md`
   was broken — its TL;DR omitted `--instrument 'os_signpost'`, so the stock Time Profiler template recorded
   ONLY Apple's PointsOfInterest lane; every `com.markdownviewer.*` interval was silently absent. Verified
   against a real 15s capture (host, ran before the UTM directive landed; future captures → VM, which has
@@ -8960,10 +8960,10 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   closes the one unmeasured span of a rendered-MD open; doc table updated (doc-coupled contract).
 - **NEXT TICK:** VM capture per the corrected recipe (rsync → release build on VM → xctrace in the GUI
   session → export interval durations for open/load/HTMLRenderer.render/loadToFinish) → fix what the
-  numbers indict. MountedPanesLRU park question now measurement-gated. `main` @ 1668d68, gate green.
+  numbers indict. MountedPanesLRU park question now measurement-gated. `main` @ c28d6ef, gate green.
 
 ## LOG +135 (2026-06-10, autonomous tick — TSK-598 MEASURED on the VM: WebKit loadToFinish = 94% of MD open)
-- **VM signpost capture done** (new `scripts/vm-profile.sh`, 1cb22cd): release build + xctrace
+- **VM signpost capture done** (new `scripts/vm-profile.sh`, 08ac325): release build + xctrace
   `--instrument os_signpost` under the launchctl-asuser GUI bridge, LESSONS.md (147KB, 17 fences, NO mermaid):
   `openResolved` 25.5ms · `DocumentController.open` 1.1ms · `HTMLRenderer.render` 203.3ms (149ms of that =
   one-time cold `ts.query-compile`) · **`WKWebView.loadToFinish` 3456.6ms — 94% of the open**. App-side
@@ -8974,7 +8974,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   hypothesis. The parked owner question on TSK-598 stands, upgraded with numbers.
 - **Harness gotchas captured in-script:** sudo'd xctrace writes the trace root-owned → in-sudo `chown vm-tester`
   before the scp pull AND sudo'd `rm` of the prior run's trace (the TSK-502 root-poisoning class, two new sites).
-  Owner offered manual chown/chmod — not needed, script self-heals. `main` @ 1cb22cd.
+  Owner offered manual chown/chmod — not needed, script self-heals. `main` @ 08ac325.
 
 ## LOG +136 (2026-06-10, autonomous tick — TSK-592 trace parsed; TSK-611 found+fixed: 927ms open hang was render-in-body)
 - **TSK-592 resize trace parsed** (/tmp/mdv-592-resize.trace, sweep window 8.0–13.5s anchored via AppKit
@@ -8984,7 +8984,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   only (the WKWebView **WebContent process is unsampled** — leading suspect for the felt jank, per TSK-598's
   94%-WebKit ratio) and setFrame ≠ live drag (inLiveResize paths unexercised). NEXT on 592: --all-processes
   capture; if WebContent dominates → snapshot-during-live-resize mitigation on the WKWebView.
-- **TSK-611 (filed + FIXED, commit 7cdf833):** the trace's ONLY hang (927ms at t=3.24s, the file OPEN) was
+- **TSK-611 (filed + FIXED, commit 8f00f00):** the trace's ONLY hang (927ms at t=3.24s, the file OPEN) was
   `DocumentModel.renderedHTML` running INSIDE ContentView's body during a layout pass — 68% of hang-window
   samples, 409/708 inside `ts_query_new` (TreeSitter grammar query compile for code-fence languages; C code,
   release pays it too). Fix: body reads `renderedHTMLIfCached` only; cold miss shows a spinner and kicks
@@ -8995,7 +8995,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   validation — held at `fixed`, not self-validated.
 
 ## LOG +137 (2026-06-10, autonomous tick — TSK-592 system-wide capture: WebContent hypothesis REFUTED; parked to owner)
-- **Harness:** `vm-profile.sh` gained a `system` scope (`--all-processes`, commit 713caea) — recorder starts
+- **Harness:** `vm-profile.sh` gained a `system` scope (`--all-processes`, commit 48b7fa7) — recorder starts
   first under sudo, app launches separately in the GUI session; for sampling XPC peers the app-scoped
   trace is blind to. Trace at `/tmp/mdv-592-resize-sys.trace` (29MB).
 - **Measured:** sweep window (7-12s, anchored by app sample density): MarkdownViewer **61%** /
@@ -9021,7 +9021,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +139 (2026-06-10, autonomous tick — TSK-593 fixed: diff window pins top-left)
 - **Root cause:** the diff tab's two-axis `ScrollView` centers content smaller than the viewport —
-  nothing anchored it (the #133 side-panel fix never covered this container). **Fix (b198275):**
+  nothing anchored it (the #133 side-panel fix never covered this container). **Fix (bf5583e):**
   GeometryReader feeds the viewport into `DiffView.scrollBody`, which expands the file-block stack to
   at least viewport size anchored `.topLeading`; large diffs scroll unchanged.
 - **Oracle lesson (also in the test header):** `ScrollView` is opaque to EVERY headless oracle — a
@@ -9033,7 +9033,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   (alignment dropped → red). Gate green on the committed commit; bundle reinstall kicked.
 
 ## LOG +140 (2026-06-10, autonomous tick — TSK-594 fixed: diff text selectable + Copy Hunk/File actions)
-- **Fix (fe1bd21), two layers:** diff content `Text` now `.textSelection(.enabled)` (in-place select/
+- **Fix (eba4832), two layers:** diff content `Text` now `.textSelection(.enabled)` (in-place select/
   copy); guaranteed multi-line copy via right-click **Copy Hunk** / **Copy File Diff** writing
   `UnifiedDiff.{Hunk,File}.clipboardText` — faithful unified-diff reconstruction (prefix chars incl.
   the `\` no-newline marker, `@@` banner, `---/+++` with `/dev/null` sides, binary one-liner) through
@@ -9044,7 +9044,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - Git-diff trio: TSK-593 ✓, TSK-594 ✓ — TSK-595 (selected log-row highlight) next.
 
 ## LOG +141 (2026-06-10, autonomous tick — TSK-595 fixed: git log selected-row highlight; diff trio complete)
-- **Fix (4c3cf28):** `GitPanelModel.selectedLogSHA` records which commit's diff is shown (set from the
+- **Fix (a7e4d14):** `GitPanelModel.selectedLogSHA` records which commit's diff is shown (set from the
   row action, cleared on repo switch — stale SHA must never match an unrelated repo's log; same-root
   no-op keeps it). The matching row renders an explicit `accentColor.opacity(0.28)` fill — NOT the
   system unemphasized selection color (grey/invisible, the TSK-488 lesson).
@@ -9055,7 +9055,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   features), TSK-602..608/610 unexplored; 3 measurement-backed parks await owner (592/598/601).
 
 ## LOG +142 (2026-06-10, autonomous tick — TSK-604 fixed: SQLite table widths now rescale with zoom)
-- **Root cause (d933eb8):** SQLite browser fonts/row-heights already track the unified zoom, but the
+- **Root cause (968b635):** SQLite browser fonts/row-heights already track the unified zoom, but the
   result table's column widths are @State computed ONCE — zooming with a table open grew the text
   into stale, clipping columns (reads as "SQLite doesn't scale"). **Fix:** `.onChange(of: uiScale)`
   rescales widths proportionally via pure `rescaledWidths(_:from:to:)` — user-dragged ratios kept,
@@ -9070,16 +9070,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   any URL, `openAsCategories` is universal, and the magic-byte sniff floats SQLite first for
   `mydb.db.bak`, with the override routing to the SQLite preview lens; (606) a true binary offers
   `[.hex]` only — Editor/Render primaries hidden (`ViewModeControl.showsEditor/showsRender`).
-- **Proof landed (16c058b):** `BinaryFileAffordanceTests` — 4 headless tests against a REAL
+- **Proof landed (7422687):** `BinaryFileAffordanceTests` — 4 headless tests against a REAL
   SQLite-magic .bak and NUL-laden garbage. Gate green. Both tickets dismissed `already-fixed` with
   checks; dismissal notes invite reopen-with-specifics if the INSTALLED build still shows otherwise.
 
 ## LOG +144 (2026-06-10, autonomous tick — TSK-607 fixed: periodic flush closes the scroll-drift crash-loss gap)
-- **Finding first:** the debounced crash-recovery autosave already exists (bf43bd2, 2026-05-31) —
+- **Finding first:** the debounced crash-recovery autosave already exists (63214b7, 2026-05-31) —
   tabs/selection/root/zoom/wrap/theme hit disk ~500ms after change. The REAL gap matching the report:
   scroll rides `SourceViewChannel` (REPUB-1) and never ticks the subscribed publishers, so
   scroll-then-crash lost the position.
-- **Fix (f44675b):** 30s periodic safety-net timer → the SAME equality-guarded `fireAutosave`
+- **Fix (3c5a70a):** 30s periodic safety-net timer → the SAME equality-guarded `fireAutosave`
   (scroll sample + single coalescing write queue; TSK-330 not widened). Idle tick = no-op compare.
   Arms/disarms with the autosave subscriptions; `<=0` interval disables for tests.
 - **Tests:** scroll-only drift persisted via `periodicFlushTick` with zero publisher ticks + idle
@@ -9089,7 +9089,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   `MetadataPanel` (file info / image dimensions / SQLite table+row counts) rendered
   UNCONDITIONALLY in ContentView's `.preview` branch — no shoulder button, no dismiss.
   If the owner meant a different surface, reopen with a screenshot and retarget.
-- **Fix (39755c5):** gate on `DocumentModel.showPreviewMetadataPanel` (@Published, didSet
+- **Fix (3e3e009):** gate on `DocumentModel.showPreviewMetadataPanel` (@Published, didSet
   write-through) persisted via `PreferencesStore.previewMetadataVisible` (default ON =
   prior behavior); new BottomAttributesBar "Info" checkbox shown only in preview mode
   (`mdv.previewInfoToggle`). Minimal persisted toggle chosen over full SidebarPanelKind
@@ -9098,12 +9098,12 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   re-enable persists). Teeth lesson: first mutation BROKE COMPILATION → 0 tests ran →
   grep said "0 failed" = FALSE no-teeth signal; redone with a compiling no-op
   (`didSet { _ = showPreviewMetadataPanel }`) → red → restored → green. Teeth mutations
-  must compile. Gate green on 39755c5; reinstall kicked.
+  must compile. Gate green on 3e3e009; reinstall kicked.
 ## LOG +146 (2026-06-10, autonomous tick — TSK-602 fixed: ViewOnly↔Editor highlight parity via shared SyntaxTheme palette)
 - **Root cause:** two unrelated palettes — source view paints TreeSitter runs with
   `SyntaxTheme` (Xcode hex constants); the CM6 editor used CodeMirror's stock pairing
   (`oneDark` dark / `defaultHighlightStyle` light). Same file, different colors per lens.
-- **Fix (4a2d307):** SyntaxTheme is now the single source of truth. `SyntaxTheme.cmPalette`
+- **Fix (e50c202):** SyntaxTheme is now the single source of truth. `SyntaxTheme.cmPalette`
   (TokenKind + chrome keys → #RRGGBB) rides the `setTheme` bridge message; the JS host
   builds `HighlightStyle.define` from it (token kinds mapped onto lezer tags) + an
   `EditorView.theme` for background/caret/gutters, swapped via the existing
@@ -9112,51 +9112,51 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   both already compiled into the shipped bundle (no new npm package; +66 bytes).
 - **Tests:** 5 SyntaxThemeCMPaletteTests (completeness, hex format, full parity vs the
   source-view colors), palette encoding pair, bundle/HTML wiring needles. Teeth ×2
-  (cssHex channel swap → 8 red; encoder palette-drop → red). Gate green on 4a2d307;
+  (cssHex channel swap → 8 red; encoder palette-drop → red). Gate green on e50c202;
   release reinstall kicked. Pixel-level confirmation = VM lane; held at `fixed`.
 ## LOG +147 (2026-06-10, autonomous tick — TSK-603 umbrella measured + split; TSK-612 sidebar line-count hotspot fixed)
-- **Capture:** 30s VM nav-sweep (debug, signpost-anchored; harness aaeaf8f). All 20 interactions
+- **Capture:** 30s VM nav-sweep (debug, signpost-anchored; harness 5dc5531). All 20 interactions
   recorded; the synchronous model calls are 0.7–3.7ms — but EVERY window (tab switch, sidebar
   toggle, view toggle) leaves the main thread **60–99% busy** for its full 150–300ms gap.
   The user-felt "navigation is slow" is broad SwiftUI re-evaluation, not one hotspot.
 - **Named contributors:** RowCounterPlugin line counting inside the sidebar body (~256ms/sweep)
-  → **TSK-612, FIXED (97998b2)**: per-URL memo keyed by the contents string (CoW `==` fast
+  → **TSK-612, FIXED (8d8ef78)**: per-URL memo keyed by the contents string (CoW `==` fast
   path) + UTF-8 byte-scan cold count — which also fixes CRLF files counting as 1 line.
   FileRowView.body 144ms (every row re-bodies per republish) → child **TSK-613**.
   SourceTextController.apply 166ms per tab switch → known MountedPanesLRU residue (TSK-598,
   parked). TrackedRepos git-root ~45ms → TSK-591 (instrumented).
 - **Bonus finding:** the always-on "ROW COUNTS" plugin section is the likely REAL surface of
-  TSK-608's "row-count tool window" (not the preview MetadataPanel gated in 39755c5) — filed
+  TSK-608's "row-count tool window" (not the preview MetadataPanel gated in 3e3e009) — filed
   **TSK-614** (dismiss/hide affordance) + evidence comment on TSK-608.
 - **Tests:** 9 RowCounterPluginTests (CRLF golden + memo-behavior via coldCountComputations
-  seam); teeth (memo defeated via compiling `, false` mutation → red). Gate green on 97998b2;
+  seam); teeth (memo defeated via compiling `, false` mutation → red). Gate green on 8d8ef78;
   TSK-603 → fixed (umbrella deliverable = measurement + children), TSK-612 → fixed.
 ## LOG +148 (2026-06-10, autonomous tick — TSK-614 fixed: plugin sidebar sections get a persisted Hide Section dismiss)
 - **The corrected TSK-608 surface.** The always-on "ROW COUNTS" section had no way off the
   screen because four gaps compounded: bundled plugins registered unconditionally at launch,
   `setEnabled(true)` for bundled was a no-op flag-flip (no re-registration path), enabled
   state never persisted, and Settings hid the toggle for bundled rows.
-- **Fix (f212ccd):** persisted disabled set (`MarkdownViewer.disabledPluginIDs`, injectable
+- **Fix (ec5de5c):** persisted disabled set (`MarkdownViewer.disabledPluginIDs`, injectable
   defaults) gates launch registration; disabled bundled sections PARK in a dormant stash so
   re-enable restores them without re-running the launch hook; "Hide Section" context menu on
   the section header; Settings → Plugins shows the toggle for bundled plugins as the re-show
   path. Both UI surfaces call exactly `PluginRegistry.setEnabled` — the tested seam.
 - **Tests:** 4 PluginSectionVisibilityTests (hide+persist, dormant re-enable, relaunch
   honors dismissal then re-enables, idempotent disable). Teeth: registration guard defeated
-  via compiling `, false` mutation → 2 red → restored green. Gate green on f212ccd; held at
+  via compiling `, false` mutation → 2 red → restored green. Gate green on ec5de5c; held at
   `fixed` (context-menu/Settings rendering = VM lane). If the owner confirms this is the
   intended "row-count tool window" dismissal, TSK-608's validation rides this fix.
 ## LOG +149 (2026-06-10, autonomous tick — TSK-613 fixed: sidebar rows skip re-body via Equatable snapshot)
 - **Root cause (measured, TSK-603 capture):** FileRowView held @ObservedObject on
   DocumentModel + SidebarModel + TrackedReposChannel — every visible row re-evaluated on
   every model republish (144ms inclusive per 4s sweep).
-- **Fix (5bf9005):** rows take an Equatable `FileRowState` snapshot computed by the parent
+- **Fix (0b34014):** rows take an Equatable `FileRowState` snapshot computed by the parent
   enumeration and are `.equatable()` — SwiftUI skips bodies whose snapshot didn't change,
   so a tab switch re-bodies ~3 rows instead of all. Object refs stay as UNOBSERVED lets for
   action closures + the lazy context menu; the "every body read goes through the snapshot"
   contract is documented and pinned TWO-SIDED by FileRowStateTests (uninvolved rows EQUAL =
   the skip; affected rows DIFFERENT = the stale-UI guard). Teeth via factory mutation.
-- Gate green on 5bf9005; reinstall kicked; AFTER nav-sweep VM capture in flight to quantify
+- Gate green on 0b34014; reinstall kicked; AFTER nav-sweep VM capture in flight to quantify
   vs the 144ms baseline (numbers to TSK-613 when pulled).
 ## LOG +150 (2026-06-10, autonomous tick — TSK-613 after-capture: sidebar fixes verified; residual filed as TSK-615)
 - **Before/after (same nav-sweep recipe, debug VM):** FileRowView.body 144→3ms (-98%),
@@ -9174,7 +9174,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   filter could never match commit DESCRIPTIONS or unloaded history. `GitClient.grepLog` runs
   `git log --grep --fixed-strings --regexp-ignore-case` (literal, case-insensitive, full
   message), sharing graphLog's record format via the extracted static `parseGraphLog`.
-- **Model (074a104):** debounced generation-guarded search task (loadMoreLog staleness
+- **Model (4e41e97):** debounced generation-guarded search task (loadMoreLog staleness
   contract: gen + repo + cancellation re-checked post-shell-out); `displayedLogEntries`
   switches the Log tab between match set and paged log; pagination disabled while searching;
   repo switch clears. UI: pinned field + match count + clear button.
@@ -9182,7 +9182,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   + 4 GitLogSearchModelTests (state machine) + 25-test git regression sweep on the
   refactored parser. Teeth: ignore-case flag dropped → red. Gate green; reinstall kicked.
 ## LOG +152 (2026-06-10, autonomous tick — TSK-597 fixed: find-in-diff with count + wrapping next/prev)
-- **Engine (e959865):** pure `DiffFind` in ViewerCore — case-insensitive literal match over
+- **Engine (ec72d88):** pure `DiffFind` in ViewerCore — case-insensitive literal match over
   EVERY hunk line (added/removed/context), document-ordered (file,hunk,line) coordinates,
   wrapping next/prev (fresh search seeds first; reverse seeds last). Headless-pinned by 6
   DiffFindTests; teeth via a wrap→clamp mutation.
@@ -9192,7 +9192,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   per-line coordinate ids under ScrollViewReader. DiffViewLayout/Copy suites confirm the
   TSK-593/594 contracts survived the body restructure. Gate green; reinstall kicked.
 ## LOG +153 (2026-06-10, autonomous tick — TSK-610 dismissed already-fixed; TSK-590 pool swept)
-- **TSK-610 (session tab height + git metadata): already shipped** in d3d2993 ("taller
+- **TSK-610 (session tab height + git metadata): already shipped** in bbf9267 ("taller
   session row + git badge"): SessionTabBar rows are two-line at uiSize(46) (vs the old
   30pt single line) with an arrow.triangle.branch + branch sub-line via SessionGitInfo —
   a subprocess-free .git/HEAD reader (worktree "gitdir:" indirection handled). Proof:
@@ -9204,7 +9204,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   supervised — case now 3×-measured), 601 (swift-open repro), 589 (eviction policy).
   Open residual: TSK-615 (distributed SwiftUI re-eval audit). Next: bumped P1 set.
 ## LOG +154 (2026-06-10, autonomous tick — TSK-313 fixed: strip double-click opens a session at ~)
-- **Browser idiom (7158054):** double-clicking the EMPTY session-tab-strip area spawns a
+- **Browser idiom (56a27ba):** double-clicking the EMPTY session-tab-strip area spawns a
   fresh session rooted at home immediately — no GoTo prompt (the `+` keeps the prompt flow).
   Gesture + new `session-open-home` script verb both call exactly
   `SessionsAppCoordinator.openHomeSession()` (`openFolder(home, forceNew: true)`; explicit
@@ -9213,7 +9213,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   force-new; GoTo gate NOT armed). Teeth: forceNew dropped → red. Gate green; reinstall
   kicked. Next P1: TSK-327 ([PARTIAL] tool-window drag/snap) + remaining bumped set states.
 ## LOG +155 (2026-06-10, autonomous tick — TSK-314 fixed: new-session prompt prefilled with ~)
-- **(a8f3ccf):** `showGoToPath(newSessionIntent: true)` sets `goToPathPrefill = "~"`; the
+- **(d3f8bfb):** `showGoToPath(newSessionIntent: true)` sets `goToPathPrefill = "~"`; the
   prompt seeds an untouched field from it on appear — bare Enter after `+` opens home via
   the TSK-600 intent plumbing. Regular in-session Go To keeps the deliberate empty
   match-Finder field; dismiss clears the prefill; seeding never clobbers typing.
@@ -9222,7 +9222,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   dismiss); the 7 existing intent-routing tests double as the commit-path guard.
   Gate green; reinstall kicked.
 ## LOG +156 (2026-06-10, autonomous tick — TSK-363 fixed: show-hidden toggle removed, hidden always shown)
-- **(84d0245):** the eye/eye.slash header button (`mdv.sidebar.showHidden`) is GONE —
+- **(3bad801):** the eye/eye.slash header button (`mdv.sidebar.showHidden`) is GONE —
   hidden files are always shown. The critical edge wasn't the button: `SessionState.hydrate`
   used to restore `sidebarIncludeHidden ?? false`, so any stale persisted `false` (or
   plain nil from an old session) would strand the user with dotfiles invisible and no
@@ -9232,9 +9232,9 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** 3 new SessionStateTests pins (stale false neutralized / nil lands true /
   snapshot never persists) + SessionIsolationTests rewritten from "include-hidden is
   per-session" to "always true". Teeth: compiling mutation restoring the old hydrate +
-  persist behavior → all 4 red; restored → green. Gate green on 84d0245; reinstall kicked.
+  persist behavior → all 4 red; restored → green. Gate green on 3bad801; reinstall kicked.
 ## LOG +157 (2026-06-10, autonomous tick — TSK-522 fixed: Git Log multi-select → cumulative diff)
-- **(2190fdb):** slice 3 lands on the already-shipped resolver (slice 1) + GitClient.cumulativeDiff
+- **(61a3092):** slice 3 lands on the already-shipped resolver (slice 1) + GitClient.cumulativeDiff
   (slice 2): Cmd-click toggles, Shift-click extends a contiguous run from the anchor, plain click
   keeps the single-commit diff. ≥2 selected → selection bar with View Diff (writes the
   `git diff base tip` net patch to a .diff tab) and an "+N in-between" warning when the selection
@@ -9243,9 +9243,9 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** 10 GitLogMultiSelectTests (state machine + range math incl. empty-tree root base)
   + a search-guard pin in GitLogSearchModelTests. Teeth: shift-range→anchor-only +
   topoIndex→0 mutation = 9/10 red; restore → 29/29 across the git-log suites. Gate green on
-  2190fdb; reinstall kicked. Bar pixels + real modifier clicks = VM lane (held at fixed).
+  61a3092; reinstall kicked. Bar pixels + real modifier clicks = VM lane (held at fixed).
 ## LOG +158 (2026-06-10, autonomous tick — TSK-523 fixed: Review Commit from the Git Log, end-to-end)
-- **(c7d75f4):** the missing piece was WIRING, not machinery — ReviewTabView (review-aware
+- **(e592871):** the missing piece was WIRING, not machinery — ReviewTabView (review-aware
   DiffView with add-comment + comment sidebar) had zero presentation sites, and Review.scope
   already handled `.commit(sha)` (git show → DiffParser). Landed: `openCommitReview(sha:)`
   find-or-creates the commit-scoped review in `.textview/reviews/` and activates it
@@ -9256,7 +9256,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** 7 CommitReviewLaunchTests (real repo: persist+diff+tab-select, idempotency,
   per-sha distinctness, reopen/close, repo-switch clear, stamp + store round-trip, nil for
   workingTree). Teeth: always-create + nil-stamp mutations → 4/7 red; restore → 21/21 across
-  the review suites. Gate green on c7d75f4; reinstall kicked. Accordion layout/pixels = VM lane.
+  the review suites. Gate green on e592871; reinstall kicked. Accordion layout/pixels = VM lane.
 - **P1 set status:** 266/267/313/314/363/522/523 all fixed; 359 parked (owner decision);
   remaining: TSK-327 ([PARTIAL] tool-window drag/snap).
 ## LOG +159 (2026-06-10, autonomous tick — TSK-327 parked (owner fork); TSK-455 HEX capture in flight)
@@ -9284,7 +9284,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   four data-backed symptoms); no HEX-side code change would move the felt second, so none was made.
   Traces: /tmp/mdv-455-hex.trace (cold), /tmp/mdv-455-hex-nav.trace (warm). Evidence on both tickets.
 ## LOG +161 (2026-06-10, autonomous tick — TSK-440 fixed: sidebar tool-window resize/fill overhaul)
-- **(5cccd93):** all three entangled bugs, headless-first. (A) lone-FILES gap root-caused:
+- **(760d5d8):** all three entangled bugs, headless-first. (A) lone-FILES gap root-caused:
   BoundedAccordionScroll conflated "unmeasured" with "measured EMPTY" — an empty accordion
   framed itself at the cap (~62% of the sidebar). New pure `AccordionHeightResolver`:
   measured-empty → 0 (FILES flex-fills), unmeasured → cap (first-pass behavior kept).
@@ -9295,7 +9295,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   delta clamped; the above-only/FILES-absorbs-slack model is gone.
 - **Tests:** 15 new SidebarResizeTests + all adjacent layout suites green (planner 8,
   heights 14, bounding 3). Teeth: triple compiling mutation → 7/15 red; restored → green.
-  Gate green on 5cccd93. VM full suite kicked as validation (regression-prone zone
+  Gate green on 760d5d8. VM full suite kicked as validation (regression-prone zone
   #100/#133/#211/#215); live drag feel + pixels stay VM/owner-lane — held at fixed with
   blocker live-validation. Install follows the VM result.
 ## LOG +162 (2026-06-10, autonomous tick — TSK-616 filed+half-fixed: VM .build toolchain poisoning)
@@ -9333,12 +9333,12 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   prompt TOP-anchored** (new dump field) → real WindowServer pixels green
   (`TerminalTabStripVisualRegressionTests` 4/4, skipped=0, in the GUI-session lane). The
   symptom requires a stale 1-row grid; the dump refutes it. Board: validated w/ checks.
-- **New evidence channel (549308c):** `--diagnose` now emits a `terminal` node per
+- **New evidence channel (ea253a7):** `--diagnose` now emits a `terminal` node per
   `TerminalNSView` — `grid_rows/cols` vs bounds-implied (`gridMatchesBounds`), cursor,
   blank/non-blank row occupancy (content-free, redaction-safe). 6 host tests pin the
   contract incl. BOTH polarities of the health bit (`TerminalDiagnosticInfoTests`). This is
   the reusable arbiter for any future "frame right, paint wrong" terminal report.
-- **Harness root-cause found+fixed (611c728):** the sudo'd asuser bridge spawns apps as
+- **Harness root-cause found+fixed (9de101e):** the sudo'd asuser bridge spawns apps as
   ROOT, so every non-sudo `pkill` reap in `vm-diagnose.sh` was a silent no-op behind
   `|| true` — 6 stray instances had piled up. Both reap sites now sudo'd. Related: the
   GUI-session suite run root-owned `.build/ModuleCache` files (TSK-502 class), breaking the
@@ -9351,7 +9351,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   (emptyFileHex) + **TSK-618 filed**: `ImageEditorVisualRegressionTests
   .test_imageEditor_previewAndControls_composite` failed on what is likely its FIRST real
   execution (it self-skips windowless); failure PNG kept root-side. Host gate green on
-  549308c (4625 tests); one earlier gate run flaked under load (exit 1, clean on re-run).
+  ea253a7 (4625 tests); one earlier gate run flaked under load (exit 1, clean on re-run).
 
 ## LOG +165 (2026-06-10, autonomous tick — TSK-592 trace PARSED: 27ms/frame resize cost, 5th symptom onto TSK-598)
 - **The "sweep can't repro it" paradox is resolved by arithmetic, not a new driver.** The
@@ -9371,7 +9371,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   resolution into the TSK-598 MountedPanesLRU approval. App-side signpost bonus from the
   same trace: open-time `ts.query-compile` = 399ms of the 403ms first `tokenize` (one-time
   grammar query compile on MAIN at first open) — candidate precompile/off-main item.
-- Also this tick: fresh `549308c` release installed to `/Applications/TextView.app`;
+- Also this tick: fresh `ea253a7` release installed to `/Applications/TextView.app`;
   root-owned `.build/ModuleCache` residue from the sudo'd GUI suite run broke the next VM
   build (`CMdvCore .pcm: Operation not permitted`) — chown self-heal, dist rebuilt clean.
 
@@ -9380,7 +9380,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   (`HTMLRenderer.swift:261` via the `renderPage` memo), so the first fence of each language
   paid the one-time `Query` compile on main — 403ms debug / ~130ms release for swift
   (measured in the TSK-592/598 captures, not guessed).
-- **Fix (1466331):** `TreeSitterEngine.warm(_:)`/`isWarm(_:)` + a utility-priority
+- **Fix (1b91f14):** `TreeSitterEngine.warm(_:)`/`isWarm(_:)` + a utility-priority
   `Task.detached` in `applicationDidFinishLaunching` precompiling all grammars. The
   engine's per-language compile locks already serialize concurrent first-touch, so the
   background warm is the designed-for path; a racing open waits only the remainder of the
@@ -9404,14 +9404,14 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   rendered its (polluted) state faithfully; the test's full-width band assumptions broke.
 - **Isolated GUI-lane run PASSES** (6.0s, real execution) — only possible after fixing a
   silent harness hole: `test-in-vm.sh test --filter X` NEVER forwarded the filter (the
-  dispatch called `run_tests` without args) and ran the FULL suite every time (`fd195b5`).
+  dispatch called `run_tests` without args) and ran the FULL suite every time (`34774b6`).
 - **Fix plan (on the ticket):** `MDV_PRISTINE_CHROME=1` launch env skipping persisted
   chrome reads (terminal pane layout, frame autosave, tool windows) for deterministic T5
   spawns + a `minWidth` floor on the editor preview (the flex-collapse is also a real UX
   nit). Teeth: polluted-defaults fixture → assert pristine chrome.
 
 ## LOG +168 (2026-06-10, autonomous tick — TSK-618 VALIDATED: MDV_PRISTINE_CHROME deterministic T5 spawns, shield demonstrated live)
-- **Fix (e82dae1), one choke point:** all chrome stores chain off `PreferencesStore.defaults`
+- **Fix (bebf9e5), one choke point:** all chrome stores chain off `PreferencesStore.defaults`
   (`TerminalPaneStore`, `PanelLayoutStore`, zoom/prefs) — its default param is now
   `PristineChrome.launchDefaults()`: `.standard` normally; under `MDV_PRISTINE_CHROME=1`
   an EMPTIED process suite (reads = factory chrome, writes die with the suite — also
@@ -9422,12 +9422,12 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Shield demonstrated against the live failure recipe:** with the VM's
   `NSWindow Frame MainWindow` deliberately polluted to 700×500, the T5 test STILL passes
   (5.4s real execution); pollution removed after. `PristineChromeTests` 3/3 pin the
-  suite-emptying + write-isolation mechanism on the host gate. Host gate green @ e82dae1;
+  suite-emptying + write-isolation mechanism on the host gate. Host gate green @ bebf9e5;
   T5 green on the rebuilt VM dist. Board: validated.
-- TSK-618 also surfaced and fixed `test-in-vm.sh` filter pass-through (fd195b5, prior log).
+- TSK-618 also surfaced and fixed `test-in-vm.sh` filter pass-through (34774b6, prior log).
 
 ## LOG +169 (2026-06-10, autonomous tick — TSK-617 fixed: uncatchable dead-pipe crash + emptyFileHex settle)
-- **The VM suite's false-failure pair is closed (fca2114).** `AppLauncher.runShell` read
+- **The VM suite's false-failure pair is closed (4f6505d).** `AppLauncher.runShell` read
   pipes via `readDataToEndOfFile()` — an UNCATCHABLE ObjC `NSFileHandleOperationException`
   on a dead fd (fd pressure in the 4600-test process) crashed ALL of xctest at
   `AppLauncher.swift:209` instead of self-skipping. Now `readToEnd()`: same condition,
@@ -9438,40 +9438,40 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   widened to 3.0s. No wait-until verb exists and ScriptRunner steps run on main (a
   blocking poll would starve the resolution it waits for) — an async `wait-mode` verb is
   the future harness investment if fixed settles keep flaking. Residue: confirm in the
-  next VM full-suite run. Host gate green @ fca2114.
+  next VM full-suite run. Host gate green @ 4f6505d.
 
 ## LOG +170 (2026-06-10, autonomous tick — TSK-315 fixed: tab → Open/Move to New Session; TSK-590 epic groomed)
-- **TSK-315 (4389207):** tab context menu gains "Open in New Session" (session rooted at
+- **TSK-315 (4a6438f):** tab context menu gains "Open in New Session" (session rooted at
   the file's parent, file open; source untouched) and "Move to New Session" (also closes
   the source session's tab BEFORE the swap so its detach-time snapshot omits it — the file
   lives in exactly one session after). Reuses the TSK-599/600 seams:
   `SessionsAppCoordinator.openFileInNewSession` → `core.openFolder(parent, forceNew:)` →
   `model.openPath(file)`; menu routes through the weak `model.sessionsCoordinator` handle.
   `TabToNewSessionTests` 2/2 exercise the exact menu closure incl. the detach-persist →
-  rehydrate round-trip (opposite-outcome teeth on the flag). Host gate green @ 4389207.
+  rehydrate round-trip (opposite-outcome teeth on the flag). Host gate green @ 4a6438f.
 - **TSK-590 epic groomed to ack** with the full child rollup: 14 fixed/validated +
   6 follow-ons, 3 wontdo, 4 parked on the owner (591/592/598/601). Everything
   agent-actionable under the epic is done; it stays open for the parked four.
 
 ## LOG +171 (2026-06-10, autonomous tick — TSK-274 fixed: drag tabs onto session pills)
-- **TSK-274 (eb63137):** dragging a document tab onto a session pill MOVES the file into
+- **TSK-274 (33450bf):** dragging a document tab onto a session pill MOVES the file into
   that session. `SessionsAppCoordinator.moveTab(withID:toSessionID:)` resolves the dragged
   tab id at DROP time (close source tab → activate target → open file; same-session/
   unknown-target/stale-id/untitled are clean no-ops). `SessionTabDropDelegate` on every
   pill consumes the tab strip's existing drag payload; the `"mdv-tab:"` wire format is now
   a shared `TabDragPayload` codec (two hand-rolled parsers collapsed — drift-proof).
   Tests 6/6: codec round-trip/rejection + move-across-sessions w/ rehydrate round-trip +
-  the no-op trio. Host gate green @ eb63137. Hover visuals deliberately VM-lane scope.
+  the no-op trio. Host gate green @ 33450bf. Hover visuals deliberately VM-lane scope.
 
 ## LOG +172 (2026-06-10, autonomous tick — TSK-617 VALIDATED: emptyFileHex was a real routing bug, not a flake)
 - **TSK-617 (both halves) → validated.** The emptyFileHex UAT "timing flake" was a REAL
   user-facing bug: a 0-byte file defeats the NUL-byte binary sniff (empty input decodes as
   valid empty UTF-8), so `DocumentController.open`'s text path claimed it and the app landed
   in **Source** mode; the UAT contract is 0-byte unknown → **HEX**. The 3.0s settle bump
-  (fca2114) failing identically refuted the timing hypothesis. Fix (c3e6e5b): auto-detected
+  (4f6505d) failing identically refuted the timing hypothesis. Fix (c5dc0f6): auto-detected
   `.unknown` + size==0 routes to the binary loader before the text decode; forced "Open As…"
   categories bypass; non-empty unknowns keep text-first. 4 host behavior tests with a teeth
-  demo (fix stashed → red → restored). Gate green @ c3e6e5b (first run's FoldBench 263ms was
+  demo (fix stashed → red → restored). Gate green @ c5dc0f6 (first run's FoldBench 263ms was
   the known under-load bench flake; clean re-run, zero non-bench failures).
 - **Two VM-lane traps burned this validation, both now codified:** (1) the post-fix VM rerun
   STILL failed because `test-in-vm.sh test` doesn't rebuild `dist/` and `dist/` is
@@ -9487,7 +9487,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 ## LOG +173 (2026-06-10, autonomous tick — TSK-267 VALIDATED: 1MB HEX stall measured, fixed, regression-guarded)
 - **TSK-267 → validated.** The "1MB HEX extremely slow" stall was TextKit 2 full-document
   layout of ~65k rows, measured on the VM signpost/Time-Profiler harness at every step.
-  Fix chain (commits dbf155c, ab52c3e, c0e80bd, 92b5129): scoped highlight clear
+  Fix chain (commits 4aa624e, 4549494, 9c8b9a5, ebaeb21): scoped highlight clear
   (`HexHighlightPlan`, no more O(document) removeAttribute per search edit) · ≤256KB sync
   one-shot dump build (kills the 6KB-class per-open machinery) · arithmetic grid frame
   (rows×TK2-measured lineHeight, self-sizing off) · `textContainerOrigin` override
@@ -9497,12 +9497,12 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   window; chunkedBuild 1.82s→663ms debug / 261ms release. Guards on every host gate:
   HexFixedGridFrameTests + HexGridGeometryTK2Tests (formula == TK2 usage EXACTLY) +
   HexHighlightPlanTests, teeth demonstrated. VM ViewModesUATTests 13/13.
-- **Dead end kept for the record:** bounding the text container (30fdc32) defeats TK2's
-  lazy layout for in-bounds content — reverted in c0e80bd; the container must stay
+- **Dead end kept for the record:** bounding the text container (463ad65) defeats TK2's
+  lazy layout for in-bounds content — reverted in 9c8b9a5; the container must stay
   unbounded while the FRAME is pinned.
 - **Measurement-integrity catch:** three "after" captures profiled STALE binaries —
   `vm-profile.sh` piped the VM build through `| tail`, masking a failure on root-owned
-  `.build` debris. Fixed (b1849c4): the script now propagates the build's real exit code
+  `.build` debris. Fixed (285260e): the script now propagates the build's real exit code
   and refuses to profile. The trace that "refuted" the origin override was the stale one;
   the verified rebuild proved the override works.
 - Minor UX note on the ticket: the hex text view's frame is now exactly grid-sized, so a
@@ -9525,7 +9525,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **TSK-363 (always show hidden) → validated.** The user-facing contract is model-layer and
   fully host-pinned with teeth (hydrate force-trues a stale persisted false; snapshot never
   persists the field; isolation suite rewritten to the always-true contract) — and a UI
-  REMOVAL has no rendered-but-invisible risk class. Evidence on the ticket (84d0245).
+  REMOVAL has no rendered-but-invisible risk class. Evidence on the ticket (3bad801).
 - **Held at `fixed` deliberately (policy-correct, NOT stalled):** TSK-313 (strip double-click
   gesture hit-area), TSK-314 (GoTo prompt field seeding on appear), TSK-522/523 (Git Log
   selection-bar rendering + real modifier clicks). Each has its model/state machine fully
@@ -9537,7 +9537,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   MountedPanesLRU owner decision (TSK-598).
 
 ## LOG +176 (2026-06-10, autonomous tick — TSK-620 half A: the ui-click real-event interaction layer lands)
-- **The harness gap behind all four VM-held P1s is closed** (522576a, gate green): new
+- **The harness gap behind all four VM-held P1s is closed** (2f83a7d, gate green): new
   `ui-click` / `ui-double-click` script verbs locate a view by accessibility id on the
   realized NSView tree, build the genuine AppKit event sequence (down/up pairs, clickCounts,
   cmd/shift flags, bounds-fraction positioning) and POST it to the app's event queue — the
@@ -9563,10 +9563,10 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   constraints mapped en route (sendEvent vs tracking loops; unordered-window routing;
   non-key click swallowing; NSHostingView ids not on NSViews; empty in-process AX tree) —
   full entries in LESSONS.md "in-process event synthesis".
-- **What landed and stays (gate PASSED on db1cec1):** the verbs + strict `UIClickSpec`
+- **What landed and stays (gate PASSED on 80c44e9):** the verbs + strict `UIClickSpec`
   grammar (6 tests), `UIEventSynth` with host-pinned `events()` builder (3 tests),
-  activate/makeKey delivery fix (e692846), versioned self-describing NOT-FOUND trace with
-  AX sample (db1cec1), `uiClickTrace` step-dump channel, `nsTextField` dump node (proven
+  activate/makeKey delivery fix (0786f98), versioned self-describing NOT-FOUND trace with
+  AX sample (80c44e9), `uiClickTrace` step-dump channel, `nsTextField` dump node (proven
   on the VM: real rendered field values), and `InteractionUATTests` — the ready acceptance
   harness for whichever delivery mechanism wins.
 - **Checkpoint on the board (TSK-620 comment, seq 4022) with the NEXT DESIGN:** SwiftUI-side
@@ -9575,19 +9575,19 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   `resolveTargetRect` BEFORE the NSView walk; coordinates feed the existing event builder
   unchanged. Fallback: the external XCUITest L4 target (testmanagerd synthesizes entitled
   events). TSK-313/314/522/523 stay correctly held at `fixed` pending that evidence.
-- Process: af8bd21 briefly landed non-compiling code via a `;`-chained commit after a
-  remote build — fixed in db1cec1; rule (gate commits on the build's REAL exit) added to
+- Process: 06c4098 briefly landed non-compiling code via a `;`-chained commit after a
+  remote build — fixed in 80c44e9; rule (gate commits on the build's REAL exit) added to
   LESSONS.
 
 ## LOG +178 (2026-06-10, autonomous tick — TSK-313 + TSK-314 VALIDATED; the synthesis question closed for good)
 - **TSK-313 validated** (strip double-click → instant ~ session) and **TSK-314 validated**
   (+ → GoTo prompt RENDERING "~"): InteractionUATTests 2/2 green on the VM GUI lane
-  (dist of 7da75a7), driving each control's EXACT action closure cross-process and
+  (dist of 2bcb61e), driving each control's EXACT action closure cross-process and
   asserting dump outcomes — session created+activated at resolved home (313), realized
   NSTextField stringValue == "~" (314, the render half the ticket was held for). Teeth
   are not theoretical: the same assertions were RED for five VM iterations until the
   closures actually ran. Host gate PASSED on every commit in the chain
-  (eeb92e4 → 838e330 → 8da1d6f → 2442841 → 7da75a7).
+  (ea5c5b0 → 5f71074 → 4e3f16d → ef78e95 → 2bcb61e).
 - **The TSK-620 investigation closed the in-process synthesis question permanently** —
   constraints 6–8 landed in LESSONS: root apps are refused key status in a user session
   (cure: console-user spawn, now in AppLauncher); fork/exec'd apps can never self-activate
@@ -9605,14 +9605,14 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 ## LOG +179 (2026-06-10, autonomous tick — TSK-522 + TSK-523 VALIDATED; TSK-620 VALIDATED: the whole held-P1 quartet is closed)
 - **TSK-522 validated** (multi-select commits → cumulative diff) and **TSK-523 validated**
   (click commit → inline structured diff): InteractionUATTests 4/4 green on the VM GUI
-  lane (iteration 14, dist of 0e94e10) — the row/toolbar EXACT closures (hoisted to
-  GitLogDiffActions, fa5a42d, so view buttons and verbs run identical code) driven
+  lane (iteration 14, dist of 0777f92) — the row/toolbar EXACT closures (hoisted to
+  GitLogDiffActions, e06e158, so view buttons and verbs run identical code) driven
   cross-process against a real fixture repo; dump asserts the multi-selection set and the
   opened base..tip / <sha>.diff tabs. Host layer: GitLogDiffActionsTests (4, real git
   repo, mutation-checked teeth). Demonstrably capable of failing: iterations 12–13 were
   red on real defects — the panel root never binds via focus-follow in harness launches,
   and logEntries load only when the Log tab is visible — fixed via the picker/tab exact
-  closures as verbs (git-panel-root / git-panel-tab, dd3a710 + 0e94e10).
+  closures as verbs (git-panel-root / git-panel-tab, 75513f8 + 0777f92).
 - **TSK-620 validated and closed**: interaction layer + VM suite delivered; all four
   target tickets (313/314/522/523) validated off its evidence; the 8-constraint
   impossibility proof for in-process SwiftUI event synthesis is in LESSONS so no future
@@ -9630,7 +9630,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   regression degrades to the guarded menu path; the literal drag gesture is the
   entitled-synthesis class.
 - **TSK-595 validated** (selected log row highlight) — with a NEW pixel guard closing its
-  render gap (commit 669b40a): the row label extracted to `GitLogRowLabel` (pure
+  render gap (commit 4b8525a): the row label extracted to `GitLogRowLabel` (pure
   code-motion; ScrollView is opaque to headless oracles — the TSK-593 discovery) and
   ImageRenderer-rendered selected-vs-unselected, asserting the accent fill changes >30%
   of sampled pixels. Teeth: fill dropped → red → restored. Before this, NOTHING went red
@@ -9679,7 +9679,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +183 (2026-06-10, autonomous tick — TSK-602 VALIDATED: WebView painted-color parity suite landed)
 - **TSK-602 validated** (ViewOnly↔Editor highlight parity): the closure path named on
-  the ticket is now real. New `EditorThemeParityTests` (commit 5b35979) boots the REAL
+  the ticket is now real. New `EditorThemeParityTests` (commit 005db57) boots the REAL
   `codemirror.html` host in a bare WKWebView, drives it through the PRODUCTION bridge
   encoding (`window.cmDispatch(CMBridgeCodec.encodeOutboundJSON(...))` — byte-identical
   to `Coordinator.dispatch`), then reads back `getComputedStyle(span).color` for
@@ -9693,7 +9693,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   wrong hex (`keyword painted #53716A (comment) ≠ #AD3DA4`); restored → green.
 - Suite wired into BOTH WebView-lane filter lists (`scripts/test-in-vm.sh`
   `run_webview_tests` + `.github/workflows/nightly-vm.yml`) so nightly actually runs it.
-  Host headless gate PASSED on committed 5b35979.
+  Host headless gate PASSED on committed 005db57.
 - The TSK-590 epic is now FULLY closed for agent-actionable children — 602 was the last
   held one. Remaining pool: child TSK-613 is validated; TSK-615 (open child of 603)
   unexamined; owner-parked 591/592/598/601/608.
@@ -9701,7 +9701,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 ## LOG +184 (2026-06-10, autonomous tick — TSK-615 VALIDATED: chrome re-eval width measured by COUNTS; hypothesis falsified, pins landed)
 - **TSK-615 validated** (distributed re-eval residual, branch (b)): built the missing
   instrument — `BodyProbe` (DEBUG-only body-eval counter, MountProbe sibling) ticked at
-  the top of all 8 top-level chrome bodies — plus `ChromeBodyEvalCountTests` (a9de107),
+  the top of all 8 top-level chrome bodies — plus `ChromeBodyEvalCountTests` (e80c5f1),
   which hosts the REAL ContentView offscreen (InteractionProfileHarness pattern, text
   tabs only — runs in the bare host gate) and pins per-view body-eval bounds per
   republish kind.
@@ -9718,7 +9718,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   content re-eval, NOT chrome fan-out.
 - **Teeth**: re-added the historical sidebar→DocumentModel forwarding sink → the
   zero-bound test went RED naming all four widened chrome views; reverted → 6/6 green.
-  Gate PASSED on a9de107.
+  Gate PASSED on e80c5f1.
 
 ## LOG +185 (2026-06-10, autonomous tick — fresh validation of TSK-108 CAUGHT a live regression; fixed as TSK-621; both validated)
 - **TSK-108 (P1, ~1s tab close/switch/open) picked off `task_next` at `fixed`** — re-ran its
@@ -9726,15 +9726,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   (MountedPanesWiringTests 5/5, RepublishCountTests 2/2, MountedPanesLRU 12/12) — but the VM
   real-view-tree probe FAILED: `test_lruOverflow_evictsExactlyTheTail` got **3 WKWebView
   dismantles, expected 1** (A→B→A=0 still held).
-- **Root cause (TSK-621, filed + fixed this tick):** TSK-611 (7cdf833, this morning) made the
+- **Root cause (TSK-621, filed + fixed this tick):** TSK-611 (8f00f00, this morning) made the
   rendered body cache-read-only — so rendered-HTML cache eviction = WebView teardown for
   mounted panes. The cache's drop-to-⅔ hysteresis dropped 3 oldest entries on the 5th open,
   2 of them for tabs still in MountedPanesLRU → their retained panes flipped webview→spinner
   and were dismantled+re-rendered (the exact reload churn TSK-108 eliminated).
-- **Fix (af5e6dd):** mounted-aware eviction in `storeRenderedHTML` — never evict a mounted
+- **Fix (ab9fac4):** mounted-aware eviction in `storeRenderedHTML` — never evict a mounted
   tab's entry, evict oldest non-mounted only, hysteresis dropped (evict to capacity). New
   bare-gate test `test_cacheEviction_neverDropsMountedTabs` (RED against the old eviction,
-  naming both mounted victims); VM probe back to 2/2. Gate PASSED on af5e6dd; release bundle
+  naming both mounted victims); VM probe back to 2/2. Gate PASSED on ab9fac4; release bundle
   rebuilt + installed to `/Applications/TextView.app`.
 - **Why it shipped silently: PaneRetentionMountProbeTests was in NO WebView-lane filter list**
   — the gated suite ran nowhere (the #312 false-green class). Now wired into both
@@ -9745,7 +9745,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +186 (2026-06-10, autonomous tick — held trio validated fresh; TSK-590 epic rolled up to review)
 - **TSK-599 / TSK-600 / TSK-609 validated** — the three children still at `fixed` were
-  re-verified with FRESH host runs on current main (post-af5e6dd): 599 = SessionTCCGuard +
+  re-verified with FRESH host runs on current main (post-ab9fac4): 599 = SessionTCCGuard +
   OpenInNewSession* 18/18 (teeth: guard re-add → 5 red, demonstrated at fix time);
   600 = OpenInNewSessionTests 10/10 (incl. the intent-routing teeth test) +
   SessionOpenHomeTests 4/4 + the TSK-314 VM live render evidence; 609 =
@@ -9758,7 +9758,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +187 (2026-06-10, autonomous tick — validation drain begins per new SOP rank 1.5: TSK-266 validated; TSK-440 hold ratified with closure path)
 - **TSK-266 (P1, tab close ~1s) VALIDATED** — both structural causes are now landed and
-  guarded, evidence re-run fresh: (1) lazy-neighbor materialize fix (5336262) —
+  guarded, evidence re-run fresh: (1) lazy-neighbor materialize fix (0004ccf) —
   CloseTabMaterializeTests 3/3 (one per close path; fix-time teeth: stripping the 3 call
   sites → all 3 red); (2) the fix-time honest residue (content-view teardown on close)
   was eliminated by the MountedPanesLRU retention validated yesterday (TSK-108/621) —
@@ -9776,7 +9776,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +188 (2026-06-10, autonomous tick — TSK-440 render-half guards built; VALIDATED. Both fixed-lane P1s now drained)
 - **TSK-440 (P1, sidebar resize/fill) VALIDATED** after building the closure path named
-  last tick (commit 3bab1d3): new `SidebarDividerWiringTests` (5 tests) hosts the REAL
+  last tick (commit dacfea8): new `SidebarDividerWiringTests` (5 tests) hosts the REAL
   SidebarView and pins (1) realized PRESENCE per divider role — `ResizableSectionDivider`
   now ticks BodyProbe with its role (pair/aboveOnly/boundary/inert); boundary divider
   realized for files+1-tool (THE bug-B config), boundary+pair for files+2, none for lone
@@ -9787,7 +9787,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Teeth**: reconstructing the boundary divider without its `heightBelow` binding (the
   exact feared sidebarBody slip) → RED naming the degradation ("roles seen:
   [ResizableSectionDivider.inert: 1]"); restored → 5/5 green. SidebarResizeTests 15/15
-  re-run fresh. Gate PASSED on 3bab1d3 (one intervening run failed with ZERO named test
+  re-run fresh. Gate PASSED on dacfea8 (one intervening run failed with ZERO named test
   failures — the documented bench-flake-under-load class; two consecutive clean re-runs).
 - **Fixed-lane P1s fully drained** (TSK-266 last tick, TSK-440 this tick). Drain continues
   next into the June 4-5 S3/S4 + BACKLOG series (~50 tickets).
@@ -9813,7 +9813,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +190 (2026-06-10, autonomous tick — TSK-150 guard test built; VALIDATED. Teeth iteration taught an assertion-design lesson)
 - **TSK-150 (S3, loadMoreLog stale-append race) VALIDATED** after building the missing
-  guard test (commit 1f41c2a): `GitLogStalePageGuardTests` — 210-commit repo A (so page 2
+  guard test (commit a58d336): `GitLogStalePageGuardTests` — 210-commit repo A (so page 2
   is a real 110-commit payload) + 1-commit repo B; the test kicks page 2, captures the
   in-flight task via a new `loadMoreTask` private→private(set) seam, switches repos, and
   asserts repo A's page-2 fingerprint never lands. Control test pins the non-vacuous
@@ -9825,7 +9825,7 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   stripped) → RED naming the leak (count 110); restored → 2/2 green. Same masking class
   as the TSK-621 cache lesson: a later wholesale replace can hide an intermediate
   corruption — assert at the corruption window, not after convergence.
-- Gate PASSED on 1f41c2a. Drain tally: 266, 440, 134, 181, 150 validated (+ the earlier
+- Gate PASSED on a58d336. Drain tally: 266, 440, 134, 181, 150 validated (+ the earlier
   599/600/609/602/108/621 wave). ~46 fixed remain.
 
 ## LOG +191 (2026-06-10, autonomous tick — drain batch 2 via delegated recon: 6/6 HOLD, all honest; TSK-622 filed as the unblock)
@@ -9848,20 +9848,20 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +192 (2026-06-10, autonomous tick — TSK-622 guard 1/4 built: HexView fingerprint pinned; TSK-141 VALIDATED)
 - **TSK-141 (S3, HexView O(matches) highlight equality) VALIDATED** via the first TSK-622
-  guard (commit 49c5ce2): `HexHighlightFingerprintTests` pins the O(1) summary contract on
+  guard (commit 9f37910): `HexHighlightFingerprintTests` pins the O(1) summary contract on
   `HexTextController.HighlightFingerprint` (private→internal seam) — equal when
   count/first/last/pattern/width match despite differing MIDDLE offsets (match + click
   sets), per-field discrimination, and the ⌘G `differsOnlyByActiveMatch` fast-path
   predicate. Teeth = the exact audited regression (full-array field re-added → synthesized
   == compares all offsets) → 2 RED with self-explaining failure text; restored → 3/3.
-  Gate PASSED on 49c5ce2. Duplicate TSK-482 is pinned by the same suite.
+  Gate PASSED on 9f37910. Duplicate TSK-482 is pinned by the same suite.
 - TSK-622 remaining guards: PTY reap ESRCH (TSK-138), FileWatcher stop-races-reattach
   (TSK-147), rust-core indices-only cache structural pin (TSK-142/143) — next ticks.
   TSK-139 awaits owner dismiss (no regression-bite test possible by nature).
 
 ## LOG +193 (2026-06-10, autonomous tick — TSK-622 guard 2/4: rust-core indices-only cache pinned; TSK-142 + TSK-143 VALIDATED)
 - **TSK-142 + TSK-143 (S3, CSV session cache clone/leak pair) VALIDATED** via one shared
-  guard (commit a58eda9): `cache_is_indices_only_no_resident_row_copy` in session.rs pins
+  guard (commit dede2b0): `cache_is_indices_only_no_resident_row_copy` in session.rs pins
   the indices-only design three ways — size assertion (CachedView == {u64, Vec<u32>}
   exactly, named failure message), compile-time pin (referencing `.indices`), and
   behavior (repeated pulls serve identical indices; cache holds exactly the surviving
@@ -9869,20 +9869,20 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Teeth**: re-adding a `rows_copy: Vec<Vec<String>>` field (the audited resident-
   duplicate shape) → RED "CachedView grew beyond {for_version, indices}"; restored →
   session:: 8/8. **Bonus: the rust gate's clippy wall caught my first draft's
-  `unnecessary_cast` (exit 101)** — fixed, gate EXIT=0 on committed a58eda9.
+  `unnecessary_cast` (exit 101)** — fixed, gate EXIT=0 on committed dede2b0.
 - TSK-622 progress: guards 1-2 of 4 done (HexView fingerprint, rust cache). Remaining:
   PTY reap ESRCH (TSK-138), FileWatcher stop-races-reattach (TSK-147); TSK-139 awaits
   owner dismiss.
 
 ## LOG +194 (2026-06-10, autonomous tick — TSK-622 guard 3/4: FileWatcher race window pinned deterministically; TSK-147 VALIDATED)
 - **TSK-147 (S3, FileWatcher stop-races-reattach fd leak) VALIDATED** via guard 3
-  (commit 0a42e5f): a DEBUG-only `attachWindowHook` seam fires INSIDE the FW-S3 window
+  (commit cac4b07): a DEBUG-only `attachWindowHook` seam fires INSIDE the FW-S3 window
   (post-resume, pre-commit-lock), turning the race into a deterministic interleaving.
   `FileWatcherStopRaceTests`: in-window stop() → watcher stopped, fd back to process
   baseline (the leak observable), handler never fires; control test pins the happy path.
 - **Teeth**: deleting the FW-S3 guard block → RED "fd not released — the fresh source
   leaked into the stopped watcher" (fd 5 > baseline 4); restored → 2/2 + FileWatcherTests
-  8/8. Gate PASSED on 0a42e5f. Production delta = the #if DEBUG seam only
+  8/8. Gate PASSED on cac4b07. Production delta = the #if DEBUG seam only
   (nonisolated(unsafe) static, test-thread-only, coalesceLock precedent).
 - TSK-622: guards 1-3 of 4 done (HexView fingerprint, rust cache, FileWatcher window).
   Remaining: PTY reap ESRCH (TSK-138) + the PTY suite foreground-sandbox flake; TSK-139
@@ -9890,18 +9890,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 
 ## LOG +195 (2026-06-10, autonomous tick — TSK-622 guard 4/4: PTY zombie-reap pinned; TSK-138 VALIDATED. Guard batch COMPLETE)
 - **TSK-138 (S3, PTY terminate() zombie leak) VALIDATED** via the final TSK-622 guard
-  (commit 8480367): `PTYReapTests.test_terminate_collectsChild_noZombie` spawns a real
+  (commit 987d03a): `PTYReapTests.test_terminate_collectsChild_noZombie` spawns a real
   shell, terminates, and polls `kill(pid, 0)` for ESRCH — collection (pid gone) vs the
   audited zombie (kill keeps succeeding) is a clean discriminator the prior lifecycle
   suite lacked (it only asserted prompt return). Seam: `childPID` private→private(set).
 - **Teeth = the exact audited bug**: reverting reapChild to a single immediate WNOHANG
   (no grace poll / no SIGKILL escalation / no blocking wait) → RED "child still exists
   after terminate() … a ZOMBIE was left unreaped"; restored → green (collection in 63ms).
-  Gate PASSED on 8480367. New test passes FOREGROUND — the recon's flake lives in the
+  Gate PASSED on 987d03a. New test passes FOREGROUND — the recon's flake lives in the
   sibling test (S2 childPID-reset pin), still tracked on TSK-622.
-- **TSK-622 guard batch COMPLETE (4/4)**: HexView fingerprint (49c5ce2→TSK-141),
-  rust indices-only cache (a58eda9→TSK-142/143), FileWatcher FW-S3 window
-  (0a42e5f→TSK-147), PTY reap (8480367→TSK-138). Drain tally: 19 validated.
+- **TSK-622 guard batch COMPLETE (4/4)**: HexView fingerprint (9f37910→TSK-141),
+  rust indices-only cache (dede2b0→TSK-142/143), FileWatcher FW-S3 window
+  (cac4b07→TSK-147), PTY reap (987d03a→TSK-138). Drain tally: 19 validated.
   TSK-622 residue: the sibling-test foreground flake + TSK-139 owner-dismiss.
 
 ## LOG +196 (2026-06-10, drain wave 5 — S3 audit-reconciliation guards)
@@ -9913,19 +9913,19 @@ each given the missing regression guard with demonstrated teeth, all validated:
 - **TSK-151** (fold double-compile race): fix present (per-lang lock + post-acquire
   re-check). Built DEBUG seam `foldCompileWindowHook`/`foldCompileCount` +
   `FoldCompileLockRaceTests` (deterministic interleaving, not stress). Teeth: lockless
-  mutation → "2 is not equal to 1". Commit 4d7fb53.
+  mutation → "2 is not equal to 1". Commit e762029.
 - **TSK-159/160** (vm-smoke path bug + injection): fix present. Added
   `MDV_SMOKE_DRY_RUN` (compute+validate path, exit pre-remote) +
   `VMSmokePathGuardTests` (3 tests, zero network: in-root translation, out-of-root
   staging, hostile-filename allowlist rejection). Teeth: double-slash regression +
-  allowlist-exit removal each caught by its own test. Commit a9d781d.
+  allowlist-exit removal each caught by its own test. Commit 1c2ddeb.
 - **TSK-157** (dylib identifier footgun): fix present in shipped artifact
   (filename-derived ids). Built `scripts/check-dylib-identifiers.sh` (fails on bundle-id
   claim AND on zero-dylib vacuousness) wired into build-app.sh post-sign. Teeth:
   re-signed libTreeSitterLuaLazy with the bundle id → EXIT=1. Full release rebuild ran
-  the integrated guard green (44 MB / 24 MB within budgets). Commit 1428c49.
+  the integrated guard green (44 MB / 24 MB within budgets). Commit 6a53893.
 
-Gate: `==> headless gate PASSED` on committed HEAD 1428c49. Board: 4× validated
+Gate: `==> headless gate PASSED` on committed HEAD 6a53893. Board: 4× validated
 (checks artifacts with teeth rows). Remaining fixed lane: ~54.
 
 ## LOG +197 (2026-06-10, drain wave 6 — test-infra trio + the lane's first catch)
@@ -9933,12 +9933,12 @@ Gate: `==> headless gate PASSED` on committed HEAD 1428c49. Board: 4× validated
 - **TSK-161 validated** — panic=unwind profile gate verified fresh
   (build-rust-core.sh:41-51 rejects abort profiles pre-cargo); pinned with
   `RustProfileGuardTests` (instant negative-path, no toolchain). Teeth: exit 1→exit 0
-  ("prints but doesn't block") → red. Commit b239dd5.
+  ("prints but doesn't block") → red. Commit 6ce34a8.
 - **TSK-162 validated** — JUnit converter EXTRACTED verbatim to
   `scripts/junit-convert.py` (write_junit delegates; identical VM behavior, now
   host-testable); `JUnitConverterTests` pins skipped→`<skipped/>`, crashed→synthetic
   count-mismatch RED, clean→no false alarm. Teeth: dropped `|skipped` → red.
-  Commit c0e0a80.
+  Commit dff3772.
 - **TSK-163 validated with a FRESH armed-lane run** — `test-in-vm.sh quick` on the VM
   executed the WebView lane for real (49 cases) instead of self-skipping… and the
   armed lane immediately caught **3 genuine reds**: ContentViewHostingTests:170,
@@ -9950,12 +9950,12 @@ Gate: `==> headless gate PASSED` on committed HEAD 1428c49. Board: 4× validated
 - **TSK-623 filed → fixed → validated same window** — the 3 tests now await the
   async fill (runloop pump + 15s deadline, regression bite retained); VM re-run with
   the gate armed: 15/15 across the 3 suites, EXIT=0. Teeth = same-day before/after on
-  identical product code. Commit 75f2829.
+  identical product code. Commit c3ff33a.
 - Process note: my first quick-run wrapper piped through `tail`, masking the lane's
   non-zero exit — the #311/#162 exit-0-masking class striking the OBSERVER this time.
   Read `EXIT=` markers, never pipeline status.
 
-Gate: `==> headless gate PASSED` on HEAD 75f2829. Board: 4× validated this wave
+Gate: `==> headless gate PASSED` on HEAD c3ff33a. Board: 4× validated this wave
 (161/162/163/623). Remaining fixed lane: ~50.
 
 ## LOG +198 (2026-06-10, drain wave 7 — S3 perf reconciliations)
@@ -9966,18 +9966,18 @@ TSK-170/171/172/173 re-verified fresh on main, pinned, validated:
   bounded head. Behavioral pin `DiagnosticDumpTextViewMetricsTests` exploits
   UTF-16-vs-grapheme semantics (emoji fixture: 150 units ≠ 100 graphemes), so a
   revert to `tv.string.count` flips the number → red. Host-safe (pure NSTextView,
-  ungated — runs in the merge gate). Teeth demonstrated. Commit 0225e2e.
+  ungated — runs in the merge gate). Teeth demonstrated. Commit f72e669.
 - **TSK-170/171** — CI build caches (3× actions/cache keyed on
   Package.resolved/Cargo.lock + workspace-pinned CARGO_TARGET_DIR) and the all-lane
   smoke-gate skip (two independent layers) verified fresh; pinned with
   `InfraInvariantTests` (textual config invariants — the cheapest guard that still
-  bites; both mutations demonstrated red). Commit 70da109.
+  bites; both mutations demonstrated red). Commit f9c8364.
 - **TSK-173** — `str()` decodes the byte slice in place (zero per-token `[UInt8]`),
   rationale documented at the site; correctness re-proven fresh
   (MessagePackEncoderTests 10/10, MsgPackDecoderNegativeAuditTests 23/23). No alloc-
   counting pseudo-test manufactured — honest skip noted on the ticket.
 
-Gate: `==> headless gate PASSED` on HEAD 70da109. Board: 4× validated.
+Gate: `==> headless gate PASSED` on HEAD f9c8364. Board: 4× validated.
 Remaining fixed lane: ~46 (next: TSK-183/185/187 S4 series).
 
 ## LOG +199 (2026-06-10, drain wave 8 — S4 series)
@@ -9993,14 +9993,14 @@ TSK-183/185/187 re-verified fresh, validated:
   emit at DocumentModel.swift:3707-3740) but UNPINNED. Added
   `FileWatcher.forceConstructionFailure` DEBUG seam + FileWatcherDegradationCueTests
   through the real open path (cue surfaces, clears on recovery, pause ≠ failure).
-  Teeth: silent-catch mutation → both red. Commit a137cdf.
+  Teeth: silent-catch mutation → both red. Commit 7723998.
 - **TSK-187** (exit() bypasses teardown) — resolution is the documented DELIBERATE
   bypass: CONTRACT comments at both exit sites (Diagnostics.swift:119-131, :243-249)
   with precondition (dev/test flags, no durable state), remediation, and a
   do-not-copy warning. Validated on the code artifact; honest skip noted — no
   generic test detects "durable state added later".
 
-Gate: `==> headless gate PASSED` on HEAD a137cdf. Board: 3× validated.
+Gate: `==> headless gate PASSED` on HEAD 7723998. Board: 3× validated.
 Remaining fixed lane: ~43 (next: TSK-189/190/191 TUI + vm-smoke S4s).
 
 ## LOG +200 (2026-06-10, drain wave 9 — TUI + vm-smoke S4s)
@@ -10017,9 +10017,9 @@ TSK-189/190/191 re-verified fresh, validated:
 - **TSK-191** (stale reset dir) — script resets the dir SessionStore actually
   writes. New PARITY pin (InfraInvariantTests) computes defaultDirectory() at
   test time and requires vm-smoke.sh to reference the same path — either side
-  drifting goes red. Teeth: stale-Workspaces mutation → red. Commit a6e91ae.
+  drifting goes red. Teeth: stale-Workspaces mutation → red. Commit 91b893d.
 
-Gates: rust-core green (fresh) + `==> headless gate PASSED` on HEAD a6e91ae.
+Gates: rust-core green (fresh) + `==> headless gate PASSED` on HEAD 91b893d.
 Board: 3× validated. Remaining fixed lane: ~40 (next: TSK-192/193/196 —
 TierGateObserver clobber, MCP header scan, Claude index double-redact).
 
@@ -10051,9 +10051,9 @@ live-gated → expect more VM lanes + honest holds).
 First three of TSK-261..334 processed; the series' different character confirmed
 (feature/[PARTIAL] items, much of it visual):
 
-- **TSK-271 validated** — media file-info zoom (0f5d33d): its pinning suite
+- **TSK-271 validated** — media file-info zoom (a2be0bc): its pinning suite
   MediaPreviewInfoZoomTests re-run fresh on current main, 2/2.
-- **TSK-261 + TSK-268 HELD at fixed (honest)** — both fixes (c72ed38, 4246ec9)
+- **TSK-261 + TSK-268 HELD at fixed (honest)** — both fixes (6191f4c, 3fb41b7)
   re-verified present in TabBar.swift with rationale comments; the residual claims
   are purely visual (the + button's on-screen placement, the 1pt divider's
   visibility). SwiftUI Buttons/Rectangles don't realize as NSViews, so no headless
@@ -10070,7 +10070,7 @@ Board: 1× validated, 2× held-with-gap. Remaining fixed lane: ~36.
 ## LOG +203 (2026-06-10, drain wave 12 — three outcomes, one each)
 
 - **TSK-273 validated** — "switching tabs very slow" is the owner-felt symptom of
-  TSK-108's root (MountedPanesLRU, 39925fd), and its pinning suite ran FRESH on the
+  TSK-108's root (MountedPanesLRU, 8f60d21), and its pinning suite ran FRESH on the
   VM TODAY: PaneRetentionMountProbeTests in the armed lane (A→B→A = 0 remounts,
   LRU tail eviction) + the TSK-621 mounted-aware-eviction guard. Evidence could not
   be fresher.
@@ -10090,14 +10090,14 @@ Visual-hold cluster for the batched VM pixel run so far: TSK-261, TSK-268.
 
 ## LOG +204 (2026-06-10, drain wave 13 — a validation, a park, and a THIRD mislabel)
 
-- **TSK-274 validated** — drag-tab-onto-session-pill (eb63137): both named suites
+- **TSK-274 validated** — drag-tab-onto-session-pill (33450bf): both named suites
   re-run fresh (TabDragPayloadTests 2/2, TabToNewSessionTests 4/4 — move-across with
   rehydrate round-trip + the no-op trio). Hover visuals deliberately out of scope.
 - **TSK-276 bounced + PARKED (owner decision)** — "Debugger" was mislabeled-as-fixed
   via the #NNN trap (IndentDetector work filed here); genuinely unbuilt. Parked with
   3 options: backlog-low-prio / design-doc-first / dismiss.
 - **TSK-279 corrected + bounced** — NEW mislabel catch (third instance): recorded
-  work is the catastrophic-regex non-capturing fix (built-in #279, real fix c7a9bb8
+  work is the catastrophic-regex non-capturing fix (built-in #279, real fix 54067df
   under TSK-293); board TSK-279 = "LSP MCP" bridge, re-confirmed unbuilt (zero LSP
   references in Sources/ViewerCore/Automation/). Returned to progress.
 
@@ -10128,13 +10128,13 @@ High-priority fallout now back in the open pool:
   2"** — owner-felt USER-FACING bugs that were falsely closed. Both annotated with
   reproduce-first guidance (270: re-measure post-TSK-108/611; 372: SessionStore
   snapshot round-trip is host-testable).
-- **TSK-293** — a REAL shipped fix (ReDoS skipGroupPrefix, c7a9bb8, 10 tests) was
+- **TSK-293** — a REAL shipped fix (ReDoS skipGroupPrefix, 54067df, 10 tests) was
   filed under "Encryption"; provenance note left on the ticket.
 
 **CONSISTENT drain queue (52)** — remaining fixed-lane work, with suites where named:
 315(TabToNewSessionTests) · 321/322/323(resolved-by-design, no tests) ·
 324(gate-only) · 331(TabBarWidthTests; NO teeth admitted — hold candidate) ·
-394–398(e83408d rust suites) · 401/439/616(VM toolchain) · 435/436(killall;
+394–398(4c21601 rust suites) · 401/439/616(VM toolchain) · 435/436(killall;
 build-only) · 446(verify-app) · 448/449(build-script) · 456–459(terminal headless
 suites) · 466(folding 7 tests) · 467(HEX ViewOnly 4 tests) · 468(view-only) ·
 477(comment-only) · 482(dup of 141, pinned via 622) · 489(no host coverage —
@@ -10147,31 +10147,31 @@ tests) · 548(TooLarge tests) · 550/553/555/569(workspace gate) · 551/556/558
 365(UNCLEAR→drainable: re-run test_zoom_persistsAcrossNewTab).
 
 Fixed lane after the purge: ~53 → all with verified-consistent recorded work.
-Next: drain the consistent queue in suite-cluster batches (rust e83408d cluster
+Next: drain the consistent queue in suite-cluster batches (rust 4c21601 cluster
 first — one gate run covers 394–398).
 
 ## LOG +206 (2026-06-10, drain wave 14 — rust cluster + terminal cluster; TSK-489 found INCOMPLETE and finished)
 
 CONSISTENT-queue drain per LOG +205, suite-cluster batches:
 
-- **TSK-394/395/396/397/398 → validated** (rust e83408d cluster) — ONE fresh `rust-core-gate.sh`
-  run on main @ 2ea4d79 covered all five: gate green EXIT=0; per-ticket pins re-ran green
+- **TSK-394/395/396/397/398 → validated** (rust 4c21601 cluster) — ONE fresh `rust-core-gate.sh`
+  run on main @ 293ad19 covered all five: gate green EXIT=0; per-ticket pins re-ran green
   (dist `opt-level=3` in Cargo.toml; 4 snapshot_frame byte-identity tests; matching_indices
   parity ×2; ascii fast-path + dotted-I/sharp-s Unicode discriminators ×5; single-alloc
   encode_frame byte-identity + round-trip ×4).
 - **TSK-459 → validated** — store wiring was pinned but the CORE suppression behavior wasn't;
-  built `TerminalForegroundBumpTests` (commit `f84ca99`): real forkpty shell through the exact
+  built `TerminalForegroundBumpTests` (commit `5fc4c49`): real forkpty shell through the exact
   production onOutput closure — backgrounded output feeds the parser but `version` stays 0;
   re-entry refresh-bumps exactly once. Teeth: gate removed → "1 is not equal to 0" red → restored.
 - **TSK-456/457 → honest holds** (comments) — model suites fresh-green (116-test terminal sweep);
   the mouse drag-select/right-click and wheel/snap UX wiring has no automated interaction
   coverage → VM interaction test or owner click-test named as the gap. Same as the +114 hold.
-- **TSK-489 → found INCOMPLETE, completed, validated** — drain re-check caught that dd8570f only
+- **TSK-489 → found INCOMPLETE, completed, validated** — drain re-check caught that 3a4c46c only
   fired the model write-back from `update()`'s pin/shrink paths; `scrollWheel`, `snapToBottom`
   (typing), and BOTH scrollbar-drag sites mutated `scrollOffset` silently. Quiet-shell scroll →
   tab switch → snap-to-bottom (the owner's exact complaint) survived the "fix"; typing left a
   stale model offset that jumped the returning tab back up. Chatty shells masked it (update-pin
-  fired constantly). Fix `ee6ab30`: all four sites route through `setScrollOffset(_:)` which
+  fired constantly). Fix `10114d3`: all four sites route through `setScrollOffset(_:)` which
   persists via `onScrollOffsetChange`. New `TerminalScrollOffsetPersistenceTests` (4) drive the
   REAL `scrollWheel(with:)`/`keyDown(with:)` with synthesized NSEvents (CGEvent scroll + keyEvent):
   write-back, init seeding (5→wheel-down→4), clamp, typing-snap 0. Teeth: callback muted → 5 red.
@@ -10181,12 +10181,12 @@ CONSISTENT-queue drain per LOG +205, suite-cluster batches:
   `TerminalTabStripVisualRegressionTests` guard (teeth proven in the TSK-488 saga) which needs a
   fresh VM GUI-session run; rsync + VM dist build kicked off for it.
 
-Gates: headless gate PASSED on `f84ca99` and `ee6ab30`; rust gate green on `2ea4d79`.
+Gates: headless gate PASSED on `5fc4c49` and `10114d3`; rust gate green on `293ad19`.
 Wave tally: 7 validated · 2 holds · 1 live bug found+fixed (commit per item).
 
 ## LOG +207 (2026-06-10, drain wave 15 — VM pixel batch + singles)
 
-- **VM GUI pixel run (fresh, main @ ee6ab30)** — rsync + VM dist build + launchctl-asuser T5 lane:
+- **VM GUI pixel run (fresh, main @ 10114d3)** — rsync + VM dist build + launchctl-asuser T5 lane:
   `TerminalTabStripVisualRegressionTests` 4/4 (left/right/top chip composites + right-docked content
   not blank — real WindowServer screencapture) and `SourceViewVisualRegressionTests` 2/2 (incl. the
   meta broken-ruler teeth test). 6/6, EXIT=0.
@@ -10221,7 +10221,7 @@ pool). "Close with 1 tab, reopen see 2":
   duplicates and `appendLazyTab` is idempotent by resolved-path dedup key; `flushForTermination`
   cancels the debounce and writes an authoritative snapshot that supersedes any pending coalesced
   value (per-URL coalescing in SessionStore).
-- **New guard `TabRestoreAfterQuitTests` (commit `83a6e8c`)** — drives the REAL quit/relaunch
+- **New guard `TabRestoreAfterQuitTests` (commit `0a2ebb6`)** — drives the REAL quit/relaunch
   machinery (flushForTermination → fresh model+coordinator over the same store dir → bootstrap)
   across three histories: the literal one-tab quit; a stale 2-tab disk snapshot that must be
   superseded when one tab is closed before quit (the most plausible original mechanism); a pending
@@ -10271,7 +10271,7 @@ the load — blank/spinner forever with no recovery (the classic WKWebView white
 matches the historical "endless spinner, retry loads fast" class and is a credible mechanism for
 the owner-felt "delay in opening files").
 
-Fix `96354f3`: every navigation outcome routes through an idempotent endLoadToFinish(); the two
+Fix `4d77ac5`: every navigation outcome routes through an idempotent endLoadToFinish(); the two
 didFail paths drop the dedup baseline (next update re-issues the load); process-termination
 additionally resets documentReady and nudges webView.reload(). RenderedLoadFailureRecoveryTests
 (3) drive the exact delegate methods against a windowless WKWebView — teeth: muting the
@@ -10285,9 +10285,9 @@ Fresh bundle building + installing to /Applications.
 
 - **60s VM trace (fixed build, fresh dist):** WKWebView.loadToFinish = **1,848ms** — didFinish FIRES
   (vs the old build's never-finished 17s+ truncation). Native path consistent: openResolved 6.5ms,
-  HTMLRenderer.render 36.6ms. The run-1 hang was the unhandled-failure class 96354f3 fixed.
+  HTMLRenderer.render 36.6ms. The run-1 hang was the unhandled-failure class 4d77ac5 fixed.
 - **TSK-624 → validated** — cause determined (no failure delegates → unrecoverable hang), fix
-  96354f3 + RenderedLoadFailureRecoveryTests (teeth shown) + both traces as evidence.
+  4d77ac5 + RenderedLoadFailureRecoveryTests (teeth shown) + both traces as evidence.
 - **TSK-270 → fixed + PARKED (review)** — investigation complete: native path ms-fast (TSK-108/
   611/619 hold in release); the one real defect (spinner-forever on failed WebView load) fixed and
   installed. Owner one-look: do opens feel fast on tonight's build; if not, which file type.
@@ -10352,12 +10352,12 @@ Session drain tally: 39 validated. Remaining: VM-toolchain 401/439/616, singles 
 
 ## LOG +215 (2026-06-11 tick — TSK-448 guard built + validated; TSK-625 footgun fixed + validated)
 
-- **TSK-448 → validated** (commit `059b1d6`) — built the missing routing guard:
+- **TSK-448 → validated** (commit `0715e88`) — built the missing routing guard:
   TerminalReturnKeyRoutingTests (4) drives the exact performKeyEquivalent override (focused view
   in a never-ordered borderless window — no on-screen UI): Return claimed + CR reaches the PTY;
   keypad Enter; ⌘-chords fall through; unfocused view doesn't steal Return. Teeth: claim muted →
   4 red → restored.
-- **TSK-625 → validated** (commit `0358b33`) — visual-smoke.sh now reaps by the MDV_TEST_INSTANCE
+- **TSK-625 → validated** (commit `9690fe2`) — visual-smoke.sh now reaps by the MDV_TEST_INSTANCE
   tag (pgrep + ps -E) and tags its own spawn; new gate-enforced pin
   `test_automatedScripts_neverBareKillallByExecName` bans bare `killall MarkdownViewer` across
   scripts/ (owner reset utilities exempt, documented). Teeth: re-added a bare line → red.
@@ -10406,7 +10406,7 @@ P1 children, and the owner queue.
 
 ## LOG +218 (2026-06-11 tick — TSK-579 landed: ABI skew guard, the versionless-ABI half of R4)
 
-- **TSK-579 → validated** (commit deb7c2e) — `MDV_WIRE_VERSION: u32 = 1` + `mdvcore_abi_version()`
+- **TSK-579 → validated** (commit 5a06653) — `MDV_WIRE_VERSION: u32 = 1` + `mdvcore_abi_version()`
   (ffi_guard_value, 0 = guard-tripped sentinel) exported from mdvcore-ffi; cbindgen emits both into
   the staged header. Swift `CoreABI` (Sources/RustCore/CoreClient.swift): `compiled` (header const)
   vs `linked` (runtime fn), `isCompatible` pure comparison, `assertCompatible()` crash-fast
@@ -10414,7 +10414,7 @@ P1 children, and the owner queue.
   FFI call. Rust pin `abi_version_reports_the_wire_const` (fn==const, !=0); Swift
   `testABIVersion_linkedLibraryMatchesCompiledHeader` is THE skew detector — header const vs linked
   lib, runs in every host+VM gate. TEETH: header const mutated 1→2 → red ("1 is not equal to 2",
-  3 asserts) → restored → 13/13 green. Both gates green on deb7c2e (rust-core: header-drift OK +
+  3 asserts) → restored → 13/13 green. Both gates green on 5a06653 (rust-core: header-drift OK +
   "Rust-core gate green"; headless: "headless gate PASSED").
 - **TSK-626 filed** — the teeth run exposed that SwiftPM's incremental build did NOT recompile on a
   header-only change to Sources/CMdvCore/mdvcore.h (needed a `touch` of the importing Swift files
@@ -10426,7 +10426,7 @@ Next: TSK-538 P1 siblings TSK-581/582.
 
 ## LOG +219 (2026-06-11 tick — TSK-581 landed: poisoned-lock tri-state, no more post-panic state service)
 
-- **TSK-581 → validated** (commit 562a56f) — `handle.with()` is tri-state `Result<R, MdvStatus>`:
+- **TSK-581 → validated** (commit e7e2d53) — `handle.with()` is tri-state `Result<R, MdvStatus>`:
   Ok / Err(Busy) / Err(HandleDead). The `into_inner()` poison recovery — which served possibly
   half-mutated post-panic session state and left the drop-&-recreate contract enforced only by
   the Swift wrapper — is gone; a poisoned lock now returns the new `MdvStatus::HandleDead = 6`
@@ -10435,13 +10435,13 @@ Next: TSK-538 P1 siblings TSK-581/582.
   `poisoned_handle_returns_handle_dead_not_recovered_state` (real panic under the real lock →
   all three session entry points HandleDead, free still safe) + Swift mapping/latch pins.
   TEETH on both sides (recovery re-introduced → rust red; latch muted → Swift red). Both gates
-  green on 562a56f.
+  green on e7e2d53.
 
 Next: TSK-582 (last of the groomed TSK-538 P1 trio).
 
 ## LOG +220 (2026-06-11 tick — TSK-582 landed: FFI misuse matrix complete; P1 trio DONE)
 
-- **TSK-582 → validated** (commit bde2016) — the audit's STRONG-verdict testing proposal is
+- **TSK-582 → validated** (commit 0d6f4fc) — the audit's STRONG-verdict testing proposal is
   complete. Six per-export misuse matrices (cm_apply, diff_parse, diff_hunk_marks, hex_render,
   hex_search, indent_detect — previously ZERO direct tests): null out_buf, null-ptr+nonzero-len,
   empty input, hostile 2GiB-declared frame prefix, non-UTF-8 inputs, hostile mode/width values;
@@ -10449,11 +10449,11 @@ Next: TSK-582 (last of the groomed TSK-538 P1 trio).
   path only, could never fail) is REPLACED by a deterministic Busy test: a holder thread parks
   inside with() via mpsc rendezvous so the main thread's FFI call is guaranteed to hit a held
   lock. ffi suite 22→28. Teeth ×2 (Busy→Internal mutation red; null-guard→Internal mutation
-  red). Both gates green on bde2016.
+  red). Both gates green on 0d6f4fc.
 - **TSK-538 P1 trio (579/581/582) is now fully validated** — ABI skew guard, poisoned-lock
   tri-state, and the misuse matrix. The epic's remaining children are lower-priority phases.
 
-Session: 3 tickets landed+validated this tick (deb7c2e, 562a56f, bde2016) + TSK-626 filed
+Session: 3 tickets landed+validated this tick (5a06653, e7e2d53, 0d6f4fc) + TSK-626 filed
 (SwiftPM header-staleness build-graph gap). Next: batched VM GUI run for the visual holds
 (261/268/331/324 + T4 UATs for 505/468), or the next groomed pool item.
 
@@ -10463,11 +10463,11 @@ Session: 3 tickets landed+validated this tick (deb7c2e, 562a56f, bde2016) + TSK-
   `encode_frame_oversize_is_too_large_not_framing` (fresh run), ffi `wire_status_maps_too_large
   _distinctly` (today's 28/28), Swift `testTooLargeStatusMapsToDistinctError` (today's 18/18).
   Scope honestly noted: the ~16 MiB ceiling itself remains until TSK-559 windowed snapshots.
-- **TSK-139 → validated** (commit 9ef960a) — the 2026-06-08 hold's named gap is closed: new
+- **TSK-139 → validated** (commit 2d17d08) — the 2026-06-08 hold's named gap is closed: new
   `InfraInvariantTests.test_lspTestCleanup_neverFireAndForgetProcessReap` scans all test files
   and fails on any detached `defer { Task }` process reap. Verified zero fire-and-forget sites
   remain (27 awaited addTeardownBlock across 7 LSP suites); TEETH (injected one → red naming
-  file:line → restored). Zombie "claude" lease reconciled. Headless gate green on 9ef960a.
+  file:line → restored). Zombie "claude" lease reconciled. Headless gate green on 2d17d08.
 - **TSK-323 → validated** — zoom-audit close claims verified fresh: ChromeZoomScalingTests 6/6,
   the residual (media file-info zoom) is TSK-271 and itself validated, persistence pinned.
 - **TSK-322 → parked (owner decision) + TSK-321 held** — drain review caught both sitting at
@@ -10482,7 +10482,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +222 (2026-06-11 tick — TSK-469 landed: Tier A static-bind real rows, placeholder gone)
 
-- **TSK-469 → validated** (commit cd7d730) — rank-2 backend-not-surfaced item. Tier A plugin
+- **TSK-469 → validated** (commit 6ab8daa) — rank-2 backend-not-surfaced item. Tier A plugin
   sections now carry their rows VERBATIM in plugin.json (`"provider": {"tier":"A","rows":[
   {id,label,detail?}]}`); `PluginManifest.Provider.a` gained the `rows` payload (absent → empty
   array, so pre-469 manifests stay loadable as honest empty sections) and `PluginRegistry`
@@ -10490,13 +10490,13 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   "(Tier A static-bind not yet implemented)" placeholder is deleted. Two behavior tests load
   real plugin.json fixtures through the real loadAll path and pin the provider output (verbatim
   rows + explicit no-placeholder assert; rows-less → empty). TEETH (placeholder re-introduced →
-  red). Plugin suites 23/23; headless gate green on cd7d730. Remaining rank-2 siblings
+  red). Plugin suites 23/23; headless gate green on 6ab8daa. Remaining rank-2 siblings
   TSK-463 (editor completion — CM6/WebView-coupled) and TSK-464 (LSP command surfacing) are
   bigger slices for dedicated ticks.
 
 ## LOG +223 (2026-06-11 tick — TSK-464 slice 1: textDocument/didSave finally has a caller)
 
-- **TSK-464 slice 1/4 landed** (commit 93748cf, ticket stays at `progress`) — the LSP
+- **TSK-464 slice 1/4 landed** (commit 75d91db, ticket stays at `progress`) — the LSP
   client/pool have had `didSave` since the LSP feature shipped, but NOTHING ever called it
   (LSPPool.didSave's own doc comment said "caller is the editor-save success path" — a caller
   that didn't exist). Now: `EditorCoordinator.onDidSaveToDisk` fires on the save SUCCESS path
@@ -10506,13 +10506,13 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   a server. Tests: LSPDidSaveWiringTests (real save path against a temp file → hook fired
   exactly once with URL+text; no-op save fires nothing; default wiring non-nil pins the
   DocumentModel side). TEETH (hook call muted → 3 asserts red). Editor-save suites 36/36;
-  headless gate green on 93748cf.
+  headless gate green on 75d91db.
 - Remaining TSK-464 increments, each tick-sized: editor.format (TextEdit[] via the CM edit
   applier), goto-declaration/typeDefinition/implementation commands, menu/palette wiring.
 
 ## LOG +224 (2026-06-11 tick — TSK-464 slice 3: the unreachable LSP go-to verbs are commands now)
 
-- **TSK-464 slice 3/4 landed** (commit 4168d9a, ticket at `progress`) — declaration /
+- **TSK-464 slice 3/4 landed** (commit 198eeb7, ticket at `progress`) — declaration /
   typeDefinition / implementation existed on the LSP client+pool but were unreachable from any
   command (definition itself was Cmd-click-only). `DocumentModel.navigateViaLSP(kind:)`
   generalizes the Cmd-click path (which now delegates to it); `navigateViaLSPAtCursor(kind:)`
@@ -10521,13 +10521,13 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   LSPGotoCommandTests (4 tests) pins verb→kind routing, cursor sourcing, 1-based→0-based
   conversion, the no-cursor no-op, the non-LSP guard, and the catalog contract. TEETH
   (declaration cross-wired to definition → red). 40/40 across goto+registry+verb suites;
-  headless gate green on 4168d9a.
+  headless gate green on 198eeb7.
 - TSK-464 remaining: slice 2 editor.format (the substantive piece) + slice 4 menu rows (polish —
   palette invokability already shipped).
 
 ## LOG +225 (2026-06-11 tick — TSK-464 closed on realized scope; stale audit evidence corrected)
 
-- **TSK-464 → validated** (commits 93748cf + 4168d9a) — closed on the REALIZED scope with the
+- **TSK-464 → validated** (commits 75d91db + 198eeb7) — closed on the REALIZED scope with the
   audit's evidence corrected on the record. Verified against current code: declaration /
   typeDefinition / implementation + didSave existed on the client/pool and were unsurfaced
   (both slices landed and validated, 7 tests + 2 teeth demos across them); but
@@ -10541,7 +10541,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +226 (2026-06-11 tick — TSK-627 landed: LSP formatting built from scratch, held at fixed)
 
-- **TSK-627 → fixed** (commit 5f77657, 381 insertions) — the formatting feature the stale audit
+- **TSK-627 → fixed** (commit a5349c5, 381 insertions) — the formatting feature the stale audit
   thought existed is now real: LSPTextEdit/LSPFormattingOptions protocol types; client
   formatting/rangeFormatting requests + tolerant decodeTextEdits; pool route;
   **LSPTextEditApplier** (pure: ranges resolved against the ORIGINAL text via
@@ -10559,7 +10559,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +227 (2026-06-11 tick — TSK-627 validated: formatting e2e gap closed with a real fake-server round trip)
 
-- **TSK-627 → validated** (commit 1c16b2d closes the hold from LOG +226) — the response-side
+- **TSK-627 → validated** (commit a2c8a73 closes the hold from LOG +226) — the response-side
   glue now has real end-to-end coverage. MDVFakeLSPServer answers `textDocument/formatting`
   with two canned edits; DocumentModel gained an injectable `lspPool` init param (HeadlessHarness
   passes it through) and the new command guards consult `pool.registry` instead of
@@ -10570,13 +10570,13 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   mid-round-trip — teeth demonstrated by muting the guard (race test red: the formatter clobbered
   "user typed this"). Plus a pool-level round-trip test pinning request encode + decode + route.
   Full TSK-627 chain: 19 tests across applier/decode/wiring/e2e, all host-gate-run. Gate green
-  on 1c16b2d.
+  on a2c8a73.
 
 ## LOG +228 (2026-06-11 tick — batched VM GUI pixel run: tab-strip visual holds TSK-261/268/331 validated with teeth)
 
 - **The visual-hold cluster is CLOSED**: TSK-261 ("+" beside last tab), TSK-268 (last tab's
   right border), TSK-331 (crowded tabs shrink, no overflow) all → **validated** on stage-④
-  WindowServer pixels from the UTM VM GUI lane (commits 0750a9b + 2984649).
+  WindowServer pixels from the UTM VM GUI lane (commits 2b64204 + 3c0f8a6).
 - **New deterministic scene `MDV_UI_SCENE=tabs-<N>`** (Diagnostics.swift): opens N throwaway
   files as permanent tabs, selects the FIRST tab (so the strip starts unscrolled and the last
   tab carries no selection tint — the tint boundary reads as a full-height column and would
@@ -10602,7 +10602,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +229 (2026-06-11 tick — TSK-505 validated: MetadataPanel checksum proven in the live app; loop PAUSED by owner)
 
-- **TSK-505 → validated** (commit 997faa6). The fixed-lane hold's named gap — VM evidence for
+- **TSK-505 → validated** (commit 7b7350d). The fixed-lane hold's named gap — VM evidence for
   the MetadataPanel "Compute SHA-256" section — is closed via the sanctioned closure-verb
   pattern (in-process SwiftUI event synthesis is impossible; same shape as InteractionUATTests):
   - Checksum @State lifted into **`MetadataChecksumModel`** (ObservableObject with a
@@ -10618,7 +10618,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
     `MetadataChecksumUATTests` opens a PNG in the real spawned app, runs the verb, and asserts
     cross-process `done` + hash equal to the TEST process's independent FileChecksum of the
     same bytes — green; teeth shown (verb no-op mutant → red `idle`/`nil`, restored → green).
-  - Host headless gate PASSED on 997faa6 (one earlier gate run flaked, clean re-run 0 failures).
+  - Host headless gate PASSED on 7b7350d (one earlier gate run flaked, clean re-run 0 failures).
 - **Owner directive (mid-tick): loop paused** — cron stopped after this item; resume on owner
   signal ("tomorrow night"). Remaining drain queue unchanged: TSK-468 (References-removal VM
   confirm), TSK-619/334/529 (live-validation holds), TSK-626, TSK-463, owner-queue parks.
@@ -10638,7 +10638,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   template CSP. What WAS missing: the existing CSP test was presence-only — a loosened
   `img-src` stayed green. Landed the exact-directive pin (teeth: `https:` added →
   red → restored), EGRESS.md corrected in place. No opt-in chip shipped (feature
-  decision, owner's call). Commits 4ebdd4b/adbcf3c/a06455f; gate green.
+  decision, owner's call). Commits 52bebfa/d80874c/bb79b30; gate green.
 - **TSK-643 filed (owner ask):** the observed outbound connection (pid 6877 →
   100.64.100.1) is now UNEXPLAINED — hypotheses + reproduce-first method on the
   ticket; needs the firewall's full flow record (remote port + process path) on next
@@ -10649,7 +10649,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +231 (2026-06-12 — TSK-554 validated: the supply-chain audit lane is real)
 
-- **TSK-554 → validated** (commit 1c11269). cargo-deny installed (brew); duty split because
+- **TSK-554 → validated** (commit 73913c1). cargo-deny installed (brew); duty split because
   cargo-deny 0.18.x hard-errors on the RustSec DB's CVSS-4.0 entries: **deny owns
   licenses/bans/sources, cargo-audit owns advisories** (`--deny warnings`). deny.toml made
   truthful: `[graph]` targets pinned to the mac builds (killed 7 phantom cross-platform dup
@@ -10665,7 +10665,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +232 (2026-06-12 tick — TSK-634 stage 1: the capability bitmap, cross-language teeth)
 
-- **TSK-634 stage 1/3 landed** (commit 83cd758): feature negotiation ABOVE the frozen wire.
+- **TSK-634 stage 1/3 landed** (commit 1b65d25): feature negotiation ABOVE the frozen wire.
   `MDV_CAP_*` u64 bits (5 shipped families ON; find/markdown/transcript/fuzzy RESERVED for
   ports TSK-630..633 — pre-assigned, OFF until each port lands) + `mdvcore_capabilities()`
   + Swift `CoreCapabilities` OptionSet with `requiredByShippingAdapters` as a soft
@@ -10680,7 +10680,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +233 (2026-06-12 tick — TSK-634 stage 2: export-ceremony codegen, zero-dep macros)
 
-- **TSK-634 stage 2/3 landed** (commit d225265, net −55 lines). `ffi_frame_body!` owns the
+- **TSK-634 stage 2/3 landed** (commit c2e9cb4, net −55 lines). `ffi_frame_body!` owns the
   whole stateless-export safety ritual (out-buf default, null/len guard, raw-parts slice,
   wire_status mapping); `frame_export_misuse_matrix!` generates the TSK-582 null/hostile
   matrix per export. The roadmap's copy-paste trio (cm_apply, diff_parse, diff_hunk_marks)
@@ -10695,7 +10695,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +234 (2026-06-12 tick — TSK-634 VALIDATED: FFI velocity complete across all three stages)
 
-- **TSK-634 → validated** (83cd758 + d225265 + 9310e83). Stage 3 landed this tick:
+- **TSK-634 → validated** (1b65d25 + c2e9cb4 + cbf2189). Stage 3 landed this tick:
   `mdvFrameCall` — the one Swift call ritual for stateless frame exports (framing, pointer
   pass, buf free, status mapping, unframe) — with the three wrappers converted to
   one-liners and the once-per-process ABI assert RESTORED (the per-wrapper copies had
@@ -10706,11 +10706,11 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - **Net effect for the ports (TSK-630..633):** a new frame-shaped export now costs a Rust
   signature+doc+1-line body, 2 test-macro lines, a 1-line Swift wrapper, and a capability
   bit flip — ~15 min vs the audited ~45. Ports land core engines next and ride this.
-- Both gates green; main @ 9310e83 + this log.
+- Both gates green; main @ cbf2189 + this log.
 
 ## LOG +235 (2026-06-12 tick — TSK-633 validated: the first engine port, riding the new ceremony)
 
-- **TSK-633 → validated** (commit 5dfd4ce, zero new deps). The FuzzyMatcher port proves the
+- **TSK-633 → validated** (commit a631960, zero new deps). The FuzzyMatcher port proves the
   whole TSK-634 pipeline end-to-end on its first real customer: char-level engine with every
   Swift scoring constant pinned (`scoring_matches_the_swift_table`), wire layer, export via
   1-line `ffi_frame_body!` + 2-line misuse matrix, `MDV_CAP_FUZZY` flipped atomically (the
@@ -10729,7 +10729,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +236 (2026-06-12 — TSK-630 find port validated; TSK-256 un-gated; handoff checkpoint)
 
-- **TSK-630 → validated** (commit db30ecb). regex-lite =0.1.8 added — the FIRST dep under
+- **TSK-630 → validated** (commit cab7473). regex-lite =0.1.8 added — the FIRST dep under
   the features-off rider: default-features OFF, explicit ["std","string"], verified ZERO
   transitive (lock 145→146 exactly). `find_engine.rs`: whole-doc search in NSRange/UTF-16
   semantics via one monotonic sweep, S2-E line accounting + CORR-6 clamp; ReDoS
@@ -10749,7 +10749,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +237 (2026-06-12 — TSK-632 validated: transcript/JSONL port, hand-rolled JSON, NSNumber quirk pinned)
 
-- **TSK-632 → validated** (commits f477b58 + 1b34251), two stages in one tick pair:
+- **TSK-632 → validated** (commits 1b2787a + d2149b6), two stages in one tick pair:
   - **Stage 1 `json.rs`** (~450 lines, NO serde_json per the 1000-line rule): byte-cursor
     recursive descent, MAX_DEPTH=128, lone-surrogate=error (Foundation parity), duplicate
     keys last-wins, i64-overflow→f64 (kills the S3 out-of-Int64 trap class), strict
@@ -10778,7 +10778,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +238 (2026-06-12 — TSK-631 validated: markdown port — THE ENGINE-PORT WAVE IS COMPLETE)
 
-- **TSK-631 → validated** (commit bad46e3). The LAST engine port: no reserved capability
+- **TSK-631 → validated** (commit 54fdeb0). The LAST engine port: no reserved capability
   bits remain. pulldown-cmark =0.13.4 lands per the features-off rider (+2 lock packages —
   itself + unicase; bitflags/memchr were already in the graph; supply-chain lane re-run
   green). `markdown.rs` (~700 lines): event-driven writer mirroring the Swift
@@ -10821,7 +10821,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   written (layer mermaid + remote gap table); TSK-650 filed (mermaid render glitch on
   the fancy diagram — parked); TSK-452 statusbar investigation parked with state.
   Reprioritization delegated → wave order recorded on TSK-651.
-- **TSK-661 → validated** (d2fa667), wave-1 head: `mermaid.rs` — MermaidSourceParser
+- **TSK-661 → validated** (b0052f4), wave-1 head: `mermaid.rs` — MermaidSourceParser
   port (@id/@step, malformed-marker rejection), sorted-keys compact steps JSON, and
   `short_hash` via a HAND-ROLLED FIPS 180-4 SHA-256 (~100 lines, zero crypto deps,
   NIST-vector-pinned — the hash keys the shim's theme-flip cache). Mermaid fences now
@@ -10834,7 +10834,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +240 (2026-06-12 tick — TSK-645 + TSK-646 validated: find + fuzzy adapters, wave 1 rolling)
 
-- **TSK-645 → validated** (8d231d6): `case find` gate (MDV_RUST_FIND, default OFF) +
+- **TSK-645 → validated** (226ed9b): `case find` gate (MDV_RUST_FIND, default OFF) +
   `RustFindAdapter` via the RustCoreFallback seam. Scoping discovery recorded: the live
   find bars use NATIVE WKWebView/NSTextView/CM6 search — `automationFind` (the MCP find
   verb) is FindEngine's only production consumer, now routed. The ICU-fallback channel
@@ -10842,7 +10842,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   engine's full result (proven non-empty in test); truly-invalid → `[]` per the
   historical contract. Rust-path gains documented: no ReDoS-guard rejections, no
   wall-clock truncation (PikeVM). Teeth: line/column swap → parity red.
-- **TSK-646 → validated** (8696a4a): `RustFuzzyAdapter.filterWithMatches<T>` routes the
+- **TSK-646 → validated** (fdd52e1): `RustFuzzyAdapter.filterWithMatches<T>` routes the
   command palette's two batch sites behind MDV_RUST_FUZZY; empty query short-circuits
   bridge-free. CARVE-OUT: FileTreeFilter's per-node match stays Swift (a bridge round
   trip per tree node is wire-hostile) — tree filtering migrates server-side with fs.tree
@@ -10853,7 +10853,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +241 (2026-06-12 tick — TSK-647 validated: transcript adapter; max_events rides the wire)
 
-- **TSK-647 → validated** (7e60d91). `transcript` gate + RustTranscriptAdapter routing
+- **TSK-647 → validated** (e776cfd). `transcript` gate + RustTranscriptAdapter routing
   all three projection consumers (timeline section, transcript search — redaction
   ALWAYS on; monitor detail — pre-redacted, custom cap). The remote-minded piece:
   `ParseRequest` gained `#[serde(default)] max_events` so the monitor's cap applies
@@ -10871,7 +10871,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +242 (2026-06-12 tick — TSK-648 validated: markdown adapter — WAVE 1 COMPLETE)
 
-- **TSK-648 → validated** (ac5955d). `markdown` gate; the seam lives INSIDE
+- **TSK-648 → validated** (4d0b978). `markdown` gate; the seam lives INSIDE
   `HTMLRenderer.render` — all three consumers route with zero churn, the renderPage CSP
   wrapper stays byte-identical (TSK-635 pin untouched). The production splice:
   raw_html → HTMLSanitizer (trust boundary at render), code → TreeSitter spans,
@@ -10881,8 +10881,8 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   test. The A/B suite consumes the production enrich (one implementation). Teeth:
   sanitizer bypass → equality + script-leak asserts red. Carve-out: LSPMarkdownRenderer
   (NSAttributedString hover surface) stays Swift.
-- **WAVE 1 COMPLETE: all four adapters wired** (find 8d231d6, fuzzy 8696a4a, transcript
-  7e60d91, markdown ac5955d) — every ported engine now has a default-OFF gate and a
+- **WAVE 1 COMPLETE: all four adapters wired** (find 226ed9b, fuzzy fdd52e1, transcript
+  e776cfd, markdown 4d0b978) — every ported engine now has a default-OFF gate and a
   fail-safe Swift fallback. TSK-649 (default-ON soak → twin deletion) is UNBLOCKED.
   Next per the recorded order: TSK-652 (CoreTransport seam), then the TSK-649 soak —
   flipping defaults is owner-visible, so stage A starts one engine per change with the
@@ -10890,7 +10890,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +243 (2026-06-12 tick — TSK-652 stage 1: the CoreTransport seam lands)
 
-- **TSK-652 stage 1 landed** (6c912c3, ticket held at progress — stage 2 blocked on
+- **TSK-652 stage 1 landed** (7cfbde3, ticket held at progress — stage 2 blocked on
   TSK-653). The remote-enabler refactor: `CoreTransport` protocol (BYTE-level — method
   name + unframed request body → response body; a remote carrier moves bytes, the
   MessagePack value layer stays client-side), `InProcessTransport` with a name→extern-fn
@@ -10908,7 +10908,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +244 (2026-06-12 tick — TSK-649 stage A: csv/indent/diff ship DEFAULT-ON; soak begins)
 
-- **The first real engine cut-over** (55bb765, soak bundle installed to /Applications).
+- **The first real engine cut-over** (7e4fb6e, soak bundle installed to /Applications).
   Consumption audit first (A0): the indent/diff adapters existed but NOTHING routed
   through them — StatusBar's indent metric, ReviewSession ×2 and DiffView now consume
   their adapters (csv was already live via CSVTableView). Then the mechanism (A1):
@@ -10925,20 +10925,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   went RED on the flip — exactly the guard the soak set needed — then were migrated to
   env-pinned gate-off + new shipped-default-routes-rust pins (the indent/diff adapters
   gained env injection in the process).
-- **A0 continued (9744caa):** HexView's query search → RustHexSearchAdapter; small-file
+- **A0 continued (081a467):** HexView's query search → RustHexSearchAdapter; small-file
   sync full-dump → RustHexAdapter.buildAll. Carve-outs in place: click-highlight
   (byte-pattern entry) and the windowed chunk build (Phase-1 windowed snapshot).
   Consumption scoreboard: consumed = csv/indent/diff (ON, soaking) + hexSearch/hex-sync/
   find/fuzzy/transcript/markdown (OFF, awaiting flip rounds); unconsumed = cmEdit only
   (CodeMirrorBridge routing audit, last A0 item).
-- **A0 COMPLETE (23b29ca):** the editor's incremental apply (keystroke hot path) routes
+- **A0 COMPLETE (b319f06):** the editor's incremental apply (keystroke hot path) routes
   RustCMEditAdapter — every adapter now has a consumer. Flip-round plan recorded on the
   ticket: hex family next, cmEdit LAST (highest stakes — keystroke path), wave-1 four
   in between; then stage B twin deletion, owner-gated per engine.
 
 ## LOG +245 (2026-06-12 tick — TSK-655 at review: remote protocol v1 designed)
 
-- **TSK-655 → review** (6b914cd): `docs/REMOTE_PROTOCOL.md`. The shape: existing body
+- **TSK-655 → review** (bb5f1fd): `docs/REMOTE_PROTOCOL.md`. The shape: existing body
   maps stay BYTE-IDENTICAL to the FFI contract (RemoteTransport = drop-in
   CoreTransport); a named-map envelope {t,i,m,b,e,s,n,k} adds correlation ids +
   unsolicited events; subscriptions are ordinary requests; per-sub monotonic seq with
@@ -10953,7 +10953,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +246 (2026-06-12 tick — TSK-653 v1: mdv-serve EXISTS — the rust-only server runs)
 
-- **TSK-653 v1 landed** (151f6b5, held at fixed pending the TSK-652 stage-2 loopback
+- **TSK-653 v1 landed** (876ab54, held at fixed pending the TSK-652 stage-2 loopback
   A/B acceptance): `crates/serve` — the machine-API daemon, std-only, ZERO new deps.
   Hand-rolled envelope codec (fixmap/bin32, unknown-key tolerant), hello with
   wire-version HARD-CLOSE + the capability mask from the ffi consts (no drift),
@@ -10966,7 +10966,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   acceptance), then TSK-654 (fs family + push, with root containment).
 ## LOG +247 (2026-06-12 tick — TSK-652 + TSK-653 VALIDATED: remote is a working carrier)
 
-- **The carrier-swap proof passed** (9cc33d8): RemoteTransport (unix-socket dial, hello,
+- **The carrier-swap proof passed** (66b5363): RemoteTransport (unix-socket dial, hello,
   serialized sync calls, in-band errors mapped onto CoreError) + the loopback acceptance
   — ALL SEVEN engine wrappers byte-equal in-process vs a spawned mdv-serve; the typed
   `invalid_pattern` survives the wire (the ICU-fallback channel works remotely);
@@ -10983,7 +10983,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   flip rounds on TSK-649.
 ## LOG +248 (2026-06-12 tick — TSK-654 validated: the fs family, root-contained)
 
-- **TSK-654 v1 → validated** (c6baaf1): fs.stat / fs.read / fs.readdir in mdv-serve
+- **TSK-654 v1 → validated** (d35b845): fs.stat / fs.read / fs.readdir in mdv-serve
   behind ROOT CONTAINMENT (--root canonicalizes once; every request path must prefix
   the canonical root — dotdot/absolute/symlink escapes all die, tested incl. a /etc
   symlink; no --root = family disabled). fs.read is WINDOWED-ONLY ({offset,len} →
@@ -10998,7 +10998,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   (push loop; protocol designed), Swift-side consumers (remote sidebar UI).
 ## LOG +249 (2026-06-12 tick — TSK-657 validated: the git family, server-side)
 
-- **TSK-657 v1 → validated** (a513564): git.head (direct .git/HEAD read incl. one
+- **TSK-657 v1 → validated** (5654a1d): git.head (direct .git/HEAD read incl. one
   worktree-indirection level — the statusbar-chip feed, subprocess-free) +
   status/branches/log spawning the SERVER's git under the GitClient discipline: no
   shell, 5s deadline (poll+kill), 1MiB cap with a DRAINING reader thread (chatty child
@@ -11015,7 +11015,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   (TreeSitter). Soak (csv/indent/diff) quiet so far — flip round 2 next.
 ## LOG +250 (2026-06-12 tick — soak round 2: hex + hexSearch default-ON; 5 of 10 engines live)
 
-- **Round 2 flipped** (8dc777e, installed): hex + hexSearch ship default-ON after a
+- **Round 2 flipped** (d09d317, installed): hex + hexSearch ship default-ON after a
   quiet round 1. ON now: csv, indent, diff, hex, hexSearch — HALF the engine surface
   runs Rust in the owner's app. Off-switches per engine unchanged (MDV_RUST_X=0 /
   Settings). Round 3: the wave-1 four; cmEdit last; then stage B twin deletion
@@ -11027,7 +11027,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   that ASSUME defaults — the env-pinning pattern is now established in four suites.
 ## LOG +251 (2026-06-12 tick — TSK-658 validated: redaction is a WIRE guarantee; transcripts discoverable)
 
-- **TSK-658 v1 → validated** (96d0a9a). The security centerpiece: mdv-serve routes
+- **TSK-658 v1 → validated** (0ef5ff3). The security centerpiece: mdv-serve routes
   transcript_parse through `parse_wire_forced_redaction` — a redacting:false request
   over the socket STILL returns scrubbed events (proven end-to-end in the loopback
   suite; in-process keeps caller choice — the trust boundary is the SOCKET, not the
@@ -11044,7 +11044,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   LSP pipe, TSK-660 TreeSitter; soak round 3 next quiet interval.
 ## LOG +252 (2026-06-12 tick — TSK-656 validated: cross-file search server-side)
 
-- **TSK-656 v1 → validated** (3366264): search.files walks the canonical served root
+- **TSK-656 v1 → validated** (b2d4ccd): search.files walks the canonical served root
   with symlinks NEVER followed (one rule = escape + cycle safety, tested with /etc and
   self-cycle links), 4MiB/NUL-sniff per-file gates, then the PORTED find_engine — a
   hostile remote regex structurally cannot ReDoS the server (the TSK-630 PikeVM win,
@@ -11056,7 +11056,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   far; round 3 (wave-1 four) next quiet interval.
 ## LOG +253 (2026-06-12 tick — soak round 3: 9 OF 10 ENGINES RUN RUST BY DEFAULT)
 
-- **Round 3 flipped** (3ffcdbd, installed): find/fuzzy/transcript/markdown default-ON
+- **Round 3 flipped** (e2fe8e5, installed): find/fuzzy/transcript/markdown default-ON
   after quiet rounds 1-2. The owner's app now routes NINE of ten capabilities through
   the Rust core; only cmEdit (the keystroke path) remains, flipping last and alone.
 - The flip's test migrations followed the established pattern, with one structural
@@ -11070,7 +11070,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   gated per engine) — the actual Swift-core shrinkage the owner asked for.
 ## LOG +254 (2026-06-12 tick — TSK-636 validated: the sensitive-activity audit log)
 
-- **TSK-636 v1 → validated** (9a66ea3): the owner's "I want to see what the app
+- **TSK-636 v1 → validated** (24dece1): the owner's "I want to see what the app
   touched" — AuditLog JSONL at ~/Library/Application Support/MarkdownViewer/audit.jsonl,
   5MB rotation, default ON (explicit-false kill switch), contents NEVER logged. The v1
   viewer is the app itself (it's a JSONL — open it in TextView). Emit points: the
@@ -11082,7 +11082,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - The TSK-652 seam paid for itself again: ONE hook covers local AND remote core calls.
 ## LOG +255 (2026-06-12 tick — TSK-628 at fixed: SwiftPM advisory watch in the nightly lane)
 
-- **TSK-628 → fixed** (bbec4e9): all 18 SPM pins — including the 14 tree-sitter
+- **TSK-628 → fixed** (632c620): all 18 SPM pins — including the 14 tree-sitter
   grammars that parse attacker-controlled files — get advisory monitoring via the GH
   Advisory Database (ecosystem=swift), as a STRICT step in nightly-supply-chain.yml.
   Design: one paginated fetch of the full swift advisory set, matched locally by
@@ -11095,7 +11095,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   workflow_dispatch it immediately.
 ## LOG +256 (2026-06-12 tick — TSK-637 at fixed: markdown finally has an outline)
 
-- **TSK-637 → fixed** (c0e74bd): the OUTLINE sidebar panel serves .md/.markdown via
+- **TSK-637 → fixed** (32f8d30): the OUTLINE sidebar panel serves .md/.markdown via
   the existing tested MarkdownOutline extractor mapped into LSPDocumentSymbol trees
   (levels stack-nest, gaps tolerated, 0-based LSP lines) — synchronously, no LSP
   server spawned (the LSP_04 no-server UAT holds by construction). The panel UI is
@@ -11107,7 +11107,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   the same panel LSP languages use — one surface, two data sources.
 ## LOG +257 (2026-06-12 tick — TSK-641 stage 1: the theme engine's headless core)
 
-- **TSK-641 stage 1 landed** (23c9bcb, ticket holds at progress): ThemeDefinition — a
+- **TSK-641 stage 1 landed** (f451313, ticket holds at progress): ThemeDefinition — a
   platform-free Codable hex-string model as the SINGLE upstream for all four color
   surfaces and the contract TSK-642's VS Code import targets (642's design is now
   unblocked). Hex parse/render round-trip stable; SyntaxTheme conversion with per-slot
@@ -11119,7 +11119,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   surfaces — VM lane. The engine's data layer is done and regression-guarded.
 ## LOG +258 (2026-06-12 tick — TSK-642 at fixed: VS Code themes import end-to-end)
 
-- **TSK-642 → fixed** (dd0f0a1): VSCodeThemeImporter — string-aware JSONC stripping
+- **TSK-642 → fixed** (d30660c): VSCodeThemeImporter — string-aware JSONC stripping
   (comments/trailing commas are legal in theme files; in-string URLs survive),
   workbench colors → surface slots, TextMate scopes → TokenKind via longest-prefix
   specificity (regexp>string, operator owns its slot, equal specificity = first claim),
@@ -11132,7 +11132,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   surfaces (641 stage 2) — VM-validated, the natural next owner-visible win.
 ## LOG +259 (2026-06-12 tick — TSK-641 stage 2: theming is owner-usable)
 
-- **TSK-641 stage 2 landed** (33583d2, installed): Settings → Appearance now offers
+- **TSK-641 stage 2 landed** (7f433cb, installed): Settings → Appearance now offers
   the full theme CATALOG (built-ins + user + VS Code imports) with Follow System, and
   an Import VS Code Theme… button (open panel → importer → auto-select). The selection
   drives the highlight surface (SyntaxTheme(from:)) and the rendered view (tokCSS
@@ -11143,7 +11143,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   Owner can pick + import themes TODAY; validation rides the VM picker check.
 ## LOG +260 (2026-06-12 tick — ROUND 4: STAGE A COMPLETE — the whole engine surface runs Rust)
 
-- **cmEdit flipped** (83356ed, installed) — the keystroke hot path, last and alone,
+- **cmEdit flipped** (d6fdb98, installed) — the keystroke hot path, last and alone,
   after three quiet rounds. **ALL TEN capabilities now route through the Rust core by
   default in the owner's app.** Every Swift engine twin is fallback-only: fail-safe
   via RustCoreFallback, every fallback Obs-logged, per-engine off-switches intact.
@@ -11186,7 +11186,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +263 (2026-06-12 tick — TSK-640 stage 1: LSP rename plumbing lands)
 
-- **`textDocument/rename` request path landed (894a7be):** `LSPClient.rename`
+- **`textDocument/rename` request path landed (6bfb5fd):** `LSPClient.rename`
   + `decodeWorkspaceEdit` (BOTH spec forms — the `changes` uri→edits map and
   the `documentChanges` TextDocumentEdit array; merged per-uri, malformed
   entries drop), `LSPPool.rename` route with request/crash bookkeeping, fake
@@ -11202,7 +11202,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +264 (2026-06-12 tick — TSK-660 stage 1: rust highlight becomes a core capability)
 
-- **`mdvcore-highlight` gains the app contract (84bf49c):** `runs_utf16` emits
+- **`mdvcore-highlight` gains the app contract (a6d7128):** `runs_utf16` emits
   UTF-16 code-unit runs in the Swift `TokenKind` rawValue vocabulary via an
   `APP_CAPTURES` table mirroring `CaptureMap.swift` (configure()'s
   longest-dot-prefix ≡ CaptureMap's right-to-left walk); `runs_wire`
@@ -11232,7 +11232,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +265 (2026-06-12 tick — TSK-660 stage 2: adapter consumed, size decision parked)
 
-- **RustHighlightAdapter lands (1cdb6f0):** `.highlight` gate (DEFAULT OFF —
+- **RustHighlightAdapter lands (7ec538b):** `.highlight` gate (DEFAULT OFF —
   the first post-stage-A port starts the same ladder), `mdvCoreHighlightRuns`
   wrapper (nil = no grammar → routine Swift fallback, coverage never
   narrows), `highlight_runs` in the InProcessTransport table, and ALL THREE
@@ -11255,7 +11255,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +266 (2026-06-12 tick — TSK-628 VALIDATED after the drain caught a dead watch)
 
-- **Validation drain found the advisory watch had NEVER worked (25dc089):**
+- **Validation drain found the advisory watch had NEVER worked (b3feae9):**
   (a) the matcher's pins rode a herestring ALONGSIDE the heredoc — the
   herestring overrode it, python executed the PIN LIST as its script, and
   the empty result read as PASSED: the watch could not flag a hit, ever;
@@ -11290,7 +11290,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +268 (2026-06-12 tick — TSK-640 stage 2: the rename action lands headless)
 
-- **`renameActiveEditorSymbolViaLSP` (9bed97a):** the model-side rename
+- **`renameActiveEditorSymbolViaLSP` (4e88356):** the model-side rename
   action on the formatActiveEditorViaLSP pattern. Policy, deliberate: the
   dispatching buffer is snapshot-guarded (racing keystroke wins); edits to
   other OPEN tabs apply in-session (uri matched by standardized,
@@ -11306,7 +11306,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +269 (2026-06-12 tick — TSK-640 stage 3: code actions land; the ticket's headless surface is complete)
 
-- **`textDocument/codeAction` (d6391b7):** client request (cursor as empty
+- **`textDocument/codeAction` (33b5938):** client request (cursor as empty
   range) + decode of the spec's (Command|CodeAction) union with PER-ENTRY
   tolerance (a malformed element drops alone — the decode test caught the
   whole-array-cast bug red-first); `decodeWorkspaceEdit` refactored to a
@@ -11323,7 +11323,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +270 (2026-06-12 tick — TSK-662 VALIDATED: the push half goes live in mdv-serve)
 
-- **fs.watch/fs.unwatch push subscriptions (5f11fc7):** handle_connection is
+- **fs.watch/fs.unwatch push subscriptions (f3b4115):** handle_connection is
   now DUPLEX — responses and unsolicited events share the write side behind
   a mutex; one watcher thread per connection, joined at teardown (subs die
   with the connection, §5). std-only POLLING watcher (the crate's zero-dep
@@ -11344,7 +11344,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +271 (2026-06-12 tick — TSK-663 VALIDATED: transcript.follow completes the §5 server push family)
 
-- **transcript.follow (c131204)** rides the TSK-662 hub as a second payload:
+- **transcript.follow (6528deb)** rides the TSK-662 hub as a second payload:
   {dir, name} are EXACTLY the transcript.list identifiers (single
   components, *.jsonl) — the zero-traversal posture, no second containment
   scheme. Tail starts at file END (from_start replays); 1 MiB/tick window;
@@ -11364,7 +11364,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +272 (2026-06-12 tick — TSK-664 VALIDATED: the §5 push pipeline is end-to-end)
 
-- **RemoteTransport subscriptions (22d8a80):** rewritten around a reader
+- **RemoteTransport subscriptions (8cacf5f):** rewritten around a reader
   thread owning all socket reads — responses fill per-call slots (30s
   deadline → the Swift fallback fires instead of a wedge), events dispatch
   to handlers, a BOUNDED pre-registration buffer absorbs events that race
@@ -11389,7 +11389,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +273 (2026-06-12 tick — TSK-665 VALIDATED: the app can now attach a remote core)
 
-- **RemoteCoreAttach (1458132):** `MDV_REMOTE_SOCKET` dials the ssh-forwarded
+- **RemoteCoreAttach (692af1c):** `MDV_REMOTE_SOCKET` dials the ssh-forwarded
   mdv-serve at launch and installs RemoteTransport as the process transport.
   FAIL-SAFE (any failure → Obs warn + stay in-process) and RESILIENT
   (onClose auto-reverts to local engines — a dropped tunnel degrades instead
@@ -11408,7 +11408,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +274 (2026-06-12 tick — TSK-659 spike resolved into a spec; VM revalidation in flight)
 
-- **TSK-659 LSP pipe: spike → written spec (63ecaf1, protocol §7.5),
+- **TSK-659 LSP pipe: spike → written spec (0237a9d, protocol §7.5),
   ticket → triaged.** The owner rulings were already on the ticket
   (terminal OUT — ssh/tmux -CC; LSP = server-side processes piped). The
   design's load-bearing call: **the wire is NOT a remote-exec API** —
@@ -11430,7 +11430,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - **Owner nudge applied: the session no longer idles during VM runs.**
   TSK-638 (Print/Export-as-PDF — the never-started parity item) was built
   while the revalidation suite ran.
-- **TSK-638 phase 1 (d7536b6):** canPrintRenderedPage gate (markdown/
+- **TSK-638 phase 1 (45ec795):** canPrintRenderedPage gate (markdown/
   mermaid rendered + html rendered; source/editor = phase 2), nonce-driven
   requests on the find-bar pattern, MarkdownRenderedView answers on the
   live WKWebView (printOperation window-modal w/ the op.view frame quirk;
@@ -11448,7 +11448,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +276 (2026-06-12 tick — TSK-638 phase 1 COMPLETE: HTML tabs + the gated PDF suite, lane-wired)
 
-- **1500eec:** HTMLRenderedView answers the same print/export nonces
+- **9dd8aee:** HTMLRenderedView answers the same print/export nonces
   (post-sanitize — the PDF can only carry what the page renders);
   ContentView feeds both rendered views active-tab-guarded. The
   #192-gated PDFExportWebViewTests suite renders OUR page into a real
@@ -11461,7 +11461,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +277 (2026-06-12 tick — TSK-639 multi-cursor lands; the greenlit parity pool is fully worked)
 
-- **Multi-cursor (28c3578):** config-only inside the CM6 host page —
+- **Multi-cursor (837de8e):** config-only inside the CM6 host page —
   `EditorState.allowMultipleSelections.of(true)` (THE permitting facet) +
   `rectangularSelection()` + `crosshairCursor()`. The built-ins light up:
   ⌥-click adds carets, ⌘D grows the selection set (searchKeymap's
@@ -11494,7 +11494,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +279 (2026-06-12 tick — validation drain: TSK-466 VALIDATED by closing its named render-path gap)
 
-- **FoldGutterWebViewTests (2a3ef6b):** the gap TSK-466's own drain note
+- **FoldGutterWebViewTests (e126e8b):** the gap TSK-466's own drain note
   named — proof that setFoldingRanges produces REAL fold-gutter markers in
   the live CM6 DOM — now exists, with teeth (gutting the range filter →
   2 red). Two non-obvious finds en route, documented in-test: CM keeps an
@@ -11544,7 +11544,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 - **TSK-452 (prio-1 statusbar bug) had a LOST PARK**: the 2026-06-06
   session fixed the one identifiable defect (blank-during-lazy-load,
-  1615b98, with a headless data-source test) and wrote "parked for owner
+  b324a43, with a headless data-source test) and wrote "parked for owner
   clarification" into the log — but never filed the park on the board, so
   the ticket squatted at reported/waiting:agent for six days. Evidence
   re-ran fresh today (DocumentModelTests 60/60 incl. the TSK-452 pin);
@@ -11555,7 +11555,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +283 (2026-06-12 tick — TSK-650 ROOT-CAUSED: mermaid's runtime NEVER loaded)
 
-- **The owner-repro mermaid bug (d8367fa):** MermaidBundle asked
+- **The owner-repro mermaid bug (1179ab9):** MermaidBundle asked
   Bundle.module for "mermaid.js" while the shipped file is mermaid.min.js
   — nil lookup, silent empty-string fallback, nothing injected, shim
   aborts, every mermaid host shows RAW SOURCE TEXT. The vendor tests
@@ -11573,7 +11573,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +284 (2026-06-12 tick — TSK-626: the stale-header SIGSEGV class closed at the staging script)
 
-- **build-rust-core.sh (b314f5a):** cmp-detects a REAL header change before
+- **build-rust-core.sh (fc5153b):** cmp-detects a REAL header change before
   overwriting the staged copy; on change, the staleness touch widens beyond
   Sources/RustCore to the TEST targets and every grep-located referent of
   the header surface (MDV_CAP_/MDV_WIRE_VERSION/import CMdvCore). The
@@ -11590,7 +11590,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 ## LOG +285 (2026-06-12 tick — OWNER ANSWERS LANDED: caps bumped, TSK-643 closed, TSK-452 root-caused + VALIDATED)
 
 - **TSK-660 caps (owner: "bump as needed for now")**: check-bundle-size.sh
-  48/26 → 64/44 (b61ff96), history documented in-script; release gate
+  48/26 → 64/44 (65aa0c5), history documented in-script; release gate
   GREEN again at 63/43. Ticket unparked; stage 3 grammars are covered by
   TSK-257's existing full-set approval; stage 4 reclaims the double-carry
   and is when the owner revisits hard caps.
@@ -11600,7 +11600,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   DNS-prefetches link hosts; with the VPN up, all of it egresses via the
   utun, so lsof shows the tunnel gateway as the peer.
 - **TSK-452 (owner: "bottom file stats") → root-caused, FIXED, VALIDATED
-  (30daa95)**: the old "0d" design made tab-switch re-stat SIGNAL-ONLY, so
+  (e289464)**: the old "0d" design made tab-switch re-stat SIGNAL-ONLY, so
   files changed while backgrounded kept load-time stats after switching.
   Now a stale-on-disk switch runs the watcher path's guarded reload —
   clean tabs refresh silently; dirty buffers keep the conflict prompt
@@ -11612,7 +11612,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +286 (2026-06-12 tick — TSK-660 stage 3: 22-language parity in the rust highlighter)
 
-- **The 10 remaining grammars landed (a8b15b5):** python/bash/yaml/html/
+- **The 10 remaining grammars landed (b2c9aef):** python/bash/yaml/html/
   css/go/ruby/markdown(block)/xml/sql, pinned exact, under TSK-257's
   full-set approval. Lang = 22 cases; "shell"→Bash host-rawValue mapping;
   every gap-encoding test retargeted to the forever-unsupported "plain";
@@ -11626,7 +11626,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +287 (2026-06-12 tick — TSK-545 VALIDATED: the highlight flip-blocker removed; TSK-552 deduped)
 
-- **Configured-grammar cache (072e870):** query parse+compile now runs once
+- **Configured-grammar cache (d8d134c):** query parse+compile now runs once
   per (Lang, name-list) process-wide (Mutex<HashMap> + Arc sharing), not
   per call. Both entry points covered — the web tier's per-request cost
   (the original S3 finding) AND the app's runs path, which would have paid
@@ -11643,7 +11643,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +288 (2026-06-12 tick — TSK-660 FLIP ROUND: the rust highlighter ships DEFAULT-ON)
 
-- **`.highlight` defaultEnabled = true (7702519)** — the first
+- **`.highlight` defaultEnabled = true (d7fb8e5)** — the first
   post-stage-A engine completes the same ladder stage A used:
   consumption (3 tokenize consumers) → contract A/B + loopback →
   22-language parity → the TSK-545 compile-cache perf fix → flip. The
@@ -11660,7 +11660,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +289 (2026-06-12 tick — TSK-547 VALIDATED in parallel with the VM revalidation)
 
-- **Cow-fold in the find engine (2c90c8b):** Case::Sensitive never copies a
+- **Cow-fold in the find engine (7b2b604):** Case::Sensitive never copies a
   line anymore (the audit caught the old to_string() copy contradicting the
   fn's own "no allocation" doc); Insensitive allocates only when uppercase
   ASCII forces real folding. Behavior byte-identical (40 pre-existing find
@@ -11677,7 +11677,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +290 (2026-06-12 tick — TSK-560 VALIDATED: the CSV tokenizer scans byte spans)
 
-- **Byte-span CSV tokenizer (5e1a7b8):** plain runs and quoted spans append
+- **Byte-span CSV tokenizer (6b98e97):** plain runs and quoted spans append
   as ONE push_str each instead of char-at-a-time; the four specials match
   at byte level (UTF-8-safe — continuation bytes never equal ASCII
   specials; non-ASCII delimiters decode at first-byte hits). Every cap
@@ -11695,7 +11695,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +291 (2026-06-12 tick — TSK-562 VALIDATED; the teeth run found a suite hole)
 
-- **Skip-loop hex search (57d60d2):** std's vectorized u8 position scan
+- **Skip-loop hex search (c7a35be):** std's vectorized u8 position scan
   finds first-byte candidates; the full compare runs only there — O(n)
   skip replaces the O(n·m) every-position compare on the default-ON
   hexSearch engine. No new deps (memchr-the-crate stays a separate owner
@@ -11710,7 +11710,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +292 (2026-06-12 tick — TSK-566 VALIDATED; string_slice joins the no-panic wall)
 
-- **string_slice = "deny" in all three lint tables (33a552d):** workspace
+- **string_slice = "deny" in all three lint tables (b6c6190):** workspace
   (inherited by mdvcore-core), ffi-local, serve-local. `&s[a..b]` on
   strings panics on non-char-boundary/out-of-range and is a SEPARATE
   restriction lint from indexing_slicing — the wall had a hole.
@@ -11729,7 +11729,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +293 (2026-06-12 tick — TSK-561 VALIDATED; zero-copy wire requests + the gutter finally routes rust)
 
-- **Borrowed request decode (5d4d5db):** `wire::decode_frame_borrowed` —
+- **Borrowed request decode (70c56b0):** `wire::decode_frame_borrowed` —
   `#[serde(borrow)] Cow<'a, str>` fields point into the frame bytes; the
   six whole-document seams (diff ×2, cm_apply, find, transcript,
   markdown render, highlight runs) drop their per-call payload copy.
@@ -11753,7 +11753,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 - **Owner resolved the park with a bug report**, re-scoping the ticket
   from the 'Main tab' fork to: tool windows AND rail icons must drag to
-  any of the 3 shoulders. Three roots found (2aab064, installed):
+  any of the 3 shoulders. Three roots found (59b140f, installed):
   1. `com.markdownviewer.panel-drag` (`UTType(exportedAs:)`) was NEVER
      declared in Info.plist `UTExportedTypeDeclarations` — an undeclared
      exported UTI is the silently-dead drag (payload writes, no
@@ -11785,7 +11785,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   complete, all five captures indict per-switch pane teardown; the
   supervised MountedPanesLRU session remains the gate — commented and
   skipped per "ignore blocking items".
-- **TSK-641 stage 3 (20b842f, installed):** the CM6 editor follows the
+- **TSK-641 stage 3 (befbf01, installed):** the CM6 editor follows the
   selected theme — `applyPendingState` had the legacy pair hardcoded, so
   catalog themes recolored ViewOnly + rendered MD but not the editor.
   `activeThemeCMPalette` → new `themePalette` prop → dedupe on BOTH
@@ -11798,7 +11798,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +296 (2026-06-12 tick — TSK-546 VALIDATED; arena table storage)
 
-- **TableArena (d764ed8):** the session's resident store drops from the
+- **TableArena (e85f9b2):** the session's resident store drops from the
   wire DTO's ~2 allocations/row + 1 String/cell (~2M+ for a 1M-cell CSV)
   to exactly TWO heap blocks — one contiguous cell-bytes String + a flat
   offset table — pinned by a struct-size test (the CachedView idiom).
@@ -11818,7 +11818,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +297 (2026-06-12 tick — TSK-563 VALIDATED; diff wire goes positional, wire v2)
 
-- **Positional per-element records (37f2d48):** diff files/hunks/lines +
+- **Positional per-element records (5b9f1e2):** diff files/hunks/lines +
   gutter marks serialize as tuple-struct ARRAYS (~41 bytes/line of key
   text gone); the envelope stays a named map (remote debuggability).
   Swift decoders mirror the order with exact-count guards.
@@ -11839,7 +11839,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +298 (2026-06-12 tick — TSK-641 stage 4: the chrome follows the theme; all four surfaces done)
 
-- **Chrome surface (52db383, installed):** Palette's three main-surface
+- **Chrome surface (209ed53, installed):** Palette's three main-surface
   accessors consult `ChromeTheme.current` (set by the model's theme
   selection, seeded at init from the persisted selection) before the
   system dynamic colors. nil = system-native, byte-identical (pinned).
@@ -11862,7 +11862,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - **Owner course-correction applied: never no-op while a background run
   is in flight** — pick the next board item in parallel. (Second time
   this directive came up; recorded to memory.)
-- **Sidebar type-to-filter (05dd9bd, installed):** field under FILES
+- **Sidebar type-to-filter (fef2403, installed):** field under FILES
   narrows the visible tree as you type — 130ms debounce, view-local
   @State (the #215 rule: no model observation widening, nothing
   expensive in body), 500-row cap with teeth, Esc/clear snap back.
@@ -11879,7 +11879,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +300 (2026-06-12 tick — TSK-544 VALIDATED; the rust-core audit's perf findings are DONE)
 
-- **TUI per-frame memoization (0d11c91):** the audit's three per-frame
+- **TUI per-frame memoization (0592f8d):** the audit's three per-frame
   rescans (whole-file text_metrics for the title badge, whole-table
   filter re-match, all-cells find re-scan) now cache on Preview with the
   hl_cache RefCell idiom — keys: nothing (badge), filter needle, (find
@@ -11898,7 +11898,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +301 (2026-06-12 tick — TSK-666: global fuzzy find (mode B) lands; filter pair complete)
 
-- **Global find-any-file (ed848cd, installed):** the sidebar filter now
+- **Global find-any-file (24be33a, installed):** the sidebar filter now
   finds files in COLLAPSED branches. Off-main enumerator walk (skip-set
   prunes .git/node_modules/.build/.swiftpm/dist; hidden honored; 50k cap
   logged) → global candidates ranked + displayed by root-relative path.
@@ -11916,7 +11916,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 ## LOG +302 (2026-06-12 tick — TSK-659 spike closed VALIDATED; VM sweep nearing the end)
 
 - **TSK-659 (remote LSP/terminal spike) validated:** the deliverable —
-  the implementable §7.5 LSP-pipe spec (63ecaf1) + the owner rulings
+  the implementable §7.5 LSP-pipe spec (0237a9d) + the owner rulings
   (terminal OUT: ssh/tmux; LSP = allowlist-only server-side processes
   piped as duplex events; URIs verbatim; provisioning = operator) +
   the sequencing decision (implementation gated on remote-file editing)
@@ -11946,7 +11946,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +304 (2026-06-12 tick — TSK-284(a): drag files OUT lands; a teeth lesson)
 
-- **Drag-out (b2f66ba, installed), per the owner's park answer (a):**
+- **Drag-out (a1e8d66, installed), per the owner's park answer (a):**
   sidebar tree rows, filter results, and TABS carry the real file
   reference — Finder copies, Mail attaches. The load-bearing detail:
   NSItemProvider(contentsOf:) registers the file's content type +
@@ -11969,7 +11969,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   week):** BookmarksStore has carried a tested removal-undo stack since
   the Delete-to-remove ask — with zero production consumers. ⌘Z outside
   the editor did nothing.
-- **Fix (51b6a12, installed):** Edit→Undo falls back to
+- **Fix (d0d534b, installed):** Edit→Undo falls back to
   model.undoLastBookmarkRemoval() when no editor is on screen;
   validateMenuItem enables on the stack state but RELEASES ⌘Z whenever
   a text input is focused (firstResponder is NSText) — prompt/search
@@ -11982,7 +11982,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +306 (2026-06-12 tick — TSK-311 slice 1: archive-browse core lands)
 
-- **ArchiveCatalog (1a734b5):** list + single-entry extract for
+- **ArchiveCatalog (6d08903):** list + single-entry extract for
   zip/jar/tar/tgz/tbz2 via the system tools every macOS ships
   (unzip/tar — the owner-approved host-tools pattern, zero deps).
   Security is structural: extraction streams over STDOUT pipes into an
@@ -11997,7 +11997,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +307 (2026-06-12 tick — TSK-311 complete: archives browse in-app)
 
-- **Slice 2 (3ab1d5f, installed):** .archive is a first-class preview
+- **Slice 2 (2d2eecf, installed):** .archive is a first-class preview
   category — detector (incl. two-part .tar.gz suffixes), mode matrix
   [.preview, .hex], controller routing, and ArchiveBrowserView (off-main
   listing, sizes, truncation badge; double-click extracts over the
@@ -12031,7 +12031,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +309 (2026-06-12 tick — TSK-259 slice 1: the font picker lands)
 
-- **Monospace font picker (f5f319a, installed):** Settings → Appearance
+- **Monospace font picker (910dd36, installed):** Settings → Appearance
   → Font (fixed-pitch families only + System Default) drives the
   read-only source view. Resolution is fail-safe: a deleted/unknown
   family degrades to the system monospaced font.
@@ -12046,7 +12046,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +310 (2026-06-12 tick — TSK-259 complete: the font picker drives both text surfaces)
 
-- **Slice 2 (ee09f99, installed):** the CM6 editor follows the same
+- **Slice 2 (929fa89, installed):** the CM6 editor follows the same
   preference — setFontFamily over the bridge into the EXISTING
   fontCompartment (one compartment owns size+family; swaps can't
   fight). The JS always falls back to the monospace stack — a missing
@@ -12066,14 +12066,14 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   dismissed as duplicates; TSK-338 parked as the canonical consolidation
   decision with 4 costed options (Extensions Settings tab → full
   extension-manager window).
-- **HANDOFF refreshed at b2fae4e:** the wishlist wave is fully recorded —
+- **HANDOFF refreshed at 1f4aa68:** the wishlist wave is fully recorded —
   6 features landed+installed this wave, all at fixed for the glance;
   board otherwise owner-gated (2 parks, stage B, the supervised perf
   session). Next new work if nothing is answered: TSK-275 (FPS chip).
 
 ## LOG +312 (2026-06-12 tick — TSK-275: the FPS/jank strip lands in MetricsView)
 
-- **FPS strip (e087051, installed):** MetricsView (the ticket's named
+- **FPS strip (69206ea, installed):** MetricsView (the ticket's named
   surface) shows fps + hitch count + nominal Hz; red on jank. The
   design point: jank is judged against the display's NOMINAL cadence —
   120Hz panels aren't graded against 60 — with two signals: missed
@@ -12088,7 +12088,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 
 ## LOG +313 (2026-06-12 tick — TSK-317: walkthrough deeplinks land behind a confirm gate)
 
-- **markdownviewer://walkthrough?path=… (ffd6869, installed):** routes
+- **markdownviewer://walkthrough?path=… (37679a4, installed):** routes
   through the SAME S1.1 containedPath wall as open/search (teeth:
   funnel bypassed → /etc/passwd escaped → red), and — the security
   delta vs the other verbs — prompts before starting: a walkthrough
@@ -12121,7 +12121,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   under-counted. TSK-333 (bookmark Delete+undo) was in review with its
   undo MODEL verified and — after TSK-330 this session — its Undo COMMAND
   wired; the ONE remaining gap was the Delete-key handler.
-- **TSK-333 completed (53f2f51, installed):** BookmarkRow gains
+- **TSK-333 completed (02b2cdf, installed):** BookmarkRow gains
   .focusable() + .onKeyPress(.delete) → undoable removeBookmark. Delete
   removes a focused bookmark, ⌘Z restores (the TSK-330 chain). 5 tests
   incl. the model round-trip + source-wiring teeth (compile-verified).
@@ -12141,7 +12141,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   TableArena, `session.table()→&Table` is gone, the FFI encodes from spans
   via `table_frame()`. That's exactly the "borrow-only shape that makes a
   clone a compile error" the prior agent asked for.
-- **Added the missing guard (4b3ec3e):** an FFI hot-path pin forbidding a
+- **Added the missing guard (6e4d2ba):** an FFI hot-path pin forbidding a
   `to_table()`-then-encode revert; teeth shown (revert → red). Hit the
   string_slice lint (TSK-566) mid-write — rewrote with split_once/split.
   Rust-core gate green.
@@ -12157,7 +12157,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   full-repaint revert paints identical pixels). Model detector was
   already host-tested (HexHighlightFingerprintTests); added the
   CONSUMPTION pin proving applyHighlights branches on
-  differsOnlyByActiveMatch → stepActiveMatch (5daa3dd). Teeth: fast path
+  differsOnlyByActiveMatch → stepActiveMatch (c48d7a9). Teeth: fast path
   disabled → red.
 - Gate note: a CONCURRENT double gate-run thrashed the machine and the
   FoldBench wall-clock (258ms vs 250ms) flaked; a clean single run
@@ -12170,7 +12170,7 @@ Autonomous tick — continued last tick's batch. The remaining 3 LSP commands (f
 verified-working via TSK-627/640: dispatch to formatActiveEditorViaLSP / showLSPRenamePrompt / showCodeActionPicker, each
 internally guarded) had no menu items. Added a Language section to the Edit menu.
 
-**Shipped TSK-824 (commit `5624847`, headless gate green — 5214 tests, 0 fail, no heavy-tier leak):** Edit ▸ Format
+**Shipped TSK-824 (commit `68ab86b`, headless gate green — 5214 tests, 0 fail, no heavy-tier leak):** Edit ▸ Format
 Document / Rename Symbol… / Code Actions… — 3 @objc actions, editor-mode-gated via `validateMenuItem` (same case as the
 goto/CM6 commands), `applyShortcut` picks up user keybindings. With TSK-823 (Navigate menu, +421) this surfaces ALL 7 LSP
 commands in the menu bar — the LSP-commands-in-menus gap is now CLOSED.
@@ -12187,7 +12187,7 @@ requests over the VM validation tail). Closed the named gap in TSK-357: JSON+XML
 shipped; JS was explicitly deferred "pending a third-party parser". Added JS support to `Formatter`
 WITHOUT any dependency.
 
-**Shipped TSK-357 (commit `bbbc858`, headless gate green — 5219 tests, 0 fail, no heavy-tier leak):**
+**Shipped TSK-357 (commit `a7ad245`, headless gate green — 5219 tests, 0 fail, no heavy-tier leak):**
 `Formatter.prettyPrintJS` — a lexical-state machine (no AST, no parser) that restores block structure
 by inserting newlines + indentation around `{` `}` and statement-ending `;`, while tracking string /
 template (incl. `${…}` interpolation) / line+block comment / regex context. Regex-vs-division uses the
@@ -12222,7 +12222,7 @@ VM-render-gated (`review`+live-validation) or owner-gated (598 re-feel, 733/791 
 highest-value HOST-actionable user-facing win was the CSS formatter I teed up last tick (TSK-825).
 Not §2.5-gated — Formatter is a standalone display utility, not a port-target engine.
 
-**Shipped TSK-825 (commit `3576817`, headless gate green — 5219 tests, 0 fail, no heavy-tier leak):**
+**Shipped TSK-825 (commit `f8a2b55`, headless gate green — 5219 tests, 0 fail, no heavy-tier leak):**
 `Formatter.prettyPrintCSS` — a FOCUSED CSS lexer (string + `/* */` block comment only; CSS has no
 regex/template/line-comments, and a bare `/` is a value char as in `url(http://…)` / `font:12px/1.4`)
 re-indenting around `{` `}` declaration-`;` and top-level selector-list `,` (commas inside `()`/`rgb()`
@@ -12249,10 +12249,10 @@ owner deprioritized the VM validation tail. The richest fully-host-closeable, ow
 2026-06-13 wishlist's **how-to question cluster** — the owner literally filed "How does MCP work?",
 "How to run WebUI/TUI", "How to interact with LSP", "How to do code reviews?", "How to monitor Claude
 Code?", "How do Claude timeline/agent/transcript-search work?". These map 1:1 onto `docs/CAPABILITIES.md`
-(written last session, commit 1d65ff5, to answer these exact ticket ids) — but the board tickets were
+(written last session, commit 1e6ff78, to answer these exact ticket ids) — but the board tickets were
 never resolved against it. Found + fixed that gap.
 
-**Did (commit `8ef05ad` + 6 board resolutions):**
+**Did (commit `8a53ebd` + 6 board resolutions):**
 - **Refreshed CAPABILITIES.md §4 (LSP)** — it was STALE: said the goto-variants had "no menu yet" and
   format/refactor were "out of scope", but TSK-823 (Navigate menu) + TSK-824 (Edit ▸ Language:
   Format/Rename/Code-Actions) shipped last session. Now: goto Declaration/Type/Implementation = ✅ Navigate
@@ -12268,7 +12268,7 @@ never resolved against it. Found + fixed that gap.
 
 No CHANGELOG entry — docs/board hygiene only; the underlying user-facing changes (823/824 LSP menus) were
 already logged when they shipped. No code touched → main stays headless-gate-green (last code change was
-the CSS formatter at `1d08322`, gated green).
+the CSS formatter at `ba15f7d`, gated green).
 
 ## LOG +426 (2026-06-13 — TSK-783/785: rust-core supply-chain — enforce --locked (fail-on-drift) + verify minimal dep tree)
 
@@ -12277,7 +12277,7 @@ The cron-named RUST-CORE tickets (554/628/634) are all `validated` — stale boi
 supply-chain items were live + host-actionable: TSK-783 (lock + fail-on-drift + approval gate) and TSK-785
 (disable optional transitive deps).
 
-**Found + fixed the real gap (commit `0a0154e`):** rust-core deps are already strongly hardened — exact
+**Found + fixed the real gap (commit `5e6cd81`):** rust-core deps are already strongly hardened — exact
 pins (`=x.y.z`), `default-features=false` on every direct dep, committed `Cargo.lock`, a tightened
 `deny.toml` (crates.io-only sources, `multiple-versions=deny`), and `rust-supply-chain-audit.sh` (cargo-deny
 + cargo-audit). BUT neither `scripts/rust-core-gate.sh` (clippy/test) nor `scripts/build-rust-core.sh` (the
@@ -12355,7 +12355,7 @@ fresh full re-scan confirms the host-closeable, owner-non-deprioritized, user-fa
 3. Un-deprioritize internal rust-core finishing → I execute TSK-820 (dead-symbol removal) + TSK-586 per their plans.
 4. File any fresh user-facing bug/feature → it jumps the queue (USER-FACING first).
 
-Until then: HOLD. No code churn, no manufactured tests. main gate-green at `9f1b8e4`.
+Until then: HOLD. No code churn, no manufactured tests. main gate-green at `4b44d4f`.
 
 ## LOG +429 (2026-06-13 — COURSE CORRECTION: HOLD was wrong; resumed building VM-tail features. TSK-366 status-bar memory shipped)
 
@@ -12370,7 +12370,7 @@ button is theirs, not my blockage); Reported 105 / Ack 59 are the real buildable
 RENDER validation at `review` for the VM tail (exactly how the LSP menus 823/824 shipped). Do NOT HOLD or park
 just because the final pixel check is VM. Saved as a feedback memory so it sticks across compaction.
 
-**Shipped TSK-366 (commit `427b324`, headless gate green — 5225 tests):** live app-memory chip in the status
+**Shipped TSK-366 (commit `622eb14`, headless gate green — 5225 tests):** live app-memory chip in the status
 bar (the [PARTIAL] gap — the Memory tool window already had it). Headline = the app's `phys_footprint` via ONE
 cheap `task_info` syscall on self (no per-process pid-walk → safe always-on); tooltip adds the current tab's
 loaded-content byte PROXY (honestly labelled NOT per-tab RSS — a WKWebView tab has none) + a pointer to the
@@ -12388,7 +12388,7 @@ Feature tick (HOLD is over — building the wishlist). Considered TSK-360 (sourc
 is CM6/WebView-bound (BlameGutterFeeder feeds CM6 markers; coloring it means touching the JS bundle = heavier VM
 territory) — deferred it for a native, bounded pick.
 
-**Shipped TSK-771 (commit `e7fde8a`, headless gate green — 5232 tests):** terminal tabs were labelled by number
+**Shipped TSK-771 (commit `82229b6`, headless gate green — 5232 tests):** terminal tabs were labelled by number
 only. Added a per-tab custom-name map to `TerminalPaneStore` (`customNames` + `renameTab` / `tabLabel` /
 `tabTitle`): a name overrides the bare number in the chip + the "Terminal N" tooltip; blank/whitespace clears
 back to default; names are session-only and dropped when a tab closes (no leak; last-close clears all). UI:
@@ -12405,7 +12405,7 @@ VM tail. Next: 358 (window/font sizing), 755 (session-menu tab ops), 762 (wrap/i
 Feature tick. Chipped the TSK-769 terminal-UX bundle: shipped the **open-in-pwd** slice (tab-rename slice was
 TSK-771 last tick).
 
-**Shipped (commit `6ba0697`, suite green):** a new **Open Terminal Here** Command-Palette command opens a
+**Shipped (commit `7723cb8`, suite green):** a new **Open Terminal Here** Command-Palette command opens a
 terminal already cd'd to the focused file's folder instead of home. Pieces: pure `TerminalCwd` resolver
 (file→folder, folder→self, non-file→nil), `TerminalModel.initialWorkingDirectory` (seeds the first spawn;
 `start()` falls back to it then home), `TerminalPaneStore.addTab(workingDirectory:)`,
@@ -12424,12 +12424,12 @@ after ~6 back-to-back full-suite runs this turn — not a real failure. Confirme
 ## LOG +436 (2026-06-14 — landed the free build-speedup wins F2/F3/F4 from the audit; + the audit/timing deliverables)
 
 Owner asked (prior turns) for build/test timing + two deep-analysis subagents (build-speedup, source-perf).
-Both audits done + committed (docs/research/build-test-speedup-2026-06-14/ `801cc8e`, source-perf-audit-2026-06-14/
-`439d069`); 11 follow-up tickets filed (TSK-826..836). Also caught + fixed a REAL latent regression while
+Both audits done + committed (docs/research/build-test-speedup-2026-06-14/ `ae1919d`, source-perf-audit-2026-06-14/
+`5ac1778`); 11 follow-up tickets filed (TSK-826..836). Also caught + fixed a REAL latent regression while
 processing the perf audit: TSK-366's memory-chip sampler @StateObject was re-bodying the whole StatusBar every
-1.5s (broke ChromeBodyEvalCountTests) → extracted StatusBarMemoryChip + change-gated the publish (`ee4c55b`).
+1.5s (broke ChromeBodyEvalCountTests) → extracted StatusBarMemoryChip + change-gated the publish (`7b9d14c`).
 
-**This tick — landed the 3 free build wins (commit `5ebab1d`, all validated green):**
+**This tick — landed the 3 free build wins (commit `fd48146`, all validated green):**
 - **F3 (TSK-833):** unified the Rust CARGO_TARGET_DIR — build-rust-core.sh + rust-core-gate.sh now default to
   /private/tmp/mdv-rust-target (same as .cargo/config.toml), so build + gate + bare cargo share ONE cache
   instead of three. Validated: build-rust-core 37s + rust-core-gate 30s into the shared dir, both EXIT=0.
@@ -12448,7 +12448,7 @@ VM lane ~5min (288s, 3x host cold-compile); .build was 4.4G (dup index tree + gr
 
 Feature tick. Extended the clipboard dev-tools suite with the encode/decode family.
 
-**Shipped (commit `f7e2e1f`, gate green EXIT=0):** five more pure `TextTools` transforms — URL Encode
+**Shipped (commit `d7f305a`, gate green EXIT=0):** five more pure `TextTools` transforms — URL Encode
 (RFC 3986 unreserved-only; space→%20) / URL Decode, HTML Encode (5 chars, & first) / HTML Decode (named +
 numeric `&#dd;`/`&#xhh;`; unknown entities untouched), Trim Trailing Whitespace (per line). Same pattern
 (TextToolVerb → CommandDescriptor + scriptVerb → ScriptVerbDispatch → TextToolRunner). **Fully host-validated,
@@ -12464,7 +12464,7 @@ flake (the mitigation from +434 worked).
 Feature tick (diversified off metadata). Shipped six NotePad++/Sublime-style clipboard transforms as
 Command-Palette tools: Sort Lines (A→Z / Z→A), Remove Duplicate Lines, Reverse Lines, UPPERCASE, lowercase.
 
-**Shipped (commit `71d5d5a`):** pure transforms in `TextTools` (line split treats \n/\r\n/\r as one separator,
+**Shipped (commit `8e2edb6`):** pure transforms in `TextTools` (line split treats \n/\r\n/\r as one separator,
 keeps empty lines, rejoins \n; sort = deterministic Unicode-scalar order; unique = keep-first), wired the SAME
 way as the existing UUID/Base64/SHA tools — `TextToolVerb` + `CommandDescriptor` + `ScriptVerbDispatch` →
 `TextToolRunner` (clipboard IO, host-tested via a `PasteboardIO` mock). **This slice is FULLY host-validated —
@@ -12483,7 +12483,7 @@ clean before committing. (Mitigation going forward: lean on targeted `--filter` 
 Feature tick. Verify-before-build caught that the TSK-769 **copy-trimmed** slice is ALREADY done
 (`TerminalSelection.selectedText` already trims trailing spaces per line) — noted on the board, pivoted.
 
-**Shipped (commit `4e1d4ad`, suite green EXIT=0):** refactored the inline image-metadata extraction into a pure
+**Shipped (commit `b05b476`, suite green EXIT=0):** refactored the inline image-metadata extraction into a pure
 `nonisolated imageRows(props:)` + `gpsCoordinate(_:)` (host-testable with synthetic dicts), and EXPANDED the
 EXIF/TIFF/GPS fields: date taken, focal length, software, and GPS coordinates (lat/long + N/S/E/W refs) on top
 of the existing lens/ISO/exposure/aperture/camera. **Fixed a latent bug** while refactoring: the old
@@ -12498,7 +12498,7 @@ is the VM tail. (Build hiccup: imageRows was @MainActor-isolated but called from
 Feature tick (diversified off terminal). Concrete slice of the broad "Deep metadata" umbrella:
 `MetadataPanel.filesystemRows` now surfaces POSIX **permissions** (octal + ls-style symbolic via a host-tested
 `posixModeString`), **owner/group**, **inode**, and **hard-link count** (only when >1 — "1" is noise on every
-file). All were already in the `attributesOfItem` dict, just unsurfaced — no extra FS calls. Commit `3168b77`;
+file). All were already in the `attributesOfItem` dict, just unsurfaced — no extra FS calls. Commit `4c86712`;
 suite confirmed green (EXIT=0, gate-wrapper exit-1 was the same machine-load flake as +431).
 
 Host tests (MetadataPanelTests +5): `posixModeString` octal/symbolic/high-bit-mask; `filesystemRows`
@@ -12518,7 +12518,7 @@ suspected lsp.rename "show-lsp-rename"-vs-"lsp-rename" mismatch was WRONG, both 
 gap: the goto commands worked via palette/keybinding but had NO menu entry points — a standard IDE Navigate menu was
 missing.
 
-**Shipped TSK-823 (commit `3c02bee`, headless gate green — 5211 tests, 0 fail, no heavy-tier leak):** a top-level
+**Shipped TSK-823 (commit `54b269c`, headless gate green — 5211 tests, 0 fail, no heavy-tier leak):** a top-level
 **Navigate** menu (after View) with Go to Definition / Declaration / Type Definition / Implementation. 4 @objc actions
 dispatch the verified-working `navigateViaLSPAtCursor`; gated to editor mode via `validateMenuItem` (same gate as the CM6
 commands); `applyShortcut` picks up any user keybinding (none by default — rebind in ~/.textview/keybinding.json). Pure
@@ -12589,7 +12589,7 @@ Autonomous tick. Re-weighed the architectural pick (TSK-583) — still a risky c
 decision-gated payoff (541, the urgent UB, is already fixed), so held for a deliberate owner-aware effort. Picked the
 clean, safe, host-testable TSK-681 (canonical; its dup TSK-684 was already dismissed).
 
-**Shipped (commit `65437e3`, headless gate green — 5208 tests, 0 fail, no heavy-tier leak):** Export/Import Settings.
+**Shipped (commit `4c8add8`, headless gate green — 5208 tests, 0 fail, no heavy-tier leak):** Export/Import Settings.
 New versioned `SettingsSnapshot` (Codable, all-optional fields) + `PreferencesStore.exportSettings()/applySettings()`
 capture the USER-facing prefs (zoom, wrap, font, theme, invisibles, indent-guides, hex-width, ffmpeg path, preview-meta,
 sidebar, per-type view defaults), EXCLUDING machine-specific state (window frame, last folder, sidebar width). The app
@@ -12612,7 +12612,7 @@ free-vs-call UB) is ALREADY validated, so 583's safety urgency is gone — it's 
 (unblocking 543) is migration-decision-gated. Per last tick's flag, that's a deliberate multi-tick + owner-aware effort,
 NOT a rushed solo slice. So instead closed the in-flight TSK-807 with its last gap.
 
-**Shipped TSK-807 slice 3 (commit `d26aa26`, headless gate green — 5202 tests, 0 fail, no heavy-tier leak):** audio common
+**Shipped TSK-807 slice 3 (commit `4633201`, headless gate green — 5202 tests, 0 fail, no heavy-tier leak):** audio common
 tags. New pure `AudioMetadataRows` (ViewerCore) maps AVMetadata common keys → ordered Title/Artist/Album/Year rows (empties
 omitted, repeated-key first-wins, creationDate → 4-digit year); `MetadataPanel.avMetadata` extracts the common-metadata
 pairs (AVAsset, off-main) and feeds it. Music files now show their tags alongside duration/sample-rate/channels.
@@ -12659,7 +12659,7 @@ bounded 500ms reader-join FORCE-CLOSES the read handles so an escaped/re-parente
 (fds/threads reclaimed). `GrandchildPipeTests` (3 tests incl. an fd-count-across-5-calls leak check) PASS fresh on main →
 dismissed `already-fixed` with the passing-checks artifact (board hygiene, like TSK-724).
 
-**Shipped TSK-807 slice 2 (commit `c691e39`, headless gate green — 5196 tests, 0 fail, no heavy-tier leak):** `ArchiveFileInfo.summaryRows`
+**Shipped TSK-807 slice 2 (commit `4731a1f`, headless gate green — 5196 tests, 0 fail, no heavy-tier leak):** `ArchiveFileInfo.summaryRows`
 (ViewerCore) reuses the read-only `ArchiveCatalog` listing (system unzip/tar, no deps) to fill the empty Archive section
 of the file-info panel — Format (Zip/Tar/Tar.gz/Tar.bz2), file + folder counts (+ a `+` when the listing was capped),
 total uncompressed size where reported (zip). Wired into `MetadataPanel.loadTypeMetadata` `.archive` (off-main);
@@ -12684,7 +12684,7 @@ multi-MB SINGLE LINES → multi-second main-thread hang on `setAttributedString`
 (off-main >64MiB, 512KB highlight bail, 4MB md / 50MB CM6 caps, 512MB read ceiling) ALL key on TOTAL SIZE — none on LINE
 LENGTH — so a sub-64MiB long-line file loads synchronously into the hang-prone view. Gap confirmed.
 
-**Shipped (commit `f2d19d0`, headless gate green — 5192 tests, 0 fail, no heavy-tier leak):** new pure `SourceWrapPolicy`
+**Shipped (commit `cbf039f`, headless gate green — 5192 tests, 0 fail, no heavy-tier leak):** new pure `SourceWrapPolicy`
 (ViewerCore): `hasLongLine` (early-exit scalar scan, resets at \n/\r) + `effectiveWrap(userWrap,text)` = pref OR a line
 ≥ 100k chars. Wired into `SourceTextController.apply` — forces soft-wrap BEFORE the text is laid out (the wrap block
 precedes `applyAttributedString`), bounding NSTextView layout to the viewport width regardless of the user's wrap pref.
@@ -12711,7 +12711,7 @@ MUTATES many user files and needs a preview/undo design before it's data-safe to
 PDF (pages/title/author) — but the `.sqlite` "Database" section was EMPTY (typeLabel exists, `loadTypeMetadata` returned
 []). Biggest clear gap + host-testable (a temp `.sqlite` + the read-only `SQLiteReader`).
 
-**Shipped (commit `87435a5`, headless gate green — 5184 tests, 0 fail, no heavy-tier leak):** `SQLiteFileInfo.summaryRows`
+**Shipped (commit `625b496`, headless gate green — 5184 tests, 0 fail, no heavy-tier leak):** `SQLiteFileInfo.summaryRows`
 (ViewerCore) reads object counts (tables/views/indexes/triggers, zero rows omitted), total rows across user tables, and
 encoding + page-size PRAGMAs via the read-only `SQLiteReader`; wired into `MetadataPanel.loadTypeMetadata` `.sqlite`
 (off-main). A non-DB / misdetected `.sqlite` degrades to NO rows (guards on the first real read — SQLite opens lazily, so
@@ -12738,7 +12738,7 @@ this session), so not host-drainable. → continued the WISH minor-feature lane.
 filtered). Dismissed TSK-724 `already-fixed` with a code-proof artifact (noted the distinct IntelliJ line-level "Recent
 Locations" variant is a separate unbuilt feature; not built speculatively for a P8). Avoided shipping a duplicate.
 
-**Shipped TSK-696 (commit `023a1af`, headless gate green — 5176 tests, 0 fail, no heavy-tier leak):** a `code`-style CLI
+**Shipped TSK-696 (commit `9f3c4ae`, headless gate green — 5176 tests, 0 fail, no heavy-tier leak):** a `code`-style CLI
 launcher. `CLILauncher` (ViewerCore) generates a `/bin/sh` wrapper that `open -a`s this bundle — files route through the
 existing `application(_:open:)` (main.swift:446), so NO launch-arg parsing was needed — and installs it 0755 into
 `/usr/local/bin`, falling back to a per-user `~/Library/Application Support/MarkdownViewer/bin` + a PATH hint when that
@@ -12759,7 +12759,7 @@ ONLY `.text` was engine-backed; no regex. `CrossFileSearch` (ViewerCore) is a pu
 target** (find=TSK-630 is the in-document engine), so §2.5 doesn't gate it. `RegexComplexityGuard.reject` already
 exists for ReDoS.
 
-**Shipped (commit `e115782`, headless gate green — 5168 tests, 0 fail, no heavy-tier leak):**
+**Shipped (commit `74a00c9`, headless gate green — 5168 tests, 0 fail, no heavy-tier leak):**
 - `CrossFileSearch`: `Options.useRegex`; a literal-or-regex `Matcher` (built once/search); `validateRegex()`
   (RegexComplexityGuard.reject + compile check); `searchFilenames()` (name-only walk reusing the same
   skip-dir/symlink-loop/entry-cap guards, never reads bodies → cheap). The literal content path keeps its Substring
@@ -12784,7 +12784,7 @@ Second feature this tick (owner: "focus on features"). TSK-678 `[WISH][P5][minor
 with the user's `~/.textview/keybinding.json` via `applying(overrides:)`. The Help menu + a retained-NSWindow opener
 (`showDiagnosticWindow`/`makeToolWindow`) are the established UI pattern.
 
-**Shipped (commit `27848fb`, headless gate green — 5153 tests, 0 fail, no heavy-tier leak):**
+**Shipped (commit `cc2bf8a`, headless gate green — 5153 tests, 0 fail, no heavy-tier leak):**
 - `Shortcut.glyphString` (ViewerCore) — pure macOS-glyph render (⌃⌥⇧⌘ HIG order + symbolic-key glyphs ⏎⎋⇥⌫←→↑↓␣⇞⇟);
   `displayString` stays the config form.
 - `KeyboardShortcutsCatalog` (ViewerCore) — groups BOUND commands by `CommandCategory` (declaration order), excludes
@@ -12810,7 +12810,7 @@ Language→"Plain Text" kills highlighting; "Open As→Plain Text" forces any fi
 discoverability/DEFAULTS, not existence. Surfaced to owner → owner picked **per-type default mode** (so .md stops
 forcing Rendered and .csv stops forcing Table on every open — the "click Editor every time" annoyance, BACKLOG gap #5).
 
-**Shipped (commit `a9777e6`, headless gate green — 5139 tests, 0 fail, no heavy-tier leak):**
+**Shipped (commit `10bed97`, headless gate green — 5139 tests, 0 fail, no heavy-tier leak):**
 - `ViewModeOptions.defaultMode(…, preferred: [FileCategory: ViewMode])` (ViewerKit) — layers a per-category override on
   the built-in default (refactored into `builtinDefaultMode`), AVAILABILITY-GATED: a pinned mode the file doesn't offer
   (e.g. `.table` pinned on `.plainText` hit by a `.txt`) degrades to the built-in so picker↔pane never desync.
@@ -12840,11 +12840,11 @@ bit — behavior + action closures are host-pinned, so a logic regression fails 
 - **Unblocked the VM first.** The run stalled at `swift build` on the SwiftPM `.build` lock, held by a `swift-test`
   from my headless run 2 ticks ago that had **hung for 50 minutes** (it never completed — the partial log I triaged
   earlier was from before the hang). Killed PID 24812 → lock freed → the GUI-lane run proceeded. Recipe + the
-  "prefer lighter VM lanes over the monolithic 4220-test run" lesson in LESSONS.md (`bd2bbd0`).
+  "prefer lighter VM lanes over the monolithic 4220-test run" lesson in LESSONS.md (`36bfd9f`).
 
 ## LOG +407 (2026-06-13 — TSK-821 VM-lane coverage: PaneScrollRestoreWebViewTests → review; CHANGELOG discipline added)
 
-- **TSK-821 (rendered-markdown per-file scroll) → review (commit `6306505`, headless gate green).** Added
+- **TSK-821 (rendered-markdown per-file scroll) → review (commit `99dca3c`, headless gate green).** Added
   `PaneScrollRestoreWebViewTests` (#192-gated, wired into `test-in-vm.sh run_webview_tests` + `nightly-vm.yml`) — proves
   the round-trip MECHANISM on our ACTUAL rendered page: scrollable + `scrollY` reflects a `scrollTo` (capture), reload →
   top (the bug), `scrollTo({behavior:'instant'})` (the exact restore JS) re-applies the offset. Proven both ways on the
@@ -12859,7 +12859,7 @@ bit — behavior + action closures are host-pinned, so a logic regression fails 
 
 ## LOG +406 (2026-06-13 — TSK-822: gate the T5 pixel tier on MDV_VM_GUI_SESSION → validated; closes a VM-lane false-fail + a host footgun)
 
-- **TSK-822 (visual-regression suites false-fail in the non-GUI VM lane) → validated (commit `1bf47cb`, headless gate green).**
+- **TSK-822 (visual-regression suites false-fail in the non-GUI VM lane) → validated (commit `0dc9284`, headless gate green).**
   Root cause: the 3 PixelTestCase visual-regression suites gated per-test only on `MDV_HEADLESS_GATE`, not `MDV_VM_GUI_SESSION`
   — so they ran outside the explicit GUI lane: on the non-GUI `test-in-vm.sh test` (AppleScript `-609` / blank screencaptures,
   the symptom surfaced last tick) AND on a bare host `swift test` (which would OPEN A WINDOW on the owner's screen — the same
@@ -12873,9 +12873,9 @@ bit — behavior + action closures are host-pinned, so a logic regression fails 
 
 ## LOG +405 (2026-06-13 — TSK-821 rendered-markdown per-file scroll (the dominant TSK-743 case); VM suite triaged + TSK-822 filed)
 
-- **TSK-821 (rendered-markdown WKWebView per-file scroll) → fixed (commit `43a29a3`, headless gate green; held for VM).**
+- **TSK-821 (rendered-markdown WKWebView per-file scroll) → fixed (commit `78d5d15`, headless gate green; held for VM).**
   The third + dominant scroll channel (rendered is the DEFAULT markdown mode), completing TSK-743 across editor + source
-  (865fdd6) + rendered. PULL design, WV-7-compatible (no user-scripts, no message handler): `DocumentModel.renderedScrollByURL`
+  (b0a2060) + rendered. PULL design, WV-7-compatible (no user-scripts, no message handler): `DocumentModel.renderedScrollByURL`
   store (cap 64) + `rememberRenderedScroll(y>0)` / `renderedScrollOffset`; `MarkdownRenderedView` captures the OUTGOING
   file's `window.scrollY` (evaluateJavaScript) right before the html-change `loadHTMLString` resets it, and restores the
   incoming file's offset in `didFinish` via `scrollTo({behavior:'instant'})`; ContentView wires it by `file.url`. Store
@@ -12890,7 +12890,7 @@ bit — behavior + action closures are host-pinned, so a logic regression fails 
 
 ## LOG +404 (2026-06-13 — validation drain: TSK-741, TSK-736, TSK-619 → validated (2 self-validatable opts + 1 closed by the profile))
 
-Host-actionable pool drained + perf cluster parked → ran the §1.5 validation drain on this session's review/fixed-held items. Re-ran each evidence FRESH on current main (fd1530c), then validated 3:
+Host-actionable pool drained + perf cluster parked → ran the §1.5 validation drain on this session's review/fixed-held items. Re-ran each evidence FRESH on current main (41f46be), then validated 3:
 - **TSK-741 (terminal output-leg ANR) → validated.** Realized it was over-held: the version-gate is an OUTPUT-IDENTICAL optimization (installs the SAME terminal screen, just gated on `version` instead of a per-frame deep `Equatable` over ~1256 scrollback rows) — no rendered-pixel change to VM-validate, only main-thread work removed. The two visual-regression risks (stale screen / swallowed font-size) are host-tested with teeth. TerminalUpdateVersionGateTests 4/4 fresh.
 - **TSK-736 (hover-highlight lag) → validated.** Same logic: skipping the redundant find-repaint leaves the displayed wash IDENTICAL; the one visual risk (stale highlight after a storage rebuild) is host-guarded (test_storageRebuild_clearsLive). TextSearchRepaintGuardTests 4/4 fresh + the VM profile corroborates apply=6.7ms.
 - **TSK-619 (first-open ~400ms ts.query-compile on MAIN) → validated by the fresh profile.** It was held at fixed for exactly "a live signpost showing ts.query-compile gone from the open critical path." This session's nav profile delivers it: ALL ts.query-compile ran on worker thread 0x64616 (the launch warm-task), NOT Main (0x6446d) — the open served warm queries (sub-ms), no main-thread hitch. TreeSitterWarmupTests 3/3 fresh.
@@ -12911,7 +12911,7 @@ Ran the teed-up fresh VM xctrace profile (`vm-profile.sh` nav + resize, debug, o
 ## LOG +402 (2026-06-13 — CORRECTION: MountedPanesLRU is DONE; the perf cluster was mis-framed as owner-gated for ticks)
 
 **A multi-tick error, corrected.** My last several handoffs called MountedPanesLRU "the owner-gated lever, awaiting a
-supervised session." That is STALE. **MountedPanesLRU (Perf Fix#1) landed 2026-06-06 (`39925fd`) and TSK-108 is
+supervised session." That is STALE. **MountedPanesLRU (Perf Fix#1) landed 2026-06-06 (`8f60d21`) and TSK-108 is
 `validated`** (2026-06-10): `ContentView.content` renders a ZStack of `MountedPanesLRU(capacity:4)`-retained panes
 (inactive at opacity:0, WKWebViews stay mounted), reconciled by `noteActiveTabForRetention()` on every
 `updateDerived()`; host `MountedPanesWiringTests`/`RepublishCountTests` + VM `PaneRetentionMountProbeTests` prove
@@ -12921,7 +12921,7 @@ supervised MountedPanesLRU?" question on TSK-598 et al. is **moot** — no appro
 - **What actually remains** (the genuine residual the TSK-108 validation carved out to TSK-598/592): the MODEL-SIDE
   per-switch cost — `SourceTextController.apply` (~199ms on a SOURCE-pane switch, TSK-613) + the `sizeThatFits` fan-out
   across the ≤4 mounted panes per resize frame. **App-side perf, host-investigable, NOT owner-gated.**
-- **Those numbers are now STALE** — they predate this session's TSK-736 Fix B (`1404c9b`), which removed the
+- **Those numbers are now STALE** — they predate this session's TSK-736 Fix B (`ca0dabb`), which removed the
   per-republish find-repaint that ran on EVERY mounted pane. So the apply() fan-out is already lighter.
 - **NEXT STEP (teed up): a fresh VM profile** (`scripts/vm-profile.sh` nav + resize, `--instrument os_signpost`,
   release) to re-measure `SourceTextController.apply` + `sizeThatFits` on current main, then a targeted host fix of
@@ -12930,7 +12930,7 @@ supervised MountedPanesLRU?" question on TSK-598 et al. is **moot** — no appro
 
 ## LOG +401 (2026-06-13 — TSK-743 source-view per-file preview scroll; rendered case split to TSK-821)
 
-- **TSK-743 source channel → landed (commit `865fdd6`, headless gate green).** The ticket was only partially fixed
+- **TSK-743 source channel → landed (commit `b0a2060`, headless gate green).** The ticket was only partially fixed
   (prior commits covered the CM6 editor scroll). Three channels: editor (done), source NSTextView (this commit),
   rendered WKWebView (split to **TSK-821**, the dominant case). The preview slot reuses one tab id and rebuilds the
   `Tab` per swap, dropping `Tab.scrollTopLine` (`TabsState.openPreview` omits the carry the lazy path does). Added a
@@ -12946,8 +12946,8 @@ supervised MountedPanesLRU?" question on TSK-598 et al. is **moot** — no appro
 
 ## LOG +400 (2026-06-13 — TSK-736 hover-lag Fix B: skip the redundant find-highlight repaint; TSK-732 scoped+deferred)
 
-- **TSK-736 (mouse-over highlight lag on a 5000-line log + Find) → Fix B landed (commit `1404c9b`, headless gate green;
-  held at review for VM signpost).** After Fix A (a1da3f1, per-line-crossing dedupe), the residual was
+- **TSK-736 (mouse-over highlight lag on a 5000-line log + Find) → Fix B landed (commit `ca0dabb`, headless gate green;
+  held at review for VM signpost).** After Fix A (901486b, per-line-crossing dedupe), the residual was
   `applyFindHighlights` running a full-range remove-all (O document) + per-match repaint (O matches) on EVERY apply() —
   and a hover line-crossing re-bodies the source view → `apply()`. Fix B: early-out when the wash is already painted for
   exactly `lastFindKey` and no next/prev nav. Correctness rests on a new `findHighlightsLive` flag, cleared only when the
@@ -12955,7 +12955,7 @@ supervised MountedPanesLRU?" question on TSK-598 et al. is **moot** — no appro
   temp-attrs); the find wash is a fixed (theme-independent) Palette colour so an attribute-only repaint needs no find
   repaint. 4 new `TextSearchRepaintGuardTests` with teeth — disabling the early-out reddened ONLY the skip test (the 3
   repaint tests stayed green, proving no over-skip). Recolor suite still green. Felt no-lag = VM `vm-profile.sh` signpost.
-- **TSK-732 (font View/Edit) scoped + deferred.** Family fix already landed (f90bef7); the two residuals (CM6 line-height
+- **TSK-732 (font View/Edit) scoped + deferred.** Family fix already landed (a7e3417); the two residuals (CM6 line-height
   `1.45` vs View's `~1.20`, and `Int`-rounded font size) need a change to the VERSIONED CM bridge message
   (`setFontSize(Int)` → carry `Double` px + a derived line-height px from `SourceTextController.lineHeight`). Correct-by-
   construction sketch captured on the ticket; deferred to a VM-paired batch (the line-height value benefits from a pixel
@@ -12963,8 +12963,8 @@ supervised MountedPanesLRU?" question on TSK-598 et al. is **moot** — no appro
 
 ## LOG +399 (2026-06-13 — TSK-806 split-pane unsaved-edits: the observation-starvation fix the model fix missed)
 
-- **TSK-806 (split-pane source shows on-disk text, not unsaved edits) → fix landed (commit `75bde17`, headless gate
-  green; held at review for VM AX-read).** The prior model fix (`e87a20a`) was correct AND host-tested — yet the live
+- **TSK-806 (split-pane source shows on-disk text, not unsaved edits) → fix landed (commit `47ff1c8`, headless gate
+  green; held at review for VM AX-read).** The prior model fix (`61d483e`) was correct AND host-tested — yet the live
   bug persisted because `SplitPaneView` never re-rendered on a keystroke. It observed only `@ObservedObject model:
   DocumentModel`, but the editor buffers live on `tabCoordinator`, whose `objectWillChange` is deliberately NOT
   forwarded into `DocumentModel` (PERF #1 severed it to kill a republish storm). So the split painted the right text on
@@ -12983,8 +12983,8 @@ residuals** (741 terminal output-leg, 743 rendered-scroll) and **4 clean host-ac
 observation, 732 font line-height/rounding, 736 hover paint-signature guard, 730 PageDown/Home/End WebView-lane test).
 Precise file:line fix sketches captured per ticket — de-risks the next ~10 ticks.
 
-- **TSK-741 output leg → fixed (commit `b79b8b2`, headless gate green; held at review for VM felt-latency).** The
-  input/paste leg was already off-main (8fd89a0), but a large burst (big JSON echoed by vim) still beachballed:
+- **TSK-741 output leg → fixed (commit `1806aee`, headless gate green; held at review for VM felt-latency).** The
+  input/paste leg was already off-main (94fe1e3), but a large burst (big JSON echoed by vim) still beachballed:
   `TerminalNSView.update` did `if self.screen != screen` — a synthesized DEEP value-compare over cells + up to ~1256
   scrollback rows on the MAIN THREAD, once per coalesced frame. Fix: gate the install on the model's monotonic
   `version` (the authoritative change signal) instead of the deep `==`; `update(screen:version:fontSize:)` +
@@ -12993,7 +12993,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +397 (2026-06-13 — TSK-580 close-out: the thin-waist FFI envelope is now the UNIVERSAL production dispatch path)
 
-- **TSK-580 (thin-waist FFI envelope) → validated (close-out commit `18da813`, headless gate green).** The 3 raw/aux
+- **TSK-580 (thin-waist FFI envelope) → validated (close-out commit `3571559`, headless gate green).** The 3 raw/aux
   production Swift wrappers — `mdvCoreHexRender`, `mdvCoreHexSearch`, `mdvCoreIndentDetect` — were the LAST direct callers
   of their dedicated per-method C symbols; they now route through the single `mdvcore_call(MDV_METHOD_*, req, aux, out)`
   envelope via a new `mdvEnvelopeCallAux` helper (CoreClient.swift). The helper carries the **aux bulk side-channel**
@@ -13016,7 +13016,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +396 (2026-06-13 — TSK-819: automate the root-poisoned-.build chown-back in test-in-vm.sh; recurring VM-build blocker killed)
 
-- **TSK-819 (test-in-vm.sh GUI-session lane poisons shared .build with root-owned files) → validated (commit `050dcaa`).**
+- **TSK-819 (test-in-vm.sh GUI-session lane poisons shared .build with root-owned files) → validated (commit `bd61e8f`).**
   The exact "build-app.sh guard someday" flagged in +395. The `MDV_VM_GUI_SESSION=1` path runs the inner build/test via
   `sudo -S launchctl asuser <uid> /bin/bash`, which executes as **root** → SwiftPM writes root-owned objects into the
   shared `.build` (TSK-502 class) → the next non-root build dies on `ModuleCache …/CMdvCore-*.pcm: Operation not
@@ -13033,7 +13033,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +395 (2026-06-13 — TSK-748 file-info checksum UI VM-render-validated (a11y-presence); decisive minor-feature drain after last tick's hold)
 
-- **TSK-748 (file-info multi-algo checksums + copy button) → validated (commit `bb363a0`).** Engine/model were
+- **TSK-748 (file-info multi-algo checksums + copy button) → validated (commit `9e0e37b`).** Engine/model were
   host-tested (CRC-32/MD5/SHA-1/256/512 pinned to vectors; algo-switch; copyHash→green-"Copied!"-1.2s; teeth).
   This tick closed the RENDER: wrapped checksumContent in `.accessibilityElement(children: .contain)` so the
   leaf ids surface, + a new `metadata-checksum` MDV_UI_SCENE (writes a 1×1 PNG, opens it as a media preview,
@@ -13076,12 +13076,12 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +393 (2026-06-13 — TSK-770 editor Find/Replace VM-behavior-validated; WebView-lane DOM mode keeps drilling the render-drain)
 
-- **TSK-770 (Find bar Replace/ReplaceAll + persist-prev-text) → validated (test `85a26d7`).** The functional
+- **TSK-770 (Find bar Replace/ReplaceAll + persist-prev-text) → validated (test `591b367`).** The functional
   replace is now proven END-TO-END: new `EditorReplaceWebViewTests` boots the real CM6 editor and proves
   `setSearchQuery{query,replace}` + `replaceAll` turns "foo foo foo" → "bar bar bar", and `findNext`+`replaceNext`
   replaces exactly ONE match (CM6 select-then-replace) — 2/2 on the VM. Model/dispatch host-tested
   (FindBarTests 9/9); the one new sub-ask (persist prior search text on Cmd+F reopen) was a prior host-tested
-  FindCoordinator fix (1c538fb, teeth). Wired into test-in-vm.sh + nightly-vm.yml.
+  FindCoordinator fix (5abd235, teeth). Wired into test-in-vm.sh + nightly-vm.yml.
 - **Caught + fixed a test-logic bug mid-validation (process win):** the first VM run failed `replaceNext`
   ("foo foo foo" unchanged) — NOT a product bug: CM6's `replaceNext` is *select-then-replace* (the first call
   selects without replacing; the real find-bar selects via findNext on query-type before Replace). Corrected
@@ -13090,12 +13090,12 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 - **Render-drain scoreboard via the WebView-lane DOM mode:** fold ✓ blame ✓ editor-replace ✓ — each clean +
   non-disruptive (in-process offscreen WKWebView, no host window, no screencapture). The mode is the workhorse
   for CM6-internal behaviors. Remaining review tail is the harder classes (crash 734, key-nav 730/728, perf
-  736/741, split-text 806, scroll 743). `main` headless-gate-green; commit 85a26d7.
+  736/741, split-text 806, scroll 743). `main` headless-gate-green; commit 591b367.
 
 ## LOG +392 (2026-06-13 — TSK-814 git blame gutter VM-render-validated via a new WebView-lane DOM test; resumed the render-drain safely)
 
-- **TSK-814 → validated (test commit `6e8d95a`).** Git blame in the editor gutter — feeder/model/toggle were
-  host-tested (prior `c341d3f`/`ebc8fd2`); this tick closed the render loop. New `BlameGutterWebViewTests`
+- **TSK-814 → validated (test commit `cbfee38`).** Git blame in the editor gutter — feeder/model/toggle were
+  host-tested (prior `ed5e718`/`7ce89fc`); this tick closed the render loop. New `BlameGutterWebViewTests`
   (mirrors FoldGutterWebViewTests, the WebView lane — NOT affected by TSK-817, it's MDV_RUN_WEBVIEW_TESTS-gated)
   boots the real codemirror.html, dispatches `setGutterMarkers` kind:"blame" rows, and asserts
   `.cm-blame-marker` elements render in the live `.cm-diff-gutter` DOM WITH the author·sha tooltip on `title`
@@ -13108,11 +13108,11 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 - **Harness maturity:** the render-drain now has 4 proven validation modes — a11y-presence (overlays),
   window-color (theming), and the WebView-lane DOM query (CM6 gutter/editor internals: fold ✓ blame ✓). Each
   remaining review item maps to one of these or needs interaction/perf (the harder tail). `main` green; commit
-  6e8d95a.
+  cbfee38.
 
 ## LOG +391 (2026-06-13 — TSK-817: closed the host-window footgun (heavy tiers now opt-in to MDV_VM_GUI_SESSION); two owner disruptions handled)
 
-- **TSK-817 → validated (commit `277450d`).** Last tick a bare host `swift test --filter ViewerUITests`
+- **TSK-817 → validated (commit `65050b8`).** Last tick a bare host `swift test --filter ViewerUITests`
   spawned a window on the owner's screen — `LaunchHarness.isAppBuilt` ran heavy tiers whenever a `dist/` bundle
   existed (I'd just built one for the /Applications build). Fix: pure
   `LaunchHarness.shouldRunLiveTiers(env:bundleExists:)` requires the explicit VM GUI opt-in
@@ -13136,7 +13136,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   run theme-dark` → the CONTENT region (rendered markdown) measures **content_dark=0.930** (was ~light, 0.18
   whole-window pre-fix) and the capture visibly shows the Design-Plan markdown on a DARK bg with light prose.
   Extended the theme-dark color assertion to guard BOTH regions — sidebar (chrome) + center content (markdown
-  page) — `pass iff both ≥ 0.35` (commit `01b120e`): sidebar_dark=0.977, content_dark=0.930. Automated VM
+  page) — `pass iff both ≥ 0.35` (commit `2edd601`): sidebar_dark=0.977, content_dark=0.930. Automated VM
   regression guard for both surfaces.
 - **TSK-641 → validated** (theme engine, all FOUR surfaces). The gap that held it last tick (markdown reading
   page) is closed by 815, so all four are now VM-confirmed: syntax (host pins) · CM6 editor
@@ -13146,11 +13146,11 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   follows (chrome + editor + markdown reading view + syntax), live without relaunch.
 - **Harness now has a two-region color assertion** — proven on a 2nd dimension (content vs chrome). The
   render-drain lever (a11y-presence · window-color · multi-region) is mature. `main` headless-gate-green;
-  commits 557ce7d (fix, prior) + 01b120e (2-region guard).
+  commits f6eaf8c (fix, prior) + 2edd601 (2-region guard).
 
 ## LOG +389 (2026-06-13 — TSK-815 markdown Dark-Mode fix landed; OWNER /Applications build → caught + fixed a TSK-813 host-build regression (TSK-816))
 
-- **TSK-815 → fixed (commit `557ce7d`): the Dark-Mode payoff.** New `ThemeDefinition.pageCSS()` overrides
+- **TSK-815 → fixed (commit `f6eaf8c`): the Dark-Mode payoff.** New `ThemeDefinition.pageCSS()` overrides
   markdown.css's `:root` vars (`--mdv-bg`←background, `--mdv-fg`←foreground, `--mdv-fg-secondary`←gutterText,
   `--mdv-code-bg`←gutterBackground, `--mdv-link`←accent) from the active theme; `themedExtraStylesheet` composes
   pageCSS + tokCSS (appended after markdown.css → wins by cascade). So a selected dark theme now darkens the
@@ -13158,8 +13158,8 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   shim only, byte-identical (pinned). Host-tested (pageCSS var mapping, link-omitted-without-accent,
   themedExtraStylesheet present/absent; teeth drop-`--mdv-bg`→red). Render guard (VM content-region color
   assertion) is the follow-up; closing it closes TSK-641 → unblocks 642.
-- **OWNER asked for an /Applications build → surfaced + fixed a regression (TSK-816 → validated, `1a47f1d`).**
-  `build-app.sh debug --install` had been silently broken on the HOST since TSK-813 (573bf0f): select_toolchain's
+- **OWNER asked for an /Applications build → surfaced + fixed a regression (TSK-816 → validated, `ac84f98`).**
+  `build-app.sh debug --install` had been silently broken on the HOST since TSK-813 (a88a767): select_toolchain's
   `newest=$(ls -d …/swift-6.*-RELEASE.xctoolchain | sort -V | tail -1)` aborts under `set -euo pipefail` when
   the glob matches nothing (the host has no such toolchain) — exiting before `swift build`. The VM never caught
   it (its glob matches). Fix: `|| true` on the substitution (build-app.sh + test-in-vm.sh's mirror). Verified
@@ -13170,7 +13170,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +388 (2026-06-13 — TSK-641 chrome surface VM-validated via a new window-COLOR harness assertion; markdown-content Dark-Mode gap found → TSK-815)
 
-- **TSK-641 chrome surface VM-render-validated** (commit `db44a95`) — the last theming surface tracked as
+- **TSK-641 chrome surface VM-render-validated** (commit `407f0d8`) — the last theming surface tracked as
   unproven. New `theme-dark` scene sets `selectedThemeID="xcode-dark"` (live @Published → ChromeTheme.current +
   chrome re-body, the stage-4 repaint path); vm-uitest gained a per-scene **window-COLOR assertion**
   (`scene_color`) — the harness's 3rd capability after the terminal pixel-eval and the a11y-presence check. It
@@ -13185,12 +13185,12 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   fix sketch (inject the theme bg/fg into the rendered view's CSS via the existing themedExtraStylesheet hook;
   nil-theme unchanged) + the validation (extend theme-dark's color check to the CONTENT region).
 - **Harness now has 3 assertion modes** (a11y-presence · window-color · legacy terminal pixel) — the
-  render-drain lever covers presence AND color. `main` headless-gate-green; per-item commit db44a95.
+  render-drain lever covers presence AND color. `main` headless-gate-green; per-item commit 407f0d8.
 
 ## LOG +387 (2026-06-13 — TSK-745 + TSK-760 VM-render-validated via one a11y-grouping edit; the surfacing rule codified in LESSONS)
 
 - **TSK-745 (new-tab recents) + TSK-760 (New File button) → validated** — TWO user-facing minor-features closed
-  with one small edit (`c4b6a81`), capitalizing on last tick's folder-only capture that already showed both
+  with one small edit (`6e4aca5`), capitalizing on last tick's folder-only capture that already showed both
   rendering. Root insight: a bare `.accessibilityIdentifier` on a SwiftUI container is NOT promoted to a
   readable out-of-process AX element (the `mdv.emptyState.*` ids existed but never surfaced). Adding
   `.accessibilityElement(children: .contain)` to the action row + recents launcher promotes them to AX groups
@@ -13204,13 +13204,13 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   elements; `.accessibilityElement(children: .contain)` is the lever; `.contain` exposes CHILD ids (assert
   those, not the wrapper); modal panels (rename/code-action) self-promote via their card material.
 - **Drain scoreboard (harness pattern):** TSK-640 (rename + code-action overlays), TSK-738 (status footer),
-  TSK-745 + TSK-760 (empty-state) all VM-validated across 3 ticks. `main` headless-gate-green; commit c4b6a81.
+  TSK-745 + TSK-760 (empty-state) all VM-validated across 3 ticks. `main` headless-gate-green; commit 6e4aca5.
 
 ## LOG +386 (2026-06-13 — TSK-738 status-footer bug VM-validated via the harness; folder-only scene; 745/760 visually confirmed + follow-up framed)
 
 - **TSK-738 → validated** (user-facing bug: status footer missing after relaunch / opening a folder). The fix
-  (`3aaa8f1`, prior) broadened the footer gate to `hasOpenContext` (currentURL || sidebar.rootURL) so it shows
-  in the no-file folder state. This tick added the **`folder-only` UI scene** (`d9536d7`) — closes the
+  (`249a630`, prior) broadened the footer gate to `hasOpenContext` (currentURL || sidebar.rootURL) so it shows
+  in the no-file folder state. This tick added the **`folder-only` UI scene** (`f4e8e36`) — closes the
   auto-opened tab + openFolder a root to REACH that state (the aqua-runner always launches with a file). VM:
   `vm-uitest.sh run folder-only` → **`mdv.statusBar` PRESENT** in the AX tree (StatusBar mounted; pre-fix the
   `currentURL != nil` gate would leave it ABSENT in this state — so the folder-only assertion is a true gate
@@ -13225,12 +13225,12 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 - **Harness lesson reinforced:** out-of-process AX surfaces CONTAINER `accessibilityIdentifier`s, not nested
   leaf controls (buttons/fields/rows). To make a SwiftUI element auto-assertable on the VM lane, put the id on
   its container. The render-drain recipe now: scene (reach the state) + a surfacing container id + a
-  `scene_expect` line. `main` headless-gate-green; per-item commit (d9536d7).
+  `scene_expect` line. `main` headless-gate-green; per-item commit (f4e8e36).
 
 ## LOG +385 (2026-06-13 — TSK-640 LSP rename + code actions FULLY VALIDATED: both SwiftUI overlays VM-render-validated; P8 parity feature closed)
 
 - **TSK-640 → validated** (the owner-named P8 PARITY feature, fully closed across the pyramid). This tick added
-  the SECOND overlay scene to finish it: `code-actions` (commit `ef935a7`) — a `#if DEBUG` harness present-seam
+  the SECOND overlay scene to finish it: `code-actions` (commit `9273da3`) — a `#if DEBUG` harness present-seam
   (`_presentCodeActionsForHarness`, parallel to `_applyRenameWorkspaceEditForTesting`) drives the picker
   (private(set)+async, no LSP server in the spawned app) to `.presenting` with canned actions over an editor
   backdrop; `vm-uitest.sh` manifest gains `code-actions → mdv.codeActions.panel`. Host-tested
@@ -13245,11 +13245,11 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   overlay = a UI scene + a `scene_expect` manifest line + (for private(set)/async state) a `#if DEBUG`
   present-seam. The remaining render drains (641 theme chrome, 745 landing) follow the same recipe; 641 also
   needs a color/pixel assertion (a11y-presence doesn't cover theming), the frame-aware-ax-reader follow-up.
-- `main` headless-gate-green; per-item commits (ef935a7 code-actions scene + the teeth-restored vm-uitest.sh).
+- `main` headless-gate-green; per-item commits (9273da3 code-actions scene + the teeth-restored vm-uitest.sh).
 
 ## LOG +384 (2026-06-13 — VM render-drain UNBLOCKED: harness now self-validates overlays; TSK-640 rename prompt VM-validated end-to-end)
 
-- **The TSK-492 lever is built + proven (commit `89d7277`).** `vm-uitest.sh run` now drives PASS/FAIL from a
+- **The TSK-492 lever is built + proven (commit `d0dd7d2`).** `vm-uitest.sh run` now drives PASS/FAIL from a
   per-scene expected-a11y-id manifest (`scene_expect`) — PASS iff every expected `mdv.*` id is present in the
   out-of-process `<scene>.ax` dump — instead of the single terminal-tuned dense-block pixel eval that
   false-passed every non-terminal scene. **Key proof:** the AX walk surfaces SwiftUI `accessibilityIdentifier`
@@ -13274,7 +13274,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +383 (2026-06-13 — render-drain enabler: `lsp-rename` UI scene lands; harness AX/pixel-assert gap framed as the TSK-492 lever)
 
-- **TSK-640 (commit `71e4375`, stays at review).** Added the `lsp-rename` MDV_UI_SCENE to `UISceneApplier` —
+- **TSK-640 (commit `0b7b6f0`, stays at review).** Added the `lsp-rename` MDV_UI_SCENE to `UISceneApplier` —
   opens an editor backdrop tab + presents the rename prompt sheet (`isLSPRenamePromptPresented`). Host-tested
   (UISceneApplierTests, teeth: scene not presenting → red); headless gate green (5091). **Why:** the vm-uitest
   harness could only reach landing/preview/tabs/terminal scenes, so the rename prompt SHEET had no path onto the
@@ -13295,7 +13295,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 - **TSK-270 → validated** (no new commit — §1.5 fresh re-run of the fix's evidence). Owner-felt user-facing
   perf bug. Re-ran `RenderedLoadFailureRecoveryTests` FRESH on current `main` → 3/3 green (host XCTestCase, not
-  VM-gated). The fix (`96354f3`) handles the rendered-MD WKWebView's `didFail` / `didFailProvisionalNavigation` /
+  VM-gated). The fix (`4d77ac5`) handles the rendered-MD WKWebView's `didFail` / `didFailProvisionalNavigation` /
   `webViewWebContentProcessDidTerminate` — pre-fix a failed/hung load left the `lastHTML` dedup baseline claiming
   the page was current, so `updateNSView` never re-issued the load (the "delay that never resolves; retry loads
   fast" symptom). The owner had **human-resolved** the parked confirmation ("File opens feels faster now. good
@@ -13318,7 +13318,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +381 (2026-06-13 — TSK-580 slice 3-output: the thin-waist envelope now routes EVERY stateless method, incl. the raw-output ones)
 
-- **TSK-580 (commit `bdb0abd`, stays in progress).** The two stateless methods left off the envelope —
+- **TSK-580 (commit `a0f8931`, stays in progress).** The two stateless methods left off the envelope —
   `indent_detect` (tiny result string) and `hex_render` (~18 MB dump, blows the 16 MiB frame cap) — return
   **raw bytes**, not MessagePack frames. Routed both through `mdvcore_call` with **NO signature change**:
   `dispatch::call` returns the raw bytes directly (no `encode_frame`), `mdvcore_call` writes them to `out_buf`
@@ -13337,7 +13337,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +380 (2026-06-13 — TSK-814: surfaced git blame in the editor gutter; completes TSK-672's blame ask)
 
-- **TSK-814 (commit `ebc8fd2`, reported→review).** Surfaced the blame data from +379 — giving the `c341d3f`
+- **TSK-814 (commit `7ce89fc`, reported→review).** Surfaced the blame data from +379 — giving the `ed5e718`
   parse a live consumer (no dead code) + completing the P1 git bundle's last ask.
   - `BlameGutterFeeder.markers(from:now:)` → sorted `"blame"`-kind `CMGutterMarker`s with
     `"author · relative-time · summary  [sha]"` tooltips (GitRelativeTime, now-injectable for tests).
@@ -13350,7 +13350,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
     catalog↔dispatcher vocab gate accepts `toggle-blame`. Held at review (live fetch + gutter pixels = VM tail;
     v1 perf caveat noted: per-line markers cover the whole file).
 - **TSK-672 (P1 git bundle) is now functionally complete:** diff/log/status were already built; blame data
-  (c341d3f) + blame surface (ebc8fd2) landed across two ticks. The render is the VM/owner tail. Standing blockers
+  (ed5e718) + blame surface (7ce89fc) landed across two ticks. The render is the VM/owner tail. Standing blockers
   unchanged (TSK-810/589 owner-decision; perf cluster supervised).
 
 ## LOG +379 (2026-06-13 — TSK-672 git bundle: 3/4 already built; landed the blame data foundation; surfacing→TSK-814)
@@ -13360,7 +13360,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   (log/fileHistory/graphLog/grepLog + GitPanelView/GitLogDiffActions + File History), STATUS
   (status/statusEntries + GitStatusTab + GitChipStore). Only **blame** was missing — no `GitClient.blame` despite
   a scaffolded CM6 `'blame'` gutter-marker channel.
-- **Landed the blame DATA foundation (commit `c341d3f`).** `GitClient.blame(path:)` + `parseBlamePorcelain` →
+- **Landed the blame DATA foundation (commit `ed5e718`).** `GitClient.blame(path:)` + `parseBlamePorcelain` →
   `[BlameLine{line, sha, author, timestamp, summary}]` from `git blame --line-porcelain`. The parse is the
   correctness-critical part — host-tested with **teeth** (a moved-line fixture, orig=5/final=2, catches a
   final-vs-orig line-mapping regression; empty/garbage safe). Gate green.
@@ -13374,7 +13374,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +378 (2026-06-13 — TSK-789: Settings shows supported LSP languages + server availability)
 
-- **TSK-789 (commit `87efa57`, reported→review).** Diversified off the VM lane to an owner-wishlisted feature.
+- **TSK-789 (commit `f50087d`, reported→review).** Diversified off the VM lane to an owner-wishlisted feature.
   Added `LSPLanguageRegistry.LanguageStatus` + `languageStatuses(resolve:)` — maps each `LSPLanguage` to
   {available, resolvedPath} via an **injectable resolver** (default probes PATH/toolchain via the existing
   discovery). Folded the list into the existing Settings "Language servers (LSP)" section (avoided a duplicate):
@@ -13390,7 +13390,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +377 (2026-06-13 — TSK-813 [VALIDATED]: build-app.sh auto-selects the Swift toolchain — unblocks all clean VM dist builds)
 
-- **TSK-813 fixed + validated (commit `573bf0f`).** The fix for the VM build break I root-caused in +376. Added
+- **TSK-813 fixed + validated (commit `a88a767`).** The fix for the VM build break I root-caused in +376. Added
   `select_toolchain()` to `build-app.sh` (mirrors `test-in-vm.sh`): picks the newest installed
   `/Library/Developer/Toolchains/swift-6.*-RELEASE` and exports `TOOLCHAINS` before `swift build`.
   - **Host-safe by construction:** the host has zero such toolchains → `select_toolchain` returns early → default
@@ -13434,7 +13434,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   the captured `.ax` has **23 `mdv.*` VIEW identifiers** (sidebar/content/statusBar/rail/recents/…), not just menu
   actions. So a robust per-item assert is viable: scene → capture → assert the element's a11y id is in the `.ax`
   (+ the PNG for visible-confirmation). This is the static-state drain mechanism.
-- **Added the `landing` empty-state scene** (commit `f0dfd7c`, host-tested) so the harness can capture
+- **Added the `landing` empty-state scene** (commit `d2317e1`, host-tested) so the harness can capture
   EmptyStateView (TSK-760's New File button, `mdv.emptyState.newFile`).
 - **TSK-760 end-to-end VM validation BLOCKED on a VM build wall:** rsync'd HEAD, but the VM build failed twice —
   (1) root-poisoned `.build` (root-owned index records from a prior sudo build; FIXED via
@@ -13469,7 +13469,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +373 (2026-06-13 — TSK-790: Settings lists supported syntax-highlighting languages + extensions)
 
-- **TSK-790 (commit `7818a8a`, reported→review).** Owner-wishlist discoverability: show which syntax-highlighting
+- **TSK-790 (commit `98b7bf1`, reported→review).** Owner-wishlist discoverability: show which syntax-highlighting
   languages the app supports, in Settings. Added `HighlightLanguage.fileExtensions` (lang→exts, the inverse of
   `detect`) + `supportedForDisplay` (allCases minus plainText, sorted) + a SettingsView "Syntax Highlighting"
   section listing each language with its extensions (View + Edit both highlight the set).
@@ -13496,7 +13496,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
      wiring it into nightly as-is would SSH-to-self. Correct fix = give vm-uitest.sh an **on-VM local mode** +
      the nightly scene matrix + a **VM run to verify** — VM-budgeted, not host-autonomous. Did NOT ship
      speculative CI wiring I can't validate.
-  2. **Layer-1 host-autonomous slice landed (commit `ad4d5e0`).** The `MDV_UI_SCENE` scene→model mapping lived in
+  2. **Layer-1 host-autonomous slice landed (commit `8ca2cbc`).** The `MDV_UI_SCENE` scene→model mapping lived in
      the un-test-linked `MarkdownViewer` executable target (`Diagnostics.applyUISceneIfRequested`), so the scene
      catalog the harness depends on had **no regression guard** (a scene silently failing to enter its state =
      a false green for the pixel harness). Extracted it to `ViewerUI.UISceneApplier` (behaviour-identical; env/
@@ -13510,7 +13510,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +371 (2026-06-13 — TSK-812: close the WebKit DNS-prefetch reading-activity leak [VALIDATED])
 
-- **TSK-812 (commit `fad48cb`, reported→validated — a clean close).** TSK-643's investigation had *surfaced* but
+- **TSK-812 (commit `cb34457`, reported→validated — a clean close).** TSK-643's investigation had *surfaced* but
   not *closed* a residual privacy vector: WebKit auto-prefetches the DNS for link `href` HOSTS in rendered content
   **without a click**, and the CSP (`connect-src 'none'` etc.) does NOT govern DNS prefetch (it's a DNS-layer step
   before any connection). So viewing a markdown doc with external links leaked those hostnames — *what you're
@@ -13527,7 +13527,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +370 (2026-06-13 — TSK-760: New File button on the empty-tab landing)
 
-- **TSK-760 (commit `592f950`, reported→review).** The new-tab landing (EmptyStateView) had Open File / Open
+- **TSK-760 (commit `1220b0a`, reported→review).** The new-tab landing (EmptyStateView) had Open File / Open
   Folder + recents but no way to CREATE a file. Added a "New File" (⌘N) button wired to a new
   `DocumentModel.newTextFileForLanding()` → `createNewFile` in `newFileTargetDirectory` (the File→New target:
   selected folder / sidebar root) ELSE the temp scratch dir. Unlike File→New (⌘N, which `validateMenuItem`
@@ -13548,7 +13548,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +369 (2026-06-13 — TSK-770: Find/Replace mostly already-built; added persist-prev-text on reopen)
 
-- **TSK-770 (commit `1c538fb`, reported→review).** "Verify-claim-first" paid off: the headline ask (Replace +
+- **TSK-770 (commit `5abd235`, reported→review).** "Verify-claim-first" paid off: the headline ask (Replace +
   ReplaceAll in the editor Find bar) was **already fully built and tested** — `CodeMirrorEditorView`
   findReplacement/replaceNextRequest/replaceAllRequest (wired ContentView:662-664), CM6 JS replaceNext/replaceAll,
   `MarkdownFindBar.ReplaceConfig` (replace row + disclosure), model `editorReplaceNext()`/`showEditorReplaceBar()`,
@@ -13570,7 +13570,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +368 (2026-06-13 — TSK-732: unify View/Edit/split font resolution)
 
-- **TSK-732 fixed (commit `f90bef7`, triaged→review).** User-facing editor bug: the source font looked different
+- **TSK-732 fixed (commit `a7e3417`, triaged→review).** User-facing editor bug: the source font looked different
   between View and Edit. Root cause — View resolves `sourceFontName` via `NSFont(name:)` → a real family, but Edit
   shipped the **same raw string** into CM6 as a CSS `font-family`, and CSS matching ≠ `NSFont(name:)` matching (a
   face/PostScript name AppKit resolves doesn't match as a CSS family) → the two surfaces could land on different
@@ -13591,7 +13591,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +367 (2026-06-13 — TSK-806: split pane shows unsaved edits, URL-keyed)
 
-- **TSK-806 fixed (commit `e87a20a`, reported→review).** A user-facing editor bug (sibling of the validated
+- **TSK-806 fixed (commit `61d483e`, reported→review).** A user-facing editor bug (sibling of the validated
   TSK-729): the split pane's text branches rendered `file.contents` (on-disk), bypassing the live dirty editor
   buffer — so the split showed stale content while you had unsaved edits.
   - **Key correctness nuance:** the ticket suggested `displayedText(for:)`, but that keys on `tabs.selected` —
@@ -13613,8 +13613,8 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +366 (2026-06-13 — TSK-743: preview slot remembers & restores editor scroll/cursor per file)
 
-- **TSK-743 preserve-half landed (commit `cd699b4`, fixed→review).** The sibling TSK-744 (isolation) fix
-  (141494d) made the reused preview tab id *reset* its scroll/cursor on each file swap so file B doesn't
+- **TSK-743 preserve-half landed (commit `e7ea84b`, fixed→review).** The sibling TSK-744 (isolation) fix
+  (8950d5b) made the reused preview tab id *reset* its scroll/cursor on each file swap so file B doesn't
   inherit A's position — but TSK-743's actual wish (*preserve* per file: return to A and it's where you left
   it) was left unimplemented, flagged as an "ambiguity." It wasn't ambiguous — the ticket pairing is explicit
   (744 = isolate, 743 = remember/restore), so per §0.5 (investigate, don't park false ambiguities) I built it:
@@ -13639,7 +13639,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +365 (2026-06-13 — TSK-580 slice 3: hex_search routes through the FFI envelope; the aux bulk side-channel gets its first real consumer)
 
-- **TSK-580 slice 3 input-half (commit `f47d782`, both gates green) — stays in `progress`.** The thin-waist
+- **TSK-580 slice 3 input-half (commit `ef906ab`, both gates green) — stays in `progress`.** The thin-waist
   FFI envelope (`mdvcore_call`) had its `aux` byte-slice **reserved but dead** since slice 1. This tick wired
   its first consumer:
   - `core/dispatch.rs` `Method::HexSearch = 10` (NEXT_FREE_ID→11) → new `core/hex.rs` `search_wire_aux(req, aux)`:
@@ -13665,7 +13665,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 ## LOG +364 (2026-06-13 — TSK-640 interactive Code Actions picker landed (fixed→review); TSK-745 test backfill)
 
 - **TSK-640 code-actions picker (second half of the PARITY ticket; rename half landed prior tick) → review.**
-  Commit `d5b8410`. The engine (`codeActionsAtCursor`/`applyCodeAction`) was already host-tested; this tick
+  Commit `6e10fab`. The engine (`codeActionsAtCursor`/`applyCodeAction`) was already host-tested; this tick
   built the interactive entry:
   - **`CodeActionPicker.swift`** (new SwiftUI view) + ContentView overlay (mirrors the LSP-rename / GoToPath
     scrim+panel block). Lightbulb header, a `.loading` spinner, and a row per action; command-only actions
@@ -13682,8 +13682,8 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
     turned 2 tests RED (mutant compiled), then restored. Headless gate 5068 tests green.
   - **Held at review (not validated):** the picker VIEW render (panel/loading/rows) is SwiftUI → VM/T5 pixel
     tail (`blocker: live-validation`); the model state machine is the host-guarded part.
-- **TSK-745 test backfill (commit `7933bd6`):** the prior tick shipped the new-tab landing recents launcher
-  (`fdb072a`) WITHOUT its host test (test gap vs the change→tests mandate). Committed the orphaned
+- **TSK-745 test backfill (commit `9c98d5e`):** the prior tick shipped the new-tab landing recents launcher
+  (`62ece91`) WITHOUT its host test (test gap vs the change→tests mandate). Committed the orphaned
   `LandingRecentsTests.swift` (3 tests pinning the `landingRecentsCap` prefix/passthrough/empty cases).
 - **Process:** picked up the in-flight TSK-640 picker, no oscillation; fixed one compile error (`.tertiary` is a
   HierarchicalShapeStyle not a Color in the ternary → `AnyShapeStyle` wrap); per-item commits.
@@ -13710,7 +13710,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +362 (2026-06-13 — TSK-745 new-tab landing shows recent files + theme-flake fix)
 
-- **TSK-745 → fixed (commit fdb072a).** EmptyStateView (the empty/new-tab content) now surfaces a capped
+- **TSK-745 → fixed (commit 62ece91).** EmptyStateView (the empty/new-tab content) now surfaces a capped
   recents launcher (icon + name + grey containing-folder, click→openPath) below the Open buttons; empty
   recents fall back to the ⌘K hint. Cap via a nonisolated pure `DocumentModel.landingRecents(from:)` (8) —
   the sidebar's Recent section keeps the full scrollable list. Host-tested (LandingRecentsTests: cap ≤8 +
@@ -13718,7 +13718,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   `mdv.emptyState.recent*` for a VM UI test. The list render + click = SwiftUI → review/VM. Scoped to recent
   FILES; the compound New-Tab vision (recent folders w/ git indicator, new-file-type buttons, embedded
   browser, drag-reorder) = separate slices 747/714/274.
-- **Recurring theme-flake fixed (commit de44826).** SetThemeVerbTests asserted on the shared
+- **Recurring theme-flake fixed (commit 413612d).** SetThemeVerbTests asserted on the shared
   `ThemeStore.shared` singleton, which ChromeThemeTests/ThemeSelectionModelTests mutate concurrently under
   `--parallel` — it flaked the gate across the last several ticks (incl. this one's first 2 gate runs).
   Dropped those assertions (keep the race-free per-instance `model.selectedThemeID`; the global-persistence
@@ -13749,7 +13749,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +360 (2026-06-13 — TSK-564 FFI copy-2 elimination: in-place frame decode for table/snapshot)
 
-- **TSK-564 (rust-core/FFI perf) copy-2 eliminated for the payload-scaling decoders (commit 90fcc06).** The
+- **TSK-564 (rust-core/FFI perf) copy-2 eliminated for the payload-scaling decoders (commit 9f1262a).** The
   Swift FFI boundary double-copied each response frame: MdvBuf→[UInt8] (copy 1) then unframe's
   `Array(frame[4...])` (copy 2). Added `MsgPackReader(_:startingAt:)` (reads the whole frame from offset 4 —
   bytes stays 0-indexed, only the cursor starts past the prefix, so bounds + `finish()` hold) + a
@@ -13768,7 +13768,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +359 (2026-06-13 — TSK-640 interactive Rename Symbol UI: command + prompt + state machine)
 
-- **TSK-640 interactive rename UI (commit 8a57023)** — the user-facing entry to the host-tested rename engine,
+- **TSK-640 interactive rename UI (commit 496e231)** — the user-facing entry to the host-tested rename engine,
   built this tick (not another verb-only seam — the handoff's directive). `LSPRenamePrompt` (mirrors
   GoToPathPrompt) presented via a DocumentModel state machine (`isLSPRenamePromptPresented` +
   `showLSPRenamePrompt`/`dismissLSPRenamePrompt`/`submitLSPRename`), opened by the `lsp.rename` command +
@@ -13787,7 +13787,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +358 (2026-06-13 — TSK-640 lsp-rename automation verb seam)
 
-- **TSK-640 reachability seam (commit 008518a):** `lsp-rename <newName>` script verb — the headless/automation
+- **TSK-640 reachability seam (commit 6add17a):** `lsp-rename <newName>` script verb — the headless/automation
   entry to the already-host-tested rename engine (`renameActiveEditorSymbolViaLSP`: request → decode →
   snapshot-guarded reverse apply across open tabs). Mirrors the `save-copy` pattern (verb = automation entry;
   the interactive UI is the live follow-up). Test rides the fake-LSP e2e harness: verb dispatches with its arg
@@ -13813,7 +13813,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   SwiftUI chrome surface, not WebView); **640 = the interactive LSP-rename UI** (command+menu+prompt sheet —
   the engine is host-tested, the trigger is unbuilt); **468 = a VM T4 menu-contents check** (dead-UI removal,
   nothing host-assertable). No quick WebView-lane wins remain.
-- **TSK-641 chrome T5 UNBLOCKED (commit 06e0c94):** added a `set-theme <id>` script verb — the headless
+- **TSK-641 chrome T5 UNBLOCKED (commit 985ec1d):** added a `set-theme <id>` script verb — the headless
   theming seam (automation equivalent of the Settings → Appearance picker; empty arg = Follow System) that
   drives `DocumentModel.selectedThemeID`. A T5 chrome-pixel test will launch the app via this verb
   (set-theme xcode-dark → screencapture the sidebar → assert the themed chrome color), closing 641's last
@@ -13832,7 +13832,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
   — rsync first; the `#192` WebView suites RUN (not skip) because `MDV_RUN_WEBVIEW_TESTS=1` is forwarded into
   the `launchctl asuser` GUI session; Swift 6.3 toolchain auto-selected; warm builds ~4-35s. This directly
   answers the owner's "do I have to click buttons?" — NO, the agent runs the VM lane.
-- **TSK-650 (owner-repro mermaid render bug) → VALIDATED.** Root cause (d8367fa): `MermaidBundle` loaded
+- **TSK-650 (owner-repro mermaid render bug) → VALIDATED.** Root cause (1179ab9): `MermaidBundle` loaded
   resource `"mermaid"` but the file base name is `"mermaid.min"` → nil lookup → every diagram degraded to raw
   source text (exactly the owner's symptom). Validated FRESH across the pyramid: host `MermaidBundleLoadTests`
   (2/2 — runtime resolves >1MB from the built bundle = the root cause) + VM `MermaidRenderProbeTests` (1/1,
@@ -13847,7 +13847,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +355 (2026-06-13 — validation drain: TSK-626 header-staleness guard gets an automated regression test)
 
-- **TSK-626 → VALIDATED (ed2821a).** §1.5 validation drain. The SwiftPM header-staleness guard (b314f5a) was
+- **TSK-626 → VALIDATED (3acfba6).** §1.5 validation drain. The SwiftPM header-staleness guard (fc5153b) was
   held at `fixed` with only a re-runnable MANUAL demo — the prior agent judged a hermetic test "not worth the
   cargo-stubbing complexity." But this trap bit TWICE (incl. a pure-Swift `throw` that SIGSEGV'd on stale test
   objects) and I dodged it MANUALLY in both Stage B packages this session — so a guard is real defense, not a
@@ -13867,7 +13867,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +354 (2026-06-13 — RUST-CORE Stage B #4: TSK-809 delete DiffParser/DiffHunkParser; carve-out #2/#3 parked)
 
-- **TSK-809 → VALIDATED (954f1d8).** Stage B package #4 (diff), done out of plan order because it's the
+- **TSK-809 → VALIDATED (778a0ab).** Stage B package #4 (diff), done out of plan order because it's the
   clean one. Deleted the Swift `DiffParser` + `DiffHunkParser` engines; `RustDiffAdapter` is rust-only
   (`mdvCoreParseDiff` / `mdvCoreDiffHunkMarks`) with an empty-result (`[]`/`[:]`) + `Obs.error` degraded
   path (no Swift fallback). The `UnifiedDiff` + `DiffMark` MODELS stay (the adapter maps the rust wire types
@@ -13887,7 +13887,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +353 (2026-06-13 — RUST-CORE Stage B begins: TSK-808 delete IndentDetector Swift twin)
 
-- **TSK-808 → VALIDATED (1e2b557).** Stage B package #1 / the template, under the migration endgame epic
+- **TSK-808 → VALIDATED (2cef2d7).** Stage B package #1 / the template, under the migration endgame epic
   TSK-649. The owner RESOLVED 649's park today ("Approve policy + batch 1-4 (indent/hexSearch/hex/diff);
   review 5-9 individually") — so the Swift-twin deletion the owner asked for ("deprecate swift core") is
   unblocked. After Stage A's quiet default-ON soak, indent is now **rust-only**:
@@ -13909,7 +13909,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +352 (2026-06-13 — minor-feature wave: TSK-763 recents grey folder hint)
 
-- **TSK-763 → review (885cb7b).** Recents rows now show the containing folder in grey after the filename
+- **TSK-763 → review (5fd06a2).** Recents rows now show the containing folder in grey after the filename
   (IntelliJ "Recent Files" style) so two same-named files in different folders disambiguate. Added a pure
   `HistoryEntry.parentFolderLabel` (immediate parent folder name; home→`~`, fs-root→`/`, `nil` for a bare
   relative name) and rendered it tertiary-grey in `RecentRow` with head-truncation + lower layout priority
@@ -13918,19 +13918,19 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +351 (2026-06-13 — minor-feature wave begins: TSK-748 file-info multi-algo checksums + copy feedback)
 
-- **TSK-748 → review (2e1d345, 2c43d0a, d3a469b).** First item of the `[WISH][minor-feature]` bucket. The
+- **TSK-748 → review (05e1903, c8952ca, 7ec7b92).** First item of the `[WISH][minor-feature]` bucket. The
   ticket bundled three asks; (a)+(b) landed, (c) split out.
-  - **(a) multi-algo checksums — ENGINE (2e1d345, self-validatable).** Generalized `FileChecksum` from
+  - **(a) multi-algo checksums — ENGINE (05e1903, self-validatable).** Generalized `FileChecksum` from
     SHA-256-only to a `ChecksumAlgorithm`-parameterized streamed hasher: a generic fold over any CryptoKit
     `HashFunction` (Insecure.MD5/SHA1, SHA256, SHA512) + a hand-rolled streaming `CRC32` (IEEE/zlib poly
     0xEDB88320, no zlib dep). `sha256Hex` stays a thin delegate. 4 new engine tests pin every algorithm
     against PUBLISHED vectors for "abc" + the CRC-32 "123456789"→cbf43926 standard check + chunked==one-shot.
-  - **(a) cont. — MODEL + wiring (2c43d0a).** `MetadataChecksumModel` now carries a selected algorithm
+  - **(a) cont. — MODEL + wiring (c8952ca).** `MetadataChecksumModel` now carries a selected algorithm
     (default SHA-256); `select(algorithm:)` drops a stale-algorithm hash to .idle; `compute()` captures and
     guards on (url, algorithm) so a completion after EITHER switch is dropped (sibling of the file-switch
     race). New `metadata-set-checksum-algorithm` verb + `algorithm` in the dump projection = the headless
     seam. View gains an algorithm Picker + dynamic labels (render VM-gated).
-  - **(b) responsive copy button (d3a469b).** Copy routes through `copyHash()` with an injectable
+  - **(b) responsive copy button (7ec7b92).** Copy routes through `copyHash()` with an injectable
     `PasteboardIO`, raises a transient `justCopied` flag → button shows green "Copied!" then self-clears 1.2s
     via `.task(id:)`; leaving .done clears the stale affordance. Host-tested with a fake pasteboard.
   - **(c) metadata for ALL formats → split to TSK-807** (needs a FileCategory-coverage inventory spike).
@@ -13941,7 +13941,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +350 (2026-06-13 overnight — TSK-741 PTY write off-main → review; WISHLIST BUG BUCKET FULLY DRAINED)
 
-- **TSK-741 FIXED → review (8fd89a0).** PTYProcess.write ran its blocking Darwin.write drain on the caller
+- **TSK-741 FIXED → review (94fe1e3).** PTYProcess.write ran its blocking Darwin.write drain on the caller
   (sendInput is @MainActor), so a large paste into a slow reader (vim) parked the main thread on the full
   kernel PTY buffer → "Not Responding". Moved the drain onto a serial writeQueue (mirrors readQueue); caller
   returns immediately, order preserved, fd captured at call time (race-with-close → EBADF bail). Extracted a
@@ -13962,7 +13962,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +349 (2026-06-13 overnight — TSK-731 terminal double-width (emoji/CJK) accounting validated)
 
-- **TSK-731 VALIDATED (58d0227).** The owner's flagged annoyance — emoji misaligning Claude Code tables.
+- **TSK-731 VALIDATED (bc74391).** The owner's flagged annoyance — emoji misaligning Claude Code tables.
   TerminalScreen.write advanced the cursor by 1 per grapheme, so a 2-cell emoji took 1 column → everything
   after shifted left. Added TerminalScreen.displayWidth (CONSERVATIVE table: CJK-wide + emoji blocks → 2,
   else 1 — un-tabled scalars keep the 1-cell path, NO regression), TerminalCell.isWideTrailer placeholder,
@@ -13978,7 +13978,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +348 (2026-06-13 overnight — TSK-736 hover-lag dedupe (fix A) → review)
 
-- **TSK-736 FIXED → review (a1da3f1).** .onContinuousHover wrote hoveredSourceLine per pointer-PIXEL, and a
+- **TSK-736 FIXED → review (901486b).** .onContinuousHover wrote hoveredSourceLine per pointer-PIXEL, and a
   @State write always invalidates (SwiftUI doesn't dedupe equal values), so every pixel re-bodied
   SourceModeView + re-ran the 2956-match find repaint = the lag. Fix A (the dominant lever): guard the
   write `if line != hoveredSourceLine` → intra-line moves produce zero re-bodies (per-pixel →
@@ -13997,7 +13997,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +347 (2026-06-13 overnight — TSK-738 status-footer folder-only gate fixed → review)
 
-- **TSK-738 FIXED → review (3aaa8f1).** The status footer gated on `currentURL != nil` (tabs.selected?.url),
+- **TSK-738 FIXED → review (249a630).** The status footer gated on `currentURL != nil` (tabs.selected?.url),
   so it vanished after relaunch / opening a folder with no file tab (openFolder sets sidebar.rootURL but
   selects no tab). Added model.hasOpenContext (currentURL != nil || sidebar.rootURL != nil); ContentView
   gates StatusBar on it (folder-only shows path "—" + folder-scoped git chip), BottomAttributesBar stays
@@ -14013,7 +14013,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +346 (2026-06-13 overnight — TSK-735 DEC scroll region (DECSTBM) fixed + validated)
 
-- **TSK-735 VALIDATED (79237b5).** The emulator had no DEC scroll region — scroll/lineFeed moved the WHOLE
+- **TSK-735 VALIDATED (5eb4cd1).** The emulator had no DEC scroll region — scroll/lineFeed moved the WHOLE
   grid, so a full-screen app pinning its footer (vim) had the footer scroll into the body (rendered twice)
   + stale region lines. Added scrollTop/scrollBottom margins + DECSTBM (CSI r) parse; made scrollUp/
   scrollDown/lineFeed/IL/DL region-aware (a sub-region scroll never evicts to scrollback; only full-screen
@@ -14029,7 +14029,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +345 (2026-06-13 overnight — TSK-740 terminal in-line edits (DCH/ICH/ECH/IL/DL) fixed + validated)
 
-- **TSK-740 VALIDATED (243438f).** ANSIParser.dispatchCSI parse-and-ignored the in-line edit CSI
+- **TSK-740 VALIDATED (4504ba1).** ANSIParser.dispatchCSI parse-and-ignored the in-line edit CSI
   sequences, so a line editor's DCH (delete-char) left the glyph on screen ("display doesn't match true
   state"). Added 5 cases + TerminalScreen mutators: DCH(P)/ICH(@)/ECH(X) char ops within the row,
   IL(L)/DL(M) line ops cursor-row→bottom (no scroll-region margins yet — that's the paired TSK-735).
@@ -14044,7 +14044,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +344 (2026-06-13 overnight — TSK-737 gutter last-line off-by-one fixed + validated)
 
-- **TSK-737 VALIDATED (97da320).** SourceTextController.countLines subtracted 1 for a trailing newline,
+- **TSK-737 VALIDATED (7f622dd).** SourceTextController.countLines subtracted 1 for a trailing newline,
   under-counting by one vs the empty final line fragment NSLayoutManager lays out. That count feeds
   SourceScrollState.lineCount; the gutter clamps lastLine=min(lineCount,…) so the bottom row of a
   \n-terminated log got no number — and the same under-count skewed the hover-highlight + pointer→line
@@ -14058,7 +14058,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +343 (2026-06-13 overnight — TSK-729 View-Only-shows-unsaved-edits fixed + validated)
 
-- **TSK-729 VALIDATED (f395750).** displayedText(for:) returned on-disk file.contents in every path, so
+- **TSK-729 VALIDATED (17d9e29).** displayedText(for:) returned on-disk file.contents in every path, so
   the View Only (.source) lens showed stale content while the editor held unsaved edits. Fix: prefer the
   selected tab's DIRTY editor buffer text (recompute byteLength; live pretty-print + bypass the on-disk-
   keyed format memo when in a formatted view) — mirrors the Editor/outline precedence at DocumentModel:1342.
@@ -14072,7 +14072,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +342 (2026-06-13 overnight — TSK-742/743/744 preview-slot fix (one change))
 
-- **TSK-742 + 744 VALIDATED, 743 fixed (141494d).** Shared root: the ephemeral preview slot reuses ONE
+- **TSK-742 + 744 VALIDATED, 743 fixed (8950d5b).** Shared root: the ephemeral preview slot reuses ONE
   tab id, and the editor buffer + scroll/cursor maps are keyed by that id → on a sidebar file-switch the
   editor pane kept the previous file's content (742) and scroll (744). Fix: in DocumentModel.openResolved's
   preview branch, capture the preview (id,url) before the swap; after openPreview, if the same id now shows
@@ -14091,7 +14091,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +341 (2026-06-13 overnight — TSK-728 + TSK-730 editor-keys fixed (one change))
 
-- **TSK-728 (Enter→sidebar) + TSK-730 (arrows/⌘←/⌥← stolen) FIXED → review (312d8d3).** Both shared one
+- **TSK-728 (Enter→sidebar) + TSK-730 (arrows/⌘←/⌥← stolen) FIXED → review (a802c42).** Both shared one
   root cause: the app-wide `SidebarKeyMonitor` only yielded Enter/arrows to `NSText`/exempt responders,
   but the CM6 editor is a WKWebView (neither) → bare keys stolen for tree nav. Fix: extracted a pure
   `shouldYield(modifiers:firstResponder:editorView:)` that yields when (a) ⌘/⌥/⌃ is held (editor/system
@@ -14108,7 +14108,7 @@ Precise file:line fix sketches captured per ticket — de-risks the next ~10 tic
 
 ## LOG +340 (2026-06-13 overnight — TSK-734 crash fixed)
 
-- **TSK-734 (crash, highest-severity bug) FIXED → review (ab5f55e).** The git-chip Menu content
+- **TSK-734 (crash, highest-severity bug) FIXED → review (df66e2c).** The git-chip Menu content
   builder called `GitClient.localBranches()`/`worktreeList()` SYNCHRONOUSLY — and SwiftUI evaluates
   `Menu` content during the layout/commit pass, so `NSTask.waitUntilExit` spun a nested CFRunLoop inside
   `CA::Transaction::commit` → AppKit reentrancy NSException → SIGTRAP. Fix: new `GitChipStore`
@@ -14139,7 +14139,7 @@ Owner went to bed ("don't be blocked, start tackling by priority, answers tomorr
   Menu @ViewBuilder spins a nested runloop during layout → SIGTRAP reentrancy; StatusBar.swift:156-160);
   728+730 share one cause (SidebarKeyMonitor steals keys from the CM6 editor); 742+743+744 share one
   (preview slot reuses tab id → stale buffer/scroll). Most are headless-landable.
-- **TSK-739 LANDED + validated (3fb8401):** Cmd+F now toggles the find bar closed on 2nd press
+- **TSK-739 LANDED + validated (68920da):** Cmd+F now toggles the find bar closed on 2nd press
   (toggle*Bar on FindCoordinator + model wrappers + findInPage routing). 4 new tests, teeth demonstrated,
   headless gate PASSED (5025 tests).
 - **NOTE for the owner:** TSK-733 (save-prompt on session switch) was parked by the triage as an A/B
@@ -14173,7 +14173,7 @@ Big owner-interaction session. Highlights:
   boundary, TSK-787/788 test-stack audit) — each produces a findings/design doc + advances its ticket
   ack→triaged, re-parking only on a real blocker.
 - Earlier this session (pre-wishlist): TSK-572 (trace fast-path) + TSK-570 (helper dedup) landed+validated;
-  573/575/492 triaged. `main` @ `213b73f`, headless gate green.
+  573/575/492 triaged. `main` @ `a24edb2`, headless gate green.
 
 ## LOG +337 (2026-06-13 tick — TSK-570 dedup landed+validated; greenlit pools reconciled (already drained))
 
@@ -14183,7 +14183,7 @@ TSK-634 (FFI codegen + capability bitmap), TSK-643 (the unexplained-egress inves
 `validated` from prior sessions. `task_next` head = TSK-590 (user-facing epic) stuck at `review` (agent
 ceiling — needs owner). So the highest *actionable* item was the planned rust-core dedup.
 
-- **TSK-570 (tui/web duplicated helpers) — LANDED + self-VALIDATED (283b60a).** Key correctness call:
+- **TSK-570 (tui/web duplicated helpers) — LANDED + self-VALIDATED (0115e97).** Key correctness call:
   core is **sans-IO by explicit design** (git.rs: "No process spawning here… sans-IO" — load-bearing for
   the WASM tier TSK-587), so I did NOT blindly follow the audit's "hoist all to core" plan. HOISTED only
   what respects the boundary: `human_size` → core::format (byte-identical copies removed from both
@@ -14202,7 +14202,7 @@ Owner corrected the "clean pool exhausted" framing: ~84 items in Reported, 140+ 
 work… some may require design/spike, don't wait for me, do those proactively." Also asked: **what's the plan
 for Validated — do I have to click buttons?** Re-scanned the board fresh and worked it, no idling:
 
-- **TSK-572 (trace facade) — LANDED + self-VALIDATED (commit e83214e).** Spun up 4 Explore subagents to
+- **TSK-572 (trace facade) — LANDED + self-VALIDATED (commit f6e7caa).** Spun up 4 Explore subagents to
   verify the rust-core efficiency cluster (572/573/570/575) against current source (audit-stale guard).
   572 confirmed TRUE on all counts: module doc claimed FFI forwarding that does not exist (grep: ZERO
   `trace::` refs outside crates/core), `emit()` took a `RwLock::read()` even with no sink (paid on the
@@ -14231,7 +14231,7 @@ for Validated — do I have to click buttons?** Re-scanned the board fresh and w
 
 Clean autonomous pool remains exhausted (per +332/+334) + owner away (no responses to the direction
 questions / parked decisions across many firings). Rather than another checkpoint or marginal cleanup,
-did the genuinely-useful consolidation: **refreshed HANDOFF.md** — it was stale at `3c95f3c` (~+318,
+did the genuinely-useful consolidation: **refreshed HANDOFF.md** — it was stale at `484db43` (~+318,
 pre-envelope) and would mislead a returning owner / fresh session. The new handoff captures this
 session's full arc (541/559/577/669/580 + 642/637/306/571 validated + TSK-451 triaged), the exhausted-
 clean-pool state, the precise gated reasons per remaining item, and the owner-decision unblocks
@@ -14269,7 +14269,7 @@ executable fix plan — then hit an honest boundary on its implementation.
 Ran the VM validation lane (the +332 default; sanctioned UI-validation path + owner standing ask)
 and drained a real finding in parallel.
 
-- **TSK-571 (HEX_WIDTH single source of truth) — VALIDATED (`5ad57b5`).** core::view::HEX_WIDTH
+- **TSK-571 (HEX_WIDTH single source of truth) — VALIDATED (`95ac894`).** core::view::HEX_WIDTH
   made pub; the TUI + web front-ends DERIVE their bytes-per-row from it (const = view::HEX_WIDTH)
   instead of mirroring the literal 16 → drift structurally impossible. Behavior-preserving; workspace
   compiles deriving from core; value-pin test + rust-core gate green. (Parallel work while the VM ran.)
@@ -14393,7 +14393,7 @@ to keep moving). TSK-580 (the thin-waist FFI envelope) is the LAST §2.5 Phase-1
 remote-enabling, and the fix-ticket for the TSK-568 duplication finding. It's a multi-slice feature;
 landed a clean, **additive** slice 1 (existing per-method symbols intact).
 
-- **Slice 1 (commit `7d092ee`, both gates green):**
+- **Slice 1 (commit `005853a`, both gates green):**
   - `core/src/dispatch.rs` — the safe-Rust dispatch, the reusable heart (host-testable, usable by
     TUI/web/WASM, not copy-pasted per extern symbol). `Method` u16 enum (8 stateless methods:
     CmApply/DiffParse/DiffHunkMarks/FuzzyRank/FindSearch/MarkdownRender/TranscriptParse×2),
@@ -14417,7 +14417,7 @@ landed a clean, **additive** slice 1 (existing per-method symbols intact).
 Thorough board sweep this tick. `task_next` surfaces only the owner-gated epic (TSK-590). Did one
 clean hygiene advance, then an honest §5 assessment of what remains.
 
-- **TSK-262 (session-tab action icons) → progress→fixed.** Verified built+wired (commit 3105935;
+- **TSK-262 (session-tab action icons) → progress→fixed.** Verified built+wired (commit 2d8f75a;
   SessionTabBar.swift:116-127 — Settings/Search/Omni icons → showSettings/showCrossSearch/showPalette
   with a11y ids). Drained from the zombie progress lane; rendered-icon visibility is the live glance.
 - **Assessed TSK-564 (Swift decode double-copy) — NOT worth it autonomously.** MsgPackReader stores
@@ -14449,7 +14449,7 @@ forward motion is gated on one of the above.
 
 With the rust-core clean pool drained and no P1 user-facing bug open, ran the §1.5 validation drain
 on the `blocker: none` fixed-lane items whose behavior is HOST-testable. Re-ran each named suite
-FRESH on main b2b7cb7; all green (no regressions surfaced), so self-validated:
+FRESH on main bf0050f; all green (no regressions surfaced), so self-validated:
 - **TSK-642 (VS Code theme import)** → validated. VSCodeThemeImporterTests (6 behavioral: end-to-end
   JSON parse → TextMate scopes, specificity last-longest-wins, luminance dark-inference, JSONC
   stripping, typed errors, install-into-store) + ThemeSelectionModelTests. The importer is pure
@@ -14469,7 +14469,7 @@ regression historically); these 3 held green. Remaining fixed-lane items are mos
 
 ## LOG +325 (2026-06-13 tick — TSK-669 closes the error-model-v2 loop: host decodes+logs WireError)
 
-- **TSK-669 (consumer for TSK-577) — FIXED (`4c7dbc1`).** TSK-577 made the FFI EMIT a rich
+- **TSK-669 (consumer for TSK-577) — FIXED (`45eba14`).** TSK-577 made the FFI EMIT a rich
   WireError frame on error; this surfaces it host-side so an FFI failure (large file / malformed
   wire) is diagnosable instead of a bare status. Swift-only, non-breaking:
   - `WireErrorDetail {code, message, kind}` + `CsvSession.decodeWireError(frame)` — TOTAL on the
@@ -14514,7 +14514,7 @@ regression historically); these 3 held green. Remaining fixed-lane items are mos
 ## LOG +323 (2026-06-13 tick — TSK-559 windowed snapshot SHIPPED (the top open S2 perf item))
 
 - **TSK-559 (`[RUST-CORE][S2][perf]` level-triggered snapshot = O(table) per filter keystroke) —
-  FIXED (`8762a58`), executing the design I triaged last firing.** Snapshot serialized ALL surviving
+  FIXED (`1c84e96`), executing the design I triaged last firing.** Snapshot serialized ALL surviving
   rows per pull, so filter-as-you-type was O(table) and the 16 MiB wire cap hard-failed large CSVs.
   - **Additive, ZERO wire-format change** (the key low-risk choice — no MDV_WIRE_VERSION bump, no
     Swift-decode-format change, no drift-gate churn):
@@ -14526,7 +14526,7 @@ regression historically); these 3 held green. Remaining fixed-lane items are mos
     - ffi/lib.rs: `mdvcore_session_snapshot_window` + `mdvcore_session_filtered_count` (via the
       TSK-541 registry lookup; CSV_SESSION capability, no new bit). cbindgen header restaged.
     - Swift: `CsvSession.snapshotWindow(offset:limit:)` + `filteredCount()` bindings.
-  - **Validation:** rust-core gate green on committed 8762a58; 5 new FFI tests with **teeth**
+  - **Validation:** rust-core gate green on committed 1c84e96; 5 new FFI tests with **teeth**
     (mutated the window to project all indices → 4 window tests red, recompile-confirmed, restored);
     Swift ABTests round-trip green vs the rebuilt .a. Caught + fixed an `indexing_slicing`
     no-panic-wall trip (`&all[start..end]` → `.get(start..end)`) that plain `cargo test` missed but
@@ -14546,7 +14546,7 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
   byte-identical frame fns are factored into the `ffi_frame_body!` macro (guard.rs:71); every
   stateless export is now one line (lib.rs:243/265/286/308). Demonstrative proof attached.
 - **Reconciled TSK-583** (CoreRuntime registry / DocId — "fix for TSK-541"): its SOUNDNESS core
-  (retire raw pointers via a never-reused-id registry) landed with my TSK-541 fix (df250db).
+  (retire raw pointers via a never-reused-id registry) landed with my TSK-541 fix (0e8973d).
   Commented the scope reduction; residual = the broader multi-doc CoreRuntime + DocId-as-public-ABI
   (overlaps owner-decision TSK-589), no longer a soundness blocker.
 - **TSK-302/303 (CSV cell-nav + find) — PARKED a consolidated owner decision.** New finding: 302's
@@ -14566,7 +14566,7 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
 ## LOG +321 (2026-06-13 tick — TSK-541 rust-core handle free-vs-call UAF closed + VALIDATED)
 
 - **TSK-541 (`[RUST-CORE][unsafe-ffi]` Handle free-vs-call race = UB) — FIXED + VALIDATED
-  (`df250db`).** The audit's "top remaining soundness hole": the inner Mutex's `try_lock`
+  (`0e8973d`).** The audit's "top remaining soundness hole": the inner Mutex's `try_lock`
   guarded call-vs-call (Busy), but `free` did `Box::from_raw`→drop with NO coordination
   against an in-flight `with` borrow → freeing a handle mid-snapshot was raw UAF + dropping
   a *locked* Mutex (the exact ARC/deinit-timing misuse a Swift app commits).
@@ -14580,7 +14580,7 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
   - **ABI byte-identical** (opaque `*mut SessionHandle`, never dereferenced — only a struct
     doc-comment changed → header restaged via build-rust-core.sh; neither header is
     git-tracked). Contained to handle.rs + 5 FFI call sites.
-  - **Validation:** rust-core gate green on committed df250db; 41 FFI tests incl. 3 new
+  - **Validation:** rust-core gate green on committed 0e8973d; 41 FFI tests incl. 3 new
     TSK-541 tests with **teeth** (free skips registry remove → 2 free-invalidation tests
     red, recompile-confirmed, restored); 116 Swift RustCoreTests green vs the rebuilt .a
     (end-to-end open/call/free via CoreClient). Self-validated (host-testable + teeth).
@@ -14590,10 +14590,10 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
 
 ## LOG +320 (2026-06-13 tick — TSK-300 Save-a-Copy menu wired (owner-greenlit); TSK-310 dedup)
 
-- **TSK-300 (Save a Copy) — UI WIRED + landed (`a775c16`, installed, gate-green 5014).**
+- **TSK-300 (Save a Copy) — UI WIRED + landed (`ebcdd50`, installed, gate-green 5014).**
   Owner had RESOLVED the park 2026-06-11: "write the remaining UI wiring + validate on
   the VM — applies to all 4 siblings" (300/302/303/310). Engine + `save-copy` verb were
-  already host-tested (6c2fc9e, SaveCopyTests×9); only the AppKit surface remained.
+  already host-tested (1c8c865, SaveCopyTests×9); only the AppKit surface remained.
   Added File → "Save a Copy…" (⇧⌘S) → NSSavePanel (pre-filled w/ the tab's name) →
   `model.saveCopyOfCurrentTab`, leaving the open doc untouched (no retarget/dirty).
   New host gates `canSaveCopyOfCurrentTab` (drives validateMenuItem) + `saveCopySuggestedName`,
@@ -14604,11 +14604,11 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
   LIVE via TSK-282: an always-visible "Filter files" field under FILES (id
   `sidebar.filterField`) that fuzzy-narrows the tree via FuzzyMatcher (recomputeFilterMatches
   → SidebarFilterRow), host-tested by SidebarFilterTests×10 + FuzzyMatcherTests. The
-  `FileTreeFilter` core built for 310 (654015b) is DEAD/unused (UI uses FuzzyMatcher
+  `FileTreeFilter` core built for 310 (4aced31) is DEAD/unused (UI uses FuzzyMatcher
   directly). Noted the only nuance for the owner (always-visible row vs 310's "button to
   reveal") — reopen only if the button affordance specifically matters.
 - **Remaining greenlit siblings: TSK-302 (CSV cell-cursor nav + Cmd-C) + TSK-303
-  (find-in-table)** — cores done (a12391c/e1dc879, host-tested), but the wiring is
+  (find-in-table)** — cores done (d1df4d5/2ddb3b1, host-tested), but the wiring is
   substantial live-gated SwiftUI-table work (focus state, key handlers, highlight render),
   each its own build. Queued as the next builds; NOTE §2.5: CSV PARSER is a port target,
   but these are VIEW-layer interaction features (cursor/find over already-parsed rows),
@@ -14616,7 +14616,7 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
 
 ## LOG +319 (2026-06-13 tick — TSK-283 rename-from-nav built; agent-fleet board reconciliation)
 
-- **TSK-283 (Enter to rename) — BUILT + landed (`1165759`, installed, gate-green
+- **TSK-283 (Enter to rename) — BUILT + landed (`8299141`, installed, gate-green
   5010 tests).** Was genuinely unbuilt (the only in-tree `rename` was LSP *symbol*
   rename; no file/folder rename anywhere). Slice mirrors the TSK-329 shape:
   - `FileRenamer` core (ViewerCore) — atomic `rename(2)`, inode-aware collision
@@ -14650,7 +14650,7 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
     Needs a focused validation pass (is match fuzzy? is SidebarFilterMatch tested?).
   - **ALREADY-DONE + tested (validate next, after identity re-check):** TSK-110
     (image-edit PoC), TSK-111 (Claude monitor PoC), TSK-262 (session-tab action icons,
-    3105935), TSK-305/307 (security fixes already remediated).
+    2d8f75a), TSK-305/307 (security fixes already remediated).
   - **UNBUILT backlog features, correctly bounced/parked — owner triage:** TSK-276
     (Debugger), 279 (LSP-MCP), 285 (Paint), 287 (Vector), 293 (Encryption), 296
     (MD formatter), 298 (Java formatter).
@@ -14659,9 +14659,9 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
 
 - **TSK-655 (fs.watch push protocol design, P1) VALIDATED** — a design is
   validated when its implementation works: docs/REMOTE_PROTOCOL.md
-  (6b914cd) is fully realized by TSK-662/663/664, all validated with
+  (bb5f1fd) is fully realized by TSK-662/663/664, all validated with
   loopback A/B green.
-- **TSK-329 (File New) — built + landed (ec231bc, installed).** The
+- **TSK-329 (File New) — built + landed (24a2531, installed).** The
   atomic NewFileCreator had a complete tested contract but ZERO UI
   callers (the reported gap). Wired model.createNewFile into File→New
   File (⌘N) + folder right-click "New File"; SidebarModel.reloadChildren
@@ -14675,7 +14675,7 @@ or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un
 ## LOG +319 (2026-06-22 — engine-fuzz campaign + DocumentModel SRP decomposition + high-value spikes; clean-heartbeat boundary reached)
 
 ### Landed (all host-gate-green, verdict-checked separately per commit)
-- **Engine-fuzz campaign — all 9 previously-un-fuzzed shipped core engines now carry no-panic robustness guards** (TSK-1223, self-validated): csv / find_engine / diff / transcript / hex / format / fuzzy / outline / indent. Deterministic-LCG fuzzes (no rand dep) over the untrusted-input surface — each guards the highest-impact bug class (app-crashing panic). SIDE FIND + FIX: a latent trace-test parallel-pollution flake (0b3ed0c7 — the trace tests' process-global CollectSink captured trace events emitted by ANY parallel suite, e.g. the CSV parse fuzz; fixed by filtering the test sink to its own records).
+- **Engine-fuzz campaign — all 9 previously-un-fuzzed shipped core engines now carry no-panic robustness guards** (TSK-1223, self-validated): csv / find_engine / diff / transcript / hex / format / fuzzy / outline / indent. Deterministic-LCG fuzzes (no rand dep) over the untrusted-input surface — each guards the highest-impact bug class (app-crashing panic). SIDE FIND + FIX: a latent trace-test parallel-pollution flake (d0f6b5f4 — the trace tests' process-global CollectSink captured trace events emitted by ANY parallel suite, e.g. the CSV parse fuzz; fixed by filtering the test sink to its own records).
 - **DocumentModel SRP decomposition (TSK-1110, slices 2-6)** — monolith ~7760 → ~7340 lines, carved into focused extension files: editor-lifecycle forwarders, find-bar forwarders (rendered/source/CM6/match-state, consolidated), find-menu gating. All verbatim public-surface-only moves (no visibility-widening). CLEAN PHASE EXHAUSTED: remaining clusters (scroll-persistence, hex-width) touch PRIVATE members (scrollMemoryBaseline / preferences) → continuing needs a private→internal widening DECISION (framed on TSK-1110; leaning accept the current decomposition).
 - **Image-editor Phase-5 draw-op rasterizers (TSK-1084/1085/1083)** — EditOp.fillPolygon (+ a same-tick AA-consistency simplification to match fillRect/fillEllipse) / strokePolygon / drawCurve: the fill / outline / cubic-Bezier rasterization the Phase-5 shape+curve tools commit through, host-tested (apply→assert pixels), non-preemptive (each op is Renderer-consumed). The multi-click gestures are the render tail.
 - **Highlight TSK-1201 class** — confirmed the Swift/SQL comment + Rust SCREAMING_CASE fixes on the highlight() span path (TUI render); audited + bounded the @spell dual-capture class (comments: Swift+SQL only; strings: clean) — both token classes now guarded across all shipped languages.
@@ -14692,10 +14692,10 @@ The clean host-buildable HEARTBEAT veins are drained — the models were built a
 Owner approved memchr/proptest/cargo-fuzz/wasm32/rusqlite (2026-06-27) + corrected that dep-hygiene counts the DEV-MACHINE surface (`cargo install` compiles the tool's full tree) → cargo-mutants REJECTED. This run built the approved deps + the PM epic core.
 
 ### Landed (all rust-core-gate-green, verdict-checked per commit)
-- **memchr SIMD `memmem`** — `hex_search_find` (TSK-399, validated, 1c2e4a5d) + `format.rs find_after` (TSK-1285, validated, a6319647). ZERO new surface (already in-tree). filter + find_engine deliberately NOT changed (case-insensitive — memmem doesn't fit).
-- **proptest property-test lane (TSK-585)** — dev-dep (default-features=false+["std"], pinned =1.9.0). 5 our-logic suites: filter differential (e8a684fb), diff-parser robustness (fa3536ac), CSV split (61a26924), CSV quoting (8ae2421f), formula arithmetic differential (be22fdb6). It FOUND + FIXED a real bug — **TSK-1286** (4722e5e1, validated): a lone quoted-empty CSV terminal row `""` was silently dropped (the terminal-empty-row heuristic couldn't see quote-state; TWO paths — the EOF flush guard + the finish() drop — fixed by tracking the terminal field's quote-state, symmetric VecSink+ArenaSink).
-- **Project-management store, slices 1-4c (TSK-345)** — new isolated `mdvcore-pm` crate (rusqlite 0.39 against the SYSTEM libsqlite3, default-features=false, NO bundled — zero new native lib; OUT of sans-IO core + the Swift build). 6 slices: (1) crate+dep 6719e348 / (2a) event-sourcing core [append-and-project atomically + replay-as-fold] 59c0a8a2 / (3) on-disk persistence daedaa16 / (4a) lifecycle state-machine [v2 2.2: 10 classes + can_transition] 9a3c0df6 / (4b) per-edge actor-gating [the SAFETY boundary - doer's ceiling, human gates] 03310faa / (4c) work_next + state_rollup queries 62475889.
-- **Dep-hygiene codified** — CLAUDE.md "Rust-core dev tooling" convention + per-dep use-follow-ups + TEST_PYRAMID notes (09b8cf90, 372af4c0).
+- **memchr SIMD `memmem`** — `hex_search_find` (TSK-399, validated, 3d0dc3b7) + `format.rs find_after` (TSK-1285, validated, ad0a93fd). ZERO new surface (already in-tree). filter + find_engine deliberately NOT changed (case-insensitive — memmem doesn't fit).
+- **proptest property-test lane (TSK-585)** — dev-dep (default-features=false+["std"], pinned =1.9.0). 5 our-logic suites: filter differential (583a886c), diff-parser robustness (cf2beec9), CSV split (67d22351), CSV quoting (495c34ae), formula arithmetic differential (c38ffa94). It FOUND + FIXED a real bug — **TSK-1286** (fb21584b, validated): a lone quoted-empty CSV terminal row `""` was silently dropped (the terminal-empty-row heuristic couldn't see quote-state; TWO paths — the EOF flush guard + the finish() drop — fixed by tracking the terminal field's quote-state, symmetric VecSink+ArenaSink).
+- **Project-management store, slices 1-4c (TSK-345)** — new isolated `mdvcore-pm` crate (rusqlite 0.39 against the SYSTEM libsqlite3, default-features=false, NO bundled — zero new native lib; OUT of sans-IO core + the Swift build). 6 slices: (1) crate+dep 6ef56ae0 / (2a) event-sourcing core [append-and-project atomically + replay-as-fold] 8952c805 / (3) on-disk persistence c12fe7ab / (4a) lifecycle state-machine [v2 2.2: 10 classes + can_transition] 975524a8 / (4b) per-edge actor-gating [the SAFETY boundary - doer's ceiling, human gates] 1d9e9d43 / (4c) work_next + state_rollup queries 719220d8.
+- **Dep-hygiene codified** — CLAUDE.md "Rust-core dev tooling" convention + per-dep use-follow-ups + TEST_PYRAMID notes (0756bbc4, 61bcd497).
 
 ### Parked / blocked (surfaced)
 - **TSK-1287 (crypto-hash dep)** — PM slice 2b (the v2 tamper-evident hash-chain row_hash=H(prev||canonical(row))) needs a crypto hash (std has none). PARKED for the owner's sha2 (recommended) / blake3 / reject decision; the PM core (1-4c) built around it.
@@ -14706,7 +14706,7 @@ PM core COMPLETE (slices 1-4c, 6 slices, all host-tested). Remaining PM: 2b (par
 
 ## LOG (2026-06-27 cont. — PM store HOST-SIDE CORE COMPLETE, 10 slices)
 
-The mdvcore-pm epic (TSK-345) reached a complete, enforced, event-sourced host-side core — 10 gate-green slices, commits 6719e348..70c0b6d7:
+The mdvcore-pm epic (TSK-345) reached a complete, enforced, event-sourced host-side core — 10 gate-green slices, commits 6ef56ae0..a957eace:
 - 1 crate + system-libsqlite3 · 2a event-sourcing (append-and-project atomically + replay-as-fold) · 3 on-disk persistence · 4a lifecycle state-machine (v2 §2.2, 10 classes) · 4b actor-gating (kind) · 4c work_next/state_rollup · 4d enforcement wired into append (PmError — illegal/unauthorized/unknown rejected before writing) · 4e doer≠verifier identity guard (§1.4 capstone — an agent structurally cannot self-certify) · 4f-i dependency edges (wi_edge + transactional cycle rejection via recursive CTE, §1.7) · 4f-ii dependency-aware work_next (finish-to-start gate).
 
 The store: append-only hash-... (chain DEFERRED to 2b) log + materialized projection, atomic commit, deterministic replay, full enforced state machine + safety boundary (kind + identity), on-disk persistence, the Ready dispatch queue with dependency gating, the dependency graph with cycle-safety. ~40 host tests.
@@ -14719,31 +14719,31 @@ The HOST-COMPLETABLE PM core is DONE. Remaining is NOT clean host-slice work:
 Two owner decisions standing: crypto-hash (TSK-1287) + PM epic direction (continue autonomously vs supervised). Otherwise the autonomous host-surface is BACKLOG-confirmed drained.
 
 ## LOG (2026-06-27 cont. — post-compaction: P0b validation + proptest/wasm hardening)
-After the PM-store session (14 slices, HEAD bd8b7b4a) compacted, re-oriented + drained the remaining clean autonomous surface:
-- **Corrected the stale HANDOFF.md** (re-injected as AX/RSS @ a7c57904 → rewritten to PM-complete @ bd8b7b4a) — `bf2f6b50`.
+After the PM-store session (14 slices, HEAD ef3bc72f) compacted, re-oriented + drained the remaining clean autonomous surface:
+- **Corrected the stale HANDOFF.md** (re-injected as AX/RSS @ 34b73249 → rewritten to PM-complete @ ef3bc72f) — `c1af2d2c`.
 - **P0b validation (with teeth):** TSK-1106 (session-tab action MODEL behaviors — SessionsCoordinatorTests 30/0, host-run offline via `--skip-update`) + TSK-585 (proptest lane named scope) → `validated`. The 4 rust-core ports (TSK-630/631/632/633) + both memchr tickets (TSK-399/1285) were ALREADY validated.
-- **Completed TSK-585's named targets:** wire-laws (decode_frame arbitrary-byte robustness of the length-prefix parser + Table frame round-trip) + session-op-replay (filter replay-determinism + set_filter idempotence) proptests — `dedcaaa7`.
-- **Extended the proptest lane to the bug-prone engines:** hex (memmem find-all == naive non-overlapping scan — verifies the TSK-399 SIMD refactor, `178a58e7`) + fuzzy (match iff CI-subsequence existence, `cc70780d`). Lane now spans 8 engines; all 12 rust-core engines carry fuzz/proptest coverage.
-- **Hardened the wasm_shape guard (TSK-800):** added std::time::Instant/SystemTime to the wasm-breaking set — closed a doc/code gap (the module doc claimed env/TIME coverage; the list omitted time; core verified clock-clean) — `c2a82157`.
+- **Completed TSK-585's named targets:** wire-laws (decode_frame arbitrary-byte robustness of the length-prefix parser + Table frame round-trip) + session-op-replay (filter replay-determinism + set_filter idempotence) proptests — `142feccc`.
+- **Extended the proptest lane to the bug-prone engines:** hex (memmem find-all == naive non-overlapping scan — verifies the TSK-399 SIMD refactor, `a625dbac`) + fuzzy (match iff CI-subsequence existence, `ac1232ee`). Lane now spans 8 engines; all 12 rust-core engines carry fuzz/proptest coverage.
+- **Hardened the wasm_shape guard (TSK-800):** added std::time::Instant/SystemTime to the wasm-breaking set — closed a doc/code gap (the module doc claimed env/TIME coverage; the list omitted time; core verified clock-clean) — `66c484a7`.
 - **ENV:** host swift toolchain network-hung on SwiftPM resolution (use `swift test --skip-update`, cached deps); wasm32 + cargo-fuzz blocked on large CDN downloads (CDN HEAD-responds 200 but the rust-std-wasm32 tarball times out — 4 attempts across ticks) → wasm real-build deferred; the static wasm_shape guard is the host proxy.
 
 BOUNDARY: the autonomous host-completable + network-resilient surface is DRAINED (verified directly this session: P0b clean pool, proptest lane comprehensive, PM host-complete, wasm guard done — not just BACKLOG-claimed). Remaining = render/VM/owner-close pile + the two owner decisions (crypto-hash TSK-1287, PM direction) + network-blocked deps (wasm real-build / cargo-fuzz).
 
 ## LOG (2026-06-27 cont. — P0a agent-drivable surface + DOM-patch host/FFI)
-Continued the drain (HEAD bf2f6b50 → e673c886), verify-state lens finding real gaps each time:
+Continued the drain (HEAD c1af2d2c → ccb9f2a1), verify-state lens finding real gaps each time:
 - **P0a agent-drivable surface — COMPREHENSIVE:**
-  - AXIdentifierCatalog 42→59: +12 major surfaces — incl. the CORE chrome that was un-addressable (mdv.tabbar / sessionTabBar / split) + walkthrough.player/browser, searchAnywhere, markdownOverview, actionHistory, problems, claudeTimeline, findMatchList, recentlyOpened (6d237905) + 5 secondary (image/audio preview, instrumentation/logs/metrics) (b7c97287).
-  - close-split script verb (638e552e) — split-verb set (toggle/swap/close) complete; toggle was state-dependent so agents couldn't deterministically close.
-  - list_verbs + list_surfaces MCP tools (7486b2e9, 9a864829) — agent SELF-DISCOVERY of the ~134-verb action vocabulary + the 59 addressable surfaces (MCP catalog 18→20). Closed a real hole (run_verb executed but nothing enumerated).
+  - AXIdentifierCatalog 42→59: +12 major surfaces — incl. the CORE chrome that was un-addressable (mdv.tabbar / sessionTabBar / split) + walkthrough.player/browser, searchAnywhere, markdownOverview, actionHistory, problems, claudeTimeline, findMatchList, recentlyOpened (560f994a) + 5 secondary (image/audio preview, instrumentation/logs/metrics) (d72274a2).
+  - close-split script verb (fb9f7f0c) — split-verb set (toggle/swap/close) complete; toggle was state-dependent so agents couldn't deterministically close.
+  - list_verbs + list_surfaces MCP tools (95c97d3d, e0fbd26b) — agent SELF-DISCOVERY of the ~134-verb action vocabulary + the 59 addressable surfaces (MCP catalog 18→20). Closed a real hole (run_verb executed but nothing enumerated).
   - Full headless gate run offline (~9024 tests, 0 fail) confirmed no cross-suite breakage from the shared-catalog changes.
-- **P1 DOM-patch (TSK-838 — the biggest perf lever): HOST+FFI stack COMPLETE** (3 slices, proptested on REAL pulldown-cmark renders): split_top_level_blocks (513c75ff) → block_patch/apply_block_patch (e6b4ae0f) → block_patch_wire + dispatch::Method::HtmlBlockPatch + MDV_METHOD_HTML_BLOCK_PATCH=17 (e673c886, FFI-callable, cbindgen header-staged). Spiked on TSK-838 first. The 2-9s loadHTMLString reload-storm → an O(changed-blocks) DOM patch. RENDER TAIL (the JS DOM applier over WarmHTMLWebViewCache + loadHTMLString→patch swap + perf-validation) is the owner/VM-aligned WebView-architecture change.
+- **P1 DOM-patch (TSK-838 — the biggest perf lever): HOST+FFI stack COMPLETE** (3 slices, proptested on REAL pulldown-cmark renders): split_top_level_blocks (72437f3a) → block_patch/apply_block_patch (4551a2b6) → block_patch_wire + dispatch::Method::HtmlBlockPatch + MDV_METHOD_HTML_BLOCK_PATCH=17 (ccb9f2a1, FFI-callable, cbindgen header-staged). Spiked on TSK-838 first. The 2-9s loadHTMLString reload-storm → an O(changed-blocks) DOM patch. RENDER TAIL (the JS DOM applier over WarmHTMLWebViewCache + loadHTMLString→patch swap + perf-validation) is the owner/VM-aligned WebView-architecture change.
 
 ENV: swift host validation via `swift test --skip-update` (SwiftPM net-hung); wasm32 + cargo-fuzz CDN-blocked (large downloads time out, HEAD ok).
 BOUNDARY: clean host-completable threads drained — P0a comprehensive, P0b validated-pool drained (TSK-1106/585 + ports/memchr), PM host-complete (14 slices), proptest lane comprehensive, DOM-patch host+FFI done. Remaining = render-tails (DOM-patch applier, the ~review pile), engine-gated (Agent-Services TSK-1154 needs sandbox/LSP/engine — verified), owner decisions (crypto-hash TSK-1287, PM direction, AX-TCC executor TSK-1261/1263).
 
 ## LOG (2026-06-27 cont. — agent READ surface, the 4th drivability axis)
 After addressing/action/discovery, completed the READING axis — what an agent asserts on:
-- **current_state journey state (9cf48e0b):** isSplitOpen + vimModeEnabled (AutomationState) + per-tab isDirty (TabDescriptor) — "is the file modified? / is vim INSERT? / is a split open?". Model-readable, MCP-reachable (NOT AX-TCC-gated). Host test asserts the populate reflects the model; 61 MCP/AutomationHost tests green.
+- **current_state journey state (15613baf):** isSplitOpen + vimModeEnabled (AutomationState) + per-tab isDirty (TabDescriptor) — "is the file modified? / is vim INSERT? / is a split open?". Model-readable, MCP-reachable (NOT AX-TCC-gated). Host test asserts the populate reflects the model; 61 MCP/AutomationHost tests green.
 - **current_state.sessions (this commit):** the live app-level session list (id/displayName/isActive) so an agent enumerates sessions to drive the session-* verbs by id/name instead of a blind 1-based index — the READ half of the session action surface (same action-without-discovery asymmetry as run_verb→list_verbs). Populate reads sessionsCoordinator?.core.sessions/.activeID (the main.swift launch wiring). Teeth: wired-mirrors-coordinator (HeadlessHarness) + unwired-is-empty negative control; 62 tests green.
 
 This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔list_verbs, surfaces↔list_surfaces, sessions↔current_state.sessions. The agent-drivable surface (the non-TCC-gated half of TSK-1254) is comprehensive across all 4 axes (addressing·action·discovery·reading). Only the out-of-process AX EXECUTOR (real events, TSK-1261/1263) is TCC-gated.
@@ -14786,9 +14786,9 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
   - CORRECTION (same tick): NOT fully-empty. The full gate caught 2 tests that DELIBERATELY pin SessionStore to the REAL dir — InfraInvariantTests.test_vmSmokeReset_targetsTheRealSessionsDir (vm-smoke.sh path parity) + SessionStoreDirOverrideTests.test_noOverride_usesRealApplicationSupport_notScratch (BUG-027). SessionStore is real-by-default ON PURPOSE; its test hermeticity is the AppLauncher harness setting MDV_SESSIONS_DIR, not the XCTest auto-redirect. Reverted SessionStore + re-allowlisted it. Guard allowlist = {SessionStore} (1 documented deliberate exception); every OTHER app-support store routes through TestStateRedirect. (AppCacheReset's auto-redirect kept — no test pins it real, and it's safe defense-in-depth.)
 
 ## LOG (2026-06-27 cont. — VM validation of the TSK-1288 session)
-- Ran the owner's standing-ask VM suite (test-in-vm all, GUI lane) on committed main (c6a7016b) for the substantive TSK-1288 Swift changes. Build CLEAN on the VM toolchain; ViewerCore host suites green. Surfaced 2 UAT failures, both diagnosed:
+- Ran the owner's standing-ask VM suite (test-in-vm all, GUI lane) on committed main (279065bf) for the substantive TSK-1288 Swift changes. Build CLEAN on the VM toolchain; ViewerCore host suites green. Surfaced 2 UAT failures, both diagnosed:
   1. PMA01 (PluginsAndMcpAutomationUATTests) — STALE MCP-catalog pin: the catalog grew to 20 tools (added list_verbs/list_surfaces with the agent self-discovery surface) but the UAT's expected array wasn't updated. FIXED — verified the new pin EXACTLY matches canonical MCPToolCatalog.all (20 tools, same order). Compile-checked.
-  2. SCROLL03/04 (ScrollRestoreUATTests) — editor scroll resets to top on tab/session switch-back = PRE-EXISTING TSK-1047 (state reported / live-validation-blocked; fix-attempt 313825b1 unvalidated), NOT a regression from the slice-2 ScrollMemoryStore repoint: the UAT harness sets MDV_SESSIONS_DIR (not MDV_APP_SUPPORT), so the spawned app's ScrollMemoryStore stays on the unchanged real path. Left as-is (owner/VM TSK-1047).
+  2. SCROLL03/04 (ScrollRestoreUATTests) — editor scroll resets to top on tab/session switch-back = PRE-EXISTING TSK-1047 (state reported / live-validation-blocked; fix-attempt 78943640 unvalidated), NOT a regression from the slice-2 ScrollMemoryStore repoint: the UAT harness sets MDV_SESSIONS_DIR (not MDV_APP_SUPPORT), so the spawned app's ScrollMemoryStore stays on the unchanged real path. Left as-is (owner/VM TSK-1047).
 
 ## LOG (2026-06-27 cont. — VM-signal hygiene: skip jetsam-useless SCROLL03/04)
 - The VM `all` release-validation suite perpetually false-red on ScrollRestoreUATTests SCROLL03/04 (editor scroll across tab/session switch). Root (TSK-1047's documented 2026-06-23 LESSON): CM6's WebContent is jetsam-killed under the spawned-app viaOpen lane → editor-scroll-to-line no-ops + the wait-editor-line poll times out (got top line 1) at SETUP, before the restore is even exercised → no product signal AND no usable [WARMCACHE-PROBE] trace. SKIPPED both via `try XCTSkipIf(true, ...)` (deterministic, documented, reversible — un-skip + drive CM6 in-process when resuming the TSK-1047 warm-cache work). Editor scroll-restore stays reliably covered in-process (EditorScrollRestoreWebViewTests). This un-masks future real regressions in the release suite (a false-red that hides regressions is itself a defect). Compile-checked (no unreachable warning — XCTSkipIf autoclosure). Recorded on TSK-1047.
@@ -14797,7 +14797,7 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - PaneRetentionMountProbeTests.test_lruOverflow used a single fixed settle() (0.15s) then asserted webViewDismantles==1 → got 0 on the VM. settle() is async-timing-fragile: if the evicted pane's dismantleNSView is a later re-body frame, 0.15s samples too early. Replaced with a bounded pump-until-dismantle (≤~6s) + 2 drain cycles (still catches an over-eager >1, the TSK-621 class). Test-only (can't regress the product). Resolves TSK-1274's A/B on the next VM run: B (async-timing) → passes (flaky-test resolved); A (real leak) → still 0 → confirmed render-lifecycle bug for owner/VM. Compile-checked.
 
 ## LOG (2026-06-27 cont. — TSK-1274 RESOLVED as a misdiagnosis + VALIDATED)
-- The PaneRetention LRU "leak" is NOT a leak. Deep-read of dismantleNSView: a rendered pane's eviction PARKS the WebView in the bounded WarmWebViewCache (TSK-1042, cap 4), returning before the webViewDismantles probe → webViewDismantles==0 is correct. The test's dismantles==1 was a stale pre-TSK-1042 expectation. Diagnostic arc: settle-experiment (88ceae14) → confirmed no-dismantle → makes==1 discriminator (6e62e24c, ruled out harness) → deep-read found the park → caught the near-miss (the pump-until-dismantle would've hardened a wrong expectation) → rewrote the test to assert makes==1 + stashes==1 + dismantles==0 (e7700ebb) → VM webview lane green (test_lruOverflow passed 1.575s) → task_validate (agent:claude-mdv). Also clears the last genuine red from the VM webview lane (with the SCROLL03/04 skip → lane fully green). LESSON recorded.
+- The PaneRetention LRU "leak" is NOT a leak. Deep-read of dismantleNSView: a rendered pane's eviction PARKS the WebView in the bounded WarmWebViewCache (TSK-1042, cap 4), returning before the webViewDismantles probe → webViewDismantles==0 is correct. The test's dismantles==1 was a stale pre-TSK-1042 expectation. Diagnostic arc: settle-experiment (16fc50b3) → confirmed no-dismantle → makes==1 discriminator (13483850, ruled out harness) → deep-read found the park → caught the near-miss (the pump-until-dismantle would've hardened a wrong expectation) → rewrote the test to assert makes==1 + stashes==1 + dismantles==0 (87ead35a) → VM webview lane green (test_lruOverflow passed 1.575s) → task_validate (agent:claude-mdv). Also clears the last genuine red from the VM webview lane (with the SCROLL03/04 skip → lane fully green). LESSON recorded.
 
 ## LOG (2026-06-27 cont. — TSK-1052 dirty-rect mechanism host-teeth)
 - Verify-stated TSK-1052 (BACKLOG line 80 "GENUINELY UNBUILT" was STALE — it's at review): the DirtyRegion model (ViewerCore/ImageEditing/DirtyRegion.swift) is built + host-tested (DirtyRegionTests, 10) + wired into ImageEditorViewModel (dirtyAccumulator/consumeDirtyBounds). GAP: no integration test pinned the dab→footprint "no full-canvas rebuild per dab" contract. Filled it (ImageEditorPaintTests, host XCTestCase): test_dirtyBounds_brushDab_isFootprintNotFullCanvas (a radius-2 dab dirties a <16px footprint of a 64x64 canvas + covers the centre + consume resets) + test_dirtyBounds_floodFill_marksFullCanvas (flood correctly falls back to full-canvas dirty). 69 ImageEditorPaintTests green. The incremental-paint MECHANISM is now host-guarded; the on-screen perf-felt stays owner/VM → TSK-1052 at review (cron: host-test the model, leave render at review).
@@ -14821,10 +14821,10 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
 - Built core::nav::NavHistory (rust-core) — a pure back/forward navigation-history model (visited-path stack + cursor, browser truncate-forward semantics, dup-coalesce) for the front-ends. TSK-250's Web back-forward (web/src/main.rs notes it "still open") wires this next; reusable by TUI/Swift via the core. 5 host tests pass (empty/push/back-forward-clamp/truncate-tail/dup-noop). The clean host-buildable kind (Rust #[test], no render/VM) after the main-app surface drained. Remaining: wire NavHistory into the Web front-end's routes (push on /view, /back + /forward).
 
 ## LOG (2026-06-27 cont. — TSK-250 Web back-forward wiring)
-- Wired core::nav::NavHistory into the Web front-end (TSK-250's "back-forward (Web)", the owner's ask — corrected my earlier over-decline of it as "browser-native covers it", which was synthesizing a skip). web/src/main.rs: main() threads a shared Mutex<NavHistory>; a confined /view pushes its target; /back + /forward routes navigate + replay the resolved /view target via route() (no re-push), serving a "no history" hint at the ends. Pure helpers view_target + back_forward_dir host-tested; 99 web tests green; poison-tolerant locks (gate-required, no unwrap). De-orphans the NavHistory model (cd64964e). Remaining: in-page back/forward BUTTONS in the page chrome (small render follow-up). TSK-250 Web half now functionally wired.
+- Wired core::nav::NavHistory into the Web front-end (TSK-250's "back-forward (Web)", the owner's ask — corrected my earlier over-decline of it as "browser-native covers it", which was synthesizing a skip). web/src/main.rs: main() threads a shared Mutex<NavHistory>; a confined /view pushes its target; /back + /forward routes navigate + replay the resolved /view target via route() (no re-push), serving a "no history" hint at the ends. Pure helpers view_target + back_forward_dir host-tested; 99 web tests green; poison-tolerant locks (gate-required, no unwrap). De-orphans the NavHistory model (0c23ce78). Remaining: in-page back/forward BUTTONS in the page chrome (small render follow-up). TSK-250 Web half now functionally wired.
 
 ## LOG (2026-06-27 cont. — TSK-250 Web back-forward buttons)
-- Added in-page ◀ Back / Forward ▶ chrome buttons to page() (all Web pages), hitting the /back + /forward routes (9c507ca4). Completes TSK-250's Web back-forward END TO END: NavHistory model (cd64964e) + routes (9c507ca4) + chrome buttons. Host-tested (page_chrome_has_back_forward_nav); 100 web tests green. TSK-250 → review (Web back-forward done; TUI multi-file tabs already built — open/cycle/close/persist).
+- Added in-page ◀ Back / Forward ▶ chrome buttons to page() (all Web pages), hitting the /back + /forward routes (73575dce). Completes TSK-250's Web back-forward END TO END: NavHistory model (0c23ce78) + routes (73575dce) + chrome buttons. Host-tested (page_chrome_has_back_forward_nav); 100 web tests green. TSK-250 → review (Web back-forward done; TUI multi-file tabs already built — open/cycle/close/persist).
 
 ## LOG (2026-06-27 cont. — TSK-250 cycle_tab teeth)
 - Added cycle_tab host tests (rust-core/tui): three distinct files → three tabs with wrap-around forward/back cycling + single-tab no-op (App::new + fixture pattern). 66 tui tests green. Closes TSK-250's last teeth-gap → BOTH halves now fully host-tested (Web back-forward model/routes/buttons + TUI tab open/switch/persist). TSK-250 → validated.
@@ -14881,7 +14881,7 @@ This gives read/action SYMMETRY across the surface: tabs↔select_tab, verbs↔l
   window-hosting made boot worse) — filed as a lane-hardening ticket, NOT an M0 blocker
   (memory fine at 51%; no crash reports; all evals incl. trivial probes die together).
 - M0 VERDICT: GO — budgets met everywhere the page survives; core-side 0.1ms constant.
-- M1.S1 record store landed (577c7a18): FracIndex + flat store + tombstones + cycle checks,
+- M1.S1 record store landed (3d7a260b): FracIndex + flat store + tombstones + cycle checks,
   proptest storm, teeth shown; wasm-shape scan made recursive for the canvas/ module dir.
 
 ## 2026-07-02 — Canvas M1.S5c: the FULL swap onto the real engine (TSK-1360)

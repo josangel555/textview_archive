@@ -8,14 +8,14 @@ import ViewerKit
 /// Bug A — "the top tab bar / top items disappear on window resize."
 ///
 /// ROOT CAUSE: `TabBar.body` was wrapped in a `GeometryReader` (introduced
-/// WAVE 2b `8ddda05`) purely to feed `geo.size.width` into the per-tab width
+/// WAVE 2b `7474204`) purely to feed `geo.size.width` into the per-tab width
 /// budget. A `GeometryReader` is GREEDY on both axes yet reports a TINY (10×10)
 /// IDEAL size — so the TabBar's intrinsic/fitting size collapsed to a 10pt
 /// width. Sitting inside ContentView's chrome VStack under
 /// `.fixedSize(horizontal:false, vertical:true)` + `.layoutPriority(1)`, that
 /// ambiguous intrinsic size is the kind of unstable composition that makes the
 /// bar mis-lay-out / blank on a LIVE window resize. The prior chrome-pinning
-/// fix (`3e8bd75`) and `ChromeLayoutGateTests` only exercised the VERTICAL axis
+/// fix (`6f1e532`) and `ChromeLayoutGateTests` only exercised the VERTICAL axis
 /// and used a `Color.clear` center, so they never observed the collapsed
 /// intrinsic WIDTH — they passed while the app failed.
 ///

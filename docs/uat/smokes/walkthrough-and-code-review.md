@@ -87,7 +87,7 @@ These apply to every smoke unless overridden in the smoke's own preconditions bl
 
 **Preconditions**
 
-- A scratch **git repo** `proj/` under temp (`git init`, one commit) with `a.swift`, `b.swift`, and a nested folder. App built with the source-load fix (`main 798b7ee` or later — earlier builds cannot load source files).
+- A scratch **git repo** `proj/` under temp (`git init`, one commit) with `a.swift`, `b.swift`, and a nested folder. App built with the source-load fix (`main c2eac32` or later — earlier builds cannot load source files).
 - A `multi.json` walkthrough (`schema /v1` or `/v2`, `rootHint` = `proj/`) with steps:
   1. `openFile a.swift` + `setView source`
   2. `showPopover` anchored to a line in `a.swift` (body text + `surface`/`container` hint)

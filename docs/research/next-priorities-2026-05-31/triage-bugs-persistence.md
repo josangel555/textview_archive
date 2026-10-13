@@ -4,7 +4,7 @@ I have a comprehensive, code-verified picture. Both bugs are real and trace to t
 
 ### Triage: state-persistence bugs
 
-The workspace state path described in the task (`Workspaces/_last.json`, `WorkspaceStore`) was **retired** in commit `2084d10` (decision G, 2026-05-25). State now lives under `~/Library/Application Support/com.markdownviewer.MarkdownViewer/Sessions/` as `index.json` + per-session `<uuid>.json`, owned by `SessionStore` / `SessionSnapshot` / `SessionsCoordinator`. The triage below is against that current path. There is **no `_last.json` fallback** anymore (`SessionsAppCoordinator.swift:76`, `main.swift:193`).
+The workspace state path described in the task (`Workspaces/_last.json`, `WorkspaceStore`) was **retired** in commit `e0115f5` (decision G, 2026-05-25). State now lives under `~/Library/Application Support/com.markdownviewer.MarkdownViewer/Sessions/` as `index.json` + per-session `<uuid>.json`, owned by `SessionStore` / `SessionSnapshot` / `SessionsCoordinator`. The triage below is against that current path. There is **no `_last.json` fallback** anymore (`SessionsAppCoordinator.swift:76`, `main.swift:193`).
 
 ---
 

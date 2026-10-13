@@ -38,7 +38,7 @@ public enum StartupTrace {
     /// Truncated on each launch — it holds ONE launch's timeline.
     private static let traceFile: URL = {
         // TestStateRedirect so host tests never write the dev's real
-        // ~/Library state (the drift guard caught the bypass — CI 7e68dcfc).
+        // ~/Library state (the drift guard caught the bypass — CI 57696f80).
         let d = TestStateRedirect.markdownViewerDir()
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d.appendingPathComponent("startup-trace.log")

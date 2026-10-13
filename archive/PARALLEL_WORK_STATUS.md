@@ -67,7 +67,7 @@ Plus 5 follow-up commits on main:
 - ✅ `LSPPool.recordRequest` wired via new `documentSymbol`/`hover`/
   `definition` pool-routed wrappers. `LSPOutlineSection` migrated to
   the routed API. Diagnostics panel now shows live `requestCount` +
-  `lastResponseMillis`. Commit `4d43df2`.
+  `lastResponseMillis`. Commit `8336e1e`.
 - UI tests for hover popover + outline section deferred to VM.
 
 
@@ -104,15 +104,15 @@ still exist in `git branch -a`.
 
 ## What landed on `main`
 
-Today's commits since `5b74676`:
+Today's commits since `08df588`:
 
-- `492fca5` — review-agent fixes (HIGH MediaPreview, MED engine reentrancy + loader portability, LOW transport perms/bound)
-- `e863291` — LESSONS: Foundation URL portability + NSViewControllerRepresentable intrinsic-size leak
-- `30464f4` — ModeBar overflow at high uiScale + ClaudeTimeline VoiceOver fix
-- `85998c9` — overnight session summary
-- `617e962` — md narrow-strip — frame on TextDisplayView + clamp invalid persisted viewMode
-- `9655700` — perf + hardening 4-item small batch (cancellation token, CSV threshold, typed Walkthrough enums, renderedHTMLCache content-hash)
-- `cd9c761` — build: bundle-size check split (35 MB total + opt-in 15 MB exec cap)
+- `4cbbad8` — review-agent fixes (HIGH MediaPreview, MED engine reentrancy + loader portability, LOW transport perms/bound)
+- `9f4d41e` — LESSONS: Foundation URL portability + NSViewControllerRepresentable intrinsic-size leak
+- `fed8eff` — ModeBar overflow at high uiScale + ClaudeTimeline VoiceOver fix
+- `415f753` — overnight session summary
+- `6b9fa72` — md narrow-strip — frame on TextDisplayView + clamp invalid persisted viewMode
+- `834e52f` — perf + hardening 4-item small batch (cancellation token, CSV threshold, typed Walkthrough enums, renderedHTMLCache content-hash)
+- `a062318` — build: bundle-size check split (35 MB total + opt-in 15 MB exec cap)
 
 ## Sessions PoC summary (already in `poc/sessions`)
 
@@ -449,7 +449,7 @@ feat/treesitter-lazyload
   ↑ Phase 3: build-app.sh dylib copy + codesign + install_name_tool
   ↑ Phase 2: Package.swift restructure — dynamic library products
   ↑ Phase 1: GrammarLoader scaffold + tests
-main (cd9c761)
+main (a062318)
 ```
 
 ## All 6 agents done

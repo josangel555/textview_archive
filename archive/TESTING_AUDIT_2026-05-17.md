@@ -27,36 +27,36 @@ Legend: ✅ = test file touched/added in same commit, ⚠ = feature shipped with
 
 | SHA | Subject | Source touched | Tests touched | Verdict |
 |---|---|---|---|---|
-| c0a9092 | fix: MarkdownRenderedView fragment compare + URL parser | `MarkdownRenderedView.swift` | `MarkdownRenderedViewTests.swift` | ✅ |
-| d2ebbc2 | test: @MainActor on existing tests | `HTMLRenderer.swift`, `MermaidBundle.swift` (signature only) | 7 test files annotated | ✅ |
-| bbae9d5 | feat: Mermaid + CR Phase 1 + Walkthrough types | 12 source files | 6 test files (29 Mermaid + Review tests) | ⚠ — Walkthrough types had **no** Codable round-trip tests (fixed in this audit). SwiftUI hosting of mermaid not covered (fixed in this audit). |
-| 4cc29d8 | docs: session summary | — | — | ➖ |
-| ed7f93e | test: SidebarRevealTests | — | `SidebarRevealTests.swift` | ✅ |
-| c0abc99 | docs: BACKLOG | — | — | ➖ |
-| 89f45de | feat: Reveal in Sidebar, Files lock, jq filter | 5 source files (`DocumentModel`, `SidebarView`, `TabBar`, `JQRunner`, `main`) | `JQRunnerTests.swift` only | ⚠ — sidebar reveal + lock covered by ed7f93e (`SidebarRevealTests`); `JQRunner` covered. OK net. |
-| 45abc87 | fix + feat: sidebar layout shifts, language override picker, design docs | 13 source files incl. `DocumentModel` (languageOverrides) | — | ❌ language override engine (`effectiveLanguage`, `setCurrentLanguage`, `hasLanguageOverride`) had no tests — **added in this audit**. |
-| c3200e8 | fix + feat: split-pane theme, current-line backdrop, Git menu wiring | `ContentView`, `DocumentModel` (`showGitPanel`), `SplitPaneView`, etc. | — | ❌ `showGitPanel` nonce + desired-tab pair untested — **added in this audit**. |
-| fb4b60c | docs: BACKLOG | — | — | ➖ |
-| bf2f886 | refactor: extract JSONFileStore | 4 source files | `JSONFileStoreTests.swift` | ✅ |
-| bbd273b | feat: Log tab graph renderer | `GraphLayout.swift`, `GitLogTab.swift`, `GitGraphColumn.swift` | `GraphLayoutTests.swift` | ✅ (layout logic; view code is visual) |
-| c8ea29c | feat: DiffView | `DiffParser.swift`, `DiffView.swift`, `DocumentModel`, `ViewMode` | `DiffParserTests.swift` | ✅ (parser logic; view code is visual) |
-| 5c338b8 | docs: VM smoke testing | — | — | ➖ |
-| 66c964f | fix: Swift 6.3 strict concurrency | 6 source files (annotation-only) | — | ➖ |
-| b1cd878 | feat: tabbed Git panel | 9 Git view files + `GitClient.swift` | `GitClientPanelTests.swift`, `GitStatusTabGroupingTests.swift` | ✅ |
-| 1a4a6e1 | docs | — | — | ➖ |
-| 94e130d | feat: Open in Terminal + git log views + diff coloring | 4 source files | `DiffHighlighterTests.swift` | ⚠ — "Open in Terminal" is a one-line `NSWorkspace.openApplication`; "show git log" wraps `GitClient.log` (already tested) into a synthetic-markdown tab; both are not worth dedicated tests. |
-| 3e32d79 | docs: BACKLOG | — | — | ➖ |
-| 092bdd8 | polish: command palette icon | `CommandPaletteView.swift` | — | ⚠ — purely visual swap. Not a model surface. OK. |
-| 6fdad21 | feat: split view minimal v1 | 5 source files | — | ⚠ — `splitURL`/`swapSplit` are simple state mutations; one-liner. Acceptable. |
-| 0fd5472 | feat: CSV table mode + FILES accordion | 4 source files | `CSVParserTests.swift` | ✅ |
-| f12ee43 | fix + feat: overnight batch — find bugs, sidebar UX, scale audit | 7 source files | — | ⚠ — assorted polish; `BookmarkLineCacheTests` / `RegexCacheTests` followed up in 3a26bb3. |
-| dedfd3b | docs: BACKLOG | — | — | ➖ |
-| 3a26bb3 | fix: code-review remediations | 12 source files | `BookmarkLineCacheTests.swift`, `RegexCacheTests.swift` | ✅ |
+| c837988 | fix: MarkdownRenderedView fragment compare + URL parser | `MarkdownRenderedView.swift` | `MarkdownRenderedViewTests.swift` | ✅ |
+| ee91582 | test: @MainActor on existing tests | `HTMLRenderer.swift`, `MermaidBundle.swift` (signature only) | 7 test files annotated | ✅ |
+| d2f8a50 | feat: Mermaid + CR Phase 1 + Walkthrough types | 12 source files | 6 test files (29 Mermaid + Review tests) | ⚠ — Walkthrough types had **no** Codable round-trip tests (fixed in this audit). SwiftUI hosting of mermaid not covered (fixed in this audit). |
+| 971b89b | docs: session summary | — | — | ➖ |
+| 0542d7f | test: SidebarRevealTests | — | `SidebarRevealTests.swift` | ✅ |
+| f5af180 | docs: BACKLOG | — | — | ➖ |
+| a87f322 | feat: Reveal in Sidebar, Files lock, jq filter | 5 source files (`DocumentModel`, `SidebarView`, `TabBar`, `JQRunner`, `main`) | `JQRunnerTests.swift` only | ⚠ — sidebar reveal + lock covered by 0542d7f (`SidebarRevealTests`); `JQRunner` covered. OK net. |
+| 332521e | fix + feat: sidebar layout shifts, language override picker, design docs | 13 source files incl. `DocumentModel` (languageOverrides) | — | ❌ language override engine (`effectiveLanguage`, `setCurrentLanguage`, `hasLanguageOverride`) had no tests — **added in this audit**. |
+| d8cf789 | fix + feat: split-pane theme, current-line backdrop, Git menu wiring | `ContentView`, `DocumentModel` (`showGitPanel`), `SplitPaneView`, etc. | — | ❌ `showGitPanel` nonce + desired-tab pair untested — **added in this audit**. |
+| 7c18be1 | docs: BACKLOG | — | — | ➖ |
+| fd77a51 | refactor: extract JSONFileStore | 4 source files | `JSONFileStoreTests.swift` | ✅ |
+| 408df08 | feat: Log tab graph renderer | `GraphLayout.swift`, `GitLogTab.swift`, `GitGraphColumn.swift` | `GraphLayoutTests.swift` | ✅ (layout logic; view code is visual) |
+| 27cb6c7 | feat: DiffView | `DiffParser.swift`, `DiffView.swift`, `DocumentModel`, `ViewMode` | `DiffParserTests.swift` | ✅ (parser logic; view code is visual) |
+| 87da29f | docs: VM smoke testing | — | — | ➖ |
+| d4cb715 | fix: Swift 6.3 strict concurrency | 6 source files (annotation-only) | — | ➖ |
+| d10eb6a | feat: tabbed Git panel | 9 Git view files + `GitClient.swift` | `GitClientPanelTests.swift`, `GitStatusTabGroupingTests.swift` | ✅ |
+| e00ea9e | docs | — | — | ➖ |
+| 7530130 | feat: Open in Terminal + git log views + diff coloring | 4 source files | `DiffHighlighterTests.swift` | ⚠ — "Open in Terminal" is a one-line `NSWorkspace.openApplication`; "show git log" wraps `GitClient.log` (already tested) into a synthetic-markdown tab; both are not worth dedicated tests. |
+| fd25d06 | docs: BACKLOG | — | — | ➖ |
+| c838859 | polish: command palette icon | `CommandPaletteView.swift` | — | ⚠ — purely visual swap. Not a model surface. OK. |
+| 2f7da22 | feat: split view minimal v1 | 5 source files | — | ⚠ — `splitURL`/`swapSplit` are simple state mutations; one-liner. Acceptable. |
+| 9d69ee2 | feat: CSV table mode + FILES accordion | 4 source files | `CSVParserTests.swift` | ✅ |
+| 46ad0ea | fix + feat: overnight batch — find bugs, sidebar UX, scale audit | 7 source files | — | ⚠ — assorted polish; `BookmarkLineCacheTests` / `RegexCacheTests` followed up in 9682892. |
+| 0d336e5 | docs: BACKLOG | — | — | ➖ |
+| 9682892 | fix: code-review remediations | 12 source files | `BookmarkLineCacheTests.swift`, `RegexCacheTests.swift` | ✅ |
 
 **Headline:** of the 25 commits, 9 are docs-only, 2 are concurrency / refactor cleanup. Of the 14 feature/fix commits:
 - 8 shipped with paired tests
 - 4 shipped polish-only / visual changes that aren't worth a dedicated test
-- 2 shipped real model-level surface without paired tests (`languageOverrides` in 45abc87, `showGitPanel` in c3200e8) — both now covered by this audit.
+- 2 shipped real model-level surface without paired tests (`languageOverrides` in 332521e, `showGitPanel` in d8cf789) — both now covered by this audit.
 
 ## 3. Currently-skipped tests (rationale)
 
@@ -87,12 +87,12 @@ Strongest:
 - `ViewerCore/Mermaid` — 29 tests across parsing, vendor-blob integrity, and HTML host emission.
 
 Weakest:
-- `ViewerCore/Walkthrough` — types-only ship in bbae9d5 had **no Codable tests**. Now covered by `WalkthroughScriptTests.swift` (added).
+- `ViewerCore/Walkthrough` — types-only ship in d2f8a50 had **no Codable tests**. Now covered by `WalkthroughScriptTests.swift` (added).
 - `ViewerUI/Git/*` tab views — visual-only, no per-view tests. Acceptable; logic is in `GitClient` / `GraphLayout` which are tested.
 - `ViewerUI` SwiftUI bodies generally — covered through model assertions + `ContentViewHostingTests`. Adding per-view tests would be brittle.
-- `DocumentModel` newly-added features: `languageOverrides`, `showGitPanel`, `isSidebarLocked` — sidebar lock covered by `SidebarRevealTests` (ed7f93e); the other two were untested. **Now covered** by additions in this audit.
+- `DocumentModel` newly-added features: `languageOverrides`, `showGitPanel`, `isSidebarLocked` — sidebar lock covered by `SidebarRevealTests` (0542d7f); the other two were untested. **Now covered** by additions in this audit.
 
-## 6. Code-review polish-issue follow-up (from bbae9d5 commit notes)
+## 6. Code-review polish-issue follow-up (from d2f8a50 commit notes)
 
 Two items the user flagged:
 
@@ -104,9 +104,9 @@ Two items the user flagged:
 
 | File | Tests | Why |
 |---|---:|---|
-| `Tests/ViewerCoreTests/Walkthrough/WalkthroughScriptTests.swift` | 17 | Walkthrough types ship in bbae9d5 with zero coverage. Round-trip every Action variant (12) + nil-optionals + full-script + reject unknown kind + reject wrong schema version + every PopoverAnchor case. |
-| `Tests/ViewerUITests/DocumentModelGitPanelTests.swift` | 4 | `showGitPanel` (c3200e8) bumps a nonce + sets desired tab — completely untested. Covers nonce bump, desired-tab setting, default-arg, and the "two clicks of same tab still bump" SwiftUI-dedup edge case. |
-| `Tests/ViewerUITests/DocumentModelLanguageOverrideTests.swift` | 5 | `languageOverrides` map (45abc87) — auto-detect baseline, set / clear / per-tab isolation / hasLanguageOverride flag. |
+| `Tests/ViewerCoreTests/Walkthrough/WalkthroughScriptTests.swift` | 17 | Walkthrough types ship in d2f8a50 with zero coverage. Round-trip every Action variant (12) + nil-optionals + full-script + reject unknown kind + reject wrong schema version + every PopoverAnchor case. |
+| `Tests/ViewerUITests/DocumentModelGitPanelTests.swift` | 4 | `showGitPanel` (d8cf789) bumps a nonce + sets desired tab — completely untested. Covers nonce bump, desired-tab setting, default-arg, and the "two clicks of same tab still bump" SwiftUI-dedup edge case. |
+| `Tests/ViewerUITests/DocumentModelLanguageOverrideTests.swift` | 5 | `languageOverrides` map (332521e) — auto-detect baseline, set / clear / per-tab isolation / hasLanguageOverride flag. |
 | `Tests/ViewerCoreTests/Review/ReviewExporterPolishTests.swift` | 2 | Explicit contract tests for the two polish items so the assumptions don't silently regress: ISO-8601 sub-second drop + null-headSha round-trip through decoder. |
 | `Tests/ViewerUITests/MermaidHostingTests.swift` | 4 | SwiftUI integration for the Mermaid pipeline — `renderedHTML` emits host div + shim CSS, cache hit, `.mmd` file hosts a WKWebView (regression guard for ContentView's category-routing). |
 

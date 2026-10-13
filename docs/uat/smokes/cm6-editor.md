@@ -34,8 +34,8 @@ automatable: `editor-set-mode <ViewMode.rawValue>`, `editor-set-text
 
 ## Preconditions common to all smokes
 
-- `dist/TextView.app` is the **fixed-bug** build (≥ `798b7ee`); the broken
-  `fd11e61` build cannot load source files at all, which would mask every
+- `dist/TextView.app` is the **fixed-bug** build (≥ `c2eac32`); the broken
+  `0bf6c36` build cannot load source files at all, which would mask every
   editor result. Confirm a plain `.txt`/`.md`/`.swift` opens and shows
   content in **Source** before trusting any editor result.
 - Scratch files live under `FileManager.temporaryDirectory`

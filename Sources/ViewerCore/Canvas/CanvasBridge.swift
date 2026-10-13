@@ -5,7 +5,7 @@ import Foundation
 // the 7 applier verbs (setText/setStyle/removeStyle/setAttr/insertNode/
 // removeNode/moveNode). Mirrors the CodeMirror bridge discipline (versioned
 // envelope, pure host-testable codec). The M0 numeric-id two-verb shape lived
-// here through commit c275fbd8.
+// here through commit a69343f0.
 
 /// Protocol version for the canvas bridge envelope.
 public enum CVProtocol {

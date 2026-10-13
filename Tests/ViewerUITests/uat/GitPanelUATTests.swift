@@ -206,7 +206,7 @@ final class GitPanelUATTests: MultiScenarioTestCase {
     /// GP-10 (BUG-026 fixed) — untracked-but-inside-repo file: `openFileHistory`
     /// NO-OPS. BUG-026 was filed because the verb opened a hosted (empty)
     /// history tab for an untracked in-repo file — the `isTracked` gate had
-    /// lived only at the MENU layer. The fix (`c944ba1c`) moved the gate INTO
+    /// lived only at the MENU layer. The fix (`1aea79f5`) moved the gate INTO
     /// `openFileHistory` itself (`GitClient.isTracked(path:)`), so firing
     /// `file-history` on an untracked in-repo file is now a no-op: no hosted
     /// tab, the original loaded markdown stays put. (Mirrors the outside-repo

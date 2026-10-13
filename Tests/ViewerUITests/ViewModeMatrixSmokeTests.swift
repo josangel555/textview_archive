@@ -9,9 +9,9 @@ import Foundation
 /// for every mode, and never lands in an `.error` / blank / wrong-mode
 /// state.
 ///
-/// ## Why this suite exists (the fd11e61 gap)
+/// ## Why this suite exists (the 0bf6c36 gap)
 ///
-/// fd11e61 shipped two regressions that every existing gate missed:
+/// 0bf6c36 shipped two regressions that every existing gate missed:
 ///   1. "main.swift cannot be loaded" / blank content on open.
 ///   2. View-mode scramble: pick Editor → blank, pick HEX → blank, pick
 ///      Editor again → shows the HEX byte grid.

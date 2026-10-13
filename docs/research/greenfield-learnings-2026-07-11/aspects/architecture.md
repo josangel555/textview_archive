@@ -17,9 +17,9 @@ layer until it became unmaintainable, then requiring a multi-week incremental ex
   `docs/research/greenfield-learnings-2026-07-11/summaries/docs/d-root-md.md`), and the *current*
   tree still totals **10,721 LOC across 74 `DocumentModel*.swift` files** (measured
   `wc -l Sources/ViewerUI/DocumentModel*.swift` — 2026-07-11) with ~90 `@Published` properties
-  distributed across them. The extraction was TSK-1110, a 15+ slice campaign (commits `f5cc17d4`,
-  `fdd88dd2`, `febfc822`, `1ead80a4`, `9b64768e`, `35ceddbb`, `ec8dff62`, `c6848dfa`, `4aba2d8c`,
-  `38ce7651` … each one "extract X from DocumentModel → DocumentModel+X").
+  distributed across them. The extraction was TSK-1110, a 15+ slice campaign (commits `e49f9979`,
+  `566c820a`, `4697e19f`, `824ffab4`, `758596d2`, `40ba79ed`, `41cccf6f`, `23ab806c`, `ccd0ab8b`,
+  `e4a39e8f` … each one "extract X from DocumentModel → DocumentModel+X").
 - `Sources/MarkdownViewer/main.swift` — **4,435 LOC**, AppDelegate-equivalent imperative
   NSMenu/NSApplication wiring (measured `wc -l`). Cited as anti-pattern #2 alongside DocumentModel
   in `summaries/INDEX.md` §"Most-cited anti-patterns" ("AppDelegate 4.4 KLOC").
@@ -115,8 +115,8 @@ mapping it)
   rendering path (NSTextView) just because it 'should' be replaced — check what invariant it
   silently protects (here: the only path with a real large-file guard)."
 - The endpoint policy: `TSK-1524` "rendering-stack policy epic captured — web for content, native
-  for chrome" (commit `38021ddb`), with `TSK-1530` shipping a gated (OFF by default) web route for
-  `.source` (commit `4f3be49e`). As of the 2026-07-09 audit, the migration was **directional but
+  for chrome" (commit `96616583`), with `TSK-1530` shipping a gated (OFF by default) web route for
+  `.source` (commit `8719863d`). As of the 2026-07-09 audit, the migration was **directional but
   incomplete and un-checklisted** ("the gated M6 web-source route is far from feature parity and
   the parity gap is not written down as a checklist anywhere" — `dual-ui-refactor.md` executive
   summary).

@@ -47,7 +47,7 @@ import Foundation
 /// cross-process editor save round-trip (CM6 WKWebView mount →
 /// `editor-set-text` buffer mutation → `editor-save` → `EditorWriter`
 /// atomic rename to disk), plus the #192-excluded editor WKWebView
-/// surface and the fd11e61 mode↔state↔realized-subtree class. Self-skips
+/// surface and the 0bf6c36 mode↔state↔realized-subtree class. Self-skips
 /// on the headless gate (`isAppBuilt` is false there); runs for real on
 /// the VM/nightly lane or a host-occluded UAT run.
 @MainActor

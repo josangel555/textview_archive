@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-10
 **Reviewer:** Claude (automated pre-launch product review, dimension: concurrency/threading/races)
-**Repo state:** `main` @ `92c72206` (+ uncommitted working-tree edits to `Sources/MarkdownViewer/main.swift`, `Sources/ViewerCore/Automation/MCPSocketBridge.swift` — reviewed as-is)
+**Repo state:** `main` @ `304a8290` (+ uncommitted working-tree edits to `Sources/MarkdownViewer/main.swift`, `Sources/ViewerCore/Automation/MCPSocketBridge.swift` — reviewed as-is)
 
 ---
 

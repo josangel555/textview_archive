@@ -1,7 +1,7 @@
 # UAT Report — Morning Review (undated)
 
 - **Workflow:** `giga-uat` · run `wf_7f6adec6-3ab` · session `80ad52ff-c401-4cd4-9a0a-7558a3ded7c4`
-- **Venue:** `host-live` — single-threaded, occluded (`MDV_BACKGROUND=1`) drive of `dist/TextView.app` @ `main 798b7ee`
+- **Venue:** `host-live` — single-threaded, occluded (`MDV_BACKGROUND=1`) drive of `dist/TextView.app` @ `main c2eac32`
 - **Fix policy:** `land-safe` — only low-risk, headless-gate-green fixes may land on `main`; everything riskier stages on a branch
 - **Catalog:** 41 durable Markdown smokes across 12 executed areas (87 active smoke ids in the full authored catalog)
 - **Issues surfaced:** 33 · **Fixed (staged):** 32 · **Confirmed non-bug:** 1 · **Landed to `main`:** 0
@@ -17,7 +17,7 @@ areas and surfaced **33 issues**. Of those, **32 were root-caused and fixed**, a
 **The headline for review: nothing landed on `main`.** Despite `fixPolicy=land-safe`, every fix
 worktree reports the **same blocker** — the headless merge gate exits non-zero. In every case the
 agent proved the red is **pre-existing and unrelated** to the change (reproduced on the clean
-`798b7ee` baseline with the fix stashed out), driven by three recurring offenders:
+`c2eac32` baseline with the fix stashed out), driven by three recurring offenders:
 
 1. **`MarkdownLinkPolicyTests.test_decide_sameDocFragment_isAllowed`** — deterministic
    `cancel != allow`. A Foundation `file://...#fragment` URL-parsing drift on this host

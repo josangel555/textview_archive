@@ -44,7 +44,7 @@ struct TabBar: View {
     /// reader (see `.background`) rather than a wrapping `GeometryReader`.
     ///
     /// CHROME RESIZE FIX (Bug A, 2026-06-01): the body used to be wrapped
-    /// in a `GeometryReader` (introduced WAVE 2b `8ddda05`) purely to feed
+    /// in a `GeometryReader` (introduced WAVE 2b `7474204`) purely to feed
     /// `geo.size.width` into `computedTabWidth`. A `GeometryReader` is
     /// GREEDY on both axes yet reports a TINY (10×10) IDEAL size — so the
     /// TabBar's intrinsic width collapsed to 10pt and its vertical sizing

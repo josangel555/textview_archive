@@ -20,54 +20,54 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 
 ## ★ Intake 2026-06-14 (user bug/feature wave) — DONE
 
-- TSK-887 — Command palette typing laggy — review @ 36e66ec (@-mode heading-memo slice; bare-mode rebuild remains → see active list)
-- TSK-888 — Global search typing + result-scroll laggy — review @ 21171a8 (result-scroll cap slice; common-case trace remains → active list)
-- TSK-893 — CM6 cursor pointer↔I-beam flip — review @ 294ba39
+- TSK-887 — Command palette typing laggy — review @ 5a1af0d (@-mode heading-memo slice; bare-mode rebuild remains → see active list)
+- TSK-888 — Global search typing + result-scroll laggy — review @ 7d08399 (result-scroll cap slice; common-case trace remains → active list)
+- TSK-893 — CM6 cursor pointer↔I-beam flip — review @ 3665000
 - TSK-894 — Current-line highlight stuck after drag-select — fixed (intake wave)
 - TSK-896 — Hovered-row highlight offset — fixed (intake wave)
 - TSK-897 — Editor missing many languages' highlighting — fixed (intake wave; re-report of 362)
 - TSK-898 — Render|Editor|HEX segmented button group — fixed (intake wave)
 - TSK-899 — view-mode shortcuts ⌘1/⌘2/⌘3 — review
-- TSK-900 — Plain-text file locked in HEX — review @ a64c52a
-- TSK-901 — Auto-detect content type (language half) — validated @ 5eaa951
-- TSK-902 — Preview tab title italic not bold — review @ 30f672c
+- TSK-900 — Plain-text file locked in HEX — review @ 2fecf10
+- TSK-901 — Auto-detect content type (language half) — validated @ dc6aaab
+- TSK-902 — Preview tab title italic not bold — review @ d385799
 - TSK-903 — Rendered MD GFM task-item check/strike — review
-- TSK-905 — Preview ↑/↓ broken unless tab last — review @ af2b30a
-- TSK-906 — Palette dismiss loses editor focus — review @ bc93d6f
-- TSK-907 — Git log duplicate-tab de-dupe — review @ a1de1b7
-- TSK-908 — Right-click commit slow + only "Review Commit" — review @ dedf45b (copy actions; framework-cost half VM-confirm)
+- TSK-905 — Preview ↑/↓ broken unless tab last — review @ 25c3b89
+- TSK-906 — Palette dismiss loses editor focus — review @ 828e534
+- TSK-907 — Git log duplicate-tab de-dupe — review @ 45cbd0b
+- TSK-908 — Right-click commit slow + only "Review Commit" — review @ 8f35c86 (copy actions; framework-cost half VM-confirm)
 - TSK-909 — Right-click commit → Reviews submenu — review
 - TSK-910 — Git diff multi-line selection — fixed (intake wave; design-on-board)
 - TSK-911 — Commit-diff summary header — review
 - TSK-913 — File-nav right-click → Rename — review (already built)
-- TSK-914 — "Open in Terminal" opens in-app terminal — review @ 06c04d1
+- TSK-914 — "Open in Terminal" opens in-app terminal — review @ f748cbe
 - TSK-915 — File tree auto-refresh — review (already built, FolderWatcher)
-- TSK-916 — "Reload from disk" — review @ 0921186
-- TSK-917 — Gutter selectable + cursor-icon — review @ b675551
+- TSK-916 — "Reload from disk" — review @ 3c4f950
+- TSK-917 — Gutter selectable + cursor-icon — review @ 7cbd5a2
 - TSK-918 — Remove max-width cap on panel resize — review
 - TSK-919 — File-nav sub-folder self-drag trap — review
 - TSK-920 — drag-to-Terminal pastes path — review
-- TSK-922 — Open-split slow — review @ fd4180a (close-button half 921 still open → active list)
-- TSK-924 — CSV copy row/column — review @ 22662a2 (rectangle select remains → active list)
+- TSK-922 — Open-split slow — review @ 5c9fec7 (close-button half 921 still open → active list)
+- TSK-924 — CSV copy row/column — review @ 428310d (rectangle select remains → active list)
 - TSK-925 — CSV sort by column header — review
-- TSK-926 / 927 — CLI open file/folder · pipe stdin — review @ 5749369
+- TSK-926 / 927 — CLI open file/folder · pipe stdin — review @ c06a4c0
 - TSK-928 — URL scheme markdownviewer:// → textview:// — review
 - TSK-929 — External rename → tab follows — review
 - TSK-930 — Named saved sessions — review (already built)
 - TSK-931 — Rename a session — review
 - TSK-932 — Unsaved blue dot on modified tab — review
 - TSK-933 — Footer filename as breadcrumb — review
-- TSK-934 — breadcrumb right-click context menu — review @ 583b4c5
+- TSK-934 — breadcrumb right-click context menu — review @ c61f7d0
 - TSK-935 — New Tab → Paste virtual-paste — review
 - TSK-937 — Focus shortcuts (Terminal/Nav/Git/File) — fixed (intake wave)
 - TSK-938 — Esc → current tab focus — fixed (intake wave)
 - TSK-939 — Parity audit — review (docs/PARITY_AUDIT_2026-06-14.md)
-- TSK-946 — Find Next/Prev (⌘G/⌥⌘G) — review @ ee78398
-- TSK-947 — ⌘F dead in HTML-rendered + editor size-cap — review @ abaa36c / 0ee63e1
+- TSK-946 — Find Next/Prev (⌘G/⌥⌘G) — review @ db8de59
+- TSK-947 — ⌘F dead in HTML-rendered + editor size-cap — review @ 83d9186 / fe11f2c
 - TSK-948 — Source code folding dead-wired — fixed (intake wave)
-- TSK-949 — Find&Replace (⌥⌘F) greyed outside editor — review @ ee78398
-- TSK-950 — LSP Find-References menu/palette — review @ 842d5fe
-- TSK-951 — palette-parity umbrella — review @ c36f1b9 (tail items remain → active list)
+- TSK-949 — Find&Replace (⌥⌘F) greyed outside editor — review @ db8de59
+- TSK-950 — LSP Find-References menu/palette — review @ d200171
+- TSK-951 — palette-parity umbrella — review @ 0cd2d81 (tail items remain → active list)
 
 ## WISH-list shipped (P0–P8, the "the-30"/ultracode wave) — DONE
 
@@ -80,15 +80,15 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 - TSK-685 — Spell check / Grammar / LSP checks (epic) — fixed
 - TSK-696 — TextView CLI launcher on PATH — review
 - TSK-705 — Snippets (epic) — review (Tab-key wiring + mgmt UI remain → active list)
-- TSK-707 — Command palette double-Shift — review @ da10ae9
+- TSK-707 — Command palette double-Shift — review @ c9e416f
 - TSK-708 — Preview definition (Cmd+Y) — fixed
 - TSK-710 — Hover symbol info (LSP hover) — review (already built)
-- TSK-718 — Hot exit — review @ 8ba2a2f
-- TSK-719 — Sticky scroll — review @ cf9ac7c
-- TSK-720 — ⇧⌘P palette binding — validated @ b4c4c20
+- TSK-718 — Hot exit — review @ 542e9c8
+- TSK-719 — Sticky scroll — review @ c87c07f
+- TSK-720 — ⇧⌘P palette binding — validated @ 1482cae
 - TSK-721 — HTTP client (epic) — fixed
-- TSK-726 — Project-wide replace — review @ 3b5724b
-- TSK-727 — Unified Goto Anything — fixed (core @ a4022b9; `@`-via-LSP tail → active list)
+- TSK-726 — Project-wide replace — review @ d04cbe6
+- TSK-727 — Unified Goto Anything — fixed (core @ d977438; `@`-via-LSP tail → active list)
 - TSK-749 — Image edit: add text & shapes (epic) — fixed
 - TSK-754 — Plugin API: contribute menu items (epic) — fixed
 - TSK-955 — RSS / Atom feed reader (epic) — fixed
@@ -98,8 +98,8 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 
 ## A. Quick wins / minor-features — DONE
 
-- TSK-355 — "Open in" / Reveal in Finder / external app — review @ c84e8bf
-- TSK-374 — Find match list view — review @ 4cdd0cb
+- TSK-355 — "Open in" / Reveal in Finder / external app — review @ 6f47d05
+- TSK-374 — Find match list view — review @ e7f8ad6
 - TSK-411–414 — Omni-invokable Reload / split+move-tab / git panel+bookmark / file history — done
 - TSK-437 — File → Reset menu (recoverable cache/state) — validated
 - TSK-505 — File SHA-256 in MetadataPanel + Copy command — validated
@@ -113,16 +113,16 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 - TSK-639 — Multi-cursor in the editor — validated
 - TSK-640 — LSP rename + code actions — validated
 - TSK-745 — New tab shows recent files — validated
-- TSK-747 — New-tab offer other types — review @ 5ed9d51
+- TSK-747 — New-tab offer other types — review @ ff1e6b6
 - TSK-748 — File info pane: multi-algo checksums + metadata — validated
-- TSK-753 — View → Language Mode menu item — review @ 192211b
-- TSK-755 — Session menu "Tab operations" section — review @ 25b732a
-- TSK-756 — Top-right toolbar palette button — review @ e31bc99
-- TSK-757 — Keyboard shortcut catalog + gap-fill — review @ 664a8d1
+- TSK-753 — View → Language Mode menu item — review @ cb0c3b1
+- TSK-755 — Session menu "Tab operations" section — review @ f8be533
+- TSK-756 — Top-right toolbar palette button — review @ 38c0ee0
+- TSK-757 — Keyboard shortcut catalog + gap-fill — review @ a0cf167
 - TSK-758 — Search tool window header filter buttons — review
 - TSK-759 — Drag to reorder tabs — review
 - TSK-760 — New Tab [New text file] button — validated
-- TSK-762 — Wrap/special-char toggle buttons — review @ a1dadb5
+- TSK-762 — Wrap/special-char toggle buttons — review @ 4d14eea
 - TSK-763 — Recents tool window folder in grey — review
 - TSK-770 — Find/Replace add Replace + ReplaceAll — validated
 - TSK-771 — Terminal right-click tab → Rename — review
@@ -136,11 +136,11 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 
 ## Editor power-ops / markdown / CSV tools (675-slices + format wave) — DONE
 
-- TSK-348 — Deep metadata: PDF + AV codec fields — validated @ 575c1c5
-- TSK-350 — Formatting: Align Markdown Tables — review @ 8449333
-- TSK-352 — NotePad++: encoding-convert slice — review @ 0686526
-- TSK-358 — Window sizing / font-size slice — review @ 6a045e0/2ad2518 (window-sizing half remains → active list)
-- TSK-360 — Source-view line-age blame heatmap — review @ 933737b
+- TSK-348 — Deep metadata: PDF + AV codec fields — validated @ c7d4832
+- TSK-350 — Formatting: Align Markdown Tables — review @ 68f8a96
+- TSK-352 — NotePad++: encoding-convert slice — review @ 63ce3e2
+- TSK-358 — Window sizing / font-size slice — review @ 95f7184/e3544b0 (window-sizing half remains → active list)
+- TSK-360 — Source-view line-age blame heatmap — review @ 038d237
 - TSK-505/347 — SHA-256 surface — validated
 - TSK-814 — git blame in editor gutter — validated
 - TSK-861 — EditorWriter BOM-less UTF-16 reopen fix — validated
@@ -169,8 +169,8 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 - TSK-525 / 526 / 527 / 531 — Audio core: PCM/waveform, FFT spectrum, trim/fade, gain/normalize — done
 - TSK-528 — Audio save-as encoders WAV/AAC/MP3 — validated
 - TSK-529 — Audio visualization + transport UI — fixed
-- TSK-533 — Audio spectrum panel — review @ fb2ada6
-- TSK-534 — Audio draggable trim + fade — review @ dc17ac8
+- TSK-533 — Audio spectrum panel — review @ 111395c
+- TSK-534 — Audio draggable trim + fade — review @ 3bc613b
 - TSK-535 — Audio Save-As sheet → AudioExporter — fixed
 - TSK-285 / 287 — Paint raster + vector slices — fixed
 - TSK-286 — Image layers / own format — fixed
@@ -201,11 +201,11 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 - TSK-736 — Mouse-over highlight laggy on 5000-line log — validated
 - TSK-828 — LineNumberRulerView ObjC char message-send — validated
 - TSK-829 — CrossFileSearch parallelize — validated
-- TSK-840 — Parallelize launch grammar-warm — validated @ 64d4c3d
-- TSK-841 — Highlight wire positional arrays — validated @ e99ca14
-- TSK-842 — Files ≤64MiB read+decode off-main — validated @ a9103b3
-- TSK-843 — Cache per-call gate decision — validated @ 9c4eb01
-- TSK-844 — CSV open parse into arena — validated @ 3d75f39
+- TSK-840 — Parallelize launch grammar-warm — validated @ bfcc134
+- TSK-841 — Highlight wire positional arrays — validated @ f2622b7
+- TSK-842 — Files ≤64MiB read+decode off-main — validated @ acd8588
+- TSK-843 — Cache per-call gate decision — validated @ cd234e9
+- TSK-844 — CSV open parse into arena — validated @ fbc5675
 - TSK-853 — Launch warm heats the actual Rust highlight path — validated
 
 ## Bugs (broken behavior) — DONE
@@ -260,7 +260,7 @@ Foreign projects (wx-globe 872–880, forge/tasked-tool-dev 102–106 / 441–44
 - TSK-300 — Save copy — fixed
 - TSK-305 — Markdown overview window (top-right) — fixed
 - TSK-306 — Preview mode on click — validated
-- TSK-307 — Bookmarks root-folder scope filter — review @ 79e053c (new-view affordance remains → active list)
+- TSK-307 — Bookmarks root-folder scope filter — review @ c722514 (new-view affordance remains → active list)
 - TSK-309 — TOCTOU on bookmark symlinks — fixed
 - TSK-311 — Compressed files without unzipping — fixed
 - TSK-315 — Open/move file in new session (tab right-click) — validated

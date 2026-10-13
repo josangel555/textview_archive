@@ -4,7 +4,7 @@ import XCTest
 
 /// TSK-1188 — BEHAVIORAL render guard for the plain-click-after-scroll bug: clicking a line,
 /// scrolling, then plain-clicking elsewhere must place a COLLAPSED caret (not extend a selection
-/// from the stale prior anchor, and not jump the viewport back). The fix (c0fd1543) deferred the
+/// from the stale prior anchor, and not jump the viewport back). The fix (1ca0e52e) deferred the
 /// re-entrant view.dispatch in the TSK-894/890 mouse handlers to a microtask. A host grep-guard
 /// pins the deferral; this attempts the actual behavior in-process by synthesizing the mouse
 /// gesture via dispatchEvent (testing the prior "not tractable in the webview lane" assumption).

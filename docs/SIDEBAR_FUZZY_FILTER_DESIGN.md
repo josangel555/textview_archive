@@ -8,7 +8,7 @@
 >
 > Authored from a headless heartbeat after confirming the SwiftUI
 > headless-safe pool was drained; this is the "Spike / Task Breakdown" SDLC
-> activity, mirroring the Tools-surface plan that let `7e9d78f` land in one
+> activity, mirroring the Tools-surface plan that let `0da4cfe` land in one
 > pass.
 
 ## What already exists (reuse, don't rebuild)

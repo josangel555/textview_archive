@@ -66,7 +66,7 @@ bookmarks/recents need visible entry points + empty states.
 | View lenses: rendered/source/formatted/diff/hex/csv/transcript | ✅ | ✅ | 🟡 |
 | Mermaid / diagrams | ✅ | ✅ | ✖ |
 | HTML file rendering (policy-gated) | ✅ | ✅ | ✖ |
-| Frontmatter hidden (fixed 8e0ec3c8), task lists, footnotes? | 🟡 | ✅ | 🟡 |
+| Frontmatter hidden (fixed 101810b7), task lists, footnotes? | 🟡 | ✅ | 🟡 |
 | Themes (light/dark/custom), zoom, wrap | ✅ | ✅ | 🟡 |
 | Find in rendered view (all-matches highlight) | ✅ | ✅ | 🟡 |
 | Perf: DOM-patch pipeline (TSK-838) **built + validated, gated OFF** | ✅ | ✅ | ✖ (latency felt) |
@@ -79,11 +79,11 @@ error, not blank); consistent lens switching (some formats auto-pick, some don't
 
 | Sub-feature | Built | Logic | Usable |
 |---|---|---|---|
-| Outline/TOC panel + Insert TOC (slug-correct since 2d646798) | ✅ | ✅ | ✖ |
-| Check Links (code-span-safe since e8baf4ad) | ✅ | ✅ | ✖ |
+| Outline/TOC panel + Insert TOC (slug-correct since e86d8113) | ✅ | ✅ | ✖ |
+| Check Links (code-span-safe since 0a5f089b) | ✅ | ✅ | ✖ |
 | Lint Markdown | ✅ | ✅ | ✖ |
 | Document statistics | ✅ | ✅ | ✖ |
-| Align tables / promote-demote headings (code-safe since 428e8160/62e7892f) | ✅ | ✅ | ✖ |
+| Align tables / promote-demote headings (code-safe since b66cc098/5cd8dbf7) | ✅ | ✅ | ✖ |
 | Copy/Export as HTML, Open in Browser | ✅ | ✅ | ✖ |
 | Copy as Markdown-table/JSON/CSV (from CSV/JSON) | ✅ | ✅ | ✖ |
 
@@ -106,7 +106,7 @@ guidance. One results-panel component would productionize four features at once.
 | Archive browser (zip), Package explorer, Dependency graph | ✅ | ✅ | ✖ |
 | Notebook (.ipynb) cell list | 🟡 | ✅ | ✖ |
 | Log patterns view | 🟡 | ➖ | ✖ |
-| DOCX/RTF/ODS import (tables since 2d2bf9b3) | ✅ | ✅ | 🟡 |
+| DOCX/RTF/ODS import (tables since edc9e1f8) | ✅ | ✅ | 🟡 |
 
 **Path to production-grade:** each viewer needs its core loop closed: SQLite browser (query box +
 export results), spreadsheet (flip formula gate after soak — owner call TSK-788/1215), notebook

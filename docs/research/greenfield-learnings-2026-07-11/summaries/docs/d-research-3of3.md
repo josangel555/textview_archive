@@ -37,7 +37,7 @@ Batch 3/3 covers 9 dated research directories (2026-05-31 through 2026-07-04) sp
 
 ### `test-stack-audit-2026-06-13/` — Swift Testing vs XCTest, test coverage, and tier enforcement
 
-**FINDINGS.md** — empirical survey of the test tree at commit 25462cf. Verdict: stay XCTest (tier machinery is XCtest-bound), allow Swift Testing for NEW pure-logic suites only (after a pilot). Four concrete gaps identified: (G1) no code-coverage measurement, (G2) live-WebView suites mis-based on plain XCTestCase (not a heavy tier), (G3) doc drift on PR-gate WebView lane, (G4) teeth discipline is convention, not enforced. Status: **current** — the gaps exist; G1/G2 filed as follow-up tickets (TSK-793a/b).
+**FINDINGS.md** — empirical survey of the test tree at commit 809bb2f. Verdict: stay XCTest (tier machinery is XCtest-bound), allow Swift Testing for NEW pure-logic suites only (after a pilot). Four concrete gaps identified: (G1) no code-coverage measurement, (G2) live-WebView suites mis-based on plain XCTestCase (not a heavy tier), (G3) doc drift on PR-gate WebView lane, (G4) teeth discipline is convention, not enforced. Status: **current** — the gaps exist; G1/G2 filed as follow-up tickets (TSK-793a/b).
 
 - **learnings:**
   - **XCTest's `XCTestObservation` gate is load-bearing** — the tier-gate observer (TierGateObserver) watches `testCaseDidFinish` and asserts heavy tiers skip in the merge gate. Swift Testing has no equivalent (uses struct-based suites, not class hierarchy) — a wholesale migration would require reimplementing the gate from scratch.

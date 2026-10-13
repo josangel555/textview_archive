@@ -122,9 +122,9 @@ The **stale-Modified-in-red** requirement: the underlying disk-change primitive 
 ### Perf — move file-loading off the main thread + proper loading/error states
 
 **Status today — this is largely already DONE; the BACKLOG note is stale.** The BACKLOG entry calling this "the highest-leverage remaining UX win" (BACKLOG.md:273-277) describes work that has since landed:
-- `DocumentState.loading(URL)` case **exists** (`DocumentController.swift:14-19`, with Equatable support at `:52-53`), landed in commit `e5e659b` ("perf: materializeIfNeeded off-main with .loading placeholder").
+- `DocumentState.loading(URL)` case **exists** (`DocumentController.swift:14-19`, with Equatable support at `:52-53`), landed in commit `b422ee2` ("perf: materializeIfNeeded off-main with .loading placeholder").
 - **Lazy-tab selection** is off-main: `materializeIfNeeded(at:)` (`DocumentModel.swift:2471-2521`) flips the tab to `.loading(url)`, reads on a `Task.detached(priority: .userInitiated)`, and swaps to the final state only after re-finding the tab by id and confirming it's still `.loading` for the same URL (cancellation + identity guard at `:2487-2507`).
-- **Eager open** is off-main too: `openResolved` checks `shouldDeferOpenOffMain` (`:1988-1999`, stats size vs `loader.softWarnBytes`, skips native-preview categories) and routes large text files through `openLargeFileOffMain` (`:2007-2056`) with the same `.loading` + identity-guard pattern (landed in commit `2639656`).
+- **Eager open** is off-main too: `openResolved` checks `shouldDeferOpenOffMain` (`:1988-1999`, stats size vs `loader.softWarnBytes`, skips native-preview categories) and routes large text files through `openLargeFileOffMain` (`:2007-2056`) with the same `.loading` + identity-guard pattern (landed in commit `af5bef0`).
 - **Loading UI state** exists: `ContentView.content` switches on `.loading(let url)` → `LoadingStateView(url:)` (`ContentView.swift:303-304`), which shows a spinner *after a 100 ms grace delay* so small files don't flash a spinner (`ContentView.swift:891-916`). Good UX detail.
 - **Error UI state** exists: `.error(let failure)` → `ErrorView(failure:model:)` (`ContentView.swift:315-316`), backed by `DocumentState.LoadFailure` (`DocumentController.swift:21-29`) and a real `FileLoadError` taxonomy including `.tooLarge(bytes:ceiling:)` (`TextFileLoader.swift:3-15`).
 
@@ -136,7 +136,7 @@ The **stale-Modified-in-red** requirement: the underlying disk-change primitive 
 
 **Fix/build sketch.**
 - Gaps are mostly closed; if pursued: (2) is the meaningful one — give `reloadCurrentFile`/`applyReload` the same `shouldDeferOpenOffMain` + `.loading` treatment used by `openLargeFileOffMain` so a large watched file reloading doesn't stall. (3) same treatment for the view-mode recovery reads. (1) is minor; true mid-read cancellation would require chunked reads in `TextFileLoader`.
-- **Action for the user:** update BACKLOG.md:273-277 — strike the "off-main" item (done in `e5e659b`/`2639656`) and replace it with the narrower "watcher reload + view-mode recovery reads still sync on main" follow-up.
+- **Action for the user:** update BACKLOG.md:273-277 — strike the "off-main" item (done in `b422ee2`/`af5bef0`) and replace it with the narrower "watcher reload + view-mode recovery reads still sync on main" follow-up.
 
 **Size.** The headline work is **already shipped (zero).** Remaining: reload-off-main **S–M** (mechanical reuse of the existing `openLargeFileOffMain` pattern, plus the dirty-buffer/editor-rebase interaction at `:2170-2185` needs care across the async hop); view-mode recovery off-main **S**; chunked/cancellable reads **L** (not worth it — the identity guard already discards stale results).
 

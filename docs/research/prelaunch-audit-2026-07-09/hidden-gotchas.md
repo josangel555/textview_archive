@@ -2,7 +2,7 @@
 
 **Dimension:** silent failure paths — `try?` swallowing errors, force-unwraps, force-casts,
 ignored return values, implicit assumptions that break on edge inputs, fenceposts.
-**Date:** 2026-07-10 · **Reviewer:** automated audit subagent · **Repo state:** main @ `92c72206` (+ doc-only working-tree changes)
+**Date:** 2026-07-10 · **Reviewer:** automated audit subagent · **Repo state:** main @ `304a8290` (+ doc-only working-tree changes)
 
 ---
 

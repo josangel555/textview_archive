@@ -41,7 +41,7 @@ struct SidebarView: View {
     /// P1 — TOOL-WINDOW BOUNDING. The sidebar's currently-allotted
     /// content height, measured via a NON-layout-driving
     /// `.background(GeometryReader …)` (the same intrinsic-size-safe trick
-    /// `b38ed03` used for TabBar width — a WRAPPING GeometryReader would
+    /// `e317a07` used for TabBar width — a WRAPPING GeometryReader would
     /// collapse the sidebar's intrinsic size, see
     /// `TabBarIntrinsicSizeTests`). Threaded into the per-panel body-height
     /// clamp so each accordion panel is bounded to a fraction of THIS
@@ -1803,7 +1803,7 @@ struct LSPOutlineWrapper: View {
         // against `.loading`, `setFile(nil,…)` clears `isSupported`, and the
         // OUTLINE section renders nothing. The load completing flips
         // `currentState` to `.loaded` (and republishes — see commit
-        // `61c1aef`) but leaves `currentURL` unchanged, so without this the
+        // `82f97f1`) but leaves `currentURL` unchanged, so without this the
         // section stayed permanently absent for a supported language.
         .onChange(of: model.currentState) { _, _ in refresh() }
     }

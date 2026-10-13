@@ -160,7 +160,7 @@ final class FormatToggleTests: HeadlessUITestCase {
     // MARK: - Available view modes
 
     // Format toggle was unified into the segmented ViewMode picker
-    // (commit 169a4de). Mode-bar tests are now under
+    // (commit 3a70c3f). Mode-bar tests are now under
     // ComponentVisualTests.test_modeBar_xmlFile_showsModesIncludingFormat
     // and the model-level supportsFormatToggle assertions above still
     // verify the underlying ViewMode availability.

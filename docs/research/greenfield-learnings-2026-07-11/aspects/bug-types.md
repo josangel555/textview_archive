@@ -16,7 +16,7 @@ delegate) that is assumed — but never proven — to run before the declarative
 - **Scroll-restore (TSK-1046):** WebView `didFinish` → SwiftUI re-eval → `Task` hop → render,
   no single stage owned the state; 13 commits over the arc, 3 distinct "fixes" that didn't
   stick before collapsing to a pull-based single source of truth
-  (`docs/research/.../commits/c-15of19.md`, commit `a28a5a35`/`1e339e9c`).
+  (`docs/research/.../commits/c-15of19.md`, commit `fd353f63`/`ea974b0f`).
 - **Session-switch scroll reset / footer-stats blank-on-switch (TSK-1120) / "loading…" flashes**
   — CLAUDE.md names these explicitly as the SAME class: "imperative state populated AROUND a
   switch, raced by the declarative render that reads it" (`CLAUDE.md` §Root-cause discipline).
@@ -30,7 +30,7 @@ delegate) that is assumed — but never proven — to run before the declarative
 **How found:** never by static inference — CLAUDE.md's root-cause SOP explicitly bans
 "restoreScroll runs after select(), so it's too late" reasoning without runtime proof, because
 SwiftUI body re-eval is async/coalesced. Found only by *instrumenting at runtime* / building a
-live in-process WebView test that reproduced the exact render VM timing (`c6327698` — "the
+live in-process WebView test that reproduced the exact render VM timing (`70efca53` — "the
 final 'right vehicle' was CM6 in-process WebView, not headless").
 **How long it evaded:** TSK-1046 took 13 commits / multiple sessions; each "fix" patched one
 stage of the async chain and the bug reappeared at the next stage.
@@ -123,7 +123,7 @@ crash-class bugs, not just test noise.**
   the SAME shape as the FFI stack-overflow-abort bug: a native runtime abort below the
   language's own exception machinery. TSK-1559's fix replaced `availableData` reads with raw
   POSIX `read(2)`/`write(2)` on a cached fd, converting the crash into an inspectable
-  `EPIPE`/`EBADF` (`c-19of19.md` §TSK-1559; three-commit fix, `84cb6560`/`75fb2ac6`).
+  `EPIPE`/`EBADF` (`c-19of19.md` §TSK-1559; three-commit fix, `6b6bedc4`/`02aff020`).
   `PluginSubprocessHost.close()`s pipe handles under `availableData` readers` was flagged in
   the audit as the SAME unfixed class recurring elsewhere (`BACKLOG.md` THEME 2).
 - **Grapheme (Swift `Character`) vs Unicode-scalar (Rust `char`) index domains diverge** on

@@ -2,9 +2,9 @@
 
 # Pre-Launch Audit — Verification, Status & Track-A Roadmap
 
-**Branch:** `audit/pre-launch` (HEAD `954a8f9`) · **Audit:** `docs/PRELAUNCH_AUDIT_2026-05-30.md` (172 findings) · **Verification discipline:** read-only, file:line-cited, verified-from-code vs inferred distinguished.
+**Branch:** `audit/pre-launch` (HEAD `a273713`) · **Audit:** `docs/PRELAUNCH_AUDIT_2026-05-30.md` (172 findings) · **Verification discipline:** read-only, file:line-cited, verified-from-code vs inferred distinguished.
 
-> **Read this first.** Every fix discussed below lives on `audit/pre-launch`, **not on `main`**. `main` @ `e05b966` carries the 2026-05-29 next-steps fanout (the branch that *introduced* the `lsp.json` RCE vector, SEC-001/002). Until `audit/pre-launch` lands on `main`, **production main has zero of these fixes and still ships the RCE-class exposure.** This is the single highest-leverage fact in the document.
+> **Read this first.** Every fix discussed below lives on `audit/pre-launch`, **not on `main`**. `main` @ `79036a4` carries the 2026-05-29 next-steps fanout (the branch that *introduced* the `lsp.json` RCE vector, SEC-001/002). Until `audit/pre-launch` lands on `main`, **production main has zero of these fixes and still ships the RCE-class exposure.** This is the single highest-leverage fact in the document.
 
 ---
 
@@ -60,7 +60,7 @@ Findings below were individually verified against code on `audit/pre-launch`. Th
 | SIGN-03 | S1 | `Info.plist:27-28`; `verify-app.sh:49-61` | **FIXED** | `LSMinimumSystemVersion=15.0` + a guard deriving the floor from `Package.swift`. |
 | DEP-001 | S1 | `gen-third-party-notices.sh`; `build-app.sh` (missing copy); dist `Resources/` | **PARTIAL** | Generator + root file + CI content test all correct. **But `build-app.sh` never copies the file into `Contents/Resources/`** (grep finds no reference; dist bundle lacks it) despite the generator's own comments claiming it does. Shipped `.app` lacks bundled attribution. One-line `cp` fix remains. |
 | TC-01 | S1 | `.github/workflows/pr.yml:14-23` | **FIXED** | CI `runs-on: macos-15` + pinned Xcode 16. |
-| G14-REVERT | — | `build-app.sh:171-185`; `check-bundle-size.sh:41`; commits `663c6a1`,`b8d3c66` | **FIXED (but see SIGN-02)** | Inside-out signing revert confirmed: clean single `--deep` pass; exec sub-cap 16→**18**. The derived-id logic survives **only** in `sign-and-notarize.sh` — that asymmetry *is* the SIGN-02 partial. *(Stale doc: `check-bundle-size.sh:3-5` header still says "16 MB".)* |
+| G14-REVERT | — | `build-app.sh:171-185`; `check-bundle-size.sh:41`; commits `1a9f1f6`,`188d655` | **FIXED (but see SIGN-02)** | Inside-out signing revert confirmed: clean single `--deep` pass; exec sub-cap 16→**18**. The derived-id logic survives **only** in `sign-and-notarize.sh` — that asymmetry *is* the SIGN-02 partial. *(Stale doc: `check-bundle-size.sh:3-5` header still says "16 MB".)* |
 
 **Surfaced (verified NOT auto-fixed, correct per audit intent):** WV-3 (`codemirror.html:9` meta-CSP retained; no `WKURLSchemeHandler` in `Sources/`), CR-03/OBS-4 (no MetricKit/crash hooks anywhere) — plus the full §2 list below.
 
@@ -77,7 +77,7 @@ Findings below were individually verified against code on `audit/pre-launch`. Th
 **Headline answer — "how many of the 172 are already fixed, and where?"**
 
 - The audit declares **141 fixed across 15 groups (G1–G15)** and **31 surfaced**. This pass re-verified the S0/S1 spine + an S2/S3 sample + all 31 surfaced. **Of the re-verified spine: 33 fully fixed, 6 partial, 0 regressed.** The bulk S2/S3 fixes (G9–G13) spot-checked clean — none stubbed, none regressed.
-- **WHERE: all of it is on `audit/pre-launch` (HEAD `954a8f9`). NONE is on `main` (`e05b966`).** `main` is the branch where the `lsp.json` RCE *landed* (2026-05-29 fanout) and where it remains **unmitigated**. Shipping `main` today ships every S0/S1 finding unfixed.
+- **WHERE: all of it is on `audit/pre-launch` (HEAD `a273713`). NONE is on `main` (`79036a4`).** `main` is the branch where the `lsp.json` RCE *landed* (2026-05-29 fanout) and where it remains **unmitigated**. Shipping `main` today ships every S0/S1 finding unfixed.
 - The **6 partials are the real residual risk** even after consolidation, ranked:
   1. **SEC-002** (S1, *most important nuance*) — env-scrub closed only on the attacker-controlled override path; the **common default-discovery path still leaks `AWS_*`/`*_TOKEN`/`ANTHROPIC_API_KEY` to every LSP child**. A compromised legit LSP server (supply chain) harvests creds. **One-line fix:** scrub at `LSPClient.init` for the `nil` case, or have default launchers pass `scrubbedLaunchEnvironment()`.
   2. **EDIT-nil-fp** (S1) — `hasUnknownDiskState` written but never called; unknown-disk-state reload over a dirty buffer shows no conflict prompt. Bytes mitigated by a backstop; the *specified* fix isn't wired. **Fix:** call it in the `DocumentModel.swift:1862` guard.
@@ -86,7 +86,7 @@ Findings below were individually verified against code on `audit/pre-launch`. Th
   5. **DEP-001** (S1) — attribution file generated but never copied into the `.app`. Redistribution obligation unmet until a one-line `cp` lands.
   6. **SEC-001** (S0) — partial **by design**; interim hardening real, full trust-UI surfaced (§2).
 
-**On the claimed "G14 signing episode" / regressions:** No finding is *claimed-fixed-but-regressed* in the strict sense. The G14 story is a **deliberate revert, not a silent regression**: the inside-out (no-`--deep`) signing attempt broke `.bundle` codesign under `--options runtime` and was reverted (`663c6a1`), restoring `--deep`. The consequence — local builds shared-id their dylibs — is captured as **SIGN-02 PARTIAL**, and the derived-id logic correctly survives in the notarize path. **Flag loudly anyway:** this is the one place where "the fix" means two different things on two different paths (notarize vs local-dev), and anyone reading "SIGN-02 fixed" without the path qualifier will be wrong about the day-to-day build.
+**On the claimed "G14 signing episode" / regressions:** No finding is *claimed-fixed-but-regressed* in the strict sense. The G14 story is a **deliberate revert, not a silent regression**: the inside-out (no-`--deep`) signing attempt broke `.bundle` codesign under `--options runtime` and was reverted (`1a9f1f6`), restoring `--deep`. The consequence — local builds shared-id their dylibs — is captured as **SIGN-02 PARTIAL**, and the derived-id logic correctly survives in the notarize path. **Flag loudly anyway:** this is the one place where "the fix" means two different things on two different paths (notarize vs local-dev), and anyone reading "SIGN-02 fixed" without the path qualifier will be wrong about the day-to-day build.
 
 ---
 
@@ -118,7 +118,7 @@ All 31 verified genuinely NOT auto-fixed by direct code inspection. Four decisio
 
 | id | sev | location | decision awaited |
 |----|-----|----------|-----------------|
-| SIGN-08 `--deep` removal / inside-out signing | S1 | `sign-and-notarize.sh:131,160,170`; `build-app.sh` (reverted `663c6a1`) | A real build+notarize run to safely migrate off `--deep` (FinderInfo/runtime issue). |
+| SIGN-08 `--deep` removal / inside-out signing | S1 | `sign-and-notarize.sh:131,160,170`; `build-app.sh` (reverted `1a9f1f6`) | A real build+notarize run to safely migrate off `--deep` (FinderInfo/runtime issue). |
 | SIGN-09 DMG packaging | S1 | `scripts/` (no `hdiutil`/`create-dmg`) | Public-ship distribution format (DMG vs zip vs pkg). |
 | SIGN-10 Sparkle auto-update | S1 | absent in `Sources/`+`scripts/` | Ship auto-update? Sparkle dependency approval + appcast/feed-signing. |
 | SIGN-11 Developer-ID + clean spctl | S1 | `sign-and-notarize.sh:64-213` (expects spctl-fail pre-notarization) | Public-ship go: obtain Developer ID cert, run notarization end-to-end. |
@@ -224,7 +224,7 @@ The linear-trunk rule forces a strict order: **you cannot start any invasive Tra
     │    fix/modebar-republish-and-panel-toggles                            │
     │    feature/focused-multi-repo-git                                      │
     │    integration/session-ui                                              │
-    │  main @ e05b966 = baseline + lsp.json RCE (UNFIXED on main)           │
+    │  main @ 79036a4 = baseline + lsp.json RCE (UNFIXED on main)           │
     └────────────────────────────────────────────────────────────────────────┘
             │
             ▼

@@ -2,7 +2,7 @@ import XCTest
 @testable import ViewerCore
 
 /// Codable round-trip tests for `WalkthroughScript` and its action
-/// variants. Types ship ahead of the engine (commit bbae9d5) so we
+/// variants. Types ship ahead of the engine (commit d2f8a50) so we
 /// pin the wire format here — the loader and engine will arrive in
 /// follow-up commits and rely on this shape being stable.
 ///

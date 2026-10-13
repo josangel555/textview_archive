@@ -136,7 +136,7 @@ All five were found by reading the mechanism (or measuring), not by pattern-matc
   handoff-reinject. The safe-writes policy currently has no mechanical enforcement — prose only.
 - **Board ground truth (2026-07-11): 1,474 tickets** on the shared project (commit-trailer grep said
   ~1,168; "~1,500" was folklore). True revert count: **6** (4 formal + 2 informal), not 2 or 12.
-- **11 pre-launch-audit findings now VERIFIED against main@3536dfa8** (5/6 data-loss CONFIRMED incl.
+- **11 pre-launch-audit findings now VERIFIED against main@be3b1008** (5/6 data-loss CONFIRMED incl.
   the CM6 debounce-never-flushed-on-save and the hot-exit-spill self-delete; MCP-socket/no-notices/
   notarization-unexercised CONFIRMED; "FormulaEngine dead" REFUTED — rust bridge live). Evidence:
   `docs/research/greenfield-learnings-2026-07-11/aspects/VERIFICATION_*.md`; BACKLOG ⏸ section updated.
@@ -275,11 +275,11 @@ The map that isn't obvious from a skim:
   post-batch store.** A batch [insert X before S; remove S] plans X's `insertBefore` anchor
   wrong if computed from final state (S is gone there) — while the DOM at that patch's
   execution moment still contains S. Fix shape: the op engine's `AppliedEffect` carries the
-  anchor captured mid-batch; the planner consumes and never recomputes (canvas a46efc8a).
+  anchor captured mid-batch; the planner consumes and never recomputes (canvas be3ec7f8).
   General class: any plan-from-final-state translation of a sequential batch is suspect —
   later ops invalidate earlier anchors.
 - **Do NOT chain `gate.sh; git commit` in one shell command** — the commit runs regardless of
-  the gate's rc (bit live at 6527a25d: committed on a red clippy gate). This is the
+  the gate's rc (bit live at ac289d98: committed on a red clippy gate). This is the
   `reference_background_gate_exit_gotcha` class in a new coat: gate FIRST, READ the rc, THEN
   commit as a separate command.
 - **A surviving teeth-mutant isn't always a weak test**: removing the token cycle-detector's
@@ -431,10 +431,10 @@ The GUI-lane viaOpen launch (`sudo -n -H -u <consoleUser> /usr/bin/open -n -W --
 - **`open --env` does NOT deliver env to the LS-launched app under `sudo -u`.** LaunchServices launches the app from launchd, NOT as a child of `open`, so `--env` vars (MDV_SCRIPT_PATH / MDV_ARTIFACT_DIR / MDV_SKIP_WORKSPACE_RESTORE / MDV_TEST_INSTANCE) never reach the app → it runs workspace-restore + never runs the script. Direct-spawn (`/usr/bin/env K=V exe`) delivers fine — that's why MFV/routed-doc (direct-spawn) UATs work but viaOpen ones don't.
 - **An LS-launched app does NOT inherit the `open` process's HOME.** `sudo -H` sets HOME for `open` itself, but the app gets launchd's HOME → `NSHomeDirectory()` is unpredictable (neither the console user's home nor /var/root reliably). A HOME-relative config/marker path is unfindable from the app; use a FIXED ABSOLUTE path (/tmp, 1777, visible to both root harness + console-user app).
 - **`ProcessInfo.processInfo.environment` is a cached snapshot on Darwin.** A module-scope `setenv()` is NOT seen by later `ProcessInfo.environment` reads if the snapshot was taken first. Use `getenv()` (live C environ) at the config-delivered read sites.
-FIX shipped (env-delivery half, b992e80c/f98a34cf): launch-config at FIXED `/tmp/mdv-launch-config.env`, written by AppLauncher (chowned to spawn user) + read+`setenv` at MODULE SCOPE in main.swift (didFinishLaunching proved unreliable to reach under viaOpen) + readers switched to `getenv`. VM-PROVEN the read runs (the /tmp file is consumed). REMAINING (TSK-1243): the script STILL doesn't run under viaOpen — `runScript` in didFinishLaunching yields 0 dumps even with env now live; needs FIXED-/tmp marker instrumentation at didFinishLaunching-entry / before-runScript / runScript-first-line to pinpoint the stop. TSK-1247 (blank rendered preview) is the SAME root.
+FIX shipped (env-delivery half, e7634ad4/b362b635): launch-config at FIXED `/tmp/mdv-launch-config.env`, written by AppLauncher (chowned to spawn user) + read+`setenv` at MODULE SCOPE in main.swift (didFinishLaunching proved unreliable to reach under viaOpen) + readers switched to `getenv`. VM-PROVEN the read runs (the /tmp file is consumed). REMAINING (TSK-1243): the script STILL doesn't run under viaOpen — `runScript` in didFinishLaunching yields 0 dumps even with env now live; needs FIXED-/tmp marker instrumentation at didFinishLaunching-entry / before-runScript / runScript-first-line to pinpoint the stop. TSK-1247 (blank rendered preview) is the SAME root.
 
 ## Before re-diagnosing/rebuilding a bug, `git log --all` for an existing fix (2026-06-23)
-The COMPLETE scroll-restore fix (TSK-1046, editor+rendered roots) AND its 260-line on-screen UAT already existed on a reaped ultracode worktree (`worktree-agent-a7063b42`), never merged — a session was burned re-diagnosing + reinventing a PARTIAL subset before `git log --all` surfaced it. ALWAYS `git log --all -S '<symbol>'` / `--oneline -- '<path>'` + `git branch -a --contains` for prior fix commits BEFORE re-diagnosing. Corollaries: (1) the wave2 integration landed worktree fixes under NEW SHAs, so board reconciles that PREDATED wave2 left items in stale-`progress` claiming "fix only on worktree" when it's actually on main — verify via `git branch --contains <sha>` + the live source, NOT the board's `branch` field (TSK-921/922 were fixed-on-main via 17932af8). (2) Never chain `swift build && git commit` — a compile error gets committed; build as a SEPARATE step first.
+The COMPLETE scroll-restore fix (TSK-1046, editor+rendered roots) AND its 260-line on-screen UAT already existed on a reaped ultracode worktree (`worktree-agent-a7063b42`), never merged — a session was burned re-diagnosing + reinventing a PARTIAL subset before `git log --all` surfaced it. ALWAYS `git log --all -S '<symbol>'` / `--oneline -- '<path>'` + `git branch -a --contains` for prior fix commits BEFORE re-diagnosing. Corollaries: (1) the wave2 integration landed worktree fixes under NEW SHAs, so board reconciles that PREDATED wave2 left items in stale-`progress` claiming "fix only on worktree" when it's actually on main — verify via `git branch --contains <sha>` + the live source, NOT the board's `branch` field (TSK-921/922 were fixed-on-main via c2858704). (2) Never chain `swift build && git commit` — a compile error gets committed; build as a SEPARATE step first.
 
 ## Bringing up the VM validation lane surfaced 3 dist/-build traps the host gate never sees (2026-06-22)
 The headless host gate is window-free and never builds `dist/` — so a whole class of
@@ -550,7 +550,7 @@ build/packaging defects is invisible to it and only shows on the VM (or the owne
 - **`scripts/coverage.sh` (TSK-1131): SCOPE it.** `FILTER=ViewerCoreTests bash
   scripts/coverage.sh` reports reliably; the bare full-suite run is cursed three
   ways and burned ~4 autonomous ticks: (1) macOS **bash 3.2 + `set -u` crashed on
-  `"${empty_array[@]}"`** when FILTER was unset (fixed 87ab82e6 → if/else, no array
+  `"${empty_array[@]}"`** when FILTER was unset (fixed 8aea2e08 → if/else, no array
   expansion); (2) the unscoped `swift test --parallel --enable-code-coverage`
   spawns **thousands of per-test `.profraw`** and, under load / a flaky perf-bench
   failure, SwiftPM **skips the profdata merge** and leaves CORRUPT partials
@@ -854,7 +854,7 @@ generated `Sources/CMdvCore/mdvcore.h` + `rust-core/link/libmdvcore_ffi.a` are *
   On the HOST that glob matches nothing → **bash leaves it literal** → `ls` fails (exit 2) → `pipefail` makes the
   pipe non-zero → the command-substitution **assignment** aborts under `set -e`. Result: `build-app.sh debug
   --install` exited 1 right after the rust-core step, BEFORE `swift build`, silently — every host build/install
-  broke from TSK-813 (573bf0f) until TSK-816. The VM never caught it (its glob matches → no failure).
+  broke from TSK-813 (a88a767) until TSK-816. The VM never caught it (its glob matches → no failure).
 - **Fix / rule:** append `|| true` to any `var=$(… | …)` whose first stage is an optional glob/lookup
   (`… | sort -V | tail -1 || true`) so a no-match yields an empty string, not a script abort. A `2>/dev/null` is
   NOT enough — it hides stderr but not the non-zero EXIT that pipefail+set-e act on.
@@ -938,7 +938,7 @@ echoed — even when the terminal had been idle and there was nothing to
 coalesce. At human typing speed (keystrokes >16ms apart) EVERY echo ate
 the full delay → "slow."
 
-**Fix (`d8141c5`).** Leading-edge throttle (new pure
+**Fix (`fa5ea24`).** Leading-edge throttle (new pure
 `ViewerCore/Terminal/FrameThrottle.swift`): the first event after an idle
 gap emits **immediately**, then a `coalesceInterval` cooldown coalesces
 the following burst with a single trailing flush. Decision logic is pure
@@ -971,7 +971,7 @@ the gate" protects the test *body* but **not `setUp`/tearDown** — XCTest
 still runs them around a skipped body, and `cleanup()` runs there, so the
 window-free headless gate WAS terminating the owner's app.
 
-**Fix (`f6499fe`).** Route `cleanup()` through
+**Fix (`3293e53`).** Route `cleanup()` through
 `AppLauncher.killTestInstances(named:)`, which only SIGTERMs PIDs whose
 `ps eww` env shows `MDV_TEST_INSTANCE=1` (set by `AppLauncher.runScript`).
 See memory `[[feedback-killall-footgun]]`.
@@ -1488,7 +1488,7 @@ doesn't propagate to the underlying NSView (varies across SwiftUI
 versions). Model-level tab semantics are covered by DocumentModelTests.
 
 **Stale paths after the rename.** When the bundle was renamed from
-`MarkdownViewer.app` → `TextView.app` (commit 8cb79da), several
+`MarkdownViewer.app` → `TextView.app` (commit 6c6bb9f), several
 test files still hard-coded `dist/MarkdownViewer.app`. Result: every
 Tier-4 test XCTSkip'd with "Build .app first" even when the .app
 was built. Hunt with `grep -rn dist/MarkdownViewer.app Tests/` after
@@ -2434,10 +2434,10 @@ expects `allow`) was written off as a macOS-26 Foundation URL-fragment
 drift and waved through the merge gate as "the one acceptable host-only
 red." It was NOT. A host-Foundation probe (`swift` one-liner on macOS 26)
 showed the same-doc field compare (scheme+host+path+query) returns `true`
-fine. The real cause: 8da6efbb (2026-05-25) added `file` to the
+fine. The real cause: 39f0bb6b (2026-05-25) added `file` to the
 `.linkActivated` dangerous-scheme block ABOVE the same-doc-fragment allow
 in `decide()`, so EVERY in-page #anchor/TOC link in the file://-loaded
-rendered markdown was being cancelled. Fixed in ad12a05 (same-doc allow
+rendered markdown was being cancelled. Fixed in a12f909 (same-doc allow
 moved before the file: block; cross-doc file: + js/vbscript/data still
 blocked).
 
@@ -2653,7 +2653,7 @@ badges/picker, session-ui rails/large-file-render/view-mode-picker. See BACKLOG.
 (Full detail: `docs/HANDOFF_2026-06-02.md` §6.)
 - **SwiftUI OVER-OBSERVATION is the dominant perf trap here.** A view holding `@ObservedObject var model: DocumentModel` re-bodies on EVERY model republish; `sourceScrollState`/`sourceSelection` fire per scroll-tick/caret → the always-on-screen `SidebarView` re-bodied on every interaction (caret = 13 ms / 249× baseline). Fix = narrow-channel ObservableObjects (`SourceViewChannel`, like `FindCoordinator`/`PanelLayoutStore`). When "laggy on every interaction," suspect over-broad observation first.
 - **Never do filesystem I/O in a SwiftUI `body` getter** — `GitClient.discoverRoot` walked ~64 `fileExists` toward `/` per sidebar pass. Cache it; recompute only on the triggering event.
-- **TEST GAP that shipped a broken build** (`fd11e61` couldn't load files live): the headless gate (T1/T1m/T2') never launches the app to open a file (that's T4 `LiveAppTestCase`, self-skips on host, VM-only, VM not run) AND `build-app.sh` runs ZERO tests before install. Fix in flight = a host-runnable live-app smoke (open each file type + cycle every view mode + assert content) wired into `build-app.sh` as a PRE-INSTALL gate. **A green headless gate does NOT mean the live app works.**
+- **TEST GAP that shipped a broken build** (`0bf6c36` couldn't load files live): the headless gate (T1/T1m/T2') never launches the app to open a file (that's T4 `LiveAppTestCase`, self-skips on host, VM-only, VM not run) AND `build-app.sh` runs ZERO tests before install. Fix in flight = a host-runnable live-app smoke (open each file type + cycle every view mode + assert content) wired into `build-app.sh` as a PRE-INSTALL gate. **A green headless gate does NOT mean the live app works.**
 - **"IOSurface 70 MB" was a transient compositing peak, not a leak/the cost** — re-measure showed base 36 MB / 2-source 84 MB. Corroborate a single heap-dump moment before acting on it.
 - **A layout-driving GeometryReader that writes `@State` it then re-reads = a per-frame layout-pass MULTIPLIER** (live-only; a one-pass headless harness can't see it). Use a non-layout `.background(GeometryReader)` + epsilon-guard the `@State` height writes.
 - **Editor was broken by a CM6 `WidgetType` bootstrap `ReferenceError`** (`codemirror.html` missing it from the `window.CM` destructure) — latent since CM6 Phase 4; one-line fix.
@@ -2684,7 +2684,7 @@ exhausting context"). The hardened resume then completed.
 `TreeSitterEngine._jsonLanguagePointerForTesting`) vanish, and `GrammarLoaderTests`
 references them unguarded. The runner only spawns the *already-release-built*
 `dist/` app as an external process, so its own optimization level is irrelevant.
-Run it debug. (Fixed: 798b7ee.)
+Run it debug. (Fixed: c2eac32.)
 
 **4. Multi-agent fix fleets leave fixes UNCOMMITTED in worktree dirs + tangle one
 shared stash stack.** 33 fixer worktrees (= 55 GB) shared a single object DB →
@@ -2710,7 +2710,7 @@ usually superseded (pre-rename test files, refactored-away `GitService`/
 to see files-unique-to-branch before deciding land-vs-delete.
 
 **7. `swift test … | tail -N` HIDES the gate verdict — a heavy-tier sentinel red
-read as green for 13 commits.** The Giga UAT commit `98ded71` added a T4 scenario
+read as green for 13 commits.** The Giga UAT commit `6fd290e` added a T4 scenario
 (`PMA06`) that drives `PluginSubprocessHost` *directly* — so it calls neither
 `skipIfNotBuilt()` nor `runScenarios()` (the two skip paths) and runs its body in
 the headless gate, tripping `TierGateObserver`. The 3394-test SUITE was always
@@ -2756,7 +2756,7 @@ raw pointer+len (like `mdvcore_session_open`), not embedded in a frame.
 The workspace `[workspace.lints]` *denied* `indexing_slicing`/`panic`/`unwrap_used`
 (the sans-panic core policy) — but CI only ran `cargo build` on the core, never
 `cargo clippy` or `cargo test`. So the denies were **dead letters**: two
-`indexing_slicing` panic sites shipped in `cm_edit.rs` (`0cead3c`) and the 80+
+`indexing_slicing` panic sites shipped in `cm_edit.rs` (`d6740a9`) and the 80+
 pure cargo tests never gated a merge. Fix: `scripts/rust-core-gate.sh` (clippy
 deny-enforce + cargo test) wired into `pr.yml`. **Lesson:** verify the lint/test
 config is actually *invoked* by a gate, not just present in the manifest.
@@ -2800,7 +2800,7 @@ test can't honestly cover the hazard. (FuzzyMatcher #6 was deferred for this.)
   allowlist** (refuse any Host that isn't localhost/127.0.0.1 — browsers always
   send Host, so a foreign one is the attack), reject non-GET, and a real
   **path jail** (canonicalize + `starts_with(root)` on every served path).
-  `mdv-web` shipped with all three missing → arbitrary file read; fixed `c0bc6dc`.
+  `mdv-web` shipped with all three missing → arbitrary file read; fixed `918af8e`.
 
 ### Redaction must sit in front of the *surfacing* path, not just the detail view
 `ClaudeLogParser.parse` does NOT redact. The monitor's transcript detail redacts
@@ -2945,7 +2945,7 @@ Root cause: several test/harness paths called **`killall MarkdownViewer`** to re
 test spawn — but the installed app and the test-spawned app **share the executable name**
 `MarkdownViewer`, so `killall` SIGTERMed whatever the user had open. The most frequent trigger was
 `scripts/build-app.sh debug` → the pre-install `ViewModeMatrixSmokeTests` T4 gate → `AppLauncher`.
-**Fix (committed `ca67005`):** mark every test spawn with `env["MDV_TEST_INSTANCE"] = "1"` and
+**Fix (committed `3b28590`):** mark every test spawn with `env["MDV_TEST_INSTANCE"] = "1"` and
 replace the blanket `killall` with `AppLauncher.killTestInstances(named:)` — it `pgrep -x`'s
 candidate PIDs, reads each one's environment via `ps eww -p <pid>`, and SIGTERMs **only** the PIDs
 whose env contains the `MDV_TEST_INSTANCE=1` marker. The Finder/LaunchServices-launched app (no
@@ -3066,7 +3066,7 @@ code was correct — but **Return never reached `keyDown`**. AppKit dispatches R
 default button cell). SwiftUI installs a window default button whenever ANY `.keyboardShortcut(.defaultAction)`
 / `.return` button exists in the chrome — so Return fired that button and the terminal's `keyDown` was never
 called. Plain letters aren't key-equivalents, so they skip that path and hit `keyDown` directly → "typing works
-but Enter doesn't" is the exact signature. **Fix (`c3a7b83`):** override `performKeyEquivalent(with:)` on the
+but Enter doesn't" is the exact signature. **Fix (`499fca6`):** override `performKeyEquivalent(with:)` on the
 terminal view to claim Return/keypad-Enter (keyCode 36/76) **only while `window?.firstResponder === self`** and
 **only when `.command` is absent** (so ⌘C/⌘V/menu shortcuts still resolve), routing them back through the
 existing `keyDown`. **Lesson:** for any embedded AppKit view that must receive Return/Tab/Esc (terminals, custom
@@ -3081,7 +3081,7 @@ under `~/Documents`, which is **iCloud-synced**, and the iCloud **file provider 
 + `com.apple.fileprovider.fpfs#P` onto the TreeSitter resource bundles *in real time*. `build-app.sh` does
 `ditto --noextattr` + `xattr -dr com.apple.FinderInfo` before signing, but iCloud re-adds the xattrs in the
 window between the clean and the sign — a **race** the build usually wins but sometimes loses. **Deterministic
-workaround (used to ship c3a7b83):** `ditto --norsrc --noextattr --noacl --noqtn dist/TextView.app
+workaround (used to ship 499fca6):** `ditto --norsrc --noextattr --noacl --noqtn dist/TextView.app
 /tmp/X.app` → `xattr -cr /tmp/X.app` → `codesign --force --deep --sign 'MarkdownViewer Local Dev'
 --options runtime --timestamp=none /tmp/X.app` → `codesign --verify --deep --strict` → `ditto /tmp/X.app
 /Applications/TextView.app`. `/private/tmp` and `/Applications` are NOT file-provider-synced, so xattrs aren't
@@ -3098,18 +3098,18 @@ The terminal's `keyDown`/`performKeyEquivalent` were correct — but `SidebarKey
 `NSEvent.addLocalMonitorForEvents(matching: .keyDown)` that consumes Return/arrows app-wide and only yielded
 when `NSApp.keyWindow?.firstResponder is NSText`. The terminal is a custom `NSView` (not `NSText`), so the
 monitor swallowed Return and returned `nil` (consumed) BEFORE it reached the terminal — a local monitor runs
-ahead of key-equivalent + responder dispatch entirely. **Fix (`8b8a547`):** a `SidebarKeyMonitorExempt` marker
+ahead of key-equivalent + responder dispatch entirely. **Fix (`eca6781`):** a `SidebarKeyMonitorExempt` marker
 protocol; the monitor yields to any first responder conforming to it; `TerminalNSView` conforms. **Lesson:**
 when a custom focusable NSView "doesn't get keys," look for app-wide local `NSEvent` monitors FIRST (they win
 over the responder chain). Two layers had to be fixed for the terminal: the monitor (this) AND
-`performKeyEquivalent` for the window default-button (`c3a7b83`) — both pre-empt `keyDown` for Return.
+`performKeyEquivalent` for the window default-button (`499fca6`) — both pre-empt `keyDown` for Return.
 
 ### `killall MarkdownViewer` in install-app.sh killed the owner's running app on every `--install`
 The owner's `/Applications` app "kept getting closed." `scripts/install-app.sh` ran `killall MarkdownViewer`
 before copying — and the installed app + freshly-built bundle share the exec name `MarkdownViewer`, so every
 `build-app.sh --install` (which the autonomous loop runs) SIGTERMed the owner's running app. Same killall-footgun
 class as the earlier `AppLauncher` fix; install-app.sh was the remaining LIVE site on the normal dev loop. **Fix
-(`e5ffa08`):** removed it — macOS replaces a running `.app` fine (live process holds the old inode; new code on
+(`b3bc353`):** removed it — macOS replaces a running `.app` fine (live process holds the old inode; new code on
 next manual relaunch). **Lesson:** NEVER `killall <shipping-exec-name>` in any script/test; when the owner says
 "something keeps closing my app," grep `killall` across scripts/ + Tests/ first. The headless gate never killed
 it (heavy tiers self-skip) — only the install path did.
@@ -3117,20 +3117,20 @@ it (heavy tiers self-skip) — only the install path did.
 ### macOS `NavigationStack` back chevron needs a window toolbar — a hosted Settings window has none
 Settings → Plugins/LSP pushed via `NavigationStack`+`NavigationLink` but showed NO back button (user stuck): on
 macOS the automatic chevron renders in the window TOOLBAR, and the `NSHostingController`-hosted Settings window
-has none. **Fix (`e3cd4a2`):** wrap sub-pages in a `SettingsSubPage` with an explicit "‹ Settings" Button
+has none. **Fix (`d748d9f`):** wrap sub-pages in a `SettingsSubPage` with an explicit "‹ Settings" Button
 calling `@Environment(\.dismiss)`. **Lesson:** don't rely on NavigationStack's auto back button in a
 toolbar-less hosted window — provide an explicit dismiss control.
 
 ### SwiftUI list "scrolls on mouse-over": hover-set selection + scroll-on-selection-change
 Command palette re-centered as the pointer moved over rows: `onHoverChanged → selectedIndex`, and
-`.onChange(of: selectedIndex){ proxy.scrollTo(.center) }` fired for hover too. **Fix (`65b2b32`):** a
+`.onChange(of: selectedIndex){ proxy.scrollTo(.center) }` fired for hover too. **Fix (`5e6534c`):** a
 `scrollOnSelectionChange` flag set ONLY by keyboard `moveSelection`; the `onChange` scrolls only when set.
 Hover still moves selection (Return opens the hovered row) but never scrolls.
 
 ### Verifying a "live-only" UI bug headlessly: prove the data source + wiring, isolate the re-render
 Owner pushed: "can't you verify [status-bar-on-tab-change] headlessly?" Yes — the bar reads `currentState`/
 `currentURL` (computed from `tabs.selected`) + observes `model.tabCoordinator`. Headless test
-`test_selectTab_statusBarDataSourceTracksSelectedFile` (`1615b98`) opens 2 files, switches tabs, asserts the
+`test_selectTab_statusBarDataSourceTracksSelectedFile` (`b324a43`) opens 2 files, switches tabs, asserts the
 data source tracks the selected file — PASSES. So model+wiring are provably correct; only the SwiftUI re-body
 (AttributeGraph) is live-only. The one headless-identifiable blank (selecting a `.empty→.loading` tab →
 `currentMetrics` nil) was fixed to show Size + "loading…". **Lesson:** a "live-only" UI bug usually has a
@@ -3213,7 +3213,7 @@ this many rounds again.
 - **FIX:** give each SwiftUI sibling its own compositing layer with an explicit z-order above the
   surface — `strip.compositingGroup().zIndex(1)` vs `terminalSurface.zIndex(0)` — in EVERY layout
   branch, so visibility no longer depends on child order.
-  (`Sources/ViewerUI/Terminal/TerminalView.swift`, commit 1dd0483.)
+  (`Sources/ViewerUI/Terminal/TerminalView.swift`, commit 50e65c6.)
 - **Why it survived 4 rounds — the false-green tool matrix.** What each "test" actually sees:
   | Tool | Sees SwiftUI draw? | Sees the opaque AppKit layer? | Verdict for this bug |
   | --- | --- | --- | --- |
@@ -3247,7 +3247,7 @@ a one-file-opens crash/DoS reachable from any untrusted `.json`.
 - Fix pattern: thread a `depth` counter (we already had one for indentation) and bail at
   the top of the recursive fn — `if depth > MAX_DEPTH { return None; }` — so it degrades
   to the raw-text fallback instead of crashing. `MAX_DEPTH = 128` matches `serde_json`'s
-  default; real documents never nest that deep. (commit f47c7d3)
+  default; real documents never nest that deep. (commit 23433d4)
 - **Teeth:** test on *balanced, valid* deep input (only the cap can reject it) and prove
   it — neuter the cap and confirm the test aborts with SIGABRT, then restore. An
   unbalanced deep string is a weaker test (it'd return None as malformed anyway).
@@ -3430,11 +3430,11 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   `rust-core/.cargo/config.toml` target-dir redirect silently did NOT apply to
   `cargo --manifest-path rust-core/Cargo.toml …` run from the repo root — a
   246 MB `rust-core/target` regrew in the iCloud tree within hours of the
-  "fix". Cure: a second `.cargo/config.toml` at the REPO root (commit 2d4f7dd).
+  "fix". Cure: a second `.cargo/config.toml` at the REPO root (commit 10c3cc9).
 - **SwiftPM does NOT track the prebuilt `libmdvcore_ffi.a` as a build input.**
   Rebuilding the staticlib alone does not relink already-built test bundles —
   the A/B parity suite ran STALE Rust against new Swift and failed with a
-  one-side-fixed signature (caught live in 730fc65). `build-rust-core.sh` now
+  one-side-fixed signature (caught live in 8e83cb4). `build-rust-core.sh` now
   `touch`es `Sources/RustCore/*.swift` after staging so the next SwiftPM build
   relinks. If an A/B test fails right after a Rust change, suspect the link
   before the code.
@@ -3456,7 +3456,7 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   'os_signpost'` — the stock template records ONLY Apple's PointsOfInterest
   lane, so every `com.markdownviewer.*` interval was absent from the trace
   while looking like a clean capture. The flag is load-bearing; doc fixed
-  (1668d68). Companion trap: `OSSignposter` intervals are NOT persisted to
+  (c28d6ef). Companion trap: `OSSignposter` intervals are NOT persisted to
   the unified log store — `log show --signpost` returns NOTHING for them, so
   it is not a fallback. The trace is the only record.
 - **Two more root-poisoning sites in the VM GUI lane (TSK-502 class):** the
@@ -3482,11 +3482,11 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   toggled fine at the model layer; the sections mounted COLLAPSED (Claude's
   disclosure was transient `@State false`, reset every remount), so the click
   read as dead. When a toggle shows a container with its own disclosure
-  state, the toggle must also expand it (reveal-on-toggle-on, c82498f).
+  state, the toggle must also expand it (reveal-on-toggle-on, bdfc0e4).
 - **Close-path lazy-survivor class:** any flow that changes the SELECTION as
   a side effect (close auto-selecting a neighbor) must run the same
   incoming-tab duties as an explicit select (`materializeIfNeeded` +
-  staleness refresh) or lazy tabs sit blank (5336262).
+  staleness refresh) or lazy tabs sit blank (0004ccf).
 
 - **2026-06-10 (TSK-592 system-scope capture):** Two WebKit perf intuitions refuted by
   measurement. (1) **WebContent does NOT relayout per resize frame** — during a 4s
@@ -3521,7 +3521,7 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   `.build/repositories` — the VM is an offline rsync mirror and cannot re-fetch).
 - **Empty files defeat NUL-byte binary sniffing** — 0 bytes decode as valid empty UTF-8,
   so content-based binary detection passes them to the text path. Any "unknown type →
-  HEX" contract needs an explicit size==0 route (`DocumentController.open`, c3e6e5b).
+  HEX" contract needs an explicit size==0 route (`DocumentController.open`, c5dc0f6).
 
 ## 2026-06-10 (TextKit 2 large-document traps — TSK-267)
 - **A self-sizing (`isVerticallyResizable`) NSTextView defeats TK2 viewport layout**: any
@@ -3536,7 +3536,7 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   container unbounded; fix the frame and the origin instead.
 - **`ssh vm 'build | tail -N'` masks build failures** (exit code is tail's) → the harness
   profiles/tests a STALE binary and "refutes" a fix that was never in the build. Always
-  propagate the remote build's exit code (vm-profile.sh fixed, b1849c4). Symptom checklist
+  propagate the remote build's exit code (vm-profile.sh fixed, 285260e). Symptom checklist
   before trusting any VM artifact: binary mtime vs fix time, `nm` for a new symbol, build
   log exit marker.
 
@@ -3554,7 +3554,7 @@ cost an iteration; together they bound what an IN-PROCESS click harness can ever
 - **(3) A click on a non-key window is swallowed as the activating click** — under
   `MDV_BACKGROUND` the window is never key; SwiftUI views default
   `acceptsFirstMouse == false`, so the first click activates and is consumed. The verb
-  must `NSApp.activate` + `makeKeyAndOrderFront` first (e692846).
+  must `NSApp.activate` + `makeKeyAndOrderFront` first (0786f98).
 - **(4) SwiftUI controls inside an NSHostingView are NOT NSViews** — their
   `.accessibilityIdentifier(_:)` never lands on any NSView; an NSView-tree walk cannot
   find them. Ids appear on hosting NSViews only at hosting BOUNDARIES (which is why
@@ -3578,7 +3578,7 @@ cost an iteration; together they bound what an IN-PROCESS click harness can ever
   permitted". Make `sudo chown -R vm-tester .build` an unconditional step of the cycle
   (rsync → chown → build → test), not a one-time repair (TSK-502 class).
 - **Never `;`-chain `git commit` after a remote/long build** — `ssh vm build; git commit`
-  commits even when the build FAILED (af8bd21 landed non-compiling code). Gate with `&&`
+  commits even when the build FAILED (06c4098 landed non-compiling code). Gate with `&&`
   on the build's REAL exit, or run the steps as separate sequential calls and read the
   exit first.
 
@@ -3650,7 +3650,7 @@ Continuation of "the five constraints" above; these three close every remaining 
   drop-to-⅔ hysteresis on such a cache amplifies one eviction into several
   teardowns. General rule: any cache consulted in `body` to DECIDE WHETHER A
   SUBTREE EXISTS must align its eviction policy with the retention policy of
-  that subtree (TSK-621, af5e6dd).
+  that subtree (TSK-621, ab9fac4).
 
 ## 2026-06-10 (validation drain) — patterns that emerged across 19 validations
 
@@ -3665,13 +3665,13 @@ Continuation of "the five constraints" above; these three close every remaining 
   task completed). If a state machine converges, a final-state assert can't see the
   mid-flight violation.
 - **Deterministic race tests want an in-window seam, not a stress loop.** The
-  `attachWindowHook` pattern (FileWatcher FW-S3, 0a42e5f): a DEBUG-only hook invoked
+  `attachWindowHook` pattern (FileWatcher FW-S3, cac4b07): a DEBUG-only hook invoked
   inside the race window turns the interleaving into a plain sequential test. Pair
   with an OS-level observable (fd-count baseline, kill(pid,0)→ESRCH) so the assert
   bites without internal state access.
 - **Cheap struct-shape pins are legitimate teeth for "never re-add storage" classes:**
   size_of equality + a field reference (compile-time) caught the rust CachedView
-  row-copy re-add immediately (a58eda9). Brittle on purpose — that's the point.
+  row-copy re-add immediately (dede2b0). Brittle on purpose — that's the point.
 - **Small visibility seams (`private`→`private(set)`/internal) are the standing way
   to make guards testable**: loadMoreTask, childPID, HighlightFingerprint, apply(delta:),
   attachWindowHook. Document each as "TSK-NNN test seam" at the declaration.
@@ -3799,7 +3799,7 @@ Continuation of "the five constraints" above; these three close every remaining 
   host-tested). I'd over-held both at review; they're squarely "host-testable logic" per the 2026-06-07 policy.
 - **A "blocked, awaiting owner approval" item may already be DONE — re-check the code before re-pinging.** The
   perf cluster (591/592/598/266/455) was framed across MULTIPLE handoffs as "blocked on a supervised MountedPanesLRU
-  approval." FALSE: MountedPanesLRU (Perf Fix#1) landed 2026-06-06 (`39925fd`), TSK-108 is validated. `ContentView.content`
+  approval." FALSE: MountedPanesLRU (Perf Fix#1) landed 2026-06-06 (`8f60d21`), TSK-108 is validated. `ContentView.content`
   already renders a ZStack of retained panes. The parked question was moot for ticks. Lesson: when an item claims
   to be owner-gated, grep the code for the supposed-missing implementation first.
 - **The "199ms apply per source-pane switch" perf residual was GONE on a fresh profile** (`vm-profile.sh nav`,
@@ -3872,7 +3872,7 @@ Continuation of "the five constraints" above; these three close every remaining 
   (timing-sensitive async bump assertion; passes on host).
 - **`LineNumberRulerView` scanned newlines via `(text as NSString).character(at:i)` per UTF-16 unit** — an ObjC
   message-send per char (first-scroll hitch on multi-MB logs). Always iterate the Swift `.utf16` view; offsets
-  are identical (TSK-828, `2c7368c`).
+  are identical (TSK-828, `1e0a407`).
 
 ## 2026-06-14 — autonomous-loop scoping lessons (the markdown docs-tools burst)
 
@@ -3935,7 +3935,7 @@ Continuation of "the five constraints" above; these three close every remaining 
   the trace tests against EACH OTHER but did NOT stop unrelated parallel suites from emitting into that same global sink during
   a test's `set_sink..clear_sink` window — the CSV `parse` fuzz (3000 calls, each emits `csv.parse.*` when a sink is installed)
   polluted `span_emits_enter_and_exit`'s collector, so its exact-match assert went RED under `cargo test` parallelism but GREEN
-  in isolation. The fuzz AMPLIFIED a latent flake that predated it. FIX (0b3ed0c7): the test `CollectSink` filters to ONLY its
+  in isolation. The fuzz AMPLIFIED a latent flake that predated it. FIX (d0f6b5f4): the test `CollectSink` filters to ONLY its
   own records (by span name / event message) so parallel pollution is excluded DETERMINISTICALLY — NOT thread-local (production
   wants one global sink) and NOT just `--test-threads=1` (that masks it). RULE: any test asserting on GLOBAL mutable state (a
   sink, a registry, a static) must isolate against PARALLEL EMITTERS — filter the assertion to this test's own marker; don't
@@ -3960,7 +3960,7 @@ Continuation of "the five constraints" above; these three close every remaining 
   shows ONLY the swift-testing summary `Test run with 0 tests in 0 suites passed` and NO XCTest body, and it READS LIKE A
   PASS. This silently undermined `build && test` VM validations (the suspect ones — MFV/TSK-1036/1242 — were re-checked
   test-only and genuinely pass). FIX: the `test` mode now self-heals with the same guarded `find .build -not -user
-  $(whoami)` → in-sudo `chown -R` the `clean` mode uses (commit 6c0d0ea5). RULES: after a GUI-lane build, ALWAYS `chown -R
+  $(whoami)` → in-sudo `chown -R` the `clean` mode uses (commit 60d3e1ec). RULES: after a GUI-lane build, ALWAYS `chown -R
   vm-tester .build` before `swift test`; ALWAYS check the test COUNT (`Executed N tests`) — "0 tests passed" is a false green.
 - **A viaOpen GUI-lane UAT can LAUNCH the app GUI-active yet produce 0 step dumps — diagnose by LAYER (TSK-1243, OPEN).**
   KEY-02/SAP-01 (`launchViaOpen=true`, needed for real CGEvent keys) fail "no step dumps". The chain that isolated it,
@@ -4001,7 +4001,7 @@ Continuation of "the five constraints" above; these three close every remaining 
   but 0.014s run TARGETED (alone) — a DIAG proved bare-`DocumentModel()`+`open(.md)` is 0.014s targeted (even against the
   real 132 MB LocalHistory store), and the real HistoryStore/PreferencesStore reads are each ~0.01s. So the deps are NOT
   the cost; the serial ~5s is a SERIAL-CONTEXT artifact (per-test serial time inflates for reasons independent of the
-  test's own work — process accumulation / serial attribution). I wrongly committed (58cd0671) a "9.6s→0.064s, 150×"
+  test's own work — process accumulation / serial attribution). I wrongly committed (5fb70149) a "9.6s→0.064s, 150×"
   ViewModeShortcut win that compared serial-9.6s to targeted-0.064s — a FALSE comparison. RULE: a perf claim MUST use the
   SAME run mode for before/after; for true per-test work use a TARGETED run, never the serial/parallel full-suite per-test
   number. (The LocalHistoryStore byteCap win IS real — the 24 MiB→240 KiB write reduction is run-mode-independent.)
@@ -4039,7 +4039,7 @@ rust-core has a long-standing **DIY xorshift fuzz lane** (`*_fuzz_*` tests: seed
 - **Editor typing cost on txt = two whole-buffer passes** (2026-07-03): main-actor whole-doc
   NSSpellChecker per debounced edit (EditorCoordinator.runEditorSpellPass, ≤200KB prose) + whole-buffer
   word scan per completion request (InFileCompletion, no-LSP fallback). Footer toggles = relief valve
-  (92dec034); real fix = TSK-1504 (off-main/visible-range spell + word-index cache).
+  (5a84b00a); real fix = TSK-1504 (off-main/visible-range spell + word-index cache).
 
 - **The bridge-source TOUCH cannot force an exec RELINK — SwiftPM skips the link when
   recompiled objects are byte-identical** (2026-07-05, TSK-1547). The TSK-626/848 recipe

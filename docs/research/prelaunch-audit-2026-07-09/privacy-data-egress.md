@@ -4,7 +4,7 @@
 subresources, DNS prefetch, subprocess fetches) and confirm the "no telemetry / no phone-home"
 claim holds with a regression pin, not just a doc.
 
-**Date:** 2026-07-10 · **Repo state:** `main` @ `92c72206` (+ uncommitted WIP in `main.swift`,
+**Date:** 2026-07-10 · **Repo state:** `main` @ `304a8290` (+ uncommitted WIP in `main.swift`,
 `MCPSocketBridge.swift`)
 
 ---

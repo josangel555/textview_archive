@@ -424,7 +424,7 @@ Line 35-48: a 32-iteration safety limit is present (`for _ in 0..<32`). ✓
 
 ### 8.8 Strict-concurrency suppression review
 
-Recent commit `365135e Cleanup: silence strict-concurrency warnings` indicates active work on the Swift 6 model. The patterns I audited (lock-bracketed `nonisolated(unsafe)` statics, `@unchecked Sendable` boxes with documented invariants) are all defensible. Worth a separate sweep specifically for any `@MainActor` annotation that was *removed* in that cleanup commit — those are the high-risk changes.
+Recent commit `4db521d Cleanup: silence strict-concurrency warnings` indicates active work on the Swift 6 model. The patterns I audited (lock-bracketed `nonisolated(unsafe)` statics, `@unchecked Sendable` boxes with documented invariants) are all defensible. Worth a separate sweep specifically for any `@MainActor` annotation that was *removed* in that cleanup commit — those are the high-risk changes.
 
 ---
 

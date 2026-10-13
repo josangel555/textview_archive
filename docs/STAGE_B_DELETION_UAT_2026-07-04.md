@@ -55,7 +55,7 @@
   single-application; large-file edit latency signposted (not wall-clock-asserted).
 - **Highlight** (twin already deleted, TSK-854) [WV]: token-color asserts incl. Swift
   `//` + SCREAMING_CASE (TSK-1201 class).
-- **Folds** (flipped ON @ 74d01932) [WV + script-bus]: fold/unfold via gutter + verbs in
+- **Folds** (flipped ON @ c3ffbc45) [WV + script-bus]: fold/unfold via gutter + verbs in
   big JSON + Swift; fold-all/unfold-all; structural search returns.
 - **Formula** (after TSK-1215 lands + flip) [script-bus + WV]: `=A1+B1` displays
   computed; formula edit box round-trips raw source; dependency edit recalcs;

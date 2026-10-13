@@ -8,19 +8,19 @@ left for daylight review.
 
 | Commit | What |
 |---|---|
-| `649b159` | SwiftUI line-number gutter (synced to NSTextView scroll) + LESSONS.md |
-| `150b399` | HACKABILITY.md + PLUGINS.md + STATE.md (design docs, no code) |
-| `71a3e34` | Native previews — image/audio/video/PDF + SQLite stub. New `.preview(URL, FileCategory)` state |
-| `ef63e9e` | Status bar extras — cursor Ln/Col + indent type (Tabs / Spaces(N) / Mixed) |
-| `cbc310f` | Search-anywhere sidebar widget + Settings window (Cmd+,) |
-| `760bf0e` | Rendered MD find: custom JS injection for count + purple/pink colors. SQLite browser (real, replacing stub) |
-| `cf6ebcc` | `mdv` CLI + `markdownviewer://` URL scheme |
-| `169a4de` | Mode normalization: every file has Source+HEX picker; markdown also gets Rendered; JSON/XML get Formatted |
-| `6aa58eb` | Phase 7 git module + CHANGED sidebar section |
-| `024e6ad` | Phase 8 Claude activity timeline in sidebar |
-| `4d18bbb` | Phase 8.5 workspace auto-save + restore (tabs survive relaunch) |
-| `fa23a80` | Test isolation: tests skip workspace restore |
-| `b64ecd4` | TESTS_AUDIT.md — overlap analysis, no deletions |
+| `c141898` | SwiftUI line-number gutter (synced to NSTextView scroll) + LESSONS.md |
+| `e28a411` | HACKABILITY.md + PLUGINS.md + STATE.md (design docs, no code) |
+| `287254e` | Native previews — image/audio/video/PDF + SQLite stub. New `.preview(URL, FileCategory)` state |
+| `edc5e87` | Status bar extras — cursor Ln/Col + indent type (Tabs / Spaces(N) / Mixed) |
+| `7332e6d` | Search-anywhere sidebar widget + Settings window (Cmd+,) |
+| `951992b` | Rendered MD find: custom JS injection for count + purple/pink colors. SQLite browser (real, replacing stub) |
+| `c5f7baf` | `mdv` CLI + `markdownviewer://` URL scheme |
+| `3a70c3f` | Mode normalization: every file has Source+HEX picker; markdown also gets Rendered; JSON/XML get Formatted |
+| `a891b9f` | Phase 7 git module + CHANGED sidebar section |
+| `463a88f` | Phase 8 Claude activity timeline in sidebar |
+| `dd97df9` | Phase 8.5 workspace auto-save + restore (tabs survive relaunch) |
+| `4dd4332` | Test isolation: tests skip workspace restore |
+| `501b882` | TESTS_AUDIT.md — overlap analysis, no deletions |
 
 ## Test status
 
@@ -32,7 +32,7 @@ GitClientTests (7), WorkspaceStoreTests (5). Total +46 unit tests.
 variance check) is the load-bearing guard against the compositor
 pathology. Both tests in it (real + meta) green.
 
-Full suite last seen passing at fa23a80. Run `swift test` to confirm.
+Full suite last seen passing at 4dd4332. Run `swift test` to confirm.
 
 ## Manual sanity checklist for tomorrow
 
@@ -79,11 +79,11 @@ After `bash scripts/install-app.sh` (or `build-app.sh debug`):
 - **Wrap-mode gutter accuracy**: when word-wrap is on and a logical
   line wraps to N visual rows, the SwiftUI gutter still shows N rows
   with sequential numbers instead of N-1 blanks. Documented in commit
-  `649b159`.
+  `c141898`.
 
 ## Known test failure left for you
 
-After the mode-normalization (commit `169a4de`) one E2E test
+After the mode-normalization (commit `3a70c3f`) one E2E test
 regressed:
 
   `InteractionDeepTests.test_zoom_persistsAcrossNewTab`

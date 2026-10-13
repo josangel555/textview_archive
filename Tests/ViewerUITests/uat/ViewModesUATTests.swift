@@ -39,7 +39,7 @@ import Foundation
 ///
 /// TIER-JUSTIFY: T4 — the observable is the assembled bundle's real
 /// cross-process per-(file type × view mode) routing, the mode↔state↔
-/// realized-subtree consistency (the fd11e61 load-bug class), and the
+/// realized-subtree consistency (the 0bf6c36 load-bug class), and the
 /// WKWebView-backed modes (Editor/Rendered, #192-excluded from the
 /// headless gate). Self-skips on the headless gate (`isAppBuilt` false
 /// there); runs for real on the VM/nightly lane or a host-occluded UAT run.
@@ -178,7 +178,7 @@ final class ViewModesUATTests: MultiScenarioTestCase {
     /// type → buffer dirty, save → flush, switch to HEX (byte grid reflects
     /// saved bytes), switch back to Source. The load-bearing checks: the
     /// realized surface matches the picker at EVERY hop (no Hex under a
-    /// non-hex picker, no stale source under editor) — the fd11e61/Bug-C
+    /// non-hex picker, no stale source under editor) — the 0bf6c36/Bug-C
     /// class.
     func test_VM_02_sourceEditorHexLifecycle() throws {
         let py = try harness.writeFile(

@@ -12,7 +12,7 @@ import XCTest
 ///   * header UNCHANGED → only the RustCore bridge sources relink (the .a isn't
 ///     a tracked build input); test targets stay untouched (cheap restage).
 ///
-/// Closes the test-gap the fix (b314f5a) deliberately left open ("a hermetic
+/// Closes the test-gap the fix (fc5153b) deliberately left open ("a hermetic
 /// test would need cargo stubbing seams") — the extracted function needs none.
 final class RustCoreHeaderRestageTests: XCTestCase {
 

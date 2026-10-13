@@ -1,6 +1,6 @@
 # Pre-launch product review — Extreme performance optimization (v2)
 
-**Date:** 2026-07-09 · **Reviewer:** perf-lens audit agent · **Repo state:** `main` @ `92c72206`
+**Date:** 2026-07-09 · **Reviewer:** perf-lens audit agent · **Repo state:** `main` @ `304a8290`
 (v2 pass — independent of the earlier `performance-optimization.md`; written as a sibling per
 safe-write policy.)
 

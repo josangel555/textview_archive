@@ -6,7 +6,7 @@ import ViewerCore
 /// TSK-489 — the scrollback viewport offset must round-trip view ↔ model:
 /// seeded from `TerminalModel.scrollOffset` on init (clamped), and written
 /// BACK through `onScrollOffsetChange` on EVERY user-driven mutation. The
-/// original dd8570f fix only fired the write-back from `update()`'s
+/// original 3a4c46c fix only fired the write-back from `update()`'s
 /// pin/shrink paths; `scrollWheel`, `snapToBottom` (typing), and the
 /// scrollbar drag mutated the offset silently — so with a quiet shell a
 /// tab switch still snapped to the bottom (the owner's complaint), and a

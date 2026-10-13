@@ -293,8 +293,8 @@ final class ThingTests: XCTestCase {
     // mark the class @MainActor, use async setUp.
 
     // Cite the bug in regression tests:
-    /// Regression: commit d175548 (HEX picker lied after file switch).
-    func test_regression_d175548_hex_persists_across_switch() { ... }
+    /// Regression: commit ea89818 (HEX picker lied after file switch).
+    func test_regression_ea89818_hex_persists_across_switch() { ... }
 }
 ```
 

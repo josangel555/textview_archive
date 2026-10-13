@@ -86,9 +86,9 @@ Hand-writing means later building a dependency-graph recalc engine (dependents m
 **Owner decision: Option A — build it ourselves, no dependencies** (not `formualizer-eval`).
 
 **Port progress** (hand-written, `rust-core/crates/core/src/formula.rs`):
-- ✅ Slice 1 — arithmetic core (`03105441`)
-- ✅ Slice 2 — cell refs + resolver + value coercion (`4b414d90`)
-- ✅ Slice 3a — function calls + ranges + core fns: SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT, IF/AND/OR/NOT (`bc6590b7`)
+- ✅ Slice 1 — arithmetic core (`1ebe6531`)
+- ✅ Slice 2 — cell refs + resolver + value coercion (`50e8d132`)
+- ✅ Slice 3a — function calls + ranges + core fns: SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT, IF/AND/OR/NOT (`8ae96982`)
 - Next: **3b** comparison operators (`>`/`<`/`=`/`>=`/`<=`/`<>`) + the text/math/lookup library vs the Swift 29-test corpus; then **4** `FormulaSession` FFI handle; **5** Swift consumer; **6** (later) recalc.
 
 **Recalc + FFI deep-research (agent 3) — VALIDATES the plan:**

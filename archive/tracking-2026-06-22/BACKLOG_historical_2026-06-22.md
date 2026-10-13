@@ -106,9 +106,9 @@ NOT the prior findings) for exploratory perf/latency/responsiveness analysis of 
 a tracker ticket (see Phase-2 of the handoff). Don't prime them with the existing audit findings — let them
 rediscover/extend independently; synthesize + dedupe against the prior docs yourself when they return.
 
-**Landed:** F2/F3/F4 build wins (TSK-832/833/834 validated, `5ebab1d`, ~7.7 GB reclaimed + shared rust cache);
-TSK-828 line-ruler single-pass utf16 scan (validated, `2c7368c`); the TSK-366 memory-chip re-body regression
-(`ee4c55b`).
+**Landed:** F2/F3/F4 build wins (TSK-832/833/834 validated, `fd48146`, ~7.7 GB reclaimed + shared rust cache);
+TSK-828 line-ruler single-pass utf16 scan (validated, `1e0a407`); the TSK-366 memory-chip re-body regression
+(`7b9d14c`).
 
 **Open audit follow-ups (don't re-file — tickets exist):**
 - **Perf, needs a profiler trace first** (MEASURE rule): TSK-826 (FFI whole-frame `MdvBuf→Array` copy at 7 sites
@@ -199,9 +199,9 @@ is rough priority — most-asked-for first.
 ## Bug fixes (small, urgent)
 
 - ~~**Find mode: can't scroll past currently-selected match.**~~ DONE
-  (commit `f12ee43` — `lastScrolledMatchIndex`).
+  (commit `46ad0ea` — `lastScrolledMatchIndex`).
 - ~~**Rendered-MD find: highlights persist after dismiss.**~~ DONE
-  (commit `f12ee43` — `window.__mdvFindClear` on empty query).
+  (commit `46ad0ea` — `window.__mdvFindClear` on empty query).
 - **Invisible characters appear too grey.** PARTIALLY DONE (item I2).
   Split by render path:
   - **Editable path (CodeMirror 6 / WKWebView) — FIXED.** Invisibles
@@ -228,7 +228,7 @@ is rough priority — most-asked-for first.
 
 - ~~**Right-click folder → Bookmark Folder.**~~ DONE.
 - ~~**Right-click folder → Set as Git Root.**~~ DONE.
-- ~~**Right-click folder → Open in Terminal.**~~ DONE (commit `94e130d`).
+- ~~**Right-click folder → Open in Terminal.**~~ DONE (commit `7530130`).
 
 ## Scaling + chrome polish
 
@@ -252,7 +252,7 @@ is rough priority — most-asked-for first.
   read-only today), and (4) undo. `ViewModeControl.present(.hex)` returns
   `viewOnly: true` and the toolbar disables nothing for HEX — when the
   edit path lands, flip those. Sizable; not blocking UX-A.
-- ~~**Left sidebar resize feels janky.**~~ DONE (commit `f12ee43` —
+- ~~**Left sidebar resize feels janky.**~~ DONE (commit `46ad0ea` —
   `@State liveWidth` during drag).
 
 ## Build hygiene
@@ -275,14 +275,14 @@ is rough priority — most-asked-for first.
 
 ## Larger features (named)
 
-- ~~**Bookmark current line + gutter marks.**~~ DONE (commit `f37af90`).
+- ~~**Bookmark current line + gutter marks.**~~ DONE (commit `9f12170`).
 - ~~**CSV → tables.**~~ DONE.
 - ~~**Collapsible accordion sidebar sections.**~~ DONE.
-- ~~**Split view (Phase 2.5).**~~ DONE (commit `6fdad21`).
-- ~~**Tabbed Git panel.**~~ DONE (commits `b1cd878` + `bbd273b`):
+- ~~**Split view (Phase 2.5).**~~ DONE (commit `2f7da22`).
+- ~~**Tabbed Git panel.**~~ DONE (commits `d10eb6a` + `408df08`):
   Status / Log / Stash / Trees / Remotes; topological Canvas graph;
   per-row branch chips + HEAD chip; ⌥⌘R refresh.
-- ~~**Proper file diff tab.**~~ DONE (commit `c8ea29c`): structured
+- ~~**Proper file diff tab.**~~ DONE (commit `27cb6c7`): structured
   DiffView with per-hunk colored rendering; default mode for
   `.diff` / `.patch`.
 - **Mermaid diagram support.** Pending — design in `docs/MERMAID.md`.
@@ -313,7 +313,7 @@ is rough priority — most-asked-for first.
 
 ## Deferred features
 
-- ~~**jq query for JSON files.**~~ DONE (commit `89f45de`) — shells
+- ~~**jq query for JSON files.**~~ DONE (commit `a87f322`) — shells
   out to `/usr/bin/jq` with Homebrew fallback. View menu → "Apply
   jq Filter… (⌥⌘J)". 6 unit tests + 200 KB no-deadlock test.
 - ~~**Expanded TreeSitter language support.**~~ DONE 2026-05-18 via
@@ -334,8 +334,8 @@ is rough priority — most-asked-for first.
   request. ~2.5 dev days; touches Package.swift, build-app.sh,
   TreeSitterEngine, and signing pipeline. Replaces the original
   "7 deps in one commit" plan, which was infeasible at the cap.
-- ~~**Diff +/- line coloring in diff tabs.**~~ DONE (commit `94e130d`
-  for runs; `c8ea29c` for proper DiffView with row backgrounds).
+- ~~**Diff +/- line coloring in diff tabs.**~~ DONE (commit `7530130`
+  for runs; `27cb6c7` for proper DiffView with row backgrounds).
 - **Phase 9 distribution.** Real Developer ID + notarization. User
   said "local signing only for now"; revisit when shipping public.
 
@@ -358,7 +358,7 @@ is rough priority — most-asked-for first.
   timeout API. Right fix: run on a background actor with
   cancellation; show "regex slow" feedback after 200ms.
 - **Batch 3 refactor.** PARTIAL. `JSONFileStore` extracted (commit
-  `bf2f886`). `LineNumberRulerView` deletion deferred — it's still
+  `fd77a51`). `LineNumberRulerView` deletion deferred — it's still
   gated behind `MDV_ENABLE_BROKEN_RULER=1` for the meta-regression
   test that catches the compositor bug class. Shared test helpers
   not addressed.
@@ -415,7 +415,7 @@ outweighs the value. Manual checks are in `MANUAL_TESTING.md`:
 ## Audit follow-ups — 2026-05-18
 
 Multi-agent memory + perf audit landed 14 commits this push (see
-`git log --oneline d45a7e2..943243a`). Highlights in `LESSONS.md`
+`git log --oneline 85457fa..6707efb`). Highlights in `LESSONS.md`
 under "Memory + perf audit (2026-05-18 multi-agent sweep)".
 
 ### Shipped
@@ -610,7 +610,7 @@ Items from the 5-lens review (2026-05-25) that landed partially or
 not at all. See `docs/code-review/*_2026-05-25.md` for full
 context.
 
-### LANDED 2026-05-29 (workflow `wf_fd4d4db5`, 14 worktree agents → main `45aa0d8`)
+### LANDED 2026-05-29 (workflow `wf_fd4d4db5`, 14 worktree agents → main `b78c571`)
 
 Tier 1 + Tier 2 fanout from `docs/NEXT_STEPS_2026-05-29.md`. All
 host-verified (`ViewerCoreTests` 1248 → **1347**, 0 failures; +132
@@ -670,8 +670,8 @@ host UI suite). VM E2E sweep still pending (VM was offline at merge).
 - **No subprocess memory cap** (macOS `RLIMIT_AS` unenforced). If a true
   RSS bound is needed: `sandbox-exec` (deprecated) or private
   `posix_spawnattr_setjetsam_ext_np`. LESSONS.md documents the trap.
-- **RESOLVED (ad12a05) — was a REAL regression, NOT Foundation drift.**
-  `test_decide_sameDocFragment_isAllowed` failed because 8da6efbb
+- **RESOLVED (a12f909) — was a REAL regression, NOT Foundation drift.**
+  `test_decide_sameDocFragment_isAllowed` failed because 39f0bb6b
   (2026-05-25) added `file` to the `.linkActivated` block ABOVE the
   same-doc-fragment allow in `decide()`, so every in-page #anchor/TOC link
   in the file://-loaded rendered markdown was cancelled. A host-Foundation
@@ -686,7 +686,7 @@ host UI suite). VM E2E sweep still pending (VM was offline at merge).
 
 The first-tier perf root causes (#1 sidebar republish chain, #2
 renderedHTML key, #5 highlightCache `@Published`) landed in commit
-`bf88840`. Remaining:
+`504e924`. Remaining:
 
 - **#6 Eager `ForEach` recursion inside `LazyVStack`** —
   `SidebarView.swift:763`. Only top-level rows are lazy; deep
@@ -733,7 +733,7 @@ open (M/L severity):
 
 - `Tests/ViewerUITests/{ComponentVisualTests, InteractionScriptTests,
   InteractionDeepTests, DragDropTests}` had 9 of 12 dishonest
-  assertions restated in commit `3707629`. The 3 remaining were
+  assertions restated in commit `6666c47`. The 3 remaining were
   borderline (smoke tests with `_ = result` discards); evaluate
   whether the smoke value justifies the brittle shape.
 - `FakeLSPServer` covers transport behaviors; the LSP `Pool` actor
@@ -749,7 +749,7 @@ open (M/L severity):
 
 E (DocumentModel split), F (git layer), G (WorkspaceStore retire),
 H (ProcessRunner), I (main.swift slim), J (find-bag collapse) all
-landed across commits `bb9dc4d` / `38f8175` / `bc5f320` / `b89f767`.
+landed across commits `9e80772` / `c8ebe9f` / `7373da5` / `8692199`.
 
 Remaining quality follow-ups:
 
@@ -852,9 +852,9 @@ independence + types + GLOBAL zoom/wrap/theme (#184). Items still open:
   in-process WKWebView suites can rejoin the bare `swift test` sweep
   instead of `#192`-gating themselves out. Low priority (VM lane covers
   them today).
-- **#201 — RESOLVED (ad12a05).** NOT a Foundation/macOS-26 issue (a
+- **#201 — RESOLVED (a12f909).** NOT a Foundation/macOS-26 issue (a
   host-Foundation probe showed the field compare returns true). Real cause
-  = code ordering: 8da6efbb put `file` in the `.linkActivated` block above
+  = code ordering: 39f0bb6b put `file` in the `.linkActivated` block above
   the same-doc-fragment allow, cancelling ALL in-page #anchor/TOC links in
   rendered markdown — a real ~9-day regression mislabeled as the
   "acceptable macOS-26 gate red." Fixed: same-doc allow now precedes the
@@ -903,7 +903,7 @@ independence + types + GLOBAL zoom/wrap/theme (#184). Items still open:
 
 
 ## 2026-06-02 — queue (detail: docs/HANDOFF_2026-06-02.md §3)
-- **IN FLIGHT** (wf `w0kz4p4kq`, branch `fix-loadbug`): fix `fd11e61` file-load failure + Editor→HEX mode-scramble + ADD a live-app smoke wired into `build-app.sh` as a pre-install gate. **`main @ fd11e61` is BROKEN (can't load files live) — do NOT ship.** Main checkout leaked onto `fix-loadbug`; reconcile per HANDOFF §0/§5.
+- **IN FLIGHT** (wf `w0kz4p4kq`, branch `fix-loadbug`): fix `0bf6c36` file-load failure + Editor→HEX mode-scramble + ADD a live-app smoke wired into `build-app.sh` as a pre-install gate. **`main @ 0bf6c36` is BROKEN (can't load files live) — do NOT ship.** Main checkout leaked onto `fix-loadbug`; reconcile per HANDOFF §0/§5.
 - **BUG #218** HEX mode slow (6 KB → ~1 s) — sync full attributed-dump build on mode-switch; stream/cache.
 - **BUG #219** Editor→HEX flash of Source — mode-routing transition; coordinate with the load-fix.
 - **FEAT #220** sidebar preview-tab / scrub — single-select swaps current tab's content (preview); double-click pins a permanent tab.
@@ -959,7 +959,7 @@ bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**
   suite never returns). Bisect which suite; add a per-suite timeout or move it to the gated WebView lane so the
   full VM lane can run unattended. Workaround today: targeted `--filter` runs. Orphan VM PIDs 28912/29140 need
   an owner `ssh macOS15 'kill ...'`.
-- **GP_10 stale test (TSK-447)** — fix committed (`541b3df`), host-compiles; live VM validation pending a clean
+- **GP_10 stale test (TSK-447)** — fix committed (`4574de9`), host-compiles; live VM validation pending a clean
   VM (blocked by TSK-451). Run `GitPanelUATTests` filter on the VM (6.3) to confirm → fixed.
 - **Sidebar tool-window resize rework (TSK-440)** — lone-Files fill + every-adjacent-pair divider + uniform
   resize. Regression-prone layout zone; needs the VM live-verify loop (now possible once TSK-451 cleared).
@@ -972,7 +972,7 @@ bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**
   + save/restore cursor + a second grid in `ANSIParser`/`TerminalScreen` so `top`/`vim`/`less` render
   correctly. Host-testable at the parser level (golden tests) → self-validatable. Medium size. The real
   fix for "top renders wrong"; the TSK-489 scroll-persist fix only addresses tab-switch scroll.
-- **Preview-tab Phase 2/3 (TSK-306, in `progress`)** — Phase 1 model core landed (`a37f861`). Remaining:
+- **Preview-tab Phase 2/3 (TSK-306, in `progress`)** — Phase 1 model core landed (`9bf1838`). Remaining:
   Phase 2 sidebar single-vs-double-click + arrow-nav triggers + auto-promote-on-edit (live); Phase 3
   italic preview-tab title affordance (VM-visual). Persistence = Option A (promote-on-save), confirmed.
   Design in `docs/PREVIEW_TAB_DESIGN.md`.
@@ -1007,7 +1007,7 @@ bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**
 
 The production-readiness audit landed (see `docs/research/rust-core-audit-2026-06-09/synthesis.md`,
 epic **TSK-538**, tag `rust-core-audit`, 39 tickets TSK-539..577). Five Phase-0 items shipped
-at `02a10e7` + `dd6d345` (TSK-549/542/553/569/555 → fixed). Remaining Phase-0, in rough order —
+at `06720bd` + `672af5b` (TSK-549/542/553/569/555 → fixed). Remaining Phase-0, in rough order —
 all already tracked on the board, listed here only as the resume pointer:
 - TSK-550 workspace-wide gate lane · TSK-576/565 hunk_marks i64 clamp + top-of-file Deleted
   mark (parity-lock with Swift) · TSK-540 hex_render width clamp · TSK-539 cbindgen

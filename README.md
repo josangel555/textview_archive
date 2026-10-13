@@ -1,4 +1,68 @@
-# TextView
+# TextView — archived source snapshot
+
+> ⚠️ **This repository is a read-only snapshot, not a live project.**
+>
+> It is a one-time showcase export of TextView's full development history
+> (3,857 commits, every commit preserved), taken on **2026-10-12**. It is **not
+> maintained**: no bug fixes, releases, pull requests, or issues are handled here, and
+> nothing in it will change. Before export, local-dev credentials, personal paths, and
+> private session links were scrubbed from every revision; in-file commit references
+> were remapped to this repository's hashes at the tip (older revisions still cite the
+> original ids). Pre-built macOS bundles are published separately in
+> [`textview_dist`](https://github.com/josangel555/textview_dist).
+
+## Build it yourself (one command)
+
+Requirements: macOS 15+, Xcode 16+ (Swift 6), and a stable Rust toolchain
+(`cargo` — install from <https://rustup.rs>).
+
+```sh
+git clone https://github.com/josangel555/textview_archive.git
+cd textview_archive
+bash scripts/build-app.sh release      # → dist/TextView.app
+```
+
+That single script builds the Rust core staticlib from source
+(`scripts/build-rust-core.sh`), stages it for SwiftPM, compiles the Swift packages,
+assembles `dist/TextView.app`, and validates the bundle. Use `debug` instead of
+`release` for a faster unoptimized build.
+
+> If you want to run plain `swift build` / `swift test` instead, stage the Rust core
+> first — `bash scripts/build-rust-core.sh` — otherwise SwiftPM fails with
+> *"could not build Objective-C module 'CMdvCore'"* (the generated header and
+> staticlib are build outputs, not checked in).
+
+## Running it — code signing and Gatekeeper
+
+**No Apple Developer account or signing identity is needed.** If no local signing
+certificate is present, `build-app.sh` signs the bundle **ad-hoc** automatically; an
+ad-hoc-signed app built on your own Mac launches normally:
+
+```sh
+open dist/TextView.app
+```
+
+Two situations need a one-time bypass of Gatekeeper, because the app is **not
+notarized** by Apple:
+
+- **You copied the app to another Mac, or downloaded a zip from `textview_dist`.**
+  macOS marks it quarantined and shows *"TextView can't be opened"*. Either
+  right-click the app → **Open** → **Open** (once), or clear the flag:
+  ```sh
+  xattr -dr com.apple.quarantine /path/to/TextView.app
+  ```
+- **macOS privacy grants (Full Disk Access, Documents, Screen Recording) keep
+  re-prompting after rebuilds.** Ad-hoc signatures change on every build, so macOS
+  forgets the grants. Create a stable local self-signed identity once:
+  ```sh
+  bash scripts/setup-signing.sh          # creates "MarkdownViewer Local Dev" in your login keychain
+  bash scripts/build-app.sh release      # subsequent builds sign with it
+  ```
+
+Nothing here weakens system security globally — both steps only affect this app on
+your machine.
+
+---
 
 A native macOS file viewer + minimal editor — plaintext and markdown, code (TreeSitter
 highlighting + a CodeMirror 6 editor), hex/CSV/SQLite/diff viewers, a git inspector, and

@@ -56,7 +56,7 @@ are from static reading + grep and are verifiable without building.
 ### P1 — Default-on rendered-markdown DOM-patch: the documented fallback is not wired, and post-processing is not re-run
 - **File:** `Sources/ViewerUI/MarkdownRenderedView.swift:156-169`;
   `Sources/ViewerCore/BlockPatchJS.swift:16-52`
-- **Commit:** `847b7921` (flip `domPatchEnabled` to default ON, opt-out `MDV_DOM_PATCH=0`).
+- **Commit:** `e4429513` (flip `domPatchEnabled` to default ON, opt-out `MDV_DOM_PATCH=0`).
 - **Evidence:**
   1. `tryApplyDOMPatch` fires the patch with
      `webView.evaluateJavaScript(..., completionHandler: nil)` and then
@@ -93,8 +93,8 @@ are from static reading + grep and are verifiable without building.
 - **Files:** `Sources/ViewerUI/ConflictResolutionView.swift` (defined, **0 callers**);
   `Sources/ViewerUI/DocumentModel.swift:3020` (`beginConflictResolution`, **0 callers**);
   banner mount at `Sources/ViewerUI/ContentView.swift:774-778`.
-- **Commits:** `f9127559` (built the 3-pane merge stack + `beginConflictResolution` +
-  `ConflictResolutionView`, host-tested) and `5ed63734` (went **live** with the
+- **Commits:** `3755420f` (built the 3-pane merge stack + `beginConflictResolution` +
+  `ConflictResolutionView`, host-tested) and `498ecdc1` (went **live** with the
   auto-merge path in `reloadCurrentFile`).
 - **Evidence:** `rg 'ConflictResolutionView' Sources/` and `rg 'beginConflictResolution'
   Sources/` return **only the defining files** — nothing mounts the 3-pane sheet or calls
@@ -120,7 +120,7 @@ are from static reading + grep and are verifiable without building.
 ### P2 — External-edit auto-merge mutates the dirty buffer silently; Revert semantics drop the merged disk changes; CM6 redisplay on-screen UNVERIFIED
 - **File:** `Sources/ViewerUI/DocumentModel.swift:2977-2990` (`applyExternalAutoMerge`),
   reconciler `Sources/ViewerCore/ExternalEditReconciler.swift`.
-- **Commit:** `5ed63734`.
+- **Commit:** `498ecdc1`.
 - **Evidence:** On a clean 3-way merge the buffer takes the merged text and is kept dirty
   with `originalText` (the base) **untouched**, and the disk fingerprint is refreshed via
   `buf.refreshSavedFingerprint(...)`. Consequences: (a) a subsequent **Revert** restores
@@ -147,7 +147,7 @@ are from static reading + grep and are verifiable without building.
 ### P2 — HTML per-page network consent is inert: no UI can grant it
 - **File:** `Sources/ViewerUI/DocumentModel+HTMLJavaScript.swift:79` (`allowHTMLNetwork`),
   `revokeHTMLNetwork` — **0 callers** outside the defining file.
-- **Commit:** `8253d8cb`.
+- **Commit:** `348ff57c`.
 - **Evidence:** `rg 'allowHTMLNetwork|revokeHTMLNetwork' Sources/` returns only the
   definition. The CSP-escalation core (`HTMLDocumentPolicy.cspString(trusted:allowedConnectHosts:)`,
   `connectSource(forHost:)`) and the fail-closed store are built and security-tested, but
@@ -165,7 +165,7 @@ are from static reading + grep and are verifiable without building.
 ### P2 — Dynamic content menu is computed but never rendered
 - **File:** `Sources/ViewerCore/ContentActionMenu.swift`;
   `Sources/ViewerUI/DocumentModel.swift:2153` (`activeContentMenu`) — **0 UI consumers**.
-- **Commit:** `9addfda8` (HEAD).
+- **Commit:** `5fda425a` (HEAD).
 - **Evidence:** `rg 'activeContentMenu' Sources/` returns only the defining computed
   property; nothing builds an `NSMenu` from it. The commit is explicit: *"the live dynamic
   NSMenu is the AppKit tail (TSK-1585)."*
@@ -198,7 +198,7 @@ are from static reading + grep and are verifiable without building.
 
 ### P3 — Big-CSV windowed assembly sniffs the delimiter from a 64 KB prefix
 - **File:** `Sources/ViewerCore/RustCSVAdapter.swift:113-140` (`windowedAssemble`).
-- **Commit:** `ed5e9689`.
+- **Commit:** `a5398bd6`.
 - **Evidence:** For inputs > 4 MB, the delimiter is sniffed from `text.prefix(64*1024)` via
   a separate `CsvSession`, while the rows are materialized from a full-file session; the
   reported delimiter comes from the prefix sniff (`sniffed.first ?? ","`). For a
@@ -233,7 +233,7 @@ are from static reading + grep and are verifiable without building.
 - **Line-merge is newline-safe.** `ThreeWayMerge` splits/joins with
   `components(separatedBy:"\n")` + empty guards, so trailing-newline and CRLF survive the
   auto-merge round-trip.
-- **The reverted tmux stack** (`600d0a14` etc.) was cleanly reverted, not left half-landed.
+- **The reverted tmux stack** (`127f2aa9` etc.) was cleanly reverted, not left half-landed.
 
 ---
 
@@ -247,7 +247,7 @@ are from static reading + grep and are verifiable without building.
   judged them refactors/gate-migrations; I did not trace every one to confirm no behavioral
   weakening slipped in.
 - **The Canvas DSL** (a large, fast-moving subsystem with many M-slice commits) — only
-  noted the one "commit-on-red-gate slip" that was already amended (`f084592d`); did not
+  noted the one "commit-on-red-gate slip" that was already amended (`99464287`); did not
   audit its slices for regressions.
 - **LSP / Git / Terminal / Sessions / Image-editing** feature clusters — not individually
   reviewed for this lens beyond commit-message scanning.

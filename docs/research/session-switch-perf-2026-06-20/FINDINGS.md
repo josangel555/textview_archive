@@ -16,7 +16,7 @@ code changed) · **Author:** `claude-mdv`
 A concurrent agent is editing this exact path — `DocumentModel.swift`,
 `Coordinators/EditorCoordinator.swift`, and a session test were uncommitted
 during this audit. All line numbers below are against the **committed** tree
-(HEAD `cbadd35e`); confirm offsets before acting.
+(HEAD `a10669de`); confirm offsets before acting.
 
 ---
 

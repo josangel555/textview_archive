@@ -1,6 +1,6 @@
 # TextView — a four-page portrait
 
-*2026-08-08 · main @ `f46c59cb` · all numbers measured from the repo, not estimated*
+*2026-08-08 · main @ `f6612f04` · all numbers measured from the repo, not estimated*
 
 ---
 

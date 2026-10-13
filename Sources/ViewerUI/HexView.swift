@@ -868,7 +868,7 @@ final class HexTextController: NSViewController {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = []
         // NOTE: the container stays INFINITE. Bounding it was tried
-        // (30fdc32) and measured WORSE — a finite container defeats TK2's
+        // (463ad65) and measured WORSE — a finite container defeats TK2's
         // lazy layout for content inside the bounds (debug chunked build
         // 267ms → 4.5s). The remaining usage-derived cost lives in
         // `textContainerOrigin`, which HexNSTextView overrides instead.

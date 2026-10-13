@@ -3,7 +3,7 @@
 **Dimension:** Data-loss paths in the editor — external-change detection, save integrity,
 encoding round-trips, undo reliability, dirty-state truthfulness.
 **Date:** 2026-07-10 · **Reviewer:** Claude (automated pre-launch audit)
-**Repo state:** `main` @ `92c72206` (working tree has unrelated uncommitted changes to
+**Repo state:** `main` @ `304a8290` (working tree has unrelated uncommitted changes to
 `main.swift` / `MCPSocketBridge.swift`, not reviewed here).
 
 ---

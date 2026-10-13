@@ -33,7 +33,7 @@ A migration item is NOT done at "engine ported." The real ladder is:
 > `grep` of `Sources/` shows `FormulaEngine.evaluate`/`evaluateFormulaCell`/
 > `recalcAllFormulas` have ZERO view consumers; `CSVTableView` renders cells as raw
 > `Text(cell)`, so `=A1+B1` shows literal text on screen. A prior CHANGELOG entry
-> over-claimed it as user-facing (removed @ e4ad9f10). The migration tracking must
+> over-claimed it as user-facing (removed @ 536f26ad). The migration tracking must
 > separate **engine-done** from **feature-shipped**; a validated engine ticket
 > should link the consumption ticket (e.g. TSK-1213 → TSK-1215) and the CHANGELOG
 > entry waits for step 3, not step 1.

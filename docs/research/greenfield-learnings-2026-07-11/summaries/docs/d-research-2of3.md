@@ -70,7 +70,7 @@
   - Tier 1 quick-wins (S, ~6 items): tab-dedup symlink, session-goto stray prompt, source mode for binaries, shoulder buttons 4/5/6, row-count tool window, right-click refresh.
   - Tier 2 medium (S–M, ~9 items): status-bar stats, recent tool, pin/follow, SQLite category-override, SQLite UI-scale, tab UX, ModeBar relocation, git file-history, folder stats.
   - One-way-door guardrails: state in core not SwiftUI, observability event FFI-shaped from day one, one command bus, terminal behind protocol, no republish amplification, all persisted shapes versioned.
-  - **Already done:** DocumentState.{loading,error} + off-main file loading (commit e5e659b, 2639656) — do NOT rebuild.
+  - **Already done:** DocumentState.{loading,error} + off-main file loading (commit b422ee2, af5bef0) — do NOT rebuild.
 - **carry-forward:** DISTILL — the foundational-ordering principle (observability + session-state as roots), the dependency DAG pattern, the tiered phasing (0/1/2/PoC-out), and the one-way-door guardrails are architectural best practices reusable in any major refactor.
 
 ---

@@ -6,7 +6,7 @@ meta-analysis, repo/board archaeology, the unverified pre-launch audit, the v4 t
 Verification note: pre-launch-audit findings were **gap-class evidence** at write time — the audit's
 adversarial verify phase never ran, so individual bugs were "plausible, unconfirmed," though the
 *classes* were corroborated across independent streams. **Update (2026-07-11):** a dedicated
-verification pass has since checked all 12 cited findings against current `main` (3536dfa8) —
+verification pass has since checked all 12 cited findings against current `main` (be3b1008) —
 10 CONFIRMED, 1 REFUTED (FormulaEngine dead-tail), 1 PARTIAL (the "every caller" overstatement on
 `JSONFileStore.write`). Per-citation verdicts are tagged inline in the top-20 list below; full
 evidence in `aspects/VERIFICATION_dataloss.md` and `aspects/VERIFICATION_security_packaging.md`.

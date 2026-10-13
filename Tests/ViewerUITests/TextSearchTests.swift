@@ -5,7 +5,7 @@ import XCTest
 /// and regex paths that power the Cmd+F bar in the source view.
 ///
 /// Lives here because the symbol is internal to ViewerUI and the find
-/// bar's regex toggle (Batch B, commit 2457015) landed without
+/// bar's regex toggle (Batch B, commit 94fa823) landed without
 /// dedicated tests. Catching invalid-regex, multiline, and case-
 /// insensitive edge cases here is cheap; doing it through the UI is
 /// expensive.

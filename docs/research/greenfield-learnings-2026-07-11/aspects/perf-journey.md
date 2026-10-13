@@ -12,18 +12,18 @@ invisible to `ImageRenderer`/`cacheDisplay` (false green).
 - Frequency: rare as a *class* but recurred 4x before being understood as a pattern (TSK-488).
 - Severity: high — broke basic UI (vanishing tabs, blank source view) on everyday interactions.
 - Evidence: `docs/research/…/summaries/commits/c-01of19.md:56-71` — 4-5 commits, 3 re-attempts,
-  one revert (`7ac0147c`), root cause = `NSRulerView` re-entrant glyph-range walks, finally fixed
-  by abandoning AppKit containment (`377044f0`, 2026-05-14/15, day 1-2 of the project).
+  one revert (`ad030f30`), root cause = `NSRulerView` re-entrant glyph-range walks, finally fixed
+  by abandoning AppKit containment (`00cd7118`, 2026-05-14/15, day 1-2 of the project).
   `CLAUDE.md` §"Compositor occlusion + the ImageRenderer false-green trap (TSK-488, 2026-06-07)".
 
 ### 2. Reload-storm / re-render-from-scratch bugs (chronic, high felt-cost, slow to fix)
 Any content swap that re-invokes `loadHTMLString` (full page reload) instead of patching the
 existing DOM — 2-9 seconds of visible freeze on same-file re-render.
 - Frequency: this specific instance took **~40 days** from first landing perf infra (06-01,
-  `PerfSignpost`) to shipping the fix DEFAULT-ON (`847b7921`, 07-09) — the underlying defect
+  `PerfSignpost`) to shipping the fix DEFAULT-ON (`e4429513`, 07-09) — the underlying defect
   (full WebView reload on every re-render) had been latent since the WebView renderer existed.
 - Severity: high — directly felt by the user on every markdown edit-to-preview cycle.
-- Evidence: commit `847b7921 perf(render): flip rendered-markdown DOM-patch ON by default —
+- Evidence: commit `e4429513 perf(render): flip rendered-markdown DOM-patch ON by default —
   kills the 2-9s reload storm [TSK-838]`; `LESSONS.md:3886-3887` (slice-and-prove pattern);
   root cause is the SAME class as the scroll-reset-on-switch bug (`LESSONS.md:442`: "the WebView
   is REBUILT on switch... loadHTMLString/reload... scrollY=0").
@@ -38,7 +38,7 @@ not process-wide.
 - Evidence: `LESSONS.md:434` — `LineDiff.lcs` allocated `(n+1)×(m+1)` Int matrix; fixed via
   common-prefix/suffix trim → line-interning → Myers O(N·D) linear-space middle-snake →
   **size-guard** (≥1 MiB either side ⇒ store a snapshot, never invoke the differ). Commits
-  `2fb9810c`/`85a212b8 fix(localhistory): linear-space Myers line-diff + size-guard`.
+  `e8dc3f37`/`85a212b8 fix(localhistory): linear-space Myers line-diff + size-guard`.
 
 ### 4. Per-frame / per-keystroke recomputation (chronic small-N, caught by measurement)
 Work that should be O(1) or cached recomputed every SwiftUI `body` re-eval or every animation tick.
@@ -82,7 +82,7 @@ as `Contents/Frameworks/` dylibs) is a multi-MB regression that looks like norma
 ## What worked — practices that earned their keep
 
 - **Env-gated, zero-overhead-when-disabled instrumentation.** `PerfSignpost` (155 LOC,
-  `Sources/ViewerCore/Perf/PerfSignpost.swift`, landed day 18: `1df52422`, 2026-06-01) wraps
+  `Sources/ViewerCore/Perf/PerfSignpost.swift`, landed day 18: `611a1510`, 2026-06-01) wraps
   `OSSignposter`, gated on `MDV_SIGNPOSTS=1`; the env-var read is cached and every API is a
   branch-and-return when disabled — "no signpost ID minted, no string formatted." This is the
   pattern that made "measure, don't guess" actually cheap enough to reach for reflexively.
@@ -113,7 +113,7 @@ as `Contents/Frameworks/` dylibs) is a multi-MB regression that looks like norma
 
 - **A "kill criterion"/budget stated at PLANNING time, not discovered post-hoc.** The Canvas
   epic's M0-M6 milestone docs explicitly named "budgets, risks, kill criterion" per slice before
-  building (`5d8240e4`, `39b7a75e`, `7124c92a`); `b604a1cb` closed "the M6 perf-budget criterion"
+  building (`0f232e58`, `799a81e9`, `e8566ad1`); `e15756fb` closed "the M6 perf-budget criterion"
   by fixing an O(steps×nodes) walk to O(steps) + a scale guard. Perf budgets as ACCEPTANCE
   CRITERIA (not aspirational) forced the fix before ship, not after.
 
@@ -129,12 +129,12 @@ as `Contents/Frameworks/` dylibs) is a multi-MB regression that looks like norma
 - **Perf audits as a bounded phase that drives targeted single-commit fixes, not open-ended
   refactoring.** TSK-838-845 (`c-10of19.md:158-159`): a research/audit phase, then 8-10
   independently-measured, independently-shipped wins (grammar-warm parallelize, cross-file
-  search parallelize [4.7x speedup, 586ms→124ms, `a3ca5304`], deferred file-read, getenv
+  search parallelize [4.7x speedup, 586ms→124ms, `41f92044`], deferred file-read, getenv
   fast-path). Each landing is single-commit, validated, checked off — "avoid multi-day perf
   refactors; measure + fix specific bottlenecks."
 
 - **A real regression-guard test, not just "build is green."** Every landed perf win in the
-  audit era paired the fix with a test that pins the measured fact (e.g., `a3ca5304`
+  audit era paired the fix with a test that pins the measured fact (e.g., `41f92044`
   "parity-tested" for the parallelized cross-file search) so a later regression fails a test,
   not just "feels slower."
 
@@ -177,7 +177,7 @@ as `Contents/Frameworks/` dylibs) is a multi-MB regression that looks like norma
   contention are unreliable), yet the pattern had to be independently rediscovered.
 
 - **Felt-perf (per-interaction budget) instrumentation didn't land until day ~56 of a ~58-day
-  project** (`InteractionProfiler`, TSK-1488, `5a6c2452`, 2026-07-09 — one day before the corpus
+  project** (`InteractionProfiler`, TSK-1488, `d36b3441`, 2026-07-09 — one day before the corpus
   cutoff). Mechanism: `PerfSignpost` (Instruments-visible signposts, day 18) answers "where did
   the time go" for a DEVELOPER profiling session; it does NOT answer "was THIS interaction felt
   as janky" as a standing, always-on, budget-graded signal an agent or CI could consume. That

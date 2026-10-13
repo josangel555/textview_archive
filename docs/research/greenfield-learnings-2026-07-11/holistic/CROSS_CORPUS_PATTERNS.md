@@ -142,7 +142,7 @@ rules are steerable, but only the fold-in discipline should exist from day 1.
 compositor burns (c-01/05) → hermeticity + 36× speed fix + proptest vein (c-16, reacting to
 pollution/slowness) → differential fuzzing as port insurance (c-14) → per-surface matrix + four
 MANDATES (07-04, reacting to the meta-analysis) → pixel-proof-as-default UAT (c-19). Teeth
-demonstration went from one clever meta-test (c-01, 4f21ac7b) to a pervasive per-commit norm
+demonstration went from one clever meta-test (c-01, 810da1e4) to a pervasive per-commit norm
 (c-17: every significant commit documents its deliberate break). The trend's direction is
 constant: **from "tests exist" toward "tests are proven able to fail, at the tier that can't
 lie."** The rebuild can skip the burns and start at the end-state.

@@ -1,6 +1,6 @@
 # Perf Fix#1 — per-tab view retention (instant tab switching, no WKWebView reload)
 
-> ✅ **LANDED 2026-06-06 — commit `39925fd`** (TSK-108 → `fixed`). Approach A shipped
+> ✅ **LANDED 2026-06-06 — commit `8f60d21`** (TSK-108 → `fixed`). Approach A shipped
 > as designed: `ContentView.content` = ZStack of `MountedPanesLRU`-bounded panes,
 > driven from `DocumentModel.updateDerived`. Validated: headless merge gate (3975),
 > `MountedPanesWiringTests` (mutation-checked), `PaneRetentionMountProbeTests`
@@ -50,7 +50,7 @@ genuinely large *real* docs from retention.
 ## Recommended code shape
 
 > **The LRU model core is already built + tested headlessly:**
-> `ViewerCore/MountedPanesLRU.swift` (commit `8e23540`, `MountedPanesLRUTests`,
+> `ViewerCore/MountedPanesLRU.swift` (commit `7c8b7ef`, `MountedPanesLRUTests`,
 > 12 tests) — MRU-ordered, capacity-bounded, with `activate`/`remove`/
 > `retainOnly`/`trim(to:)` and deterministic eviction (always-retain-active,
 > LRU-not-FIFO, prune-on-close, memory-pressure trim-to-1). The live turn just

@@ -4,7 +4,7 @@ import CoreGraphics
 @testable import ViewerUI
 
 /// Pure-logic coverage for `MetadataPanel` row builders. Batch B
-/// (commit 2457015) shipped these untested; image/AV/PDF loaders rely
+/// (commit 94fa823) shipped these untested; image/AV/PDF loaders rely
 /// on system frameworks we don't unit-test, but the filesystem and
 /// duration formatters are deterministic and easy to lock in.
 @MainActor

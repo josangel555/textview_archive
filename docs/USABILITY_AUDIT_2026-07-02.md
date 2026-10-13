@@ -278,7 +278,7 @@ SettingsMenusAndShortcuts, Plugins+MCP, MetadataChecksum, KeySynth, and rendered
 
 The sweep found exactly TWO issues, both handled:
 - **PMA01** — a real code<->test divergence I introduced (Canvas added 11 canvas_* MCP tools; the
-  UAT's expected tools/list was stale at 20). FIXED (fc9fba51) -> 31, re-run green. Note: it was a
+  UAT's expected tools/list was stale at 20). FIXED (7ac49a35) -> 31, re-run green. Note: it was a
   TEST-expectation lag; the app catalog was correct.
 - **PMA04** — a 30s TIMEOUT flake under heavy batch load (zoomIn is unconditional; passed on
   re-run). Test-perf edge, not an app bug.
@@ -363,7 +363,7 @@ Systematic follow-on to the FeedReader orphan (TSK-1417). Two whole classes swep
   File/View menus + verbs but had NO ⌘K palette entries. Added 5 CommandDescriptors → their existing
   show-* verbs, + a CommandVerbCohesionTests REGRESSION GUARD (every command verb resolves to a real
   catalog token — catches a palette command that would silently no-op). Teeth-verified. Commit
-  1c46b2a0.
+  35009f74.
 
 Running tally of GENUINE gaps found + fixed this run: CSV empty-state (1415), image paint-undo
 (1416), HTTP-client verb cohesion, FeedReader orphan wired (1417), palette discoverability (1413).
@@ -404,7 +404,7 @@ editor, committing a geometry op (crop/resize/rotate/skew) AFTER starting a pain
 silently swallowed — render() early-returns the destructive paint buffer, shadowing base.ops, so the
 op was recorded but never rendered AND lost on export (the paint buffer, without the op, was
 written). Diagnosed with a failing test first (rendered stayed 12px after a resize to 24), fixed by
-transforming the paint buffer THROUGH the op via the same Renderer (4dc94b8c). 3 host tests + teeth.
+transforming the paint buffer THROUGH the op via the same Renderer (4363e661). 3 host tests + teeth.
 
 LESSON for the remaining run: stop re-checking main surfaces (verified). Hunt DEEP INTERACTION /
 EDGE paths — ordering between two features (paint↔geometry), state across a switch (session/tab),
@@ -424,7 +424,7 @@ failing test (brightness=-1 left paintCanvas pixels unchanged). Unlike discrete 
 commitGeometry now transforms the buffer through), tonal is CONTINUOUS live state baked into the
 buffer and can't be re-derived per-tick, so the fix GATES rather than fakes: isToneEditable
 (paintCanvas==nil) → the view disables the Tone group + a "discard paint to adjust" note. Geometry
-stays enabled. 3 host tests + teeth (6cb11753). The real long-term fix (non-destructive paint layer)
+stays enabled. 3 host tests + teeth (f2a409f6). The real long-term fix (non-destructive paint layer)
 is BACKLOG'd.
 
 PAINT IS A DESTRUCTIVE TERMINAL MODE — every post-paint crossing needs explicit handling:
@@ -438,7 +438,7 @@ Fourth image-editor paint-crossing bug, all found by the deep-interaction mining
 Interleaved paint+geometry undo reverted TWO actions per ⌘Z (a resize + the preceding stroke) and
 desynced base.ops from paintCanvas — two undo timelines for one destructive session. Fixed by
 collapsing to a unified paint-undo timeline: commitGeometry during paint snapshots onto paintUndo +
-transforms the buffer, no base.ops push. undo peels in order; redo re-applies (aad50470). Diagnosed
+transforms the buffer, no base.ops push. undo peels in order; redo re-applies (6a1a5079). Diagnosed
 with a failing test (undo → uniform buffer). 3 tests + teeth; TSK-1419/1416 suites still green.
 
 **PAINT-CROSSING SET COMPLETE:**
@@ -463,7 +463,7 @@ editingAvailable — same gate pattern as tonal). The tab-switch + CSV families 
 REAL BUG found in the image-editor LAYER model: the vector overlay (annotation shapes + text, drawn
 over the preview, "never baked") was SILENTLY DROPPED on export/save-a-copy — diagnosed with a
 byte-identical export test. Fixed by compositing the overlay via ImageRenderer(VectorOverlayView)
-over the export base — WYSIWYG-guaranteed, host-testable (7d3b5070). 2 tests + teeth; 114-test suite
+over the export base — WYSIWYG-guaranteed, host-testable (0884e0c7). 2 tests + teeth; 114-test suite
 green.
 
 THE IMAGE EDITOR IS THE RICHEST VEIN — 5 real bugs this run (paint-undo 1416, geometry-after-paint
@@ -506,7 +506,7 @@ text/rotation/frame/z-order/clear) pushed to NO undo stack — annotations were 
 nothing), the same missing-undo class as paint strokes. And overlay interleaves freely with paint/
 geometry, so per-layer precedence couldn't order it. Fixed with a UNIFIED undo timeline (undoOrder over
 .op/.paint/.overlay; each action records its layer, undo pops+routes) so all three layers peel in true
-order. Also fixed a latent revertAll paintUndo leak. 4 tests + teeth; 114-test suite green (08d6d6eb).
+order. Also fixed a latent revertAll paintUndo leak. 4 tests + teeth; 114-test suite green (f6ef2e59).
 
 IMAGE-EDITOR UNDO HARDENING COMPLETE — 6 bugs across the full multi-layer/multi-mode design:
 paint-undo (1416), geometry-after-paint (1419), tonal-after-paint (1420), interleaved undo ordering

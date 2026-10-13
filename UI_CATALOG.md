@@ -60,7 +60,7 @@ Tests:
 `NSHostingController` as the window's `contentViewController`. The
 hosting controller's view installs auto-layout to track window resize.
 Earlier we used a bare `NSHostingView` set on `window.contentView` and
-that broke resize tracking (commit 713194b fixed this).
+that broke resize tracking (commit 18951b2 fixed this).
 
 ---
 
@@ -183,7 +183,7 @@ Tests:
 `LineNumberGutterView` (40pt wide) alongside the `NSScrollView`. The
 old `NSRulerView` approach is **forbidden** — it triggered a macOS-14+
 SwiftUI compositing pathology where the whole window's SwiftUI tree
-stopped committing layer contents (see FINDINGS.md, commit 73baa53).
+stopped committing layer contents (see FINDINGS.md, commit 5fdac1c).
 
 Source NSTextView config:
 - TextKit 1 stack (not the `scrollableTextView()` factory)

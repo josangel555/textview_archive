@@ -1,7 +1,7 @@
 # Pre-launch audit — Read/write consistency scrutiny
 
 **Date:** 2026-07-10 · **Dimension:** persisted read+write consistency (atomicity, torn/partial writes, stale reads, lost updates, concurrent-writer safety, crash-mid-write recovery)
-**Repo:** `/Users/me/Documents/workspaces/claude/markdown_viewer` @ `92c72206` (+ uncommitted doc-only changes)
+**Repo:** `/Users/me/Documents/workspaces/claude/markdown_viewer` @ `304a8290` (+ uncommitted doc-only changes)
 
 ---
 

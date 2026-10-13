@@ -8,7 +8,7 @@ Here is the analysis.
 
 ## Summary
 
-The recently merged `feat/image-scroll-zoom` branch (commit `4d0a9e2`) already implemented **three of the four asks**. The image preview path is `MediaPreviewView.ImagePreview` → `ImageScrollHost` (an `NSViewRepresentable` wrapping `ZoomableImageScrollView` + `CenteringClipView` + `CenteredImageView`), all in `/Users/me/Documents/workspaces/claude/markdown_viewer/Sources/ViewerUI/MediaPreviewView.swift`. Pure zoom math lives in `/Users/me/Documents/workspaces/claude/markdown_viewer/Sources/ViewerKit/ImageZoomState.swift` with host-runnable tests in `Tests/ViewerKitTests/ImageZoomStateTests.swift`.
+The recently merged `feat/image-scroll-zoom` branch (commit `850e480`) already implemented **three of the four asks**. The image preview path is `MediaPreviewView.ImagePreview` → `ImageScrollHost` (an `NSViewRepresentable` wrapping `ZoomableImageScrollView` + `CenteringClipView` + `CenteredImageView`), all in `/Users/me/Documents/workspaces/claude/markdown_viewer/Sources/ViewerUI/MediaPreviewView.swift`. Pure zoom math lives in `/Users/me/Documents/workspaces/claude/markdown_viewer/Sources/ViewerKit/ImageZoomState.swift` with host-runnable tests in `Tests/ViewerKitTests/ImageZoomStateTests.swift`.
 
 Only **click-and-drag to pan** is genuinely missing. The other three are implemented; the relevant work is verification/edge-case hardening, not greenfield.
 

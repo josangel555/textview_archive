@@ -1,6 +1,6 @@
 # Verification pass 1/2 — DATA-SAFETY audit findings vs current `main`
 
-Verified against `markdown_viewer @ 3536dfa8` (2026-07-10 00:14:33 -0400), read fresh from
+Verified against `markdown_viewer @ be3b1008` (2026-07-10 00:14:33 -0400), read fresh from
 the working tree on 2026-07-11. Original audit findings dated 2026-07-09; line numbers had
 drift in a couple of spots (noted per-item). This pass is READ-ONLY — no repo files touched
 outside this corpus doc.
@@ -256,7 +256,7 @@ UI is future work, TSK-768)."*
 
 Notably, a real 3-way merge stack already exists in the tree —
 `Sources/ViewerCore/ThreeWayMerge.swift`, `Sources/ViewerUI/ConflictResolutionModel.swift`
-(landed 2026-07-10, commit `f9127559`, per git log: *"feat(merge): 3-way merge
+(landed 2026-07-10, commit `3755420f`, per git log: *"feat(merge): 3-way merge
 conflict-resolution stack — resolution model + 3-pane UI [CH-H: TSK-1171]"*) — but it is not
 wired to `resolveDiskConflict`/`DiskConflictBanner` as of HEAD. The disk-conflict banner's
 Merge button is still a stub pointing at the pre-existing merge engine's future integration.

@@ -56,7 +56,7 @@ alone.
    standalone doc-only commit per logged item).
 
 6. **Board reconciliation / meta-work** — a distinct, recurring work type: auditing the board
-   itself against code reality. c-18's `42f61606` ("app-wide feature/usability/cohesion audit —
+   itself against code reality. c-18's `d9051525` ("app-wide feature/usability/cohesion audit —
    foundation pass, code-first correction") discovered the board *understated* completion — wired
    features filed as missing UI. Evidence: `summaries/commits/c-18of19.md` lines 92, 140-141:
    "the tracking board had become a stale liability, listing 'missing UI' for features that were

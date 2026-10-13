@@ -1,6 +1,6 @@
 # Feature backlog audit (2026-06-05)
 
-Source: `feature-backlog-audit` workflow (wf_332394c9, 40 agents) — every leaf item in the owner braindump classified against the codebase at `main @ 1dbf1ca`.
+Source: `feature-backlog-audit` workflow (wf_332394c9, 40 agents) — every leaf item in the owner braindump classified against the codebase at `main @ e973e4e`.
 
 **373 items** — implemented 211 · partial 62 · not-implemented 62 · ambiguous 21 · contradicting 6 · duplicate 6 · not-needed 4 · not-possible 1.
 

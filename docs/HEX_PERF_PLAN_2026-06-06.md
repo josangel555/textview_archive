@@ -2,7 +2,7 @@
 
 **Status:** plan only. The fix is live-validation-blocked (needs Instruments on the target macOS);
 this turns the vague "1MB HEX extremely slow" complaint into an actionable, reviewed plan with a
-testable seam. Author: autonomous run 2026-06-06. `main` @ `247c3cf`.
+testable seam. Author: autonomous run 2026-06-06. `main` @ `3a65759`.
 
 ## Confirmed diagnosis (from the TSK-267 spike + code read)
 - **Model layer is clean.** `HexDumpBuilder.renderRows` is `withUnsafeBytes` raw-pointer iteration

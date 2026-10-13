@@ -50,7 +50,7 @@ import CoreGraphics
 ///
 /// TIER-JUSTIFY: T4 — the observable is the assembled bundle's real
 /// cross-process per-(preview type × lens) routing, the
-/// mode↔state↔realized-subtree consistency (fd11e61 load-bug + Bug B/C
+/// mode↔state↔realized-subtree consistency (0bf6c36 load-bug + Bug B/C
 /// preview-vs-HEX class), and the AVKit/PDFKit/WKWebView-backed surfaces
 /// that only a live process mounts. Self-skips on the headless gate
 /// (`isAppBuilt` false there); runs for real on the VM/nightly lane or a
@@ -172,7 +172,7 @@ final class PreviewsUATTests: MultiScenarioTestCase {
 
     /// Audio (`.wav`) and video (`.mp4`) both default to **Preview**
     /// (AVPlayerView), NOT HEX (native-preview-never-HEX sentinel,
-    /// `7de0f44`/`08176e9`). Force HEX on the video → byte grid, then back.
+    /// `35af305`/`ade3d04`). Force HEX on the video → byte grid, then back.
     /// The realized tree must mount an `AVPlayerView` for the preview.
     func test_PV_02_audioVideoPreviewAndHexFallback() throws {
         let wav = try writeWAVFixture("tune.wav")

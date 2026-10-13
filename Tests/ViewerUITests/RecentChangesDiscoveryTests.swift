@@ -3,7 +3,7 @@ import XCTest
 @testable import ViewerUI
 
 /// Regression coverage for the "Git is not showing anything" fix
-/// (commit d175548): the CHANGED sidebar section used to refresh only
+/// (commit ea89818): the CHANGED sidebar section used to refresh only
 /// when `sidebar.rootURL` changed, leaving the section dark when the
 /// user opened a file inside a repo without opening the folder.
 ///

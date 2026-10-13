@@ -40,7 +40,7 @@ VERIFIED: (1) No protocol version exists anywhere on the boundary — `rust-core
 ### One highlighter for all front-ends: expose mdvcore-highlight through the core RPC to the Swift app (owner-gated) — verdict: **weak** (effort epic)
 - **Critique:** The duplication is real, but the proposal misstates the problem, overstates the unification win, and contains one technically incoherent design element. Verified against the code:
 
-1. STALE PROBLEM STATEMENT (the headline motivator is fixed). The proposal calls the Swift TreeSitter integration "known-buggy: predicates #match?/#eq? never evaluated — TSK-410". That bug was fixed in commit 5e840b3 ("fix(highlight): evaluate tree-sitter query predicates (TSK-410)") with regression tests (2cc59e9, 3e904a4). Sources/ViewerCore/Highlight/TreeSitterEngine.swift:83-100 now resolves predicates via `curs
+1. STALE PROBLEM STATEMENT (the headline motivator is fixed). The proposal calls the Swift TreeSitter integration "known-buggy: predicates #match?/#eq? never evaluated — TSK-410". That bug was fixed in commit b0866a1 ("fix(highlight): evaluate tree-sitter query predicates (TSK-410)") with regression tests (b8eae92, c399bf7). Sources/ViewerCore/Highlight/TreeSitterEngine.swift:83-100 now resolves predicates via `curs
 - **Improvements:** 1. Re-ground the problem statement post-TSK-410: the honest pitch is "eliminate dual grammar/query maintenance and version skew", not "fix the buggy Swift highlighter". Quantify actual divergence today (grammar versions: Swift pins tree-sitter-* 0.23.x via SwiftPM, Rust pins 0.24/0.25; query sources: hand-vendored .scm vs crate-bundled).
 
 2. Scope it as "one PARSING stack", not "one highlighter": 

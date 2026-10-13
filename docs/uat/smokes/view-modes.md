@@ -381,7 +381,7 @@ override · workspace snapshot restore of view mode · clamp of invalid persiste
   endless spinner (the Bug C latest-switch-wins guard, and the fd61ef-era load-bug republish fix).
 - **Content actually loads:** the live app must show real file content, not "main.swift cannot be
   loaded" / a permanently empty pane — this is the exact class of regression that shipped in the
-  fd11e61 build. Every smoke's step 1 implicitly asserts content rendered.
+  0bf6c36 build. Every smoke's step 1 implicitly asserts content rendered.
 - **Chrome pin:** TabBar / ModeBar / StatusBar keep fixed heights when the window shrinks; the
   center band absorbs all shrink. The ModeBar picker must not overflow the toolbar at high zoom.
 - **Known-open issues to note but NOT fail on:** #218 (HEX entry latency), #219 (Editor→HEX flash

@@ -12,7 +12,7 @@ import ViewerCore
 /// SYNCHRONOUSLY on the same main-actor turn, so the `.hex` switch's
 /// `loadBinaryAsync` has not even started its detached Task before
 /// `.editor` is set. The binary load therefore lands when `viewMode` is
-/// already `.editor` and the b3b06bc guard correctly drops it.
+/// already `.editor` and the ac4fcee guard correctly drops it.
 ///
 /// The LIVE app does not switch synchronously — there is a real gap
 /// (a user's clicks; the `--script` runner sleeps 300 ms between verbs).

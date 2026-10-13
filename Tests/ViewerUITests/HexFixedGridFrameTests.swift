@@ -60,7 +60,7 @@ final class HexFixedGridFrameTests: XCTestCase {
 
     /// The armed override answers from the inset — no layout pass needed —
     /// and the container itself stays unbounded (bounding it defeats TK2's
-    /// lazy layout; tried and reverted in 30fdc32).
+    /// lazy layout; tried and reverted in 463ad65).
     func test_fixedOrigin_isInset_andContainerStaysInfinite() {
         let c = makeApplied(byteCount: 64)
         XCTAssertEqual(c.textView.textContainerOrigin.x,

@@ -220,7 +220,7 @@ I-## → TSK-### when the tasked board reconnects.
     `TabBar.computedTabWidth`/`tabsAreCrowded` — a deletion must rehome those
     two statics first). ~~fixed chip width~~ DONE 2026-08-12: the owner hit
     the silent-overflow before the port — shrink-to-fit + TSK-304 overflow
-    menu + top/bottom hairlines now live per-pane (`f95a3f97`).
+    menu + top/bottom hairlines now live per-pane (`a17544f3`).
     **Resize FINAL SPEC (owner 2026-08-12, three rounds)**: strict pair-only
     dividers (a drag moves THAT boundary; stops at the floor; cascade DELETED),
     flex-adjacent dividers trade against the origin-frozen slack only,
@@ -346,12 +346,12 @@ Multi-agent pre-launch audit workflow (`scripts/workflows/prelaunch-audit.js`, r
   evidence) but **UNVERIFIED** — the adversarial-verify phase never ran (0/~45 verifiers), and there is
   **no `MASTER_REPORT.md` / `NEEDS_OWNER.md`** (synthesis died). Treat every finding as "plausible, unconfirmed".
 - Review WAVE 2 (~19 dims incl. the 8 per-module code-reviews), VERIFY, completeness-critic, SYNTHESIS,
-  FIX phase → all ❌ never ran. `main` untouched at `3536dfa8`; no fix worktrees/branches.
+  FIX phase → all ❌ never ran. `main` untouched at `be3b1008`; no fix worktrees/branches.
 
 **Signal quality: HIGH.** 27 of ~30 wave-1 reports carry findings with real threat models + file:line
 evidence. No P0s (every report says so); the ceiling is P1. Triaged & deduped 2026-07-10 (3 read-only
 Explore passes) into themes below. Most were UNVERIFIED (verify phase never ran) — **UPDATE 2026-07-11:
-a bounded verification pass confirmed 11 of the load-bearing findings against main@3536dfa8**: THEME 1
+a bounded verification pass confirmed 11 of the load-bearing findings against main@be3b1008**: THEME 1
 items 1/2/3/5/6 CONFIRMED (item 4 PARTIAL — ReviewStore does check the Bool), THEME 3 MCP-socket +
 run_verb-fence CONFIRMED, THEME 4 notices-not-bundled + notarization-unexercised + mermaid-11.4.1
 CONFIRMED; THEME 5 "FormulaEngine dead" REFUTED (rust bridge live-wired via CSVTableView), 1171/1319
@@ -444,11 +444,11 @@ Once `MASTER_REPORT.md` lands, file its findings as a board wave + spin fix work
 
 ## ⚠ OPEN FOLLOW-UPS (updated at the 2026-08-01 handoff — everything below is COMMITTED)
 
-State: main @ f711c2b8 (17 commits landed 07-31..08-01: owner-queue drain + release pipeline +
+State: main @ 8bc4217e (17 commits landed 07-31..08-01: owner-queue drain + release pipeline +
 AX tier + 5 paired rounds). The struck-through items in this section are the audit trail; the
 LIVE open set is: VM tail triage (TSK-1247 = the big one; EBADF stragglers; gitPanelScene
 quirk), Local History smarter retention (re-diff on eviction first), merge-sheet interactive
-flows (AX-unblocked now), owner-side: ~~textview_dist refresh~~ (SHIPPED 2026-08-05 @ 495d2f0e) + tasked-board
+flows (AX-unblocked now), owner-side: ~~textview_dist refresh~~ (SHIPPED 2026-08-05 @ dd07f356) + tasked-board
 reconciliation on reconnect + math-typography eyeball. Exec size sits at 68 of 70 MB — the
 TSK-1214/1098 reclaim is nearly due.
 
@@ -544,7 +544,7 @@ TSK-1214/1098 reclaim is nearly due.
 
 - **[TRIAGED 2026-07-31] The ~98-failure flood was EMFILE** (`ulimit -n` capped by
   `kern.maxfilesperproc`=10240 → the 16384 raise silently fell back to 8192). Fixed
-  self-applyingly in `test-in-vm.sh` (05337de7); headless re-run: 98 → 6 failures.
+  self-applyingly in `test-in-vm.sh` (b0692676); headless re-run: 98 → 6 failures.
   Remaining 6, none from the 07-31 commits: 4 × EBADF ("Bad file descriptor" — same fd
   family, host-green suites: `VMSmokePathGuardTests` ×3-ish, `ViewModeMatrixSmokeTests`,
   `ViewModesUATTests` VM_04; likely a shared fixture/helper holding a stale fd — chase the
@@ -757,7 +757,7 @@ independence · 1342 canvas spike · 1450–1460 usability-epic umbrellas · 152
 AX tier (owner-declared off-limits): 1197–1199 UAT framework · 1261/1263–1266 ElementRef · 1543 AX
 matrix.  VM infra (agent-workable, VM up): 1239 fd exhaustion · 1247 webview-blank · 1336 mermaid
 occlusion T5 · 1365 WebContent hardening · 1541 rust coverage · 1542 Sequoia nag.  Reconcile: 1503
-(SHIPPED 92dec034 — board-reconcile, not build) · 1506 salvage-branch integration (verify vs main).
+(SHIPPED 5a84b00a — board-reconcile, not build) · 1506 salvage-branch integration (verify vs main).
 
 ## Living analyses (pointers)
 WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core migration → 1117 +
@@ -794,7 +794,7 @@ WebUI surface-sharing → 1507 · rendering-stack policy → 1524 · whole-core 
   2026-08-22 ~22:20 — AX interaction suites 6/6 green on the final build
   (divider tooth self-skips as documented). AWAITING: owner confirmation
   the screenshot ghost + dead spots are gone on the installed build.
-- **Owner batch 2026-08-22 — all 5 LANDED (`f95651ed`, CI-green)**: stuck
+- **Owner batch 2026-08-22 — all 5 LANDED (`bec566ee`, CI-green)**: stuck
   mid-drag chip guards, micro-drag click swallow, NSCursor→`.pointerStyle`
   migration (I-07 phase 2 DONE), stale-preview holes (unfocused-pane
   watchers + split diskStamp), pill separator removed. RESIDUES: (a) if the

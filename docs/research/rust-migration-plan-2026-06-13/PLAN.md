@@ -47,7 +47,7 @@ routes Rust by default; the Swift twins are now **fallback-only** behind
 
 | Capability | Rust module | Swift incumbent (now fallback) | Port ticket | Default |
 |---|---|---|---|---|
-| `csv` | `core/src/csv.rs` + `session.rs` + `filter.rs` | `CSVParser`/`CSVFilter`/`CSVFind` | beachhead (`ace7d5c`) | ON |
+| `csv` | `core/src/csv.rs` + `session.rs` + `filter.rs` | `CSVParser`/`CSVFilter`/`CSVFind` | beachhead (`3e60cd3`) | ON |
 | `cmEdit` | `core/src/cm_edit.rs` | `CMEditApplier` | slice 2 | ON |
 | `diff` | `core/src/diff.rs` | `DiffParser`/`DiffHunkParser` | slice 3 | ON |
 | `hex` | `core/src/hex.rs` | `HexDumpBuilder`/`HexLayout` | slice 4 | ON |
@@ -85,7 +85,7 @@ mdvcore_call(method:u16, req, req_len, aux, aux_len, out_buf) -> MdvStatus
 - **All 8 stateless methods route through `mdvcore_call`** — the Swift
   `InProcessTransport.methodIds` table is the single dispatch point; the
   per-method C symbols still exist but are no longer dispatched (slices 1/2/4/5
-  landed: `1900606`, `d1b5a35`, `56560f9`).
+  landed: `46013ac`, `c667a97`, `f8025a7`).
 - Method ids are codegen'd: `ffi/lib.rs` `MDV_METHOD_*` consts → cbindgen emits
   `#define`s into `mdvcore.h` → Swift shares them via `CMdvCore` with a drift-pin
   test (no hand-synced table). Method id = ABI: assign once, never renumber/reuse.
